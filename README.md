@@ -369,3 +369,7 @@ For support, please open a [GitHub issue](https://github.com/github/spec-kit/iss
 ## Acknowledgements
 
 This project is heavily influenced by and based on the work and research of [John Lam](https://github.com/jflam).
+
+## License
+
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
