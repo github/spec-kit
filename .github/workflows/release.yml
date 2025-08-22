@@ -1,0 +1,225 @@
+name: Create Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Get latest tag
+      id: get_tag
+      run: |
+        # Get the latest tag, or use v0.0.0 if no tags exist
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+        
+        # Extract version number and increment
+        VERSION=$(echo $LATEST_TAG | sed 's/v//')
+        IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+        MAJOR=${VERSION_PARTS[0]:-0}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # Increment patch version
+        PATCH=$((PATCH + 1))
+        NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+        
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "New version will be: $NEW_VERSION"
+        
+    - name: Check if release already exists
+      id: check_release
+      run: |
+        if gh release view ${{ steps.get_tag.outputs.new_version }} >/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "Release ${{ steps.get_tag.outputs.new_version }} already exists, skipping..."
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Release ${{ steps.get_tag.outputs.new_version }} does not exist, proceeding..."
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create release package
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        # Create base package directory structure
+        mkdir -p sdd-package-base
+        
+        # Copy common folders to base
+        if [ -d "memory" ]; then
+          cp -r memory sdd-package-base/
+          echo "Copied memory folder"
+        fi
+        
+        if [ -d "scripts" ]; then
+          cp -r scripts sdd-package-base/
+          echo "Copied scripts folder"
+        fi
+
+        if [ -d "templates" ]; then
+          mkdir -p sdd-package-base/templates
+          # Copy templates folder but exclude the commands directory
+          find templates -type f -not -path "templates/commands/*" -exec cp --parents {} sdd-package-base/ \;
+          echo "Copied templates folder (excluding commands directory)"
+        fi
+        
+        # Generate command files for each agent from source templates
+        generate_commands() {
+          local agent=$1
+          local ext=$2
+          local arg_format=$3
+          local output_dir=$4
+          
+          mkdir -p "$output_dir"
+          
+          for template in templates/commands/*.md; do
+            if [[ -f "$template" ]]; then
+              name=$(basename "$template" .md)
+              description=$(awk '/^description:/ {gsub(/^description: *"?/, ""); gsub(/"$/, ""); print; exit}' "$template" | tr -d '\r')
+              content=$(awk '/^---$/{if(++count==2) start=1; next} start' "$template" | sed "s/{ARGS}/$arg_format/g")
+              
+              case $ext in
+                "toml")
+                  {
+                    echo "description = \"$description\""
+                    echo ""
+                    echo "prompt = \"\"\""
+                    echo "$content"
+                    echo "\"\"\""
+                  } > "$output_dir/$name.$ext"
+                  ;;
+                "md")
+                  echo "$content" > "$output_dir/$name.$ext"
+                  ;;
+                "prompt.md")
+                  {
+                    echo "# $(echo "$description" | sed 's/\. .*//')"
+                    echo ""
+                    echo "$content"
+                  } > "$output_dir/$name.$ext"
+                  ;;
+              esac
+            fi
+          done
+        }
+        
+        # Create Claude Code package
+        mkdir -p sdd-claude-package
+        cp -r sdd-package-base/* sdd-claude-package/
+        mkdir -p sdd-claude-package/.claude/commands
+        generate_commands "claude" "md" "\$ARGUMENTS" "sdd-claude-package/.claude/commands"
+        echo "Created Claude Code package"
+        
+        # Create Gemini CLI package  
+        mkdir -p sdd-gemini-package
+        cp -r sdd-package-base/* sdd-gemini-package/
+        mkdir -p sdd-gemini-package/.gemini/commands
+        generate_commands "gemini" "toml" "{{args}}" "sdd-gemini-package/.gemini/commands"
+        if [ -f "agent_templates/gemini/GEMINI.md" ]; then
+          cp agent_templates/gemini/GEMINI.md sdd-gemini-package/GEMINI.md
+        fi
+        echo "Created Gemini CLI package"
+        
+        # Create GitHub Copilot package
+        mkdir -p sdd-copilot-package
+        cp -r sdd-package-base/* sdd-copilot-package/
+        mkdir -p sdd-copilot-package/.github/prompts
+        generate_commands "copilot" "prompt.md" "\$ARGUMENTS" "sdd-copilot-package/.github/prompts"
+        echo "Created GitHub Copilot package"
+        
+        # Create archive files for each package
+        cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+        
+        cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+        
+        cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+        
+        # List contents for verification
+        echo "Claude package contents:"
+        unzip -l spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        echo "Gemini package contents:"
+        unzip -l spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        echo "Copilot package contents:"
+        unzip -l spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        
+    - name: Generate release notes
+      if: steps.check_release.outputs.exists == 'false'
+      id: release_notes
+      run: |
+        # Get commits since last tag
+        LAST_TAG=${{ steps.get_tag.outputs.latest_tag }}
+        if [ "$LAST_TAG" = "v0.0.0" ]; then
+          COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~10..HEAD)
+        else
+          COMMITS=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
+        fi
+        
+        # Create release notes
+        cat > release_notes.md << EOF
+        Template release ${{ steps.get_tag.outputs.new_version }}
+        
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+        
+        Download the template for your preferred AI assistant:
+        - spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip
+        - spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip
+        - spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip  
+        EOF
+        
+        echo "Generated release notes:"
+        cat release_notes.md
+        
+    - name: Create GitHub Release
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        # Remove 'v' prefix from version for release title
+        VERSION_NO_V=${{ steps.get_tag.outputs.new_version }}
+        VERSION_NO_V=${VERSION_NO_V#v}
+        
+        gh release create ${{ steps.get_tag.outputs.new_version }} \
+          spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip \
+          spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip \
+          spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip \
+          --title "Spec Kit Templates - $VERSION_NO_V" \
+          --notes-file release_notes.md
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Update version in pyproject.toml
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        # Update version in pyproject.toml (remove 'v' prefix for Python versioning)
+        VERSION=${{ steps.get_tag.outputs.new_version }}
+        PYTHON_VERSION=${VERSION#v}
+        
+        if [ -f "pyproject.toml" ]; then
+          sed -i "s/version = \".*\"/version = \"$PYTHON_VERSION\"/" pyproject.toml
+          echo "Updated pyproject.toml version to $PYTHON_VERSION"
+        fi
+        
+    - name: Commit version update
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        if git diff --quiet; then
+          echo "No changes to commit"
+        else
+          git add pyproject.toml
+          git commit -m "chore: bump version to ${{ steps.get_tag.outputs.new_version }}"
+          git push
+        fi
