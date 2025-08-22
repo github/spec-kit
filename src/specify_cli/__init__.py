@@ -389,8 +389,8 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     """Download the latest template release from GitHub using HTTP requests.
     Returns (zip_path, metadata_dict)
     """
-    repo_owner = "localden"
-    repo_name = "sdd"
+    repo_owner = "github"
+    repo_name = "spec-kit"
     
     if verbose:
         console.print("[cyan]Fetching latest release information...[/cyan]")
