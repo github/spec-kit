@@ -162,7 +162,13 @@ jobs:
         # Get commits since last tag
         LAST_TAG=${{ steps.get_tag.outputs.latest_tag }}
         if [ "$LAST_TAG" = "v0.0.0" ]; then
-          COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~10..HEAD)
+          # Check how many commits we have and use that as the limit
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          if [ "$COMMIT_COUNT" -gt 10 ]; then
+            COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~10..HEAD)
+          else
+            COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~$COMMIT_COUNT..HEAD 2>/dev/null || git log --oneline --pretty=format:"- %s")
+          fi
         else
           COMMITS=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
         fi
