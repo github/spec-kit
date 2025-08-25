@@ -2,6 +2,8 @@
     <img src="./media/logo_small.webp"/>
     <h1>🌱 Spec Kit</h1>
     <h3><em>Build high-quality software faster.</em></h3>
+    
+    [![Release](https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg)](https://github.com/github/spec-kit/actions/workflows/release.yml)
 </div>
 
 <p align="center">
@@ -361,6 +363,7 @@ rm gcm-linux_amd64.2.6.1.deb
 ## Maintainers
 
 - Den Delimarsky ([@localden](https://github.com/localden))
+- John Lam ([@jflam](https://github.com/jflam))
 
 ## Support
 
