@@ -27,7 +27,10 @@ check_feature_branch() {
 get_feature_dir() {
     local repo_root="$1"
     local branch="$2"
-    echo "$repo_root/specs/$branch"
+    # Check git config for custom specs directory, default to specs
+    local specs_dir
+    specs_dir=$(git -C "$repo_root" config --local --get spec-kit.specsDir 2>/dev/null || echo "specs")
+    echo "$repo_root/$specs_dir/$branch"
 }
 
 # Get all standard paths for a feature

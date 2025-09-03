@@ -2,12 +2,13 @@
 # Create a new feature with branch, directory structure, and template
 # Usage: ./create-new-feature.sh "feature description"
 #        ./create-new-feature.sh --json "feature description"
+ 
 
 set -e
 
 JSON_MODE=false
 
-# Collect non-flag args
+# Collect non-flag args and parse options
 ARGS=()
 for arg in "$@"; do
     case "$arg" in
@@ -29,7 +30,10 @@ fi
 
 # Get repository root
 REPO_ROOT=$(git rev-parse --show-toplevel)
-SPECS_DIR="$REPO_ROOT/specs"
+
+# Resolve specs base dir from config or default  
+specs_dir=$(git -C "$REPO_ROOT" config --local --get spec-kit.specsDir 2>/dev/null || echo "specs")
+SPECS_DIR="$REPO_ROOT/$specs_dir"
 
 # Create specs directory if it doesn't exist
 mkdir -p "$SPECS_DIR"
