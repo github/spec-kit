@@ -54,13 +54,14 @@ case "$AGENT_TYPE" in
   cursor) update_agent_file "$CURSOR_FILE" "Cursor IDE" ;;
   qwen) update_agent_file "$QWEN_FILE" "Qwen Code" ;;
   opencode) update_agent_file "$AGENTS_FILE" "opencode" ;;
+  codex) update_agent_file "$AGENTS_FILE" "Codex CLI" ;;
   "") [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"; \
        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI"; \
        [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"; \
        [ -f "$CURSOR_FILE" ] && update_agent_file "$CURSOR_FILE" "Cursor IDE"; \
        [ -f "$QWEN_FILE" ] && update_agent_file "$QWEN_FILE" "Qwen Code"; \
-       [ -f "$AGENTS_FILE" ] && update_agent_file "$AGENTS_FILE" "opencode"; \
+       [ -f "$AGENTS_FILE" ] && update_agent_file "$AGENTS_FILE" "Codex/opencode"; \
        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$CURSOR_FILE" ] && [ ! -f "$QWEN_FILE" ] && [ ! -f "$AGENTS_FILE" ]; then update_agent_file "$CLAUDE_FILE" "Claude Code"; fi ;;
-  *) echo "ERROR: Unknown agent type '$AGENT_TYPE' (expected claude|gemini|copilot|cursor|qwen|opencode)"; exit 1 ;;
+  *) echo "ERROR: Unknown agent type '$AGENT_TYPE' (expected claude|gemini|copilot|cursor|qwen|opencode|codex)"; exit 1 ;;
 esac
-echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode]"
+echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex]"
