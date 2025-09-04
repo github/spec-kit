@@ -1,6 +1,6 @@
 #!/bin/bash
 # Incrementally update agent context files based on new feature plan
-# Supports: CLAUDE.md, GEMINI.md, and .github/copilot-instructions.md
+# Supports: CLAUDE.md, GEMINI.md, AGENTS.md, and .github/copilot-instructions.md
 # O(1) operation - only reads current context file and new plan.md
 
 set -e
@@ -13,6 +13,7 @@ NEW_PLAN="$FEATURE_DIR/plan.md"
 # Determine which agent context files to update
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
+AGENTS_FILE="$REPO_ROOT/AGENTS.md"
 COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
 
 # Allow override via argument
@@ -191,8 +192,11 @@ case "$AGENT_TYPE" in
     "claude")
         update_agent_file "$CLAUDE_FILE" "Claude Code"
         ;;
-    "gemini") 
+    "gemini")
         update_agent_file "$GEMINI_FILE" "Gemini CLI"
+        ;;
+    "codex")
+        update_agent_file "$AGENTS_FILE" "Codex CLI"
         ;;
     "copilot")
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
@@ -200,7 +204,8 @@ case "$AGENT_TYPE" in
     "")
         # Update all existing files
         [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"
-        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI" 
+        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI"
+        [ -f "$AGENTS_FILE" ] && update_agent_file "$AGENTS_FILE" "Codex CLI"
         [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"
         
         # If no files exist, create based on current directory or ask user
@@ -210,7 +215,7 @@ case "$AGENT_TYPE" in
         fi
         ;;
     *)
-        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, or leave empty for all."
+        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, codex, copilot, or leave empty for all."
         exit 1
         ;;
 esac
@@ -227,8 +232,9 @@ if [ ! -z "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ]; then
 fi
 
 echo ""
-echo "Usage: $0 [claude|gemini|copilot]"
+echo "Usage: $0 [claude|gemini|codex|copilot]"
 echo "  - No argument: Update all existing agent context files"
 echo "  - claude: Update only CLAUDE.md"
-echo "  - gemini: Update only GEMINI.md" 
+echo "  - gemini: Update only GEMINI.md"
+echo "  - codex: Update only AGENTS.md"
 echo "  - copilot: Update only .github/copilot-instructions.md"
