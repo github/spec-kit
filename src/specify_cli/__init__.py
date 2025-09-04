@@ -15,7 +15,7 @@ Specify CLI - Setup tool for Specify projects
 Usage:
     uvx specify-cli.py init <project-name>
     uvx specify-cli.py init --here
-    
+
 Or install globally:
     uv tool install --from specify-cli.py specify-cli
     specify init <project-name>
