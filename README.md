@@ -146,7 +146,6 @@ specify init <project_name> --ai codex
 specify init <project_name> --ai copilot
 # Or in current directory:
 specify init --here --ai claude
-specify init --here --ai codex
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, or Codex CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
