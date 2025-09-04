@@ -207,7 +207,7 @@ At this stage, your project folder contents should resemble the following:
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── 002-create-taskify
+│	 └── 001-create-taskify
 │	     └── spec.md
 └── templates
     ├── CLAUDE-template.md
@@ -260,7 +260,7 @@ The output of this step will include a number of implementation detail documents
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── 002-create-taskify
+│	 └── 001-create-taskify
 │	     ├── contracts
 │	     │	 ├── api-spec.json
 │	     │	 └── signalr-spec.md
