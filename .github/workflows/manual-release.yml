@@ -125,6 +125,18 @@ jobs:
         else
           echo "⚠️ agent_templates/copilot folder not found"
         fi
+
+        # Create Codex package
+        echo "Creating Codex package..."
+        mkdir -p sdd-codex-package
+        cp -r sdd-package-base/* sdd-codex-package/
+        if [ -d "agent_templates/codex" ]; then
+          mkdir -p sdd-codex-package/.codex/prompts
+          cp -r agent_templates/codex/* sdd-codex-package/.codex/prompts/
+          echo "✓ Added Codex prompts ($(find agent_templates/codex -type f | wc -l) files)"
+        else
+          echo "⚠️ agent_templates/codex folder not found"
+        fi
         
         # Create archive files for each package
         echo "Creating archive files..."
@@ -133,12 +145,15 @@ jobs:
         cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip . && cd ..
         
         cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip . && cd ..
+
+        cd sdd-codex-package && zip -r ../spec-kit-template-codex-${{ steps.version.outputs.new_version }}.zip . && cd ..
         
         echo ""
         echo "📦 Packages created:"
         echo "Claude: $(ls -lh spec-kit-template-claude-*.zip | awk '{print $5}')"
         echo "Gemini: $(ls -lh spec-kit-template-gemini-*.zip | awk '{print $5}')"
         echo "Copilot: $(ls -lh spec-kit-template-copilot-*.zip | awk '{print $5}')"
+        echo "Codex: $(ls -lh spec-kit-template-codex-*.zip | awk '{print $5}')"
         echo "Copilot: $(ls -lh sdd-template-copilot-*.zip | awk '{print $5}')"
         
     - name: Generate detailed release notes
@@ -158,18 +173,20 @@ jobs:
         CLAUDE_COUNT=$(find agent_templates/claude -type f 2>/dev/null | wc -l || echo "0")
         GEMINI_COUNT=$(find agent_templates/gemini -type f 2>/dev/null | wc -l || echo "0")
         COPILOT_COUNT=$(find agent_templates/copilot -type f 2>/dev/null | wc -l || echo "0")
+        CODEX_COUNT=$(find agent_templates/codex -type f 2>/dev/null | wc -l || echo "0")
         MEMORY_COUNT=$(find memory -type f 2>/dev/null | wc -l || echo "0")
         SCRIPTS_COUNT=$(find scripts -type f 2>/dev/null | wc -l || echo "0")
         
         cat > release_notes.md << EOF
         Template release ${{ steps.version.outputs.new_version }}
         
-        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, and Codex.
         
         Download the template for your preferred AI assistant:
         - spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip
         - spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip
-        - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip  
+        - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip
+        - spec-kit-template-codex-${{ steps.version.outputs.new_version }}.zip
         
         Changes since $LAST_TAG:
         $COMMITS
@@ -185,6 +202,7 @@ jobs:
           spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-codex-${{ steps.version.outputs.new_version }}.zip \
           --title "Spec Kit Templates - $VERSION_NO_V" \
           --notes-file release_notes.md
       env:
