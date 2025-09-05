@@ -23,6 +23,7 @@
 - [📖 Learn more](#-learn-more)
 - [Detailed process](#detailed-process)
 - [Troubleshooting](#troubleshooting)
+ - [GEPA-Optimized Templates](#gepa-optimized-templates)
 
 ## 🤔 What is Spec-Driven Development?
 
@@ -115,6 +116,36 @@ Our research and experimentation focus on:
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#detailed-process)** - Step-by-step implementation guide
+
+## GEPA-Optimized Templates
+
+You can synthesize and iteratively improve the prompt templates in `templates/` using DSPy's GEPA optimizer.
+
+- Script: `scripts/generate_templates_with_gepa.py`
+- Default output: `templates/generated/` (safe mode)
+- Overwrite in place: pass `--in-place`
+
+Quick start (offline dev mode):
+
+```
+python3 scripts/generate_templates_with_gepa.py --use-mock --limit 1
+```
+
+Using a real LLM (OpenAI example):
+
+```
+export OPENAI_API_KEY=...  # required
+python3 scripts/generate_templates_with_gepa.py \
+  --lm-provider openai --lm-model gpt-4o-mini --in-place
+```
+
+The GEPA metric favors:
+
+- Structural completeness: required headings/sections present
+- Clarity: minimal placeholders like `<...>` or `TODO`
+- Guardrails: selected guidance from `memory/constitution.md`
+
+This keeps templates instruction-first, consistent, and CI-friendly.
 
 ---
 
