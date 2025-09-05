@@ -165,8 +165,9 @@ def make_metric(spec: TemplateSpec):
         if count > spec.max_placeholders:
             feedbacks.append(f"Reduce placeholders (found {count}).")
 
-        feedback = " \n".join(feedbacks) if feedbacks else f"Looks good; score={score:.2f}"
-        return score, feedback
+        # Return only a numeric score to match DSPy v3 GEPA aggregators.
+        # GEPA will auto-generate text feedback from the score if needed.
+        return float(score)
 
     return metric
 
