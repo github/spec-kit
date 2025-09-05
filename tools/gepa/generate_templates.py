@@ -17,8 +17,8 @@ overwriting the hand-written templates. Use --in-place to replace them
 once you are satisfied.
 
 Examples:
-  python scripts/generate_templates_with_gepa.py --use-mock --limit 1
-  OPENAI_API_KEY=... python scripts/generate_templates_with_gepa.py \
+  python tools/gepa/generate_templates.py --use-mock --limit 1
+  OPENAI_API_KEY=... python tools/gepa/generate_templates.py \
       --lm-provider openai --lm-model gpt-4o-mini --in-place
 """
 
