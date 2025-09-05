@@ -126,20 +126,38 @@ jobs:
           echo "⚠️ agent_templates/copilot folder not found"
         fi
         
+        # Create Cursor CLI package
+        echo "Creating Cursor CLI package..."
+        mkdir -p sdd-cursor-package
+        cp -r sdd-package-base/* sdd-cursor-package/
+        # Add any agent_templates/cursor files if you have them (optional)
+        # mkdir -p sdd-cursor-package/.cursor
+        # cp -r agent_templates/cursor sdd-cursor-package/.cursor
+        echo "✓ Created Cursor CLI package"
+
+        # Create Cursor IDE package
+        echo "Creating Cursor IDE package..."
+        mkdir -p sdd-cursor-ide-package
+        cp -r sdd-package-base/* sdd-cursor-ide-package/
+        mkdir -p sdd-cursor-ide-package/.cursor/commands
+        generate_commands "cursor-ide" "md" "$ARGUMENTS" "sdd-cursor-ide-package/.cursor/commands"
+        echo "✓ Created Cursor IDE package"
+
         # Create archive files for each package
         echo "Creating archive files..."
         cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip . && cd ..
-        
         cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip . && cd ..
-        
         cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip . && cd ..
-        
+        cd sdd-cursor-package && zip -r ../spec-kit-template-cursor-${{ steps.version.outputs.new_version }}.zip . && cd ..
+        cd sdd-cursor-ide-package && zip -r ../spec-kit-template-cursor-ide-${{ steps.version.outputs.new_version }}.zip . && cd ..
+
         echo ""
         echo "📦 Packages created:"
         echo "Claude: $(ls -lh spec-kit-template-claude-*.zip | awk '{print $5}')"
         echo "Gemini: $(ls -lh spec-kit-template-gemini-*.zip | awk '{print $5}')"
         echo "Copilot: $(ls -lh spec-kit-template-copilot-*.zip | awk '{print $5}')"
-        echo "Copilot: $(ls -lh sdd-template-copilot-*.zip | awk '{print $5}')"
+        echo "Cursor: $(ls -lh spec-kit-template-cursor-*.zip | awk '{print $5}')"
+        echo "Cursor IDE: $(ls -lh spec-kit-template-cursor-ide-*.zip | awk '{print $5}')"
         
     - name: Generate detailed release notes
       run: |
@@ -164,15 +182,14 @@ jobs:
         cat > release_notes.md << EOF
         Template release ${{ steps.version.outputs.new_version }}
         
-        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, Cursor CLI, and Cursor IDE.
         
         Download the template for your preferred AI assistant:
         - spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip
         - spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip
         - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip  
-        
-        Changes since $LAST_TAG:
-        $COMMITS
+        - spec-kit-template-cursor-${{ steps.version.outputs.new_version }}.zip
+        - spec-kit-template-cursor-ide-${{ steps.version.outputs.new_version }}.zip
         EOF
         
     - name: Create GitHub Release
@@ -185,6 +202,8 @@ jobs:
           spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-cursor-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-cursor-ide-${{ steps.version.outputs.new_version }}.zip \
           --title "Spec Kit Templates - $VERSION_NO_V" \
           --notes-file release_notes.md
       env:

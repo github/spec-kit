@@ -106,7 +106,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor IDE](https://docs.cursor.com/), or [Cursor CLI](https://github.com/getcursor/cursor) (**experimental**)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -143,6 +143,8 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 specify init <project_name> --ai claude
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
+specify init <project_name> --ai cursor-ide  # Cursor IDE 
+specify init <project_name> --ai cursor      # Cursor CLI (experimental)
 # Or in current directory:
 specify init --here --ai claude
 ```
