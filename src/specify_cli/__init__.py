@@ -51,8 +51,53 @@ import readchar
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
-    "gemini": "Gemini CLI"
+    "gemini": "Gemini CLI",
+    "codex": "Codex CLI",
 }
+
+# Embedded fallback command templates for Codex (used only if templates/commands is not found)
+CODEX_CMD_SPECIFY = """---
+name: specify
+description: "Start a new feature by creating a specification and feature branch."
+---
+
+Start a new feature by creating a specification and feature branch.
+
+Given the feature description provided as an argument, do this:
+
+1. Run the script `scripts/create-new-feature.sh --json "{ARGS}"` from the repo root and parse its JSON for BRANCH_NAME and SPEC_FILE. All future paths must be absolute.
+2. Load `templates/spec-template.md` and create the initial specification at SPEC_FILE, filling in the placeholders with concrete details derived from the arguments while preserving headings/order.
+3. Report completion with the new branch name and spec file path.
+"""
+
+CODEX_CMD_PLAN = """---
+name: plan
+description: "Plan how to implement the specified feature."
+---
+
+Plan how to implement the specified feature.
+
+Given the implementation details provided as an argument, do this:
+
+1. Run `scripts/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. Use absolute paths in all steps.
+2. Read the feature specification (FEATURE_SPEC) and `memory/constitution.md`.
+3. Copy `templates/plan-template.md` to IMPL_PLAN if not already present and fill in all sections using the specification and {ARGS} as Technical Context.
+4. Ensure the plan includes phases and produces research.md, data-model.md (if needed), contracts/, quickstart.md as appropriate.
+5. Report results with BRANCH and generated artifact paths.
+"""
+
+CODEX_CMD_TASKS = """---
+name: tasks
+description: "Break down the plan into executable tasks."
+---
+
+Break down the plan into executable tasks.
+
+1. Run `scripts/check-task-prerequisites.sh --json` and parse FEATURE_DIR and AVAILABLE_DOCS.
+2. Read plan.md and any available docs to derive concrete tasks.
+3. Use `templates/tasks-template.md` as the base, generating numbered tasks (T001, T002, …) with clear file paths and dependency notes. Mark tasks that can run in parallel with [P].
+4. Write the result to FEATURE_DIR/tasks.md.
+"""
 
 # ASCII Art Banner
 BANNER = """
@@ -405,23 +450,30 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
             console.print(f"[red]Error fetching release information:[/red] {e}")
         raise typer.Exit(1)
     
-    # Find the template asset for the specified AI assistant
+    # Find the template asset for the specified AI assistant, with fallback for 'codex' -> 'copilot'
     pattern = f"spec-kit-template-{ai_assistant}"
-    matching_assets = [
-        asset for asset in release_data.get("assets", [])
-        if pattern in asset["name"] and asset["name"].endswith(".zip")
-    ]
-    
-    if not matching_assets:
+    assets = release_data.get("assets", [])
+    matching_assets = [a for a in assets if pattern in a["name"] and a["name"].endswith(".zip")]
+
+    asset = None
+    if matching_assets:
+        asset = matching_assets[0]
+    elif ai_assistant == "codex":
+        # Fallback to copilot template if codex-specific template is not published yet
+        fallback_pattern = "spec-kit-template-copilot"
+        fallback_assets = [a for a in assets if fallback_pattern in a["name"] and a["name"].endswith(".zip")]
+        if fallback_assets:
+            asset = fallback_assets[0]
+            if verbose:
+                console.print("[yellow]No 'codex' template found; falling back to 'copilot' template.[/yellow]")
+
+    if asset is None:
         if verbose:
             console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
             console.print(f"[yellow]Available assets:[/yellow]")
-            for asset in release_data.get("assets", []):
-                console.print(f"  - {asset['name']}")
+            for a in assets:
+                console.print(f"  - {a['name']}")
         raise typer.Exit(1)
-    
-    # Use the first matching asset
-    asset = matching_assets[0]
     download_url = asset["browser_download_url"]
     filename = asset["name"]
     file_size = asset["size"]
@@ -648,7 +700,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, or GitHub Copilot)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, or Codex CLI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -659,8 +711,10 @@ def init(
         specify init my-project --ai claude
         specify init my-project --ai gemini
         specify init my-project --ai copilot --no-git
+        specify init my-project --ai codex
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
+        specify init --here --ai codex
         specify init --here
     """
     # Show banner first
@@ -737,6 +791,10 @@ def init(
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
                 agent_tool_missing = True
+        elif selected_ai == "codex":
+            if not check_tool("codex", "Install from: https://github.com/openai/codex"):
+                console.print("[red]Error:[/red] Codex CLI is required for Codex projects")
+                agent_tool_missing = True
         # GitHub Copilot check is not needed as it's typically available in supported IDEs
         
         if agent_tool_missing:
@@ -765,12 +823,43 @@ def init(
         ("final", "Finalize")
     ]:
         tracker.add(key, label)
+    # Codex only: show progress for auto-adding commands/
+    if selected_ai == "codex":
+        tracker.add("commands", "Add commands directory")
 
     # Use transient so live tree is replaced by the final static render (avoids duplicate output)
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
             download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
+
+            # Codex only: if commands/ is missing, copy from template or bootstrap minimal ones
+            if selected_ai == "codex":
+                tracker.start("commands")
+                try:
+                    target_cmds = project_path / "commands"
+                    if not target_cmds.exists():
+                        # Search for templates/commands within the running package/repo
+                        commands_src = None
+                        for ancestor in Path(__file__).resolve().parents:
+                            cand = ancestor / "templates" / "commands"
+                            if cand.exists() and cand.is_dir():
+                                commands_src = cand
+                                break
+                        if commands_src is not None:
+                            shutil.copytree(commands_src, target_cmds, dirs_exist_ok=True)
+                            tracker.complete("commands", "added")
+                        else:
+                            # Fallback: embed minimal commands
+                            target_cmds.mkdir(parents=True, exist_ok=True)
+                            (target_cmds / "specify.md").write_text(CODEX_CMD_SPECIFY, encoding="utf-8")
+                            (target_cmds / "plan.md").write_text(CODEX_CMD_PLAN, encoding="utf-8")
+                            (target_cmds / "tasks.md").write_text(CODEX_CMD_TASKS, encoding="utf-8")
+                            tracker.complete("commands", "bootstrapped")
+                    else:
+                        tracker.skip("commands", "already present")
+                except Exception as e:
+                    tracker.error("commands", str(e))
 
             # Git step
             if not no_git:
@@ -823,6 +912,12 @@ def init(
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+    elif selected_ai == "codex":
+        steps_lines.append(f"{step_num}. Use / commands with Codex CLI")
+        steps_lines.append("   - Run codex /specify to create specifications")
+        steps_lines.append("   - Run codex /plan to create implementation plans")
+        steps_lines.append("   - Run codex /tasks to generate task list")
+        steps_lines.append("   - See AGENTS.md for available commands")
 
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
@@ -855,11 +950,12 @@ def check():
     console.print("\n[cyan]Optional AI tools:[/cyan]")
     claude_ok = check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup")
     gemini_ok = check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli")
+    codex_ok = check_tool("codex", "Install from: https://github.com/openai/codex")
     
     console.print("\n[green]✓ Specify CLI is ready to use![/green]")
     if not git_ok:
         console.print("[yellow]Consider installing git for repository management[/yellow]")
-    if not (claude_ok or gemini_ok):
+    if not (claude_ok or gemini_ok or codex_ok):
         console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
 
 
