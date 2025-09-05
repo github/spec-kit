@@ -7,7 +7,8 @@ set -e
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-FEATURE_DIR="$REPO_ROOT/specs/$CURRENT_BRANCH"
+specs_dir=$(git -C "$REPO_ROOT" config --local --get spec-kit.specsDir 2>/dev/null || echo "specs")
+FEATURE_DIR="$REPO_ROOT/$specs_dir/$CURRENT_BRANCH"
 NEW_PLAN="$FEATURE_DIR/plan.md"
 
 # Determine which agent context files to update

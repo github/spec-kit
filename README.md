@@ -135,6 +135,12 @@ Or initialize in the current directory:
 specify init --here
 ```
 
+Or with a custom specs directory:
+
+```bash
+specify init --here --specs-dir docs/specs
+```
+
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
 
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
@@ -145,6 +151,9 @@ specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
 # Or in current directory:
 specify init --here --ai claude
+# Use a custom specs directory (defaults to specs/ if not set)
+specify init <project_name> --specs-dir docs/specs
+specify init --here --specs-dir docs/specs
 ```
 
 The CLI will check if you have Claude Code or Gemini CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
@@ -157,7 +166,6 @@ specify init <project_name> --ai claude --ignore-agent-tools
 
 Go to the project folder and run your AI agent. In our example, we're using `claude`.
 
-![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
 
 You will know that things are configured correctly if you see the `/specify`, `/plan`, and `/tasks` commands available.
 

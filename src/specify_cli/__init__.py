@@ -642,6 +642,7 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
+    specs_dir: Optional[str] = typer.Option(None, "--specs-dir", help="Directory to store specs (e.g. docs/specs). Saved to git config as spec-kit.specsDir"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -662,6 +663,7 @@ def init(
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
+        specify init my-project --specs-dir docs/specs
     """
     # Show banner first
     show_banner()
@@ -800,6 +802,10 @@ def init(
     # Final static tree (ensures finished state visible after Live context ends)
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
+    
+    # Save specs dir to git config if provided
+    if specs_dir and is_git_repo(project_path):
+        subprocess.run(["git", "-C", str(project_path), "config", "--local", "spec-kit.specsDir", specs_dir])
     
     # Boxed "Next steps" section
     steps_lines = []
