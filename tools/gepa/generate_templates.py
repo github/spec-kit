@@ -270,7 +270,8 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Generate/optimize templates using DSPy GEPA")
-    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
+    # Script is in tools/gepa/, so repo root is two levels up.
+    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--out-dir", type=Path, default=None, help="Output dir; defaults to templates/generated")
     parser.add_argument("--in-place", action="store_true", help="Overwrite templates in place")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of templates processed")
