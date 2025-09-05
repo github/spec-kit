@@ -222,25 +222,27 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
         gold = ts.path.read_text(encoding="utf-8")
         trainset = [dspy.Example(requirements=requirements, template=gold)]
 
-        prog = TemplateProgram()
+        # If running with a mock LM, skip heavy GEPA and stage the original with a marker.
+        if isinstance(dspy.settings.lm, dspy.LM) and getattr(dspy.settings.lm, "provider", "").startswith("mock"):
+            text = f"<!-- Generated (mock) passthrough; replace via real GEPA run -->\n" + gold
+        else:
+            prog = TemplateProgram()
+            metric = make_metric(ts)
+            # Provide a reflection LM as required by GEPA. Reuse configured LM.
+            reflection_lm = dspy.settings.lm
+            gepa = dspy.GEPA(metric=metric, auto="light", track_stats=True, reflection_lm=reflection_lm, max_metric_calls=10)
 
-        metric = make_metric(ts)
-        # Provide a reflection LM as required by GEPA. In mock mode, this will also be a mock LM.
-        reflection_lm = dspy.settings.lm  # reuse configured LM (mock or real)
-        gepa = dspy.GEPA(metric=metric, auto="light", track_stats=True, reflection_lm=reflection_lm)
-
-        try:
-            optimized = gepa.compile(prog, trainset=trainset, valset=trainset)
-        except Exception as e:
-            # Fall back to single-shot predict if GEPA cannot run (e.g., in mock mode)
-            eprint(f"[GEPA] Optimization failed for {ts.name}: {e}. Falling back to single prediction.")
-            optimized = prog
-
-        pred = optimized(requirements=requirements)
-        text = getattr(pred, "template", None) or getattr(pred, "output", None)
-        if not isinstance(text, str) or len(text.strip()) == 0:
-            eprint(f"[WARN] Empty output for {ts.name}; using original file content.")
-            text = gold
+            try:
+                optimized = gepa.compile(prog, trainset=trainset, valset=trainset)
+                pred = optimized(requirements=requirements)
+                text = getattr(pred, "template", None) or getattr(pred, "output", None)
+                if not isinstance(text, str) or len(text.strip()) == 0:
+                    eprint(f"[WARN] Empty output for {ts.name}; using original file content.")
+                    text = gold
+            except Exception as e:
+                # Fall back to original if optimization fails
+                eprint(f"[GEPA] Optimization failed for {ts.name}: {e}. Falling back to original.")
+                text = gold
 
         if args.in_place:
             out_path = ts.path
@@ -280,12 +282,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         configure_lm(args)
     except Exception as e:
-        eprint(f"[WARN] LM configuration failed: {e}. Using MockLM.")
+        eprint(f"[WARN] LM configuration failed: {e}. Using mock LM.")
         try:
             import dspy
-            dspy.configure(lm=dspy.MockLM())
+            dspy.configure(lm=dspy.LM('mock'))
         except Exception as e2:
-            eprint(f"[FATAL] Failed to initialize MockLM: {e2}")
+            eprint(f"[FATAL] Failed to initialize mock LM: {e2}")
             return 2
 
     written = optimize_and_generate(specs, out_dir, args)
