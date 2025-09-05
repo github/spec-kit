@@ -15,10 +15,11 @@
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
+- [🏗️ Architecture](#️-architecture)
 - [⚡ Get started](#-get-started)
+- [🎯 Available commands](#-available-commands)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
-- [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn more](#-learn-more)
 - [Detailed process](#detailed-process)
@@ -26,7 +27,45 @@
 
 ## 🤔 What is Spec-Driven Development?
 
-Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+**Spec-Driven Development** transforms software development from ad-hoc coding into a systematic, specification-driven process. The Spec-Kit provides a comprehensive set of 10 commands that work together in a layered architecture to implement this methodology.
+
+### Core Philosophy
+
+- **Intent-driven development** where specifications define the "_what_" before the "_how_"
+- **Executable specifications** that generate working implementations
+- **Continuous refinement** through AI-assisted validation and consistency checking
+- **Multi-layered integration** supporting gradual adoption and enhancement
+- **Collaborative intelligence** through expert systems and agent coordination
+
+## 🏗️ Architecture
+
+The Spec-Kit implements a **4-layer architecture** where each layer builds upon the previous ones:
+
+```text
+Layer 4: PACT Coordination (Multi-agent collaboration)
+├── /pact command for coordination setup
+├── coordination/ directory structure
+└── Enhanced collaboration patterns
+
+Layer 3: Expert Systems (Domain guidance)  
+├── /expert command for domain expertise
+├── experts/ directory for knowledge files
+└── Agentic integration patterns
+
+Layer 2: SPARC Methodology (Structured development)
+├── /sparc command for systematic approach
+├── Phase-by-phase documentation
+└── Quality gates and validation
+
+Layer 1: Project Foundation (Discovery & planning)
+├── /discover command for comprehensive analysis
+├── Foundation documents (BACKLOG.md, IMPLEMENTATION_GUIDE.md, etc.)
+└── Market reality validation
+```
+
+**Orchestration Layer**: Integrated workflows that coordinate all layers
+- `/workflow` for complex development scenarios
+- `/sync` for maintaining consistency across systems
 
 ## ⚡ Get started
 
@@ -35,47 +74,114 @@ Spec-Driven Development **flips the script** on traditional software development
 Initialize your project depending on the coding agent you're using:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/Wavegoodvybe2929/spec-kit.git specify init <PROJECT_NAME>
 ```
 
-### 2. Create the spec
+### 2. Choose your approach
 
-Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
-
+**Quick Start (Basic SDD):**
 ```bash
-/specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums never other nested albums. Within each album, photos are previewed in a tile-like interface.
+/specify "Feature description" → /plan "Implementation" → /tasks "Break down work"
 ```
 
-### 3. Create a technical implementation plan
-
-Use the `/plan` command to provide your tech stack and architecture choices.
-
+**Comprehensive Discovery (Recommended):**
 ```bash
-/plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+/discover "Project overview" → /specify → /plan → /tasks
 ```
 
-### 4. Break down and implement
+**Full Integration (Advanced):**
+```bash
+/workflow --type=feature-development "Feature description"
+```
 
-Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
+### 3. Progressive adoption
+
+Start simple and add capabilities as needed:
+
+- **Level 1**: Basic SDD workflow (`/specify` → `/plan` → `/tasks`)
+- **Level 2**: Foundation-enhanced (`/discover` → basic SDD)
+- **Level 3**: Methodology-enhanced (`/sparc` → basic SDD)
+- **Level 4**: Expert-guided (`/expert` → basic SDD)
+- **Level 5**: Full integration (`/discover` → `/sparc` → `/expert` → `/pact` → SDD)
+- **Level 6**: Orchestrated workflows (`/workflow`)
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
+## 🎯 Available commands
+
+The Spec-Kit provides a comprehensive set of commands that work together in a layered architecture:
+
+### Core SDD Commands (Always Available)
+
+- **`/specify`** - Start new feature by creating specification and feature branch
+- **`/plan`** - Plan feature implementation with technical details and architecture  
+- **`/tasks`** - Break down plan into executable, numbered tasks with dependencies
+
+### Foundation Commands (Enhanced Project Discovery)
+
+- **`/discover`** - Execute comprehensive project discovery with market reality validation
+- **`/enhance`** - Upgrade existing projects with enhanced analysis and codebase extraction
+
+### Methodology Commands (Structured Development)
+
+- **`/sparc`** - Apply SPARC methodology (Specification, Pseudocode, Architecture, Refinement, Completion)
+
+### Expert System Commands (Domain Guidance)
+
+- **`/expert`** - Generate or consult specialized expert context files with agentic integration
+
+### Collaboration Commands (Multi-Agent Coordination)
+
+- **`/pact`** - Implement PACT framework (Planning, Action, Coordination, Testing)
+
+### Orchestration Commands (Integrated Workflows)
+
+- **`/workflow`** - Execute integrated workflow combining multiple methodologies
+- **`/sync`** - Update and synchronize expert and memory systems for consistency
+
+### Example Integration Patterns
+
+**New Project Development:**
+```bash
+/discover "Project overview" → /sparc → /expert → /specify → /plan → /tasks
+```
+
+**Feature Development (Enhanced SDD):**
+```bash
+/specify "Feature description" → /plan "Implementation" → /tasks "Break down work"
+```
+
+**Complex Feature Development:**
+```bash
+/sparc --phase=specification → /specify → /plan → /tasks
+```
+
+**Full Integration Workflow:**
+```bash
+/workflow --type=feature-development "Feature description"
+```
+
 ## 📚 Core philosophy
 
-Spec-Driven Development is a structured process that emphasizes:
+Spec-Driven Development with Spec-Kit integration is a structured process that emphasizes:
 
 - **Intent-driven development** where specifications define the "_what_" before the "_how_"
-- **Rich specification creation** using guardrails and organizational principles
-- **Multi-step refinement** rather than one-shot code generation from prompts
-- **Heavy reliance** on advanced AI model capabilities for specification interpretation
+- **Executable specifications** that generate working implementations
+- **Continuous refinement** through AI-assisted validation and consistency checking
+- **Multi-layered integration** supporting gradual adoption and enhancement
+- **Collaborative intelligence** through expert systems and agent coordination
+- **Comprehensive project discovery** with brutal market reality validation
+- **Structured methodology application** through SPARC (Specification, Pseudocode, Architecture, Refinement, Completion)
+- **Expert knowledge integration** providing domain-specific guidance and agentic coordination
+- **Multi-agent collaboration** through PACT framework (Planning, Action, Coordination, Testing)
 
 ## 🌟 Development phases
 
 | Phase | Focus | Key Activities |
 |-------|-------|----------------|
-| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+| **0-to-1 Development** ("Greenfield") | Generate from scratch | Start with high-level requirements<br/>Generate specifications<br/>Plan implementation steps<br/>Build production-ready applications |
+| **Creative Exploration** | Parallel implementations | Explore diverse solutions<br/>Support multiple technology stacks & architectures<br/>Experiment with UX patterns |
+| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | Add features iteratively<br/>Modernize legacy systems<br/>Adapt processes |
 
 ## 🎯 Experimental goals
 
@@ -114,6 +220,8 @@ Our research and experimentation focus on:
 ## 📖 Learn more
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+- **[Commands and Features Guide](./src/COMMANDS_AND_FEATURES_GUIDE.md)** - Comprehensive command documentation
+- **[Integration Guide](./INTEGRATION_GUIDE.md)** - Comprehensive integration documentation
 - **[Detailed Walkthrough](#detailed-process)** - Step-by-step implementation guide
 
 ---
