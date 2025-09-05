@@ -175,7 +175,8 @@ def configure_lm(args) -> None:
     import dspy
 
     if args.use_mock:
-        dspy.configure(lm=dspy.MockLM())
+        # DSPy v3: use the built-in mock LM for offline runs
+        dspy.configure(lm=dspy.LM('mock'))
         return
 
     provider = (args.lm_provider or os.getenv("DSPY_LM_PROVIDER") or "openai").lower()
@@ -185,7 +186,8 @@ def configure_lm(args) -> None:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY not set; use --use-mock or export a key.")
-        dspy.configure(lm=dspy.OpenAI(model=model, api_key=api_key))
+        # DSPy v3 unified LM configuration
+        dspy.configure(lm=dspy.LM(f'openai/{model}', api_key=api_key))
     else:
         raise RuntimeError(f"Unsupported lm provider: {provider}")
 
@@ -291,4 +293,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
