@@ -235,8 +235,12 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
             metric = make_metric(ts)
             # Provide a reflection LM as required by GEPA. Reuse configured LM.
             reflection_lm = dspy.settings.lm
-            gepa = dspy.GEPA(metric=metric, auto="light", track_stats=True,
-                             reflection_lm=reflection_lm, max_metric_calls=args.max_metric_calls)
+            # GEPA requires exactly one of auto/max_metric_calls/max_full_evals.
+            gepa_kwargs = dict(metric=metric, track_stats=True, reflection_lm=reflection_lm)
+            if args.max_metric_calls is not None:
+                gepa = dspy.GEPA(max_metric_calls=args.max_metric_calls, **gepa_kwargs)
+            else:
+                gepa = dspy.GEPA(auto="light", **gepa_kwargs)
 
             try:
                 optimized = gepa.compile(prog, trainset=trainset, valset=trainset)
