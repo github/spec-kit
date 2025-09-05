@@ -221,8 +221,8 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
         # reflect toward meeting the structure while still allowing improvements.
         gold = ts.path.read_text(encoding="utf-8")
         # Explicitly declare inputs/outputs for DSPy v3 teleprompters
-        train_ex = dspy.Example(requirements=requirements, template=gold) \
-            .with_inputs("requirements").with_outputs("template")
+        # In DSPy v3, specify inputs only; remaining keys are treated as labels/outputs.
+        train_ex = dspy.Example(requirements=requirements, template=gold).with_inputs("requirements")
         trainset = [train_ex]
 
         # If running with a mock LM, skip heavy GEPA and stage the original with a marker.
