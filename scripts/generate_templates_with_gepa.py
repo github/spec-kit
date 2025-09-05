@@ -223,7 +223,7 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
         trainset = [dspy.Example(requirements=requirements, template=gold)]
 
         # If running with a mock LM, skip heavy GEPA and stage the original with a marker.
-        if isinstance(dspy.settings.lm, dspy.LM) and getattr(dspy.settings.lm, "provider", "").startswith("mock"):
+        if isinstance(dspy.settings.lm, dspy.LM) and getattr(dspy.settings.lm, "model", "") == "mock":
             text = f"<!-- Generated (mock) passthrough; replace via real GEPA run -->\n" + gold
         else:
             prog = TemplateProgram()
