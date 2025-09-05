@@ -619,7 +619,6 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                 tracker.complete("chmod")
             elif verbose:
                 console.print(f"[cyan]Set executable permissions on scripts in {scripts_dir}[/cyan]")
-     
     except Exception as e:
         if tracker:
             tracker.error("extract", str(e))
