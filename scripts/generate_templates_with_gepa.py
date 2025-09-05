@@ -225,7 +225,9 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
         prog = TemplateProgram()
 
         metric = make_metric(ts)
-        gepa = dspy.GEPA(metric=metric, auto="light", track_stats=True)
+        # Provide a reflection LM as required by GEPA. In mock mode, this will also be a mock LM.
+        reflection_lm = dspy.settings.lm  # reuse configured LM (mock or real)
+        gepa = dspy.GEPA(metric=metric, auto="light", track_stats=True, reflection_lm=reflection_lm)
 
         try:
             optimized = gepa.compile(prog, trainset=trainset, valset=trainset)
