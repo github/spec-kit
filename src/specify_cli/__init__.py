@@ -607,7 +607,18 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                         tracker.complete("flatten")
                     elif verbose:
                         console.print(f"[cyan]Flattened nested directory structure[/cyan]")
-                    
+
+        # If extraction was successful, chmod files in scripts directory to be executable
+        scripts_dir = project_path / "scripts"
+        if scripts_dir.exists() and scripts_dir.is_dir():
+            for script in scripts_dir.iterdir():
+                if script.is_file():
+                    script.chmod(0o755)  # rwxr-xr-x
+            if tracker:
+                tracker.add("chmod", "Set executable permissions on scripts")
+                tracker.complete("chmod")
+            elif verbose:
+                console.print(f"[cyan]Set executable permissions on scripts in {scripts_dir}[/cyan]")
     except Exception as e:
         if tracker:
             tracker.error("extract", str(e))
