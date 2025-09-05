@@ -25,6 +25,7 @@ venv/
 ENV/
 env/
 .venv
+templates/generated/
 
 # IDE
 .vscode/

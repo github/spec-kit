@@ -1,0 +1,36 @@
+name: GEPA Mock Check
+
+on:
+  pull_request:
+    branches: [ main, "feat/**", "fix/**" ]
+  push:
+    branches: [ "feat/**", "fix/**" ]
+
+jobs:
+  gepa-mock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies (runtime only)
+        run: |
+          python -m pip install --upgrade pip
+          pip install dspy-ai
+
+      - name: Run GEPA generator in mock mode
+        run: |
+          python tools/gepa/generate_templates.py --use-mock --limit 2
+
+      # Optional drift check: uncomment to fail if templates would change
+      # - name: Drift check (in-place)
+      #   run: |
+      #     git diff --quiet || (echo "Repository has changes after mock run" && git --no-pager diff && exit 1)
+
