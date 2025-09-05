@@ -138,7 +138,7 @@ def make_metric(spec: TemplateSpec):
     Returns a callable compatible with dspy.GEPA's GEPAFeedbackMetric.
     """
 
-    def metric(example, pred, trace=None):  # type: ignore[override]
+    def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):  # GEPA expects 5 args
         # Support both dict-like and attr-like preds from DSPy
         output = None
         if isinstance(pred, dict):
