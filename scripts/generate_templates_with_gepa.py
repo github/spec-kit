@@ -225,15 +225,18 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
         train_ex = dspy.Example(requirements=requirements, template=gold).with_inputs("requirements")
         trainset = [train_ex]
 
-        # If running with a mock LM, skip heavy GEPA and stage the original with a marker.
-        if isinstance(dspy.settings.lm, dspy.LM) and getattr(dspy.settings.lm, "model", "") == "mock":
+        # If running with a mock LM, skip heavy GEPA unless forced (dev verification).
+        if (isinstance(dspy.settings.lm, dspy.LM)
+            and getattr(dspy.settings.lm, "model", "") == "mock"
+            and not args.force_gepa):
             text = f"<!-- Generated (mock) passthrough; replace via real GEPA run -->\n" + gold
         else:
             prog = TemplateProgram()
             metric = make_metric(ts)
             # Provide a reflection LM as required by GEPA. Reuse configured LM.
             reflection_lm = dspy.settings.lm
-            gepa = dspy.GEPA(metric=metric, auto="light", track_stats=True, reflection_lm=reflection_lm, max_metric_calls=10)
+            gepa = dspy.GEPA(metric=metric, auto="light", track_stats=True,
+                             reflection_lm=reflection_lm, max_metric_calls=args.max_metric_calls)
 
             try:
                 optimized = gepa.compile(prog, trainset=trainset, valset=trainset)
@@ -269,6 +272,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--use-mock", action="store_true", help="Use MockLM (offline/dev)")
     parser.add_argument("--lm-provider", type=str, default=None, help="e.g., openai")
     parser.add_argument("--lm-model", type=str, default=None, help="e.g., gpt-4o-mini")
+    parser.add_argument("--force-gepa", action="store_true", help="Run GEPA even in mock mode for verification")
+    parser.add_argument("--max-metric-calls", type=int, default=10, help="GEPA budget (lower for quick runs)")
 
     args = parser.parse_args(argv)
 
