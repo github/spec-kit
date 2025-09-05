@@ -54,6 +54,9 @@ AI_CHOICES = {
     "gemini": "Gemini CLI"
 }
 
+# Module-level variable for tracker state
+_specify_tracker_active = False
+
 # ASCII Art Banner
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -111,7 +114,8 @@ class StepTracker:
         if self._refresh_cb:
             try:
                 self._refresh_cb()
-            except Exception:
+            except (RuntimeError, AttributeError, ValueError):
+                # Silently ignore refresh callback errors
                 pass
 
     def render(self):
@@ -185,7 +189,7 @@ def get_key():
 
 
 
-def select_with_arrows(options: dict, prompt_text: str = "Select an option", default_key: str = None) -> str:
+def select_with_arrows(options: dict, prompt_text: str = "Select an option", default_key: Optional[str] = None) -> str:
     """
     Interactive selection using arrow keys with Rich Live display.
     
@@ -248,9 +252,9 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
                     
                     live.update(create_selection_panel(), refresh=True)
 
-                except KeyboardInterrupt:
+                except KeyboardInterrupt as exc:
                     console.print("\n[yellow]Selection cancelled[/yellow]")
-                    raise typer.Exit(1)
+                    raise typer.Exit(1) from exc
 
     run_selection_loop()
 
@@ -340,7 +344,7 @@ def check_tool(tool: str, install_hint: str) -> bool:
         return False
 
 
-def is_git_repo(path: Path = None) -> bool:
+def is_git_repo(path: Optional[Path] = None) -> bool:
     """Check if the specified path is inside a git repository."""
     if path is None:
         path = Path.cwd()
@@ -365,8 +369,8 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
     """Initialize a git repository in the specified path.
     quiet: if True suppress console output (tracker handles status)
     """
+    original_cwd = Path.cwd()
     try:
-        original_cwd = Path.cwd()
         os.chdir(project_path)
         if not quiet:
             console.print("[cyan]Initializing git repository...[/cyan]")
@@ -415,7 +419,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     if not matching_assets:
         if verbose:
             console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
-            console.print(f"[yellow]Available assets:[/yellow]")
+            console.print("[yellow]Available assets:[/yellow]")
             for asset in release_data.get("assets", []):
                 console.print(f"  - {asset['name']}")
         raise typer.Exit(1)
@@ -434,7 +438,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     # Download the file
     zip_path = download_dir / filename
     if verbose:
-        console.print(f"[cyan]Downloading template...[/cyan]")
+        console.print("[cyan]Downloading template...[/cyan]")
     
     try:
         with httpx.stream("GET", download_url, timeout=30, follow_redirects=True) as response:
@@ -553,7 +557,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                             tracker.add("flatten", "Flatten nested directory")
                             tracker.complete("flatten")
                         elif verbose:
-                            console.print(f"[cyan]Found nested directory structure[/cyan]")
+                            console.print("[cyan]Found nested directory structure[/cyan]")
                     
                     # Copy contents to current directory
                     for item in source_dir.iterdir():
@@ -576,7 +580,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                                 console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
                             shutil.copy2(item, dest_path)
                     if verbose and not tracker:
-                        console.print(f"[cyan]Template files merged into current directory[/cyan]")
+                        console.print("[cyan]Template files merged into current directory[/cyan]")
             else:
                 # Extract directly to project directory (original behavior)
                 zip_ref.extractall(project_path)
@@ -606,7 +610,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                         tracker.add("flatten", "Flatten nested directory")
                         tracker.complete("flatten")
                     elif verbose:
-                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
+                        console.print("[cyan]Flattened nested directory structure[/cyan]")
                     
     except Exception as e:
         if tracker:
@@ -633,6 +637,45 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                 console.print(f"Cleaned up: {zip_path.name}")
     
     return project_path
+
+
+def setup_integration(project_path: Path, ai_assistant: str) -> bool:
+    """Run the integration setup script to initialize Spec-Kit enhanced features."""
+    try:
+        # Find the setup-integration.sh script
+        script_path = project_path / "scripts" / "setup-integration.sh"
+        
+        if not script_path.exists():
+            # Script might not be in the project yet, skip integration setup
+            return True
+        
+        # Make script executable
+        script_path.chmod(0o755)
+        
+        # Run the integration setup script
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(project_path)
+            result = subprocess.run(
+                [str(script_path), ai_assistant],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode == 0:
+                return True
+            else:
+                # Log error but don't fail the whole init
+                console.print(f"[yellow]Integration setup warning:[/yellow] {result.stderr.strip()}")
+                return False
+        finally:
+            os.chdir(original_cwd)
+            
+    except Exception as e:
+        # Log error but don't fail the whole init
+        console.print(f"[yellow]Integration setup error:[/yellow] {e}")
+        return False
 
 
 @app.command()
@@ -747,8 +790,8 @@ def init(
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
     tracker = StepTracker("Initialize Specify Project")
-    # Flag to allow suppressing legacy headings
-    sys._specify_tracker_active = True
+    # Flag to allow suppressing legacy headings (store in a module variable)
+    _specify_tracker_active = True
     # Pre steps recorded as completed before live rendering
     tracker.add("precheck", "Check required tools")
     tracker.complete("precheck", "ok")
@@ -761,6 +804,7 @@ def init(
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("cleanup", "Cleanup"),
+        ("integration", "Setup Spec-Kit integration"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
     ]:
@@ -771,6 +815,18 @@ def init(
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
             download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
+
+            # Integration setup step
+            tracker.start("integration", "setting up enhanced features")
+            try:
+                setup_result = setup_integration(project_path, selected_ai)
+                if setup_result:
+                    tracker.complete("integration", "Spec-Kit layers ready")
+                else:
+                    tracker.error("integration", "setup failed")
+            except Exception as e:
+                tracker.error("integration", f"error: {e}")
+                # Continue anyway - integration is not critical for basic functionality
 
             # Git step
             if not no_git:
@@ -813,16 +869,24 @@ def init(
     if selected_ai == "claude":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and start using / commands with Claude Code")
         steps_lines.append("   - Type / in any file to see available commands")
+        steps_lines.append("   - Use /discover to create project foundation")
         steps_lines.append("   - Use /specify to create specifications")
         steps_lines.append("   - Use /plan to create implementation plans")
         steps_lines.append("   - Use /tasks to generate tasks")
+        steps_lines.append("   - Use /sparc for complex features")
+        steps_lines.append("   - Use /workflow for integrated development")
     elif selected_ai == "gemini":
         steps_lines.append(f"{step_num}. Use / commands with Gemini CLI")
+        steps_lines.append("   - Run gemini /discover to create project foundation")
         steps_lines.append("   - Run gemini /specify to create specifications")
         steps_lines.append("   - Run gemini /plan to create implementation plans")
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+        steps_lines.append(f"{step_num}. Open in Visual Studio Code and use enhanced / commands with GitHub Copilot")
+        steps_lines.append("   - Use [bold cyan]/discover[/] for project foundation")
+        steps_lines.append("   - Use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] for core SDD")
+        steps_lines.append("   - Use [bold cyan]/sparc[/] for structured methodology")
+        steps_lines.append("   - Use [bold cyan]/workflow[/] for integrated development")
 
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
@@ -843,7 +907,7 @@ def check():
     # Check if we have internet connectivity by trying to reach GitHub API
     console.print("[cyan]Checking internet connectivity...[/cyan]")
     try:
-        response = httpx.get("https://api.github.com", timeout=5, follow_redirects=True)
+        httpx.get("https://api.github.com", timeout=5, follow_redirects=True)
         console.print("[green]✓[/green] Internet connection available")
     except httpx.RequestError:
         console.print("[red]✗[/red] No internet connection - required for downloading templates")
