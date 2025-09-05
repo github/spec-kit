@@ -220,7 +220,10 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
         # Trainset with the existing file as a soft target. This lets GEPA
         # reflect toward meeting the structure while still allowing improvements.
         gold = ts.path.read_text(encoding="utf-8")
-        trainset = [dspy.Example(requirements=requirements, template=gold)]
+        # Explicitly declare inputs/outputs for DSPy v3 teleprompters
+        train_ex = dspy.Example(requirements=requirements, template=gold) \
+            .with_inputs("requirements").with_outputs("template")
+        trainset = [train_ex]
 
         # If running with a mock LM, skip heavy GEPA and stage the original with a marker.
         if isinstance(dspy.settings.lm, dspy.LM) and getattr(dspy.settings.lm, "model", "") == "mock":
