@@ -33,6 +33,9 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Tuple
 
 
+DEFAULT_MAX_METRIC_CALLS = 10
+
+
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
@@ -71,9 +74,9 @@ def discover_templates(root: Path) -> List[TemplateSpec]:
             continue
         name = path.relative_to(template_dir).as_posix()
         text = path.read_text(encoding="utf-8")
-        headings = [ln.strip() for ln in text.splitlines() if re.match(r"^#{1,3} ", ln)]
-        # Keep only the heading titles (strip leading #'s)
-        sections = [re.sub(r"^#{1,3} \\s*", "", h) for h in headings]
+        headings = [ln.strip() for ln in text.splitlines() if re.match(r"^#{1,3}\s+", ln)]
+        # Keep only the heading titles (strip leading #'s and whitespace)
+        sections = [re.sub(r"^#{1,3}\s*", "", h) for h in headings]
         # A few non-heading anchors we want to enforce if we see them in the original
         anchors = []
         for token in ["Inputs", "Outputs", "Success Criteria", "Edge Cases", "Checklist"]:
@@ -279,7 +282,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--lm-provider", type=str, default=None, help="e.g., openai")
     parser.add_argument("--lm-model", type=str, default=None, help="e.g., gpt-4o-mini")
     parser.add_argument("--force-gepa", action="store_true", help="Run GEPA even in mock mode for verification")
-    parser.add_argument("--max-metric-calls", type=int, default=10, help="GEPA budget (lower for quick runs)")
+    parser.add_argument("--max-metric-calls", type=int, default=DEFAULT_MAX_METRIC_CALLS, help=f"GEPA budget (lower for quick runs) [default {DEFAULT_MAX_METRIC_CALLS}]")
 
     args = parser.parse_args(argv)
 
