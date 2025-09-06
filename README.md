@@ -23,7 +23,7 @@
 - [📖 Learn more](#-learn-more)
 - [Detailed process](#detailed-process)
 - [Troubleshooting](#troubleshooting)
- - [GEPA-Optimized Templates](#gepa-optimized-templates)
+- [GEPA-Optimized Templates](#gepa-optimized-templates)
 
 ## 🤔 What is Spec-Driven Development?
 
