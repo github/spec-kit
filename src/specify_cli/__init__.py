@@ -51,8 +51,35 @@ import readchar
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
-    "gemini": "Gemini CLI"
+    "gemini": "Gemini CLI",
+    "codex": "Codex CLI"
 }
+
+def create_codex_prompts(project_path: Path):
+    """Copies the Codex prompts to the user's home directory."""
+    try:
+        home_dir = Path.home()
+        codex_prompts_dir = home_dir / ".codex" / "prompts"
+        codex_prompts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Assuming the templates are located relative to this script
+        # This might need adjustment based on the actual package structure
+        script_dir = Path(__file__).parent
+        template_dir = script_dir.parent.parent / "templates" / "codex"
+
+        if not template_dir.is_dir():
+            console.print(f"[red]Error:[/red] Template directory not found at {template_dir}")
+            return
+
+        for template_file in template_dir.glob("*.md"):
+            dest_file = codex_prompts_dir / template_file.name
+            shutil.copy2(template_file, dest_file)
+        
+        console.print(f"[green]✓[/green] Codex prompts created in {codex_prompts_dir}")
+
+    except Exception as e:
+        console.print(f"[red]Error creating Codex prompts:[/red] {e}")
+
 
 # ASCII Art Banner
 BANNER = """
@@ -737,6 +764,11 @@ def init(
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
                 agent_tool_missing = True
+        elif selected_ai == "codex":
+            codex_dir = Path.home() / ".codex"
+            if not codex_dir.is_dir():
+                console.print("[red]Error:[/red] Codex CLI directory not found at ~/.codex")
+                agent_tool_missing = True
         # GitHub Copilot check is not needed as it's typically available in supported IDEs
         
         if agent_tool_missing:
@@ -786,6 +818,9 @@ def init(
                     tracker.skip("git", "git not available")
             else:
                 tracker.skip("git", "--no-git flag")
+
+            if selected_ai == "codex":
+                create_codex_prompts(project_path)
 
             tracker.complete("final", "project ready")
         except Exception as e:
