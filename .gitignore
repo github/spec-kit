@@ -38,3 +38,6 @@ env/
 .env
 .env.local
 *.lock
+
+# Coverage
+.coverage
