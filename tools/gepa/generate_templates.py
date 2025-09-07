@@ -336,6 +336,20 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
                 if not isinstance(text, str) or len(text.strip()) == 0:
                     eprint(f"[WARN] Empty output for {ts.name}; using original file content.")
                     text = gold
+                else:
+                    # Hard guard: if key structure regresses vs baseline, keep baseline.
+                    b_cf = _count_code_fences(gold)
+                    o_cf = _count_code_fences(text)
+                    b_steps = len(_enumerated_lines(gold))
+                    o_steps = len(_enumerated_lines(text))
+                    regressions = []
+                    if b_cf and o_cf < b_cf:
+                        regressions.append(f"codefences {o_cf}/{b_cf}")
+                    if b_steps and o_steps < b_steps:
+                        regressions.append(f"steps {o_steps}/{b_steps}")
+                    if regressions:
+                        eprint(f"[WARN] Structural regression for {ts.name}: {'; '.join(regressions)}. Keeping baseline.")
+                        text = gold
             except Exception as e:
                 # Fall back to original if optimization fails
                 eprint(f"[GEPA] Optimization failed for {ts.name}: {e}. Falling back to original.")
