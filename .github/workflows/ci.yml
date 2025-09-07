@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+        
+    - name: Install dependencies
+      run: |
+        uv sync --extra dev
+        
+    - name: Lint with ruff
+      run: |
+        uv run ruff check .
+        uv run ruff format --check .
+        
+    - name: Type check with pyrefly
+      run: |
+        uv run pyrefly check .
+        
+    - name: Test with pytest
+      run: |
+        uv run pytest --cov=specify_cli --cov-report=xml --cov-report=term-missing
+        
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+  lint-only:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+        
+    - name: Install dependencies
+      run: |
+        uv sync --extra dev
+        
+    - name: Check formatting
+      run: |
+        uv run ruff format --diff .
+        
+    - name: Check imports
+      run: |
+        uv run ruff check --select I .
+        
+    - name: Check for unused imports
+      run: |
+        uv run ruff check --select F401 .
