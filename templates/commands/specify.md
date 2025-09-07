@@ -1,17 +1,58 @@
----
-name: specify
-description: "Start a new feature by creating a specification and feature branch. This is the first step in the Spec-Driven Development lifecycle."
----
+# Commands Specification
 
-Start a new feature by creating a specification and feature branch.
+## Overview
+This document outlines the commands available in the orchestration library. Each command is designed to facilitate specific tasks within the orchestration process.
 
-This is the first step in the Spec-Driven Development lifecycle.
+## Command Structure
+Each command follows a standard structure:
+```
+command [options] [arguments]
+```
 
-Given the feature description provided as an argument, do this:
+## Available Commands
 
-1. Run the script `scripts/create-new-feature.sh --json "{ARGS}"` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
-2. Load `templates/spec-template.md` to understand required sections.
-3. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
-4. Report completion with branch name, spec file path, and readiness for the next phase.
+### Initialize
+- **Description**: Sets up the orchestration environment.
+- **Usage**: 
+  ```
+  initialize [--config <config_file>]
+  ```
+- **Options**:
+  - `--config`: Specify the configuration file to use.
 
-Note: The script creates and checks out the new branch and initializes the spec file before writing.
+### Start
+- **Description**: Begins the orchestration process.
+- **Usage**: 
+  ```
+  start [--dry-run]
+  ```
+- **Options**:
+  - `--dry-run`: Simulate the start without executing actions.
+
+### Stop
+- **Description**: Halts the orchestration process.
+- **Usage**: 
+  ```
+  stop [--force]
+  ```
+- **Options**:
+  - `--force`: Forcefully stop the process without cleanup.
+
+### Status
+- **Description**: Displays the current status of the orchestration.
+- **Usage**: 
+  ```
+  status
+  ```
+
+### Logs
+- **Description**: Retrieves logs from the orchestration process.
+- **Usage**: 
+  ```
+  logs [--tail <number_of_lines>]
+  ```
+- **Options**:
+  - `--tail`: Specify the number of lines to retrieve from the end of the log.
+
+## Conclusion
+Refer to this document for a quick reference on the commands available in the orchestration library. Ensure to use the correct options to optimize your orchestration tasks.

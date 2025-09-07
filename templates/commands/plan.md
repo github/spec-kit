@@ -1,41 +1,44 @@
----
-name: plan
-description: "Plan how to implement the specified feature. This is the second step in the Spec-Driven Development lifecycle."
----
+# Commands Plan
 
-Plan how to implement the specified feature.
+## Overview
+This document outlines the commands and orchestration plan for the library. It serves as a guide for users to effectively utilize the available commands.
 
-This is the second step in the Spec-Driven Development lifecycle.
+## Command Structure
+- Each command follows a specific syntax.
+- Commands can be executed in sequence or in parallel.
 
-Given the implementation details provided as an argument, do this:
+## Available Commands
+### Command 1: Initialize
+- **Description**: Set up the environment for orchestration.
+- **Usage**: `initialize [options]`
+- **Options**:
+  - `--config`: Specify the configuration file.
+  - `--verbose`: Enable detailed logging.
 
-1. Run `scripts/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.
-2. Read and analyze the feature specification to understand:
-   - The feature requirements and user stories
-   - Functional and non-functional requirements
-   - Success criteria and acceptance criteria
-   - Any technical constraints or dependencies mentioned
+### Command 2: Execute
+- **Description**: Run the specified task or workflow.
+- **Usage**: `execute [task] [options]`
+- **Options**:
+  - `--dry-run`: Simulate execution without making changes.
+  - `--timeout`: Set a maximum execution time.
 
-3. Read the constitution at `/memory/constitution.md` to understand constitutional requirements.
+### Command 3: Monitor
+- **Description**: Track the status of running tasks.
+- **Usage**: `monitor [task_id]`
+- **Options**:
+  - `--follow`: Continuously display updates.
+  - `--format`: Specify output format (e.g., JSON, text).
 
-4. Execute the implementation plan template:
-   - Load `/templates/implementation-plan-template.md` (already copied to IMPL_PLAN path)
-   - Set Input path to FEATURE_SPEC
-   - Run the Execution Flow (main) function steps 1-10
-   - The template is self-contained and executable
-   - Follow error handling and gate checks as specified
-   - Let the template guide artifact generation in $SPECS_DIR:
-     * Phase 0 generates research.md
-     * Phase 1 generates data-model.md, contracts/, quickstart.md
-     * Phase 2 generates tasks.md
-   - Incorporate user-provided details from arguments into Technical Context: {ARGS}
-   - Update Progress Tracking as you complete each phase
+### Command 4: Terminate
+- **Description**: Stop a running task or workflow.
+- **Usage**: `terminate [task_id]`
+- **Options**:
+  - `--force`: Force termination without cleanup.
 
-5. Verify execution completed:
-   - Check Progress Tracking shows all phases complete
-   - Ensure all required artifacts were generated
-   - Confirm no ERROR states in execution
+## Best Practices
+- Always initialize the environment before executing commands.
+- Use the `--verbose` option for troubleshooting.
+- Regularly monitor long-running tasks to ensure they are progressing.
 
-6. Report results with branch name, file paths, and generated artifacts.
-
-Use absolute paths with the repository root for all file operations to avoid path issues.
+## Conclusion
+This commands plan provides a structured approach to using the orchestration library effectively. Follow the outlined commands and best practices for optimal results.

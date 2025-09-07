@@ -1,63 +1,76 @@
----
-name: tasks
-description: "Break down the plan into executable tasks. This is the third step in the Spec-Driven Development lifecycle."
----
+# Commands and Tasks Reference for Orchestration Library
 
-Break down the plan into executable tasks.
+## Overview
+This document serves as a comprehensive guide to the commands and tasks available in the orchestration library. It provides users with the necessary information to effectively utilize the library's features for managing orchestration tasks.
 
-This is the third step in the Spec-Driven Development lifecycle.
+## Command Structure
+Commands in the orchestration library follow a consistent structure to ensure ease of use. The general format is:
 
-Given the context provided as an argument, do this:
+```
+orchestration <command> [options]
+```
 
-1. Run `scripts/check-task-prerequisites.sh --json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
-2. Load and analyze available design documents:
-   - Always read plan.md for tech stack and libraries
-   - IF EXISTS: Read data-model.md for entities
-   - IF EXISTS: Read contracts/ for API endpoints  
-   - IF EXISTS: Read research.md for technical decisions
-   - IF EXISTS: Read quickstart.md for test scenarios
-   
-   Note: Not all projects have all documents. For example:
-   - CLI tools might not have contracts/
-   - Simple libraries might not need data-model.md
-   - Generate tasks based on what's available
+Where `<command>` is the specific action you want to perform, and `[options]` are any additional parameters that modify the command's behavior.
 
-3. Generate tasks following the template:
-   - Use `/templates/tasks-template.md` as the base
-   - Replace example tasks with actual tasks based on:
-     * **Setup tasks**: Project init, dependencies, linting
-     * **Test tasks [P]**: One per contract, one per integration scenario
-     * **Core tasks**: One per entity, service, CLI command, endpoint
-     * **Integration tasks**: DB connections, middleware, logging
-     * **Polish tasks [P]**: Unit tests, performance, docs
+## Common Commands
 
-4. Task generation rules:
-   - Each contract file → contract test task marked [P]
-   - Each entity in data-model → model creation task marked [P]
-   - Each endpoint → implementation task (not parallel if shared files)
-   - Each user story → integration test marked [P]
-   - Different files = can be parallel [P]
-   - Same file = sequential (no [P])
+### Start
+The `start` command initiates a new orchestration process.
 
-5. Order tasks by dependencies:
-   - Setup before everything
-   - Tests before implementation (TDD)
-   - Models before services
-   - Services before endpoints
-   - Core before integration
-   - Everything before polish
+**Usage:**
+```bash
+orchestration start --name myOrchestration
+```
 
-6. Include parallel execution examples:
-   - Group [P] tasks that can run together
-   - Show actual Task agent commands
+### Stop
+The `stop` command halts an ongoing orchestration process.
 
-7. Create FEATURE_DIR/tasks.md with:
-   - Correct feature name from implementation plan
-   - Numbered tasks (T001, T002, etc.)
-   - Clear file paths for each task
-   - Dependency notes
-   - Parallel execution guidance
+**Usage:**
+```bash
+orchestration stop --id 12345
+```
 
-Context for task generation: {ARGS}
+### Status
+The `status` command retrieves the current status of a specified orchestration process.
 
-The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
+**Usage:**
+```bash
+orchestration status --id 12345
+```
+
+## Task Management
+
+### Add Task
+The `add-task` command allows you to add a new task to an existing orchestration.
+
+**Usage:**
+```bash
+orchestration add-task --orchestration-id 12345 --task "Data Processing"
+```
+
+### Remove Task
+The `remove-task` command removes a specified task from an orchestration.
+
+**Usage:**
+```bash
+orchestration remove-task --orchestration-id 12345 --task-id 67890
+```
+
+### List Tasks
+The `list-tasks` command lists all tasks associated with a specific orchestration.
+
+**Usage:**
+```bash
+orchestration list-tasks --orchestration-id 12345
+```
+
+## Error Handling
+When executing commands, errors may occur. It is important to handle these errors gracefully. The library provides a mechanism to catch and respond to errors.
+
+**Example:**
+```bash
+orchestration start --name myOrchestration || echo "Failed to start orchestration. Please check the parameters."
+```
+
+## Conclusion
+This document outlines the essential commands and task management features of the orchestration library. By following the provided examples and guidelines, users can effectively manage their orchestration processes and tasks.
