@@ -325,7 +325,7 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
 
             try:
                 optimized = gepa.compile(prog, trainset=trainset, valset=trainset)
-                pred = optimized(requirements=requirements)
+                pred = optimized(requirements=requirements, baseline=gold)
                 text = getattr(pred, "template", None) or getattr(pred, "output", None)
                 if not isinstance(text, str) or len(text.strip()) == 0:
                     eprint(f"[WARN] Empty output for {ts.name}; using original file content.")
