@@ -73,6 +73,29 @@ def discover_templates(root: Path) -> List[TemplateSpec]:
         if phrase.lower() in constitution_text.lower():
             guard_phrases.append(phrase)
 
+    # Per-template invariants to preserve orchestration context
+    invariants: dict[str, List[str]] = {
+        "commands/specify.md": [
+            "scripts/create-new-feature.sh",
+            "templates/spec-template.md",
+            "SPEC_FILE",
+            "branch",
+        ],
+        "commands/plan.md": [
+            "scripts/setup-plan.sh",
+            "FEATURE_SPEC",
+            "IMPL_PLAN",
+            "SPECS_DIR",
+            "Phase 0",
+            "Phase 1",
+        ],
+        "commands/tasks.md": [
+            "templates/tasks-template.md",
+            "SPECS_DIR",
+            "tasks.md",
+        ],
+    }
+
     for path in sorted(template_dir.rglob("*.md")):
         if "/generated/" in str(path):
             continue
@@ -88,13 +111,15 @@ def discover_templates(root: Path) -> List[TemplateSpec]:
                 anchors.append(token)
 
         required = sorted(set(sections + anchors))
+        # Add invariants for command templates to required content
+        inv = invariants.get(name, [])
 
         specs.append(
             TemplateSpec(
                 name=name,
                 path=path,
                 required_sections=required,
-                must_contain=guard_phrases,
+                must_contain=guard_phrases + inv,
                 max_placeholders=0,
                 baseline=None,
             )
@@ -351,6 +376,22 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
                         regressions.append(f"codefences {o_cf}/{b_cf}")
                     if b_steps and o_steps < b_steps:
                         regressions.append(f"steps {o_steps}/{b_steps}")
+                    # For command templates, ensure orchestration invariants are present.
+                    cmd_inv = [
+                        "scripts/create-new-feature.sh",
+                        "templates/spec-template.md",
+                        "SPEC_FILE",
+                        "scripts/setup-plan.sh",
+                        "FEATURE_SPEC",
+                        "IMPL_PLAN",
+                        "SPECS_DIR",
+                        "templates/tasks-template.md",
+                        "tasks.md",
+                    ]
+                    if ts.name.startswith("commands/"):
+                        missing_inv = [p for p in cmd_inv if p in current_text and p not in text]
+                        if missing_inv:
+                            regressions.append("missing invariants: " + ", ".join(missing_inv))
                     if regressions:
                         eprint(f"[WARN] Structural regression for {ts.name}: {'; '.join(regressions)}. Keeping baseline.")
                         text = gold
