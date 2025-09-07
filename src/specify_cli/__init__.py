@@ -428,11 +428,17 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True):
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True, repo_owner: str = "Page-Carbajal"):
     """Download the latest template release from GitHub using HTTP requests.
     Returns (zip_path, metadata_dict)
+    
+    Args:
+        ai_assistant: The AI assistant type (claude, gemini, copilot, codex)
+        download_dir: Directory to download the template to
+        verbose: Whether to show verbose output
+        show_progress: Whether to show download progress
+        repo_owner: GitHub repository owner (defaults to "Page-Carbajal")
     """
-    repo_owner = "github"
     repo_name = "spec-kit"
 
     if verbose:
@@ -526,9 +532,17 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, repo_owner: str = "Page-Carbajal") -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+    
+    Args:
+        project_path: Path where the project will be created
+        ai_assistant: The AI assistant type (claude, gemini, copilot, codex)
+        is_current_dir: Whether to initialize in current directory
+        verbose: Whether to show verbose output
+        tracker: Optional step tracker for progress display
+        repo_owner: GitHub repository owner (defaults to "Page-Carbajal")
     """
     current_dir = Path.cwd()
 
@@ -540,7 +554,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
             ai_assistant,
             current_dir,
             verbose=verbose and tracker is None,
-            show_progress=(tracker is None)
+            show_progress=(tracker is None),
+            repo_owner=repo_owner
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -685,6 +700,7 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
+    repo_owner: str = typer.Option("Page-Carbajal", "--repo-owner", help="GitHub repository owner (defaults to 'Page-Carbajal')"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -705,6 +721,7 @@ def init(
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
+        specify init my-project --repo-owner my-org
     """
     # Show banner first
     show_banner()
@@ -818,7 +835,7 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
+            download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker, repo_owner=repo_owner)
 
             # Git step
             if not no_git:
