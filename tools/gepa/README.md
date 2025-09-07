@@ -1,6 +1,6 @@
 # GEPA Template Optimizer
 
-This tool optimizes the prompt templates under `templates/` using DSPy’s GEPA optimizer. It generates high‑quality, instruction‑first markdown templates with structural completeness and org guardrails.
+This tool optimizes the prompt templates under `templates/` using DSPy’s GEPA optimizer. It generates high-quality, instruction‑first markdown templates with structural completeness and org guardrails.
 
 ## What It Does
 
