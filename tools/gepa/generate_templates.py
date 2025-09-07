@@ -31,6 +31,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Tuple
+import fnmatch
 import subprocess
 from dotenv import load_dotenv
 
@@ -124,6 +125,9 @@ def build_requirements(ts: TemplateSpec) -> str:
         "- If YAML front matter exists, copy it verbatim.",
         "- Preserve code fences and enumerated step sequences. If in doubt, keep baseline text and improve clarity without deleting structure.",
     ]
+    # For command templates, stress retention of fenced usage blocks.
+    if ts.name.startswith("commands/"):
+        parts.append("- For each command section, retain fenced usage/code examples; do not remove code fences.")
     return "\n".join(parts)
 
 
@@ -221,8 +225,10 @@ def make_metric(spec: TemplateSpec):
             b_cf = _count_code_fences(base)
             o_cf = _count_code_fences(output)
             if b_cf and o_cf < b_cf:
-                retention *= 0.8
-                feedbacks.append("Fewer code fences than baseline")
+                # Proportional penalty with a strong floor to protect examples.
+                ratio = max(0.3, o_cf / b_cf)
+                retention *= ratio
+                feedbacks.append(f"Fewer code fences than baseline ({o_cf}/{b_cf})")
             # Enumerated steps overlap
             base_steps = _enumerated_lines(base)
             kept = 0
@@ -361,6 +367,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--force-gepa", action="store_true", help="Run GEPA even in mock mode for verification")
     parser.add_argument("--max-metric-calls", type=int, default=DEFAULT_MAX_METRIC_CALLS, help=f"GEPA budget (lower for quick runs) [default {DEFAULT_MAX_METRIC_CALLS}]")
     parser.add_argument("--env-file", type=Path, default=None, help="Optional path to a .env file (defaults to <repo-root>/.env if present)")
+    parser.add_argument("--only", action="append", default=None, help="Only process templates matching these glob patterns (repeatable)")
 
     args = parser.parse_args(argv)
 
@@ -373,6 +380,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Discover and build specs
     specs = discover_templates(root)
+    # Optional filter by patterns
+    if args.only:
+        filtered: List[TemplateSpec] = []
+        for ts in specs:
+            if any(fnmatch.fnmatch(ts.name, pat) for pat in args.only):
+                filtered.append(ts)
+        specs = filtered
     if not specs:
         eprint("No templates found.")
         return 1
