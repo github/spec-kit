@@ -23,6 +23,7 @@
 - [📖 Learn more](#-learn-more)
 - [Detailed process](#detailed-process)
 - [Troubleshooting](#troubleshooting)
+- [GEPA-Optimized Templates](#gepa-optimized-templates)
 
 ## 🤔 What is Spec-Driven Development?
 
@@ -115,6 +116,65 @@ Our research and experimentation focus on:
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#detailed-process)** - Step-by-step implementation guide
+
+## GEPA-Optimized Templates
+
+You can synthesize and iteratively improve the prompt templates in `templates/` using DSPy's GEPA optimizer.
+
+- Script: `tools/gepa/generate_templates.py`
+- Default output: `templates/generated/` (safe mode)
+- Overwrite in place: pass `--in-place`
+
+Quick start (offline dev mode):
+
+```
+python3 tools/gepa/generate_templates.py --use-mock --limit 1
+```
+
+Using a real LLM (OpenAI example):
+
+```
+export OPENAI_API_KEY=...  # required
+python3 tools/gepa/generate_templates.py \
+  --lm-provider openai --lm-model gpt-4o-mini --in-place
+```
+
+The GEPA metric favors:
+
+- Structural completeness: required headings/sections present
+- Clarity: minimal placeholders like `<...>` or `TODO`
+- Guardrails: selected guidance from `memory/constitution.md`
+
+This keeps templates instruction-first, consistent, and CI-friendly.
+
+### GEPA Tooling Overview
+
+- Location: `tools/gepa/`
+- Entrypoint: `generate_templates.py`
+- Purpose: Optimize the markdown prompt templates in `templates/` using DSPy’s GEPA with a metric that checks for required sections, avoids placeholders, and incorporates guardrails extracted from `memory/constitution.md`.
+
+Quick flags:
+
+- `--use-mock`: offline dev mode; skips heavy GEPA, stages generated files with a marker
+- `--lm-provider`/`--lm-model`: configure a real LM (e.g., `openai`/`gpt-4o-mini`)
+- `--max-metric-calls`: controls GEPA budget for bounded runs
+- `--in-place`: overwrite existing templates in `templates/`
+- `--limit`: process only N templates for targeted runs
+
+Examples:
+
+- Preview two templates offline:
+  `python3 tools/gepa/generate_templates.py --use-mock --limit 2`
+
+- Optimize in-place with OpenAI:
+  `OPENAI_API_KEY=... python3 tools/gepa/generate_templates.py --lm-provider openai --lm-model gpt-4o-mini --max-metric-calls 10 --in-place`
+
+Outputs are written to `templates/generated/` by default and are ignored by git. Remove `--use-mock` and provide an LLM to execute the full optimization loop.
+
+### .env support
+
+- Place secrets (e.g., `OPENAI_API_KEY=...`) in a `.env` at repo root. The tool auto-loads it if present.
+- Or pass a custom file with `--env-file path/to/.env`.
 
 ---
 

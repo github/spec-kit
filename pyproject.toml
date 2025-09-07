@@ -9,6 +9,8 @@ dependencies = [
     "httpx",
     "platformdirs",
     "readchar",
+    "dspy-ai>=2.5.0",
+    "python-dotenv>=1.0.1",
 ]
 
 [project.scripts]
