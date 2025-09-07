@@ -1,0 +1,34 @@
+# See https://pre-commit.com for usage and config
+# Install hooks with: pre-commit install
+# Run on all files: pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      - id: pyrefly-check
+        name: pyrefly check
+        entry: pyrefly check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest
+        entry: pytest -q
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff
+        name: ruff
+        entry: ruff check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --check
+        language: system
+        types: [python]
+        pass_filenames: false
