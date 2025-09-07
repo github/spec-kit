@@ -133,11 +133,11 @@ team = "dev-team"
         assert result is False
 
     def test_load_global_config_contract(
-        self, config_service: ConfigService, monkeypatch
+        self, config_service: ConfigService, monkeypatch, tmp_path: Path
     ):
         """Test load_global_config method contract"""
         # Mock home directory to use temp directory
-        temp_home = Path.cwd() / "test_home"
+        temp_home = tmp_path / "test_home"
         monkeypatch.setenv("HOME", str(temp_home))
 
         # Test when no global config exists
@@ -169,9 +169,10 @@ ai_assistant = "claude"
         config_service: ConfigService,
         sample_project_config: ProjectConfig,
         monkeypatch,
+        tmp_path: Path,
     ):
         """Test save_global_config method contract"""
-        temp_home = Path.cwd() / "test_home_save"
+        temp_home = tmp_path / "test_home_save"
         monkeypatch.setenv("HOME", str(temp_home))
 
         result = config_service.save_global_config(sample_project_config)
