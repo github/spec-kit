@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup implementation plan structure for current branch
 # Returns paths needed for implementation plan generation
 # Usage: ./setup-plan.sh [--json]

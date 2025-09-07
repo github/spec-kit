@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Get paths for current feature branch without creating anything
 # Used by commands that need to find existing feature files
 

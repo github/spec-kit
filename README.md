@@ -348,7 +348,7 @@ Once the implementation step is done, ask Claude Code to try to run the applicat
 If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 echo "Downloading Git Credential Manager v2.6.1..."
 wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
