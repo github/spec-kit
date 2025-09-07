@@ -303,9 +303,11 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
 
         requirements = build_requirements(ts)
 
-        # Build baseline from git (origin/main or HEAD~1), falling back to current file.
+        # Capture current file for guard comparisons.
+        current_text = ts.path.read_text(encoding="utf-8")
+        # Build baseline for the program from git (origin/main or HEAD~1), falling back to current file.
         git_base = get_git_baseline(Path.cwd(), ts.path)
-        gold = git_base if git_base is not None else ts.path.read_text(encoding="utf-8")
+        gold = git_base if git_base is not None else current_text
         ts.baseline = gold
         # Explicitly declare inputs/outputs for DSPy v3 teleprompters
         # In DSPy v3, specify inputs only; remaining keys are treated as labels/outputs.
@@ -338,9 +340,11 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
                     text = gold
                 else:
                     # Hard guard: if key structure regresses vs baseline, keep baseline.
-                    b_cf = _count_code_fences(gold)
+                    # Guard against regression relative to current file (not the program baseline),
+                    # so we never degrade structure within a single run.
+                    b_cf = _count_code_fences(current_text)
                     o_cf = _count_code_fences(text)
-                    b_steps = len(_enumerated_lines(gold))
+                    b_steps = len(_enumerated_lines(current_text))
                     o_steps = len(_enumerated_lines(text))
                     regressions = []
                     if b_cf and o_cf < b_cf:
