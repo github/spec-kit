@@ -28,7 +28,6 @@ import sys
 import zipfile
 import tempfile
 import shutil
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -415,7 +414,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     if not matching_assets:
         if verbose:
             console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
-            console.print(f"[yellow]Available assets:[/yellow]")
+            console.print("[yellow]Available assets:[/yellow]")
             for asset in release_data.get("assets", []):
                 console.print(f"  - {asset['name']}")
         raise typer.Exit(1)
@@ -434,7 +433,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     # Download the file
     zip_path = download_dir / filename
     if verbose:
-        console.print(f"[cyan]Downloading template...[/cyan]")
+        console.print("[cyan]Downloading template...[/cyan]")
     
     try:
         with httpx.stream("GET", download_url, timeout=30, follow_redirects=True) as response:
@@ -553,7 +552,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                             tracker.add("flatten", "Flatten nested directory")
                             tracker.complete("flatten")
                         elif verbose:
-                            console.print(f"[cyan]Found nested directory structure[/cyan]")
+                            console.print("[cyan]Found nested directory structure[/cyan]")
                     
                     # Copy contents to current directory
                     for item in source_dir.iterdir():
@@ -576,7 +575,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                                 console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
                             shutil.copy2(item, dest_path)
                     if verbose and not tracker:
-                        console.print(f"[cyan]Template files merged into current directory[/cyan]")
+                        console.print("[cyan]Template files merged into current directory[/cyan]")
             else:
                 # Extract directly to project directory (original behavior)
                 zip_ref.extractall(project_path)
@@ -606,7 +605,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                         tracker.add("flatten", "Flatten nested directory")
                         tracker.complete("flatten")
                     elif verbose:
-                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
+                        console.print("[cyan]Flattened nested directory structure[/cyan]")
                     
     except Exception as e:
         if tracker:
@@ -843,7 +842,7 @@ def check():
     # Check if we have internet connectivity by trying to reach GitHub API
     console.print("[cyan]Checking internet connectivity...[/cyan]")
     try:
-        response = httpx.get("https://api.github.com", timeout=5, follow_redirects=True)
+        httpx.get("https://api.github.com", timeout=5, follow_redirects=True)
         console.print("[green]✓[/green] Internet connection available")
     except httpx.RequestError:
         console.print("[red]✗[/red] No internet connection - required for downloading templates")
