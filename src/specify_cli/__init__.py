@@ -55,12 +55,12 @@ AI_CHOICES = {
 
 # ASCII Art Banner
 BANNER = """
-███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
-██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
-███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝ 
-╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝  
-███████║██║     ███████╗╚██████╗██║██║        ██║   
-╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
+███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗    ██╗  ██╗
+██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝    ╚██╗██╔╝
+███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝█████╗╚███╔╝ 
+╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝ ╚════╝██╔██╗ 
+███████║██║     ███████╗╚██████╗██║██║        ██║       ██╔╝ ██╗
+╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝       ╚═╝  ╚═╝
 """
 
 TAGLINE = "Spec-Driven Development Toolkit"
@@ -149,14 +149,6 @@ class StepTracker:
 
             tree.add(line)
         return tree
-
-
-
-MINI_BANNER = """
-╔═╗╔═╗╔═╗╔═╗╦╔═╗╦ ╦
-╚═╗╠═╝║╣ ║  ║╠╣ ╚╦╝
-╚═╝╩  ╚═╝╚═╝╩╚   ╩ 
-"""
 
 def get_key():
     """Get a single keypress in a cross-platform way using readchar."""
@@ -284,15 +276,19 @@ app = typer.Typer(
 
 
 def show_banner():
-    """Display the ASCII art banner."""
-    # Create gradient effect with different colors
+    """Display the ASCII art banner with a professional gradient color scheme."""
     banner_lines = BANNER.strip().split('\n')
-    colors = ["bright_blue", "blue", "cyan", "bright_cyan", "white", "bright_white"]
     
+    # Professional color palette: green to teal gradient for differentiation
+    colors = ["bright_green", "green", "bright_cyan", "cyan", "bright_blue", "blue"]
+    num_colors = len(colors)
+
     styled_banner = Text()
     for i, line in enumerate(banner_lines):
-        color = colors[i % len(colors)]
-        styled_banner.append(line + "\n", style=color)
+        # Simple vertical gradient: each line gets a different color
+        color_index = int((i / len(banner_lines)) * num_colors) % num_colors
+        styled_banner.append(line, style=colors[color_index])
+        styled_banner.append("\n")
     
     console.print(Align.center(styled_banner))
     console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
