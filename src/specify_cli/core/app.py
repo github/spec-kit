@@ -47,21 +47,43 @@ class BannerGroup(TyperGroup):
 
 
 def show_banner():
-    """Display the ASCII art banner with a professional gradient color scheme."""
+    """Display the ASCII art banner with enhanced colorization for front and back characters."""
     banner_lines = BANNER.strip().split("\n")
 
-    # Professional color palette: green to teal gradient for differentiation
-    colors = ["bright_green", "green", "bright_cyan", "cyan", "bright_blue", "blue"]
-    num_colors = len(colors)
+    # Professional color palette: green to teal gradient for front characters
+    front_colors = [
+        "bright_green",
+        "green",
+        "bright_cyan",
+        "cyan",
+        "bright_blue",
+        "blue",
+    ]
+    # Subtle background color for decorative elements
+    back_color = "dim white"
 
-    styled_banner = Text()
+    num_colors = len(front_colors)
+
+    # Print each line with different colors for front and back characters
     for i, line in enumerate(banner_lines):
-        # Simple vertical gradient: each line gets a different color
-        color_index = int((i / len(banner_lines)) * num_colors) % num_colors
-        styled_banner.append(line, style=colors[color_index])
-        styled_banner.append("\n")
+        # Get front color for this line using gradient
+        front_color_index = int((i / len(banner_lines)) * num_colors) % num_colors
+        front_color = front_colors[front_color_index]
 
-    console.print(Align.center(styled_banner))
+        # Split the line into front characters (█) and back characters (box drawing)
+        # Only the solid block characters █ are front characters
+        # All other characters (╗╔╝║═╚ and spaces) are back characters
+        colored_line = ""
+        for char in line:
+            if char == "█":
+                # Only the solid block character is the front character
+                colored_line += f"[bold {front_color}]{char}[/]"
+            else:
+                # All other characters are back characters
+                colored_line += f"[{back_color}]{char}[/]"
+
+        console.print(Align.center(colored_line))
+
     console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
     console.print()
 

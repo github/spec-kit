@@ -1,4 +1,4 @@
-"""Project management commands using services."""
+"""Project management commands using services and enhanced UI."""
 
 from pathlib import Path
 from typing import Optional
@@ -16,6 +16,7 @@ from specify_cli.services import (
     SpecifyProjectManager,
     TomlConfigService,
 )
+from specify_cli.utils.ui import InteractiveUI, StepTracker
 
 
 # Initialize services
@@ -38,8 +39,10 @@ def init_command(
     project_name: Optional[str] = typer.Argument(
         None, help="Name for your new project directory (optional if using --here)"
     ),
-    ai_assistant: str = typer.Option(
-        "claude", "--ai", help="AI assistant to use: claude, gemini, or copilot"
+    ai_assistant: Optional[str] = typer.Option(
+        None,
+        "--ai",
+        help="AI assistant to use: claude, gemini, or copilot (interactive if not specified)",
     ),
     # no_git: bool = typer.Option(
     #     False, "--no-git", help="Skip git repository initialization"
@@ -95,63 +98,121 @@ def init_command(
 
     console.print(
         Panel.fit(
-            "[bold cyan]Specify-X Project Setup (Modular Architecture)[/bold cyan]\n"
+            "[bold cyan]Specify-X Project Setup[/bold cyan]\n"
             f"{'Initializing in current directory:' if here else 'Creating new project:'} [green]{project_path.name}[/green]"
             + (f"\n[dim]Path: {project_path}[/dim]" if here else ""),
             border_style="cyan",
         )
     )
 
+    # Interactive AI assistant selection if not specified
+    if ai_assistant is None:
+        ui = InteractiveUI()
+        ai_choices = {
+            "claude": "Claude Code (Terminal-based AI assistant with / commands)",
+            "gemini": "Gemini CLI (Terminal-based AI assistant)",
+            "copilot": "GitHub Copilot (VS Code/IDE integration)",
+        }
+
+        try:
+            # Create choices as dict format for proper key:value display
+            choice_dict = ai_choices
+            choice_keys = list(ai_choices.keys())
+
+            selected_choice = ui.select(
+                "Choose your AI assistant:",
+                choices=choice_dict,
+                default=choice_keys[0],  # First choice key (claude)
+            )
+
+            # The selected_choice should be the key directly
+            ai_assistant = selected_choice
+        except KeyboardInterrupt:
+            console.print("[yellow]Setup cancelled[/yellow]")
+            raise typer.Exit(0) from None
+
+    # Validate AI assistant choice
+    valid_assistants = ["claude", "gemini", "copilot"]
+    if ai_assistant not in valid_assistants:
+        console.print(
+            f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(valid_assistants)}"
+        )
+        raise typer.Exit(1)
+
     # Get project manager
     project_manager = get_project_manager()
 
-    try:
-        # Use ProjectManager service to initialize project
-        console.print("[cyan]Initializing project using service architecture...[/cyan]")
+    # Use StepTracker for enhanced progress display
+    with StepTracker.create_default("Specify-X Project Setup") as tracker:
+        try:
+            tracker.add_step("validate", "Validate project settings")
+            tracker.start_step("validate")
 
-        # Build options for project initialization
-        options = ProjectInitOptions(
-            project_name=project_name if not here else None,
-            ai_assistant=ai_assistant,
-            use_current_dir=here,
-            skip_git=False,
+            # Build options for project initialization
+            options = ProjectInitOptions(
+                project_name=project_name if not here else None,
+                ai_assistant=ai_assistant,
+                use_current_dir=here,
+                skip_git=False,
+            )
+            tracker.complete_step("validate", f"AI: {ai_assistant}")
+
+            tracker.add_step("initialize", "Initialize project structure")
+            tracker.start_step("initialize")
+
+            result = project_manager.initialize_project(options)
+
+            if result:
+                tracker.complete_step("initialize", "Project created successfully")
+
+                tracker.add_step("finalize", "Finalize setup")
+                tracker.start_step("finalize")
+                tracker.complete_step("finalize", "Ready to use!")
+            else:
+                tracker.error_step("initialize", "Project initialization failed")
+                raise typer.Exit(1)
+
+        except Exception as e:
+            if "tracker" in locals():
+                tracker.error_step("initialize", f"Error: {e}")
+            console.print(f"[red]Error during project initialization:[/red] {e}")
+            raise typer.Exit(1) from e
+
+    # Show next steps (outside the context manager so tracker is displayed)
+    if result:
+        console.print("\n[bold green]✓ Project initialized successfully![/bold green]")
+
+        # Show next steps with enhanced formatting
+        steps_lines = []
+        if not here:
+            steps_lines.append(f"1. [bold green]cd {project_name}[/bold green]")
+            step_num = 2
+        else:
+            steps_lines.append("1. You're already in the project directory!")
+            step_num = 2
+
+        # Add AI-specific guidance
+        if ai_assistant == "claude":
+            steps_lines.append(
+                f"{step_num}. Open in VS Code and use / commands with Claude Code"
+            )
+            steps_lines.append("   • Type / in any file to see available commands")
+            steps_lines.append("   • Use /specify to create specifications")
+        elif ai_assistant == "gemini":
+            steps_lines.append(f"{step_num}. Use Gemini CLI for development")
+            steps_lines.append("   • Run gemini /specify for specifications")
+        elif ai_assistant == "copilot":
+            steps_lines.append(f"{step_num}. Use GitHub Copilot in your IDE")
+            steps_lines.append("   • Use /specify, /plan, /tasks commands")
+
+        steps_lines.append(
+            f"{step_num + 1}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's principles"
         )
 
-        result = project_manager.initialize_project(options)
-
-        if result:
-            console.print(
-                "[bold green]✓ Project initialized successfully![/bold green]"
-            )
-
-            # Show next steps
-            steps_lines = []
-            if not here:
-                steps_lines.append(f"1. [bold green]cd {project_name}[/bold green]")
-                step_num = 2
-            else:
-                steps_lines.append("1. You're already in the project directory!")
-                step_num = 2
-
-            steps_lines.append(
-                f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's principles"
-            )
-            steps_lines.append(
-                f"{step_num + 1}. Use your AI assistant to start developing!"
-            )
-
-            steps_panel = Panel(
-                "\n".join(steps_lines),
-                title="Next steps",
-                border_style="cyan",
-                padding=(1, 2),
-            )
-            console.print()
-            console.print(steps_panel)
-        else:
-            console.print("[red]✗ Project initialization failed[/red]")
-            raise typer.Exit(1)
-
-    except Exception as e:
-        console.print(f"[red]Error during project initialization:[/red] {e}")
-        raise typer.Exit(1) from e
+        steps_panel = Panel(
+            "\n".join(steps_lines),
+            title="Next steps",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+        console.print(steps_panel)
