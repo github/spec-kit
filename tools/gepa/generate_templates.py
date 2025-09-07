@@ -31,6 +31,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Tuple
+import subprocess
 from dotenv import load_dotenv
 
 
@@ -48,6 +49,7 @@ class TemplateSpec:
     required_sections: List[str]
     must_contain: List[str]
     max_placeholders: int = 0  # e.g., occurrences of '<...>' or 'TODO'
+    baseline: str | None = None
 
 
 def discover_templates(root: Path) -> List[TemplateSpec]:
@@ -93,6 +95,7 @@ def discover_templates(root: Path) -> List[TemplateSpec]:
                 required_sections=required,
                 must_contain=guard_phrases,
                 max_placeholders=0,
+                baseline=None,
             )
         )
 
@@ -117,6 +120,9 @@ def build_requirements(ts: TemplateSpec) -> str:
         "- Avoid placeholders like '<...>' or 'TODO'.",
         "- Use concise, actionable language.",
         "- Keep sections ordered logically.",
+        "- Critically: preserve the baseline orchestration flow. Do not remove or reorder core steps unless the change is an improvement that strictly maintains intent.",
+        "- If YAML front matter exists, copy it verbatim.",
+        "- Preserve code fences and enumerated step sequences. If in doubt, keep baseline text and improve clarity without deleting structure.",
     ]
     return "\n".join(parts)
 
@@ -134,6 +140,46 @@ def section_score(text: str, required_sections: List[str]) -> Tuple[float, List[
 def placeholder_penalty(text: str, max_placeholders: int) -> Tuple[float, int]:
     count = len(re.findall(r"<[^>]+>|TODO|TBD", text, re.IGNORECASE))
     return (1.0 if count <= max_placeholders else max(0.0, 1.0 - 0.2 * (count - max_placeholders))), count
+
+
+def _extract_yaml_front_matter(text: str) -> str | None:
+    lines = text.splitlines()
+    if lines and lines[0].strip() == '---':
+        buf = ['---']
+        for ln in lines[1:]:
+            buf.append(ln)
+            if ln.strip() == '---':
+                return "\n".join(buf)
+    return None
+
+
+def _count_code_fences(text: str) -> int:
+    return text.count("```") // 2
+
+
+def _enumerated_lines(text: str) -> List[str]:
+    pats = []
+    for ln in text.splitlines():
+        if re.match(r"^\d+\.\s+", ln.strip()):
+            pats.append(ln.strip())
+    return pats
+
+
+def get_git_baseline(root: Path, path: Path) -> Optional[str]:
+    """Try to load the baseline content from origin/main, else HEAD~1, else None."""
+    rel = path.relative_to(root).as_posix()
+    try:
+        # Prefer origin/main if available
+        out = subprocess.run(["git", "show", f"origin/main:{rel}"], capture_output=True, text=True, check=False)
+        if out.returncode == 0 and out.stdout:
+            return out.stdout
+        # Fallback: previous commit
+        out2 = subprocess.run(["git", "show", f"HEAD~1:{rel}"], capture_output=True, text=True, check=False)
+        if out2.returncode == 0 and out2.stdout:
+            return out2.stdout
+    except Exception:
+        pass
+    return None
 
 
 def make_metric(spec: TemplateSpec):
@@ -162,7 +208,35 @@ def make_metric(spec: TemplateSpec):
                 guards_ok *= 0.9
                 feedbacks.append(f"Missing guard phrase: {g}")
 
-        score = max(0.0, min(1.0, 0.6 * s_score + 0.3 * p_score + 0.1 * guards_ok))
+        # Retention: preserve baseline orchestration flow
+        retention = 1.0
+        if spec.baseline:
+            base = spec.baseline
+            # YAML front matter retention
+            yfm = _extract_yaml_front_matter(base)
+            if yfm and yfm not in output:
+                retention *= 0.6
+                feedbacks.append("YAML front matter changed/removed")
+            # Code fence balance
+            b_cf = _count_code_fences(base)
+            o_cf = _count_code_fences(output)
+            if b_cf and o_cf < b_cf:
+                retention *= 0.8
+                feedbacks.append("Fewer code fences than baseline")
+            # Enumerated steps overlap
+            base_steps = _enumerated_lines(base)
+            kept = 0
+            for st in base_steps:
+                if st in output:
+                    kept += 1
+            if base_steps:
+                step_ratio = kept / len(base_steps)
+                if step_ratio < 0.8:
+                    retention *= max(0.0, step_ratio)
+                    feedbacks.append(f"Only {kept}/{len(base_steps)} enumerated steps retained")
+
+        # Blend retention with structure/clarity
+        score = max(0.0, min(1.0, 0.6 * retention + 0.25 * s_score + 0.1 * p_score + 0.05 * guards_ok))
 
         if missing:
             feedbacks.append("Missing sections: " + ", ".join(missing))
@@ -202,15 +276,16 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
 
     class TemplateSignature(dspy.Signature):
         requirements: str = dspy.InputField()
-        template: str = dspy.OutputField(desc="Complete markdown template text")
+        baseline: str = dspy.InputField(desc="Baseline template to preserve critical flow")
+        template: str = dspy.OutputField(desc="Complete markdown template text (improved, not rewritten)")
 
     class TemplateProgram(dspy.Module):
         def __init__(self):
             super().__init__()
             self.gen = dspy.Predict(TemplateSignature)
 
-        def forward(self, requirements: str) -> dspy.Prediction:
-            return self.gen(requirements=requirements)
+        def forward(self, requirements: str, baseline: str) -> dspy.Prediction:
+            return self.gen(requirements=requirements, baseline=baseline)
 
     written: List[Path] = []
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -222,12 +297,13 @@ def optimize_and_generate(specs: List[TemplateSpec], out_dir: Path, args) -> Lis
 
         requirements = build_requirements(ts)
 
-        # Trainset with the existing file as a soft target. This lets GEPA
-        # reflect toward meeting the structure while still allowing improvements.
-        gold = ts.path.read_text(encoding="utf-8")
+        # Build baseline from git (origin/main or HEAD~1), falling back to current file.
+        git_base = get_git_baseline(Path.cwd(), ts.path)
+        gold = git_base if git_base is not None else ts.path.read_text(encoding="utf-8")
+        ts.baseline = gold
         # Explicitly declare inputs/outputs for DSPy v3 teleprompters
         # In DSPy v3, specify inputs only; remaining keys are treated as labels/outputs.
-        train_ex = dspy.Example(requirements=requirements, template=gold).with_inputs("requirements")
+        train_ex = dspy.Example(requirements=requirements, baseline=gold, template=gold).with_inputs("requirements", "baseline")
         trainset = [train_ex]
 
         # If running with a mock LM, skip heavy GEPA unless forced (dev verification).
