@@ -9,6 +9,7 @@
 #     "httpx",
 # ]
 # ///
+
 """
 Specify CLI - Setup tool for Specify projects
 
@@ -23,28 +24,29 @@ Or install globally:
 """
 
 import os
+import shutil
 import subprocess
 import sys
-import zipfile
 import tempfile
-import shutil
+import zipfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Optional
 
-import typer
 import httpx
-from rich.console import Console
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.text import Text
-from rich.live import Live
-from rich.align import Align
-from rich.table import Table
-from rich.tree import Tree
-from typer.core import TyperGroup
 
 # For cross-platform keyboard input
 import readchar
+import typer
+from rich.align import Align
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+from rich.text import Text
+from rich.tree import Tree
+from typer.core import TyperGroup
 
 # Constants
 AI_CHOICES = {
@@ -108,10 +110,8 @@ class StepTracker:
 
     def _maybe_refresh(self):
         if self._refresh_cb:
-            try:
+            with suppress(Exception):
                 self._refresh_cb()
-            except Exception:
-                pass
 
     def render(self):
         tree = Tree(f"[bold cyan]{self.title}[/bold cyan]", guide_style="grey50")
@@ -239,9 +239,9 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
                     
                     live.update(create_selection_panel(), refresh=True)
 
-                except KeyboardInterrupt:
+                except KeyboardInterrupt as e:
                     console.print("\n[yellow]Selection cancelled[/yellow]")
-                    raise typer.Exit(1)
+                    raise typer.Exit(1) from e
 
     run_selection_loop()
 
@@ -398,7 +398,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     except httpx.RequestError as e:
         if verbose:
             console.print(f"[red]Error fetching release information:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     
     # Find the template asset for the specified AI assistant
     pattern = f"spec-kit-template-{ai_assistant}"
@@ -466,7 +466,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
             console.print(f"[red]Error downloading template:[/red] {e}")
         if zip_path.exists():
             zip_path.unlink()
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     if verbose:
         console.print(f"Downloaded: {filename}")
     metadata = {
@@ -612,7 +612,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
         # Clean up project directory if created and not current directory
         if not is_current_dir and project_path.exists():
             shutil.rmtree(project_path)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     else:
         if tracker:
             tracker.complete("extract")
@@ -728,10 +728,9 @@ def init(
             if not check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup"):
                 console.print("[red]Error:[/red] Claude CLI is required for Claude Code projects")
                 agent_tool_missing = True
-        elif selected_ai == "gemini":
-            if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
-                console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
-                agent_tool_missing = True
+        elif selected_ai == "gemini" and not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
+            console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
+            agent_tool_missing = True
         # GitHub Copilot check is not needed as it's typically available in supported IDEs
         
         if agent_tool_missing:
@@ -787,7 +786,7 @@ def init(
             tracker.error("final", str(e))
             if not here and project_path.exists():
                 shutil.rmtree(project_path)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         finally:
             # Force final render
             pass
