@@ -38,6 +38,18 @@ Initialize your project depending on the coding agent you're using:
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
+Or add SDD to an existing project (in-place) from your repo root:
+
+```bash
+specify init --here
+```
+
+>[!CAUTION]
+> When running in an existing project, your AI agent may rewrite, move, or remove files to align with the generated spec/plan. Start on a new branch and review diffs. See details: [Use in an existing project (in-place)](#use-in-an-existing-project-in-place).
+>
+>[!NOTE]
+> There is an active proposal to scaffold into `./specify` by default for better containment. Track [Issue #38](https://github.com/github/spec-kit/issues/38) for updates.
+
 ### 2. Create the spec
 
 Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
@@ -146,6 +158,36 @@ specify init <project_name> --ai copilot
 # Or in current directory:
 specify init --here --ai claude
 ```
+
+#### Use in an existing project (in-place)
+
+You can add Spec-Driven Development to an existing repository by running the initializer in the current directory:
+
+```bash
+specify init --here
+```
+
+This will scaffold the SDD templates, scripts, and configuration directly into your existing project without creating a new folder.
+
+>[!CAUTION]
+> When initializing in an existing project, your AI agent may attempt to rewrite, move, or remove files as it aligns the codebase to the generated specification and plan. To minimize risk:
+> - Ensure your working tree is clean (commit or stash any changes) before you start.
+> - Create and use a dedicated branch for the initialization work (e.g., `git checkout -b sdd/init`).
+> - Review diffs carefully before accepting AI-suggested changes, especially deletions or large refactors.
+> - Consider running in a fresh clone or taking a backup if you’re unsure.
+>
+> Example safe sequence:
+>
+> ```bash
+> git checkout -b sdd/init
+> specify init --here
+> # review changes with your normal workflow (e.g., git diff, code review)
+> ```
+
+You can combine this with the same flags shown above (e.g., `--ai`, `--ignore-agent-tools`) when working in-place.
+
+>[!NOTE]
+> Default scaffolding location update: There is an active proposal to change the default scaffold directory to `./specify`. This would make in-place initialization more predictable and contained. Track progress in [Issue #38](https://github.com/github/spec-kit/issues/38) and the associated pull request linked from that issue. Future releases may adopt this behavior by default.
 
 The CLI will check if you have Claude Code or Gemini CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
