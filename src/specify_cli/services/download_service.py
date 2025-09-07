@@ -105,7 +105,7 @@ class HttpxDownloadService(DownloadService):
     """Download service implementation using httpx for HTTP requests."""
 
     def __init__(self, console: Optional[Console] = None, timeout: int = 30,
-                 default_repo_owner: str = "github", default_repo_name: str = "spec-kit"):
+                 default_repo_owner: str = "barisgit", default_repo_name: str = "spec-kit-improved"):
         """Initialize the service.
         
         Args:

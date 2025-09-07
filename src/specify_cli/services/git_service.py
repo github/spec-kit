@@ -81,7 +81,7 @@ class CommandLineGitService(GitService):
             
             # Create initial commit
             subprocess.run(
-                ["git", "commit", "-m", "Initial commit from Specify template"],
+                ["git", "commit", "-m", "Initial commit from Specify-X template"],
                 cwd=project_path,
                 check=True,
                 capture_output=True,

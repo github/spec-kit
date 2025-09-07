@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from jinja2 import Environment, FileSystemLoader, TemplateSyntaxError
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 from jinja2.meta import find_undeclared_variables
 
 from specify_cli.models.project import TemplateContext, TemplateFile
@@ -157,6 +157,8 @@ class JinjaTemplateService(TemplateService):
             context_dict = self._prepare_context(context)
             return template.render(**context_dict)
             
+        except TemplateNotFound as e:
+            raise FileNotFoundError(f"Template not found: {template_name}") from e
         except Exception as e:
             raise RuntimeError(f"Failed to render template '{template_name}': {str(e)}") from e
 

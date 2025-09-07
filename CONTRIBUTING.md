@@ -17,7 +17,7 @@ These are one time installations required to be able to test your changes locall
 
 1. Fork and clone the repository
 1. Configure and install the dependencies: `uv sync`
-1. Make sure the CLI works on your machine: `uv run specify --help`
+1. Make sure the CLI works on your machine: `uv run specifyx --help`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant

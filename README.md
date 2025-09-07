@@ -14,28 +14,28 @@
 
 ## Table of Contents
 
-- [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
-- [⚡ Get started](#-get-started)
-- [📚 Core philosophy](#-core-philosophy)
-- [🌟 Development phases](#-development-phases)
-- [🎯 Experimental goals](#-experimental-goals)
-- [🔧 Prerequisites](#-prerequisites)
-- [📖 Learn more](#-learn-more)
+- [What is Spec-Driven Development?](#-what-is-spec-driven-development)
+- [Get started](#-get-started)
+- [Core philosophy](#-core-philosophy)
+- [Development phases](#-development-phases)
+- [Experimental goals](#-experimental-goals)
+- [Prerequisites](#-prerequisites)
+- [Learn more](#-learn-more)
 - [Detailed process](#detailed-process)
 - [Troubleshooting](#troubleshooting)
 
-## 🤔 What is Spec-Driven Development?
+## What is Spec-Driven Development?
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
 
-## ⚡ Get started
+## Get started
 
 ### 1. Install Specify
 
 Initialize your project depending on the coding agent you're using:
 
 ```bash
-uvx --from git+https://github.com/barisgit/spec-kit-improved.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/barisgit/spec-kit-improved.git specifyx init <PROJECT_NAME>
 ```
 
 ### 2. Create the spec
@@ -60,7 +60,7 @@ Use `/tasks` to create an actionable task list, then ask your agent to implement
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
-## 📚 Core philosophy
+## Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
 
@@ -69,7 +69,7 @@ Spec-Driven Development is a structured process that emphasizes:
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
 
-## 🌟 Development phases
+## Development phases
 
 | Phase | Focus | Key Activities |
 |-------|-------|----------------|
@@ -77,7 +77,7 @@ Spec-Driven Development is a structured process that emphasizes:
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
 
-## 🎯 Experimental goals
+## Experimental goals
 
 Our research and experimentation focus on:
 
@@ -103,7 +103,7 @@ Our research and experimentation focus on:
 - Provide robust iterative feature development workflows
 - Extend processes to handle upgrades and modernization tasks  
 
-## 🔧 Prerequisites
+## Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
@@ -111,7 +111,7 @@ Our research and experimentation focus on:
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
-## 📖 Learn more
+## Learn more
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#detailed-process)** - Step-by-step implementation guide
@@ -123,34 +123,34 @@ Our research and experimentation focus on:
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
 
-You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
+You can use the Specify-X CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
 
 ```bash
-specify init <project_name>
+specifyx init <project_name>
 ```
 
 Or initialize in the current directory:
 
 ```bash
-specify init --here
+specifyx init --here
 ```
 
-![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
+![Specify-X CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
 
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai claude
-specify init <project_name> --ai gemini
-specify init <project_name> --ai copilot
+specifyx init <project_name> --ai claude
+specifyx init <project_name> --ai gemini
+specifyx init <project_name> --ai copilot
 # Or in current directory:
-specify init --here --ai claude
+specifyx init --here --ai claude
 ```
 
 The CLI will check if you have Claude Code or Gemini CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai claude --ignore-agent-tools
+specifyx init <project_name> --ai claude --ignore-agent-tools
 ```
 
 ### **STEP 1:** Bootstrap the project
