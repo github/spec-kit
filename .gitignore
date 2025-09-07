@@ -41,3 +41,5 @@ env/
 
 # Coverage
 .coverage
+
+temp*/
