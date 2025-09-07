@@ -31,6 +31,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Tuple
+from dotenv import load_dotenv
 
 
 DEFAULT_MAX_METRIC_CALLS = 10
@@ -283,10 +284,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--lm-model", type=str, default=None, help="e.g., gpt-4o-mini")
     parser.add_argument("--force-gepa", action="store_true", help="Run GEPA even in mock mode for verification")
     parser.add_argument("--max-metric-calls", type=int, default=DEFAULT_MAX_METRIC_CALLS, help=f"GEPA budget (lower for quick runs) [default {DEFAULT_MAX_METRIC_CALLS}]")
+    parser.add_argument("--env-file", type=Path, default=None, help="Optional path to a .env file (defaults to <repo-root>/.env if present)")
 
     args = parser.parse_args(argv)
 
     root = args.repo_root
+    # Load environment variables from .env if present (explicit path or <repo-root>/.env)
+    env_path = args.env_file or (root / ".env")
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
     out_dir = args.out_dir or (root / "templates" / "generated")
 
     # Discover and build specs

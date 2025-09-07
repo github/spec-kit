@@ -171,6 +171,11 @@ Examples:
 
 Outputs are written to `templates/generated/` by default and are ignored by git. Remove `--use-mock` and provide an LLM to execute the full optimization loop.
 
+### .env support
+
+- Place secrets (e.g., `OPENAI_API_KEY=...`) in a `.env` at repo root. The tool auto-loads it if present.
+- Or pass a custom file with `--env-file path/to/.env`.
+
 ---
 
 ## Detailed process

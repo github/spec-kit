@@ -20,6 +20,26 @@ This tool optimizes the prompt templates under `templates/` using DSPy’s GEPA 
   - `python3 tools/gepa/generate_templates.py --lm-provider openai --lm-model gpt-4o-mini --max-metric-calls 10`
   - Add `--in-place` to overwrite `templates/` once satisfied.
 
+### .env support
+
+You can store your secrets (e.g., `OPENAI_API_KEY=...`) in a `.env` file at the repo root. The tool will load `<repo-root>/.env` automatically if present, or you can pass a custom path via `--env-file`.
+
+Examples:
+
+- Create `.env` in repo root:
+  ```
+  OPENAI_API_KEY=sk-…
+  ```
+  Then run:
+  ```
+  python3 tools/gepa/generate_templates.py --lm-provider openai --lm-model gpt-4o-mini --max-metric-calls 10
+  ```
+
+- Use a custom env file:
+  ```
+  python3 tools/gepa/generate_templates.py --env-file ./local.env --lm-provider openai --lm-model gpt-4o-mini
+  ```
+
 ### Flags
 
 - `--use-mock`: run with DSPy mock LM; skips heavy GEPA and stages generated files in `templates/generated/` with a marker.
@@ -52,4 +72,3 @@ The metric returns a single numeric score for GEPA aggregation.
 ## CI Drift Check
 
 The repo includes a GitHub Actions workflow that runs this tool in mock mode to ensure it executes cleanly. Optionally, you can enable an in‑place drift check (see the workflow file) to fail if re‑running the tool would change tracked templates.
-
