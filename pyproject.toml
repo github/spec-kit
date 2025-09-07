@@ -19,8 +19,10 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-benchmark",
+    "pytest-cov",
     "ruff",
     "pyrefly",
+    "pre-commit",
 ]
 
 [project.scripts]

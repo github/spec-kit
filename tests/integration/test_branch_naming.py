@@ -3,6 +3,7 @@ Integration test for branch naming patterns workflow (T012)
 """
 
 from pathlib import Path
+from typing import Any, Dict, List
 
 import pytest
 
@@ -113,7 +114,7 @@ template_cache_enabled = true
     def test_branch_name_expansion_workflows(self, config_service: ConfigService):
         """Test branch name expansion for different spec-kit workflows"""
         # Feature development workflow
-        feature_cases = [
+        feature_cases: List[Dict[str, Any]] = [
             {
                 "pattern": "feature/{feature-name}",
                 "context": {"feature-name": "user-authentication"},
@@ -132,7 +133,7 @@ template_cache_enabled = true
         ]
 
         # Bug fixing workflow
-        bugfix_cases = [
+        bugfix_cases: List[Dict[str, Any]] = [
             {
                 "pattern": "bugfix/{bug-id}",
                 "context": {"bug-id": "BUG-123"},
@@ -146,7 +147,7 @@ template_cache_enabled = true
         ]
 
         # Task-based workflow
-        task_cases = [
+        task_cases: List[Dict[str, Any]] = [
             {
                 "pattern": "task/{task-id}",
                 "context": {"task-id": "TASK-789"},
@@ -160,7 +161,7 @@ template_cache_enabled = true
         ]
 
         # Hotfix workflow
-        hotfix_cases = [
+        hotfix_cases: List[Dict[str, Any]] = [
             {
                 "pattern": "hotfix/{version}",
                 "context": {"version": "1.2.3"},
@@ -268,7 +269,7 @@ template_cache_enabled = true
         assert result == "feature/test"
 
         # Test special characters in variable values
-        special_char_cases = [
+        special_char_cases: List[Dict[str, Any]] = [
             {
                 "pattern": "feature/{feature-name}",
                 "context": {"feature-name": "api-v2"},
@@ -334,7 +335,7 @@ template_cache_enabled = true
     def test_complex_branch_naming_scenarios(self, config_service: ConfigService):
         """Test complex real-world branch naming scenarios"""
         # Multi-team development scenarios
-        team_scenarios = [
+        team_scenarios: List[Dict[str, Any]] = [
             {
                 "pattern": "team/{team}/feature/{feature}",
                 "context": {"team": "frontend", "feature": "user-dashboard"},
@@ -348,7 +349,7 @@ template_cache_enabled = true
         ]
 
         # Release management scenarios
-        release_scenarios = [
+        release_scenarios: List[Dict[str, Any]] = [
             {
                 "pattern": "release/{version}/feature/{feature}",
                 "context": {"version": "2.0", "feature": "new-api"},
@@ -362,7 +363,7 @@ template_cache_enabled = true
         ]
 
         # Epic-based development scenarios
-        epic_scenarios = [
+        epic_scenarios: List[Dict[str, Any]] = [
             {
                 "pattern": "epic/{epic}/story/{story}",
                 "context": {"epic": "user-management", "story": "login-flow"},

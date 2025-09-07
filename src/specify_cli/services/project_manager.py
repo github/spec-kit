@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 from rich.console import Console
 
-from ..models.config import ProjectConfig
+from ..models.config import BranchNamingConfig, ProjectConfig, TemplateConfig
 from ..models.project import (
     ProjectInitOptions,
     ProjectInitResult,
@@ -124,6 +124,7 @@ class SpecifyProjectManager(ProjectManager):
         """Initialize a new project with the given options."""
         completed_steps = []
         warnings = []
+        project_path: Path = Path.cwd()
 
         try:
             # Step 1: Validation
@@ -190,11 +191,11 @@ class SpecifyProjectManager(ProjectManager):
 
             # Step 5: Create project configuration
             config = ProjectConfig(
-                project_name=options.project_name or project_path.name,
-                ai_assistant=options.ai_assistant,
-                branch_naming_pattern="001-feature-{feature_name}",
-                ignore_agent_tools=options.ignore_agent_tools,
-                custom_config=options.custom_config or {},
+                name=options.project_name or project_path.name,
+                branch_naming=BranchNamingConfig(
+                    default_pattern="001-feature-{feature_name}"
+                ),
+                template_settings=TemplateConfig(ai_assistant=options.ai_assistant),
             )
 
             if self._config_service.save_project_config(project_path, config):
@@ -233,7 +234,7 @@ class SpecifyProjectManager(ProjectManager):
             ):
                 branch_context = {"feature_name": "initial-setup"}
                 branch_name = self._config_service.expand_branch_name(
-                    config.branch_naming_pattern, branch_context
+                    config.branch_naming.default_pattern, branch_context
                 )
                 if self._git_service.create_branch(branch_name, project_path):
                     completed_steps.append(ProjectInitStep.BRANCH_CREATION)
@@ -252,7 +253,7 @@ class SpecifyProjectManager(ProjectManager):
         except Exception as e:
             return ProjectInitResult(
                 success=False,
-                project_path=project_path if "project_path" in locals() else Path.cwd(),
+                project_path=project_path,
                 completed_steps=completed_steps,
                 error_message=f"Project initialization failed: {str(e)}",
             )
@@ -400,9 +401,11 @@ class SpecifyProjectManager(ProjectManager):
             config = self._config_service.load_project_config(project_path)
             if config is None:
                 config = ProjectConfig(
-                    project_name=project_path.name,
-                    ai_assistant="claude",
-                    branch_naming_pattern="001-feature-{feature_name}",
+                    name=project_path.name,
+                    branch_naming=BranchNamingConfig(
+                        default_pattern="001-feature-{feature_name}"
+                    ),
+                    template_settings=TemplateConfig(ai_assistant="claude"),
                 )
 
             if interactive:
@@ -448,8 +451,8 @@ class SpecifyProjectManager(ProjectManager):
             if config:
                 info.update(
                     {
-                        "ai_assistant": config.ai_assistant,
-                        "branch_pattern": config.branch_naming_pattern,
+                        "ai_assistant": config.template_settings.ai_assistant,
+                        "branch_pattern": config.branch_naming.default_pattern,
                     }
                 )
 

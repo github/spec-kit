@@ -10,7 +10,7 @@ repos:
         entry: pyrefly check
         language: system
         types: [python]
-        pass_filenames: false
+        pass_filenames: true
 
       - id: pytest
         name: pytest
@@ -24,11 +24,11 @@ repos:
         entry: ruff check
         language: system
         types: [python]
-        pass_filenames: false
+        pass_filenames: true
 
       - id: ruff-format
         name: ruff format
         entry: ruff format --check
         language: system
         types: [python]
-        pass_filenames: false
+        pass_filenames: true

@@ -3,6 +3,7 @@ Integration test for TOML configuration loading workflow (T010)
 """
 
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
 import pytest
 
@@ -21,7 +22,7 @@ class TestTOMLConfigurationLoading:
         return TomlConfigService()
 
     @pytest.fixture
-    def complex_project_structure(self, tmp_path: Path) -> Path:
+    def complex_project_structure(self, tmp_path: Path) -> Tuple[Path, Path]:
         """Create complex project structure with nested configs"""
         project_root = tmp_path / "complex_project"
         project_root.mkdir()
@@ -101,7 +102,9 @@ environment = "development"
         return project_root, global_config_dir.parent
 
     def test_complex_configuration_loading(
-        self, config_service: ConfigService, complex_project_structure: tuple
+        self,
+        config_service: ConfigService,
+        complex_project_structure: Tuple[Path, Path],
     ):
         """Test loading complex nested TOML configuration"""
         project_root, global_root = complex_project_structure
@@ -157,7 +160,9 @@ environment = "development"
             if "SPEC_KIT_GLOBAL_CONFIG" in os.environ:
                 del os.environ["SPEC_KIT_GLOBAL_CONFIG"]
 
-    def test_global_configuration_loading(self, complex_project_structure: tuple):
+    def test_global_configuration_loading(
+        self, complex_project_structure: Tuple[Path, Path]
+    ):
         """Test loading global user configuration"""
         _, global_root = complex_project_structure
 
@@ -191,7 +196,9 @@ environment = "development"
                 del os.environ["HOME"]
 
     def test_merged_configuration_loading(
-        self, config_service: ConfigService, complex_project_structure: tuple
+        self,
+        config_service: ConfigService,
+        complex_project_structure: Tuple[Path, Path],
     ):
         """Test merged configuration with global and project settings"""
         project_root, global_root = complex_project_structure
@@ -271,7 +278,7 @@ environment = "development"
 
     def test_branch_name_expansion_workflow(self, config_service: ConfigService):
         """Test branch name expansion with various patterns and contexts"""
-        test_cases = [
+        test_cases: List[Dict[str, Any]] = [
             {
                 "pattern": "feature/{feature-name}",
                 "context": {"feature-name": "user-authentication"},
@@ -330,7 +337,7 @@ environment = "development"
             ),
             template_settings=TemplateConfig(
                 ai_assistant="claude",
-                custom_templates_dir="./templates",
+                custom_templates_dir=Path("./templates"),
                 template_cache_enabled=True,
                 template_variables={
                     "persistence": "test",
@@ -381,6 +388,7 @@ environment = "development"
 
         # Verify modification
         modified_loaded = config_service.load_project_config(project_dir)
+        assert modified_loaded is not None
         assert modified_loaded.name == "modified-test"
         assert modified_loaded.template_settings.ai_assistant == "gemini"
 
@@ -388,6 +396,7 @@ environment = "development"
         restore_result = config_service.restore_config(project_dir, backup_path)
         if restore_result:  # Only check if restore succeeded
             restored_config = config_service.load_project_config(project_dir)
+            assert restored_config is not None
             assert restored_config.name == "persistence-test"
             assert (
                 restored_config.branch_naming.default_pattern
@@ -425,7 +434,7 @@ invalid toml content
     def test_complex_branch_pattern_workflow(self, config_service: ConfigService):
         """Test complex branch pattern validation and expansion scenarios"""
         # Test nested variable substitution
-        complex_patterns = {
+        complex_patterns: Dict[str, Dict[str, Any]] = {
             "epic/{epic-name}/feature/{feature-name}": {
                 "context": {"epic-name": "user-management", "feature-name": "login"},
                 "expected": "epic/user-management/feature/login",

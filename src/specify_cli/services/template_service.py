@@ -8,7 +8,7 @@ supporting Jinja2 template rendering with context variables.
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple, cast
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError
 from jinja2.meta import find_undeclared_variables
@@ -141,8 +141,13 @@ class JinjaTemplateService(TemplateService):
                 # Don't use StrictUndefined as it's too strict for template conditionals
             )
 
-            # Add custom filters
-            self._environment.filters["regex_replace"] = self._regex_replace_filter
+            # Add custom filters (register as a plain callable for typing compatibility)
+            def regex_replace(value: str, pattern: str, replacement: str = "") -> str:
+                return self._regex_replace_filter(value, pattern, replacement)
+
+            self._environment.filters["regex_replace"] = cast(
+                Callable[..., Any], regex_replace
+            )
 
             return True
 

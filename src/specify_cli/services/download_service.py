@@ -37,7 +37,7 @@ class DownloadService(ABC):
 
     @abstractmethod
     def download_github_repo(
-        self, repo_url: str, destination_path: Path, branch: str = "main"
+        self, repo_url: str, destination_path: Path, _branch: str = "main"
     ) -> bool:
         """Download a GitHub repository to the specified destination.
 
@@ -151,7 +151,7 @@ class HttpxDownloadService(DownloadService):
             return False
 
     def download_github_repo(
-        self, repo_url: str, destination_path: Path, branch: str = "main"
+        self, repo_url: str, destination_path: Path, _branch: str = "main"
     ) -> bool:
         """Download a GitHub repository to the specified destination.
 

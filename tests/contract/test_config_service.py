@@ -48,6 +48,10 @@ class TestConfigServiceContract:
         self, tmp_path: Path, sample_project_config: ProjectConfig
     ) -> Path:
         """Create temporary project directory with config"""
+        sample_project_config = (
+            sample_project_config  # Remove once implementation exists
+        )
+
         project_dir = tmp_path / "test-project"
         project_dir.mkdir()
 

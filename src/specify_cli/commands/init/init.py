@@ -6,6 +6,8 @@ from typing import Optional
 import typer
 from rich.panel import Panel
 
+from specify_cli.models.project import ProjectInitOptions
+
 # Import services
 from specify_cli.services import (
     CommandLineGitService,
@@ -75,12 +77,16 @@ def init_command(
         )
         raise typer.Exit(1)
 
-    # Determine project path
+    # Determine project path (for display only; manager derives it from options)
     if here:
-        project_name = Path.cwd().name
+        display_project_name = Path.cwd().name
         project_path = Path.cwd()
     else:
-        project_path = Path(project_name).resolve()
+        # project_name is asserted below
+        display_project_name = project_name or ""
+        project_path = (
+            Path.cwd() / display_project_name if display_project_name else Path.cwd()
+        )
 
     # Check if project already exists
     if not here and project_path.exists():
@@ -103,11 +109,15 @@ def init_command(
         # Use ProjectManager service to initialize project
         console.print("[cyan]Initializing project using service architecture...[/cyan]")
 
-        result = project_manager.initialize_project(
-            project_name=project_name,
-            project_path=project_path,
+        # Build options for project initialization
+        options = ProjectInitOptions(
+            project_name=project_name if not here else None,
             ai_assistant=ai_assistant,
+            use_current_dir=here,
+            skip_git=False,
         )
+
+        result = project_manager.initialize_project(options)
 
         if result:
             console.print(

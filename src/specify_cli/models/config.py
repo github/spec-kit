@@ -59,7 +59,7 @@ class TemplateConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for TOML serialization"""
-        result = {
+        result: Dict[str, Any] = {
             "ai_assistant": self.ai_assistant,
             "template_cache_enabled": self.template_cache_enabled,
         }
@@ -68,7 +68,8 @@ class TemplateConfig:
             result["custom_templates_dir"] = str(self.custom_templates_dir)
 
         if self.template_variables:
-            result["template_variables"] = self.template_variables.copy()
+            # Preserve nested dict typing by storing as Any
+            result["template_variables"] = dict(self.template_variables)
 
         return result
 
