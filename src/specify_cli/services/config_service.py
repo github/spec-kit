@@ -175,22 +175,22 @@ class TomlConfigService(ConfigService):
         # Check for invalid characters in the pattern itself
         if " " in pattern:
             return False, "Pattern cannot contain spaces"
-        
+
         if pattern.isupper():
             return False, "Pattern cannot be all uppercase"
-        
+
         if "." in pattern:
             return False, "Pattern cannot contain dots"
-            
+
         if pattern.startswith("/") or pattern.endswith("/"):
             return False, "Pattern cannot start or end with slash"
-            
+
         if "//" in pattern:
             return False, "Pattern cannot contain double slashes"
-            
+
         if ":" in pattern:
             return False, "Pattern cannot contain colons"
-            
+
         if "\\" in pattern:
             return False, "Pattern cannot contain backslashes"
 

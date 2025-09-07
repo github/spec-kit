@@ -7,13 +7,13 @@ from .template_service import JinjaTemplateService, TemplateService
 
 __all__ = [
     "ConfigService",
-    "TomlConfigService", 
+    "TomlConfigService",
     "GitService",
     "CommandLineGitService",
     "ProjectManager",
     "SpecifyProjectManager",
-    "TemplateService", 
+    "TemplateService",
     "JinjaTemplateService",
     "DownloadService",
-    "HttpxDownloadService"
+    "HttpxDownloadService",
 ]

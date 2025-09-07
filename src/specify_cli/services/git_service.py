@@ -30,7 +30,9 @@ class GitService(ABC):
         pass
 
     @abstractmethod
-    def add_files(self, project_path: Path, file_patterns: Optional[List[str]] = None) -> bool:
+    def add_files(
+        self, project_path: Path, file_patterns: Optional[List[str]] = None
+    ) -> bool:
         """Add files to the staging area. If file_patterns is None, adds all files"""
         pass
 
@@ -67,27 +69,27 @@ class CommandLineGitService(GitService):
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
-            
+
             # Add all files
             subprocess.run(
                 ["git", "add", "."],
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
-            
+
             # Create initial commit
             subprocess.run(
                 ["git", "commit", "-m", "Initial commit from Specify-X template"],
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
-            
+
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -100,7 +102,7 @@ class CommandLineGitService(GitService):
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -114,13 +116,15 @@ class CommandLineGitService(GitService):
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
-    def add_files(self, project_path: Path, file_patterns: Optional[List[str]] = None) -> bool:
+    def add_files(
+        self, project_path: Path, file_patterns: Optional[List[str]] = None
+    ) -> bool:
         """Add files to the staging area. If file_patterns is None, adds all files"""
         try:
             if file_patterns is None:
@@ -130,7 +134,7 @@ class CommandLineGitService(GitService):
                     cwd=project_path,
                     check=True,
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
             else:
                 # Add specific files/patterns
@@ -140,7 +144,7 @@ class CommandLineGitService(GitService):
                         cwd=project_path,
                         check=True,
                         capture_output=True,
-                        text=True
+                        text=True,
                     )
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -154,7 +158,7 @@ class CommandLineGitService(GitService):
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -172,7 +176,7 @@ class CommandLineGitService(GitService):
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -186,7 +190,7 @@ class CommandLineGitService(GitService):
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             return result.stdout.strip()
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -200,7 +204,7 @@ class CommandLineGitService(GitService):
                 cwd=project_path,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             return result.stdout.strip()
         except (subprocess.CalledProcessError, FileNotFoundError):

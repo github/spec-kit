@@ -17,7 +17,7 @@ from typer.core import TyperGroup
 # AI assistant choices for validation
 AI_CHOICES: Dict[str, str] = {
     "copilot": "GitHub Copilot",
-    "claude": "Claude Code", 
+    "claude": "Claude Code",
     "gemini": "Gemini CLI",
 }
 
@@ -66,7 +66,6 @@ def show_banner():
     console.print()
 
 
-
 # Main Typer app instance
 app = typer.Typer(
     name="specify",
@@ -93,7 +92,7 @@ def callback(
             pkg_version = "unknown"
         console.print(f"Specify-X CLI [bold cyan]v{pkg_version}[/bold cyan]")
         raise typer.Exit()
-    
+
     # Show banner only when no subcommand and no help flag
     # (help is handled by BannerGroup)
     if (
@@ -111,7 +110,7 @@ def callback(
 def register_commands():
     """Register commands with the main app."""
     from specify_cli.commands import check_command, init_command
-    
+
     # Register commands directly on main app
     app.command("init")(init_command)
     app.command("check")(check_command)

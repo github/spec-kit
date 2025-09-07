@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 class TemplateDict(dict):
     """Custom dict that prioritizes key access over dict methods in Jinja2 templates"""
-    
+
     def __getattribute__(self, name):
         # If the name is a key in the dict, return the value instead of the method
         if name in self:
@@ -38,7 +38,9 @@ class TemplateContext:
     # User/environment information
     author_name: str = ""
     author_email: str = ""
-    creation_date: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
+    creation_date: str = field(
+        default_factory=lambda: datetime.now().strftime("%Y-%m-%d")
+    )
     creation_year: str = field(default_factory=lambda: str(datetime.now().year))
 
     # Template-specific variables
@@ -75,35 +77,30 @@ class TemplateContext:
             "project_name": self.project_name,
             "project_description": self.project_description,
             "project_path": str(self.project_path) if self.project_path else "",
-
             # Branch and feature info
             "branch_name": self.branch_name,
             "feature_name": self.feature_name,
             "task_name": self.task_name,
-
             # Author and timing
             "author_name": self.author_name,
             "author_email": self.author_email,
             "creation_date": self.creation_date,
             "creation_year": self.creation_year,
-
             # AI assistant
             "ai_assistant": self.ai_assistant,
             "ai_context": self.ai_context.copy(),
-
             # Git information
             "git_remote_url": self.git_remote_url,
             "git_branch": self.git_branch,
-
             # Specification
             "spec_number": self.spec_number,
             "spec_title": self.spec_title,
             "spec_type": self.spec_type,
-
             # Backwards compatibility
             "branch_type": self.branch_type,
-            "additional_vars": TemplateDict(self.additional_vars),  # Use TemplateDict to avoid method conflicts
-
+            "additional_vars": TemplateDict(
+                self.additional_vars
+            ),  # Use TemplateDict to avoid method conflicts
             # Template variables (merged with custom fields and additional_vars)
             **self.template_variables,
             **self.custom_fields,
@@ -194,12 +191,12 @@ class TemplateContext:
 @dataclass
 class TemplateFile:
     """Represents a rendered template file"""
-    
+
     template_path: Path
     output_path: str
     content: str
     is_executable: bool = False
-    
+
     def __post_init__(self):
         """Ensure template_path is Path object"""
         if isinstance(self.template_path, str):
@@ -208,9 +205,10 @@ class TemplateFile:
 
 class ProjectInitStep(Enum):
     """Steps in project initialization process"""
+
     VALIDATION = "validation"
     DIRECTORY_CREATION = "directory_creation"
-    GIT_INIT = "git_init" 
+    GIT_INIT = "git_init"
     DOWNLOAD = "download"
     TEMPLATE_RENDER = "template_render"
     CONFIG_SAVE = "config_save"
@@ -222,6 +220,7 @@ class ProjectInitStep(Enum):
 @dataclass
 class ProjectInitOptions:
     """Options for project initialization"""
+
     project_name: Optional[str]
     ai_assistant: str = "claude"
     use_current_dir: bool = False
@@ -230,9 +229,10 @@ class ProjectInitOptions:
     custom_config: Optional[Dict[str, Any]] = None
 
 
-@dataclass 
+@dataclass
 class ProjectInitResult:
     """Result of project initialization"""
+
     success: bool
     project_path: Path
     completed_steps: List[ProjectInitStep] = field(default_factory=list)

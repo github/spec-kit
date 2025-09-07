@@ -25,25 +25,27 @@ class DownloadService(ABC):
     @abstractmethod
     def download_template(self, template_url: str, destination_path: Path) -> bool:
         """Download a template from a URL to the specified destination.
-        
+
         Args:
             template_url: URL to download the template from
             destination_path: Where to save the downloaded template
-            
+
         Returns:
             True if successful, False otherwise
         """
         pass
 
     @abstractmethod
-    def download_github_repo(self, repo_url: str, destination_path: Path, branch: str = "main") -> bool:
+    def download_github_repo(
+        self, repo_url: str, destination_path: Path, branch: str = "main"
+    ) -> bool:
         """Download a GitHub repository to the specified destination.
-        
+
         Args:
-            repo_url: GitHub repository URL (e.g., "owner/repo")  
+            repo_url: GitHub repository URL (e.g., "owner/repo")
             destination_path: Where to save the downloaded repo
             branch: Git branch to download (default: "main")
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -52,23 +54,25 @@ class DownloadService(ABC):
     @abstractmethod
     def extract_archive(self, archive_path: Path, destination_path: Path) -> bool:
         """Extract an archive (ZIP or TAR) to the specified destination.
-        
+
         Args:
             archive_path: Path to the archive file
             destination_path: Where to extract the archive
-            
+
         Returns:
             True if successful, False otherwise
         """
         pass
 
     @abstractmethod
-    def validate_template_package(self, template_path: Path) -> Tuple[bool, Optional[str]]:
+    def validate_template_package(
+        self, template_path: Path
+    ) -> Tuple[bool, Optional[str]]:
         """Validate a template package structure.
-        
+
         Args:
             template_path: Path to the template directory
-            
+
         Returns:
             Tuple of (is_valid, error_message)
         """
@@ -77,24 +81,26 @@ class DownloadService(ABC):
     @abstractmethod
     def get_available_templates(self, repo_url: str) -> List[str]:
         """Get list of available templates from a repository.
-        
+
         Args:
             repo_url: GitHub repository URL
-            
+
         Returns:
             List of template names available
         """
         pass
 
     @abstractmethod
-    def download_specific_template(self, repo_url: str, template_name: str, destination_path: Path) -> bool:
+    def download_specific_template(
+        self, repo_url: str, template_name: str, destination_path: Path
+    ) -> bool:
         """Download a specific template from a repository.
-        
+
         Args:
             repo_url: GitHub repository URL
             template_name: Name of the specific template
             destination_path: Where to save the template
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -104,10 +110,15 @@ class DownloadService(ABC):
 class HttpxDownloadService(DownloadService):
     """Download service implementation using httpx for HTTP requests."""
 
-    def __init__(self, console: Optional[Console] = None, timeout: int = 30,
-                 default_repo_owner: str = "barisgit", default_repo_name: str = "spec-kit-improved"):
+    def __init__(
+        self,
+        console: Optional[Console] = None,
+        timeout: int = 30,
+        default_repo_owner: str = "barisgit",
+        default_repo_name: str = "spec-kit-improved",
+    ):
         """Initialize the service.
-        
+
         Args:
             console: Rich console for output (optional)
             timeout: Request timeout in seconds (default: 30)
@@ -122,24 +133,28 @@ class HttpxDownloadService(DownloadService):
     def download_template(self, template_url: str, destination_path: Path) -> bool:
         """Download a template from a URL to the specified destination."""
         try:
-            response = httpx.get(template_url, timeout=self.timeout, follow_redirects=True)
+            response = httpx.get(
+                template_url, timeout=self.timeout, follow_redirects=True
+            )
             response.raise_for_status()
-            
+
             # Ensure destination directory exists
             destination_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             with open(destination_path, "wb") as f:
                 f.write(response.content)
-            
+
             return True
-            
+
         except (httpx.RequestError, OSError) as e:
             self.console.print(f"[red]Error downloading template:[/red] {e}")
             return False
 
-    def download_github_repo(self, repo_url: str, destination_path: Path, branch: str = "main") -> bool:
+    def download_github_repo(
+        self, repo_url: str, destination_path: Path, branch: str = "main"
+    ) -> bool:
         """Download a GitHub repository to the specified destination.
-        
+
         This method downloads the latest release from the GitHub repository
         using the same logic as the original monolithic implementation.
         """
@@ -148,17 +163,19 @@ class HttpxDownloadService(DownloadService):
             if "/" not in repo_url:
                 self.console.print(f"[red]Invalid repo URL format:[/red] {repo_url}")
                 return False
-                
+
             parts = repo_url.strip("/").split("/")
             if len(parts) < 2:
                 self.console.print(f"[red]Invalid repo URL format:[/red] {repo_url}")
                 return False
-                
+
             repo_owner = parts[-2]
             repo_name = parts[-1]
 
             # Get latest release information from GitHub API
-            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+            api_url = (
+                f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+            )
             response = httpx.get(api_url, timeout=self.timeout, follow_redirects=True)
             response.raise_for_status()
             release_data = response.json()
@@ -181,47 +198,53 @@ class HttpxDownloadService(DownloadService):
                 return False
 
             download_url = zip_asset["browser_download_url"]
-            
+
             # Download to temporary location first
             with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_file:
                 temp_path = Path(tmp_file.name)
-                
-            if self.download_template(download_url, temp_path) and self.extract_archive(temp_path, destination_path):
+
+            if self.download_template(download_url, temp_path) and self.extract_archive(
+                temp_path, destination_path
+            ):
                 # Clean up temporary file
                 temp_path.unlink()
                 return True
-                    
+
             # Clean up on failure
             if temp_path.exists():
                 temp_path.unlink()
             return False
-            
+
         except (httpx.RequestError, KeyError, ValueError) as e:
             self.console.print(f"[red]Error downloading GitHub repo:[/red] {e}")
             return False
 
-    def download_github_release_template(self, ai_assistant: str, destination_path: Path) -> Tuple[bool, Dict]:
+    def download_github_release_template(
+        self, ai_assistant: str, destination_path: Path
+    ) -> Tuple[bool, Dict]:
         """Download template from spec-kit GitHub releases.
-        
+
         This method replicates the original download_template_from_github logic.
-        
+
         Args:
             ai_assistant: AI assistant type ("claude", "gemini", "copilot")
             destination_path: Where to save the downloaded template
-            
+
         Returns:
             Tuple of (success, metadata_dict)
         """
-        repo_owner = self.default_repo_owner  
+        repo_owner = self.default_repo_owner
         repo_name = self.default_repo_name
-        
+
         try:
             # Fetch release information
-            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+            api_url = (
+                f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+            )
             response = httpx.get(api_url, timeout=self.timeout, follow_redirects=True)
             response.raise_for_status()
             release_data = response.json()
-            
+
             # Find the template asset for the specified AI assistant
             pattern = f"spec-kit-template-{ai_assistant}"
             matching_assets = [
@@ -234,8 +257,12 @@ class HttpxDownloadService(DownloadService):
                 self.console.print(
                     f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'"
                 )
-                available_assets = [asset["name"] for asset in release_data.get("assets", [])]
-                self.console.print(f"[yellow]Available assets:[/yellow] {available_assets}")
+                available_assets = [
+                    asset["name"] for asset in release_data.get("assets", [])
+                ]
+                self.console.print(
+                    f"[yellow]Available assets:[/yellow] {available_assets}"
+                )
                 return False, {}
 
             # Use the first matching asset
@@ -247,27 +274,35 @@ class HttpxDownloadService(DownloadService):
             # Download the file with progress
             zip_path = destination_path / filename
             success = self._download_with_progress(download_url, zip_path, file_size)
-            
-            metadata = {
-                "filename": filename,
-                "size": file_size,
-                "release": release_data["tag_name"],
-                "asset_url": download_url,
-            } if success else {}
-            
+
+            metadata = (
+                {
+                    "filename": filename,
+                    "size": file_size,
+                    "release": release_data["tag_name"],
+                    "asset_url": download_url,
+                }
+                if success
+                else {}
+            )
+
             return success, metadata
-            
+
         except (httpx.RequestError, KeyError) as e:
             self.console.print(f"[red]Error fetching release information:[/red] {e}")
             return False, {}
 
-    def _download_with_progress(self, url: str, destination: Path, file_size: int) -> bool:
+    def _download_with_progress(
+        self, url: str, destination: Path, file_size: int
+    ) -> bool:
         """Download a file with progress bar."""
         try:
             # Ensure destination directory exists
             destination.parent.mkdir(parents=True, exist_ok=True)
-            
-            with httpx.stream("GET", url, timeout=self.timeout, follow_redirects=True) as response:
+
+            with httpx.stream(
+                "GET", url, timeout=self.timeout, follow_redirects=True
+            ) as response:
                 response.raise_for_status()
                 total_size = int(response.headers.get("content-length", file_size))
 
@@ -290,9 +325,9 @@ class HttpxDownloadService(DownloadService):
                                 f.write(chunk)
                                 downloaded += len(chunk)
                                 progress.update(task, completed=downloaded)
-                                
+
             return True
-            
+
         except (httpx.RequestError, OSError) as e:
             self.console.print(f"[red]Error downloading file:[/red] {e}")
             if destination.exists():
@@ -308,16 +343,18 @@ class HttpxDownloadService(DownloadService):
         try:
             # Ensure destination exists
             destination_path.mkdir(parents=True, exist_ok=True)
-            
+
             # Determine archive type and extract
             if archive_path.suffix.lower() == ".zip":
                 return self._extract_zip(archive_path, destination_path)
             elif archive_path.suffix.lower() in [".tar", ".tar.gz", ".tgz", ".tar.bz2"]:
                 return self._extract_tar(archive_path, destination_path)
             else:
-                self.console.print(f"[red]Unsupported archive format:[/red] {archive_path.suffix}")
+                self.console.print(
+                    f"[red]Unsupported archive format:[/red] {archive_path.suffix}"
+                )
                 return False
-                
+
         except Exception as e:
             self.console.print(f"[red]Error extracting archive:[/red] {e}")
             return False
@@ -327,23 +364,23 @@ class HttpxDownloadService(DownloadService):
         try:
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(destination_path)
-                
+
                 # Handle GitHub-style ZIP with single root directory
                 extracted_items = list(destination_path.iterdir())
                 if len(extracted_items) == 1 and extracted_items[0].is_dir():
                     # Flatten nested directory structure
                     nested_dir = extracted_items[0]
                     temp_dir = destination_path.parent / f"{destination_path.name}_temp"
-                    
+
                     # Move nested content to temp location
                     shutil.move(str(nested_dir), str(temp_dir))
-                    # Remove empty destination  
+                    # Remove empty destination
                     destination_path.rmdir()
                     # Move temp to final destination
                     shutil.move(str(temp_dir), str(destination_path))
-                    
+
             return True
-            
+
         except (zipfile.BadZipFile, OSError) as e:
             self.console.print(f"[red]Error extracting ZIP:[/red] {e}")
             return False
@@ -353,43 +390,45 @@ class HttpxDownloadService(DownloadService):
         try:
             with tarfile.open(tar_path, "r:*") as tar_ref:
                 tar_ref.extractall(destination_path)
-                
+
                 # Handle single root directory (similar to ZIP)
                 extracted_items = list(destination_path.iterdir())
                 if len(extracted_items) == 1 and extracted_items[0].is_dir():
                     # Flatten nested directory structure
                     nested_dir = extracted_items[0]
                     temp_dir = destination_path.parent / f"{destination_path.name}_temp"
-                    
+
                     shutil.move(str(nested_dir), str(temp_dir))
                     destination_path.rmdir()
                     shutil.move(str(temp_dir), str(destination_path))
-                    
+
             return True
-            
+
         except (tarfile.TarError, OSError) as e:
             self.console.print(f"[red]Error extracting TAR:[/red] {e}")
             return False
 
-    def validate_template_package(self, template_path: Path) -> Tuple[bool, Optional[str]]:
+    def validate_template_package(
+        self, template_path: Path
+    ) -> Tuple[bool, Optional[str]]:
         """Validate a template package structure."""
         if not template_path.exists():
             return False, f"Template path does not exist: {template_path}"
-            
+
         if not template_path.is_dir():
             return False, f"Template path is not a directory: {template_path}"
 
         # Basic validation - check for common template files
         expected_files = ["README.md", "CONSTITUTION.md"]
         missing_files = []
-        
+
         for expected_file in expected_files:
             if not (template_path / expected_file).exists():
                 missing_files.append(expected_file)
-                
+
         if missing_files:
             return False, f"Missing expected template files: {', '.join(missing_files)}"
-            
+
         return True, None
 
     def get_available_templates(self, repo_url: str) -> List[str]:
@@ -398,16 +437,18 @@ class HttpxDownloadService(DownloadService):
             # Parse repo URL
             if "/" not in repo_url:
                 return []
-                
+
             parts = repo_url.strip("/").split("/")
             if len(parts) < 2:
                 return []
-                
+
             repo_owner = parts[-2]
             repo_name = parts[-1]
 
             # Get latest release information
-            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+            api_url = (
+                f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+            )
             response = httpx.get(api_url, timeout=self.timeout, follow_redirects=True)
             response.raise_for_status()
             release_data = response.json()
@@ -422,19 +463,23 @@ class HttpxDownloadService(DownloadService):
                     parts = name.replace(".zip", "").split("-")
                     if len(parts) >= 4 and parts[-2] == "template":
                         templates.append(parts[-1])
-                        
+
             return templates
-            
+
         except (httpx.RequestError, KeyError) as e:
             self.console.print(f"[red]Error getting available templates:[/red] {e}")
             return []
 
-    def download_specific_template(self, repo_url: str, template_name: str, destination_path: Path) -> bool:
+    def download_specific_template(
+        self, repo_url: str, template_name: str, destination_path: Path
+    ) -> bool:
         """Download a specific template from a repository."""
         try:
             # For spec-kit, use the release-based download
             if "spec-kit" in repo_url.lower():
-                success, metadata = self.download_github_release_template(template_name, destination_path.parent)
+                success, metadata = self.download_github_release_template(
+                    template_name, destination_path.parent
+                )
                 if success and metadata:
                     # The download method saves to destination_path.parent, so we need to move/extract
                     zip_path = destination_path.parent / metadata["filename"]
@@ -444,7 +489,7 @@ class HttpxDownloadService(DownloadService):
             else:
                 # Generic GitHub repo download
                 return self.download_github_repo(repo_url, destination_path)
-                
+
         except Exception as e:
             self.console.print(f"[red]Error downloading specific template:[/red] {e}")
             return False

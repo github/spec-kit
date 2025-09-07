@@ -1,4 +1,5 @@
 """Commands package for spec-kit CLI"""
+
 from .check import check_command
 from .init import init_command
 

@@ -134,7 +134,9 @@ environment = "development"
             # Verify template settings
             assert isinstance(config.template_settings, TemplateConfig)
             assert config.template_settings.ai_assistant == "claude"
-            assert str(config.template_settings.custom_templates_dir) == "custom_templates"
+            assert (
+                str(config.template_settings.custom_templates_dir) == "custom_templates"
+            )
             assert config.template_settings.template_cache_enabled is True
 
             # Verify template variables
@@ -155,9 +157,7 @@ environment = "development"
             if "SPEC_KIT_GLOBAL_CONFIG" in os.environ:
                 del os.environ["SPEC_KIT_GLOBAL_CONFIG"]
 
-    def test_global_configuration_loading(
-        self, complex_project_structure: tuple
-    ):
+    def test_global_configuration_loading(self, complex_project_structure: tuple):
         """Test loading global user configuration"""
         _, global_root = complex_project_structure
 
@@ -168,8 +168,9 @@ environment = "development"
         try:
             # Create config service AFTER setting HOME so it picks up the right path
             from specify_cli.services.config_service import TomlConfigService
+
             config_service = TomlConfigService()
-            
+
             # Load global configuration
             global_config = config_service.load_global_config()
 

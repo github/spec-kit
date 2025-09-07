@@ -1,7 +1,7 @@
 """
 Project Manager service for orchestrating project initialization workflow.
 
-This service coordinates other services (TemplateService, ConfigService, GitService, 
+This service coordinates other services (TemplateService, ConfigService, GitService,
 DownloadService) to provide a complete project initialization experience.
 """
 
@@ -51,7 +51,9 @@ class ProjectManager(ABC):
         pass
 
     @abstractmethod
-    def configure_branch_naming(self, project_path: Path, interactive: bool = True) -> bool:
+    def configure_branch_naming(
+        self, project_path: Path, interactive: bool = True
+    ) -> bool:
         """Configure branch naming patterns for the project."""
         pass
 
@@ -84,28 +86,32 @@ class SpecifyProjectManager(ProjectManager):
         download_service: Optional[DownloadService] = None,
     ):
         """Initialize with service dependencies.
-        
+
         Args:
             template_service: Service for template operations
             config_service: Service for configuration management
-            git_service: Service for git operations  
+            git_service: Service for git operations
             download_service: Service for downloading templates
         """
         # Use default implementations if not provided
         if template_service is None:
             from .template_service import JinjaTemplateService
+
             template_service = JinjaTemplateService()
-            
+
         if config_service is None:
             from .config_service import TomlConfigService
+
             config_service = TomlConfigService()
-            
+
         if git_service is None:
             from .git_service import CommandLineGitService
+
             git_service = CommandLineGitService()
-            
+
         if download_service is None:
             from .download_service import HttpxDownloadService
+
             download_service = HttpxDownloadService()
 
         self._template_service = template_service
@@ -145,7 +151,9 @@ class SpecifyProjectManager(ProjectManager):
                 project_path = Path.cwd() / options.project_name
 
             # Validate directory
-            is_valid, error = self.validate_project_directory(project_path, options.use_current_dir)
+            is_valid, error = self.validate_project_directory(
+                project_path, options.use_current_dir
+            )
             if not is_valid:
                 return ProjectInitResult(
                     success=False,
@@ -203,9 +211,13 @@ class SpecifyProjectManager(ProjectManager):
 
             # Load and apply templates for the AI assistant
             template_dir = project_path / ".specify" / "templates"
-            if self._template_service.load_template_package(options.ai_assistant, template_dir):
+            if self._template_service.load_template_package(
+                options.ai_assistant, template_dir
+            ):
                 try:
-                    rendered_files = self._template_service.render_project_templates(context, project_path)
+                    rendered_files = self._template_service.render_project_templates(
+                        context, project_path
+                    )
                     if rendered_files:
                         completed_steps.append(ProjectInitStep.TEMPLATE_RENDER)
                     else:
@@ -216,7 +228,9 @@ class SpecifyProjectManager(ProjectManager):
                 warnings.append("Failed to load template package")
 
             # Step 7: Create initial branch (if git is enabled and branch pattern is configured)
-            if not options.skip_git and self._git_service.is_git_repository(project_path):
+            if not options.skip_git and self._git_service.is_git_repository(
+                project_path
+            ):
                 branch_context = {"feature_name": "initial-setup"}
                 branch_name = self._config_service.expand_branch_name(
                     config.branch_naming_pattern, branch_context
@@ -238,7 +252,7 @@ class SpecifyProjectManager(ProjectManager):
         except Exception as e:
             return ProjectInitResult(
                 success=False,
-                project_path=project_path if 'project_path' in locals() else Path.cwd(),
+                project_path=project_path if "project_path" in locals() else Path.cwd(),
                 completed_steps=completed_steps,
                 error_message=f"Project initialization failed: {str(e)}",
             )
@@ -256,7 +270,10 @@ class SpecifyProjectManager(ProjectManager):
 
         # Check for invalid characters
         if not re.match(r"^[a-z0-9_-]+$", name):
-            return False, "Project name must only contain lowercase letters, numbers, hyphens, and underscores"
+            return (
+                False,
+                "Project name must only contain lowercase letters, numbers, hyphens, and underscores",
+            )
 
         # Check for invalid patterns
         if name.startswith("-") or name.endswith("-"):
@@ -324,7 +341,10 @@ class SpecifyProjectManager(ProjectManager):
 
                 # Check if already initialized
                 if (path / ".specify").exists():
-                    return False, "Directory is already initialized as a spec-kit project"
+                    return (
+                        False,
+                        "Directory is already initialized as a spec-kit project",
+                    )
 
             # Check if parent directory exists and is writable
             parent = path.parent
@@ -371,7 +391,9 @@ class SpecifyProjectManager(ProjectManager):
             self._console.print(f"[red]Failed to setup project structure: {e}[/red]")
             return False
 
-    def configure_branch_naming(self, project_path: Path, interactive: bool = True) -> bool:
+    def configure_branch_naming(
+        self, project_path: Path, interactive: bool = True
+    ) -> bool:
         """Configure branch naming patterns for the project."""
         try:
             # Load existing config or create default
@@ -424,10 +446,12 @@ class SpecifyProjectManager(ProjectManager):
             # Add config information if available
             config = self._config_service.load_project_config(project_path)
             if config:
-                info.update({
-                    "ai_assistant": config.ai_assistant,
-                    "branch_pattern": config.branch_naming_pattern,
-                })
+                info.update(
+                    {
+                        "ai_assistant": config.ai_assistant,
+                        "branch_pattern": config.branch_naming_pattern,
+                    }
+                )
 
             # Add git information if available
             if info["is_git_repo"]:
@@ -455,16 +479,23 @@ class SpecifyProjectManager(ProjectManager):
                 specify_dir = project_path / ".specify"
                 if specify_dir.exists():
                     import shutil
+
                     shutil.rmtree(specify_dir)
 
-            if (ProjectInitStep.DIRECTORY_CREATION in completed_steps 
-                and project_path.exists() and project_path != Path.cwd()):
+            if (
+                ProjectInitStep.DIRECTORY_CREATION in completed_steps
+                and project_path.exists()
+                and project_path != Path.cwd()
+            ):
                 # Remove the entire project directory if it was created during init
                 import shutil
+
                 shutil.rmtree(project_path)
 
             return True
 
         except Exception as e:
-            self._console.print(f"[red]Failed to cleanup failed initialization: {e}[/red]")
+            self._console.print(
+                f"[red]Failed to cleanup failed initialization: {e}[/red]"
+            )
             return False
