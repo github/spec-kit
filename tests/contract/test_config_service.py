@@ -1,6 +1,5 @@
 """
 Contract tests for ConfigService interface
-These tests MUST FAIL initially - services don't exist yet (TDD approach)
 """
 
 from pathlib import Path
@@ -8,8 +7,6 @@ from pathlib import Path
 import pytest
 
 from specify_cli.models.config import BranchNamingConfig, ProjectConfig, TemplateConfig
-
-# These imports WILL FAIL initially - this is expected in TDD
 from specify_cli.services.config_service import ConfigService
 
 

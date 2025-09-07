@@ -1,6 +1,5 @@
 """
 Integration test for project initialization flow (T011)
-These tests MUST FAIL initially - services don't exist yet (TDD approach)
 """
 
 from pathlib import Path
@@ -13,8 +12,6 @@ from specify_cli.models.project import (
     ProjectInitStep,
 )
 from specify_cli.services.config_service import ConfigService
-
-# These imports WILL FAIL initially - this is expected in TDD
 from specify_cli.services.project_manager import ProjectManager
 from specify_cli.services.template_service import TemplateService
 
@@ -245,7 +242,7 @@ class TestProjectInitializationFlow:
             # Verify basic structure was created
             assert project_dir.exists()
             # Should create .specify directory at minimum
-            spec_dir = project_dir / ".specify"
+            project_dir / ".specify"
             # May or may not exist depending on implementation approach
 
     def test_branch_naming_configuration_workflow(
@@ -264,7 +261,7 @@ class TestProjectInitializationFlow:
             spec_dir = project_dir / ".specify"
             if spec_dir.exists():
                 # May have created config file
-                config_file = spec_dir / "config.toml"
+                spec_dir / "config.toml"
                 # File may or may not exist depending on implementation
 
     def test_failed_initialization_cleanup_workflow(

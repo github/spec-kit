@@ -1,6 +1,5 @@
 """
 Contract tests for TemplateService interface
-These tests MUST FAIL initially - services don't exist yet (TDD approach)
 """
 
 from pathlib import Path
@@ -8,8 +7,6 @@ from pathlib import Path
 import pytest
 
 from specify_cli.models.project import TemplateContext, TemplateFile
-
-# These imports WILL FAIL initially - this is expected in TDD
 from specify_cli.services.template_service import TemplateService
 
 
@@ -88,7 +85,7 @@ class TestTemplateServiceContract:
         assert "claude" in result
 
         # Test non-existent template
-        with pytest.raises(Exception):  # Should raise appropriate exception
+        with pytest.raises(FileNotFoundError):
             template_service.render_template("nonexistent.j2", sample_context)
 
     def test_render_project_templates_contract(

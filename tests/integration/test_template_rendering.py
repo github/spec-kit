@@ -1,6 +1,5 @@
 """
-Integration test for Jinja2 template rendering workflow (T009)
-These tests MUST FAIL initially - services don't exist yet (TDD approach)
+Integration test for Jinja2 template rendering workflow
 """
 
 from pathlib import Path
@@ -8,8 +7,6 @@ from pathlib import Path
 import pytest
 
 from specify_cli.models.project import TemplateContext
-
-# These imports WILL FAIL initially - this is expected in TDD
 from specify_cli.services.template_service import TemplateService
 
 

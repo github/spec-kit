@@ -1,6 +1,5 @@
 """
 Integration test for branch naming patterns workflow (T012)
-These tests MUST FAIL initially - services don't exist yet (TDD approach)
 """
 
 from pathlib import Path
@@ -8,8 +7,6 @@ from pathlib import Path
 import pytest
 
 from specify_cli.models.config import BranchNamingConfig, ProjectConfig, TemplateConfig
-
-# These imports WILL FAIL initially - this is expected in TDD
 from specify_cli.services.config_service import ConfigService
 
 
@@ -320,7 +317,7 @@ template_cache_enabled = true
         )
 
         config_service.save_project_config(project_dir, config)
-        loaded_config = config_service.load_project_config(project_dir)
+        config_service.load_project_config(project_dir)
 
         # Test that template variables don't interfere with branch naming
         branch_result = config_service.expand_branch_name(

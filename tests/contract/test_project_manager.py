@@ -1,6 +1,5 @@
 """
 Contract tests for ProjectManager interface
-These tests MUST FAIL initially - services don't exist yet (TDD approach)
 """
 
 from pathlib import Path
@@ -12,8 +11,6 @@ from specify_cli.models.project import (
     ProjectInitResult,
     ProjectInitStep,
 )
-
-# These imports WILL FAIL initially - this is expected in TDD
 from specify_cli.services.project_manager import ProjectManager
 
 

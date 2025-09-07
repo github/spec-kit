@@ -1,6 +1,5 @@
 """
 Integration test for TOML configuration loading workflow (T010)
-These tests MUST FAIL initially - services don't exist yet (TDD approach)
 """
 
 from pathlib import Path
@@ -8,8 +7,6 @@ from pathlib import Path
 import pytest
 
 from specify_cli.models.config import BranchNamingConfig, ProjectConfig, TemplateConfig
-
-# These imports WILL FAIL initially - this is expected in TDD
 from specify_cli.services.config_service import ConfigService
 
 
@@ -137,7 +134,7 @@ environment = "development"
             # Verify template settings
             assert isinstance(config.template_settings, TemplateConfig)
             assert config.template_settings.ai_assistant == "claude"
-            assert config.template_settings.custom_templates_dir == "./custom_templates"
+            assert str(config.template_settings.custom_templates_dir) == "custom_templates"
             assert config.template_settings.template_cache_enabled is True
 
             # Verify template variables
@@ -159,16 +156,20 @@ environment = "development"
                 del os.environ["SPEC_KIT_GLOBAL_CONFIG"]
 
     def test_global_configuration_loading(
-        self, config_service: ConfigService, complex_project_structure: tuple
+        self, complex_project_structure: tuple
     ):
         """Test loading global user configuration"""
-        project_root, global_root = complex_project_structure
+        _, global_root = complex_project_structure
 
         import os
 
         os.environ["HOME"] = str(global_root)
 
         try:
+            # Create config service AFTER setting HOME so it picks up the right path
+            from specify_cli.services.config_service import TomlConfigService
+            config_service = TomlConfigService()
+            
             # Load global configuration
             global_config = config_service.load_global_config()
 
