@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Check that implementation plan exists and find optional design documents
 # Usage: ./check-task-prerequisites.sh [--json]
 
