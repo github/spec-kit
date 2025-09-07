@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Incrementally update agent context files based on new feature plan
 # Supports: CLAUDE.md, GEMINI.md, and .github/copilot-instructions.md
 # O(1) operation - only reads current context file and new plan.md

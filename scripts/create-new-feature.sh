@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Create a new feature with branch, directory structure, and template
 # Usage: ./create-new-feature.sh "feature description"
 #        ./create-new-feature.sh --json "feature description"

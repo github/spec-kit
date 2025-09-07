@@ -15,7 +15,7 @@ Specify CLI - Setup tool for Specify projects
 Usage:
     uvx specify-cli.py init <project-name>
     uvx specify-cli.py init --here
-    
+
 Or install globally:
     uv tool install --from specify-cli.py specify-cli
     specify init <project-name>
@@ -813,12 +813,12 @@ def init(
     if selected_ai == "claude":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and start using / commands with Claude Code")
         steps_lines.append("   - Type / in any file to see available commands")
-        steps_lines.append("   - Use /spec to create specifications")
+        steps_lines.append("   - Use /specify to create specifications")
         steps_lines.append("   - Use /plan to create implementation plans")
         steps_lines.append("   - Use /tasks to generate tasks")
     elif selected_ai == "gemini":
         steps_lines.append(f"{step_num}. Use / commands with Gemini CLI")
-        steps_lines.append("   - Run gemini /spec to create specifications")
+        steps_lines.append("   - Run gemini /specify to create specifications")
         steps_lines.append("   - Run gemini /plan to create implementation plans")
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":

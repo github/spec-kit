@@ -8,6 +8,8 @@
     <strong>An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.</strong>
 </p>
 
+[![Release](https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg)](https://github.com/github/spec-kit/actions/workflows/release.yml)
+
 ---
 
 ## Table of Contents
@@ -205,7 +207,7 @@ At this stage, your project folder contents should resemble the following:
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── 002-create-taskify
+│	 └── 001-create-taskify
 │	     └── spec.md
 └── templates
     ├── CLAUDE-template.md
@@ -258,7 +260,7 @@ The output of this step will include a number of implementation detail documents
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── 002-create-taskify
+│	 └── 001-create-taskify
 │	     ├── contracts
 │	     │	 ├── api-spec.json
 │	     │	 └── signalr-spec.md
@@ -346,7 +348,7 @@ Once the implementation step is done, ask Claude Code to try to run the applicat
 If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 echo "Downloading Git Credential Manager v2.6.1..."
 wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
@@ -361,6 +363,7 @@ rm gcm-linux_amd64.2.6.1.deb
 ## Maintainers
 
 - Den Delimarsky ([@localden](https://github.com/localden))
+- John Lam ([@jflam](https://github.com/jflam))
 
 ## Support
 
