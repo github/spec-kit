@@ -47,6 +47,14 @@ from typer.core import TyperGroup
 # For cross-platform keyboard input
 import readchar
 
+# Import validation module
+from .validation import (
+    TemplateValidator, 
+    ValidationSeverity, 
+    validate_template_file, 
+    validate_templates_directory
+)
+
 # Constants
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
@@ -861,6 +869,178 @@ def check():
         console.print("[yellow]Consider installing git for repository management[/yellow]")
     if not (claude_ok or gemini_ok):
         console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
+
+
+@app.command()
+def validate(
+    template_path: str = typer.Argument(None, help="Path to specific template file or directory to validate"),
+    templates_dir: str = typer.Option("templates", "--templates-dir", "-t", help="Templates directory to validate"),
+    show_warnings: bool = typer.Option(True, "--warnings/--no-warnings", help="Show warning-level issues"),
+    show_suggestions: bool = typer.Option(True, "--suggestions/--no-suggestions", help="Show suggestions for fixes"),
+    exit_on_error: bool = typer.Option(True, "--exit-on-error/--no-exit-on-error", help="Exit with error code if validation fails"),
+):
+    """
+    Validate template files for structure, format, and completeness.
+    
+    This command checks templates for:
+    - Required sections and structure
+    - Valid placeholder patterns
+    - Command metadata (for command templates)
+    - Execution flow format
+    - Content consistency
+    
+    Examples:
+        specify validate                           # Validate all templates in templates/
+        specify validate templates/spec-template.md  # Validate specific file
+        specify validate -t custom-templates/      # Validate custom templates directory
+        specify validate --no-warnings            # Show only errors
+    """
+    show_banner()
+    
+    current_dir = Path.cwd()
+    
+    if template_path:
+        # Validate specific file or directory
+        target_path = Path(template_path)
+        if not target_path.is_absolute():
+            target_path = current_dir / target_path
+            
+        if target_path.is_file():
+            console.print(f"[bold]Validating template: {target_path.name}[/bold]\n")
+            result = validate_template_file(target_path)
+            results = {str(target_path.name): result}
+        elif target_path.is_dir():
+            console.print(f"[bold]Validating templates in: {target_path}[/bold]\n")
+            results = validate_templates_directory(target_path)
+        else:
+            console.print(f"[red]Error:[/red] Path not found: {target_path}")
+            raise typer.Exit(1)
+    else:
+        # Validate templates directory
+        templates_path = Path(templates_dir)
+        if not templates_path.is_absolute():
+            templates_path = current_dir / templates_path
+            
+        if not templates_path.exists():
+            console.print(f"[red]Error:[/red] Templates directory not found: {templates_path}")
+            console.print("[yellow]Tip:[/yellow] Use --templates-dir to specify a different location")
+            raise typer.Exit(1)
+            
+        console.print(f"[bold]Validating templates in: {templates_path}[/bold]\n")
+        results = validate_templates_directory(templates_path)
+
+    if not results:
+        console.print("[yellow]No template files found to validate[/yellow]")
+        return
+
+    # Display results
+    total_files = len(results)
+    valid_files = sum(1 for result in results.values() if result.is_valid)
+    total_errors = sum(len([issue for issue in result.issues if issue.severity == ValidationSeverity.ERROR]) 
+                     for result in results.values())
+    total_warnings = sum(len([issue for issue in result.issues if issue.severity == ValidationSeverity.WARNING]) 
+                        for result in results.values())
+
+    # Summary table
+    summary_table = Table(title="Validation Summary")
+    summary_table.add_column("Metric", style="cyan", no_wrap=True)
+    summary_table.add_column("Count", justify="right")
+    
+    summary_table.add_row("Total files", str(total_files))
+    summary_table.add_row("Valid files", f"[green]{valid_files}[/green]")
+    summary_table.add_row("Invalid files", f"[red]{total_files - valid_files}[/red]")
+    summary_table.add_row("Total errors", f"[red]{total_errors}[/red]" if total_errors > 0 else "0")
+    summary_table.add_row("Total warnings", f"[yellow]{total_warnings}[/yellow]" if total_warnings > 0 else "0")
+    
+    console.print(summary_table)
+    console.print()
+
+    # Detailed results
+    for template_name, result in sorted(results.items()):
+        if not result.issues:
+            console.print(f"[green]✓[/green] {template_name} - No issues found")
+            continue
+            
+        # Show template header
+        status_icon = "[red]✗[/red]" if result.has_errors else "[yellow]⚠[/yellow]"
+        console.print(f"{status_icon} {template_name} ({result.template_type} template)")
+        
+        # Show issues
+        for issue in result.issues:
+            if issue.severity == ValidationSeverity.WARNING and not show_warnings:
+                continue
+                
+            severity_color = {
+                ValidationSeverity.ERROR: "red",
+                ValidationSeverity.WARNING: "yellow", 
+                ValidationSeverity.INFO: "blue"
+            }[issue.severity]
+            
+            severity_symbol = {
+                ValidationSeverity.ERROR: "✗",
+                ValidationSeverity.WARNING: "⚠",
+                ValidationSeverity.INFO: "ℹ"
+            }[issue.severity]
+            
+            line_info = f" (line {issue.line_number})" if issue.line_number else ""
+            section_info = f" in {issue.section}" if issue.section else ""
+            
+            console.print(f"  [{severity_color}]{severity_symbol}[/{severity_color}] {issue.message}{line_info}{section_info}")
+            
+            if show_suggestions and issue.suggestion:
+                console.print(f"    [dim]💡 {issue.suggestion}[/dim]")
+        
+        console.print()  # Blank line between files
+
+    # Exit with appropriate code
+    if exit_on_error and total_errors > 0:
+        console.print(f"[red]Validation failed with {total_errors} error(s)[/red]")
+        raise typer.Exit(1)
+    elif total_errors > 0:
+        console.print(f"[yellow]Validation completed with {total_errors} error(s)[/yellow]")
+    else:
+        console.print("[green]All templates are valid![/green]")
+
+
+@app.command()
+def template():
+    """
+    Template management commands.
+    
+    Subcommands:
+        list    - List available templates
+        info    - Show information about a template
+        validate - Validate templates (alias for 'specify validate')
+    """
+    console.print("[yellow]Use 'specify template --help' to see available subcommands[/yellow]")
+    console.print("\nAvailable commands:")
+    console.print("  specify validate [template]  - Validate templates")
+    console.print("  specify template list        - List templates (coming soon)")
+    console.print("  specify template info        - Template info (coming soon)")
+
+
+def format_validation_results_json(results: Dict[str, any]) -> str:
+    """Format validation results as JSON for programmatic use."""
+    import json
+    
+    formatted = {}
+    for template_name, result in results.items():
+        formatted[template_name] = {
+            "is_valid": result.is_valid,
+            "template_type": result.template_type,
+            "issues": [
+                {
+                    "severity": issue.severity.value,
+                    "message": issue.message,
+                    "line_number": issue.line_number,
+                    "section": issue.section,
+                    "suggestion": issue.suggestion
+                }
+                for issue in result.issues
+            ]
+        }
+    
+    return json.dumps(formatted, indent=2)
 
 
 def main():

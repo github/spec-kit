@@ -9,6 +9,7 @@ dependencies = [
     "httpx",
     "platformdirs",
     "readchar",
+    "pyyaml",
 ]
 
 [project.scripts]
