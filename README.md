@@ -21,8 +21,12 @@
 - [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn more](#-learn-more)
-- [Detailed process](#detailed-process)
-- [Troubleshooting](#troubleshooting)
+- [📋 Detailed process](#-detailed-process)
+- [🔍 Troubleshooting](#-troubleshooting)
+- [👥 Maintainers](#-maintainers)
+- [💬 Support](#-support)
+- [🙏 Acknowledgements](#-acknowledgements)
+- [📄 License](#-license)
 
 ## 🤔 What is Spec-Driven Development?
 
@@ -118,7 +122,7 @@ Our research and experimentation focus on:
 
 ---
 
-## Detailed process
+## 📋 Detailed process
 
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
@@ -341,7 +345,7 @@ Once the implementation step is done, ask Claude Code to try to run the applicat
 
 ---
 
-## Troubleshooting
+## 🔍 Troubleshooting
 
 ### Git Credential Manager on Linux
 
@@ -360,19 +364,19 @@ echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
 
-## Maintainers
+## 👥 Maintainers
 
 - Den Delimarsky ([@localden](https://github.com/localden))
 - John Lam ([@jflam](https://github.com/jflam))
 
-## Support
+## 💬 Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
 This project is heavily influenced by and based on the work and research of [John Lam](https://github.com/jflam).
 
-## License
+## 📄 License
 
 This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
