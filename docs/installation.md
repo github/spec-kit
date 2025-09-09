@@ -1,6 +1,6 @@
 # Installation Guide
 
-## 🔧 Prerequisites
+## Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
@@ -49,7 +49,7 @@ After initialization, you should see the following commands available in your AI
 - `/plan` - Generate implementation plans  
 - `/tasks` - Break down into actionable tasks
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Git Credential Manager on Linux
 

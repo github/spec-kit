@@ -1,4 +1,4 @@
-# ⚡ Quick Start Guide
+# Quick Start Guide
 
 This guide will help you get started with Spec-Driven Development using Spec Kit.
 

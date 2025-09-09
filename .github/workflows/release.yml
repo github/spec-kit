@@ -3,6 +3,10 @@ name: Create Release
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'memory/**'
+      - 'scripts/**'
+      - 'templates/**'
   workflow_dispatch:
 
 jobs:

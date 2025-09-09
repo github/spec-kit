@@ -1,10 +1,10 @@
-# 🌱 Spec Kit
+# Spec Kit
 
 *Build high-quality software faster.*
 
 **An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.**
 
-## 🤔 What is Spec-Driven Development?
+## What is Spec-Driven Development?
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
 
@@ -13,7 +13,7 @@ Spec-Driven Development **flips the script** on traditional software development
 - [Installation Guide](installation.md)
 - [Quick Start Guide](quickstart.md)
 
-## 📚 Core Philosophy
+## Core Philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
 
@@ -22,7 +22,7 @@ Spec-Driven Development is a structured process that emphasizes:
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
 
-## 🌟 Development Phases
+## Development Phases
 
 | Phase | Focus | Key Activities |
 |-------|-------|----------------|
@@ -30,7 +30,7 @@ Spec-Driven Development is a structured process that emphasizes:
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
 
-## 🎯 Experimental Goals
+## Experimental Goals
 
 Our research and experimentation focus on:
 
