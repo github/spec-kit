@@ -109,6 +109,6 @@ implement specs/002-create-taskify/plan.md
 
 ## Next Steps
 
-- Read the [complete methodology](../spec-driven.md) for in-depth guidance
+- Read the complete methodology for in-depth guidance
 - Check out more examples in the repository
 - Explore the source code on GitHub
