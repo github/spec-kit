@@ -71,7 +71,7 @@ def create_codex_prompts(project_path: Path):
 
         # Find all .md files in the template directory
         md_files = list(template_dir.glob("*.md"))
-        
+
         if not md_files:
             console.print(f"[yellow]Warning:[/yellow] No .md template files found in {template_dir}")
             console.print("[yellow]Codex prompts directory created but empty[/yellow]")
@@ -81,14 +81,14 @@ def create_codex_prompts(project_path: Path):
         copied_count = 0
         for md_file in md_files:
             dest_file = codex_prompts_dir / md_file.name
-            
+
             # Copy the file content
             with open(md_file, "r") as source:
                 content = source.read()
-            
+
             with open(dest_file, "w") as dest:
                 dest.write(content)
-            
+
             copied_count += 1
 
         console.print(f"[green]✓[/green] Copied {copied_count} Codex prompts to {codex_prompts_dir}")
@@ -431,7 +431,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True, repo_owner: str = "Page-Carbajal"):
     """Download the latest template release from GitHub using HTTP requests.
     Returns (zip_path, metadata_dict)
-    
+
     Args:
         ai_assistant: The AI assistant type (claude, gemini, copilot, codex)
         download_dir: Directory to download the template to
@@ -532,10 +532,10 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, repo_owner: str = "Page-Carbajal") -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, repo_owner: str = "github") -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
-    
+
     Args:
         project_path: Path where the project will be created
         ai_assistant: The AI assistant type (claude, gemini, copilot, codex)
