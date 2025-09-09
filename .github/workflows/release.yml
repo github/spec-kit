@@ -138,8 +138,8 @@ jobs:
         # Create Opencode package
         mkdir -p sdd-opencode-package
         cp -r sdd-package-base/* sdd-opencode-package/
-        mkdir -p sdd-opencode-package/.opencode/commands
-        generate_commands "opencode" "md" "\$ARGUMENTS" "sdd-opencode-package/.opencode/commands"
+        mkdir -p sdd-opencode-package/.opencode/command
+        generate_commands "opencode" "md" "\$ARGUMENTS" "sdd-opencode-package/.opencode/command"
         if [ -f "agent_templates/opencode/AGENTS.md" ]; then
           cp agent_templates/opencode/AGENTS.md sdd-opencode-package/AGENTS.md
         fi
