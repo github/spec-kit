@@ -54,6 +54,9 @@ AI_CHOICES = {
     "gemini": "Gemini CLI"
 }
 
+# Claude CLI local installation path after migrate-installer
+CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
+
 # ASCII Art Banner
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -339,8 +342,7 @@ def check_tool(tool: str, install_hint: str) -> bool:
     # and creates an alias at ~/.claude/local/claude instead
     # This path should be prioritized over other claude executables in PATH
     if tool == "claude":
-        claude_local_path = Path.home() / ".claude" / "local" / "claude"
-        if claude_local_path.exists() and claude_local_path.is_file():
+        if CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file():
             return True
     
     if shutil.which(tool):
