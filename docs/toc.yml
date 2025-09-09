@@ -1,0 +1,10 @@
+- name: Home
+  href: index.md
+- name: Installation
+  href: installation.md
+- name: Quick Start
+  href: quickstart.md
+- name: Contributing
+  href: CONTRIBUTING.md
+- name: Support
+  href: SUPPORT.md
