@@ -105,7 +105,7 @@ Our research and experimentation focus on:
 
 ## 🔧 Prerequisites
 
-- **Linux/macOS** (or WSL2 on Windows)
+- **Cross-platform**: Windows, Linux, macOS
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
@@ -342,6 +342,53 @@ Once the implementation step is done, ask Claude Code to try to run the applicat
 ---
 
 ## Troubleshooting
+
+### Windows Support
+
+Spec Kit now provides full Windows support through Python-based scripts. The CLI automatically detects your platform and uses:
+
+- **Windows**: Python scripts (`.py`) for full compatibility
+- **Linux/macOS**: Bash scripts (`.sh`) with Python fallback
+
+#### Windows-Specific Helpers
+
+For Windows users, additional wrapper scripts are provided for convenience:
+
+**PowerShell users:**
+```powershell
+# Navigate to your spec-kit project directory
+.\scripts\specify-tools.ps1 create-feature "Add user authentication"
+.\scripts\specify-tools.ps1 setup-plan
+.\scripts\specify-tools.ps1 check-prerequisites
+```
+
+**Command Prompt users:**
+```cmd
+REM Navigate to your spec-kit project directory
+scripts\specify-tools.bat create-feature "Add user authentication"
+scripts\specify-tools.bat setup-plan
+scripts\specify-tools.bat check-prerequisites
+```
+
+#### Windows Troubleshooting
+
+If you encounter issues on Windows:
+
+1. **Ensure Python 3.11+ is installed** and available in your PATH
+   ```cmd
+   python --version
+   ```
+
+2. **Install Git for Windows**: https://gitforwindows.org/
+
+3. **Use PowerShell or Command Prompt** for running commands
+
+4. **Check script compatibility**:
+   ```cmd
+   specify scripts
+   ```
+
+5. **If bash scripts fail**, the Python equivalents will be used automatically
 
 ### Git Credential Manager on Linux
 

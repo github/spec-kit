@@ -835,6 +835,53 @@ def init(
 
 
 @app.command()
+def scripts():
+    """Show available scripts and platform compatibility."""
+    show_banner()
+    
+    try:
+        # Import here to avoid import errors if scripts.py has issues
+        from .scripts import get_available_scripts, test_script_compatibility, get_platform, is_windows
+        
+        console.print(f"[bold]Platform:[/bold] {get_platform().title()}")
+        console.print(f"[bold]Windows mode:[/bold] {'Yes' if is_windows() else 'No'}")
+        console.print()
+        
+        # Get available scripts
+        console.print("[bold cyan]Available Scripts:[/bold cyan]")
+        available = get_available_scripts()
+        
+        for script_name, paths in available.items():
+            console.print(f"\n[green]• {script_name}[/green]")
+            for path in paths:
+                script_type = "Python" if path.suffix == ".py" else "Bash"
+                console.print(f"  - {script_type}: [dim]{path}[/dim]")
+        
+        console.print("\n[bold cyan]Script Compatibility Test:[/bold cyan]")
+        compat = test_script_compatibility()
+        
+        for script_name, works in compat.items():
+            status = "[green]✓[/green]" if works else "[red]✗[/red]"
+            console.print(f"{status} {script_name}")
+        
+        # Show summary
+        working_count = sum(1 for works in compat.values() if works)
+        total_count = len(compat)
+        
+        if working_count == total_count:
+            console.print(f"\n[green]✓ All {total_count} scripts are working on your platform![/green]")
+        else:
+            console.print(f"\n[yellow]⚠ {working_count}/{total_count} scripts are working on your platform[/yellow]")
+            console.print("[dim]Some scripts may require a feature branch to be active[/dim]")
+        
+    except ImportError as e:
+        console.print(f"[red]Error importing scripts module:[/red] {e}")
+        console.print("[yellow]Scripts functionality may not be available[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error checking scripts:[/red] {e}")
+
+
+@app.command()
 def check():
     """Check that all required tools are installed."""
     show_banner()
