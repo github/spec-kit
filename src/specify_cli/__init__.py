@@ -615,7 +615,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                 if script.is_file():
                     try:
                         script.chmod(0o755)  # rwxr-xr-x
-                    except Exception as chmod_err:
+                    except OSError as chmod_err:
                         # Warn but do not fail extraction
                         console.print(f"[yellow]Warning: Could not set executable permission on {script}: {chmod_err}[/yellow]")
             if tracker:
