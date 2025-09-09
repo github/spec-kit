@@ -71,7 +71,7 @@ def create_codex_prompts(project_path: Path):
 
         # Find all .md files in the template directory
         md_files = list(template_dir.glob("*.md"))
-        
+
         if not md_files:
             console.print(f"[yellow]Warning:[/yellow] No .md template files found in {template_dir}")
             console.print("[yellow]Codex prompts directory created but empty[/yellow]")
@@ -81,14 +81,14 @@ def create_codex_prompts(project_path: Path):
         copied_count = 0
         for md_file in md_files:
             dest_file = codex_prompts_dir / md_file.name
-            
+
             # Copy the file content
             with open(md_file, "r") as source:
                 content = source.read()
-            
+
             with open(dest_file, "w") as dest:
                 dest.write(content)
-            
+
             copied_count += 1
 
         console.print(f"[green]✓[/green] Copied {copied_count} Codex prompts to {codex_prompts_dir}")
@@ -428,16 +428,16 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True, repo_owner: str = "Page-Carbajal"):
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True, repo_owner: str = "github"):
     """Download the latest template release from GitHub using HTTP requests.
     Returns (zip_path, metadata_dict)
-    
+
     Args:
         ai_assistant: The AI assistant type (claude, gemini, copilot, codex)
         download_dir: Directory to download the template to
         verbose: Whether to show verbose output
         show_progress: Whether to show download progress
-        repo_owner: GitHub repository owner (defaults to "Page-Carbajal")
+        repo_owner: GitHub repository owner (defaults to "github")
     """
     repo_name = "spec-kit"
 
@@ -532,17 +532,17 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, repo_owner: str = "Page-Carbajal") -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, repo_owner: str = "github") -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
-    
+
     Args:
         project_path: Path where the project will be created
         ai_assistant: The AI assistant type (claude, gemini, copilot, codex)
         is_current_dir: Whether to initialize in current directory
         verbose: Whether to show verbose output
         tracker: Optional step tracker for progress display
-        repo_owner: GitHub repository owner (defaults to "Page-Carbajal")
+        repo_owner: GitHub repository owner (defaults to "github")
     """
     current_dir = Path.cwd()
 
@@ -700,7 +700,7 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
-    repo_owner: str = typer.Option("Page-Carbajal", "--repo-owner", help="GitHub repository owner (defaults to 'Page-Carbajal')"),
+    repo_owner: str = typer.Option("github", "--repo-owner", help="GitHub repository owner (defaults to 'github')"),
 ):
     """
     Initialize a new Specify project from the latest template.
