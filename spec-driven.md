@@ -81,7 +81,7 @@ This command transforms a simple feature description (the user-prompt) into a co
 1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003)
 2. **Branch Creation**: Generates a semantic branch name from your description and creates it automatically
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
-4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
+4. **Directory Structure**: Creates the proper `/specs/[branch-name]/` structure for all related documents
 
 ### The `generate_plan` Command
 
@@ -114,21 +114,21 @@ Total: ~12 hours of documentation work
 
 # This automatically:
 # - Creates branch "003-chat-system"
-# - Generates specs/003-chat-system/feature-spec.md
+# - Generates /specs/003-chat-system/feature-spec.md
 # - Populates it with structured requirements
 
 # Step 2: Generate implementation plan (10 minutes)
 /generate_plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
 
 # This automatically creates:
-# - specs/003-chat-system/implementation-plan.md
-# - specs/003-chat-system/implementation-details/
+# - /specs/003-chat-system/implementation-plan.md
+# - /specs/003-chat-system/implementation-details/
 #   - 00-research.md (WebSocket library comparisons)
 #   - 02-data-model.md (Message and User schemas)
 #   - 03-api-contracts.md (WebSocket events, REST endpoints)
 #   - 06-contract-tests.md (Message flow scenarios)
 #   - 08-inter-library-tests.md (Database-WebSocket integration)
-# - specs/003-chat-system/manual-testing.md
+# - /specs/003-chat-system/manual-testing.md
 ```
 
 In 15 minutes, you have:
@@ -247,7 +247,7 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Constitutional Foundation: Enforcing Architectural Discipline
 
-At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`base/memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`REPO_ROOT/memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
 
 ### The Nine Articles of Development
 

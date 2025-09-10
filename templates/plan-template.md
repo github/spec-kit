@@ -79,7 +79,7 @@
 
 ### Documentation (this feature)
 ```
-specs/[###-feature]/
+/specs/[###-feature]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
 ├── data-model.md        # Phase 1 output (/plan command)
