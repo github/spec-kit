@@ -820,6 +820,7 @@ def init(
         steps_lines.append(f"{step_num}. Use / commands with Gemini CLI")
         steps_lines.append("   - Run gemini /specify to create specifications")
         steps_lines.append("   - Run gemini /plan to create implementation plans")
+        steps_lines.append("   - Run gemini /tasks to generate tasks")
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
