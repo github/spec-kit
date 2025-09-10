@@ -110,7 +110,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Augment IDE](https://www.augmentcode.com/), or [Auggie CLI](https://www.augmentcode.com/product/CLI)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Auggie CLI](https://www.augmentcode.com/product/CLI)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -147,7 +147,6 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 specify init <project_name> --ai claude
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
-specify init <project_name> --ai augment-ide
 specify init <project_name> --ai auggie
 # Or in current directory:
 specify init --here --ai claude
@@ -166,8 +165,6 @@ Go to the project folder and run your AI agent. In our example, we're using `cla
 ![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
 
 You will know that things are configured correctly if you see the `/specify`, `/plan`, and `/tasks` commands available.
-
-**For Augment IDE users:** Open the project in Visual Studio Code or JetBrains with the Augment extension installed. The commands will be available in `.augment/commands/` and `.claude/commands/` directories.
 
 **For Auggie CLI users:** Use commands like `auggie /specify`, `auggie /plan`, and `auggie /tasks` from the terminal. Commands are available in the `.augment/commands/` directory.
 

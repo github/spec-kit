@@ -52,7 +52,6 @@ AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
     "gemini": "Gemini CLI",
-    "augment-ide": "Augment IDE",
     "auggie": "Auggie CLI"
 }
 
@@ -640,7 +639,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, augment-ide, or auggie"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, or auggie"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -650,7 +649,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Augment IDE, or Auggie CLI)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, or Auggie CLI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -661,7 +660,6 @@ def init(
         specify init my-project --ai claude
         specify init my-project --ai gemini
         specify init my-project --ai copilot --no-git
-        specify init my-project --ai augment-ide
         specify init my-project --ai auggie
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
@@ -745,9 +743,6 @@ def init(
             if not check_tool("auggie", "Install with: npm install -g @augmentcode/auggie"):
                 console.print("[red]Error:[/red] Auggie CLI is required for Auggie CLI projects")
                 agent_tool_missing = True
-        elif selected_ai == "augment-ide":
-            # Augment IDE doesn't require CLI tool checking as it's IDE-based
-            pass
         # GitHub Copilot check is not needed as it's typically available in supported IDEs
 
         if agent_tool_missing:
@@ -839,12 +834,6 @@ def init(
         steps_lines.append("   - Run auggie /plan to create implementation plans")
         steps_lines.append("   - Run auggie /tasks to generate tasks")
         steps_lines.append("   - Commands are available in .augment/commands/")
-    elif selected_ai == "augment-ide":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code or JetBrains with Augment IDE")
-        steps_lines.append("   - Use /specify to create specifications")
-        steps_lines.append("   - Use /plan to create implementation plans")
-        steps_lines.append("   - Use /tasks to generate tasks")
-        steps_lines.append("   - Commands are available in .augment/commands/ and .claude/commands/")
 
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")

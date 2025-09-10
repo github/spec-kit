@@ -16,7 +16,7 @@
    → Update Progress Tracking: Initial Constitution Check
 4. Execute Phase 0 → research.md
    → If NEEDS CLARIFICATION remain: ERROR "Resolve unknowns"
-5. Execute Phase 1 → contracts, data-model.md, quickstart.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `GEMINI.md` for Gemini CLI, `.augment-guidelines` for Augment IDE, or `.augment/guidelines.md` for Auggie CLI).
+5. Execute Phase 1 → contracts, data-model.md, quickstart.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `GEMINI.md` for Gemini CLI, or `.augment/guidelines.md` for Auggie CLI).
 6. Re-evaluate Constitution Check section
    → If new violations: Refactor design, return to Phase 1
    → Update Progress Tracking: Post-Design Constitution Check
@@ -171,15 +171,15 @@ ios/ or android/
    - Quickstart test = story validation steps
 
 5. **Update agent file incrementally** (O(1) operation):
-   - Run `/scripts/update-agent-context.sh [claude|gemini|copilot|augment-ide|auggie]` for your AI assistant
+   - Run `/scripts/update-agent-context.sh [claude|gemini|copilot|auggie]` for your AI assistant
    - If exists: Add only NEW tech from current plan
    - Preserve manual additions between markers
-   - Note: Augment IDE/Auggie creates `.augment/guidelines.md` or `.augment/guidelines.md` instead of separate files
+   - Note: Auggie creates `.augment/guidelines.md` instead of separate files
    - Update recent changes (keep last 3)
    - Keep under 150 lines for token efficiency
    - Output to repository root
 
-**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file (CLAUDE.md, GEMINI.md, .github/copilot-instructions.md, .augment-guidelines or .augment/guidelines.md)
+**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file (CLAUDE.md, GEMINI.md, .github/copilot-instructions.md, or .augment/guidelines.md)
 
 ## Phase 2: Task Planning Approach
 *This section describes what the /tasks command will do - DO NOT execute during /plan*
