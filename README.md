@@ -105,7 +105,7 @@ Our research and experimentation focus on:
 
 - Validate the concept of parallel implementation exploration
 - Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks  
+- Extend processes to handle upgrades and modernization tasks
 
 ## 🔧 Prerequisites
 
