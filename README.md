@@ -34,23 +34,111 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ## ⚡ Get started
 
-### 1. Install Specify
+### 1. Prerequisites
 
-Initialize your project depending on the coding agent you're using:
+Install Node.js 16+ if you haven't already:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+# Install Node.js (macOS with Homebrew)
+brew install node
+
+# Or download from https://nodejs.org/
 ```
 
-### 2. Create the spec
+### 2. npx Usage Examples
 
-Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+#### 🚀 One-liner Project Creation
+
+```bash
+# Create a React app project
+npx git+https://github.com/github/spec-kit.git init react-todo-app
+
+# Create a Node.js API project
+npx git+https://github.com/github/spec-kit.git init api-project
+
+# Create a static website project
+npx git+https://github.com/github/spec-kit.git init portfolio-site
+```
+
+#### 💡 Advanced npx Usage
+
+```bash
+# Initialize in current directory
+npx git+https://github.com/github/spec-kit.git init --here
+
+# Skip git repo creation
+npx git+https://github.com/github/spec-kit.git init my-project --no-git
+
+# Get help and see all options
+npx git+https://github.com/github/spec-kit.git --help
+
+# Use specific version (if available)
+npx git+https://github.com/github/spec-kit.git@v1.0.0 init my-project
+```
+
+#### 🔄 npx Benefits
+- ✅ **Zero installation** - Works on any machine with Node.js
+- ✅ **Always latest** - Gets the newest version automatically
+- ✅ **No global clutter** - No permanent installation on your system
+- ✅ **Cross-platform** - Works on Windows, macOS, and Linux
+- ✅ **Secure** - Runs in isolated environment
+
+### 4. Alternative Installation Methods
+
+#### 💻 Global Installation (Recommended for frequent use)
+
+```bash
+# Install globally from npm
+npm install -g git+https://github.com/github/spec-kit.git
+
+# Then use the CLI directly
+specify init my-project
+specify --help
+```
+
+#### 🛠️ Local Development Setup
+
+For contributing to Spec-Kit itself:
+
+```bash
+# Clone the repository
+git clone https://github.com/github/spec-kit.git
+cd spec-kit
+
+# Install dependencies
+npm install
+
+# Link for development
+npm link
+
+# Use locally
+specify init my-project
+```
+
+### 5. Initialize your project
+
+Once installed, create a new project:
+
+```bash
+# Create new project in a new directory
+specify init my-project
+
+# Or initialize in current directory
+specify init --here
+
+# With npx (always latest version)
+npx git+https://github.com/github/spec-kit.git init my-awesome-app
+```
+
+### 6. Create the spec
+
+Use the `/specify` command in Cursor to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
 /specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
-### 3. Create a technical implementation plan
+### 7. Create a technical implementation plan
 
 Use the `/plan` command to provide your tech stack and architecture choices.
 
@@ -58,11 +146,50 @@ Use the `/plan` command to provide your tech stack and architecture choices.
 /plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 4. Break down and implement
+### 8. Break down and implement
 
-Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
+Use `/tasks` to create an actionable task list, then ask Cursor to implement the feature.
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 📖 npx Command Reference
+
+### Quick Commands
+
+```bash
+# Create new project
+npx git+https://github.com/github/spec-kit.git init <project-name>
+
+# Initialize in current directory
+npx git+https://github.com/github/spec-kit.git init --here
+
+# Skip git repository creation
+npx git+https://github.com/github/spec-kit.git init <project-name> --no-git
+
+# Show help
+npx git+https://github.com/github/spec-kit.git --help
+```
+
+### Global Installation (for frequent use)
+
+```bash
+# Install globally
+npm install -g git+https://github.com/github/spec-kit.git
+
+# Then use without npx
+specify init my-project
+specify --help
+```
+
+### Development Usage
+
+```bash
+# Test local changes
+npx . init test-project
+
+# Run from local directory
+node bin/init.js init my-project
+```
 
 ## 📚 Core philosophy
 
@@ -105,15 +232,15 @@ Our research and experimentation focus on:
 
 - Validate the concept of parallel implementation exploration
 - Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks  
+- Extend processes to handle upgrades and modernization tasks
 
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
-- [uv](https://docs.astral.sh/uv/) for package management
-- [Python 3.11+](https://www.python.org/downloads/)
-- [Git](https://git-scm.com/downloads)
+- [Node.js 16+](https://nodejs.org/) for CLI and scripting
+- [Cursor](https://cursor.sh/) - AI-first code editor (recommended)
+- [Git](https://git-scm.com/downloads) for version control
+- npm (comes with Node.js) for package management
 
 ## 📖 Learn more
 
@@ -159,11 +286,9 @@ specify init <project_name> --ai claude --ignore-agent-tools
 
 ### **STEP 1:** Bootstrap the project
 
-Go to the project folder and run your AI agent. In our example, we're using `claude`.
+Open your project folder in Cursor. The project has been pre-configured with Cursor command templates.
 
-![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
-
-You will know that things are configured correctly if you see the `/specify`, `/plan`, and `/tasks` commands available.
+You will know that things are configured correctly if you can use the `/specify`, `/plan`, and `/tasks` commands in Cursor.
 
 The first step should be creating a new project scaffolding. Use `/specify` command and then provide the concrete requirements for the project you want to develop.
 
@@ -191,7 +316,7 @@ see yours. You can edit any comments that you make, but you can't edit comments 
 delete any comments that you made, but you can't delete comments anybody else made.
 ```
 
-After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
+After this prompt is entered, Cursor will create a new feature branch and generate a specification document using the templates.
 
 Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
 
@@ -222,7 +347,7 @@ At this stage, your project folder contents should resemble the following:
 
 ### **STEP 2:** Functional specification clarification
 
-With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt. For example, you could use a prompt like this within the same Claude Code session:
+With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first attempt. For example, you could use a prompt like this in Cursor:
 
 ```text
 For each sample project or project that you create there should be a variable number of tasks between 5 and 15
@@ -230,13 +355,13 @@ tasks for each one randomly distributed into different states of completion. Mak
 one task in each stage of completion.
 ```
 
-You should also ask Claude Code to validate the **Review & Acceptance Checklist**, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
+You should also ask Cursor to validate the **Review & Acceptance Checklist**, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
 
 ```text
 Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
 ```
 
-It's important to use the interaction with Claude Code as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
+It's important to use Cursor as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
 
 ### **STEP 3:** Generate a plan
 
@@ -307,9 +432,9 @@ That's way too untargeted research. The research needs to help you solve a speci
 >[!NOTE]
 >Claude Code might be over-eager and add components that you did not ask for. Ask it to clarify the rationale and the source of the change.
 
-### **STEP 4:** Have Claude Code validate the plan
+### **STEP 4:** Have Cursor validate the plan
 
-With the plan in place, you should have Claude Code run through it to make sure that there are no missing pieces. You can use a prompt like this:
+With the plan in place, you should have Cursor run through it to make sure that there are no missing pieces. You can use a prompt like this:
 
 ```text
 Now I want you to go and audit the implementation plan and the implementation detail files.
@@ -319,27 +444,24 @@ when I look at the core implementation, it would be useful to reference the appr
 details where it can find the information as it walks through each step in the core implementation or in the refinement.
 ```
 
-This helps refine the implementation plan and helps you avoid potential blind spots that Claude Code missed in its planning cycle. Once the initial refinement pass is complete, ask Claude Code to go through the checklist once more before you can get to the implementation.
+This helps refine the implementation plan and helps you avoid potential blind spots that Cursor missed in its planning cycle. Once the initial refinement pass is complete, ask Cursor to go through the checklist once more before you can get to the implementation.
 
-You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.com/en/github-cli/github-cli) installed) to go ahead and create a pull request from your current branch to `main` with a detailed description, to make sure that the effort is properly tracked.
-
->[!NOTE]
->Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
+You can also ask Cursor to cross-check the details to see if there are any over-engineered pieces. If over-engineered components or decisions exist, you can ask Cursor to resolve them. Ensure that Cursor follows the [constitution](memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
 
 ### STEP 5: Implementation
 
-Once ready, instruct Claude Code to implement your solution (example path included):
+Once ready, instruct Cursor to implement your solution (example path included):
 
 ```text
-implement specs/002-create-taskify/plan.md
+implement specs/001-create-taskify/plan.md
 ```
 
-Claude Code will spring into action and will start creating the implementation.
+Cursor will spring into action and will start creating the implementation.
 
 >[!IMPORTANT]
->Claude Code will execute local CLI commands (such as `dotnet`) - make sure you have them installed on your machine.
+>Cursor will execute local CLI commands (such as `npm`, `node`) - make sure you have the required tools installed on your machine.
 
-Once the implementation step is done, ask Claude Code to try to run the application and resolve any emerging build errors. If the application runs, but there are _runtime errors_ that are not directly available to Claude Code through CLI logs (e.g., errors rendered in browser logs), copy and paste the error in Claude Code and have it attempt to resolve it.
+Once the implementation step is done, ask Cursor to try to run the application and resolve any emerging build errors. If the application runs, but there are _runtime errors_ that are not directly available to Cursor through CLI logs (e.g., errors rendered in browser logs), copy and paste the error in Cursor and have it attempt to resolve it.
 
 </details>
 

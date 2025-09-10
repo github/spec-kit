@@ -1,0 +1,28 @@
+{
+  "name": "spec-kit",
+  "version": "0.1.0",
+  "description": "Spec-Driven Development Toolkit for Cursor",
+  "main": "bin/init.js",
+  "bin": {
+    "specify": "bin/init.js"
+  },
+  "scripts": {
+    "init": "node bin/init.js",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "spec-driven-development",
+    "cursor",
+    "project-templates",
+    "development-toolkit"
+  ],
+  "author": "Spec-Kit Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/github/spec-kit.git"
+  }
+}
