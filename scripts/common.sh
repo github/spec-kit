@@ -37,7 +37,7 @@ get_feature_paths() {
     local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
     local feature_dir=$(get_feature_dir "$repo_root" "$current_branch")
-    
+
     echo "REPO_ROOT='$repo_root'"
     echo "CURRENT_BRANCH='$current_branch'"
     echo "FEATURE_DIR='$feature_dir'"

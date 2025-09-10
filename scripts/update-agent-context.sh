@@ -36,16 +36,16 @@ NEW_PROJECT_TYPE=$(grep "^**Project Type**: " "$NEW_PLAN" 2>/dev/null | head -1 
 update_agent_file() {
     local target_file="$1"
     local agent_name="$2"
-    
+
     echo "Updating $agent_name context file: $target_file"
-    
+
     # Create temp file for new context
     local temp_file=$(mktemp)
-    
+
     # If file doesn't exist, create from template
     if [ ! -f "$target_file" ]; then
         echo "Creating new $agent_name context file..."
-        
+
         # Check if this is the SDD repo itself
         if [ -f "$REPO_ROOT/templates/agent-file-template.md" ]; then
             cp "$REPO_ROOT/templates/agent-file-template.md" "$temp_file"
@@ -53,19 +53,19 @@ update_agent_file() {
             echo "ERROR: Template not found at $REPO_ROOT/templates/agent-file-template.md"
             return 1
         fi
-        
+
         # Replace placeholders
         sed -i.bak "s/\[PROJECT NAME\]/$(basename $REPO_ROOT)/" "$temp_file"
         sed -i.bak "s/\[DATE\]/$(date +%Y-%m-%d)/" "$temp_file"
         sed -i.bak "s/\[EXTRACTED FROM ALL PLAN.MD FILES\]/- $NEW_LANG + $NEW_FRAMEWORK ($CURRENT_BRANCH)/" "$temp_file"
-        
+
         # Add project structure based on type
         if [[ "$NEW_PROJECT_TYPE" == *"web"* ]]; then
             sed -i.bak "s|\[ACTUAL STRUCTURE FROM PLANS\]|backend/\nfrontend/\ntests/|" "$temp_file"
         else
             sed -i.bak "s|\[ACTUAL STRUCTURE FROM PLANS\]|src/\ntests/|" "$temp_file"
         fi
-        
+
         # Add minimal commands
         if [[ "$NEW_LANG" == *"Python"* ]]; then
             COMMANDS="cd src && pytest && ruff check ."
@@ -77,25 +77,25 @@ update_agent_file() {
             COMMANDS="# Add commands for $NEW_LANG"
         fi
         sed -i.bak "s|\[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES\]|$COMMANDS|" "$temp_file"
-        
+
         # Add code style
         sed -i.bak "s|\[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE\]|$NEW_LANG: Follow standard conventions|" "$temp_file"
-        
+
         # Add recent changes
         sed -i.bak "s|\[LAST 3 FEATURES AND WHAT THEY ADDED\]|- $CURRENT_BRANCH: Added $NEW_LANG + $NEW_FRAMEWORK|" "$temp_file"
-        
+
         rm "$temp_file.bak"
     else
         echo "Updating existing $agent_name context file..."
-        
+
         # Extract manual additions
         local manual_start=$(grep -n "<!-- MANUAL ADDITIONS START -->" "$target_file" | cut -d: -f1)
         local manual_end=$(grep -n "<!-- MANUAL ADDITIONS END -->" "$target_file" | cut -d: -f1)
-        
+
         if [ ! -z "$manual_start" ] && [ ! -z "$manual_end" ]; then
             sed -n "${manual_start},${manual_end}p" "$target_file" > /tmp/manual_additions.txt
         fi
-        
+
         # Parse existing file and create updated version
         python3 - << EOF
 import re
@@ -110,14 +110,14 @@ with open("$target_file", 'r') as f:
 tech_section = re.search(r'## Active Technologies\n(.*?)\n\n', content, re.DOTALL)
 if tech_section:
     existing_tech = tech_section.group(1)
-    
+
     # Add new tech if not already present
     new_additions = []
     if "$NEW_LANG" and "$NEW_LANG" not in existing_tech:
         new_additions.append(f"- $NEW_LANG + $NEW_FRAMEWORK ($CURRENT_BRANCH)")
     if "$NEW_DB" and "$NEW_DB" not in existing_tech and "$NEW_DB" != "N/A":
         new_additions.append(f"- $NEW_DB ($CURRENT_BRANCH)")
-    
+
     if new_additions:
         updated_tech = existing_tech + "\n" + "\n".join(new_additions)
         content = content.replace(tech_section.group(0), f"## Active Technologies\n{updated_tech}\n\n")
@@ -135,7 +135,7 @@ if "$NEW_LANG" and f"# {NEW_LANG}" not in content:
     commands_section = re.search(r'## Commands\n\`\`\`bash\n(.*?)\n\`\`\`', content, re.DOTALL)
     if not commands_section:
         commands_section = re.search(r'## Commands\n(.*?)\n\n', content, re.DOTALL)
-    
+
     if commands_section:
         new_commands = commands_section.group(1)
         if "Python" in "$NEW_LANG":
@@ -144,12 +144,12 @@ if "$NEW_LANG" and f"# {NEW_LANG}" not in content:
             new_commands += "\ncargo test && cargo clippy"
         elif "JavaScript" in "$NEW_LANG" or "TypeScript" in "$NEW_LANG":
             new_commands += "\nnpm test && npm run lint"
-        
+
         if "```bash" in content:
-            content = re.sub(r'(## Commands\n\`\`\`bash\n).*?(\n\`\`\`)', 
+            content = re.sub(r'(## Commands\n\`\`\`bash\n).*?(\n\`\`\`)',
                             f'\\1{new_commands}\\2', content, flags=re.DOTALL)
         else:
-            content = re.sub(r'(## Commands\n).*?(\n\n)', 
+            content = re.sub(r'(## Commands\n).*?(\n\n)',
                             f'\\1{new_commands}\\2', content, flags=re.DOTALL)
 
 # Update recent changes (keep only last 3)
@@ -159,11 +159,11 @@ if changes_section:
     changes.insert(0, f"- $CURRENT_BRANCH: Added $NEW_LANG + $NEW_FRAMEWORK")
     # Keep only last 3
     changes = changes[:3]
-    content = re.sub(r'(## Recent Changes\n).*?(\n\n|$)', 
+    content = re.sub(r'(## Recent Changes\n).*?(\n\n|$)',
                     f'\\1{chr(10).join(changes)}\\2', content, flags=re.DOTALL)
 
 # Update date
-content = re.sub(r'Last updated: \d{4}-\d{2}-\d{2}', 
+content = re.sub(r'Last updated: \d{4}-\d{2}-\d{2}',
                 f'Last updated: {datetime.now().strftime("%Y-%m-%d")}', content)
 
 # Write to temp file
@@ -180,7 +180,7 @@ EOF
             rm /tmp/manual_additions.txt "$temp_file.bak"
         fi
     fi
-    
+
     # Move temp file to final location
     mv "$temp_file" "$target_file"
     echo "✅ $agent_name context file updated successfully"
@@ -191,7 +191,7 @@ case "$AGENT_TYPE" in
     "claude")
         update_agent_file "$CLAUDE_FILE" "Claude Code"
         ;;
-    "gemini") 
+    "gemini")
         update_agent_file "$GEMINI_FILE" "Gemini CLI"
         ;;
     "copilot")
@@ -202,7 +202,7 @@ case "$AGENT_TYPE" in
         [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"
         [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI" 
         [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-        
+
         # If no files exist, create based on current directory or ask user
         if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ]; then
             echo "No agent context files found. Creating Claude Code context file by default."
@@ -230,5 +230,5 @@ echo ""
 echo "Usage: $0 [claude|gemini|copilot]"
 echo "  - No argument: Update all existing agent context files"
 echo "  - claude: Update only CLAUDE.md"
-echo "  - gemini: Update only GEMINI.md" 
+echo "  - gemini: Update only GEMINI.md"
 echo "  - copilot: Update only .github/copilot-instructions.md"
