@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Incrementally update agent context files based on new feature plan
-# Supports: CLAUDE.md, GEMINI.md, and .github/copilot-instructions.md
+# Supports: CLAUDE.md, GEMINI.md, .github/copilot-instructions.md, .augment-guidelines, and .augment/guidelines.md
 # O(1) operation - only reads current context file and new plan.md
 
 set -e
@@ -14,6 +14,10 @@ NEW_PLAN="$FEATURE_DIR/plan.md"
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
+AUGMENT_FILE="$REPO_ROOT/.augment-guidelines"
+AUGGIE_CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
+AUGGIE_AGENTS_FILE="$REPO_ROOT/AGENTS.md"
+AUGGIE_GUIDELINES_FILE="$REPO_ROOT/.augment/guidelines.md"
 
 # Allow override via argument
 AGENT_TYPE="$1"
@@ -197,20 +201,36 @@ case "$AGENT_TYPE" in
     "copilot")
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
         ;;
+    "augment-ide")
+        update_agent_file "$AUGMENT_FILE" "Augment IDE"
+        ;;
+    "auggie")
+        # Auggie supports multiple files
+        update_agent_file "$AUGGIE_CLAUDE_FILE" "Auggie CLI (Claude compatibility)"
+        update_agent_file "$AUGGIE_AGENTS_FILE" "Auggie CLI (Agents)"
+        # Create .augment directory if it doesn't exist
+        mkdir -p "$(dirname "$AUGGIE_GUIDELINES_FILE")"
+        update_agent_file "$AUGGIE_GUIDELINES_FILE" "Auggie CLI (Guidelines)"
+        ;;
     "")
         # Update all existing files
         [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"
-        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI" 
+        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI"
         [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-        
+        [ -f "$AUGMENT_FILE" ] && update_agent_file "$AUGMENT_FILE" "Augment IDE"
+        # Update Auggie files if they exist
+        [ -f "$AUGGIE_CLAUDE_FILE" ] && update_agent_file "$AUGGIE_CLAUDE_FILE" "Auggie CLI (Claude compatibility)"
+        [ -f "$AUGGIE_AGENTS_FILE" ] && update_agent_file "$AUGGIE_AGENTS_FILE" "Auggie CLI (Agents)"
+        [ -f "$AUGGIE_GUIDELINES_FILE" ] && update_agent_file "$AUGGIE_GUIDELINES_FILE" "Auggie CLI (Guidelines)"
+
         # If no files exist, create based on current directory or ask user
-        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ]; then
+        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$AUGMENT_FILE" ] && [ ! -f "$AUGGIE_CLAUDE_FILE" ] && [ ! -f "$AUGGIE_AGENTS_FILE" ] && [ ! -f "$AUGGIE_GUIDELINES_FILE" ]; then
             echo "No agent context files found. Creating Claude Code context file by default."
             update_agent_file "$CLAUDE_FILE" "Claude Code"
         fi
         ;;
     *)
-        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, or leave empty for all."
+        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, augment-ide, auggie, or leave empty for all."
         exit 1
         ;;
 esac
@@ -227,8 +247,10 @@ if [ ! -z "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ]; then
 fi
 
 echo ""
-echo "Usage: $0 [claude|gemini|copilot]"
+echo "Usage: $0 [claude|gemini|copilot|augment-ide|auggie]"
 echo "  - No argument: Update all existing agent context files"
 echo "  - claude: Update only CLAUDE.md"
-echo "  - gemini: Update only GEMINI.md" 
+echo "  - gemini: Update only GEMINI.md"
 echo "  - copilot: Update only .github/copilot-instructions.md"
+echo "  - augment-ide: Update only AUGMENT.md"
+echo "  - auggie: Update CLAUDE.md, AGENTS.md, and .augment/guidelines.md"

@@ -51,7 +51,9 @@ import readchar
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
-    "gemini": "Gemini CLI"
+    "gemini": "Gemini CLI",
+    "augment-ide": "Augment IDE",
+    "auggie": "Auggie CLI"
 }
 
 # ASCII Art Banner
@@ -376,14 +378,13 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         if not quiet:
             console.print("[green]✓[/green] Git repository initialized")
         return True
-        
+
     except subprocess.CalledProcessError as e:
         if not quiet:
             console.print(f"[red]Error initializing git repository:[/red] {e}")
         return False
     finally:
         os.chdir(original_cwd)
-
 
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True):
     """Download the latest template release from GitHub using HTTP requests.
@@ -411,7 +412,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
         asset for asset in release_data.get("assets", [])
         if pattern in asset["name"] and asset["name"].endswith(".zip")
     ]
-    
+
     if not matching_assets:
         if verbose:
             console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
@@ -492,6 +493,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
     # Step: fetch + download combined
     if tracker:
         tracker.start("fetch", "contacting GitHub API")
+
     try:
         zip_path, meta = download_template_from_github(
             ai_assistant,
@@ -638,7 +640,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, or copilot"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, augment-ide, or auggie"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -648,17 +650,19 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, or GitHub Copilot)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Augment IDE, or Auggie CLI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
-    
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
         specify init my-project --ai gemini
         specify init my-project --ai copilot --no-git
+        specify init my-project --ai augment-ide
+        specify init my-project --ai auggie
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
@@ -737,8 +741,15 @@ def init(
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
                 agent_tool_missing = True
+        elif selected_ai == "auggie":
+            if not check_tool("auggie", "Install with: npm install -g @augmentcode/auggie"):
+                console.print("[red]Error:[/red] Auggie CLI is required for Auggie CLI projects")
+                agent_tool_missing = True
+        elif selected_ai == "augment-ide":
+            # Augment IDE doesn't require CLI tool checking as it's IDE-based
+            pass
         # GitHub Copilot check is not needed as it's typically available in supported IDEs
-        
+
         if agent_tool_missing:
             console.print("\n[red]Required AI tool is missing![/red]")
             console.print("[yellow]Tip:[/yellow] Use --ignore-agent-tools to skip this check")
@@ -787,7 +798,6 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
-            tracker.complete("final", "project ready")
         except Exception as e:
             tracker.error("final", str(e))
             if not here and project_path.exists():
@@ -823,6 +833,18 @@ def init(
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+    elif selected_ai == "auggie":
+        steps_lines.append(f"{step_num}. Use Auggie CLI commands")
+        steps_lines.append("   - Run auggie /specify to create specifications")
+        steps_lines.append("   - Run auggie /plan to create implementation plans")
+        steps_lines.append("   - Run auggie /tasks to generate tasks")
+        steps_lines.append("   - Commands are available in .augment/commands/")
+    elif selected_ai == "augment-ide":
+        steps_lines.append(f"{step_num}. Open in Visual Studio Code or JetBrains with Augment IDE")
+        steps_lines.append("   - Use /specify to create specifications")
+        steps_lines.append("   - Use /plan to create implementation plans")
+        steps_lines.append("   - Use /tasks to generate tasks")
+        steps_lines.append("   - Commands are available in .augment/commands/ and .claude/commands/")
 
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
@@ -855,11 +877,12 @@ def check():
     console.print("\n[cyan]Optional AI tools:[/cyan]")
     claude_ok = check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup")
     gemini_ok = check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli")
-    
+    auggie_ok = check_tool("auggie", "Install with: npm install -g @augmentcode/auggie")
+
     console.print("\n[green]✓ Specify CLI is ready to use![/green]")
     if not git_ok:
         console.print("[yellow]Consider installing git for repository management[/yellow]")
-    if not (claude_ok or gemini_ok):
+    if not (claude_ok or gemini_ok or auggie_ok):
         console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
 
 

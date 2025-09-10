@@ -145,13 +145,33 @@ jobs:
         mkdir -p sdd-copilot-package/.github/prompts
         generate_commands "copilot" "prompt.md" "\$ARGUMENTS" "sdd-copilot-package/.github/prompts"
         echo "Created GitHub Copilot package"
+
+        # Create Auggie CLI package
+        echo "Creating Auggie CLI package..."
+        mkdir -p sdd-auggie-package
+        cp -r sdd-package-base/* sdd-auggie-package/
+        mkdir -p sdd-auggie-package/.augment/commands
+        generate_commands "auggie" "md" "\$ARGUMENTS" "sdd-auggie-package/.augment/commands"
+        echo "✓ Created Auggie CLI package"
+
+        # Create Augment IDE package
+        echo "Creating Augment IDE package..."
+        mkdir -p sdd-augment-ide-package
+        cp -r sdd-package-base/* sdd-augment-ide-package/
+        mkdir -p sdd-augment-ide-package/.augment/commands
+        generate_commands "augment-ide" "md" "\$ARGUMENTS" "sdd-augment-ide-package/.augment/commands"
+        echo "✓ Created Augment IDE package"
         
         # Create archive files for each package
         cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
-        
+
         cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
-        
+
         cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+
+        cd sdd-auggie-package && zip -r ../spec-kit-template-auggie-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+
+        cd sdd-augment-ide-package && zip -r ../spec-kit-template-augment-ide-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
         
         # List contents for verification
         echo "Claude package contents:"
@@ -160,6 +180,10 @@ jobs:
         unzip -l spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip | head -10
         echo "Copilot package contents:"
         unzip -l spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        echo "Auggie package contents:"
+        unzip -l spec-kit-template-auggie-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        echo "Augment IDE package contents:"
+        unzip -l spec-kit-template-augment-ide-${{ steps.get_tag.outputs.new_version }}.zip | head -10
         
     - name: Generate release notes
       if: steps.check_release.outputs.exists == 'false'
@@ -182,13 +206,15 @@ jobs:
         # Create release notes
         cat > release_notes.md << EOF
         Template release ${{ steps.get_tag.outputs.new_version }}
-        
-        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
-        
+
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, Auggie CLI, and Augment IDE.
+
         Download the template for your preferred AI assistant:
         - spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip
         - spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip
-        - spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip  
+        - spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip
+        - spec-kit-template-auggie-${{ steps.get_tag.outputs.new_version }}.zip
+        - spec-kit-template-augment-ide-${{ steps.get_tag.outputs.new_version }}.zip
         EOF
         
         echo "Generated release notes:"
@@ -205,6 +231,8 @@ jobs:
           spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip \
           spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip \
           spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip \
+          spec-kit-template-auggie-${{ steps.get_tag.outputs.new_version }}.zip \
+          spec-kit-template-augment-ide-${{ steps.get_tag.outputs.new_version }}.zip \
           --title "Spec Kit Templates - $VERSION_NO_V" \
           --notes-file release_notes.md
       env:

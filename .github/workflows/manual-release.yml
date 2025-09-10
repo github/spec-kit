@@ -125,21 +125,52 @@ jobs:
         else
           echo "⚠️ agent_templates/copilot folder not found"
         fi
+
+        # Create Auggie CLI package
+        echo "Creating Auggie CLI package..."
+        mkdir -p sdd-auggie-package
+        cp -r sdd-package-base/* sdd-auggie-package/
+        mkdir -p sdd-auggie-package/.augment/commands
+        if [ -d "agent_templates/auggie" ]; then
+          cp -r agent_templates/auggie/* sdd-auggie-package/.augment/commands/
+          echo "✓ Added Auggie CLI commands ($(find agent_templates/auggie -type f | wc -l) files)"
+        else
+          echo "⚠️ agent_templates/auggie folder not found"
+        fi
+        echo "✓ Created Auggie CLI package"
+
+        # Create Augment IDE package
+        echo "Creating Augment IDE package..."
+        mkdir -p sdd-augment-ide-package
+        cp -r sdd-package-base/* sdd-augment-ide-package/
+        mkdir -p sdd-augment-ide-package/.augment/commands
+        if [ -d "agent_templates/augment-ide" ]; then
+          cp -r agent_templates/augment-ide/* sdd-augment-ide-package/.augment/commands/
+          echo "✓ Added Augment IDE commands ($(find agent_templates/augment-ide -type f | wc -l) files)"
+        else
+          echo "⚠️ agent_templates/augment-ide folder not found"
+        fi
+        echo "✓ Created Augment IDE package"
         
         # Create archive files for each package
         echo "Creating archive files..."
         cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip . && cd ..
-        
+
         cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip . && cd ..
-        
+
         cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip . && cd ..
+
+        cd sdd-auggie-package && zip -r ../spec-kit-template-auggie-${{ steps.version.outputs.new_version }}.zip . && cd ..
+
+        cd sdd-augment-ide-package && zip -r ../spec-kit-template-augment-ide-${{ steps.version.outputs.new_version }}.zip . && cd ..
         
         echo ""
         echo "📦 Packages created:"
         echo "Claude: $(ls -lh spec-kit-template-claude-*.zip | awk '{print $5}')"
         echo "Gemini: $(ls -lh spec-kit-template-gemini-*.zip | awk '{print $5}')"
         echo "Copilot: $(ls -lh spec-kit-template-copilot-*.zip | awk '{print $5}')"
-        echo "Copilot: $(ls -lh sdd-template-copilot-*.zip | awk '{print $5}')"
+        echo "Auggie: $(ls -lh spec-kit-template-auggie-*.zip | awk '{print $5}')"
+        echo "Augment IDE: $(ls -lh spec-kit-template-augment-ide-*.zip | awk '{print $5}')"
         
     - name: Generate detailed release notes
       run: |
@@ -158,19 +189,23 @@ jobs:
         CLAUDE_COUNT=$(find agent_templates/claude -type f 2>/dev/null | wc -l || echo "0")
         GEMINI_COUNT=$(find agent_templates/gemini -type f 2>/dev/null | wc -l || echo "0")
         COPILOT_COUNT=$(find agent_templates/copilot -type f 2>/dev/null | wc -l || echo "0")
+        AUGGIE_COUNT=$(find agent_templates/auggie -type f 2>/dev/null | wc -l || echo "0")
+        AUGMENT_IDE_COUNT=$(find agent_templates/augment-ide -type f 2>/dev/null | wc -l || echo "0")
         MEMORY_COUNT=$(find memory -type f 2>/dev/null | wc -l || echo "0")
         SCRIPTS_COUNT=$(find scripts -type f 2>/dev/null | wc -l || echo "0")
         
         cat > release_notes.md << EOF
         Template release ${{ steps.version.outputs.new_version }}
-        
-        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
-        
+
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, Auggie CLI, and Augment IDE.
+
         Download the template for your preferred AI assistant:
         - spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip
         - spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip
-        - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip  
-        
+        - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip
+        - spec-kit-template-auggie-${{ steps.version.outputs.new_version }}.zip
+        - spec-kit-template-augment-ide-${{ steps.version.outputs.new_version }}.zip
+
         Changes since $LAST_TAG:
         $COMMITS
         EOF
@@ -185,6 +220,8 @@ jobs:
           spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-auggie-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-augment-ide-${{ steps.version.outputs.new_version }}.zip \
           --title "Spec Kit Templates - $VERSION_NO_V" \
           --notes-file release_notes.md
       env:
