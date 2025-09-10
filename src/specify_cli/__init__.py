@@ -46,6 +46,11 @@ from typer.core import TyperGroup
 
 # For cross-platform keyboard input
 import readchar
+import ssl
+import truststore
+
+ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+client = httpx.Client(verify=ssl_context)
 
 # Constants
 AI_CHOICES = {
@@ -397,10 +402,10 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
     try:
-        response = httpx.get(api_url, timeout=30, follow_redirects=True)
+        response = client.get(api_url, timeout=30, follow_redirects=True)
         response.raise_for_status()
         release_data = response.json()
-    except httpx.RequestError as e:
+    except client.RequestError as e:
         if verbose:
             console.print(f"[red]Error fetching release information:[/red] {e}")
         raise typer.Exit(1)
@@ -437,7 +442,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        with httpx.stream("GET", download_url, timeout=30, follow_redirects=True) as response:
+        with client.stream("GET", download_url, timeout=30, follow_redirects=True) as response:
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
             
@@ -466,7 +471,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
                         for chunk in response.iter_bytes(chunk_size=8192):
                             f.write(chunk)
     
-    except httpx.RequestError as e:
+    except client.RequestError as e:
         if verbose:
             console.print(f"[red]Error downloading template:[/red] {e}")
         if zip_path.exists():
@@ -843,9 +848,9 @@ def check():
     # Check if we have internet connectivity by trying to reach GitHub API
     console.print("[cyan]Checking internet connectivity...[/cyan]")
     try:
-        response = httpx.get("https://api.github.com", timeout=5, follow_redirects=True)
+        response = client.get("https://api.github.com", timeout=5, follow_redirects=True)
         console.print("[green]✓[/green] Internet connection available")
-    except httpx.RequestError:
+    except client.RequestError:
         console.print("[red]✗[/red] No internet connection - required for downloading templates")
         console.print("[yellow]Please check your internet connection[/yellow]")
     

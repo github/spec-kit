@@ -9,6 +9,7 @@ dependencies = [
     "httpx",
     "platformdirs",
     "readchar",
+    "truststore>=0.10.4",
 ]
 
 [project.scripts]
