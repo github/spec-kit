@@ -51,6 +51,20 @@ After initialization, you should see the following commands available in your AI
 
 ## Troubleshooting
 
+### Claude CLI Not Found Error
+
+If you have Claude installed but see `⚠️  claude not found`, the installation cannot find the `claude` command in PATH.
+
+**Quick fix:**
+```bash
+PATH="$HOME/.claude/local:$PATH" uvx --from git+https://github.com/github/spec-kit.git specify init --here
+```
+
+**Other solutions:**
+- Find claude location: `which claude`
+- Add to shell permanently: `export PATH="$HOME/.claude/local:$PATH"` in `~/.bashrc`/`~/.zshrc`
+- Create symlink: `ln -s ~/.claude/local/claude /usr/local/bin/claude`
+
 ### Git Credential Manager on Linux
 
 If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
