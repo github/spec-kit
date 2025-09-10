@@ -209,7 +209,7 @@ case "$AGENT_TYPE" in
         [ -f "$AGENTS_FILE" ] && update_agent_file "$AGENTS_FILE" "Opencode"
         
         # If no files exist, create based on current directory or ask user
-        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ]; then
+        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ -f "$AGENTS_FILE" ] && [ ! -f "$COPILOT_FILE" ]; then
             echo "No agent context files found. Creating Claude Code context file by default."
             update_agent_file "$CLAUDE_FILE" "Claude Code"
         fi
