@@ -105,7 +105,7 @@ Our research and experimentation focus on:
 
 - Validate the concept of parallel implementation exploration
 - Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks  
+- Extend processes to handle upgrades and modernization tasks
 
 ## 🔧 Prerequisites
 
@@ -118,7 +118,7 @@ Our research and experimentation focus on:
 ## 📖 Learn more
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
-- **[Detailed Walkthrough](#detailed-process)** - Step-by-step implementation guide
+- **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
 
