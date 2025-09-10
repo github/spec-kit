@@ -147,7 +147,7 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 specify init <project_name> --ai claude
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
-specify init <project_name> --ai rovodev-cli
+specify init <project_name> --ai rovodev
 # Or in current directory:
 specify init --here --ai claude
 ```
