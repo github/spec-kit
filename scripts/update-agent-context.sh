@@ -14,7 +14,7 @@ NEW_PLAN="$FEATURE_DIR/plan.md"
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
-ROVODEV_FILE="REPO_ROOT/agent.md"
+ROVODEV_FILE="$REPO_ROOT/agent.md"
 
 # Allow override via argument
 AGENT_TYPE="$1"
