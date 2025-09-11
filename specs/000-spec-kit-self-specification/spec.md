@@ -12,7 +12,7 @@
 2. Extract key concepts from description
    → Actors: Developers, AI agents  Actions: Onboard, specify, develop  Data: Specifications, code
 3. For each unclear aspect:
-   → [NEEDS CLARIFICATION: None - self-onboarding is well-defined]
+   → None - self-onboarding is well-defined
 4. Fill User Scenarios & Testing section
    → Clear user flow: Use spec-kit tools to create spec-kit's own specification
 5. Generate Functional Requirements
@@ -20,7 +20,7 @@
 6. Identify Key Entities (if data involved)
    → Specifications, Projects, Features, Tools
 7. Run Review Checklist
-   → No [NEEDS CLARIFICATION] markers - ✓
+   → No unclear markers remain - ✓
    → No implementation details - ✓
 8. Return: SUCCESS (spec ready for planning)
 ```
@@ -87,7 +87,7 @@ As a spec-kit maintainer, I want spec-kit to have its own specification created 
 - [x] All mandatory sections completed
 
 ### Requirement Completeness
-- [x] No [NEEDS CLARIFICATION] markers remain
+- [x] No unclear markers remain
 - [x] Requirements are testable and unambiguous  
 - [x] Success criteria are measurable
 - [x] Scope is clearly bounded
@@ -105,5 +105,10 @@ As a spec-kit maintainer, I want spec-kit to have its own specification created 
 - [x] Requirements generated
 - [x] Entities identified
 - [x] Review checklist passed
+- [x] Implementation plan created
+- [x] Tasks breakdown completed
+- [x] Validation gates passed
+- [x] Git workflow established
+- [x] Documentation completed
 
 ---
