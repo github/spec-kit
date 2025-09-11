@@ -38,6 +38,13 @@ from .scripts import (
     get_platform,
     is_windows,
 )
+from .onboarding import (
+    analyze_project_structure,
+    parse_existing_documentation,
+    extract_requirements_from_code,
+    generate_standardized_spec,
+    create_migration_plan,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -196,6 +203,129 @@ async def handle_list_tools() -> List[Tool]:
                 },
                 "required": ["script_name"]
             }
+        ),
+        Tool(
+            name="analyze_existing_project",
+            description="Analyze the structure of an existing project to understand its organization and prepare for spec-driven development migration",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the existing project directory to analyze"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "default": 3,
+                        "description": "Maximum directory depth to scan for analysis"
+                    }
+                },
+                "required": ["project_path"]
+            }
+        ),
+        Tool(
+            name="parse_existing_documentation",
+            description="Parse existing documentation files to extract requirements, specifications, and other relevant information",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project directory containing documentation"
+                    },
+                    "file_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of file patterns to search for (e.g., ['*.md', 'README*'])",
+                        "default": []
+                    }
+                },
+                "required": ["project_path"]
+            }
+        ),
+        Tool(
+            name="extract_requirements_from_code",
+            description="Extract requirements and specifications from code comments, docstrings, and TODO/FIXME items",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project directory containing source code"
+                    },
+                    "file_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of file patterns to search for (e.g., ['*.py', '*.js'])",
+                        "default": []
+                    }
+                },
+                "required": ["project_path"]
+            }
+        ),
+        Tool(
+            name="generate_standardized_spec",
+            description="Generate a standardized specification document from existing project analysis data",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_analysis": {
+                        "type": "object",
+                        "description": "Project structure analysis result (from analyze_existing_project)"
+                    },
+                    "documentation_analysis": {
+                        "type": "object", 
+                        "description": "Documentation parsing result (from parse_existing_documentation)"
+                    },
+                    "code_analysis": {
+                        "type": "object",
+                        "description": "Code analysis result (from extract_requirements_from_code)"
+                    }
+                },
+                "required": ["project_analysis", "documentation_analysis", "code_analysis"]
+            }
+        ),
+        Tool(
+            name="create_migration_plan",
+            description="Create a detailed migration plan for adopting spec-driven development workflow",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_analysis": {
+                        "type": "object",
+                        "description": "Project structure analysis result (from analyze_existing_project)"
+                    },
+                    "standardized_spec": {
+                        "type": "object",
+                        "description": "Standardized specification result (from generate_standardized_spec)"
+                    }
+                },
+                "required": ["project_analysis", "standardized_spec"]
+            }
+        ),
+        Tool(
+            name="onboard_existing_project",
+            description="Complete end-to-end onboarding of an existing project to spec-driven development (combines all analysis steps)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the existing project directory"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "default": 3,
+                        "description": "Maximum directory depth to scan"
+                    },
+                    "include_migration_plan": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Whether to include a detailed migration plan"
+                    }
+                },
+                "required": ["project_path"]
+            }
         )
     ]
 
@@ -222,6 +352,18 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResu
             return await handle_get_feature_paths(arguments)
         elif name == "run_script":
             return await handle_run_script(arguments)
+        elif name == "analyze_existing_project":
+            return await handle_analyze_existing_project(arguments)
+        elif name == "parse_existing_documentation":
+            return await handle_parse_existing_documentation(arguments)
+        elif name == "extract_requirements_from_code":
+            return await handle_extract_requirements_from_code(arguments)
+        elif name == "generate_standardized_spec":
+            return await handle_generate_standardized_spec(arguments)
+        elif name == "create_migration_plan":
+            return await handle_create_migration_plan(arguments)
+        elif name == "onboard_existing_project":
+            return await handle_onboard_existing_project(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
@@ -697,6 +839,300 @@ async def handle_run_script(arguments: Dict[str, Any]) -> CallToolResult:
                 TextContent(
                     type="text",
                     text=f"Error running script '{script_name}': {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_analyze_existing_project(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle existing project analysis."""
+    project_path = arguments["project_path"]
+    max_depth = arguments.get("max_depth", 3)
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        if not project_path_obj.is_dir():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path is not a directory: {project_path}"
+                    )
+                ]
+            )
+        
+        analysis = analyze_project_structure(project_path_obj, max_depth)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(analysis, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error analyzing project: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_parse_existing_documentation(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle existing documentation parsing."""
+    project_path = arguments["project_path"]
+    file_patterns = arguments.get("file_patterns")
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        parsed_docs = parse_existing_documentation(
+            project_path_obj, 
+            file_patterns if file_patterns else None
+        )
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(parsed_docs, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error parsing documentation: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_extract_requirements_from_code(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle requirements extraction from code."""
+    project_path = arguments["project_path"]
+    file_patterns = arguments.get("file_patterns")
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        code_analysis = extract_requirements_from_code(
+            project_path_obj,
+            file_patterns if file_patterns else None
+        )
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(code_analysis, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error extracting from code: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_generate_standardized_spec(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle standardized specification generation."""
+    project_analysis = arguments["project_analysis"]
+    documentation_analysis = arguments["documentation_analysis"]
+    code_analysis = arguments["code_analysis"]
+    
+    try:
+        standardized_spec = generate_standardized_spec(
+            project_analysis,
+            documentation_analysis,
+            code_analysis
+        )
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(standardized_spec, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error generating standardized spec: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_create_migration_plan(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle migration plan creation."""
+    project_analysis = arguments["project_analysis"]
+    standardized_spec = arguments["standardized_spec"]
+    
+    try:
+        migration_plan = create_migration_plan(project_analysis, standardized_spec)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(migration_plan, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error creating migration plan: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_onboard_existing_project(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle complete end-to-end project onboarding."""
+    project_path = arguments["project_path"]
+    max_depth = arguments.get("max_depth", 3)
+    include_migration_plan = arguments.get("include_migration_plan", True)
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        if not project_path_obj.is_dir():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path is not a directory: {project_path}"
+                    )
+                ]
+            )
+        
+        # Step 1: Analyze project structure
+        project_analysis = analyze_project_structure(project_path_obj, max_depth)
+        
+        # Step 2: Parse documentation
+        documentation_analysis = parse_existing_documentation(project_path_obj)
+        
+        # Step 3: Extract from code
+        code_analysis = extract_requirements_from_code(project_path_obj)
+        
+        # Step 4: Generate standardized spec
+        standardized_spec = generate_standardized_spec(
+            project_analysis,
+            documentation_analysis,
+            code_analysis
+        )
+        
+        # Step 5: Create migration plan (if requested)
+        migration_plan = None
+        if include_migration_plan:
+            migration_plan = create_migration_plan(project_analysis, standardized_spec)
+        
+        # Combine all results
+        onboarding_result = {
+            "onboarding_date": standardized_spec["analysis_date"],
+            "project_analysis": project_analysis,
+            "documentation_analysis": documentation_analysis,
+            "code_analysis": code_analysis,
+            "standardized_specification": standardized_spec,
+            "migration_plan": migration_plan,
+            "summary": {
+                "project_name": project_analysis.get("project_name"),
+                "estimated_size": project_analysis.get("estimated_size"),
+                "languages": project_analysis.get("languages_detected", []),
+                "documentation_files_found": len(documentation_analysis.get("files_parsed", [])),
+                "requirements_found": len(documentation_analysis.get("requirements_found", [])),
+                "features_found": len(documentation_analysis.get("features_found", [])),
+                "code_files_analyzed": len(code_analysis.get("files_analyzed", [])),
+                "gaps_identified": len(standardized_spec.get("gaps_identified", [])),
+                "next_steps": [
+                    "Review the generated specification and fill in gaps",
+                    "Validate requirements with stakeholders",
+                    "Follow the migration plan phases",
+                    "Set up spec-kit environment for the project",
+                    "Train team on spec-driven development workflow"
+                ]
+            }
+        }
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(onboarding_result, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error during project onboarding: {str(e)}"
                 )
             ]
         )

@@ -46,6 +46,7 @@ spec-kit-mcp
 
 Add the Spec-Kit MCP server to your AI agent's configuration. The server provides these tools:
 
+**For New Projects:**
 - **init_project**: Initialize new Spec-Kit projects with templates
 - **create_new_feature**: Create feature branches with specifications  
 - **setup_plan**: Set up implementation plans
@@ -56,16 +57,33 @@ Add the Spec-Kit MCP server to your AI agent's configuration. The server provide
 - **check_requirements**: Check system requirements
 - **list_scripts**: Show available scripts and compatibility
 
+**For Existing Projects (NEW):**
+- **analyze_existing_project**: Analyze existing project structure and codebase
+- **parse_existing_documentation**: Extract requirements from existing documentation
+- **extract_requirements_from_code**: Extract specifications from code comments and docstrings
+- **generate_standardized_spec**: Generate Spec-Kit compatible specifications from analysis
+- **create_migration_plan**: Create detailed migration plans for adopting spec-driven development
+- **onboard_existing_project**: Complete end-to-end onboarding analysis
+
 ### 3. Use with your AI agent
 
 Once configured, your AI agent can use spec-driven development tools directly:
 
+**For New Projects:**
 - Create specifications that define the **what** and **why**, not the tech stack
 - Generate technical implementation plans with your chosen tech stack  
 - Break down features into actionable tasks
 - Manage the complete spec-driven development lifecycle
 
+**For Existing Projects:**
+- Analyze existing project structure and extract requirements
+- Parse documentation and code to understand current specifications
+- Generate standardized Spec-Kit compatible specifications
+- Create migration plans for adopting spec-driven development workflow
+- Onboard legacy projects to modern spec-driven approaches
+
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+For existing project onboarding, see our [onboarding guide](./ONBOARDING.md).
 
 ## 📚 Core philosophy
 
@@ -83,6 +101,7 @@ Spec-Driven Development is a structured process that emphasizes:
 | **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+| **Existing Project Onboarding** (**NEW**) | Legacy project migration | <ul><li>Analyze existing codebases and documentation</li><li>Extract and standardize requirements</li><li>Create migration plans</li><li>Adopt spec-driven workflows gradually</li></ul> |
 
 ## 🎯 Experimental goals
 
