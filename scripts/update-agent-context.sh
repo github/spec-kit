@@ -26,11 +26,11 @@ fi
 echo "=== Updating agent context files for feature $CURRENT_BRANCH ==="
 
 # Extract tech from new plan
-NEW_LANG=$(grep "^\*\*Language/Version\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^\*\*Language\/Version\*\*: //' | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_FRAMEWORK=$(grep "^\*\*Primary Dependencies\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^\*\*Primary Dependencies\*\*: //' | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_TESTING=$(grep "^\*\*Testing\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^\*\*Testing\*\*: //' | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_DB=$(grep "^\*\*Storage\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^\*\*Storage\*\*: //' | grep -v "N/A" | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_PROJECT_TYPE=$(grep "^\*\*Project Type\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^\*\*Project Type\*\*: //' || echo "")
+NEW_LANG=$(grep "^\*\*Language/Version\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Language/Version\*\*: ||' | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_FRAMEWORK=$(grep "^\*\*Primary Dependencies\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Primary Dependencies\*\*: ||' | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_TESTING=$(grep "^\*\*Testing\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Testing\*\*: ||' | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_DB=$(grep "^\*\*Storage\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Storage\*\*: ||' | grep -v "N/A" | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_PROJECT_TYPE=$(grep "^\*\*Project Type\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Project Type\*\*: ||' || echo "")
 
 # Function to update a single agent context file
 update_agent_file() {
