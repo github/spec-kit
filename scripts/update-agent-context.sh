@@ -26,12 +26,26 @@ fi
 echo "=== Updating agent context files for feature $CURRENT_BRANCH ==="
 
 # Extract tech from new plan
-NEW_LANG=$(grep "^\*\*Language/Version\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Language/Version\*\*: ||' | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_FRAMEWORK=$(grep "^\*\*Primary Dependencies\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Primary Dependencies\*\*: ||' | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_TESTING=$(grep "^\*\*Testing\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Testing\*\*: ||' | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_DB=$(grep "^\*\*Storage\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Storage\*\*: ||' | grep -v "N/A" | grep -v "NEEDS CLARIFICATION" || echo "")
-NEW_PROJECT_TYPE=$(grep "^\*\*Project Type\*\*: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's|^\*\*Project Type\*\*: ||' || echo "")
+# Function to extract a field from plan.md
+extract_field() {
+    local field="$1"
+    local plan_file="$2"
+    local value
+    value=$(grep "^\*\*${field}\*\*: " "$plan_file" 2>/dev/null | head -1 | sed "s|^\*\*${field}\*\*: ||")
+    # Filter out "NEEDS CLARIFICATION" for all except Project Type
+    if [[ "$field" == "Storage" ]]; then
+        value=$(echo "$value" | grep -v "N/A" | grep -v "NEEDS CLARIFICATION")
+    elif [[ "$field" == "Language/Version" || "$field" == "Primary Dependencies" || "$field" == "Testing" ]]; then
+        value=$(echo "$value" | grep -v "NEEDS CLARIFICATION")
+    fi
+    echo "${value:-}"
+}
 
+NEW_LANG=$(extract_field "Language/Version" "$NEW_PLAN")
+NEW_FRAMEWORK=$(extract_field "Primary Dependencies" "$NEW_PLAN")
+NEW_TESTING=$(extract_field "Testing" "$NEW_PLAN")
+NEW_DB=$(extract_field "Storage" "$NEW_PLAN")
+NEW_PROJECT_TYPE=$(extract_field "Project Type" "$NEW_PLAN")
 # Function to update a single agent context file
 update_agent_file() {
     local target_file="$1"
