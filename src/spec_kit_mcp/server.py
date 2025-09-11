@@ -44,6 +44,16 @@ from .onboarding import (
     extract_requirements_from_code,
     generate_standardized_spec,
     create_migration_plan,
+    # Progressive onboarding functions
+    analyze_feature_component,
+    extract_feature_boundaries,
+    onboard_project_feature,
+    merge_feature_specifications,
+    detect_specification_conflicts,
+    resolve_feature_dependencies,
+    create_progressive_migration_plan,
+    track_onboarding_progress,
+    validate_specification_consistency,
 )
 
 # Set up logging
@@ -326,6 +336,181 @@ async def handle_list_tools() -> List[Tool]:
                 },
                 "required": ["project_path"]
             }
+        ),
+        Tool(
+            name="analyze_feature_component",
+            description="Analyze a specific feature or component within a project for progressive onboarding",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the main project directory"
+                    },
+                    "feature_path": {
+                        "type": "string",
+                        "description": "Relative path to the feature/component within the project"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "default": 2,
+                        "description": "Maximum directory depth to scan within the feature"
+                    }
+                },
+                "required": ["project_path", "feature_path"]
+            }
+        ),
+        Tool(
+            name="extract_feature_boundaries",
+            description="Identify logical feature boundaries within a project to support progressive onboarding",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project directory"
+                    },
+                    "analysis_depth": {
+                        "type": "integer",
+                        "default": 2,
+                        "description": "Depth to analyze for feature boundaries"
+                    }
+                },
+                "required": ["project_path"]
+            }
+        ),
+        Tool(
+            name="onboard_project_feature",
+            description="Onboard a specific feature to spec-driven development with dependency analysis",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the main project directory"
+                    },
+                    "feature_path": {
+                        "type": "string",
+                        "description": "Relative path to the feature within the project"
+                    },
+                    "include_dependencies": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Whether to analyze feature dependencies"
+                    }
+                },
+                "required": ["project_path", "feature_path"]
+            }
+        ),
+        Tool(
+            name="merge_feature_specifications",
+            description="Merge multiple feature specifications into a master specification",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "feature_specifications": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "List of feature specification dictionaries to merge"
+                    },
+                    "master_project_info": {
+                        "type": "object",
+                        "description": "Optional master project information for context"
+                    }
+                },
+                "required": ["feature_specifications"]
+            }
+        ),
+        Tool(
+            name="detect_specification_conflicts",
+            description="Detect conflicts between multiple feature specifications",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "feature_specifications": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "List of feature specification dictionaries to analyze for conflicts"
+                    }
+                },
+                "required": ["feature_specifications"]
+            }
+        ),
+        Tool(
+            name="resolve_feature_dependencies",
+            description="Analyze and document dependencies between features",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "feature_specifications": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "List of feature specification dictionaries to analyze"
+                    }
+                },
+                "required": ["feature_specifications"]
+            }
+        ),
+        Tool(
+            name="create_progressive_migration_plan",
+            description="Create a progressive migration plan for incremental adoption of spec-driven development",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project directory"
+                    },
+                    "feature_boundaries": {
+                        "type": "object",
+                        "description": "Result from extract_feature_boundaries"
+                    },
+                    "priority_features": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of features to prioritize"
+                    }
+                },
+                "required": ["project_path", "feature_boundaries"]
+            }
+        ),
+        Tool(
+            name="track_onboarding_progress",
+            description="Track progress of progressive onboarding migration",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project directory"
+                    },
+                    "migration_plan": {
+                        "type": "object",
+                        "description": "Result from create_progressive_migration_plan"
+                    },
+                    "completed_features": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of features that have been completed"
+                    }
+                },
+                "required": ["project_path", "migration_plan"]
+            }
+        ),
+        Tool(
+            name="validate_specification_consistency",
+            description="Validate consistency across multiple feature specifications",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "feature_specifications": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "List of feature specification dictionaries to validate"
+                    }
+                },
+                "required": ["feature_specifications"]
+            }
         )
     ]
 
@@ -364,6 +549,24 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResu
             return await handle_create_migration_plan(arguments)
         elif name == "onboard_existing_project":
             return await handle_onboard_existing_project(arguments)
+        elif name == "analyze_feature_component":
+            return await handle_analyze_feature_component(arguments)
+        elif name == "extract_feature_boundaries":
+            return await handle_extract_feature_boundaries(arguments)
+        elif name == "onboard_project_feature":
+            return await handle_onboard_project_feature(arguments)
+        elif name == "merge_feature_specifications":
+            return await handle_merge_feature_specifications(arguments)
+        elif name == "detect_specification_conflicts":
+            return await handle_detect_specification_conflicts(arguments)
+        elif name == "resolve_feature_dependencies":
+            return await handle_resolve_feature_dependencies(arguments)
+        elif name == "create_progressive_migration_plan":
+            return await handle_create_progressive_migration_plan(arguments)
+        elif name == "track_onboarding_progress":
+            return await handle_track_onboarding_progress(arguments)
+        elif name == "validate_specification_consistency":
+            return await handle_validate_specification_consistency(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
@@ -1133,6 +1336,333 @@ async def handle_onboard_existing_project(arguments: Dict[str, Any]) -> CallTool
                 TextContent(
                     type="text",
                     text=f"Error during project onboarding: {str(e)}"
+                )
+            ]
+        )
+
+
+# Progressive Onboarding Handler Functions
+
+async def handle_analyze_feature_component(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle feature component analysis."""
+    project_path = arguments["project_path"]
+    feature_path = arguments["feature_path"]
+    max_depth = arguments.get("max_depth", 2)
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        analysis = analyze_feature_component(project_path_obj, feature_path, max_depth)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(analysis, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error analyzing feature component: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_extract_feature_boundaries(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle feature boundary extraction."""
+    project_path = arguments["project_path"]
+    analysis_depth = arguments.get("analysis_depth", 2)
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        boundaries = extract_feature_boundaries(project_path_obj, analysis_depth)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(boundaries, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error extracting feature boundaries: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_onboard_project_feature(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle feature onboarding."""
+    project_path = arguments["project_path"]
+    feature_path = arguments["feature_path"]
+    include_dependencies = arguments.get("include_dependencies", True)
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        onboarding_result = onboard_project_feature(
+            project_path_obj, 
+            feature_path, 
+            include_dependencies
+        )
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(onboarding_result, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error onboarding project feature: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_merge_feature_specifications(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle feature specification merging."""
+    feature_specifications = arguments["feature_specifications"]
+    master_project_info = arguments.get("master_project_info")
+    
+    try:
+        merged_spec = merge_feature_specifications(feature_specifications, master_project_info)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(merged_spec, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error merging feature specifications: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_detect_specification_conflicts(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle specification conflict detection."""
+    feature_specifications = arguments["feature_specifications"]
+    
+    try:
+        conflict_analysis = detect_specification_conflicts(feature_specifications)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(conflict_analysis, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error detecting specification conflicts: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_resolve_feature_dependencies(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle feature dependency resolution."""
+    feature_specifications = arguments["feature_specifications"]
+    
+    try:
+        dependency_analysis = resolve_feature_dependencies(feature_specifications)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(dependency_analysis, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error resolving feature dependencies: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_create_progressive_migration_plan(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle progressive migration plan creation."""
+    project_path = arguments["project_path"]
+    feature_boundaries = arguments["feature_boundaries"]
+    priority_features = arguments.get("priority_features")
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        migration_plan = create_progressive_migration_plan(
+            project_path_obj, 
+            feature_boundaries, 
+            priority_features
+        )
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(migration_plan, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error creating progressive migration plan: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_track_onboarding_progress(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle onboarding progress tracking."""
+    project_path = arguments["project_path"]
+    migration_plan = arguments["migration_plan"]
+    completed_features = arguments.get("completed_features")
+    
+    try:
+        project_path_obj = Path(project_path).resolve()
+        
+        if not project_path_obj.exists():
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=f"Error: Project path does not exist: {project_path}"
+                    )
+                ]
+            )
+        
+        progress_report = track_onboarding_progress(
+            project_path_obj, 
+            migration_plan, 
+            completed_features
+        )
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(progress_report, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error tracking onboarding progress: {str(e)}"
+                )
+            ]
+        )
+
+
+async def handle_validate_specification_consistency(arguments: Dict[str, Any]) -> CallToolResult:
+    """Handle specification consistency validation."""
+    feature_specifications = arguments["feature_specifications"]
+    
+    try:
+        validation_report = validate_specification_consistency(feature_specifications)
+        
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(validation_report, indent=2)
+                )
+            ]
+        )
+        
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error validating specification consistency: {str(e)}"
                 )
             ]
         )
