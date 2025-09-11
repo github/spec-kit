@@ -414,6 +414,14 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     asset = None
     if matching_assets:
         asset = matching_assets[0]
+    elif ai_assistant == "rovodevcli":
+        # Fallback to copilot template if rovodevcli-specific template is not published yet
+        fallback_pattern = "spec-kit-template-copilot"
+        fallback_assets = [a for a in assets if fallback_pattern in a["name"] and a["name"].endswith(".zip")]
+        if fallback_assets:
+            asset = fallback_assets[0]
+            if verbose:
+                console.print("[yellow]No 'rovodevcli' template found; falling back to 'copilot' template.[/yellow]")
 
     if asset is None:
         if verbose:
