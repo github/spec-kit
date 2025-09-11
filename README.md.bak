@@ -30,40 +30,33 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ## ⚡ Get started
 
-### 1. Install Spec-Kit MCP Server
+### 1. Install Specify
 
-The Spec-Kit is now available as a Model Context Protocol (MCP) server that provides AI agents with powerful spec-driven development tools:
+Initialize your project depending on the coding agent you're using:
 
 ```bash
-# Install the MCP server
-pip install git+https://github.com/ASISaga/spec-kit.git
-
-# Run the MCP server
-spec-kit-mcp
+uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
-### 2. Configure your AI agent
+### 2. Create the spec
 
-Add the Spec-Kit MCP server to your AI agent's configuration. The server provides these tools:
+Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
-- **init_project**: Initialize new Spec-Kit projects with templates
-- **create_new_feature**: Create feature branches with specifications  
-- **setup_plan**: Set up implementation plans
-- **check_task_prerequisites**: Validate task requirements
-- **update_agent_context**: Update agent context files
-- **get_feature_paths**: Get feature file paths
-- **run_script**: Execute cross-platform scripts
-- **check_requirements**: Check system requirements
-- **list_scripts**: Show available scripts and compatibility
+```bash
+/specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums never other nested albums. Within each album, photos are previewed in a tile-like interface.
+```
 
-### 3. Use with your AI agent
+### 3. Create a technical implementation plan
 
-Once configured, your AI agent can use spec-driven development tools directly:
+Use the `/plan` command to provide your tech stack and architecture choices.
 
-- Create specifications that define the **what** and **why**, not the tech stack
-- Generate technical implementation plans with your chosen tech stack  
-- Break down features into actionable tasks
-- Manage the complete spec-driven development lifecycle
+```bash
+/plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+```
+
+### 4. Break down and implement
+
+Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
