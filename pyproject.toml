@@ -11,6 +11,11 @@ dependencies = [
     "readchar",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+]
+
 [project.scripts]
 specify = "specify_cli:main"
 

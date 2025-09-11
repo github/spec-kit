@@ -385,6 +385,53 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
+def setup_gemini_extension(workspace: Path) -> bool:
+    """Set up Gemini CLI extension folder and files.
+    
+    Creates:
+    - <workspace>/.gemini/extensions/spec-kit/
+    - gemini-extension.json with default contents
+    - GEMINI.md with stub contents
+    
+    Args:
+        workspace: Path to the project workspace
+        
+    Returns:
+        bool: True if setup was successful, False otherwise
+    """
+    try:
+        # Create the extension directory structure
+        extension_dir = workspace / ".gemini" / "extensions" / "spec-kit"
+        extension_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create gemini-extension.json
+        extension_config = {
+            "name": "spec-kit",
+            "version": "1.0.0",
+            "description": "Spec-kit Gemini CLI extension"
+        }
+        
+        extension_json_path = extension_dir / "gemini-extension.json"
+        with open(extension_json_path, 'w', encoding='utf-8') as f:
+            json.dump(extension_config, f, indent=2)
+        
+        # Create GEMINI.md
+        gemini_md_content = """# GEMINI Extension for Spec Kit
+
+This extension integrates Spec Kit with Gemini CLI.
+"""
+        
+        gemini_md_path = extension_dir / "GEMINI.md"
+        with open(gemini_md_path, 'w', encoding='utf-8') as f:
+            f.write(gemini_md_content)
+        
+        return True
+        
+    except Exception as e:
+        console.print(f"[red]Error setting up Gemini extension:[/red] {e}")
+        return False
+
+
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True):
     """Download the latest template release from GitHub using HTTP requests.
     Returns (zip_path, metadata_dict)
@@ -786,6 +833,15 @@ def init(
                     tracker.skip("git", "git not available")
             else:
                 tracker.skip("git", "--no-git flag")
+
+            # Gemini extension setup
+            if selected_ai == "gemini":
+                tracker.add("gemini-ext", "Setup Gemini extension")
+                tracker.start("gemini-ext")
+                if setup_gemini_extension(project_path):
+                    tracker.complete("gemini-ext", "extension files created")
+                else:
+                    tracker.error("gemini-ext", "setup failed")
 
             tracker.complete("final", "project ready")
         except Exception as e:

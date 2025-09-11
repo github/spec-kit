@@ -157,6 +157,27 @@ The CLI will check if you have Claude Code or Gemini CLI installed. If you do no
 specify init <project_name> --ai claude --ignore-agent-tools
 ```
 
+#### Gemini CLI Extension Setup
+
+When you select Gemini as your AI assistant (`--ai gemini`), the CLI automatically creates a Gemini CLI extension folder structure in your project:
+
+```
+<workspace>/.gemini/extensions/spec-kit/
+├── gemini-extension.json
+└── GEMINI.md
+```
+
+The `gemini-extension.json` file contains the extension configuration:
+```json
+{
+  "name": "spec-kit",
+  "version": "1.0.0",
+  "description": "Spec-kit Gemini CLI extension"
+}
+```
+
+The `GEMINI.md` file provides documentation for using Spec Kit with Gemini CLI.
+
 ### **STEP 1:** Bootstrap the project
 
 Go to the project folder and run your AI agent. In our example, we're using `claude`.
