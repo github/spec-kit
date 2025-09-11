@@ -12,6 +12,7 @@ Spec-Driven Development **flips the script** on traditional software development
 
 - [Installation Guide](installation.md)
 - [Quick Start Guide](quickstart.md)
+- [CLI Commands](cli-commands.md)
 
 ## Core Philosophy
 

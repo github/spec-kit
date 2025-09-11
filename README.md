@@ -118,6 +118,7 @@ Our research and experimentation focus on:
 ## 📖 Learn more
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+- **[CLI Commands](./docs/cli-commands.md)** - Detailed documentation for the `specify-cli` tool.
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---

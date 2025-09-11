@@ -24,7 +24,9 @@ wheels/
 venv/
 ENV/
 env/
-.venv
+.venv/
+
+test_project/
 
 # IDE
 .vscode/
@@ -38,3 +40,7 @@ env/
 .env
 .env.local
 *.lock
+
+
+# Spec-kit manifest for updates
+.spec-kit/

@@ -483,9 +483,9 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> tuple[Path, list[str]]:
     """Download the latest release and extract it to create a new project.
-    Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+    Returns (project_path, manifest_files). Uses tracker if provided.
     """
     current_dir = Path.cwd()
     
@@ -517,14 +517,18 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
     elif verbose:
         console.print("Extracting template...")
     
+    manifest_files = []
+
     try:
         # Create project directory only if not using current directory
         if not is_current_dir:
             project_path.mkdir(parents=True)
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            # List all files in the ZIP for debugging
+            # Get list of all files in the zip, excluding directories
             zip_contents = zip_ref.namelist()
+            manifest_files = [f for f in zip_contents if not f.endswith('/')]
+
             if tracker:
                 tracker.start("zip-list")
                 tracker.complete("zip-list", f"{len(zip_contents)} entries")
@@ -537,7 +541,6 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                     temp_path = Path(temp_dir)
                     zip_ref.extractall(temp_path)
                     
-                    # Check what was extracted
                     extracted_items = list(temp_path.iterdir())
                     if tracker:
                         tracker.start("extracted-summary")
@@ -545,7 +548,6 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                     elif verbose:
                         console.print(f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]")
                     
-                    # Handle GitHub-style ZIP with a single root directory
                     source_dir = temp_path
                     if len(extracted_items) == 1 and extracted_items[0].is_dir():
                         source_dir = extracted_items[0]
@@ -554,7 +556,11 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                             tracker.complete("flatten")
                         elif verbose:
                             console.print(f"[cyan]Found nested directory structure[/cyan]")
-                    
+                        
+                        # Strip the top-level directory from manifest paths
+                        nested_dir_name = extracted_items[0].name + '/'
+                        manifest_files = [f[len(nested_dir_name):] for f in manifest_files if f.startswith(nested_dir_name)]
+
                     # Copy contents to current directory
                     for item in source_dir.iterdir():
                         dest_path = project_path / item.name
@@ -578,10 +584,9 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                     if verbose and not tracker:
                         console.print(f"[cyan]Template files merged into current directory[/cyan]")
             else:
-                # Extract directly to project directory (original behavior)
+                # Extract directly to project directory
                 zip_ref.extractall(project_path)
                 
-                # Check what was extracted
                 extracted_items = list(project_path.iterdir())
                 if tracker:
                     tracker.start("extracted-summary")
@@ -591,16 +596,17 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
                     for item in extracted_items:
                         console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
                 
-                # Handle GitHub-style ZIP with a single root directory
                 if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                    # Move contents up one level
                     nested_dir = extracted_items[0]
+                    
+                    # Strip the top-level directory from manifest paths
+                    nested_dir_name = nested_dir.name + '/'
+                    manifest_files = [f[len(nested_dir_name):] for f in manifest_files if f.startswith(nested_dir_name)]
+
+                    # Move contents up one level
                     temp_move_dir = project_path.parent / f"{project_path.name}_temp"
-                    # Move the nested directory contents to temp location
                     shutil.move(str(nested_dir), str(temp_move_dir))
-                    # Remove the now-empty project directory
                     project_path.rmdir()
-                    # Rename temp directory to project directory
                     shutil.move(str(temp_move_dir), str(project_path))
                     if tracker:
                         tracker.add("flatten", "Flatten nested directory")
@@ -614,7 +620,6 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
         else:
             if verbose:
                 console.print(f"[red]Error extracting template:[/red] {e}")
-        # Clean up project directory if created and not current directory
         if not is_current_dir and project_path.exists():
             shutil.rmtree(project_path)
         raise typer.Exit(1)
@@ -624,7 +629,6 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
     finally:
         if tracker:
             tracker.add("cleanup", "Remove temporary archive")
-        # Clean up downloaded ZIP file
         if zip_path.exists():
             zip_path.unlink()
             if tracker:
@@ -632,7 +636,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
             elif verbose:
                 console.print(f"Cleaned up: {zip_path.name}")
     
-    return project_path
+    return project_path, manifest_files
 
 
 @app.command()
@@ -762,6 +766,7 @@ def init(
         ("extracted-summary", "Extraction summary"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
+        ("manifest", "Create project manifest"),
         ("final", "Finalize")
     ]:
         tracker.add(key, label)
@@ -770,7 +775,7 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
+            project_path, manifest_files = download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
 
             # Git step
             if not no_git:
@@ -786,6 +791,29 @@ def init(
                     tracker.skip("git", "git not available")
             else:
                 tracker.skip("git", "--no-git flag")
+
+            # Create manifest
+            tracker.start("manifest")
+            try:
+                spec_kit_dir = project_path / ".spec-kit"
+                spec_kit_dir.mkdir(exist_ok=True)
+                manifest_path = spec_kit_dir / "manifest.json"
+                # Sort files for consistency
+                manifest_files.sort()
+                with open(manifest_path, "w") as f:
+                    json.dump({
+                        "ai_assistant": selected_ai,
+                        "files": manifest_files
+                    }, f, indent=2)
+                
+                # Add .spec-kit to .gitignore
+                gitignore_path = project_path / ".gitignore"
+                with open(gitignore_path, "a") as f:
+                    f.write("\n\n# Spec-kit manifest for updates\n.spec-kit/\n")
+                
+                tracker.complete("manifest", f"{len(manifest_files)} files tracked")
+            except Exception as e:
+                tracker.error("manifest", str(e))
 
             tracker.complete("final", "project ready")
         except Exception as e:
@@ -833,6 +861,89 @@ def init(
     console.print(steps_panel)
     
     # Removed farewell line per user request
+
+
+@app.command()
+def update(force: bool = typer.Option(False, "--force", help="Force update without confirmation.")):
+    """Update the project with the latest spec-kit templates."""
+    console.print("[bold cyan]Updating spec-kit project...[/bold cyan]")
+    
+    project_path = Path.cwd()
+    manifest_path = project_path / ".spec-kit" / "manifest.json"
+
+    if not manifest_path.exists():
+        console.print("[red]Error:[/red] .spec-kit/manifest.json not found.")
+        console.print("Please run this command from the root of a spec-kit project initialized with a compatible version of spec-kit.")
+        raise typer.Exit(1)
+
+    with open(manifest_path, "r") as f:
+        manifest = json.load(f)
+    
+    ai_assistant = manifest.get("ai_assistant")
+    if not ai_assistant:
+        console.print("[red]Error:[/red] AI assistant not found in manifest. Your project might be from an older version of spec-kit.")
+        raise typer.Exit(1)
+
+    old_files = set(manifest["files"])
+    console.print(f"Found {len(old_files)} files in the manifest for the '{ai_assistant}' AI assistant.")
+
+    if not force:
+        console.print("\n[bold yellow]Warning:[/bold yellow] This command will overwrite template files with the latest version.")
+        console.print("It is strongly recommended to commit any local changes before proceeding.")
+        response = typer.confirm("Are you sure you want to continue?")
+        if not response:
+            console.print("[yellow]Update cancelled.[/yellow]")
+            raise typer.Exit(0)
+
+    # Download new template to a temporary directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        console.print("Downloading latest template...")
+        try:
+            temp_path = Path(temp_dir)
+            _, new_files_list = download_and_extract_template(temp_path, ai_assistant, is_current_dir=True, verbose=False)
+            new_files = set(new_files_list)
+            console.print(f"Downloaded {len(new_files)} new files.")
+
+            # Compare file lists
+            files_to_add = new_files - old_files
+            files_to_remove = old_files - new_files
+            files_to_update = old_files.intersection(new_files)
+
+            console.print(f"Files to add: {len(files_to_add)}")
+            console.print(f"Files to remove: {len(files_to_remove)}")
+            console.print(f"Files to update: {len(files_to_update)}")
+
+            # Process updates
+            for filename in files_to_update:
+                console.print(f"Updating {filename}...")
+                # Simple overwrite for now. A more robust solution would check for local changes.
+                shutil.copy2(temp_path / filename, project_path / filename)
+
+            # Process additions
+            for filename in files_to_add:
+                console.print(f"Adding {filename}...")
+                dest_path = project_path / filename
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(temp_path / filename, dest_path)
+
+            # Process removals
+            if files_to_remove:
+                console.print("\n[yellow]The following files are no longer in the template and can probably be removed:[/yellow]")
+                for filename in files_to_remove:
+                    console.print(f"- {filename}")
+
+            # Update manifest
+            manifest["files"] = sorted(list(new_files))
+            with open(manifest_path, "w") as f:
+                json.dump(manifest, f, indent=2)
+            
+            console.print("\n[bold green]Update complete![/bold green]")
+
+        except Exception as e:
+            console.print(f"[red]An error occurred during update: {e}[/red]")
+            raise typer.Exit(1)
+
+
 
 
 @app.command()
