@@ -9,7 +9,9 @@ This is the second step in the Spec-Driven Development lifecycle.
 
 Given the implementation details provided as an argument, do this:
 
-1. Run `scripts/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.
+1. Determine the operating system. Run the appropriate script from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.
+   - **On Windows:** `pwsh scripts/setup-plan.ps1 --json`
+   - **On Linux/macOS:** `scripts/setup-plan.sh --json`
 2. Read and analyze the feature specification to understand:
    - The feature requirements and user stories
    - Functional and non-functional requirements
