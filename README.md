@@ -42,6 +42,14 @@ Initialize your project depending on the coding agent you're using:
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
+### Validate Templates
+
+Ensure your templates are properly formatted and complete:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify validate
+```
+
 ### 2. Create the spec
 
 Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
@@ -114,6 +122,39 @@ Our research and experimentation focus on:
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
+
+## 🔍 Template Validation
+
+Spec-Kit includes a powerful template validation system to ensure your templates are properly formatted and complete:
+
+### Validate All Templates
+```bash
+specify validate
+```
+
+### Validate Specific Template
+```bash
+specify validate templates/spec-template.md
+```
+
+### Validation Options
+```bash
+# Hide warnings, show only errors
+specify validate --no-warnings
+
+# Don't exit with error code on validation failure
+specify validate --no-exit-on-error
+
+# Validate custom templates directory
+specify validate -t custom-templates/
+```
+
+The validator checks for:
+- **Required sections** (e.g., Execution Flow, Requirements)
+- **Valid placeholder patterns** (`[FEATURE NAME]`, `[DATE]`, etc.)
+- **Command metadata** for command templates (YAML front matter)
+- **Execution flow format** (proper code blocks with steps)
+- **Content consistency** and structure
 
 ## 📖 Learn more
 
