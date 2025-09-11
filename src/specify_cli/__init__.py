@@ -56,7 +56,8 @@ client = httpx.Client(verify=ssl_context)
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
-    "gemini": "Gemini CLI"
+    "gemini": "Gemini CLI",
+    "rovodevcli": "Rovo Dev CLI",
 }
 
 # ASCII Art Banner
@@ -409,23 +410,30 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
             console.print(f"[red]Error fetching release information:[/red] {e}")
         raise typer.Exit(1)
     
-    # Find the template asset for the specified AI assistant
+    # Find the template asset for the specified AI assistant, with fallback for 'rovodevcli' -> 'copilot'
     pattern = f"spec-kit-template-{ai_assistant}"
-    matching_assets = [
-        asset for asset in release_data.get("assets", [])
-        if pattern in asset["name"] and asset["name"].endswith(".zip")
-    ]
-    
-    if not matching_assets:
+    assets = release_data.get("assets", [])
+    matching_assets = [a for a in assets if pattern in a["name"] and a["name"].endswith(".zip")]
+
+    asset = None
+    if matching_assets:
+        asset = matching_assets[0]
+    elif ai_assistant == "rovodevcli":
+        # Fallback to copilot template if rovodevcli-specific template is not published yet
+        fallback_pattern = "spec-kit-template-copilot"
+        fallback_assets = [a for a in assets if fallback_pattern in a["name"] and a["name"].endswith(".zip")]
+        if fallback_assets:
+            asset = fallback_assets[0]
+            if verbose:
+                console.print("[yellow]No 'rovodevcli' template found; falling back to 'copilot' template.[/yellow]")
+
+    if asset is None:
         if verbose:
             console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
             console.print(f"[yellow]Available assets:[/yellow]")
-            for asset in release_data.get("assets", []):
-                console.print(f"  - {asset['name']}")
+            for a in assets:
+                console.print(f"  - {a['name']}")
         raise typer.Exit(1)
-    
-    # Use the first matching asset
-    asset = matching_assets[0]
     download_url = asset["browser_download_url"]
     filename = asset["name"]
     file_size = asset["size"]
@@ -638,7 +646,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, or copilot"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, or rovodevcli"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -649,7 +657,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, or GitHub Copilot)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, or Rovo Dev CLI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -660,8 +668,10 @@ def init(
         specify init my-project --ai claude
         specify init my-project --ai gemini
         specify init my-project --ai copilot --no-git
+        specify init my-project --ai rovodevcli
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
+        specify init --here --ai rovodevcli
         specify init --here
     """
     # Show banner first
@@ -737,6 +747,10 @@ def init(
         elif selected_ai == "gemini":
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
+                agent_tool_missing = True
+        elif selected_ai == "rovodevcli":
+            if not check_tool("acli", "Install from: https://support.atlassian.com/rovo/docs/install-and-run-rovo-dev-cli-on-your-device"):
+                console.print("[red]Error:[/red] Rovo Dev CLI is required for Rovo Dev CLI projects")
                 agent_tool_missing = True
         # GitHub Copilot check is not needed as it's typically available in supported IDEs
         
@@ -830,6 +844,12 @@ def init(
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+    elif selected_ai == "rovodevcli":
+        steps_lines.append(f"{step_num}. Use / commands with Rovo Dev CLI")
+        steps_lines.append("   - Use /specify to create specifications")
+        steps_lines.append("   - Use /plan to create implementation plans")
+        steps_lines.append("   - Use /tasks to generate tasks")
+        steps_lines.append("   - See agent.md for all available commands")
 
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
@@ -866,11 +886,13 @@ def check(skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS 
     console.print("\n[cyan]Optional AI tools:[/cyan]")
     claude_ok = check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup")
     gemini_ok = check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli")
+    rovodevcli_ok = check_tool("acli", "Install from: https://support.atlassian.com/rovo/docs/install-and-run-rovo-dev-cli-on-your-device")
+    
     
     console.print("\n[green]✓ Specify CLI is ready to use![/green]")
     if not git_ok:
         console.print("[yellow]Consider installing git for repository management[/yellow]")
-    if not (claude_ok or gemini_ok):
+    if not (claude_ok or gemini_ok or rovodevcli_ok):
         console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
 
 
