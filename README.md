@@ -57,13 +57,24 @@ Add the Spec-Kit MCP server to your AI agent's configuration. The server provide
 - **check_requirements**: Check system requirements
 - **list_scripts**: Show available scripts and compatibility
 
-**For Existing Projects (NEW):**
+**For Existing Projects:**
 - **analyze_existing_project**: Analyze existing project structure and codebase
 - **parse_existing_documentation**: Extract requirements from existing documentation
 - **extract_requirements_from_code**: Extract specifications from code comments and docstrings
 - **generate_standardized_spec**: Generate Spec-Kit compatible specifications from analysis
 - **create_migration_plan**: Create detailed migration plans for adopting spec-driven development
 - **onboard_existing_project**: Complete end-to-end onboarding analysis
+
+**For Progressive Onboarding (NEW):**
+- **analyze_feature_component**: Analyze specific features/components within a project
+- **extract_feature_boundaries**: Identify logical feature boundaries for progressive onboarding
+- **onboard_project_feature**: Onboard individual features to spec-driven development
+- **merge_feature_specifications**: Combine multiple feature specifications into master specification
+- **detect_specification_conflicts**: Identify conflicts between feature specifications
+- **resolve_feature_dependencies**: Analyze and document dependencies between features
+- **create_progressive_migration_plan**: Create phased migration plans for incremental adoption
+- **track_onboarding_progress**: Track progress across multiple features/teams
+- **validate_specification_consistency**: Ensure consistency across progressive specifications
 
 ### 3. Use with your AI agent
 
@@ -81,6 +92,14 @@ Once configured, your AI agent can use spec-driven development tools directly:
 - Generate standardized Spec-Kit compatible specifications
 - Create migration plans for adopting spec-driven development workflow
 - Onboard legacy projects to modern spec-driven approaches
+
+**For Progressive Onboarding (NEW):**
+- Analyze and onboard individual features or components incrementally
+- Support multiple teams working on different parts independently
+- Merge and coordinate specifications across features
+- Detect and resolve conflicts between feature specifications
+- Track progress and manage dependencies during progressive migration
+- Enable gradual adoption of spec-driven development across organizations
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 For existing project onboarding, see our [onboarding guide](./ONBOARDING.md).
@@ -101,7 +120,8 @@ Spec-Driven Development is a structured process that emphasizes:
 | **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
-| **Existing Project Onboarding** (**NEW**) | Legacy project migration | <ul><li>Analyze existing codebases and documentation</li><li>Extract and standardize requirements</li><li>Create migration plans</li><li>Adopt spec-driven workflows gradually</li></ul> |
+| **Existing Project Onboarding** (**ENHANCED**) | Legacy project migration | <ul><li>Analyze existing codebases and documentation</li><li>Extract and standardize requirements</li><li>Create migration plans</li><li>Adopt spec-driven workflows gradually</li></ul> |
+| **Progressive Onboarding** (**NEW**) | Incremental feature-level adoption | <ul><li>Onboard individual features and components</li><li>Support multi-team development workflows</li><li>Coordinate specifications across features</li><li>Enable gradual organizational adoption</li></ul> |
 
 ## 🎯 Experimental goals
 
