@@ -56,7 +56,7 @@ git checkout -b $BranchName
 $FeatureDir = Join-Path -Path $SpecsDir -ChildPath $BranchName
 New-Item -Path $FeatureDir -ItemType Directory | Out-Null
 
-# Copy the spec template int the new feature directory
+# Copy the spec template into the new feature directory
 $Template = Join-Path -Path $RepoRoot -ChildPath "templates/spec-template.md"
 $SpecFile = Join-Path -Path $FeatureDir -ChildPath "spec.md"
 
