@@ -31,7 +31,7 @@ extract_field() {
     local field="$1"
     local plan_file="$2"
     local value
-    value=$(grep "^\*\*${field}\*\*: " "$plan_file" 2>/dev/null | head -1 | sed "s|^\*\*${field}\*\*: ||")
+    value=$(grep "^\\*\\*${field}\\*\\*: " "$plan_file" 2>/dev/null | head -1 | sed "s|^\\*\\*${field}\\*\\*: ||")
     # Filter out "NEEDS CLARIFICATION" for all except Project Type
     if [[ "$field" == "Storage" ]]; then
         value=$(echo "$value" | grep -v "N/A" | grep -v "NEEDS CLARIFICATION")
