@@ -146,12 +146,24 @@ jobs:
         generate_commands "copilot" "prompt.md" "\$ARGUMENTS" "sdd-copilot-package/.github/prompts"
         echo "Created GitHub Copilot package"
         
+        # Create Qwen CLI package  
+        mkdir -p sdd-qwen-package
+        cp -r sdd-package-base/* sdd-qwen-package/
+        mkdir -p sdd-qwen-package/.qwen/commands
+        generate_commands "qwen" "md" "\$ARGUMENTS" "sdd-qwen-package/.qwen/commands"
+        if [ -f "agent_templates/qwen/QWEN.md" ]; then
+          cp agent_templates/qwen/QWEN.md sdd-qwen-package/QWEN.md
+        fi
+        echo "Created Qwen CLI package"
+        
         # Create archive files for each package
         cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
         
         cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
         
         cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+        
+        cd sdd-qwen-package && zip -r ../spec-kit-template-qwen-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
         
         # List contents for verification
         echo "Claude package contents:"
@@ -160,6 +172,8 @@ jobs:
         unzip -l spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip | head -10
         echo "Copilot package contents:"
         unzip -l spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        echo "Qwen package contents:"
+        unzip -l spec-kit-template-qwen-${{ steps.get_tag.outputs.new_version }}.zip | head -10
         
     - name: Generate release notes
       if: steps.check_release.outputs.exists == 'false'
@@ -183,12 +197,13 @@ jobs:
         cat > release_notes.md << EOF
         Template release ${{ steps.get_tag.outputs.new_version }}
         
-        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, and Qwen Code.
         
         Download the template for your preferred AI assistant:
         - spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip
         - spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip
-        - spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip  
+        - spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip
+        - spec-kit-template-qwen-${{ steps.get_tag.outputs.new_version }}.zip  
         EOF
         
         echo "Generated release notes:"
@@ -205,6 +220,7 @@ jobs:
           spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip \
           spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip \
           spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip \
+          spec-kit-template-qwen-${{ steps.get_tag.outputs.new_version }}.zip \
           --title "Spec Kit Templates - $VERSION_NO_V" \
           --notes-file release_notes.md
       env:
