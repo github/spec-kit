@@ -15,6 +15,7 @@
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
+- [🌟 Dogfooding Example](#-dogfooding-example)
 - [⚡ Get started](#-get-started)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
@@ -27,6 +28,19 @@
 ## 🤔 What is Spec-Driven Development?
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+
+## 🌟 Dogfooding Example
+
+Spec-kit practices what it preaches! We've used our own onboarding tools to create a proper specification for spec-kit itself. This demonstrates the methodology in action and serves as a reference implementation.
+
+**👀 See it in action**: Check out [specs/000-spec-kit-self-specification/](./specs/000-spec-kit-self-specification/) to see how spec-kit onboarded itself using its own tools.
+
+**Key files:**
+- [spec.md](./specs/000-spec-kit-self-specification/spec.md) - Complete specification following our template
+- [plan.md](./specs/000-spec-kit-self-specification/plan.md) - Implementation plan with constitutional compliance
+- [quickstart.md](./specs/000-spec-kit-self-specification/quickstart.md) - How to use this example
+
+This self-onboarding validates our methodology and provides a perfect example for new users to follow.
 
 ## ⚡ Get started
 
