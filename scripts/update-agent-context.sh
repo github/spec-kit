@@ -150,7 +150,7 @@ if new_project_type == "web" and "frontend/" not in content:
                         f'\\1{updated_struct}\\2', content, flags=re.DOTALL)
 
 # Add new commands if language is new
-if new_lang and f"# {new_lang}" not in content:
+if new_lang and new_lang not in content:
     commands_section = re.search(r'## Commands\n```bash\n(.*?)\n```', content, re.DOTALL)
     if not commands_section:
         commands_section = re.search(r'## Commands\n(.*?)\n\n', content, re.DOTALL)
