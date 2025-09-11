@@ -51,7 +51,8 @@ import readchar
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
-    "gemini": "Gemini CLI"
+    "gemini": "Gemini CLI",
+    "windsurf": "Windsurf AI"
 }
 
 # ASCII Art Banner
@@ -635,10 +636,11 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
     return project_path
 
 
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, or copilot"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, or windsurf"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -648,7 +650,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, or GitHub Copilot)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, or Windsurf AI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -659,6 +661,7 @@ def init(
         specify init my-project --ai claude
         specify init my-project --ai gemini
         specify init my-project --ai copilot --no-git
+        specify init my-project --ai windsurf
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
@@ -770,6 +773,7 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
+            # Download and extract template for the selected AI (including Windsurf asset)
             download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
 
             # Git step
@@ -824,6 +828,8 @@ def init(
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+    elif selected_ai == "windsurf":
+        steps_lines.append(f"{step_num}. Open in Windsurf and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] workflows with Windsurf AI")
 
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
