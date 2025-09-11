@@ -126,6 +126,18 @@ jobs:
           echo "⚠️ agent_templates/copilot folder not found"
         fi
         
+        # Create Rovo Dev CLI package
+        echo "Creating Rovo Dev CLI package..."
+        mkdir -p sdd-rovodevcli-package
+        cp -r sdd-package-base/* sdd-rovodevcli-package/
+        if [ -d "agent_templates/rovodevcli" ]; then
+          cp agent_templates/rovodevcli/agent.md sdd-rovodevcli-package/
+          echo "✓ Added Rovo Dev CLI agent file ($(find agent_templates/rovodevcli -type f | wc -l) files)"
+        else
+          echo "⚠️ agent_templates/rovodevcli folder not found"
+        fi
+        echo "✓ Created Rovo Dev CLI package"
+        
         # Create archive files for each package
         echo "Creating archive files..."
         cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip . && cd ..
@@ -134,12 +146,14 @@ jobs:
         
         cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip . && cd ..
         
+        cd sdd-rovodevcli-package && zip -r ../spec-kit-template-rovodevcli-${{ steps.version.outputs.new_version }}.zip . && cd ..
+        
         echo ""
         echo "📦 Packages created:"
         echo "Claude: $(ls -lh spec-kit-template-claude-*.zip | awk '{print $5}')"
         echo "Gemini: $(ls -lh spec-kit-template-gemini-*.zip | awk '{print $5}')"
         echo "Copilot: $(ls -lh spec-kit-template-copilot-*.zip | awk '{print $5}')"
-        echo "Copilot: $(ls -lh sdd-template-copilot-*.zip | awk '{print $5}')"
+        echo "Rovo Dev CLI: $(ls -lh spec-kit-template-rovodevcli-*.zip | awk '{print $5}')"
         
     - name: Generate detailed release notes
       run: |
@@ -164,12 +178,13 @@ jobs:
         cat > release_notes.md << EOF
         Template release ${{ steps.version.outputs.new_version }}
         
-        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, and Rovo Dev CLI.
         
         Download the template for your preferred AI assistant:
         - spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip
         - spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip
-        - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip  
+        - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip
+        - spec-kit-template-rovodevcli-${{ steps.version.outputs.new_version }}.zip  
         
         Changes since $LAST_TAG:
         $COMMITS
@@ -185,6 +200,7 @@ jobs:
           spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip \
           spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-rovodevcli-${{ steps.version.outputs.new_version }}.zip \
           --title "Spec Kit Templates - $VERSION_NO_V" \
           --notes-file release_notes.md
       env:
