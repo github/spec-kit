@@ -1,9 +1,10 @@
 [project]
-name = "specify-cli"
+name = "spec-kit-mcp"
 version = "0.0.2"
-description = "Setup tool for Specify spec-driven development projects"
+description = "Model Context Protocol server for Specify spec-driven development tools"
 requires-python = ">=3.11"
 dependencies = [
+    "mcp",
     "typer",
     "rich",
     "httpx",
@@ -12,11 +13,12 @@ dependencies = [
 ]
 
 [project.scripts]
-specify = "specify_cli:main"
+spec-kit-mcp = "spec_kit_mcp.server:main"
+specify = "spec_kit_mcp.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/specify_cli"]
+packages = ["src/spec_kit_mcp"]

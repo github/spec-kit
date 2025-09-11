@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "spec-kit": {
+      "command": "spec-kit-mcp",
+      "args": [],
+      "env": {},
+      "description": "Spec-Driven Development toolkit providing tools for creating specifications, plans, and managing development workflows"
+    }
+  }
+}
