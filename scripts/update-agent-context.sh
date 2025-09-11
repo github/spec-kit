@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Incrementally update agent context files based on new feature plan
-# Supports: CLAUDE.md, GEMINI.md, agent.md (Rovodev CLI) and .github/copilot-instructions.md
+# Supports: CLAUDE.md, GEMINI.md, agent.md (Rovo Dev CLI) and .github/copilot-instructions.md
 # O(1) operation - only reads current context file and new plan.md
 
 set -e
@@ -198,15 +198,15 @@ case "$AGENT_TYPE" in
     "copilot")
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
         ;;
-    "rovodev")
-        update_agent_file "$ROVODEV_FILE" "Rovodev CLI"
+    "rovodevcli")
+        update_agent_file "$ROVODEV_FILE" "Rovo Dev CLI"
         ;;
     "")
         # Update all existing files
         [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"
         [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI" 
         [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-        [ -f "$ROVODEV_FILE" ] && update_agent_file "$ROVODEV_FILE" "Rovodev CLI"
+        [ -f "$ROVODEV_FILE" ] && update_agent_file "$ROVODEV_FILE" "Rovo Dev CLI"
         
         # If no files exist, create based on current directory or ask user
         if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$ROVODEV_FILE" ]; then
@@ -215,7 +215,7 @@ case "$AGENT_TYPE" in
         fi
         ;;
     *)
-        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, rovodev or leave empty for all."
+        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, rovodevcli or leave empty for all."
         exit 1
         ;;
 esac
@@ -232,9 +232,9 @@ if [ ! -z "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ]; then
 fi
 
 echo ""
-echo "Usage: $0 [claude|gemini|copilot|rovodev]"
+echo "Usage: $0 [claude|gemini|copilot|rovodevcli]"
 echo "  - No argument: Update all existing agent context files"
 echo "  - claude: Update only CLAUDE.md"
 echo "  - gemini: Update only GEMINI.md" 
 echo "  - copilot: Update only .github/copilot-instructions.md"
-echo "  - rovodev: Update only agent.md"
+echo "  - rovodevcli: Update only agent.md"
