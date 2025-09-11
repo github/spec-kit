@@ -58,17 +58,21 @@ CONFIG_PATTERNS = [
 ]
 
 
-def analyze_project_structure(project_path: Path, max_depth: int = 3) -> Dict[str, Any]:
+def analyze_project_structure(project_path: Union[str, Path], max_depth: int = 3) -> Dict[str, Any]:
     """
     Analyze the structure of an existing project to understand its organization.
     
     Args:
-        project_path: Path to the project directory
+        project_path: Path to the project directory (string or Path object)
         max_depth: Maximum directory depth to scan
         
     Returns:
         Dictionary containing project structure analysis
     """
+    # Convert string to Path if needed
+    if isinstance(project_path, str):
+        project_path = Path(project_path)
+    
     if not project_path.exists() or not project_path.is_dir():
         raise ValueError(f"Project path does not exist or is not a directory: {project_path}")
     
@@ -195,17 +199,20 @@ def _matches_patterns(filename: str, patterns: List[str]) -> bool:
     return False
 
 
-def parse_existing_documentation(project_path: Path, file_patterns: Optional[List[str]] = None) -> Dict[str, Any]:
+def parse_existing_documentation(project_path: Union[str, Path], file_patterns: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Parse existing documentation files to extract requirements and specifications.
     
     Args:
-        project_path: Path to the project directory
+        project_path: Path to the project directory (string or Path object)
         file_patterns: Optional list of file patterns to search for
         
     Returns:
         Dictionary containing parsed documentation content
     """
+    # Convert string to Path if needed
+    if isinstance(project_path, str):
+        project_path = Path(project_path)
     if file_patterns is None:
         file_patterns = DOCUMENTATION_PATTERNS
     
@@ -389,17 +396,20 @@ def _extract_technology_mentions(content: str, parsed_docs: Dict[str, Any]) -> N
             parsed_docs["technologies_mentioned"].add(tech)
 
 
-def extract_requirements_from_code(project_path: Path, file_patterns: Optional[List[str]] = None) -> Dict[str, Any]:
+def extract_requirements_from_code(project_path: Union[str, Path], file_patterns: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Extract requirements and specifications from code comments and docstrings.
     
     Args:
-        project_path: Path to the project directory
+        project_path: Path to the project directory (string or Path object)
         file_patterns: Optional list of file patterns to search for
         
     Returns:
         Dictionary containing extracted requirements from code
     """
+    # Convert string to Path if needed
+    if isinstance(project_path, str):
+        project_path = Path(project_path)
     if file_patterns is None:
         file_patterns = CODE_PATTERNS
     
@@ -1258,17 +1268,21 @@ def _identify_feature_boundaries(feature_path: Path, analysis: Dict[str, Any]) -
         logger.warning(f"Error identifying feature boundaries: {e}")
 
 
-def extract_feature_boundaries(project_path: Path, analysis_depth: int = 2) -> Dict[str, Any]:
+def extract_feature_boundaries(project_path: Union[str, Path], analysis_depth: int = 2) -> Dict[str, Any]:
     """
     Identify logical feature boundaries within a project.
     
     Args:
-        project_path: Path to the project directory
+        project_path: Path to the project directory (string or Path object)
         analysis_depth: Depth to analyze for feature boundaries
         
     Returns:
         Dictionary containing identified feature boundaries
     """
+    # Convert string to Path if needed
+    if isinstance(project_path, str):
+        project_path = Path(project_path)
+        
     if not project_path.exists() or not project_path.is_dir():
         raise ValueError(f"Project path does not exist or is not a directory: {project_path}")
     
