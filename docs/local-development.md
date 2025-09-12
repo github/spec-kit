@@ -62,7 +62,9 @@ uvx --from git+https://github.com/github/spec-kit.git@your-feature-branch specif
 ```
 
 ## 5. Testing Script Permission Logic
+
 After running an `init`, check that shell scripts are executable on POSIX systems:
+
 ```bash
 ls -l scripts | grep .sh
 # Expect owner execute bit (e.g. -rwxr-xr-x)
@@ -70,13 +72,16 @@ ls -l scripts | grep .sh
 On Windows this step is a no-op.
 
 ## 6. Run Lint / Basic Checks (Add Your Own)
+
 Currently no enforced lint config is bundled, but you can quickly sanity check importability:
 ```bash
 python -c "import specify_cli; print('Import OK')"
 ```
 
 ## 7. Build a Wheel Locally (Optional)
+
 Validate packaging before publishing:
+
 ```bash
 uv build
 ls dist/
@@ -84,7 +89,9 @@ ls dist/
 Install the built artifact into a fresh throwaway environment if needed.
 
 ## 8. Using a Temporary Workspace
+
 When testing `init --here` in a dirty directory, create a temp workspace:
+
 ```bash
 mkdir /tmp/spec-test && cd /tmp/spec-test
 python -m src.specify_cli init --here --ai claude --ignore-agent-tools  # if repo copied here
@@ -92,7 +99,9 @@ python -m src.specify_cli init --here --ai claude --ignore-agent-tools  # if rep
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
 ## 9. Debug Network / TLS Skips
+
 If you need to bypass TLS validation while experimenting:
+
 ```bash
 specify check --skip-tls
 specify init demo --skip-tls --ai gemini --ignore-agent-tools
@@ -100,6 +109,7 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools
 (Use only for local experimentation.)
 
 ## 10. Rapid Edit Loop Summary
+
 | Action | Command |
 |--------|---------|
 | Run CLI directly | `python -m src.specify_cli --help` |
@@ -109,12 +119,14 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools
 | Build wheel | `uv build` |
 
 ## 11. Cleaning Up
+
 Remove build artifacts / virtual env quickly:
 ```bash
 rm -rf .venv dist build *.egg-info
 ```
 
 ## 12. Common Issues
+
 | Symptom | Fix |
 |---------|-----|
 | `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
@@ -123,9 +135,8 @@ rm -rf .venv dist build *.egg-info
 | TLS errors on corporate network | Try `--skip-tls` (not for production) |
 
 ## 13. Next Steps
+
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied
 - (Optional) Tag a release once changes land in `main`
 
----
-Feel free to expand this guide with additional local workflows (debugging, profiling, test automation) as the project matures.
