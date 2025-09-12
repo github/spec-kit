@@ -30,7 +30,7 @@ import tempfile
 import shutil
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import typer
 import httpx
@@ -402,7 +402,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None):
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False) -> Tuple[Path, dict]:
     repo_owner = "github"
     repo_name = "spec-kit"
     if client is None:
@@ -414,11 +414,19 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     
     try:
         response = client.get(api_url, timeout=30, follow_redirects=True)
-        response.raise_for_status()
-        release_data = response.json()
-    except httpx.RequestError as e:
-        if verbose:
-            console.print(f"[red]Error fetching release information:[/red] {e}")
+        status = response.status_code
+        if status != 200:
+            msg = f"GitHub API returned {status} for {api_url}"
+            if debug:
+                msg += f"\nResponse headers: {response.headers}\nBody (truncated 500): {response.text[:500]}"
+            raise RuntimeError(msg)
+        try:
+            release_data = response.json()
+        except ValueError as je:
+            raise RuntimeError(f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}")
+    except Exception as e:
+        console.print(f"[red]Error fetching release information[/red]")
+        console.print(Panel(str(e), title="Fetch Error", border_style="red"))
         raise typer.Exit(1)
     
     # Find the template asset for the specified AI assistant
@@ -429,11 +437,9 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     ]
     
     if not matching_assets:
-        if verbose:
-            console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
-            console.print(f"[yellow]Available assets:[/yellow]")
-            for asset in release_data.get("assets", []):
-                console.print(f"  - {asset['name']}")
+        console.print(f"[red]No matching release asset found[/red] for pattern: [bold]{pattern}[/bold]")
+        asset_names = [a.get('name','?') for a in release_data.get('assets', [])]
+        console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
     
     # Use the first matching asset
@@ -453,8 +459,10 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        with client.stream("GET", download_url, timeout=30, follow_redirects=True) as response:
-            response.raise_for_status()
+        with client.stream("GET", download_url, timeout=60, follow_redirects=True) as response:
+            if response.status_code != 200:
+                body_sample = response.text[:400]
+                raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
             total_size = int(response.headers.get('content-length', 0))
             with open(zip_path, 'wb') as f:
                 if total_size == 0:
@@ -477,11 +485,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
                     else:
                         for chunk in response.iter_bytes(chunk_size=8192):
                             f.write(chunk)
-    except httpx.RequestError as e:
-        if verbose:
-            console.print(f"[red]Error downloading template:[/red] {e}")
+    except Exception as e:
+        console.print(f"[red]Error downloading template[/red]")
+        detail = str(e)
         if zip_path.exists():
             zip_path.unlink()
+        console.print(Panel(detail, title="Download Error", border_style="red"))
         raise typer.Exit(1)
     if verbose:
         console.print(f"Downloaded: {filename}")
@@ -494,7 +503,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -510,7 +519,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             script_type=script_type,
             verbose=verbose and tracker is None,
             show_progress=(tracker is None),
-            client=client
+            client=client,
+            debug=debug
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -627,6 +637,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
         else:
             if verbose:
                 console.print(f"[red]Error extracting template:[/red] {e}")
+                if debug:
+                    console.print(Panel(str(e), title="Extraction Error", border_style="red"))
         # Clean up project directory if created and not current directory
         if not is_current_dir and project_path.exists():
             shutil.rmtree(project_path)
@@ -702,6 +714,7 @@ def init(
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -856,7 +869,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -879,6 +892,14 @@ def init(
             tracker.complete("final", "project ready")
         except Exception as e:
             tracker.error("final", str(e))
+            console.print(Panel(f"Initialization failed: {e}", title="Failure", border_style="red"))
+            if debug:
+                env_info = [
+                    f"Python: {sys.version.split()[0]}",
+                    f"Platform: {sys.platform}",
+                    f"CWD: {Path.cwd()}",
+                ]
+                console.print(Panel("\n".join(env_info), title="Debug Environment", border_style="magenta"))
             if not here and project_path.exists():
                 shutil.rmtree(project_path)
             raise typer.Exit(1)
