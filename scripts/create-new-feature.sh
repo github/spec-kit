@@ -28,7 +28,7 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
 fi
 
 # Get repository root
-REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_ROOT=$( rev-parse --show-toplevel)
 SPECS_DIR="$REPO_ROOT/specs"
 
 # Create specs directory if it doesn't exist
@@ -68,7 +68,7 @@ WORDS=$(echo "$BRANCH_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-'
 BRANCH_NAME="${FEATURE_NUM}-${WORDS}"
 
 # Create and switch to new branch
-git checkout -b "$BRANCH_NAME"
+ checkout -b "$BRANCH_NAME"
 
 # Create feature directory
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"

@@ -5,8 +5,8 @@
 
 set -e
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+REPO_ROOT=$( rev-parse --show-toplevel)
+CURRENT_BRANCH=$( rev-parse --abbrev-ref HEAD)
 FEATURE_DIR="$REPO_ROOT/specs/$CURRENT_BRANCH"
 NEW_PLAN="$FEATURE_DIR/plan.md"
 

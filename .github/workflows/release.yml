@@ -29,7 +29,7 @@ jobs:
       id: get_tag
       run: |
         # Get the latest tag, or use v0.0.0 if no tags exist
-        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        LATEST_TAG=$( describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
         echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
         
         # Extract version number and increment
@@ -73,14 +73,14 @@ jobs:
         LAST_TAG=${{ steps.get_tag.outputs.latest_tag }}
         if [ "$LAST_TAG" = "v0.0.0" ]; then
           # Check how many commits we have and use that as the limit
-          COMMIT_COUNT=$(git rev-list --count HEAD)
+          COMMIT_COUNT=$( rev-list --count HEAD)
           if [ "$COMMIT_COUNT" -gt 10 ]; then
-            COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~10..HEAD)
+            COMMITS=$( log --oneline --pretty=format:"- %s" HEAD~10..HEAD)
           else
-            COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~$COMMIT_COUNT..HEAD 2>/dev/null || git log --oneline --pretty=format:"- %s")
+            COMMITS=$( log --oneline --pretty=format:"- %s" HEAD~$COMMIT_COUNT..HEAD 2>/dev/null ||  log --oneline --pretty=format:"- %s")
           fi
         else
-          COMMITS=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
+          COMMITS=$( log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
         fi
         
         # Create release notes

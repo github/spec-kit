@@ -31,7 +31,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetch all history for git info
+          fetch-depth: 0 # Fetch all history for  info
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4

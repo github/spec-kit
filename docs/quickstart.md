@@ -9,7 +9,7 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 Initialize your project depending on the coding agent you're using:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from +https://github.com/github/spec-kit. specify init <PROJECT_NAME>
 ```
 
 ### 2. Create the Spec

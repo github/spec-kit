@@ -369,7 +369,7 @@ def check_tool(tool: str, install_hint: str) -> bool:
 
 
 def is_git_repo(path: Path = None) -> bool:
-    """Check if the specified path is inside a git repository."""
+    """Check if the specified path is inside a  repository."""
     if path is None:
         path = Path.cwd()
     
@@ -377,9 +377,9 @@ def is_git_repo(path: Path = None) -> bool:
         return False
 
     try:
-        # Use git command to check if inside a work tree
+        # Use  command to check if inside a work tree
         subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
+            ["", "rev-parse", "--is-inside-work-tree"],
             check=True,
             capture_output=True,
             cwd=path,
@@ -390,24 +390,24 @@ def is_git_repo(path: Path = None) -> bool:
 
 
 def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
-    """Initialize a git repository in the specified path.
+    """Initialize a  repository in the specified path.
     quiet: if True suppress console output (tracker handles status)
     """
     try:
         original_cwd = Path.cwd()
         os.chdir(project_path)
         if not quiet:
-            console.print("[cyan]Initializing git repository...[/cyan]")
-        subprocess.run(["git", "init"], check=True, capture_output=True)
-        subprocess.run(["git", "add", "."], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True)
+            console.print("[cyan]Initializing  repository...[/cyan]")
+        subprocess.run(["", "init"], check=True, capture_output=True)
+        subprocess.run(["", "add", "."], check=True, capture_output=True)
+        subprocess.run(["", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True)
         if not quiet:
             console.print("[green]✓[/green] Git repository initialized")
         return True
         
     except subprocess.CalledProcessError as e:
         if not quiet:
-            console.print(f"[red]Error initializing git repository:[/red] {e}")
+            console.print(f"[red]Error initializing  repository:[/red] {e}")
         return False
     finally:
         os.chdir(original_cwd)
@@ -724,7 +724,7 @@ def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, or copilot"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
-    no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
+    no_git: bool = typer.Option(False, "--no-", help="Skip  repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
 ):
@@ -732,18 +732,18 @@ def init(
     Initialize a new Specify project from the latest template.
     
     This command will:
-    1. Check that required tools are installed (git is optional)
+    1. Check that required tools are installed ( is optional)
     2. Let you choose your AI assistant (Claude Code, Gemini CLI, or GitHub Copilot)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
+    5. Initialize a fresh  repository (if not --no- and no existing repo)
     6. Optionally set up AI assistant commands
     
     Examples:
         specify init my-project
         specify init my-project --ai claude
         specify init my-project --ai gemini
-        specify init my-project --ai copilot --no-git
+        specify init my-project --ai copilot --no-
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
@@ -790,10 +790,10 @@ def init(
         border_style="cyan"
     ))
     
-    # Check git only if we might need it (not --no-git)
+    # Check  only if we might need it (not --no-)
     git_available = True
     if not no_git:
-        git_available = check_tool("git", "https://git-scm.com/downloads")
+        git_available = check_tool("", "https://-scm.com/downloads")
         if not git_available:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
@@ -847,7 +847,7 @@ def init(
         ("extracted-summary", "Extraction summary"),
     ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
-        ("git", "Initialize git repository"),
+        ("", "Initialize  repository"),
         ("final", "Finalize")
     ]:
         tracker.add(key, label)
@@ -868,18 +868,18 @@ def init(
 
             # Git step
             if not no_git:
-                tracker.start("git")
+                tracker.start("")
                 if is_git_repo(project_path):
-                    tracker.complete("git", "existing repo detected")
+                    tracker.complete("", "existing repo detected")
                 elif git_available:
                     if init_git_repo(project_path, quiet=True):
-                        tracker.complete("git", "initialized")
+                        tracker.complete("", "initialized")
                     else:
-                        tracker.error("git", "init failed")
+                        tracker.error("", "init failed")
                 else:
-                    tracker.skip("git", "git not available")
+                    tracker.skip("", " not available")
             else:
-                tracker.skip("git", "--no-git flag")
+                tracker.skip("", "--no- flag")
 
             tracker.complete("final", "project ready")
         except Exception as e:
@@ -939,12 +939,12 @@ def check():
     tracker = StepTracker("Check Available Tools")
     
     # Add all tools we want to check
-    tracker.add("git", "Git version control")
+    tracker.add("", "Git version control")
     tracker.add("claude", "Claude Code CLI")
     tracker.add("gemini", "Gemini CLI")
     
     # Check each tool
-    git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
+    git_ok = check_tool_for_tracker("", "https://-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
     gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
     
@@ -956,7 +956,7 @@ def check():
     
     # Recommendations
     if not git_ok:
-        console.print("[dim]Tip: Install git for repository management[/dim]")
+        console.print("[dim]Tip: Install  for repository management[/dim]")
     if not (claude_ok or gemini_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 

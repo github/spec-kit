@@ -3,12 +3,12 @@
 
 # Get repository root
 get_repo_root() {
-    git rev-parse --show-toplevel
+     rev-parse --show-toplevel
 }
 
 # Get current branch
 get_current_branch() {
-    git rev-parse --abbrev-ref HEAD
+     rev-parse --abbrev-ref HEAD
 }
 
 # Check if current branch is a feature branch

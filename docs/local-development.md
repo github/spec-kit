@@ -5,10 +5,10 @@ This guide shows how to iterate on the `specify` CLI locally without publishing 
 ## 1. Clone and Switch Branches
 
 ```bash
-git clone https://github.com/github/spec-kit.git
+ clone https://github.com/github/spec-kit.
 cd spec-kit
 # Work on a feature branch
-git checkout -b your-feature-branch
+ checkout -b your-feature-branch
 ```
 
 ## 2. Run the CLI Directly (Fastest Feedback)
@@ -57,8 +57,8 @@ You can also point uvx at a specific branch without merging:
 
 ```bash
 # Push your working branch first
-git push origin your-feature-branch
-uvx --from git+https://github.com/github/spec-kit.git@your-feature-branch specify init demo-branch-test
+ push origin your-feature-branch
+uvx --from +https://github.com/github/spec-kit.@your-feature-branch specify init demo-branch-test
 ```
 
 ### 4a. Absolute Path uvx (Run From Anywhere)
@@ -138,7 +138,7 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools
 | Editable install | `uv pip install -e .` then `specify ...` |
 | Local uvx run (repo root) | `uvx --from . specify ...` |
 | Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit specify ...` |
-| Git branch uvx | `uvx --from git+URL@branch specify ...` |
+| Git branch uvx | `uvx --from +URL@branch specify ...` |
 | Build wheel | `uv build` |
 
 ## 11. Cleaning Up
@@ -154,7 +154,7 @@ rm -rf .venv dist build *.egg-info
 |---------|-----|
 | `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
 | Scripts not executable (Linux) | Re-run init (logic adds bits) or `chmod +x scripts/*.sh` |
-| Git step skipped | You passed `--no-git` or Git not installed |
+| Git step skipped | You passed `--no-` or Git not installed |
 | TLS errors on corporate network | Try `--skip-tls` (not for production) |
 
 ## 13. Next Steps

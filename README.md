@@ -40,7 +40,7 @@ Spec-Driven Development **flips the script** on traditional software development
 Initialize your project depending on the coding agent you're using:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from +https://github.com/github/spec-kit. specify init <PROJECT_NAME>
 ```
 
 ### 2. Create the spec
@@ -74,7 +74,7 @@ The `specify` command supports the following options:
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
-| `check`     | Check for installed tools (`git`, `claude`, `gemini`)          |
+| `check`     | Check for installed tools (``, `claude`, `gemini`)          |
 
 ### `specify init` Arguments & Options
 
@@ -83,7 +83,7 @@ The `specify` command supports the following options:
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
 | `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, or `copilot`                       |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
-| `--no-git`             | Flag     | Skip git repository initialization                                          |
+| `--no-`             | Flag     | Skip  repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 
@@ -99,8 +99,8 @@ specify init my-project --ai claude
 # Initialize in current directory
 specify init --here --ai copilot
 
-# Skip git initialization
-specify init my-project --ai gemini --no-git
+# Skip  initialization
+specify init my-project --ai gemini --no-
 
 # Check system requirements
 specify check
@@ -155,7 +155,7 @@ Our research and experimentation focus on:
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
-- [Git](https://git-scm.com/downloads)
+- [Git](https://-scm.com/downloads)
 
 ## 📖 Learn more
 
@@ -396,11 +396,11 @@ If you're having issues with Git authentication on Linux, you can install Git Cr
 #!/usr/bin/env bash
 set -e
 echo "Downloading Git Credential Manager v2.6.1..."
-wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
+wget https://github.com/-ecosystem/-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
 echo "Installing Git Credential Manager..."
 sudo dpkg -i gcm-linux_amd64.2.6.1.deb
 echo "Configuring Git to use GCM..."
-git config --global credential.helper manager
+ config --global credential.helper manager
 echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
