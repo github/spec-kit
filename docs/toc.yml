@@ -1,10 +1,17 @@
+# Home page
 - name: Home
   href: index.md
-- name: Installation
-  href: installation.md
-- name: Quick Start
-  href: quickstart.md
-- name: Contributing
-  href: CONTRIBUTING.md
-- name: Support
-  href: SUPPORT.md
+
+# Getting started section
+- name: Getting Started
+  items:
+    - name: Installation
+      href: installation.md
+    - name: Quick Start
+      href: quickstart.md
+
+# Development workflows
+- name: Development
+  items:
+    - name: Local Development
+      href: local-development.md

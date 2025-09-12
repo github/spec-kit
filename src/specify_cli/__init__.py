@@ -60,6 +60,9 @@ AI_CHOICES = {
     "qwen": "Qwen Code"
 }
 
+# Claude CLI local installation path after migrate-installer
+CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
+
 # ASCII Art Banner
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -336,8 +339,28 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
         return None
 
 
+def check_tool_for_tracker(tool: str, install_hint: str, tracker: StepTracker) -> bool:
+    """Check if a tool is installed and update tracker."""
+    if shutil.which(tool):
+        tracker.complete(tool, "available")
+        return True
+    else:
+        tracker.error(tool, f"not found - {install_hint}")
+        return False
+
+
 def check_tool(tool: str, install_hint: str) -> bool:
     """Check if a tool is installed."""
+    
+    # Special handling for Claude CLI after `claude migrate-installer`
+    # See: https://github.com/github/spec-kit/issues/123
+    # The migrate-installer command REMOVES the original executable from PATH
+    # and creates an alias at ~/.claude/local/claude instead
+    # This path should be prioritized over other claude executables in PATH
+    if tool == "claude":
+        if CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file():
+            return True
+    
     if shutil.which(tool):
         return True
     else:
@@ -636,6 +659,67 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
     return project_path
 
 
+def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Ensure POSIX .sh scripts in the project .specify/scripts directory have execute bits (no-op on Windows)."""
+    if os.name == "nt":
+        return  # Windows: skip silently
+    scripts_dir = project_path / ".specify" / "scripts"
+    if not scripts_dir.is_dir():
+        return
+    failures: list[str] = []
+    updated = 0
+    for script in scripts_dir.glob("*.sh"):
+        try:
+            # Skip symlinks
+            if script.is_symlink():
+                continue
+            # Must be a regular file
+            if not script.is_file():
+                continue
+            # Quick shebang check
+            try:
+                with script.open("rb") as f:
+                    first_two = f.read(2)
+                if first_two != b"#!":
+                    continue
+            except Exception:
+                continue
+            st = script.stat()
+            mode = st.st_mode
+            # If already any execute bit set, skip
+            if mode & 0o111:
+                continue
+            # Only add execute bits that correspond to existing read bits
+            new_mode = mode
+            if mode & 0o400:  # owner read
+                new_mode |= 0o100
+            if mode & 0o040:  # group read
+                new_mode |= 0o010
+            if mode & 0o004:  # other read
+                new_mode |= 0o001
+            # Fallback: ensure at least owner execute
+            if not (new_mode & 0o100):
+                new_mode |= 0o100
+            os.chmod(script, new_mode)
+            updated += 1
+        except Exception as e:
+            failures.append(f"{script.name}: {e}")
+    if tracker:
+        detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
+        tracker.add("chmod", "Set script permissions")
+        if failures:
+            tracker.error("chmod", detail)
+        else:
+            tracker.complete("chmod", detail)
+    else:
+        if updated:
+            console.print(f"[cyan]Updated execute permissions on {updated} script(s)[/cyan]")
+        if failures:
+            console.print("[yellow]Some scripts could not be updated:[/yellow]")
+            for f in failures:
+                console.print(f"  - {f}")
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
@@ -767,6 +851,7 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
+    ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -783,6 +868,9 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker, client=local_client)
+
+            # Ensure scripts are executable (POSIX)
+            ensure_executable_scripts(project_path, tracker=tracker)
 
             # Git step
             if not no_git:
@@ -853,38 +941,38 @@ def init(
     # Removed farewell line per user request
 
 
-# Add skip_tls option to check
 @app.command()
-def check(skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)")):
+def check():
     """Check that all required tools are installed."""
     show_banner()
-    console.print("[bold]Checking Specify requirements...[/bold]\n")
+    console.print("[bold]Checking for installed tools...[/bold]\n")
 
-    # Check if we have internet connectivity by trying to reach GitHub API
-    console.print("[cyan]Checking internet connectivity...[/cyan]")
-    verify = not skip_tls
-    local_ssl_context = ssl_context if verify else False
-    local_client = httpx.Client(verify=local_ssl_context)
-    try:
-        response = local_client.get("https://api.github.com", timeout=5, follow_redirects=True)
-        console.print("[green]✓[/green] Internet connection available")
-    except httpx.RequestError:
-        console.print("[red]✗[/red] No internet connection - required for downloading templates")
-        console.print("[yellow]Please check your internet connection[/yellow]")
-
-    console.print("\n[cyan]Optional tools:[/cyan]")
-    git_ok = check_tool("git", "https://git-scm.com/downloads")
+    # Create tracker for checking tools
+    tracker = StepTracker("Check Available Tools")
     
-    console.print("\n[cyan]Optional AI tools:[/cyan]")
-    claude_ok = check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup")
-    gemini_ok = check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli")
-    qwen_ok = check_tool("qwen", "Install from: https://github.com/QwenLM/qwen-code")
+    # Add all tools we want to check
+    tracker.add("git", "Git version control")
+    tracker.add("claude", "Claude Code CLI")
+    tracker.add("gemini", "Gemini CLI")
+    tracker.add("qwen", "Qwen Code CLI")
     
-    console.print("\n[green]✓ Specify CLI is ready to use![/green]")
+    # Check each tool
+    git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
+    claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
+    gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
+    qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
+    
+    # Render the final tree
+    console.print(tracker.render())
+    
+    # Summary
+    console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
+    
+    # Recommendations
     if not git_ok:
-        console.print("[yellow]Consider installing git for repository management[/yellow]")
+        console.print("[dim]Tip: Install git for repository management[/dim]")
     if not (claude_ok or gemini_ok or qwen_ok):
-        console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
+        console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
 def main():
