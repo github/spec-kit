@@ -14,6 +14,7 @@ NEW_PLAN="$FEATURE_DIR/plan.md"
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
+CODEX_FILE="$REPO_ROOT/CODEX.md"
 
 # Allow override via argument
 AGENT_TYPE="$1"
@@ -46,13 +47,18 @@ update_agent_file() {
     if [ ! -f "$target_file" ]; then
         echo "Creating new $agent_name context file..."
         
-        # Check if this is the SDD repo itself
-        if [ -f "$REPO_ROOT/templates/agent-file-template.md" ]; then
-            cp "$REPO_ROOT/templates/agent-file-template.md" "$temp_file"
+        # Check if this is the SDD repo itself and select appropriate template
+        local template_file
+        if [[ "$agent_name" == *"Codex"* ]] && [ -f "$REPO_ROOT/templates/CODEX-template.md" ]; then
+            template_file="$REPO_ROOT/templates/CODEX-template.md"
+        elif [ -f "$REPO_ROOT/templates/agent-file-template.md" ]; then
+            template_file="$REPO_ROOT/templates/agent-file-template.md"
         else
             echo "ERROR: Template not found at $REPO_ROOT/templates/agent-file-template.md"
             return 1
         fi
+        
+        cp "$template_file" "$temp_file"
         
         # Replace placeholders
         sed -i.bak "s/\[PROJECT NAME\]/$(basename $REPO_ROOT)/" "$temp_file"
@@ -197,20 +203,24 @@ case "$AGENT_TYPE" in
     "copilot")
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
         ;;
+    "codex")
+        update_agent_file "$CODEX_FILE" "OpenAI Codex CLI"
+        ;;
     "")
         # Update all existing files
         [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"
         [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI" 
         [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"
+        [ -f "$CODEX_FILE" ] && update_agent_file "$CODEX_FILE" "OpenAI Codex CLI"
         
         # If no files exist, create based on current directory or ask user
-        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ]; then
+        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$CODEX_FILE" ]; then
             echo "No agent context files found. Creating Claude Code context file by default."
             update_agent_file "$CLAUDE_FILE" "Claude Code"
         fi
         ;;
     *)
-        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, or leave empty for all."
+        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, codex, or leave empty for all."
         exit 1
         ;;
 esac
@@ -227,8 +237,9 @@ if [ ! -z "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ]; then
 fi
 
 echo ""
-echo "Usage: $0 [claude|gemini|copilot]"
+echo "Usage: $0 [claude|gemini|copilot|codex]"
 echo "  - No argument: Update all existing agent context files"
 echo "  - claude: Update only CLAUDE.md"
 echo "  - gemini: Update only GEMINI.md" 
 echo "  - copilot: Update only .github/copilot-instructions.md"
+echo "  - codex: Update only CODEX.md"

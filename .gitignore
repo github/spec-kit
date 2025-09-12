@@ -38,3 +38,6 @@ env/
 .env
 .env.local
 *.lock
+
+# Git sync script (user-specific)
+git_sync_repo.bash
