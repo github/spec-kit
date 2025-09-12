@@ -96,27 +96,16 @@ jobs:
               name=$(basename "$template" .md)
               description=$(awk '/^description:/ {gsub(/^description: *"?/, ""); gsub(/"$/, ""); print; exit}' "$template" | tr -d '\r')
               content=$(awk '/^---$/{if(++count==2) start=1; next} start' "$template" | sed "s/{ARGS}/$arg_format/g")
-              
               case $ext in
                 "toml")
-                  {
-                    echo "description = \"$description\""
-                    echo ""
-                    echo "prompt = \"\"\""
-                    echo "$content"
-                    echo "\"\"\""
-                  } > "$output_dir/$name.$ext"
-                  ;;
+                  { echo "description = \"$description\""; echo ""; echo "prompt = \"\"\""; echo "$content"; echo "\"\"\""; } > "$output_dir/$name.$ext" ;;
                 "md")
-                  echo "$content" > "$output_dir/$name.$ext"
-                  ;;
+                  echo "$content" > "$output_dir/$name.$ext" ;;
                 "prompt.md")
-                  {
-                    echo "# $(echo "$description" | sed 's/\. .*//')"
-                    echo ""
-                    echo "$content"
-                  } > "$output_dir/$name.$ext"
-                  ;;
+                  # Preserve original front matter + body with argument substitution for Copilot
+                  # Simply copy the entire template, replacing {ARGS}
+                  # This keeps YAML so tooling can parse metadata
+                  sed "s/{ARGS}/$arg_format/g" "$template" > "$output_dir/$name.$ext" ;;
               esac
             fi
           done

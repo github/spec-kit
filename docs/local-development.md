@@ -61,6 +61,28 @@ git push origin your-feature-branch
 uvx --from git+https://github.com/github/spec-kit.git@your-feature-branch specify init demo-branch-test
 ```
 
+### 4a. Absolute Path uvx (Run From Anywhere)
+
+If you're in another directory, use an absolute path instead of `.`:
+
+```bash
+uvx --from /mnt/c/GitHub/spec-kit specify --help
+uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --ai copilot --ignore-agent-tools
+```
+
+Set an environment variable for convenience:
+```bash
+export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai copilot --ignore-agent-tools
+```
+
+(Optional) Define a shell function:
+```bash
+specify-dev() { uvx --from /mnt/c/GitHub/spec-kit specify "$@"; }
+# Then
+specify-dev --help
+```
+
 ## 5. Testing Script Permission Logic
 
 After running an `init`, check that shell scripts are executable on POSIX systems:
@@ -114,7 +136,8 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools
 |--------|---------|
 | Run CLI directly | `python -m src.specify_cli --help` |
 | Editable install | `uv pip install -e .` then `specify ...` |
-| Local uvx run | `uvx --from . specify ...` |
+| Local uvx run (repo root) | `uvx --from . specify ...` |
+| Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit specify ...` |
 | Git branch uvx | `uvx --from git+URL@branch specify ...` |
 | Build wheel | `uv build` |
 
