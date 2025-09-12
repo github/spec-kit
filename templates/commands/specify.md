@@ -1,3 +1,6 @@
+---
+description: Create or update the feature specification from a natural language feature description.
+---
 <!-- VARIANT:sh 1. Run the script `scripts/bash/create-new-feature.sh --json "{ARGS}"` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute. -->
 <!-- VARIANT:ps 1. Run the script `scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute. -->
 

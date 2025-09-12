@@ -4,7 +4,14 @@ set -euo pipefail
 # create-release-packages.sh (workflow-local)
 # Build Spec Kit template release archives for each supported AI assistant and script type.
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
-# Version argument should include leading 'v'.
+#   Version argument should include leading 'v'.
+#   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
+#     AGENTS  : space or comma separated subset of: claude gemini copilot (default: all)
+#     SCRIPTS : space or comma separated subset of: sh ps (default: both)
+#   Examples:
+#     AGENTS=claude SCRIPTS=sh $0 v0.2.0
+#     AGENTS="copilot,gemini" $0 v0.2.0
+#     SCRIPTS=ps $0 v0.2.0
 
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 <version-with-v-prefix>" >&2
@@ -40,10 +47,26 @@ generate_commands() {
   mkdir -p "$output_dir"
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
-    local name description raw_body variant_line injected body
+    local name description raw_body variant_line injected body file_norm delim_count
     name=$(basename "$template" .md)
-    description=$(awk '/^description:/ {gsub(/^description: *"?/, ""); gsub(/"$/, ""); print; exit}' "$template" | tr -d '\r')
-    raw_body=$(awk '/^---$/{if(++count==2) start=1; next} start' "$template")
+    # Normalize line endings first (remove CR) for consistent regex matching
+    file_norm=$(tr -d '\r' < "$template")
+    # Extract description from frontmatter
+    description=$(printf '%s\n' "$file_norm" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
+    # Count YAML frontmatter delimiter lines
+    delim_count=$(printf '%s\n' "$file_norm" | grep -c '^---$' || true)
+    if [[ $delim_count -ge 2 ]]; then
+      # Grab everything after the second --- line
+      raw_body=$(printf '%s\n' "$file_norm" | awk '/^---$/ {if(++c==2){next}; if(c>=2){print}}')
+    else
+      # Fallback: no proper frontmatter detected; use entire file content (still allowing variant parsing)
+      raw_body=$file_norm
+    fi
+    # If somehow still empty, fallback once more to whole normalized file
+    if [[ -z ${raw_body// /} ]]; then
+      echo "Warning: body extraction empty for $template; using full file" >&2
+      raw_body=$file_norm
+    fi
     # Find single-line variant comment matching the variant: <!-- VARIANT:sh ... --> or <!-- VARIANT:ps ... -->
     variant_line=$(printf '%s\n' "$raw_body" | awk -v sv="$script_variant" '/<!--[[:space:]]+VARIANT:'sv'/ {match($0, /VARIANT:'"sv"'[[:space:]]+(.*)-->/, m); if (m[1]!="") {print m[1]; exit}}')
     if [[ -z $variant_line ]]; then
@@ -54,6 +77,11 @@ generate_commands() {
     injected=$(printf '%s\n' "$raw_body" | sed "s/VARIANT-INJECT/${variant_line//\//\/}/")
     # Remove all single-line variant comments
     injected=$(printf '%s\n' "$injected" | sed '/<!--[[:space:]]*VARIANT:sh/d' | sed '/<!--[[:space:]]*VARIANT:ps/d')
+    # Guard: if after stripping variant lines and injection the body became empty, restore original (minus variant comments) to avoid empty prompt files
+    if [[ -z ${injected// /} ]]; then
+      echo "Warning: resulting injected body empty for $template; writing unmodified body" >&2
+      injected=$raw_body
+    fi
     # Apply arg substitution and path rewrite
     body=$(printf '%s\n' "$injected" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
     case $ext in
@@ -100,9 +128,48 @@ build_variant() {
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
-# Build for each agent+script variant
-for agent in claude gemini copilot; do
-  for script in sh ps; do
+# Determine agent list
+ALL_AGENTS=(claude gemini copilot)
+ALL_SCRIPTS=(sh ps)
+
+norm_list() {
+  # convert comma+space separated -> space separated unique while preserving order of first occurrence
+  tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?" ":"") $i)}}}END{printf("\n")}'
+}
+
+validate_subset() {
+  local type=$1; shift; local -n allowed=$1; shift; local items=($@)
+  local ok=1
+  for it in "${items[@]}"; do
+    local found=0
+    for a in "${allowed[@]}"; do [[ $it == $a ]] && { found=1; break; }; done
+    if [[ $found -eq 0 ]]; then
+      echo "Error: unknown $type '$it' (allowed: ${allowed[*]})" >&2
+      ok=0
+    fi
+  done
+  return $ok
+}
+
+if [[ -n ${AGENTS:-} ]]; then
+  AGENT_LIST=($(printf '%s' "$AGENTS" | norm_list))
+  validate_subset agent ALL_AGENTS "${AGENT_LIST[@]}" || exit 1
+else
+  AGENT_LIST=(${ALL_AGENTS[@]})
+fi
+
+if [[ -n ${SCRIPTS:-} ]]; then
+  SCRIPT_LIST=($(printf '%s' "$SCRIPTS" | norm_list))
+  validate_subset script ALL_SCRIPTS "${SCRIPT_LIST[@]}" || exit 1
+else
+  SCRIPT_LIST=(${ALL_SCRIPTS[@]})
+fi
+
+echo "Agents: ${AGENT_LIST[*]}"
+echo "Scripts: ${SCRIPT_LIST[*]}"
+
+for agent in "${AGENT_LIST[@]}"; do
+  for script in "${SCRIPT_LIST[@]}"; do
     build_variant "$agent" "$script"
   done
 done
