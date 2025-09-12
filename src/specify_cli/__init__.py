@@ -635,6 +635,67 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
     return project_path
 
 
+def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Ensure POSIX .sh scripts in the project scripts directory have execute bits (no-op on Windows)."""
+    if os.name == "nt":
+        return  # Windows: skip silently
+    scripts_dir = project_path / "scripts"
+    if not scripts_dir.is_dir():
+        return
+    failures: list[str] = []
+    updated = 0
+    for script in scripts_dir.glob("*.sh"):
+        try:
+            # Skip symlinks
+            if script.is_symlink():
+                continue
+            # Must be a regular file
+            if not script.is_file():
+                continue
+            # Quick shebang check
+            try:
+                with script.open("rb") as f:
+                    first_two = f.read(2)
+                if first_two != b"#!":
+                    continue
+            except Exception:
+                continue
+            st = script.stat()
+            mode = st.st_mode
+            # If already any execute bit set, skip
+            if mode & 0o111:
+                continue
+            # Only add execute bits that correspond to existing read bits
+            new_mode = mode
+            if mode & 0o400:  # owner read
+                new_mode |= 0o100
+            if mode & 0o040:  # group read
+                new_mode |= 0o010
+            if mode & 0o004:  # other read
+                new_mode |= 0o001
+            # Fallback: ensure at least owner execute
+            if not (new_mode & 0o100):
+                new_mode |= 0o100
+            os.chmod(script, new_mode)
+            updated += 1
+        except Exception as e:
+            failures.append(f"{script.name}: {e}")
+    if tracker:
+        detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
+        tracker.add("chmod", "Set script permissions")
+        if failures:
+            tracker.error("chmod", detail)
+        else:
+            tracker.complete("chmod", detail)
+    else:
+        if updated:
+            console.print(f"[cyan]Updated execute permissions on {updated} script(s)[/cyan]")
+        if failures:
+            console.print("[yellow]Some scripts could not be updated:[/yellow]")
+            for f in failures:
+                console.print(f"  - {f}")
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
@@ -761,6 +822,7 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
+    ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -777,6 +839,9 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker, client=local_client)
+
+            # Ensure scripts are executable (POSIX)
+            ensure_executable_scripts(project_path, tracker=tracker)
 
             # Git step
             if not no_git:
