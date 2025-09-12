@@ -98,7 +98,7 @@ specify init my-project
 # Initialize with specific AI assistant
 specify init my-project --ai claude
 
-# Initialize with Cursor IDE support
+# Initialize with Cursor support
 specify init my-project --ai cursor
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
@@ -163,7 +163,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Cursor IDE](https://cursor.sh/)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Cursor](https://cursor.sh/)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
