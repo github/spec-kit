@@ -16,6 +16,7 @@
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get started](#-get-started)
+- [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
 - [🎯 Experimental goals](#-experimental-goals)
@@ -23,7 +24,7 @@
 - [📖 Learn more](#-learn-more)
 - [Detailed process](#detailed-process)
 - [Troubleshooting](#troubleshooting)
-- [Repo Agent (cheap‑mode)](#repo-agent-cheapmode)
+- [Repo Agent (cheap‑mode)](#repo-agent-cheapmode
 
 ## 🤔 What is Spec-Driven Development?
 
@@ -44,7 +45,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
-/specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums never other nested albums. Within each album, photos are previewed in a tile-like interface.
+/specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
 ### 3. Create a technical implementation plan
@@ -60,6 +61,47 @@ Use the `/plan` command to provide your tech stack and architecture choices.
 Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 🔧 Specify CLI Reference
+
+The `specify` command supports the following options:
+
+### Commands
+
+| Command     | Description                                                    |
+|-------------|----------------------------------------------------------------|
+| `init`      | Initialize a new Specify project from the latest template      |
+| `check`     | Check for installed tools (`git`, `claude`, `gemini`)          |
+
+### `specify init` Arguments & Options
+
+| Argument/Option        | Type     | Description                                                                  |
+|------------------------|----------|------------------------------------------------------------------------------|
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, or `copilot`                       |
+| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
+| `--no-git`             | Flag     | Skip git repository initialization                                          |
+| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
+| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
+
+### Examples
+
+```bash
+# Basic project initialization
+specify init my-project
+
+# Initialize with specific AI assistant
+specify init my-project --ai claude
+
+# Initialize in current directory
+specify init --here --ai copilot
+
+# Skip git initialization
+specify init my-project --ai gemini --no-git
+
+# Check system requirements
+specify check
+```
 
 ## 📚 Core philosophy
 
@@ -102,7 +144,7 @@ Our research and experimentation focus on:
 
 - Validate the concept of parallel implementation exploration
 - Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks  
+- Extend processes to handle upgrades and modernization tasks
 
 ## 🔧 Prerequisites
 
@@ -115,11 +157,11 @@ Our research and experimentation focus on:
 ## 📖 Learn more
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
-- **[Detailed Walkthrough](#detailed-process)** - Step-by-step implementation guide
+- **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
 
-## Detailed process
+## 📋 Detailed process
 
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
@@ -211,7 +253,6 @@ At this stage, your project folder contents should resemble the following:
 │	 └── 001-create-taskify
 │	     └── spec.md
 └── templates
-    ├── CLAUDE-template.md
     ├── plan-template.md
     ├── spec-template.md
     └── tasks-template.md
@@ -342,7 +383,7 @@ Once the implementation step is done, ask Claude Code to try to run the applicat
 
 ---
 
-## Troubleshooting
+## 🔍 Troubleshooting
 
 ### Git Credential Manager on Linux
 
@@ -360,7 +401,6 @@ git config --global credential.helper manager
 echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
-
 ## Repo Agent (cheap‑mode)
 
 This repo includes a comment‑triggered agent that runs via GitHub Actions (no local setup).
@@ -381,19 +421,14 @@ This repo includes a comment‑triggered agent that runs via GitHub Actions (no 
    - `/agent diagnose <your one‑line goal>` → agent replies with **exactly 3 bullets**.  
    - `/agent patch <your one‑line goal>` → agent replies with **unified diff + 2‑3‑sentence rationale**.
 
-## Maintainers
-
-- Den Delimarsky ([@localden](https://github.com/localden))
-- John Lam ([@jflam](https://github.com/jflam))
-
-## Support
+## 💬 Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
 This project is heavily influenced by and based on the work and research of [John Lam](https://github.com/jflam).
 
-## License
+## 📄 License
 
 This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.

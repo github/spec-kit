@@ -1,0 +1,8 @@
+# DocFX build output
+_site/
+obj/
+.docfx/
+
+# Temporary files
+*.tmp
+*.log

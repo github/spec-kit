@@ -70,11 +70,11 @@ Today, practicing SDD requires assembling existing tools and maintaining discipl
 
 The key is treating specifications as the source of truth, with code as the generated output that serves the specification rather than the other way around.
 
-## Streamlining SDD with Claude Commands
+## Streamlining SDD with Commands
 
-The SDD methodology is significantly enhanced through two powerful Claude commands that automate the specification and planning workflow:
+The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking workflow:
 
-### The `new_feature` Command
+### The `/specify` Command
 
 This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
 
@@ -83,7 +83,7 @@ This command transforms a simple feature description (the user-prompt) into a co
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
 4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
 
-### The `generate_plan` Command
+### The `/plan` Command
 
 Once a feature specification exists, this command creates a comprehensive implementation plan:
 
@@ -91,14 +91,24 @@ Once a feature specification exists, this command creates a comprehensive implem
 2. **Constitutional Compliance**: Ensures alignment with project constitution and architectural principles
 3. **Technical Translation**: Converts business requirements into technical architecture and implementation details
 4. **Detailed Documentation**: Generates supporting documents for data models, API contracts, and test scenarios
-5. **Manual Testing Plans**: Creates step-by-step validation procedures for each user story
+5. **Quickstart Validation**: Produces a quickstart guide capturing key validation scenarios
+
+### The `/tasks` Command
+
+After a plan is created, this command analyzes the plan and related design documents to generate an executable task list:
+
+1. **Inputs**: Reads `plan.md` (required) and, if present, `data-model.md`, `contracts/`, and `research.md`
+2. **Task Derivation**: Converts contracts, entities, and scenarios into specific tasks
+3. **Parallelization**: Marks independent tasks `[P]` and outlines safe parallel groups
+4. **Output**: Writes `tasks.md` in the feature directory, ready for execution by a Task agent
 
 ### Example: Building a Chat Feature
 
 Here's how these commands transform the traditional development workflow:
 
 **Traditional Approach:**
-```
+
+```text
 1. Write a PRD in a document (2-3 hours)
 2. Create design documents (2-3 hours)
 3. Set up project structure manually (30 minutes)
@@ -108,30 +118,33 @@ Total: ~12 hours of documentation work
 ```
 
 **SDD with Commands Approach:**
+
 ```bash
 # Step 1: Create the feature specification (5 minutes)
-/new_feature Real-time chat system with message history and user presence
+/specify Real-time chat system with message history and user presence
 
 # This automatically:
 # - Creates branch "003-chat-system"
-# - Generates specs/003-chat-system/feature-spec.md
+# - Generates specs/003-chat-system/spec.md
 # - Populates it with structured requirements
 
-# Step 2: Generate implementation plan (10 minutes)
-/generate_plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
+# Step 2: Generate implementation plan (5 minutes)
+/plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
+
+# Step 3: Generate executable tasks (5 minutes)
+/tasks
 
 # This automatically creates:
-# - specs/003-chat-system/implementation-plan.md
-# - specs/003-chat-system/implementation-details/
-#   - 00-research.md (WebSocket library comparisons)
-#   - 02-data-model.md (Message and User schemas)
-#   - 03-api-contracts.md (WebSocket events, REST endpoints)
-#   - 06-contract-tests.md (Message flow scenarios)
-#   - 08-inter-library-tests.md (Database-WebSocket integration)
-# - specs/003-chat-system/manual-testing.md
+# - specs/003-chat-system/plan.md
+# - specs/003-chat-system/research.md (WebSocket library comparisons)
+# - specs/003-chat-system/data-model.md (Message and User schemas)
+# - specs/003-chat-system/contracts/ (WebSocket events, REST endpoints)
+# - specs/003-chat-system/quickstart.md (Key validation scenarios)
+# - specs/003-chat-system/tasks.md (Task list derived from the plan)
 ```
 
 In 15 minutes, you have:
+
 - A complete feature specification with user stories and acceptance criteria
 - A detailed implementation plan with technology choices and rationale
 - API contracts and data models ready for code generation
@@ -156,7 +169,8 @@ The true power of these commands lies not just in automation, but in how the tem
 #### 1. **Preventing Premature Implementation Details**
 
 The feature specification template explicitly instructs:
-```
+
+```text
 - ✅ Focus on WHAT users need and WHY
 - ❌ Avoid HOW to implement (no tech stack, APIs, code structure)
 ```
@@ -166,9 +180,10 @@ This constraint forces the LLM to maintain proper abstraction levels. When an LL
 #### 2. **Forcing Explicit Uncertainty Markers**
 
 Both templates mandate the use of `[NEEDS CLARIFICATION]` markers:
-```
+
+```text
 When creating this spec from a user prompt:
-1. **Mark all ambiguities**: Use [NEEDS CLARIFICATION: specific question] 
+1. **Mark all ambiguities**: Use [NEEDS CLARIFICATION: specific question]
 2. **Don't guess**: If the prompt doesn't specify something, mark it
 ```
 
@@ -177,10 +192,11 @@ This prevents the common LLM behavior of making plausible but potentially incorr
 #### 3. **Structured Thinking Through Checklists**
 
 The templates include comprehensive checklists that act as "unit tests" for the specification:
-```
+
+```markdown
 ### Requirement Completeness
 - [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous  
+- [ ] Requirements are testable and unambiguous
 - [ ] Success criteria are measurable
 ```
 
@@ -189,7 +205,8 @@ These checklists force the LLM to self-review its output systematically, catchin
 #### 4. **Constitutional Compliance Through Gates**
 
 The implementation plan template enforces architectural principles through phase gates:
-```
+
+```markdown
 ### Phase -1: Pre-Implementation Gates
 #### Simplicity Gate (Article VII)
 - [ ] Using ≤3 projects?
@@ -204,9 +221,10 @@ These gates prevent over-engineering by making the LLM explicitly justify any co
 #### 5. **Hierarchical Detail Management**
 
 The templates enforce proper information architecture:
-```
-**IMPORTANT**: This implementation plan should remain high-level and readable. 
-Any code samples, detailed algorithms, or extensive technical specifications 
+
+```text
+**IMPORTANT**: This implementation plan should remain high-level and readable.
+Any code samples, detailed algorithms, or extensive technical specifications
 must be placed in the appropriate `implementation-details/` file
 ```
 
@@ -215,7 +233,8 @@ This prevents the common problem of specifications becoming unreadable code dump
 #### 6. **Test-First Thinking**
 
 The implementation template enforces test-first development:
-```
+
+```text
 ### File Creation Order
 1. Create `contracts/` with API specifications
 2. Create test files in order: contract → integration → e2e → unit
@@ -227,7 +246,8 @@ This ordering constraint ensures the LLM thinks about testability and contracts 
 #### 7. **Preventing Speculative Features**
 
 Templates explicitly discourage speculation:
-```
+
+```text
 - [ ] No speculative or "might need" features
 - [ ] All phases have clear prerequisites and deliverables
 ```
@@ -237,6 +257,7 @@ This stops the LLM from adding "nice to have" features that complicate implement
 ### The Compound Effect
 
 These constraints work together to produce specifications that are:
+
 - **Complete**: Checklists ensure nothing is forgotten
 - **Unambiguous**: Forced clarification markers highlight uncertainties
 - **Testable**: Test-first thinking baked into the process
@@ -247,25 +268,29 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Constitutional Foundation: Enforcing Architectural Discipline
 
-At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`base/memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
 
 ### The Nine Articles of Development
 
 The constitution defines nine articles that shape every aspect of the development process:
 
 #### Article I: Library-First Principle
+
 Every feature must begin as a standalone library—no exceptions. This forces modular design from the start:
-```
-Every feature in Specify MUST begin its existence as a standalone library. 
-No feature shall be implemented directly within application code without 
+
+```text
+Every feature in Specify MUST begin its existence as a standalone library.
+No feature shall be implemented directly within application code without
 first being abstracted into a reusable library component.
 ```
 
 This principle ensures that specifications generate modular, reusable code rather than monolithic applications. When the LLM generates an implementation plan, it must structure features as libraries with clear boundaries and minimal dependencies.
 
 #### Article II: CLI Interface Mandate
+
 Every library must expose its functionality through a command-line interface:
-```
+
+```text
 All CLI interfaces MUST:
 - Accept text as input (via stdin, arguments, or files)
 - Produce text as output (via stdout)
@@ -275,8 +300,10 @@ All CLI interfaces MUST:
 This enforces observability and testability. The LLM cannot hide functionality inside opaque classes—everything must be accessible and verifiable through text-based interfaces.
 
 #### Article III: Test-First Imperative
+
 The most transformative article—no code before tests:
-```
+
+```text
 This is NON-NEGOTIABLE: All implementation MUST follow strict Test-Driven Development.
 No implementation code shall be written before:
 1. Unit tests are written
@@ -287,8 +314,10 @@ No implementation code shall be written before:
 This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
+
 These paired articles combat over-engineering:
-```
+
+```text
 Section 7.3: Minimal Project Structure
 - Maximum 3 projects for initial implementation
 - Additional projects require documented justification
@@ -300,8 +329,10 @@ Section 8.1: Framework Trust
 When an LLM might naturally create elaborate abstractions, these articles force it to justify every layer of complexity. The implementation plan template's "Phase -1 Gates" directly enforce these principles.
 
 #### Article IX: Integration-First Testing
+
 Prioritizes real-world testing over isolated unit tests:
-```
+
+```text
 Tests MUST use realistic environments:
 - Prefer real databases over mocks
 - Use actual service instances over stubs
@@ -343,7 +374,8 @@ The constitution's power lies in its immutability. While implementation details 
 ### Constitutional Evolution
 
 While principles are immutable, their application can evolve:
-```
+
+```text
 Section 4.2: Amendment Process
 Modifications to this constitution require:
 - Explicit documentation of the rationale for change
