@@ -894,12 +894,14 @@ def init(
             tracker.error("final", str(e))
             console.print(Panel(f"Initialization failed: {e}", title="Failure", border_style="red"))
             if debug:
-                env_info = [
-                    f"Python: {sys.version.split()[0]}",
-                    f"Platform: {sys.platform}",
-                    f"CWD: {Path.cwd()}",
+                _env_pairs = [
+                    ("Python", sys.version.split()[0]),
+                    ("Platform", sys.platform),
+                    ("CWD", str(Path.cwd())),
                 ]
-                console.print(Panel("\n".join(env_info), title="Debug Environment", border_style="magenta"))
+                _label_width = max(len(k) for k, _ in _env_pairs)
+                env_lines = [f"{k.ljust(_label_width)} → [bright_black]{v}[/bright_black]" for k, v in _env_pairs]
+                console.print(Panel("\n".join(env_lines), title="Debug Environment", border_style="magenta"))
             if not here and project_path.exists():
                 shutil.rmtree(project_path)
             raise typer.Exit(1)

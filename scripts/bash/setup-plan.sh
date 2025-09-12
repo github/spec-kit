@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/common.sh"
 eval $(get_feature_paths)
 check_feature_branch "$CURRENT_BRANCH" || exit 1
 mkdir -p "$FEATURE_DIR"
-TEMPLATE="$REPO_ROOT/templates/plan-template.md"
+TEMPLATE="$REPO_ROOT/.specify/templates/plan-template.md"
 [[ -f "$TEMPLATE" ]] && cp "$TEMPLATE" "$IMPL_PLAN"
 if $JSON_MODE; then
   printf '{"FEATURE_SPEC":"%s","IMPL_PLAN":"%s","SPECS_DIR":"%s","BRANCH":"%s"}\n' \
