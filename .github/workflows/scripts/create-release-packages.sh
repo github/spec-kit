@@ -18,10 +18,11 @@ fi
 
 echo "Building release packages for $NEW_VERSION"
 
-rm -rf sdd-package-base sdd-claude-package sdd-gemini-package sdd-copilot-package \
+rm -rf sdd-package-base sdd-claude-package sdd-gemini-package sdd-copilot-package sdd-auggie-package \
        spec-kit-template-claude-${NEW_VERSION}.zip \
        spec-kit-template-gemini-${NEW_VERSION}.zip \
-       spec-kit-template-copilot-${NEW_VERSION}.zip || true
+       spec-kit-template-copilot-${NEW_VERSION}.zip \
+       spec-kit-template-auggie-${NEW_VERSION}.zip || true
 
 mkdir -p sdd-package-base
 SPEC_DIR="sdd-package-base/.specify"
@@ -83,9 +84,18 @@ mkdir -p sdd-copilot-package/.github/prompts
 generate_commands copilot prompt.md "\$ARGUMENTS" sdd-copilot-package/.github/prompts
 echo "Created Copilot package"
 
+# Create Auggie package
+echo "Building Auggie package..."
+mkdir -p sdd-auggie-package
+cp -r sdd-package-base/. sdd-auggie-package/
+mkdir -p sdd-auggie-package/.augment/commands
+generate_commands auggie md "\$ARGUMENTS" sdd-auggie-package/.augment/commands
+echo "Created Auggie package"
+
 ( cd sdd-claude-package && zip -r ../spec-kit-template-claude-${NEW_VERSION}.zip . )
 ( cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${NEW_VERSION}.zip . )
 ( cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${NEW_VERSION}.zip . )
+( cd sdd-auggie-package && zip -r ../spec-kit-template-auggie-${NEW_VERSION}.zip . )
 
 echo "Archives:"
 ls -1 spec-kit-template-*-${NEW_VERSION}.zip
