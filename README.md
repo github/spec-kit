@@ -40,6 +40,14 @@ Spec-Driven Development **flips the script** on traditional software development
 Initialize your project depending on the coding agent you're using:
 
 ```bash
+# Recommended: Install from PyPI
+uvx --from specify-cli specify init <PROJECT_NAME>
+
+# Install from PyPI with pip
+pip install specify-cli
+specify init <PROJECT_NAME>
+
+# Alternative: Install from Git
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
