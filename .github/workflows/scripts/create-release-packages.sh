@@ -18,10 +18,11 @@ fi
 
 echo "Building release packages for $NEW_VERSION"
 
-rm -rf sdd-package-base sdd-claude-package sdd-gemini-package sdd-copilot-package \
+rm -rf sdd-package-base sdd-claude-package sdd-gemini-package sdd-copilot-package sdd-qwen-package \
        spec-kit-template-claude-${NEW_VERSION}.zip \
        spec-kit-template-gemini-${NEW_VERSION}.zip \
-       spec-kit-template-copilot-${NEW_VERSION}.zip || true
+       spec-kit-template-copilot-${NEW_VERSION}.zip \
+       spec-kit-template-qwen-${NEW_VERSION}.zip || true
 
 mkdir -p sdd-package-base
 SPEC_DIR="sdd-package-base/.specify"
@@ -83,10 +84,21 @@ mkdir -p sdd-copilot-package/.github/prompts
 generate_commands copilot prompt.md "\$ARGUMENTS" sdd-copilot-package/.github/prompts
 echo "Created Copilot package"
 
+# Create Qwen package
+echo "Building Qwen package..."
+mkdir -p sdd-qwen-package
+cp -r sdd-package-base/. sdd-qwen-package/
+mkdir -p sdd-qwen-package/.qwen/commands
+generate_commands qwen md "\$ARGUMENTS" sdd-qwen-package/.qwen/commands
+[[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md sdd-qwen-package/QWEN.md
+echo "Created Qwen package"
+
 ( cd sdd-claude-package && zip -r ../spec-kit-template-claude-${NEW_VERSION}.zip . )
 ( cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${NEW_VERSION}.zip . )
 ( cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${NEW_VERSION}.zip . )
+( cd sdd-qwen-package && zip -r ../spec-kit-template-qwen-${NEW_VERSION}.zip . )
 
 echo "Archives:"
 ls -1 spec-kit-template-*-${NEW_VERSION}.zip
 unzip -l spec-kit-template-copilot-${NEW_VERSION}.zip | head -10 || true
+unzip -l spec-kit-template-qwen-${NEW_VERSION}.zip | head -10 || true
