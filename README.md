@@ -23,6 +23,7 @@
 - [📖 Learn more](#-learn-more)
 - [Detailed process](#detailed-process)
 - [Troubleshooting](#troubleshooting)
+- [Repo Agent (cheap‑mode)](#repo-agent-cheapmode)
 
 ## 🤔 What is Spec-Driven Development?
 
@@ -359,6 +360,26 @@ git config --global credential.helper manager
 echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
+
+## Repo Agent (cheap‑mode)
+
+This repo includes a comment‑triggered agent that runs via GitHub Actions (no local setup).
+
+**Secrets**
+- `MODEL_PROVIDER` – e.g. `openai`
+- `MODEL_API_KEY` – your API key
+- (Optional) `MODEL_NAME` – defaults to `gpt‑4o‑mini`
+
+**Safety**
+- Allowlist: `server/**`, `ui/**`, `scripts/**`
+- Diff cap: 50 changed lines
+- Patch phase posts a unified diff preview (MVP doesn’t auto‑commit).
+
+**Use**
+1. Open a pull request.
+2. Comment  
+   - `/agent diagnose <your one‑line goal>` → agent replies with **exactly 3 bullets**.  
+   - `/agent patch <your one‑line goal>` → agent replies with **unified diff + 2‑3‑sentence rationale**.
 
 ## Maintainers
 

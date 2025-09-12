@@ -1,0 +1,42 @@
+name: Repo Agent (cheap‑mode)
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  run-agent:
+    # Only run on comments that start with /agent diagnose or /agent patch on a PR
+    if: >
+      github.event.issue.pull_request &&
+      (startsWith(github.event.comment.body, '/agent diagnose') ||
+       startsWith(github.event.comment.body, '/agent patch'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/pull/${{ github.event.issue.number }}/head
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run the agent script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODEL_PROVIDER: ${{ secrets.MODEL_PROVIDER }}
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          MODEL_NAME: ${{ secrets.MODEL_NAME }}  # optional override
+          ALLOWLIST: "server/** ui/** scripts/**"
+          DIFF_CAP: "50"
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: node scripts/agent.mjs
