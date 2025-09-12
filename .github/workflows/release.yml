@@ -81,7 +81,7 @@ jobs:
           cat > release_notes.md << EOF
           Template release ${{ steps.get_tag.outputs.new_version }}
 
-          Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+          Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, and Cursor IDE.
 
           Now includes per-script variants for POSIX shell (sh) and PowerShell (ps).
 
@@ -92,6 +92,8 @@ jobs:
           - spec-kit-template-claude-ps-${{ steps.get_tag.outputs.new_version }}.zip
           - spec-kit-template-gemini-sh-${{ steps.get_tag.outputs.new_version }}.zip
           - spec-kit-template-gemini-ps-${{ steps.get_tag.outputs.new_version }}.zip
+          - spec-kit-template-cursor-sh-${{ steps.get_tag.outputs.new_version }}.zip
+          - spec-kit-template-cursor-ps-${{ steps.get_tag.outputs.new_version }}.zip
           EOF
           
           echo "Generated release notes:"
@@ -110,6 +112,8 @@ jobs:
             spec-kit-template-claude-ps-${{ steps.get_tag.outputs.new_version }}.zip \
             spec-kit-template-gemini-sh-${{ steps.get_tag.outputs.new_version }}.zip \
             spec-kit-template-gemini-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            spec-kit-template-cursor-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            spec-kit-template-cursor-ps-${{ steps.get_tag.outputs.new_version }}.zip \
             --title "Spec Kit Templates - $VERSION_NO_V" \
             --notes-file release_notes.md
         env:
