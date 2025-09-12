@@ -1,8 +1,8 @@
 ---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
 ---
-<!-- VARIANT:sh 1. Run `scripts/bash/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute. -->
-<!-- VARIANT:ps 1. Run `scripts/powershell/setup-plan.ps1 -Json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute. -->
+<!-- VARIANT:sh Run `scripts/bash/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute. -->
+<!-- VARIANT:ps Run `scripts/powershell/setup-plan.ps1 -Json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute. -->
 
 Given the implementation details provided as an argument, do this:
 
