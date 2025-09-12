@@ -58,26 +58,29 @@ generate_commands() {
   done
 }
 
+# Create Claude package
+echo "Building Claude package..."
 mkdir -p sdd-claude-package
-cp -r sdd-package-base/* sdd-claude-package/
+cp -r sdd-package-base/. sdd-claude-package/
 mkdir -p sdd-claude-package/.claude/commands
 generate_commands claude md "\$ARGUMENTS" sdd-claude-package/.claude/commands
-
 echo "Created Claude package"
 
+# Create Gemini package
+echo "Building Gemini package..."
 mkdir -p sdd-gemini-package
-cp -r sdd-package-base/* sdd-gemini-package/
+cp -r sdd-package-base/. sdd-gemini-package/
 mkdir -p sdd-gemini-package/.gemini/commands
 generate_commands gemini toml "{{args}}" sdd-gemini-package/.gemini/commands
 [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md sdd-gemini-package/GEMINI.md
-
 echo "Created Gemini package"
 
+# Create Copilot package
+echo "Building Copilot package..."
 mkdir -p sdd-copilot-package
-cp -r sdd-package-base/* sdd-copilot-package/
+cp -r sdd-package-base/. sdd-copilot-package/
 mkdir -p sdd-copilot-package/.github/prompts
 generate_commands copilot prompt.md "\$ARGUMENTS" sdd-copilot-package/.github/prompts
-
 echo "Created Copilot package"
 
 ( cd sdd-claude-package && zip -r ../spec-kit-template-claude-${NEW_VERSION}.zip . )
