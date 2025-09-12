@@ -47,43 +47,22 @@ generate_commands() {
   mkdir -p "$output_dir"
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
-    local name description raw_body variant_line injected body file_norm delim_count
+    local name description file_content variant_line injected body
     name=$(basename "$template" .md)
-    # Normalize line endings first (remove CR) for consistent regex matching
-    file_norm=$(tr -d '\r' < "$template")
+    # Normalize line endings and work with entire file content
+    file_content=$(tr -d '\r' < "$template")
     # Extract description from frontmatter
-    description=$(printf '%s\n' "$file_norm" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
-    # Count YAML frontmatter delimiter lines
-    delim_count=$(printf '%s\n' "$file_norm" | grep -c '^---$' || true)
-    if [[ $delim_count -ge 2 ]]; then
-      # Grab everything after the second --- line
-      raw_body=$(printf '%s\n' "$file_norm" | awk '/^---$/ {if(++c==2){next}; if(c>=2){print}}')
-    else
-      # Fallback: no proper frontmatter detected; use entire file content (still allowing variant parsing)
-      raw_body=$file_norm
-    fi
-    # If somehow still empty, fallback once more to whole normalized file
-    if [[ -z ${raw_body// /} ]]; then
-      echo "Warning: body extraction empty for $template; using full file" >&2
-      raw_body=$file_norm
-    fi
-    # Find single-line variant comment matching the variant: <!-- VARIANT:sh ... --> or <!-- VARIANT:ps ... -->
-    variant_line=$(printf '%s\n' "$raw_body" | awk -v sv="$script_variant" '/<!--[[:space:]]+VARIANT:'sv'/ {match($0, /VARIANT:'"sv"'[[:space:]]+(.*)-->/, m); if (m[1]!="") {print m[1]; exit}}')
+    description=$(printf '%s\n' "$file_content" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
+    # Find variant line content
+    variant_line=$(printf '%s\n' "$file_content" | grep -E "<!--[[:space:]]*VARIANT:${script_variant}[[:space:]]" | head -1 | sed -E "s/.*VARIANT:${script_variant}[[:space:]]+//; s/-->.*//")
     if [[ -z $variant_line ]]; then
       echo "Warning: no variant line found for $script_variant in $template" >&2
       variant_line="(Missing variant command for $script_variant)"
     fi
-    # Replace the token VARIANT-INJECT with the selected variant line
-    injected=$(printf '%s\n' "$raw_body" | sed "s/VARIANT-INJECT/${variant_line//\//\/}/")
-    # Remove all single-line variant comments
-    injected=$(printf '%s\n' "$injected" | sed '/<!--[[:space:]]*VARIANT:sh/d' | sed '/<!--[[:space:]]*VARIANT:ps/d')
-    # Guard: if after stripping variant lines and injection the body became empty, restore original (minus variant comments) to avoid empty prompt files
-    if [[ -z ${injected// /} ]]; then
-      echo "Warning: resulting injected body empty for $template; writing unmodified body" >&2
-      injected=$raw_body
-    fi
-    # Apply arg substitution and path rewrite
-    body=$(printf '%s\n' "$injected" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
+    # Replace VARIANT-INJECT and remove variant comments  
+    body=$(printf '%s\n' "$file_content" | sed "s|VARIANT-INJECT|${variant_line}|" | sed '/<!--[[:space:]]*VARIANT:sh/d' | sed '/<!--[[:space:]]*VARIANT:ps/d')
+    # Apply substitutions
+    body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
     case $ext in
       toml)
         { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/$name.$ext" ;;
@@ -104,12 +83,13 @@ build_variant() {
   # Inject variant into plan-template.md within .specify/templates if present
   local plan_tpl="$base_dir/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
-    variant_line=$(awk -v sv="$script" '/<!--[[:space:]]*VARIANT:'"$script"'/ {match($0, /VARIANT:'"$script"'[[:space:]]+(.*)-->/, m); if(m[1]!=""){print m[1]; exit}}' "$plan_tpl")
+    plan_norm=$(tr -d '\r' < "$plan_tpl")
+    variant_line=$(printf '%s\n' "$plan_norm" | grep -E "<!--[[:space:]]*VARIANT:$script" | head -1 | sed -E "s/.*VARIANT:$script[[:space:]]+//; s/-->.*//; s/^[[:space:]]+//; s/[[:space:]]+$//")
     if [[ -n $variant_line ]]; then
       tmp_file=$(mktemp)
-  sed "s/VARIANT-INJECT/${variant_line//\//\/}/" "$plan_tpl" | sed "/__AGENT__/s//${agent}/g" | sed '/<!--[[:space:]]*VARIANT:sh/d' | sed '/<!--[[:space:]]*VARIANT:ps/d' > "$tmp_file" && mv "$tmp_file" "$plan_tpl"
+      sed "s|VARIANT-INJECT|${variant_line}|" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g" | sed '/<!--[[:space:]]*VARIANT:sh/d' | sed '/<!--[[:space:]]*VARIANT:ps/d' > "$tmp_file" && mv "$tmp_file" "$plan_tpl"
     else
-      echo "Warning: no plan-template variant for $script" >&2
+      echo "Warning: no plan-template variant for $script (pattern not matched)" >&2
     fi
   fi
   case $agent in
