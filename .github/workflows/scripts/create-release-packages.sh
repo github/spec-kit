@@ -28,7 +28,7 @@ SPEC_DIR="sdd-package-base/.specify"
 mkdir -p "$SPEC_DIR"
 
 [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
-[[ -d scripts ]] && { mkdir -p "$SPEC_DIR/scripts"; rsync -a scripts/ "$SPEC_DIR/scripts/" --exclude 'create-release-packages.sh'; echo "Copied scripts -> .specify/scripts"; }
+[[ -d scripts ]] && { cp -r scripts "$SPEC_DIR/"; echo "Copied scripts -> .specify/scripts"; }
 [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \;; echo "Copied templates -> .specify/templates"; }
 
 rewrite_paths() {
