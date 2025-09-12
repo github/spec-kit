@@ -1,3 +1,6 @@
+---
+description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
+---
 <!-- VARIANT:sh 1. Run `scripts/bash/check-task-prerequisites.sh --json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. -->
 <!-- VARIANT:ps 1. Run `scripts/powershell/check-task-prerequisites.ps1 -Json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. -->
 
