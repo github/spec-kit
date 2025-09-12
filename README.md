@@ -16,6 +16,7 @@
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get started](#-get-started)
+- [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
 - [🎯 Experimental goals](#-experimental-goals)
@@ -63,6 +64,47 @@ Use the `/plan` command to provide your tech stack and architecture choices.
 Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 🔧 Specify CLI Reference
+
+The `specify` command supports the following options:
+
+### Commands
+
+| Command     | Description                                                    |
+|-------------|----------------------------------------------------------------|
+| `init`      | Initialize a new Specify project from the latest template      |
+| `check`     | Check for installed tools (`git`, `claude`, `gemini`)          |
+
+### `specify init` Arguments & Options
+
+| Argument/Option        | Type     | Description                                                                  |
+|------------------------|----------|------------------------------------------------------------------------------|
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, or `copilot`                       |
+| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
+| `--no-git`             | Flag     | Skip git repository initialization                                          |
+| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
+| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
+
+### Examples
+
+```bash
+# Basic project initialization
+specify init my-project
+
+# Initialize with specific AI assistant
+specify init my-project --ai claude
+
+# Initialize in current directory
+specify init --here --ai copilot
+
+# Skip git initialization
+specify init my-project --ai gemini --no-git
+
+# Check system requirements
+specify check
+```
 
 ## 📚 Core philosophy
 
@@ -214,7 +256,6 @@ At this stage, your project folder contents should resemble the following:
 │	 └── 001-create-taskify
 │	     └── spec.md
 └── templates
-    ├── CLAUDE-template.md
     ├── plan-template.md
     ├── spec-template.md
     └── tasks-template.md

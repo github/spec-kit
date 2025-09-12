@@ -338,6 +338,16 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
         return None
 
 
+def check_tool_for_tracker(tool: str, install_hint: str, tracker: StepTracker) -> bool:
+    """Check if a tool is installed and update tracker."""
+    if shutil.which(tool):
+        tracker.complete(tool, "available")
+        return True
+    else:
+        tracker.error(tool, f"not found - {install_hint}")
+        return False
+
+
 def check_tool(tool: str, install_hint: str) -> bool:
     """Check if a tool is installed."""
     
@@ -919,37 +929,36 @@ def init(
     # Removed farewell line per user request
 
 
-# Add skip_tls option to check
 @app.command()
-def check(skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)")):
+def check():
     """Check that all required tools are installed."""
     show_banner()
-    console.print("[bold]Checking Specify requirements...[/bold]\n")
+    console.print("[bold]Checking for installed tools...[/bold]\n")
 
-    # Check if we have internet connectivity by trying to reach GitHub API
-    console.print("[cyan]Checking internet connectivity...[/cyan]")
-    verify = not skip_tls
-    local_ssl_context = ssl_context if verify else False
-    local_client = httpx.Client(verify=local_ssl_context)
-    try:
-        response = local_client.get("https://api.github.com", timeout=5, follow_redirects=True)
-        console.print("[green]✓[/green] Internet connection available")
-    except httpx.RequestError:
-        console.print("[red]✗[/red] No internet connection - required for downloading templates")
-        console.print("[yellow]Please check your internet connection[/yellow]")
-
-    console.print("\n[cyan]Optional tools:[/cyan]")
-    git_ok = check_tool("git", "https://git-scm.com/downloads")
+    # Create tracker for checking tools
+    tracker = StepTracker("Check Available Tools")
     
-    console.print("\n[cyan]Optional AI tools:[/cyan]")
-    claude_ok = check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup")
-    gemini_ok = check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli")
+    # Add all tools we want to check
+    tracker.add("git", "Git version control")
+    tracker.add("claude", "Claude Code CLI")
+    tracker.add("gemini", "Gemini CLI")
     
-    console.print("\n[green]✓ Specify CLI is ready to use![/green]")
+    # Check each tool
+    git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
+    claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
+    gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
+    
+    # Render the final tree
+    console.print(tracker.render())
+    
+    # Summary
+    console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
+    
+    # Recommendations
     if not git_ok:
-        console.print("[yellow]Consider installing git for repository management[/yellow]")
+        console.print("[dim]Tip: Install git for repository management[/dim]")
     if not (claude_ok or gemini_ok):
-        console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
+        console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
 def main():
