@@ -1,12 +1,13 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
+scripts:
+  sh: scripts/bash/check-task-prerequisites.sh --json
+  ps: scripts/powershell/check-task-prerequisites.ps1 -Json
 ---
-<!-- VARIANT:sh Run `scripts/bash/check-task-prerequisites.sh --json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. -->
-<!-- VARIANT:ps Run `scripts/powershell/check-task-prerequisites.ps1 -Json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. -->
 
 Given the context provided as an argument, do this:
 
-1. VARIANT-INJECT
+1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
 2. Load and analyze available design documents:
    - Always read plan.md for tech stack and libraries
    - IF EXISTS: Read data-model.md for entities

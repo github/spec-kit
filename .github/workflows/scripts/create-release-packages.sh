@@ -47,22 +47,36 @@ generate_commands() {
   mkdir -p "$output_dir"
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
-    local name description file_content variant_line injected body
+    local name description script_command body
     name=$(basename "$template" .md)
-    # Normalize line endings and work with entire file content
+    
+    # Normalize line endings
     file_content=$(tr -d '\r' < "$template")
-    # Extract description from frontmatter
+    
+    # Extract description and script command from YAML frontmatter
     description=$(printf '%s\n' "$file_content" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
-    # Find variant line content
-    variant_line=$(printf '%s\n' "$file_content" | grep -E "<!--[[:space:]]*VARIANT:${script_variant}[[:space:]]" | head -1 | sed -E "s/.*VARIANT:${script_variant}[[:space:]]+//; s/-->.*//")
-    if [[ -z $variant_line ]]; then
-      echo "Warning: no variant line found for $script_variant in $template" >&2
-      variant_line="(Missing variant command for $script_variant)"
+    script_command=$(printf '%s\n' "$file_content" | awk -v sv="$script_variant" '/^[[:space:]]*'"$script_variant"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, ""); print; exit}')
+    
+    if [[ -z $script_command ]]; then
+      echo "Warning: no script command found for $script_variant in $template" >&2
+      script_command="(Missing script command for $script_variant)"
     fi
-    # Replace VARIANT-INJECT and remove variant comments  
-    body=$(printf '%s\n' "$file_content" | sed "s|VARIANT-INJECT|${variant_line}|" | sed '/<!--[[:space:]]*VARIANT:sh/d' | sed '/<!--[[:space:]]*VARIANT:ps/d')
-    # Apply substitutions
+    
+    # Replace {SCRIPT} placeholder with the script command
+    body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
+    
+    # Remove the scripts: section from frontmatter while preserving YAML structure
+    body=$(printf '%s\n' "$body" | awk '
+      /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
+      in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && /^[a-zA-Z].*:/ && skip_scripts { skip_scripts=0 }
+      in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
+      { print }
+    ')
+    
+    # Apply other substitutions
     body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
+    
     case $ext in
       toml)
         { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/$name.$ext" ;;
