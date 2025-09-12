@@ -110,7 +110,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Codex CLI](https://github.com/openai/codex)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -147,15 +147,23 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 specify init <project_name> --ai claude
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
+specify init <project_name> --ai codex
 # Or in current directory:
 specify init --here --ai claude
+specify init --here --ai codex
 ```
 
-The CLI will check if you have Claude Code or Gemini CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, or Codex CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools
 ```
+
+> [!NOTE]
+> Codex CLI specifics
+> - When you run `specify init --ai codex`, the CLI ensures a `commands/` directory exists. If packaged templates are not available, it bootstraps minimal command files (`specify.md`, `plan.md`, `tasks.md`).
+> - Codex reads project memory from `AGENTS.md`. If it does not exist yet, run `codex /init` inside the project.
+> - To allow the bundled scripts under `scripts/` to run from Codex slash commands, open `codex /approvals` and enable “Run shell commands”.
 
 ### **STEP 1:** Bootstrap the project
 
