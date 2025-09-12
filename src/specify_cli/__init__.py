@@ -30,7 +30,7 @@ import tempfile
 import shutil
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import typer
 import httpx
@@ -58,6 +58,8 @@ AI_CHOICES = {
     "claude": "Claude Code",
     "gemini": "Gemini CLI"
 }
+# Add script type choices
+SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
@@ -413,7 +415,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True, client: httpx.Client = None):
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False) -> Tuple[Path, dict]:
     repo_owner = "github"
     repo_name = "spec-kit"
     if client is None:
@@ -425,26 +427,32 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     
     try:
         response = client.get(api_url, timeout=30, follow_redirects=True)
-        response.raise_for_status()
-        release_data = response.json()
-    except httpx.RequestError as e:
-        if verbose:
-            console.print(f"[red]Error fetching release information:[/red] {e}")
+        status = response.status_code
+        if status != 200:
+            msg = f"GitHub API returned {status} for {api_url}"
+            if debug:
+                msg += f"\nResponse headers: {response.headers}\nBody (truncated 500): {response.text[:500]}"
+            raise RuntimeError(msg)
+        try:
+            release_data = response.json()
+        except ValueError as je:
+            raise RuntimeError(f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}")
+    except Exception as e:
+        console.print(f"[red]Error fetching release information[/red]")
+        console.print(Panel(str(e), title="Fetch Error", border_style="red"))
         raise typer.Exit(1)
     
     # Find the template asset for the specified AI assistant
-    pattern = f"spec-kit-template-{ai_assistant}"
+    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
     matching_assets = [
         asset for asset in release_data.get("assets", [])
         if pattern in asset["name"] and asset["name"].endswith(".zip")
     ]
     
     if not matching_assets:
-        if verbose:
-            console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
-            console.print(f"[yellow]Available assets:[/yellow]")
-            for asset in release_data.get("assets", []):
-                console.print(f"  - {asset['name']}")
+        console.print(f"[red]No matching release asset found[/red] for pattern: [bold]{pattern}[/bold]")
+        asset_names = [a.get('name','?') for a in release_data.get('assets', [])]
+        console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
     
     # Use the first matching asset
@@ -464,8 +472,10 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        with client.stream("GET", download_url, timeout=30, follow_redirects=True) as response:
-            response.raise_for_status()
+        with client.stream("GET", download_url, timeout=60, follow_redirects=True) as response:
+            if response.status_code != 200:
+                body_sample = response.text[:400]
+                raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
             total_size = int(response.headers.get('content-length', 0))
             with open(zip_path, 'wb') as f:
                 if total_size == 0:
@@ -488,11 +498,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
                     else:
                         for chunk in response.iter_bytes(chunk_size=8192):
                             f.write(chunk)
-    except httpx.RequestError as e:
-        if verbose:
-            console.print(f"[red]Error downloading template:[/red] {e}")
+    except Exception as e:
+        console.print(f"[red]Error downloading template[/red]")
+        detail = str(e)
         if zip_path.exists():
             zip_path.unlink()
+        console.print(Panel(detail, title="Download Error", border_style="red"))
         raise typer.Exit(1)
     if verbose:
         console.print(f"Downloaded: {filename}")
@@ -505,7 +516,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, verb
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -518,9 +529,11 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
         zip_path, meta = download_template_from_github(
             ai_assistant,
             current_dir,
+            script_type=script_type,
             verbose=verbose and tracker is None,
             show_progress=(tracker is None),
-            client=client
+            client=client,
+            debug=debug
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -637,6 +650,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
         else:
             if verbose:
                 console.print(f"[red]Error extracting template:[/red] {e}")
+                if debug:
+                    console.print(Panel(str(e), title="Extraction Error", border_style="red"))
         # Clean up project directory if created and not current directory
         if not is_current_dir and project_path.exists():
             shutil.rmtree(project_path)
@@ -659,60 +674,44 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts in the project .specify/scripts directory have execute bits (no-op on Windows)."""
+    """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
-    scripts_dir = project_path / ".specify" / "scripts"
-    if not scripts_dir.is_dir():
+    scripts_root = project_path / ".specify" / "scripts"
+    if not scripts_root.is_dir():
         return
     failures: list[str] = []
     updated = 0
-    for script in scripts_dir.glob("*.sh"):
+    for script in scripts_root.rglob("*.sh"):
         try:
-            # Skip symlinks
-            if script.is_symlink():
+            if script.is_symlink() or not script.is_file():
                 continue
-            # Must be a regular file
-            if not script.is_file():
-                continue
-            # Quick shebang check
             try:
                 with script.open("rb") as f:
-                    first_two = f.read(2)
-                if first_two != b"#!":
-                    continue
+                    if f.read(2) != b"#!":
+                        continue
             except Exception:
                 continue
-            st = script.stat()
-            mode = st.st_mode
-            # If already any execute bit set, skip
+            st = script.stat(); mode = st.st_mode
             if mode & 0o111:
                 continue
-            # Only add execute bits that correspond to existing read bits
             new_mode = mode
-            if mode & 0o400:  # owner read
-                new_mode |= 0o100
-            if mode & 0o040:  # group read
-                new_mode |= 0o010
-            if mode & 0o004:  # other read
-                new_mode |= 0o001
-            # Fallback: ensure at least owner execute
+            if mode & 0o400: new_mode |= 0o100
+            if mode & 0o040: new_mode |= 0o010
+            if mode & 0o004: new_mode |= 0o001
             if not (new_mode & 0o100):
                 new_mode |= 0o100
             os.chmod(script, new_mode)
             updated += 1
         except Exception as e:
-            failures.append(f"{script.name}: {e}")
+            failures.append(f"{script.relative_to(scripts_root)}: {e}")
     if tracker:
         detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
-        tracker.add("chmod", "Set script permissions")
-        if failures:
-            tracker.error("chmod", detail)
-        else:
-            tracker.complete("chmod", detail)
+        tracker.add("chmod", "Set script permissions recursively")
+        (tracker.error if failures else tracker.complete)("chmod", detail)
     else:
         if updated:
-            console.print(f"[cyan]Updated execute permissions on {updated} script(s)[/cyan]")
+            console.print(f"[cyan]Updated execute permissions on {updated} script(s) recursively[/cyan]")
         if failures:
             console.print("[yellow]Some scripts could not be updated:[/yellow]")
             for f in failures:
@@ -723,10 +722,12 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, or copilot"),
+    script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -829,6 +830,24 @@ def init(
             console.print("[yellow]Tip:[/yellow] Use --ignore-agent-tools to skip this check")
             raise typer.Exit(1)
     
+    # Determine script type (explicit, interactive, or OS default)
+    if script_type:
+        if script_type not in SCRIPT_TYPE_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
+            raise typer.Exit(1)
+        selected_script = script_type
+    else:
+        # Auto-detect default
+        default_script = "ps" if os.name == "nt" else "sh"
+        # Provide interactive selection similar to AI if stdin is a TTY
+        if sys.stdin.isatty():
+            selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
+        else:
+            selected_script = default_script
+    
+    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
+    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+    
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
     tracker = StepTracker("Initialize Specify Project")
@@ -839,6 +858,8 @@ def init(
     tracker.complete("precheck", "ok")
     tracker.add("ai-select", "Select AI assistant")
     tracker.complete("ai-select", f"{selected_ai}")
+    tracker.add("script-select", "Select script type")
+    tracker.complete("script-select", selected_script)
     for key, label in [
         ("fetch", "Fetch latest release"),
         ("download", "Download template"),
@@ -861,7 +882,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker, client=local_client)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -884,6 +905,16 @@ def init(
             tracker.complete("final", "project ready")
         except Exception as e:
             tracker.error("final", str(e))
+            console.print(Panel(f"Initialization failed: {e}", title="Failure", border_style="red"))
+            if debug:
+                _env_pairs = [
+                    ("Python", sys.version.split()[0]),
+                    ("Platform", sys.platform),
+                    ("CWD", str(Path.cwd())),
+                ]
+                _label_width = max(len(k) for k, _ in _env_pairs)
+                env_lines = [f"{k.ljust(_label_width)} → [bright_black]{v}[/bright_black]" for k, v in _env_pairs]
+                console.print(Panel("\n".join(env_lines), title="Debug Environment", border_style="magenta"))
             if not here and project_path.exists():
                 shutil.rmtree(project_path)
             raise typer.Exit(1)
@@ -919,6 +950,7 @@ def init(
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
 
+    # Removed script variant step (scripts are transparent to users)
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
 

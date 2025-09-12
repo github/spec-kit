@@ -1,15 +1,9 @@
----
-name: plan
-description: "Plan how to implement the specified feature. This is the second step in the Spec-Driven Development lifecycle."
----
-
-Plan how to implement the specified feature.
-
-This is the second step in the Spec-Driven Development lifecycle.
+<!-- VARIANT:sh 1. Run `scripts/bash/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute. -->
+<!-- VARIANT:ps 1. Run `scripts/powershell/setup-plan.ps1 -Json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute. -->
 
 Given the implementation details provided as an argument, do this:
 
-1. Run `scripts/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.
+1. VARIANT-INJECT
 2. Read and analyze the feature specification to understand:
    - The feature requirements and user stories
    - Functional and non-functional requirements
