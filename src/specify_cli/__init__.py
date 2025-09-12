@@ -812,8 +812,7 @@ def init(
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
                 agent_tool_missing = True
-        # GitHub Copilot check is not needed as it's typically available in supported IDEs
-        
+
         if agent_tool_missing:
             console.print("\n[red]Required AI tool is missing![/red]")
             console.print("[yellow]Tip:[/yellow] Use --ignore-agent-tools to skip this check")
@@ -963,11 +962,18 @@ def check():
     tracker.add("git", "Git version control")
     tracker.add("claude", "Claude Code CLI")
     tracker.add("gemini", "Gemini CLI")
+    tracker.add("code", "VS Code (for GitHub Copilot)")
+    tracker.add("cursor-agent", "Cursor IDE agent (optional)")
     
     # Check each tool
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
     gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
+    # Check for VS Code (code or code-insiders)
+    code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
+    if not code_ok:
+        code_ok = check_tool_for_tracker("code-insiders", "https://code.visualstudio.com/insiders/", tracker)
+    cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
     
     # Render the final tree
     console.print(tracker.render())
