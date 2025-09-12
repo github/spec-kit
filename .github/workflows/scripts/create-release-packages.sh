@@ -117,13 +117,16 @@ build_variant() {
     copilot)
       mkdir -p "$base_dir/.github/prompts"
       generate_commands copilot prompt.md "\$ARGUMENTS" "$base_dir/.github/prompts" "$script" ;;
+    cursor)
+      mkdir -p "$base_dir/.cursor/commands"
+      generate_commands cursor md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot)
+ALL_AGENTS=(claude gemini copilot cursor)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
