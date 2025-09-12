@@ -636,10 +636,10 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, is_curr
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts in the project scripts directory have execute bits (no-op on Windows)."""
+    """Ensure POSIX .sh scripts in the project .specify/scripts directory have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
-    scripts_dir = project_path / "scripts"
+    scripts_dir = project_path / ".specify" / "scripts"
     if not scripts_dir.is_dir():
         return
     failures: list[str] = []
