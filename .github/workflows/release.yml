@@ -61,8 +61,8 @@ jobs:
     - name: Create release package
       if: steps.check_release.outputs.exists == 'false'
       run: |
-        chmod +x scripts/create-release-packages.sh
-        ./scripts/create-release-packages.sh ${{ steps.get_tag.outputs.new_version }}
+        chmod +x .github/workflows/scripts/create-release-packages.sh
+        .github/workflows/scripts/create-release-packages.sh ${{ steps.get_tag.outputs.new_version }}
         
     - name: Generate release notes
       if: steps.check_release.outputs.exists == 'false'
