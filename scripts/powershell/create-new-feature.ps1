@@ -42,11 +42,16 @@ $template = Join-Path $repoRoot 'templates/spec-template.md'
 $specFile = Join-Path $featureDir 'spec.md'
 if (Test-Path $template) { Copy-Item $template $specFile -Force } else { New-Item -ItemType File -Path $specFile | Out-Null }
 
+$testCasesTemplate = Join-Path $repoRoot 'templates/test-cases-template.md'
+$testCasesFile = Join-Path $featureDir 'test-cases.md'
+if (Test-Path $testCasesTemplate) { Copy-Item $testCasesTemplate $testCasesFile -Force } else { New-Item -ItemType File -Path $testCasesFile | Out-Null }
+
 if ($Json) {
-    $obj = [PSCustomObject]@{ BRANCH_NAME = $branchName; SPEC_FILE = $specFile; FEATURE_NUM = $featureNum }
+    $obj = [PSCustomObject]@{ BRANCH_NAME = $branchName; SPEC_FILE = $specFile; TEST_CASES_FILE = $testCasesFile; FEATURE_NUM = $featureNum }
     $obj | ConvertTo-Json -Compress
 } else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "SPEC_FILE: $specFile"
+    Write-Output "TEST_CASES_FILE: $testCasesFile"
     Write-Output "FEATURE_NUM: $featureNum"
 }

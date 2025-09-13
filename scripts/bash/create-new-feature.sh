@@ -49,10 +49,15 @@ TEMPLATE="$REPO_ROOT/templates/spec-template.md"
 SPEC_FILE="$FEATURE_DIR/spec.md"
 if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
 
+TEST_CASES_TEMPLATE="$REPO_ROOT/templates/test-cases-template.md"
+TEST_CASES_FILE="$FEATURE_DIR/test-cases.md"
+if [ -f "$TEST_CASES_TEMPLATE" ]; then cp "$TEST_CASES_TEMPLATE" "$TEST_CASES_FILE"; else touch "$TEST_CASES_FILE"; fi
+
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","TEST_CASES_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$TEST_CASES_FILE" "$FEATURE_NUM"
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
+    echo "TEST_CASES_FILE: $TEST_CASES_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
 fi
