@@ -950,6 +950,10 @@ def init(
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+    elif selected_ai == "cursor":
+        steps_lines.append(f"{step_num}. Open in Cursor or Cursor CLI and use /specify, /plan, and /tasks commands")
+        steps_lines.append("   - Type / in any file to see available commands")
+        steps_lines.append("   - Project rules are in .cursor/rules/spec-kit.md")
 
     # Removed script variant step (scripts are transparent to users)
     step_num += 1
