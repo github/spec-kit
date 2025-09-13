@@ -43,8 +43,8 @@ function Initialize-AgentFile($targetFile, $agentName) {
     elseif ($newLang -match 'JavaScript|TypeScript') { $commands = 'npm test && npm run lint' }
     else { $commands = "# Add commands for $newLang" }
     $content = $content.Replace('[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]', $commands)
-    $content = $content.Replace('[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]', "$newLang: Follow standard conventions")
-    $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', "- $currentBranch: Added $newLang + $newFramework")
+    $content = $content.Replace('[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]', "${newLang}: Follow standard conventions")
+    $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', "- ${currentBranch}: Added ${newLang} + ${newFramework}")
     $content | Set-Content $targetFile -Encoding UTF8
 }
 
