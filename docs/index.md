@@ -12,7 +12,7 @@ Spec-Driven Development **flips the script** on traditional software development
 
 - [Installation Guide](installation.md)
 - [Quick Start Guide](quickstart.md)
- - [Local Development](local-development.md)
+- [Local Development](local-development.md)
 
 ## Core Philosophy
 
