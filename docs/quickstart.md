@@ -15,6 +15,10 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 ```
 
 Pick script type explicitly (optional):
+You can also specify your AI agent up front (e.g., Cursor):
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --ai cursor
+```
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script ps  # Force PowerShell
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script sh  # Force POSIX shell
