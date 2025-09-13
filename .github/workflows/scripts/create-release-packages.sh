@@ -27,14 +27,6 @@ echo "Building release packages for $NEW_VERSION"
 
 rm -rf sdd-package-base* sdd-*-package-* spec-kit-template-*-${NEW_VERSION}.zip || true
 
-mkdir -p sdd-package-base
-SPEC_DIR="sdd-package-base/.specify"
-mkdir -p "$SPEC_DIR"
-
-[[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
-[[ -d scripts ]] && { cp -r scripts "$SPEC_DIR/"; echo "Copied scripts -> .specify/scripts"; }
-[[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
-
 rewrite_paths() {
   sed -E \
     -e 's@(/?)memory/@.specify/memory/@g' \
@@ -93,7 +85,31 @@ build_variant() {
   local base_dir="sdd-${agent}-package-${script}"
   echo "Building $agent ($script) package..."
   mkdir -p "$base_dir"
-  cp -r sdd-package-base/. "$base_dir"/
+  
+  # Copy base structure but filter scripts by variant
+  SPEC_DIR="$base_dir/.specify"
+  mkdir -p "$SPEC_DIR"
+  
+  [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
+  
+  # Only copy the relevant script variant directory
+  if [[ -d scripts ]]; then
+    mkdir -p "$SPEC_DIR/scripts"
+    case $script in
+      sh)
+        [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .specify/scripts"; }
+        # Copy any script files that aren't in variant-specific directories
+        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+        ;;
+      ps)
+        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .specify/scripts"; }
+        # Copy any script files that aren't in variant-specific directories
+        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+        ;;
+    esac
+  fi
+  
+  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
   # Inject variant into plan-template.md within .specify/templates if present
   local plan_tpl="$base_dir/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
