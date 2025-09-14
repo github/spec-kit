@@ -439,3 +439,33 @@ This project is heavily influenced by and based on the work and research of [Joh
 ## 📄 License
 
 This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
+
+## Using Spec Kit with Existing Projects
+
+If you already have a developed project and want to integrate Spec Kit, follow these steps:
+
+1. **Initialize Spec Kit in your existing project directory:**
+   
+   Run the following command in your project directory:
+   ```bash
+   uvx --from git+https://github.com/github/spec-kit.git specify init --here
+   ```
+
+   This will initialize Spec Kit in the current directory without creating a new project structure.
+
+2. **Handle existing `CLAUDE.md` files:**
+   
+   If your project already contains `CLAUDE.md` files, review them carefully. These files may contain user-level instructions or configurations that need to be merged with the new setup. Ensure that no critical information is overwritten.
+
+3. **Verify the setup:**
+   
+   After initialization, verify that the `/specify`, `/plan`, and `/tasks` commands are available and functioning correctly. You can test this by running:
+   ```bash
+   specify --help
+   ```
+
+4. **Update your project documentation:**
+   
+   Add any necessary details about the Spec Kit integration to your project documentation to ensure team members are aware of the new workflow.
+
+By following these steps, you can seamlessly integrate Spec Kit into your existing project and leverage its capabilities for Spec-Driven Development.

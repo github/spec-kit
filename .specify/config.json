@@ -1,0 +1,12 @@
+{
+  "projectId": "proj_1757749784832_fc8au81si",
+  "name": "hjLabs.in-spec-kit",
+  "aiModel": "claude",
+  "version": "0.1.0",
+  "createdAt": "2025-09-13T07:49:44.832Z",
+  "updatedAt": "2025-09-13T07:49:44.832Z",
+  "specDirectory": "/home/hemang/Documents/GitHub/hjLabs.in-spec-kit/specs",
+  "configPath": "/home/hemang/Documents/GitHub/hjLabs.in-spec-kit/.specify/config.json",
+  "isInitialized": true,
+  "migrationHistory": []
+}

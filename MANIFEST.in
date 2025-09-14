@@ -1,0 +1,4 @@
+include package.json
+recursive-include dist *
+recursive-include node_modules *
+recursive-include src *.ts
