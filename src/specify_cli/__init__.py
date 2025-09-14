@@ -52,6 +52,19 @@ import truststore
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
+def _github_token() -> str | None:
+    return os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+
+def _github_auth_headers() -> dict:
+    """Headers for GitHub REST API requests.
+    - Uses Bearer auth if token present
+    """
+    headers = {}
+    token = _github_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
 # Constants
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
@@ -427,7 +440,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
     try:
-        response = client.get(api_url, timeout=30, follow_redirects=True)
+        response = client.get(
+            api_url,
+            timeout=30,
+            follow_redirects=True,
+            headers=_github_auth_headers() or None,
+        )
         status = response.status_code
         if status != 200:
             msg = f"GitHub API returned {status} for {api_url}"
@@ -473,7 +491,14 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        with client.stream("GET", download_url, timeout=60, follow_redirects=True) as response:
+        # Include auth header for initial GitHub request; it won't leak across cross-origin redirects
+        with client.stream(
+            "GET",
+            download_url,
+            timeout=60,
+            follow_redirects=True,
+            headers=_github_auth_headers() or None,
+        ) as response:
             if response.status_code != 200:
                 body_sample = response.text[:400]
                 raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
