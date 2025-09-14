@@ -65,6 +65,12 @@ Use **`/tasks`** to create an actionable task list, then ask your agent to imple
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
+## 📽️ Video Overview
+
+Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
+
+[![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
+
 ## 🔧 Specify CLI Reference
 
 The `specify` command supports the following options:
