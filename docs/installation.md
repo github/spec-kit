@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Linux/macOS** (or WSL2 on Windows)
+- **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
@@ -34,6 +34,21 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
 ```
 
+### Specify Script Type (Shell vs PowerShell)
+
+All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
+
+Auto behavior:
+- Windows default: `ps`
+- Other OS default: `sh`
+- Interactive mode: you'll be prompted unless you pass `--script`
+
+Force a specific script type:
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script sh
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
+```
+
 ### Ignore Agent Tools Check
 
 If you prefer to get the templates without checking for the right tools:
@@ -48,6 +63,8 @@ After initialization, you should see the following commands available in your AI
 - `/specify` - Create specifications
 - `/plan` - Generate implementation plans  
 - `/tasks` - Break down into actionable tasks
+
+The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ## Troubleshooting
 
