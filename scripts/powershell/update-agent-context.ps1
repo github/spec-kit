@@ -11,6 +11,7 @@ if (-not (Test-Path $newPlan)) { Write-Error "ERROR: No plan.md found at $newPla
 
 $claudeFile = Join-Path $repoRoot 'CLAUDE.md'
 $geminiFile = Join-Path $repoRoot 'GEMINI.md'
+$agentsFile = Join-Path $repoRoot 'AGENTS.md'
 $copilotFile = Join-Path $repoRoot '.github/copilot-instructions.md'
 
 Write-Output "=== Updating agent context files for feature $currentBranch ==="
@@ -68,12 +69,13 @@ function Update-AgentFile($targetFile, $agentName) {
 switch ($AgentType) {
     'claude' { Update-AgentFile $claudeFile 'Claude Code' }
     'gemini' { Update-AgentFile $geminiFile 'Gemini CLI' }
+    'codex' { Update-AgentFile $agentsFile 'Codex' }
     'copilot' { Update-AgentFile $copilotFile 'GitHub Copilot' }
     '' {
-        foreach ($pair in @(@{file=$claudeFile; name='Claude Code'}, @{file=$geminiFile; name='Gemini CLI'}, @{file=$copilotFile; name='GitHub Copilot'})) {
+        foreach ($pair in @(@{file=$claudeFile; name='Claude Code'}, @{file=$geminiFile; name='Gemini CLI'}, @{file=$agentsFile; name='Codex'}, @{file=$copilotFile; name='GitHub Copilot'})) {
             if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
         }
-        if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $copilotFile)) {
+        if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $agentsFile) -and -not (Test-Path $copilotFile)) {
             Write-Output 'No agent context files found. Creating Claude Code context file by default.'
             Update-AgentFile $claudeFile 'Claude Code'
         }
