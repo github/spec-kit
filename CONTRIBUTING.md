@@ -9,9 +9,9 @@ Please note that this project is released with a [Contributor Code of Conduct](C
 These are one time installations required to be able to test your changes locally as part of the pull request (PR) submission process.
 
 1. Install [Python 3.11+](https://www.python.org/downloads/)
-2. Install [uv](https://docs.astral.sh/uv/) for package management
-3. Install [Git](https://git-scm.com/downloads)
-4. Have an AI coding agent available: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Qwen Code](https://github.com/QwenLM/qwen-code). We're working on adding support for other agents as well.
+1. Install [uv](https://docs.astral.sh/uv/) for package management
+1. Install [Git](https://git-scm.com/downloads)
+1. Have an AI coding agent available: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Qwen Code](https://github.com/QwenLM/qwen-code). We're working on adding support for other agents as well.
 
 ## Submitting a pull request
 
@@ -19,13 +19,13 @@ These are one time installations required to be able to test your changes locall
 >If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
 1. Fork and clone the repository
-2. Configure and install the dependencies: `uv sync`
-3. Make sure the CLI works on your machine: `uv run specify --help`
-4. Create a new branch: `git checkout -b my-branch-name`
-5. Make your change, add tests, and make sure everything still works
-6. Test the CLI functionality with a sample project if relevant
-7. Push to your fork and submit a pull request
-8. Wait for your pull request to be reviewed and merged.
+1. Configure and install the dependencies: `uv sync`
+1. Make sure the CLI works on your machine: `uv run specify --help`
+1. Create a new branch: `git checkout -b my-branch-name`
+1. Make your change, add tests, and make sure everything still works
+1. Test the CLI functionality with a sample project if relevant
+1. Push to your fork and submit a pull request
+1. Wait for your pull request to be reviewed and merged.
 
 Here are a few things you can do that will increase the likelihood of your pull request being accepted:
 

@@ -129,6 +129,3 @@ jobs:
             sed -i "s/version = \".*\"/version = \"$PYTHON_VERSION\"/" pyproject.toml
             echo "Updated pyproject.toml version to $PYTHON_VERSION (for release artifacts only)"
           fi
-
-    # Note: No longer committing version changes back to main branch
-    # The version is only updated in the release artifacts
