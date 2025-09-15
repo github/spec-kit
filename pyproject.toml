@@ -1,12 +1,12 @@
 [project]
 name = "specify-cli"
-version = "0.0.3"
+version = "0.0.4"
 description = "Setup tool for Specify spec-driven development projects"
 requires-python = ">=3.11"
 dependencies = [
     "typer",
     "rich",
-    "httpx",
+    "httpx[socks]",
     "platformdirs",
     "readchar",
     "truststore>=0.10.4",
