@@ -512,8 +512,11 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
                 console.print("[yellow]No Codex-specific template found; falling back to GitHub Copilot template.[/yellow]")
 
     if asset is None:
-        console.print(f"[red]No matching release asset found[/red] for pattern: [bold]{pattern}[/bold]")
-        asset_names = [a.get('name','?') for a in assets]
+        console.print(
+            f"[red]No matching release asset found[/red] for AI assistant "
+            f"[bold]{ai_assistant}[/bold] (pattern: {pattern})"
+        )
+        asset_names = [a.get('name', '?') for a in assets]
         console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
 
@@ -1119,14 +1122,15 @@ def check():
     
     # Render the final tree
     console.print(tracker.render())
-    
+
     # Summary
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
-    
+
     # Recommendations
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
     if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or opencode_ok or codex_ok):
+        console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
