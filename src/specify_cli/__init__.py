@@ -883,6 +883,13 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
+            # Use GitHub Token if set in environment
+            gh_token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+            if gh_token:
+                local_client.headers.update({"Authorization": f"token {gh_token}"})
+                if debug:
+                    console.print("[magenta]Using GitHub token from environment for authenticated requests[/magenta]")
+
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
 
             # Ensure scripts are executable (POSIX)
