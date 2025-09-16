@@ -1,8 +1,8 @@
 ---
 description: "Implementation plan template for feature development"
 scripts:
-  sh: .specify/scripts/bash/update-agent-context.sh __AGENT__
-  ps: .specify/scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
+  sh: scripts/bash/update-agent-context.sh __AGENT__
+  ps: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
 # Implementation Plan: [FEATURE]

@@ -116,11 +116,15 @@ build_variant() {
     plan_norm=$(tr -d '\r' < "$plan_tpl")
     # Extract script command from YAML frontmatter
     script_command=$(printf '%s\n' "$plan_norm" | awk -v sv="$script" '/^[[:space:]]*'"$script"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script"':[[:space:]]*/, ""); print; exit}')
-    
     if [[ -n $script_command ]]; then
+      # Always prefix with .specify/ for plan usage
+      script_command=".specify/$script_command"
       tmp_file=$(mktemp)
       # Replace {SCRIPT} placeholder with the script command and __AGENT__ with agent name
-      sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g" > "$tmp_file" && mv "$tmp_file" "$plan_tpl"
+      substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g")
+      # Strip YAML frontmatter from plan template output (keep body only)
+      stripped=$(printf '%s\n' "$substituted" | awk 'BEGIN{fm=0;dash=0} /^---$/ {dash++; if(dash==1){fm=1; next} else if(dash==2){fm=0; next}} {if(!fm) print}')
+      printf '%s\n' "$stripped" > "$plan_tpl"
     else
       echo "Warning: no plan-template script command found for $script in YAML frontmatter" >&2
     fi
