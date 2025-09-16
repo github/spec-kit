@@ -12,6 +12,7 @@ if (-not (Test-Path $newPlan)) { Write-Error "ERROR: No plan.md found at $newPla
 $claudeFile = Join-Path $repoRoot 'CLAUDE.md'
 $geminiFile = Join-Path $repoRoot 'GEMINI.md'
 $copilotFile = Join-Path $repoRoot '.github/copilot-instructions.md'
+$cursorFile = Join-Path $repoRoot '.cursor/rules/specify-rules.mdc'
 
 Write-Output "=== Updating agent context files for feature $currentBranch ==="
 
@@ -30,7 +31,7 @@ $newProjectType = Get-PlanValue 'Project Type'
 
 function Initialize-AgentFile($targetFile, $agentName) {
     if (Test-Path $targetFile) { return }
-    $template = Join-Path $repoRoot 'templates/agent-file-template.md'
+    $template = Join-Path $repoRoot '.specify/templates/agent-file-template.md'
     if (-not (Test-Path $template)) { Write-Error "Template not found: $template"; return }
     $content = Get-Content $template -Raw
     $content = $content.Replace('[PROJECT NAME]', (Split-Path $repoRoot -Leaf))
@@ -55,7 +56,7 @@ function Update-AgentFile($targetFile, $agentName) {
     if ($newDb -and $newDb -ne 'N/A' -and ($content -notmatch [regex]::Escape($newDb))) { $content = $content -replace '(## Active Technologies\n)', "`$1- $newDb ($currentBranch)`n" }
     if ($content -match '## Recent Changes\n([\s\S]*?)(\n\n|$)') {
         $changesBlock = $matches[1].Trim().Split("`n")
-        $changesBlock = ,"- $currentBranch: Added $newLang + $newFramework" + $changesBlock
+    $changesBlock = ,"- ${currentBranch}: Added ${newLang} + ${newFramework}" + $changesBlock
         $changesBlock = $changesBlock | Where-Object { $_ } | Select-Object -First 3
         $joined = ($changesBlock -join "`n")
         $content = [regex]::Replace($content, '## Recent Changes\n([\s\S]*?)(\n\n|$)', "## Recent Changes`n$joined`n`n")
@@ -69,16 +70,22 @@ switch ($AgentType) {
     'claude' { Update-AgentFile $claudeFile 'Claude Code' }
     'gemini' { Update-AgentFile $geminiFile 'Gemini CLI' }
     'copilot' { Update-AgentFile $copilotFile 'GitHub Copilot' }
+    'cursor' { Update-AgentFile $cursorFile 'Cursor IDE' }
     '' {
-        foreach ($pair in @(@{file=$claudeFile; name='Claude Code'}, @{file=$geminiFile; name='Gemini CLI'}, @{file=$copilotFile; name='GitHub Copilot'})) {
+        foreach ($pair in @(
+            @{file=$claudeFile; name='Claude Code'},
+            @{file=$geminiFile; name='Gemini CLI'},
+            @{file=$copilotFile; name='GitHub Copilot'},
+            @{file=$cursorFile; name='Cursor IDE'}
+        )) {
             if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
         }
-        if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $copilotFile)) {
+        if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $copilotFile) -and -not (Test-Path $cursorFile)) {
             Write-Output 'No agent context files found. Creating Claude Code context file by default.'
             Update-AgentFile $claudeFile 'Claude Code'
         }
     }
-    Default { Write-Error "ERROR: Unknown agent type '$AgentType'. Use: claude, gemini, copilot, or leave empty for all."; exit 1 }
+    Default { Write-Error "ERROR: Unknown agent type '$AgentType'. Use: claude, gemini, copilot, cursor or leave empty for all."; exit 1 }
 }
 
 Write-Output ''
@@ -88,4 +95,4 @@ if ($newFramework) { Write-Output "- Added framework: $newFramework" }
 if ($newDb -and $newDb -ne 'N/A') { Write-Output "- Added database: $newDb" }
 
 Write-Output ''
-Write-Output 'Usage: ./update-agent-context.ps1 [claude|gemini|copilot]'
+Write-Output 'Usage: ./update-agent-context.ps1 [claude|gemini|copilot|cursor]'
