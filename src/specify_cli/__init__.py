@@ -57,7 +57,8 @@ AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
     "gemini": "Gemini CLI",
-    "cursor": "Cursor"
+    "cursor": "Cursor",
+    "iflow": "iFlow CLI"
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -722,7 +723,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, or cursor"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, or iflow"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -747,6 +748,7 @@ def init(
         specify init my-project --ai gemini
         specify init my-project --ai copilot --no-git
         specify init my-project --ai cursor
+        specify init my-project --ai iflow
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
@@ -824,6 +826,10 @@ def init(
         elif selected_ai == "gemini":
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
+                agent_tool_missing = True
+        elif selected_ai == "iflow":
+            if not check_tool("iflow", "Install from: https://github.com/iflow-ai/iflow-cli"):
+                console.print("[red]Error:[/red] iFlow CLI is required for iFlow projects")
                 agent_tool_missing = True
 
         if agent_tool_missing:
@@ -950,6 +956,12 @@ def init(
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+    elif selected_ai == "iflow":
+        steps_lines.append(f"{step_num}. Use / commands with iFlow CLI")
+        steps_lines.append("   - Run iflow /specify to create specifications")
+        steps_lines.append("   - Run iflow /plan to create implementation plans")
+        steps_lines.append("   - Run iflow /tasks to generate tasks")
+        steps_lines.append("   - See IFLOW.md for all available commands")
 
     # Removed script variant step (scripts are transparent to users)
     step_num += 1
@@ -975,6 +987,7 @@ def check():
     tracker.add("git", "Git version control")
     tracker.add("claude", "Claude Code CLI")
     tracker.add("gemini", "Gemini CLI")
+    tracker.add("iFlow", "iFlow CLI")
     tracker.add("code", "VS Code (for GitHub Copilot)")
     tracker.add("cursor-agent", "Cursor IDE agent (optional)")
     
@@ -982,6 +995,7 @@ def check():
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
     gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
+    iflow_ok = check_tool_for_tracker("iFlow", "https://github.com/iflow-ai/iflow-cli", tracker)
     # Check for VS Code (code or code-insiders)
     code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
     if not code_ok:
@@ -997,7 +1011,7 @@ def check():
     # Recommendations
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok):
+    if not (claude_ok or gemini_ok or iflow_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
