@@ -70,47 +70,153 @@ CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
 # Embedded fallback command templates for Codex (used only if packaged templates are unavailable)
 CODEX_CMD_SPECIFY = """---
-name: specify
-description: "Start a new feature by creating a specification and feature branch."
+description: Create or update the feature specification from a natural language feature description.
+scripts:
+  sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
+  ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
-
-Start a new feature by creating a specification and feature branch.
 
 Given the feature description provided as an argument, do this:
 
-1. Run the script `scripts/create-new-feature.sh --json "{ARGS}"` from the repo root and parse its JSON for BRANCH_NAME and SPEC_FILE. All future paths must be absolute.
-2. Load `templates/spec-template.md` and create the initial specification at SPEC_FILE, filling in the placeholders with concrete details derived from the arguments while preserving headings/order.
-3. Report completion with the new branch name and spec file path.
+1. Run the script `{SCRIPT}` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
+2. Load `templates/spec-template.md` to understand required sections.
+3. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+4. Report completion with branch name, spec file path, and readiness for the next phase.
+
+Note: The script creates and checks out the new branch and initializes the spec file before writing.
 """
 
 CODEX_CMD_PLAN = """---
-name: plan
-description: "Plan how to implement the specified feature."
+description: Execute the implementation planning workflow using the plan template to generate design artifacts.
+scripts:
+  sh: scripts/bash/setup-plan.sh --json
+  ps: scripts/powershell/setup-plan.ps1 -Json
 ---
-
-Plan how to implement the specified feature.
 
 Given the implementation details provided as an argument, do this:
 
-1. Run `scripts/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. Use absolute paths in all steps.
-2. Read the feature specification (FEATURE_SPEC) and `memory/constitution.md`.
-3. Copy `templates/plan-template.md` to IMPL_PLAN if not already present and fill in all sections using the specification and {ARGS} as Technical Context.
-4. Ensure the plan includes phases and produces research.md, data-model.md (if needed), contracts/, quickstart.md as appropriate.
-5. Report results with BRANCH and generated artifact paths.
+1. Run `{SCRIPT}` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.
+2. Read and analyze the feature specification to understand:
+   - The feature requirements and user stories
+   - Functional and non-functional requirements
+   - Success criteria and acceptance criteria
+   - Any technical constraints or dependencies mentioned
+
+3. Read the constitution at `memory/constitution.md` to understand constitutional requirements.
+
+4. Execute the implementation plan template:
+   - Load `templates/plan-template.md` (already copied to IMPL_PLAN path)
+   - Set Input path to FEATURE_SPEC
+   - Run the Execution Flow (main) function steps 1-9
+   - The template is self-contained and executable
+   - Follow error handling and gate checks as specified
+   - Let the template guide artifact generation in $SPECS_DIR:
+     * Phase 0 generates research.md
+     * Phase 1 generates data-model.md, contracts/, quickstart.md
+     * Phase 2 generates tasks.md
+   - Incorporate user-provided details from arguments into Technical Context: {ARGS}
+   - Update Progress Tracking as you complete each phase
+
+5. Verify execution completed:
+   - Check Progress Tracking shows all phases complete
+   - Ensure all required artifacts were generated
+   - Confirm no ERROR states in execution
+
+6. Report results with branch name, file paths, and generated artifacts.
+
+Use absolute paths with the repository root for all file operations to avoid path issues.
 """
 
 CODEX_CMD_TASKS = """---
-name: tasks
-description: "Break down the plan into executable tasks."
+description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
+scripts:
+  sh: scripts/bash/check-task-prerequisites.sh --json
+  ps: scripts/powershell/check-task-prerequisites.ps1 -Json
 ---
 
-Break down the plan into executable tasks.
+Given the context provided as an argument, do this:
 
-1. Run `scripts/check-task-prerequisites.sh --json` and parse FEATURE_DIR and AVAILABLE_DOCS.
-2. Read plan.md and any available docs to derive concrete tasks.
-3. Use `templates/tasks-template.md` as the base, generating numbered tasks (T001, T002, …) with clear file paths and dependency notes. Mark tasks that can run in parallel with [P].
-4. Write the result to FEATURE_DIR/tasks.md.
+1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
+2. Load and analyze available design documents:
+   - Always read plan.md for tech stack and libraries
+   - IF EXISTS: Read data-model.md for entities
+   - IF EXISTS: Read contracts/ for API endpoints
+   - IF EXISTS: Read research.md for technical decisions
+   - IF EXISTS: Read quickstart.md for test scenarios
+
+   Note: Not all projects have all documents. For example:
+   - CLI tools might not have contracts/
+   - Simple libraries might not need data-model.md
+   - Generate tasks based on what's available
+
+3. Generate tasks following the template:
+   - Use `templates/tasks-template.md` as the base
+   - Replace example tasks with actual tasks based on:
+     * **Setup tasks**: Project init, dependencies, linting
+     * **Test tasks [P]**: One per contract, one per integration scenario
+     * **Core tasks**: One per entity, service, CLI command, endpoint
+     * **Integration tasks**: DB connections, middleware, logging
+     * **Polish tasks [P]**: Unit tests, performance, docs
+
+4. Task generation rules:
+   - Each contract file → contract test task marked [P]
+   - Each entity in data-model → model creation task marked [P]
+   - Each endpoint → implementation task (not parallel if shared files)
+   - Each user story → integration test marked [P]
+   - Different files = can be parallel [P]
+   - Same file = sequential (no [P])
+
+5. Order tasks by dependencies:
+   - Setup before everything
+   - Tests before implementation (TDD)
+   - Models before services
+   - Services before endpoints
+   - Core before integration
+   - Everything before polish
+
+6. Include parallel execution examples:
+   - Group [P] tasks that can run together
+   - Show actual Task agent commands
+
+7. Create FEATURE_DIR/tasks.md with:
+   - Correct feature name from implementation plan
+   - Numbered tasks (T001, T002, etc.)
+   - Clear file paths for each task
+   - Dependency notes
+   - Parallel execution guidance
+
+Context for task generation: {ARGS}
+
+The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
 """
+
+
+# Utility to ensure Codex command templates use the modern schema (with scripts mapping)
+def ensure_codex_command_templates_current(commands_dir: Path) -> None:
+    expected = {
+        "specify.md": CODEX_CMD_SPECIFY,
+        "plan.md": CODEX_CMD_PLAN,
+        "tasks.md": CODEX_CMD_TASKS,
+    }
+
+    def needs_upgrade(content: str) -> bool:
+        # Old templates lacked the scripts: mapping and {SCRIPT} placeholder
+        return "scripts:" not in content or "{SCRIPT}" not in content
+
+    for filename, template_text in expected.items():
+        target_file = commands_dir / filename
+        if target_file.exists():
+            try:
+                current = target_file.read_text(encoding="utf-8")
+            except Exception:
+                target_file.write_text(template_text, encoding="utf-8")
+            else:
+                if needs_upgrade(current):
+                    target_file.write_text(template_text, encoding="utf-8")
+        else:
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            target_file.write_text(template_text, encoding="utf-8")
+
 
 # ASCII Art Banner
 BANNER = """
@@ -972,6 +1078,7 @@ def init(
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
 
+            # Codex only: if commands/ is missing, copy from template (with embedded fallback)
             if selected_ai == "codex":
                 tracker.start("commands")
                 try:
@@ -985,13 +1092,20 @@ def init(
                                 break
                         if commands_src is not None:
                             shutil.copytree(commands_src, target_cmds, dirs_exist_ok=True)
+                            ensure_codex_command_templates_current(target_cmds)
                             tracker.complete("commands", "added")
                         else:
-                            target_cmds.mkdir(parents=True, exist_ok=True)
-                            (target_cmds / "specify.md").write_text(CODEX_CMD_SPECIFY, encoding="utf-8")
-                            (target_cmds / "plan.md").write_text(CODEX_CMD_PLAN, encoding="utf-8")
-                            (target_cmds / "tasks.md").write_text(CODEX_CMD_TASKS, encoding="utf-8")
-                            tracker.complete("commands", "bootstrapped")
+                            template_commands = project_path / ".specify" / "templates" / "commands"
+                            if template_commands.exists():
+                                shutil.copytree(template_commands, target_cmds, dirs_exist_ok=True)
+                                ensure_codex_command_templates_current(target_cmds)
+                                tracker.complete("commands", "added from template")
+                            else:
+                                target_cmds.mkdir(parents=True, exist_ok=True)
+                                (target_cmds / "specify.md").write_text(CODEX_CMD_SPECIFY, encoding="utf-8")
+                                (target_cmds / "plan.md").write_text(CODEX_CMD_PLAN, encoding="utf-8")
+                                (target_cmds / "tasks.md").write_text(CODEX_CMD_TASKS, encoding="utf-8")
+                                tracker.complete("commands", "bootstrapped minimal")
                     else:
                         tracker.skip("commands", "already present")
                 except Exception as codex_error:
