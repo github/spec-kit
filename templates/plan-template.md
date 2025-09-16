@@ -1,8 +1,8 @@
 ---
 description: "Implementation plan template for feature development"
 scripts:
-  sh: ".specify/scripts/bash/update-agent-context.sh __AGENT__"
-  ps: ".specify/scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__"
+  sh: .specify/scripts/bash/update-agent-context.sh __AGENT__
+  ps: .specify/scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
 # Implementation Plan: [FEATURE]
@@ -178,7 +178,7 @@ ios/ or android/
    - Quickstart test = story validation steps
 
 5. **Update agent file incrementally** (O(1) operation):
-   - Run {SCRIPT} for your AI assistant
+   - Run `{SCRIPT}` for your AI assistant
    - If exists: Add only NEW tech from current plan
    - Preserve manual additions between markers
    - Update recent changes (keep last 3)

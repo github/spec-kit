@@ -31,7 +31,7 @@ $newProjectType = Get-PlanValue 'Project Type'
 
 function Initialize-AgentFile($targetFile, $agentName) {
     if (Test-Path $targetFile) { return }
-    $template = Join-Path $repoRoot 'templates/agent-file-template.md'
+    $template = Join-Path $repoRoot '.specify/templates/agent-file-template.md'
     if (-not (Test-Path $template)) { Write-Error "Template not found: $template"; return }
     $content = Get-Content $template -Raw
     $content = $content.Replace('[PROJECT NAME]', (Split-Path $repoRoot -Leaf))
