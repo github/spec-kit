@@ -886,7 +886,7 @@ def init(
             # Use GitHub Token if set in environment
             gh_token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
             if gh_token:
-                local_client.headers.update({"Authorization": f"token {gh_token}"})
+                local_client.headers.update({"Authorization": f"Bearer {gh_token}"})
                 if debug:
                     console.print("[magenta]Using GitHub token from environment for authenticated requests[/magenta]")
 
