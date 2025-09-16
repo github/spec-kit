@@ -114,12 +114,15 @@ build_variant() {
   local plan_tpl="$base_dir/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
     plan_norm=$(tr -d '\r' < "$plan_tpl")
-    variant_line=$(printf '%s\n' "$plan_norm" | grep -E "<!--[[:space:]]*VARIANT:$script" | head -1 | sed -E "s/.*VARIANT:$script[[:space:]]+//; s/-->.*//; s/^[[:space:]]+//; s/[[:space:]]+$//")
-    if [[ -n $variant_line ]]; then
+    # Extract script command from YAML frontmatter
+    script_command=$(printf '%s\n' "$plan_norm" | awk -v sv="$script" '/^[[:space:]]*'"$script"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script"':[[:space:]]*/, ""); print; exit}')
+    
+    if [[ -n $script_command ]]; then
       tmp_file=$(mktemp)
-      sed "s|VARIANT-INJECT|${variant_line}|" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g" | sed '/<!--[[:space:]]*VARIANT:sh/d' | sed '/<!--[[:space:]]*VARIANT:ps/d' > "$tmp_file" && mv "$tmp_file" "$plan_tpl"
+      # Replace {SCRIPT} placeholder with the script command and __AGENT__ with agent name
+      sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g" > "$tmp_file" && mv "$tmp_file" "$plan_tpl"
     else
-      echo "Warning: no plan-template variant for $script (pattern not matched)" >&2
+      echo "Warning: no plan-template script command found for $script in YAML frontmatter" >&2
     fi
   fi
   case $agent in

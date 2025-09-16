@@ -4,7 +4,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 FEATURE_DIR="$REPO_ROOT/specs/$CURRENT_BRANCH"
 NEW_PLAN="$FEATURE_DIR/plan.md"
-CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"; GEMINI_FILE="$REPO_ROOT/GEMINI.md"; COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
+CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"; GEMINI_FILE="$REPO_ROOT/GEMINI.md"; COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"; CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
 AGENT_TYPE="$1"
 [ -f "$NEW_PLAN" ] || { echo "ERROR: No plan.md found at $NEW_PLAN"; exit 1; }
 echo "=== Updating agent context files for feature $CURRENT_BRANCH ==="
@@ -51,7 +51,12 @@ case "$AGENT_TYPE" in
   claude) update_agent_file "$CLAUDE_FILE" "Claude Code" ;;
   gemini) update_agent_file "$GEMINI_FILE" "Gemini CLI" ;;
   copilot) update_agent_file "$COPILOT_FILE" "GitHub Copilot" ;;
-  "") [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"; [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI"; [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"; if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ]; then update_agent_file "$CLAUDE_FILE" "Claude Code"; fi ;;
-  *) echo "ERROR: Unknown agent type '$AGENT_TYPE'"; exit 1 ;;
+  cursor) update_agent_file "$CURSOR_FILE" "Cursor IDE" ;;
+  "") [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"; \
+       [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI"; \
+       [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"; \
+       [ -f "$CURSOR_FILE" ] && update_agent_file "$CURSOR_FILE" "Cursor IDE"; \
+       if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$CURSOR_FILE" ]; then update_agent_file "$CLAUDE_FILE" "Claude Code"; fi ;;
+  *) echo "ERROR: Unknown agent type '$AGENT_TYPE' (expected claude|gemini|copilot|cursor)"; exit 1 ;;
 esac
-echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot]"
+echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot|cursor]"
