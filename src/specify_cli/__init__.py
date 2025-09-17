@@ -794,10 +794,11 @@ def init(
     ))
     
     # Check git only if we might need it (not --no-git)
-    git_available = True
+    # Only set to True if the user wants it and the tool is available
+    should_init_git = False
     if not no_git:
-        git_available = check_tool("git", "https://git-scm.com/downloads")
-        if not git_available:
+        should_init_git = check_tool("git", "https://git-scm.com/downloads")
+        if not should_init_git:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
     # AI assistant selection
@@ -893,7 +894,7 @@ def init(
                 tracker.start("git")
                 if is_git_repo(project_path):
                     tracker.complete("git", "existing repo detected")
-                elif git_available:
+                elif should_init_git:
                     if init_git_repo(project_path, quiet=True):
                         tracker.complete("git", "initialized")
                     else:
