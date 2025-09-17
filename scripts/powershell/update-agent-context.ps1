@@ -1,4 +1,77 @@
 #!/usr/bin/env pwsh
+
+# ==============================================================================
+# Update Agent Context Script (PowerShell)
+# ==============================================================================
+#
+# DESCRIPTION:
+#   PowerShell equivalent of the bash update-agent-context.sh script.
+#   Updates AI coding assistant context files with information from the current
+#   feature's implementation plan. This script extracts technical details like
+#   programming language, frameworks, database choices, and project structure
+#   from plan.md and updates the appropriate agent configuration files to ensure
+#   the AI assistant has current project context.
+#
+# USAGE:
+#   .\update-agent-context.ps1 [AgentType]
+#
+# PARAMETERS:
+#   AgentType     Specific agent to update (optional)
+#                 Options: claude, gemini, copilot, cursor
+#                 If omitted, updates all existing agent files or creates Claude by default
+#
+# SUPPORTED AGENTS:
+#   - claude: Updates CLAUDE.md (Claude Code)
+#   - gemini: Updates GEMINI.md (Gemini CLI)
+#   - copilot: Updates .github/copilot-instructions.md (GitHub Copilot)
+#   - cursor: Updates .cursor/rules/specify-rules.mdc (Cursor IDE)
+#
+# EXTRACTED INFORMATION:
+#   From plan.md, the script extracts:
+#   - **Language/Version**: Programming language and version
+#   - **Primary Dependencies**: Main frameworks and libraries
+#   - **Testing**: Testing frameworks and approaches
+#   - **Storage**: Database and storage solutions
+#   - **Project Type**: Application type (web, mobile, CLI, etc.)
+#
+# AGENT FILE UPDATES:
+#   For existing files:
+#   - Updates "Active Technologies" section with new tech stack
+#   - Updates "Recent Changes" section with latest feature info
+#   - Updates "Last updated" timestamp
+#   - Uses regex-based text processing for reliable updates
+#
+#   For new files:
+#   - Creates from agent-file-template.md if available
+#   - Populates with project-specific information
+#   - Sets up appropriate commands based on detected technology
+#   - Configures project structure based on project type
+#
+# PREREQUISITES:
+#   - Must be run from within a git repository
+#   - plan.md must exist in current feature directory
+#   - PowerShell 5.1+ or PowerShell Core 6+
+#
+# EXIT CODES:
+#   0 - Agent context files updated successfully
+#   1 - Missing plan.md file or invalid agent type
+#
+# EXAMPLES:
+#   .\update-agent-context.ps1              # Update all agent files
+#   .\update-agent-context.ps1 claude       # Update only Claude context
+#   .\update-agent-context.ps1 copilot      # Update only GitHub Copilot context
+#
+# TEMPLATE DEPENDENCIES:
+#   - agent-file-template.md: Base template for creating new agent files
+#   - Must be located at .specify/templates/agent-file-template.md
+#
+# RELATED SCRIPTS:
+#   - setup-plan.ps1: Creates the plan.md file that this script reads
+#   - common.ps1: Could be used for shared functionality (currently not used)
+#   - update-agent-context.sh: Bash equivalent of this script
+#
+# ==============================================================================
+
 [CmdletBinding()]
 param([string]$AgentType)
 $ErrorActionPreference = 'Stop'

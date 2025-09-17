@@ -1,5 +1,49 @@
 #!/usr/bin/env bash
-# (Moved to scripts/bash/) Common functions and variables for all scripts
+
+# ==============================================================================
+# Common Functions Library
+# ==============================================================================
+#
+# DESCRIPTION:
+#   Shared utility functions and path resolution logic used across all
+#   Spec-Driven Development workflow scripts. This library provides consistent
+#   behavior for git operations, feature branch validation, and file system
+#   path management.
+#
+# FUNCTIONS:
+#   get_repo_root()        - Returns the root directory of the git repository
+#   get_current_branch()   - Returns the name of the current git branch
+#   check_feature_branch() - Validates feature branch naming convention
+#   get_feature_dir()      - Constructs feature directory path from repo root and branch
+#   get_feature_paths()    - Generates all standard feature-related file paths
+#   check_file()           - Displays file existence status with checkmark/X
+#   check_dir()            - Displays directory existence status with contents check
+#
+# FEATURE BRANCH NAMING CONVENTION:
+#   Feature branches must follow the pattern: XXX-feature-name
+#   Where XXX is a 3-digit zero-padded number (001, 002, etc.)
+#   Examples: 001-user-authentication, 042-payment-integration
+#
+# STANDARD FEATURE DIRECTORY STRUCTURE:
+#   specs/XXX-feature-name/
+#   ├── spec.md           # Feature specification (required)
+#   ├── plan.md           # Implementation plan (required)
+#   ├── tasks.md          # Task breakdown (optional)
+#   ├── research.md       # Research notes (optional)
+#   ├── data-model.md     # Data model documentation (optional)
+#   ├── quickstart.md     # Quick start guide (optional)
+#   └── contracts/        # API contracts and interfaces (optional)
+#
+# USAGE:
+#   This file should be sourced by other scripts:
+#   source "$SCRIPT_DIR/common.sh"
+#   eval $(get_feature_paths)
+#
+# DEPENDENCIES:
+#   - git (for repository operations)
+#   - bash 4.0+ (for associative arrays and advanced features)
+#
+# ==============================================================================
 
 get_repo_root() { git rev-parse --show-toplevel; }
 get_current_branch() { git rev-parse --abbrev-ref HEAD; }

@@ -1,5 +1,63 @@
 #!/usr/bin/env bash
-# (Moved to scripts/bash/) Create a new feature with branch, directory structure, and template
+
+# ==============================================================================
+# Create New Feature Script
+# ==============================================================================
+#
+# DESCRIPTION:
+#   Initializes a new feature in the Spec-Driven Development workflow by:
+#   1. Creating a new feature branch with proper naming convention
+#   2. Setting up the feature directory structure in specs/
+#   3. Copying the specification template to start feature definition
+#   4. Auto-incrementing feature numbers for consistent organization
+#
+# USAGE:
+#   ./create-new-feature.sh [OPTIONS] <feature_description>
+#
+# OPTIONS:
+#   --json    Output results in JSON format for programmatic consumption
+#   --help    Show usage information and exit
+#   -h        Show usage information and exit
+#
+# ARGUMENTS:
+#   feature_description    A descriptive name for the feature (multiple words allowed)
+#                         Will be normalized to lowercase with hyphens
+#
+# FEATURE NUMBERING:
+#   Features are automatically numbered starting from 001, incrementing based on
+#   existing feature directories. The script finds the highest existing number
+#   and adds 1 to ensure sequential, non-conflicting feature numbers.
+#
+# BRANCH NAMING:
+#   Created branches follow the pattern: XXX-first-few-words
+#   - XXX: 3-digit zero-padded feature number
+#   - Only first 3 words of description are used for brevity
+#   - All text converted to lowercase with hyphens as separators
+#   - Special characters are removed or converted to hyphens
+#
+# DIRECTORY STRUCTURE CREATED:
+#   specs/XXX-feature-name/
+#   └── spec.md           # Feature specification (copied from template)
+#
+# OUTPUT:
+#   In default mode: Displays branch name, spec file path, and feature number
+#   In JSON mode: Returns structured JSON with BRANCH_NAME, SPEC_FILE, FEATURE_NUM
+#
+# EXIT CODES:
+#   0 - Feature created successfully
+#   1 - Missing feature description or other error
+#
+# EXAMPLES:
+#   ./create-new-feature.sh "User Authentication System"
+#   ./create-new-feature.sh --json "Payment Processing Integration"
+#   ./create-new-feature.sh "Advanced Search and Filtering Capabilities"
+#
+# RELATED SCRIPTS:
+#   - setup-plan.sh: Next step to create implementation plan
+#   - check-task-prerequisites.sh: Validates the created structure
+#
+# ==============================================================================
+
 set -e
 
 JSON_MODE=false

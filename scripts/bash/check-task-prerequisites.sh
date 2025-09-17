@@ -1,4 +1,48 @@
 #!/usr/bin/env bash
+
+# ==============================================================================
+# Check Task Prerequisites Script
+# ==============================================================================
+#
+# DESCRIPTION:
+#   Validates that all required prerequisites are in place before starting
+#   implementation tasks in the Spec-Driven Development workflow. This script
+#   ensures that the current branch is a valid feature branch, that the feature
+#   directory structure exists, and that essential planning documents are present.
+#
+# USAGE:
+#   ./check-task-prerequisites.sh [OPTIONS]
+#
+# OPTIONS:
+#   --json    Output results in JSON format for programmatic consumption
+#   --help    Show usage information and exit
+#   -h        Show usage information and exit
+#
+# PREREQUISITES:
+#   - Must be run from within a git repository
+#   - Must be on a feature branch (format: XXX-feature-name)
+#   - Feature directory must exist in specs/
+#   - plan.md must exist in the feature directory
+#
+# OUTPUT:
+#   In default mode: Displays feature directory path and available documentation files
+#   In JSON mode: Returns structured JSON with FEATURE_DIR and AVAILABLE_DOCS array
+#
+# EXIT CODES:
+#   0 - All prerequisites met successfully
+#   1 - Missing prerequisites or invalid branch/directory structure
+#
+# EXAMPLES:
+#   ./check-task-prerequisites.sh
+#   ./check-task-prerequisites.sh --json
+#
+# RELATED SCRIPTS:
+#   - common.sh: Provides shared functions for path resolution and validation
+#   - create-new-feature.sh: Creates the feature structure that this script validates
+#   - setup-plan.sh: Creates the plan.md file that this script requires
+#
+# ==============================================================================
+
 set -e
 JSON_MODE=false
 for arg in "$@"; do case "$arg" in --json) JSON_MODE=true ;; --help|-h) echo "Usage: $0 [--json]"; exit 0 ;; esac; done

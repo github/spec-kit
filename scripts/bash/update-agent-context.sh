@@ -1,4 +1,74 @@
 #!/usr/bin/env bash
+
+# ==============================================================================
+# Update Agent Context Script
+# ==============================================================================
+#
+# DESCRIPTION:
+#   Updates AI coding assistant context files with information from the current
+#   feature's implementation plan. This script extracts technical details like
+#   programming language, frameworks, database choices, and project structure
+#   from plan.md and updates the appropriate agent configuration files to ensure
+#   the AI assistant has current project context.
+#
+# USAGE:
+#   ./update-agent-context.sh [AGENT_TYPE]
+#
+# ARGUMENTS:
+#   AGENT_TYPE    Specific agent to update (optional)
+#                 Options: claude, gemini, copilot, cursor
+#                 If omitted, updates all existing agent files or creates Claude by default
+#
+# SUPPORTED AGENTS:
+#   - claude: Updates CLAUDE.md (Claude Code)
+#   - gemini: Updates GEMINI.md (Gemini CLI)
+#   - copilot: Updates .github/copilot-instructions.md (GitHub Copilot)
+#   - cursor: Updates .cursor/rules/specify-rules.mdc (Cursor IDE)
+#
+# EXTRACTED INFORMATION:
+#   From plan.md, the script extracts:
+#   - **Language/Version**: Programming language and version
+#   - **Primary Dependencies**: Main frameworks and libraries
+#   - **Storage**: Database and storage solutions
+#   - **Project Type**: Application type (web, mobile, CLI, etc.)
+#
+# AGENT FILE UPDATES:
+#   For existing files:
+#   - Updates "Active Technologies" section with new tech stack
+#   - Updates "Recent Changes" section with latest feature info
+#   - Updates "Last updated" timestamp
+#   - Preserves manual additions between special comment markers
+#
+#   For new files:
+#   - Creates from agent-file-template.md
+#   - Populates with project-specific information
+#   - Sets up appropriate commands based on detected technology
+#   - Configures project structure based on project type
+#
+# PREREQUISITES:
+#   - Must be run from within a git repository
+#   - plan.md must exist in current feature directory
+#   - Python 3 available for text processing
+#
+# EXIT CODES:
+#   0 - Agent context files updated successfully
+#   1 - Missing plan.md file or invalid agent type
+#
+# EXAMPLES:
+#   ./update-agent-context.sh              # Update all agent files
+#   ./update-agent-context.sh claude       # Update only Claude context
+#   ./update-agent-context.sh copilot      # Update only GitHub Copilot context
+#
+# TEMPLATE DEPENDENCIES:
+#   - agent-file-template.md: Base template for creating new agent files
+#   - Must be located at .specify/templates/agent-file-template.md
+#
+# RELATED SCRIPTS:
+#   - setup-plan.sh: Creates the plan.md file that this script reads
+#   - common.sh: Could be used for shared functionality (currently not used)
+#
+# ==============================================================================
+
 set -e
 REPO_ROOT=$(git rev-parse --show-toplevel)
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)

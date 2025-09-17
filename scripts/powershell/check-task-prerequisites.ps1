@@ -1,4 +1,49 @@
 #!/usr/bin/env pwsh
+
+# ==============================================================================
+# Check Task Prerequisites Script (PowerShell)
+# ==============================================================================
+#
+# DESCRIPTION:
+#   PowerShell equivalent of the bash check-task-prerequisites.sh script.
+#   Validates that all required prerequisites are in place before starting
+#   implementation tasks in the Spec-Driven Development workflow. This script
+#   ensures that the current branch is a valid feature branch, that the feature
+#   directory structure exists, and that essential planning documents are present.
+#
+# USAGE:
+#   .\check-task-prerequisites.ps1 [-Json]
+#
+# PARAMETERS:
+#   -Json         Output results in JSON format for programmatic consumption
+#
+# PREREQUISITES:
+#   - Must be run from within a git repository
+#   - Must be on a feature branch (format: XXX-feature-name)
+#   - Feature directory must exist in specs/
+#   - plan.md must exist in the feature directory
+#   - PowerShell 5.1+ or PowerShell Core 6+
+#
+# OUTPUT:
+#   In default mode: Displays feature directory path and available documentation files
+#   In JSON mode: Returns structured JSON with FEATURE_DIR and AVAILABLE_DOCS array
+#
+# EXIT CODES:
+#   0 - All prerequisites met successfully
+#   1 - Missing prerequisites or invalid branch/directory structure
+#
+# EXAMPLES:
+#   .\check-task-prerequisites.ps1
+#   .\check-task-prerequisites.ps1 -Json
+#
+# RELATED SCRIPTS:
+#   - common.ps1: Provides shared functions for path resolution and validation
+#   - create-new-feature.ps1: Creates the feature structure that this script validates
+#   - setup-plan.ps1: Creates the plan.md file that this script requires
+#   - check-task-prerequisites.sh: Bash equivalent of this script
+#
+# ==============================================================================
+
 [CmdletBinding()]
 param([switch]$Json)
 $ErrorActionPreference = 'Stop'
