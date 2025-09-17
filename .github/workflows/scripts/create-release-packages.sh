@@ -143,13 +143,17 @@ build_variant() {
     cursor)
       mkdir -p "$base_dir/.cursor/commands"
       generate_commands cursor md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
+    qwen)
+      mkdir -p "$base_dir/.qwen/commands"
+      generate_commands qwen md "\$ARGUMENTS" "$base_dir/.qwen/commands" "$script"
+      [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor)
+ALL_AGENTS=(claude gemini copilot cursor qwen)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {

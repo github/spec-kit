@@ -57,7 +57,8 @@ AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
     "gemini": "Gemini CLI",
-    "cursor": "Cursor"
+    "cursor": "Cursor",
+    "qwen": "Qwen Code"
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -722,7 +723,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, or cursor"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, or qwen"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -735,7 +736,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, or Cursor)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, or Qwen Code)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -747,6 +748,7 @@ def init(
         specify init my-project --ai gemini
         specify init my-project --ai copilot --no-git
         specify init my-project --ai cursor
+        specify init my-project --ai qwen
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
@@ -825,6 +827,11 @@ def init(
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
                 agent_tool_missing = True
+        elif selected_ai == "qwen":
+            if not check_tool("qwen", "Install from: https://github.com/QwenLM/qwen-code"):
+                console.print("[red]Error:[/red] Qwen CLI is required for Qwen Code projects")
+                agent_tool_missing = True
+        # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
 
         if agent_tool_missing:
             console.print("\n[red]Required AI tool is missing![/red]")
@@ -950,6 +957,12 @@ def init(
         steps_lines.append("   - See GEMINI.md for all available commands")
     elif selected_ai == "copilot":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+    elif selected_ai == "qwen":
+        steps_lines.append(f"{step_num}. Use / commands with Qwen CLI")
+        steps_lines.append("   - Run qwen /specify to create specifications")
+        steps_lines.append("   - Run qwen /plan to create implementation plans")
+        steps_lines.append("   - Run qwen /tasks to generate tasks")
+        steps_lines.append("   - See QWEN.md for all available commands")
 
     # Removed script variant step (scripts are transparent to users)
     step_num += 1
@@ -975,6 +988,7 @@ def check():
     tracker.add("git", "Git version control")
     tracker.add("claude", "Claude Code CLI")
     tracker.add("gemini", "Gemini CLI")
+    tracker.add("qwen", "Qwen Code CLI")
     tracker.add("code", "VS Code (for GitHub Copilot)")
     tracker.add("cursor-agent", "Cursor IDE agent (optional)")
     
@@ -982,6 +996,7 @@ def check():
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
     gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
+    qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
     # Check for VS Code (code or code-insiders)
     code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
     if not code_ok:
@@ -997,7 +1012,7 @@ def check():
     # Recommendations
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok):
+    if not (claude_ok or gemini_ok or qwen_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
