@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini copilot opencode (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -147,13 +147,16 @@ build_variant() {
       mkdir -p "$base_dir/.qwen/commands"
       generate_commands qwen md "\$ARGUMENTS" "$base_dir/.qwen/commands" "$script"
       [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
+    opencode)
+      mkdir -p "$base_dir/.opencode/command"
+      generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
