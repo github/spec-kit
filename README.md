@@ -18,7 +18,8 @@
 - [⚡ Get started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
-- [📚 Core philosophy](#-core-philosophy)
+- [� APM Integration](#-apm-integration)
+- [�📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
 - [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
@@ -82,6 +83,7 @@ The `specify` command supports the following options:
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`) |
+| `apm`       | APM - Agent Package Manager commands for Context management   |
 
 ### `specify init` Arguments & Options
 
@@ -95,6 +97,7 @@ The `specify` command supports the following options:
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
+| `--use-apm`            | Flag     | Include APM (Agent Package Manager) structure for context management       |
 
 ### Examples
 
@@ -105,14 +108,17 @@ specify init my-project
 # Initialize with specific AI assistant
 specify init my-project --ai claude
 
+# Initialize with APM support
+specify init my-project --ai claude --use-apm
+
 # Initialize with Cursor support
 specify init my-project --ai cursor
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specify init my-project --ai copilot --script ps
 
-# Initialize in current directory
-specify init --here --ai copilot
+# Initialize in current directory with APM
+specify init --here --ai copilot --use-apm
 
 # Skip git initialization
 specify init my-project --ai gemini --no-git
@@ -124,7 +130,49 @@ specify init my-project --ai claude --debug
 specify check
 ```
 
-## 📚 Core philosophy
+## 📦 APM Integration - NPM for Agent Context
+
+**Context as Code Packages**: Package and share agent intelligence like npm packages. With APM, your agents get:
+
+- **Team knowledge** from reusable context packages
+- **Optimized context** through mathematical relevance scoring  
+- **Universal compatibility** via dynamically generated Agents.md files
+
+[Complete Context Management Guide →](docs/context-management.md)
+
+Spec Kit includes full APM (Agent Package Manager) functionality for managing modular context packages and files:
+
+### Unified Initialization
+```bash
+# The --use-apm flag creates both SDD and APM structures 
+specify init my-project --ai claude --use-apm
+```
+
+### APM Commands
+```bash
+# Core APM commands available under 'apm' subcommand
+
+# Install APM packages from apm.yml
+specify apm install       
+
+# Add APM package to apm.yml and install                      
+specify apm install org/repo   
+
+# Remove package from apm.yml and apm_modules
+specify apm uninstall org/repo              
+
+# Remove orphaned packages not in apm.yml
+specify apm prune   
+
+# List installed APM packages
+specify apm deps list    
+
+# Generate nested optimal AGENTS.md tree
+# Uses installed APM packages and local context files
+specify apm compile                                
+```
+
+## �📚 Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
 
@@ -427,6 +475,7 @@ rm gcm-linux_amd64.2.6.1.deb
 
 - Den Delimarsky ([@localden](https://github.com/localden))
 - John Lam ([@jflam](https://github.com/jflam))
+- Daniel Meppiel [@danielmeppiel](https://github.com/danielmeppiel)
 
 ## 💬 Support
 

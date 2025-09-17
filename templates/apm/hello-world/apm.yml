@@ -1,0 +1,9 @@
+name: {{project_name}}
+version: {{version}}
+description: {{description}}
+author: {{author}}
+
+dependencies:
+  apm:
+    # list of APM packages as GitHub repositories: <owner>/<repo>
+    # - github/design-guidelines

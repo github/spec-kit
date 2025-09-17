@@ -1,2 +1,7 @@
 # Global code owner
 * @localden
+
+# APM CLI code owner
+src/apm_cli/ @danielmeppiel
+templates/apm/ @danielmeppiel
+docs/context-management.md @danielmeppiel

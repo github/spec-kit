@@ -3,10 +3,20 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "typer",
-#     "rich",
+#     "rich>=13.0.0",
 #     "platformdirs",
 #     "readchar",
 #     "httpx",
+#     "click>=8.0.0",
+#     "colorama>=0.4.6",
+#     "pyyaml>=6.0.0",
+#     "requests>=2.28.0",
+#     "python-frontmatter>=1.0.0",
+#     "tomli>=1.2.0; python_version<'3.11'",
+#     "toml>=0.10.2",
+#     "rich-click>=1.7.0",
+#     "watchdog>=3.0.0",
+#     "GitPython>=3.1.0",
 # ]
 # ///
 """
@@ -43,6 +53,12 @@ from rich.align import Align
 from rich.table import Table
 from rich.tree import Tree
 from typer.core import TyperGroup
+
+# APM imports
+from apm_cli.cli import init as apm_init, install as apm_install, compile as apm_compile, prune as apm_prune, uninstall as apm_uninstall
+from apm_cli.commands.deps import deps as apm_deps
+import click
+from click.testing import CliRunner
 
 # For cross-platform keyboard input
 import readchar
@@ -293,6 +309,240 @@ app = typer.Typer(
     invoke_without_command=True,
     cls=BannerGroup,
 )
+
+@click.group()
+def apm_click():
+    """APM - Agent Package Manager commands"""
+    pass
+
+# Add APM commands to the Click group
+apm_click.add_command(apm_init, name="init")
+apm_click.add_command(apm_install, name="install") 
+apm_click.add_command(apm_uninstall, name="uninstall")
+apm_click.add_command(apm_compile, name="compile")
+apm_click.add_command(apm_prune, name="prune")
+apm_click.add_command(apm_deps, name="deps")
+
+
+# Create APM subcommands as Typer commands
+apm_app = typer.Typer(
+    name="apm",
+    help="APM - Agent Package Manager commands for context management.",
+    add_completion=False,
+)
+
+@apm_app.command("init", context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
+def apm_init_wrapper(
+    ctx: typer.Context,
+    project_name: str = typer.Argument(None, help="Project name"),
+    force: bool = typer.Option(False, "-f", "--force", help="Overwrite existing files without confirmation"),
+    yes: bool = typer.Option(False, "-y", "--yes", help="Skip interactive questionnaire and use defaults"),
+):
+    """Initialize a new APM project"""
+    args = []
+    if project_name:
+        args.append(project_name)
+    if force:
+        args.append("--force")
+    if yes:
+        args.append("--yes")
+    if ctx.args:
+        args.extend(ctx.args)
+    
+    _run_apm_command(["init"] + args)
+
+@apm_app.command("install", context_settings={"allow_extra_args": True, "allow_interspersed_args": False}) 
+def apm_install_wrapper(
+    ctx: typer.Context,
+    packages: list[str] = typer.Argument(None, help="APM packages to add and install (owner/repo format)"),
+    runtime: str = typer.Option(None, "--runtime", help="Target specific runtime only (codex, vscode)"),
+    exclude: str = typer.Option(None, "--exclude", help="Exclude specific runtime from installation"),
+    only: str = typer.Option(None, "--only", help="Install only specific dependency type (apm or mcp)"),
+    update: bool = typer.Option(False, "--update", help="Update dependencies to latest Git references"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be installed without installing"),
+):
+    """Install APM and MCP dependencies from apm.yml. 
+    
+    Examples:
+        specify apm install                             # Install existing deps from apm.yml
+        specify apm install github/design-guidelines   # Add package and install
+        specify apm install org/pkg1 org/pkg2          # Add multiple packages and install
+    """
+    args = []
+    
+    # Add package arguments first
+    if packages:
+        args.extend(packages)
+    
+    if runtime:
+        args.extend(["--runtime", runtime])
+    if exclude:
+        args.extend(["--exclude", exclude])
+    if only:
+        args.extend(["--only", only])
+    if update:
+        args.append("--update")
+    if dry_run:
+        args.append("--dry-run")
+    if ctx.args:
+        args.extend(ctx.args)
+    
+    _run_apm_command(["install"] + args)
+
+@apm_app.command("compile", context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
+def apm_compile_wrapper(
+    ctx: typer.Context,
+    output: str = typer.Option(None, "-o", "--output", help="Output file path (for single-file mode)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="🔍 Preview compilation without writing files (shows placement decisions)"),
+    no_links: bool = typer.Option(False, "--no-links", help="Skip markdown link resolution"),
+    chatmode: str = typer.Option(None, "--chatmode", help="Chatmode to prepend to AGENTS.md files"),
+    watch: bool = typer.Option(False, "--watch", help="Auto-regenerate on changes"),
+    validate: bool = typer.Option(False, "--validate", help="Validate primitives without compiling"),
+    with_constitution: bool = typer.Option(True, "--with-constitution/--no-constitution", help="Include Spec Kit constitution block at top if memory/constitution.md present"),
+    single_agents: bool = typer.Option(False, "--single-agents", help="📄 Force single-file compilation (legacy mode)"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="🔍 Show detailed source attribution and optimizer analysis"),
+    local_only: bool = typer.Option(False, "--local-only", help="🏠 Ignore dependencies, compile only local primitives"),
+    clean: bool = typer.Option(False, "--clean", help="🧹 Remove orphaned AGENTS.md files that are no longer generated"),
+):
+    """Generate AGENTS.md from APM context"""
+    # Build arguments for the Click command
+    args = []
+    if output:
+        args.extend(["-o", output])
+    if dry_run:
+        args.append("--dry-run")
+    if no_links:
+        args.append("--no-links")
+    if chatmode:
+        args.extend(["--chatmode", chatmode])
+    if watch:
+        args.append("--watch")
+    if validate:
+        args.append("--validate")
+    if not with_constitution:
+        args.append("--no-constitution")
+    if single_agents:
+        args.append("--single-agents")
+    if verbose:
+        args.append("--verbose")
+    if local_only:
+        args.append("--local-only")
+    if clean:
+        args.append("--clean")
+    
+    # Add any extra arguments
+    if ctx.args:
+        args.extend(ctx.args)
+    
+    _run_apm_command(["compile"] + args)
+
+@apm_app.command("prune", context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
+def apm_prune_wrapper(
+    ctx: typer.Context,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be removed without removing"),
+):
+    """Remove APM packages not listed in apm.yml.
+    
+    This command cleans up the apm_modules/ directory by removing packages that
+    were previously installed but are no longer declared as dependencies in apm.yml.
+    
+    Examples:
+        specify apm prune           # Remove orphaned packages
+        specify apm prune --dry-run # Show what would be removed
+    """
+    args = []
+    if dry_run:
+        args.append("--dry-run")
+    
+    # Add any extra arguments
+    if ctx.args:
+        args.extend(ctx.args)
+    
+    _run_apm_command(["prune"] + args)
+
+@apm_app.command("uninstall", context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
+def apm_uninstall_wrapper(
+    ctx: typer.Context,
+    packages: list[str] = typer.Argument(..., help="APM packages to remove (owner/repo format)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be removed without removing"),
+):
+    """Remove APM packages from apm.yml and apm_modules.
+    
+    This command removes packages from both the apm.yml dependencies list
+    and the apm_modules/ directory. It's the opposite of 'specify apm install <package>'.
+    
+    Examples:
+        specify apm uninstall github/design-guidelines    # Remove one package
+        specify apm uninstall org/pkg1 org/pkg2           # Remove multiple packages
+        specify apm uninstall github/pkg --dry-run        # Show what would be removed
+    """
+    args = []
+    
+    # Add package arguments first
+    if packages:
+        args.extend(packages)
+    
+    if dry_run:
+        args.append("--dry-run")
+    
+    # Add any extra arguments
+    if ctx.args:
+        args.extend(ctx.args)
+    
+    _run_apm_command(["uninstall"] + args)
+
+# Create deps subcommands as Typer sub-application
+deps_app = typer.Typer(
+    name="deps",
+    help="🔗 Manage APM package dependencies",
+    add_completion=False,
+)
+
+@deps_app.command("clean")
+def apm_deps_clean_wrapper(ctx: typer.Context):
+    """Remove all APM dependencies"""
+    _run_apm_command(["deps", "clean"] + (ctx.args or []))
+
+@deps_app.command("info") 
+def apm_deps_info_wrapper(ctx: typer.Context):
+    """Show detailed package information"""
+    _run_apm_command(["deps", "info"] + (ctx.args or []))
+
+@deps_app.command("list")
+def apm_deps_list_wrapper(ctx: typer.Context):
+    """List installed APM dependencies"""
+    _run_apm_command(["deps", "list"] + (ctx.args or []))
+
+@deps_app.command("tree")
+def apm_deps_tree_wrapper(ctx: typer.Context):
+    """Show dependency tree structure"""
+    _run_apm_command(["deps", "tree"] + (ctx.args or []))
+
+@deps_app.command("update")
+def apm_deps_update_wrapper(ctx: typer.Context):
+    """Update APM dependencies"""
+    _run_apm_command(["deps", "update"] + (ctx.args or []))
+
+# Add the deps sub-application to the APM app
+apm_app.add_typer(deps_app, name="deps")
+
+def _run_apm_command(args: list[str]):
+    """Helper to run APM Click commands"""
+    original_argv = sys.argv.copy()
+    try:
+        sys.argv = ["apm"] + args
+        try:
+            apm_click.main(args, standalone_mode=False)
+        except SystemExit as e:
+            if e.code != 0:
+                raise typer.Exit(e.code)
+    finally:
+        sys.argv = original_argv
+
+# Add the APM subcommand app to the main app
+app.add_typer(apm_app, name="apm")
+
+# Remove the old apm_command since we're using the Typer subcommand app now
 
 
 def show_banner():
@@ -719,6 +969,53 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 console.print(f"  - {f}")
 
 
+def _create_apm_structure(project_path: Path, project_name: str, ai_assistant: str = "copilot") -> None:
+    """Create APM structure in the project directory."""
+    # Copy APM template files
+    template_source = Path(__file__).parent.parent.parent / "templates" / "apm" / "hello-world"
+    
+    if not template_source.exists():
+        raise FileNotFoundError(f"APM template not found at {template_source}")
+    
+    # Copy APM files to project root
+    files_to_copy = [
+        "apm.yml",
+        "hello-world.prompt.md", 
+        "feature-implementation.prompt.md",
+        "README.md"
+    ]
+    
+    for file_name in files_to_copy:
+        src_file = template_source / file_name
+        if src_file.exists():
+            shutil.copy2(src_file, project_path / file_name)
+    
+    # Copy .apm directory
+    apm_src = template_source / ".apm"
+    apm_dst = project_path / ".apm"
+    if apm_src.exists():
+        shutil.copytree(apm_src, apm_dst, dirs_exist_ok=True)
+    
+    # Update apm.yml with proper template variable replacement
+    apm_yml = project_path / "apm.yml"
+    if apm_yml.exists():
+        content = apm_yml.read_text()
+        
+        # Replace template variables with actual values
+        replacements = {
+            "{{project_name}}": project_name,
+            "{{version}}": "1.0.0",
+            "{{description}}": f"AI-native project powered by {ai_assistant}",
+            "{{author}}": "Developer",
+            "hello-world": project_name  # Also replace any hello-world references
+        }
+        
+        for placeholder, value in replacements.items():
+            content = content.replace(placeholder, value)
+        
+        apm_yml.write_text(content)
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
@@ -729,6 +1026,7 @@ def init(
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
+    use_apm: bool = typer.Option(False, "--use-apm", help="Include APM (Agent Package Manager) structure for context management"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -740,16 +1038,17 @@ def init(
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
+    7. Optionally include APM support (with --use-apm flag)
     
     Examples:
         specify init my-project
         specify init my-project --ai claude
-        specify init my-project --ai gemini
+        specify init my-project --ai gemini --use-apm
         specify init my-project --ai copilot --no-git
-        specify init my-project --ai cursor
+        specify init my-project --ai cursor --use-apm
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
-        specify init --here
+        specify init --here --use-apm
     """
     # Show banner first
     show_banner()
@@ -867,7 +1166,8 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
-    ("chmod", "Ensure scripts executable"),
+        ("apm", "Create APM structure"),
+        ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -884,6 +1184,17 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
+
+            # APM structure creation (conditional)
+            if use_apm:
+                tracker.start("apm", "setting up APM structure")
+                try:
+                    _create_apm_structure(project_path, project_path.name, selected_ai)
+                    tracker.complete("apm", "APM structure created")
+                except Exception as e:
+                    tracker.error("apm", f"APM setup failed: {str(e)}")
+            else:
+                tracker.skip("apm", "APM not requested")
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -954,6 +1265,14 @@ def init(
     # Removed script variant step (scripts are transparent to users)
     step_num += 1
     steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
+    
+    # Add APM-specific next steps if APM was enabled
+    if use_apm:
+        step_num += 1
+        steps_lines.append(f"{step_num}. Use APM commands to manage your project context:")
+        steps_lines.append("   - [bold cyan]specify apm compile[/bold cyan] - Generate AGENTS.md from APM instructions and packages")
+        steps_lines.append("   - [bold cyan]specify apm install[/bold cyan] - Install APM packages")
+        steps_lines.append("   - [bold cyan]specify apm deps list[/bold cyan] - List installed APM packages")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
     console.print()  # blank line
