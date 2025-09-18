@@ -1,0 +1,18 @@
+#!/bin/bash
+# Post-specify hook: Runs after spec file is written and completed
+# Arguments: $1 = feature description
+# Environment: BRANCH_NAME, SPEC_FILE, FEATURE_NUM available
+
+# Example: Create GitHub issue linking to completed spec
+# if command -v gh >/dev/null 2>&1; then
+#     gh issue create --title "Spec Complete: $1" --body "Specification completed: $SPEC_FILE on branch $BRANCH_NAME"
+# fi
+
+# Example: Send completion notification
+# echo "Specification $FEATURE_NUM completed: $SPEC_FILE" | mail -s "Spec Ready for Review" team@company.com
+
+# Example: Trigger CI/CD pipeline
+# curl -X POST "$CI_WEBHOOK_URL" -d '{"event":"spec_completed","branch":"'$BRANCH_NAME'","spec":"'$SPEC_FILE'"}'
+
+# Default: Do nothing
+exit 0

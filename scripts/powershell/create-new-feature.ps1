@@ -3,13 +3,14 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [int]$FeatureNum = 0,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
 )
 $ErrorActionPreference = 'Stop'
 
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature.ps1 [-Json] <feature description>"; exit 1
+    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-FeatureNum NUMBER] <feature description>"; exit 1
 }
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
@@ -17,17 +18,22 @@ $repoRoot = git rev-parse --show-toplevel
 $specsDir = Join-Path $repoRoot 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
-$highest = 0
-if (Test-Path $specsDir) {
-    Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-        if ($_.Name -match '^(\d{3})') {
-            $num = [int]$matches[1]
-            if ($num -gt $highest) { $highest = $num }
+# Use override if provided, otherwise auto-increment
+if ($FeatureNum -gt 0) {
+    $featureNum = ('{0:000}' -f $FeatureNum)
+} else {
+    $highest = 0
+    if (Test-Path $specsDir) {
+        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+            if ($_.Name -match '^(\d{3})') {
+                $num = [int]$matches[1]
+                if ($num -gt $highest) { $highest = $num }
+            }
         }
     }
+    $next = $highest + 1
+    $featureNum = ('{0:000}' -f $next)
 }
-$next = $highest + 1
-$featureNum = ('{0:000}' -f $next)
 
 $branchName = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 $words = ($branchName -split '-') | Where-Object { $_ } | Select-Object -First 3

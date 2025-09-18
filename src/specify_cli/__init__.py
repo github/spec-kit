@@ -677,46 +677,77 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
+    """Ensure POSIX .sh scripts under .specify/scripts and hooks under .specify/hooks have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
-    scripts_root = project_path / ".specify" / "scripts"
-    if not scripts_root.is_dir():
-        return
+
     failures: list[str] = []
     updated = 0
-    for script in scripts_root.rglob("*.sh"):
-        try:
-            if script.is_symlink() or not script.is_file():
-                continue
+
+    # Handle scripts
+    scripts_root = project_path / ".specify" / "scripts"
+    if scripts_root.is_dir():
+        for script in scripts_root.rglob("*.sh"):
             try:
-                with script.open("rb") as f:
-                    if f.read(2) != b"#!":
-                        continue
-            except Exception:
-                continue
-            st = script.stat(); mode = st.st_mode
-            if mode & 0o111:
-                continue
-            new_mode = mode
-            if mode & 0o400: new_mode |= 0o100
-            if mode & 0o040: new_mode |= 0o010
-            if mode & 0o004: new_mode |= 0o001
-            if not (new_mode & 0o100):
-                new_mode |= 0o100
-            os.chmod(script, new_mode)
-            updated += 1
-        except Exception as e:
-            failures.append(f"{script.relative_to(scripts_root)}: {e}")
+                if script.is_symlink() or not script.is_file():
+                    continue
+                try:
+                    with script.open("rb") as f:
+                        if f.read(2) != b"#!":
+                            continue
+                except Exception:
+                    continue
+                st = script.stat(); mode = st.st_mode
+                if mode & 0o111:
+                    continue
+                new_mode = mode
+                if mode & 0o400: new_mode |= 0o100
+                if mode & 0o040: new_mode |= 0o010
+                if mode & 0o004: new_mode |= 0o001
+                if not (new_mode & 0o100):
+                    new_mode |= 0o100
+                os.chmod(script, new_mode)
+                updated += 1
+            except Exception as e:
+                failures.append(f"scripts/{script.relative_to(scripts_root)}: {e}")
+
+    # Handle hooks (skip sample files)
+    hooks_root = project_path / ".specify" / "hooks"
+    if hooks_root.is_dir():
+        for hook in hooks_root.iterdir():
+            try:
+                if (hook.is_symlink() or not hook.is_file() or
+                    hook.name == "README.md" or hook.name.endswith(".sample")):
+                    continue
+                try:
+                    with hook.open("rb") as f:
+                        if f.read(2) != b"#!":
+                            continue
+                except Exception:
+                    continue
+                st = hook.stat(); mode = st.st_mode
+                if mode & 0o111:
+                    continue
+                new_mode = mode
+                if mode & 0o400: new_mode |= 0o100
+                if mode & 0o040: new_mode |= 0o010
+                if mode & 0o004: new_mode |= 0o001
+                if not (new_mode & 0o100):
+                    new_mode |= 0o100
+                os.chmod(hook, new_mode)
+                updated += 1
+            except Exception as e:
+                failures.append(f"hooks/{hook.name}: {e}")
+
     if tracker:
         detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
-        tracker.add("chmod", "Set script permissions recursively")
+        tracker.add("chmod", "Set script and hook permissions")
         (tracker.error if failures else tracker.complete)("chmod", detail)
     else:
         if updated:
-            console.print(f"[cyan]Updated execute permissions on {updated} script(s) recursively[/cyan]")
+            console.print(f"[cyan]Updated execute permissions on {updated} script(s) and hook(s)[/cyan]")
         if failures:
-            console.print("[yellow]Some scripts could not be updated:[/yellow]")
+            console.print("[yellow]Some scripts/hooks could not be updated:[/yellow]")
             for f in failures:
                 console.print(f"  - {f}")
 
