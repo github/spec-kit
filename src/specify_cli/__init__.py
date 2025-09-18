@@ -725,7 +725,8 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                             continue
                 except Exception:
                     continue
-                st = hook.stat(); mode = st.st_mode
+                st = hook.stat()
+                mode = st.st_mode
                 if mode & 0o111:
                     continue
                 new_mode = mode
