@@ -49,8 +49,12 @@ Copy-Item .specify/hooks/prepare-feature-num.ps1.sample .specify/hooks/prepare-f
 ### `post-checkout` - Post-Checkout Hook
 - **When**: After branch creation and checkout (matches Git's `post-checkout`)
 - **Purpose**: Setup tasks after branch creation but before spec writing
-- **Arguments**: `$1` = feature description
-- **Environment**: `BRANCH_NAME`, `SPEC_FILE`, `FEATURE_NUM` are available
+- **Arguments**:
+  - `$1` = feature description
+  - `$2` = feature number
+  - `$3` = branch name
+  - `$4` = spec file path
+- **Environment**: `BRANCH_NAME`, `SPEC_FILE`, `FEATURE_NUM` also available
 - **Exit codes**: Non-zero exit codes show warnings but don't stop execution
 
 **Example uses:**
@@ -62,8 +66,12 @@ Copy-Item .specify/hooks/prepare-feature-num.ps1.sample .specify/hooks/prepare-f
 ### `post-specify` - Post-Specification Hook
 - **When**: After spec file is completely written (true post-specify)
 - **Purpose**: Final integration tasks and notifications
-- **Arguments**: `$1` = feature description
-- **Environment**: `BRANCH_NAME`, `SPEC_FILE`, `FEATURE_NUM` are available
+- **Arguments**:
+  - `$1` = feature description
+  - `$2` = feature number
+  - `$3` = branch name
+  - `$4` = spec file path
+- **Environment**: `BRANCH_NAME`, `SPEC_FILE`, `FEATURE_NUM` also available
 - **Exit codes**: Non-zero exit codes show warnings but don't stop execution
 
 **Example uses:**
@@ -123,10 +131,13 @@ Write-Output $issueNumber
 #!/bin/bash
 # .specify/hooks/post-checkout
 FEATURE_DESC="$1"
+FEATURE_NUM="$2"
+BRANCH_NAME="$3"
+SPEC_FILE="$4"
 # Create additional project directories
 mkdir -p "docs/$BRANCH_NAME"
 # Set up branch-specific configuration
-echo "Branch $BRANCH_NAME created for: $FEATURE_DESC" > "docs/$BRANCH_NAME/info.txt"
+echo "Branch $BRANCH_NAME (#$FEATURE_NUM) created for: $FEATURE_DESC" > "docs/$BRANCH_NAME/info.txt"
 ```
 
 ### Post-Specification Notification
@@ -136,8 +147,11 @@ echo "Branch $BRANCH_NAME created for: $FEATURE_DESC" > "docs/$BRANCH_NAME/info.
 #!/bin/bash
 # .specify/hooks/post-specify
 FEATURE_DESC="$1"
+FEATURE_NUM="$2"
+BRANCH_NAME="$3"
+SPEC_FILE="$4"
 # Create completion issue
-gh issue create --title "Spec Complete: $FEATURE_DESC" --body "Specification ready for review: $SPEC_FILE"
+gh issue create --title "Spec Complete #$FEATURE_NUM: $FEATURE_DESC" --body "Specification ready for review: $SPEC_FILE on branch $BRANCH_NAME"
 # Send notification
 echo "Specification $FEATURE_NUM completed: $SPEC_FILE" | mail -s "Spec Ready" team@company.com
 ```
@@ -150,9 +164,9 @@ echo "Specification $FEATURE_NUM completed: $SPEC_FILE" | mail -s "Spec Ready" t
 - **Cross-platform**: System automatically detects and uses appropriate hook format.
 
 ### Hook Execution
-- Hooks are called with the feature description as the first argument
-- The `feature-num` hook should output only the number to stdout
-- The `post-specify` hook has access to environment variables set by the create script
+- Hooks are called with multiple arguments: feature description, feature number, branch name, spec file path
+- The `prepare-feature-num` hook should output only the number to stdout
+- All hooks have access to environment variables (BRANCH_NAME, SPEC_FILE, FEATURE_NUM) in addition to explicit arguments
 - Failed hooks generate warnings but don't stop the specification process
 - Non-existent or non-executable hook files are safely ignored
 
