@@ -24,7 +24,7 @@ Given that feature description, do this:
    - If hook returns a number, use `--feature-num $FEATURE_NUM` with the script
 3. Run the script `{SCRIPT}` from repo root (with optional --feature-num parameter) and parse its JSON output for BRANCH_NAME, SPEC_FILE, and FEATURE_NUM. All file paths must be absolute.
   **IMPORTANT** You must only ever run this script once. The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for.
-4. Export environment variables: `export BRANCH_NAME SPEC_FILE FEATURE_NUM` (Unix) or `$env:BRANCH_NAME = ...; $env:SPEC_FILE = ...; $env:FEATURE_NUM = ...` (Windows)
+4. Export environment variables: `export BRANCH_NAME SPEC_FILE FEATURE_NUM` (Unix) or `$env:BRANCH_NAME = $BRANCH_NAME; $env:SPEC_FILE = $SPEC_FILE; $env:FEATURE_NUM = $FEATURE_NUM` (Windows)
 5. Run post-checkout hook if available (ignore errors):
    - Windows: Try `.specify/hooks/post-checkout.ps1 "{ARGS}" "$FEATURE_NUM" "$BRANCH_NAME" "$SPEC_FILE"` then `.specify/hooks/post-checkout "{ARGS}" "$FEATURE_NUM" "$BRANCH_NAME" "$SPEC_FILE"`
    - Unix/Linux: Try `.specify/hooks/post-checkout "{ARGS}" "$FEATURE_NUM" "$BRANCH_NAME" "$SPEC_FILE"`
