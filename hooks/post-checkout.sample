@@ -1,5 +1,5 @@
 #!/bin/bash
-# Post-specify hook: Runs after feature branch and directory creation
+# Post-checkout hook: Runs after feature branch and directory creation
 # Arguments: $1 = feature description
 # Environment: BRANCH_NAME, SPEC_FILE, FEATURE_NUM available
 
