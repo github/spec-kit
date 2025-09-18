@@ -1,0 +1,29 @@
+#!/usr/bin/env pwsh
+# Post-specify hook: Runs after spec file is written and completed
+# Arguments: $args[0] = feature description
+# Environment: $env:BRANCH_NAME, $env:SPEC_FILE, $env:FEATURE_NUM available
+
+param(
+    [Parameter(Position=0)]
+    [string]$FeatureDescription
+)
+
+# Example: Create GitHub issue linking to completed spec
+# if (Get-Command gh -ErrorAction SilentlyContinue) {
+#     gh issue create --title "Spec Complete: $FeatureDescription" --body "Specification completed: $env:SPEC_FILE on branch $env:BRANCH_NAME"
+# }
+
+# Example: Send completion notification
+# $message = "Specification $env:FEATURE_NUM completed: $env:SPEC_FILE"
+# Send-MailMessage -To "team@company.com" -Subject "Spec Ready for Review" -Body $message -SmtpServer "smtp.company.com"
+
+# Example: Trigger CI/CD pipeline
+# $body = @{
+#     event = "spec_completed"
+#     branch = $env:BRANCH_NAME
+#     spec = $env:SPEC_FILE
+# } | ConvertTo-Json
+# Invoke-RestMethod -Uri $env:CI_WEBHOOK_URL -Method Post -Body $body -ContentType "application/json"
+
+# Default: Do nothing
+exit 0

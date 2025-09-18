@@ -1,0 +1,23 @@
+#!/usr/bin/env pwsh
+# Feature-num hook: Override auto-generated feature number
+# Arguments: $args[0] = feature description
+# Output: Custom feature number (integer)
+
+param(
+    [Parameter(Position=0)]
+    [string]$FeatureDescription
+)
+
+# Example 1: Get from server
+# $featureNumber = Invoke-RestMethod -Uri "$env:SPEC_SERVER/api/next-number"
+# Write-Output $featureNumber
+
+# Example 2: Use GitHub issue number
+# if (Get-Command gh -ErrorAction SilentlyContinue) {
+#     $issueUrl = gh issue create --title "Spec: $FeatureDescription" --body "Specification development"
+#     $issueNumber = [regex]::Match($issueUrl, '\d+$').Value
+#     Write-Output $issueNumber
+# }
+
+# Default: Let script auto-increment (output nothing)
+exit 0
