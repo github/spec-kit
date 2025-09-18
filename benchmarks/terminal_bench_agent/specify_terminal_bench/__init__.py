@@ -1,3 +1,3 @@
-from .agent import SpecifyClaudeWorkflowAgent
+from .agent import SpecifyClaudeWorkflowAgent, SpecifyOpenCodeWorkflowAgent
 
-__all__ = ["SpecifyClaudeWorkflowAgent"]
+__all__ = ["SpecifyClaudeWorkflowAgent", "SpecifyOpenCodeWorkflowAgent"]

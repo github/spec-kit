@@ -190,13 +190,16 @@ managed with uv and keeps heavy benchmarking dependencies separate from the main
 ```bash
 cd benchmarks/terminal_bench_agent
 uv sync
-ANTHROPIC_API_KEY=... uv run tb run \
+uv run tb run \
+  --dataset terminal-bench-core==head \
   --task-id hello-world \
-  --agent-import-path specify_terminal_bench.agent:SpecifyClaudeWorkflowAgent
+  --agent-import-path specify_terminal_bench.agent:SpecifyOpenCodeWorkflowAgent
 ```
 
-See [`benchmarks/terminal_bench_agent/README.md`](benchmarks/terminal_bench_agent/README.md)
-for more options (model selection, additional agent kwargs, troubleshooting).
+Set provider credentials only if you switch to a paid model (for example export
+`ANTHROPIC_API_KEY` before using the Claude workflow agent). See
+[`benchmarks/terminal_bench_agent/README.md`](benchmarks/terminal_bench_agent/README.md)
+for detailed options and overrides.
 
 ---
 

@@ -17,3 +17,4 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["specify_terminal_bench"]
+include = ["specify_terminal_bench/**"]
