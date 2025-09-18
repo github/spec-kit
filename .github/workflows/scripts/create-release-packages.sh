@@ -155,6 +155,22 @@ build_variant() {
       mkdir -p "$base_dir/.opencode/command"
       generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
   esac
+  
+  # Replace agent-specific placeholders in constitution checklist
+  local checklist="$base_dir/.specify/memory/constitution_update_checklist.md"
+  if [[ -f "$checklist" ]]; then
+    case $agent in
+      claude)
+        sed -i 's@__COMMANDS_PLAN_PATH__@/.claude/commands/plan.md@g; s@__COMMANDS_TASKS_PATH__@/.claude/commands/tasks.md@g; s@__AGENT_CONFIG_FILE__@/CLAUDE.md@g' "$checklist" ;;
+      copilot)
+        sed -i 's@__COMMANDS_PLAN_PATH__@/.github/prompts/plan.prompt.md@g; s@__COMMANDS_TASKS_PATH__@/.github/prompts/tasks.prompt.md@g; s@__AGENT_CONFIG_FILE__@/.github/copilot-instructions.md@g' "$checklist" ;;
+      gemini)
+        sed -i 's@__COMMANDS_PLAN_PATH__@/.gemini/commands/plan.toml@g; s@__COMMANDS_TASKS_PATH__@/.gemini/commands/tasks.toml@g; s@__AGENT_CONFIG_FILE__@/GEMINI.md@g' "$checklist" ;;
+      cursor)
+        sed -i 's@__COMMANDS_PLAN_PATH__@/.cursor/commands/plan.md@g; s@__COMMANDS_TASKS_PATH__@/.cursor/commands/tasks.md@g; s@__AGENT_CONFIG_FILE__@/CURSOR.md@g' "$checklist" ;;
+    esac
+  fi
+  
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
