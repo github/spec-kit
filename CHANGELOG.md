@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 2025-09-18
+
+### Added
+
+- Auggie CLI support as additional AI assistant option
+
 ## [0.0.6] - 2025-09-17
 
 ### Added
@@ -32,4 +38,3 @@ N/A
 ### Changed
 
 N/A
-

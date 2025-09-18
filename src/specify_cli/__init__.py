@@ -59,7 +59,8 @@ AI_CHOICES = {
     "gemini": "Gemini CLI",
     "cursor": "Cursor",
     "qwen": "Qwen Code",
-    "opencode": "opencode"
+    "opencode": "opencode",
+    "auggie": "Auggie CLI"
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -355,7 +356,7 @@ def check_tool_for_tracker(tool: str, install_hint: str, tracker: StepTracker) -
 
 def check_tool(tool: str, install_hint: str) -> bool:
     """Check if a tool is installed."""
-    
+
     # Special handling for Claude CLI after `claude migrate-installer`
     # See: https://github.com/github/spec-kit/issues/123
     # The migrate-installer command REMOVES the original executable from PATH
@@ -364,7 +365,7 @@ def check_tool(tool: str, install_hint: str) -> bool:
     if tool == "claude":
         if CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file():
             return True
-    
+
     if shutil.which(tool):
         return True
     else:
@@ -409,7 +410,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         if not quiet:
             console.print("[green]✓[/green] Git repository initialized")
         return True
-        
+
     except subprocess.CalledProcessError as e:
         if not quiet:
             console.print(f"[red]Error initializing git repository:[/red] {e}")
@@ -423,7 +424,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     repo_name = "spec-kit"
     if client is None:
         client = httpx.Client(verify=ssl_context)
-    
+
     if verbose:
         console.print("[cyan]Fetching latest release information...[/cyan]")
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
@@ -451,7 +452,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         asset for asset in release_data.get("assets", [])
         if pattern in asset["name"] and asset["name"].endswith(".zip")
     ]
-    
+
     if not matching_assets:
         console.print(f"[red]No matching release asset found[/red] for pattern: [bold]{pattern}[/bold]")
         asset_names = [a.get('name','?') for a in release_data.get('assets', [])]
@@ -724,7 +725,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen or opencode"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, or auggie"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -737,12 +738,12 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code or opencode)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, or Auggie CLI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
-    
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
@@ -751,6 +752,7 @@ def init(
         specify init my-project --ai cursor
         specify init my-project --ai qwen
         specify init my-project --ai opencode
+        specify init my-project --ai auggie
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
@@ -838,6 +840,10 @@ def init(
             if not check_tool("opencode", "Install from: https://opencode.ai"):
                 console.print("[red]Error:[/red] opencode CLI is required for opencode projects")
                 agent_tool_missing = True
+        elif selected_ai == "auggie":
+            if not check_tool("auggie", "Install from: https://www.augmentcode.com/product/CLI"):
+                console.print("[red]Error:[/red] Auggie CLI is required for Auggie CLI projects")
+                agent_tool_missing = True
         # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
 
         if agent_tool_missing:
@@ -881,10 +887,10 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
-    ("chmod", "Ensure scripts executable"),
+        ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
-        ("final", "Finalize")
+        ("final", "Finalize"),
     ]:
         tracker.add(key, label)
 
@@ -975,6 +981,11 @@ def init(
         steps_lines.append("   - Use /specify to create specifications")
         steps_lines.append("   - Use /plan to create implementation plans")
         steps_lines.append("   - Use /tasks to generate tasks")
+    elif selected_ai == "auggie":
+        steps_lines.append(f"{step_num}. Use / commands with Auggie CLI")
+        steps_lines.append("   - Use /specify to create specifications")
+        steps_lines.append("   - Use /plan to create implementation plans")
+        steps_lines.append("   - Use /tasks to generate tasks")
 
     # Removed script variant step (scripts are transparent to users)
     step_num += 1
@@ -995,7 +1006,7 @@ def check():
 
     # Create tracker for checking tools
     tracker = StepTracker("Check Available Tools")
-    
+
     # Add all tools we want to check
     tracker.add("git", "Git version control")
     tracker.add("claude", "Claude Code CLI")
@@ -1004,10 +1015,10 @@ def check():
     tracker.add("code", "VS Code (for GitHub Copilot)")
     tracker.add("cursor-agent", "Cursor IDE agent (optional)")
     tracker.add("opencode", "opencode")
-    
+    tracker.add("auggie", "Auggie CLI")
     # Check each tool
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
-    claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
+    claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)
     gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
     qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
     # Check for VS Code (code or code-insiders)
@@ -1016,17 +1027,17 @@ def check():
         code_ok = check_tool_for_tracker("code-insiders", "https://code.visualstudio.com/insiders/", tracker)
     cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
     opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
-    
+    auggie_ok = check_tool_for_tracker("auggie", "https://www.augmentcode.com/product/CLIe", tracker)
     # Render the final tree
     console.print(tracker.render())
-    
+
     # Summary
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
-    
+
     # Recommendations
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or opencode_ok):
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or opencode_ok or auggie_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
