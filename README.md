@@ -16,6 +16,7 @@
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get started](#-get-started)
+- [📽️ Video Overview](#️-video-overview)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
@@ -45,7 +46,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 ### 2. Create the spec
 
-Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Use the **`/specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
 /specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
@@ -53,7 +54,7 @@ Use the `/specify` command to describe what you want to build. Focus on the **wh
 
 ### 3. Create a technical implementation plan
 
-Use the `/plan` command to provide your tech stack and architecture choices.
+Use the **`/plan`** command to provide your tech stack and architecture choices.
 
 ```bash
 /plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
@@ -61,9 +62,15 @@ Use the `/plan` command to provide your tech stack and architecture choices.
 
 ### 4. Break down and implement
 
-Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
+Use **`/tasks`** to create an actionable task list, then ask your agent to implement the feature.
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 📽️ Video Overview
+
+Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
+
+[![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
 ## 🔧 Specify CLI Reference
 
@@ -74,18 +81,20 @@ The `specify` command supports the following options:
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
-| `check`     | Check for installed tools (`git`, `claude`, `gemini`)          |
+| `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `opencode`, `cursor-agent`, `auggie`) |
 
 ### `specify init` Arguments & Options
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, or `copilot`                       |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `opencode`, `cursor`, or `auggie`             |
+| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
+| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 
 ### Examples
 
@@ -96,11 +105,20 @@ specify init my-project
 # Initialize with specific AI assistant
 specify init my-project --ai claude
 
+# Initialize with Cursor support
+specify init my-project --ai cursor
+
+# Initialize with PowerShell scripts (Windows/cross-platform)
+specify init my-project --ai copilot --script ps
+
 # Initialize in current directory
 specify init --here --ai copilot
 
 # Skip git initialization
 specify init my-project --ai gemini --no-git
+
+# Enable debug output for troubleshooting
+specify init my-project --ai claude --debug
 
 # Check system requirements
 specify check
@@ -152,7 +170,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Auggie CLI](https://www.augmentcode.com/product/CLI)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code), [opencode](https://opencode.ai/), or [Auggie CLI](https://www.augmentcode.com/product/CLI)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -189,12 +207,14 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 specify init <project_name> --ai claude
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
+specify init <project_name> --ai qwen
+specify init <project_name> --ai opencode
 specify init <project_name> --ai auggie
 # Or in current directory:
 specify init --here --ai claude
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, or Auggie CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Qwen CLI, opencode, or Auggie CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools
