@@ -3,6 +3,7 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [ValidateRange(1, 999)]
     [int]$FeatureNum = 0,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -10,7 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-FeatureNum NUMBER] <feature description>"; exit 1
+    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-FeatureNum NUMBER(1-999)] <feature description>"; exit 1
 }
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 

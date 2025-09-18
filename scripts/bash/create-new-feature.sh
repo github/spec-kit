@@ -8,15 +8,29 @@ ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --json) JSON_MODE=true; shift ;;
-        --feature-num) FEATURE_NUM_OVERRIDE="$2"; shift 2 ;;
-        --help|-h) echo "Usage: $0 [--json] [--feature-num NUMBER] <feature_description>"; exit 0 ;;
+        --feature-num)
+            if [[ -z "$2" || "$2" =~ ^- ]]; then
+                echo "Error: --feature-num requires a number (1-999)" >&2
+                exit 1
+            fi
+            if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                echo "Error: --feature-num must be a positive integer" >&2
+                exit 1
+            fi
+            if [[ "$2" -lt 1 || "$2" -gt 999 ]]; then
+                echo "Error: --feature-num must be between 1 and 999" >&2
+                exit 1
+            fi
+            FEATURE_NUM_OVERRIDE="$2"
+            shift 2 ;;
+        --help|-h) echo "Usage: $0 [--json] [--feature-num NUMBER(1-999)] <feature_description>"; exit 0 ;;
         *) ARGS+=("$1"); shift ;;
     esac
 done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [--feature-num NUMBER] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--feature-num NUMBER(1-999)] <feature_description>" >&2
     exit 1
 fi
 
