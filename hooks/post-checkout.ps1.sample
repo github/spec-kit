@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Post-specify hook: Runs after feature branch and directory creation
+# Post-checkout hook: Runs after feature branch and directory creation
 # Arguments: $args[0] = feature description
 # Environment: $env:BRANCH_NAME, $env:SPEC_FILE, $env:FEATURE_NUM available
 
