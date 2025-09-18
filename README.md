@@ -23,6 +23,7 @@
 - [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn more](#-learn-more)
+- [📊 Benchmarking with Terminal Bench](#-benchmarking-with-terminal-bench)
 - [📋 Detailed process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [👥 Maintainers](#-maintainers)
@@ -179,6 +180,23 @@ Our research and experimentation focus on:
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
+
+## 📊 Benchmarking with Terminal Bench
+
+Benchmark the Specify workflow without impacting end users by using the standalone
+Terminal Bench agent that lives in `benchmarks/terminal_bench_agent`. The project is
+managed with uv and keeps heavy benchmarking dependencies separate from the main CLI.
+
+```bash
+cd benchmarks/terminal_bench_agent
+uv sync
+ANTHROPIC_API_KEY=... uv run tb run \
+  --task-id hello-world \
+  --agent-import-path specify_terminal_bench.agent:SpecifyClaudeWorkflowAgent
+```
+
+See [`benchmarks/terminal_bench_agent/README.md`](benchmarks/terminal_bench_agent/README.md)
+for more options (model selection, additional agent kwargs, troubleshooting).
 
 ---
 
