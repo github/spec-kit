@@ -8,9 +8,9 @@ When amending the constitution (`/memory/constitution.md`), ensure all dependent
 - [ ] `/templates/plan-template.md` - Update Constitution Check section
 - [ ] `/templates/spec-template.md` - Update if requirements/scope affected
 - [ ] `/templates/tasks-template.md` - Update if new task types needed
-- [ ] `/.claude/commands/plan.md` - Update if planning process changes
-- [ ] `/.claude/commands/tasks.md` - Update if task generation affected
-- [ ] `/CLAUDE.md` - Update runtime development guidelines
+- [ ] `__COMMANDS_PLAN_PATH__` - Update if planning process changes
+- [ ] `__COMMANDS_TASKS_PATH__` - Update if task generation affected
+- [ ] `__AGENT_CONFIG_FILE__` - Update runtime development guidelines
 
 ### Article-specific updates:
 
