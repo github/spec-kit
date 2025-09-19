@@ -30,4 +30,5 @@ Given that feature description, do this:
    - Try `.specify/hooks/post-specify{HOOK_EXT} "{ARGS}" "$FEATURE_NUM" "$BRANCH_NAME" "$SPEC_FILE"`
 8. Report completion with branch name, spec file path, and readiness for the next phase.
 
-Note: The script creates and checks out the new branch and initializes the spec file before writing. Hooks follow Git-style naming: pre-specify for validation, prepare-feature-num for custom numbering, post-checkout after branch creation, and post-specify after spec completion.
+Note: The script creates and checks out the new branch and initializes the spec file before writing. 
+Hooks follow Git-style naming: pre-specify for validation, prepare-feature-num for custom numbering, post-checkout after branch creation, and post-specify after spec completion.
