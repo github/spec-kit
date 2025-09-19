@@ -9,7 +9,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --json) JSON_MODE=true; shift ;;
         --feature-num)
-            if [[ -z "$2" || "$2" =~ ^- ]]; then
+            if [[ -z "$2" || "$2" == -* ]]; then
                 echo "Error: --feature-num requires a number (1-999)" >&2
                 exit 1
             fi
