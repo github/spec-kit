@@ -9,7 +9,7 @@ Follow this execution flow:
 
 1. Load the existing constitution template at `/memory/constitution.md`.
    - Identify every placeholder token of the form `[ALL_CAPS_IDENTIFIER]`.
-   - List them in a table with columns: Placeholder | Description In Comments (if present) | Current Value (if any) | Required?
+   **IMPORTANT**: The user might require less or more principles than the ones used in the template. If a number is specified, respect that - follow the general template. You will update the doc accordingly.
 
 2. Collect/derive values for placeholders:
    - If user input (conversation) supplies a value, use it.
