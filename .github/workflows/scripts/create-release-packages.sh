@@ -38,6 +38,15 @@ rewrite_paths() {
     -e 's@(/?)hooks/@.specify/hooks/@g'
 }
 
+get_hook_extension() {
+  local script_variant=$1
+  if [[ "$script_variant" == "ps" ]]; then
+    echo ".ps1"
+  else
+    echo ""
+  fi
+}
+
 generate_commands() {
   local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5
   mkdir -p "$output_dir"
@@ -58,11 +67,8 @@ generate_commands() {
       script_command="(Missing script command for $script_variant)"
     fi
     
-    # Replace {SCRIPT} placeholder with the script command and {EXT} with extension
-    local ext=""
-    if [[ "$script_variant" == "ps" ]]; then
-      ext=".ps1"
-    fi
+    # Replace {SCRIPT} placeholder with the script command and {HOOK_EXT} with extension
+    local ext=$(get_hook_extension "$script_variant")
     body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g" | sed "s|{HOOK_EXT}|${ext}|g")
     
     # Remove the scripts: section from frontmatter while preserving YAML structure
@@ -146,11 +152,8 @@ build_variant() {
     if [[ -n $script_command ]]; then
       # Always prefix with .specify/ for plan usage
       script_command=".specify/$script_command"
-      # Replace {SCRIPT} placeholder with the script command, {EXT} with extension, and __AGENT__ with agent name
-      local ext=""
-      if [[ "$script" == "ps" ]]; then
-        ext=".ps1"
-      fi
+      # Replace {SCRIPT} placeholder with the script command, {HOOK_EXT} with extension, and __AGENT__ with agent name
+      local ext=$(get_hook_extension "$script")
       substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g" | sed "s|{HOOK_EXT}|${ext}|g")
       # Strip YAML frontmatter from plan template output (keep body only)
       stripped=$(printf '%s\n' "$substituted" | awk 'BEGIN{fm=0;dash=0} /^---$/ {dash++; if(dash==1){fm=1; next} else if(dash==2){fm=0; next}} {if(!fm) print}')
