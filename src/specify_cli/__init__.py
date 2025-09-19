@@ -700,13 +700,15 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+UTF8_BOM = b'\xef\xbb\xbf'
+
 def _has_shebang(file_path: Path) -> bool:
     """Check if file has shebang, handling UTF-8 BOM."""
     try:
         with file_path.open("rb") as f:
             head = f.read(5)
             # Skip UTF-8 BOM if present
-            if head.startswith(b'\xef\xbb\xbf'):
+            if head.startswith(UTF8_BOM):
                 head = head[3:]
             return head.startswith(b"#!")
     except Exception:
