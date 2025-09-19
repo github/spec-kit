@@ -77,7 +77,7 @@ BANNER = """
 ╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
 """
 
-TAGLINE = "Spec-Driven Development Toolkit"
+TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -951,15 +951,11 @@ def init(
         step_num = 2
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
-    steps_lines.append("   [bold cyan]/constitution[/] - Establish project principles")
-    step_num += 1
-    steps_lines.append(f"{step_num}. [bold cyan]/specify[/] - Create specifications")
-    step_num += 1
-    steps_lines.append(f"{step_num}. [bold cyan]/plan[/] - Create implementation plans")
-    step_num += 1
-    steps_lines.append(f"{step_num}. [bold cyan]/tasks[/] - Generate actionable tasks")
-    step_num += 1
-    steps_lines.append(f"{step_num}. [bold cyan]/implement[/] - Execute implementation")
+    steps_lines.append("   2.1 [bold cyan]/constitution[/] - Establish project principles")
+    steps_lines.append("   2.2 [bold cyan]/specify[/] - Create specifications")
+    steps_lines.append("   2.3 [bold cyan]/plan[/] - Create implementation plans")
+    steps_lines.append("   2.4 [bold cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [bold cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
     console.print()
