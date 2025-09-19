@@ -700,6 +700,18 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def _has_shebang(file_path: Path) -> bool:
+    """Check if file has shebang, handling UTF-8 BOM."""
+    try:
+        with file_path.open("rb") as f:
+            head = f.read(5)
+            # Skip UTF-8 BOM if present
+            if head.startswith(b'\xef\xbb\xbf'):
+                head = head[3:]
+            return head.startswith(b"#!")
+    except Exception:
+        return False
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts and hooks under .specify/hooks have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -715,11 +727,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             try:
                 if script.is_symlink() or not script.is_file():
                     continue
-                try:
-                    with script.open("rb") as f:
-                        if f.read(2) != b"#!":
-                            continue
-                except Exception:
+                if not _has_shebang(script):
                     continue
                 st = script.stat(); mode = st.st_mode
                 if mode & 0o111:
@@ -743,11 +751,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 if (hook.is_symlink() or not hook.is_file() or
                     hook.name == "README.md" or hook.name.endswith(".sample")):
                     continue
-                try:
-                    with hook.open("rb") as f:
-                        if f.read(2) != b"#!":
-                            continue
-                except Exception:
+                if not _has_shebang(hook):
                     continue
                 st = hook.stat()
                 mode = st.st_mode
