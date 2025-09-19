@@ -950,42 +950,20 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    if selected_ai == "claude":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code and start using / commands with Claude Code")
-        steps_lines.append("   - Type / in any file to see available commands")
-        steps_lines.append("   - Use /specify to create specifications")
-        steps_lines.append("   - Use /plan to create implementation plans")
-        steps_lines.append("   - Use /tasks to generate tasks")
-    elif selected_ai == "gemini":
-        steps_lines.append(f"{step_num}. Use / commands with Gemini CLI")
-        steps_lines.append("   - Run gemini /specify to create specifications")
-        steps_lines.append("   - Run gemini /plan to create implementation plans")
-        steps_lines.append("   - Run gemini /tasks to generate tasks")
-        steps_lines.append("   - See GEMINI.md for all available commands")
-    elif selected_ai == "copilot":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
-    elif selected_ai == "qwen":
-        steps_lines.append(f"{step_num}. Use / commands with Qwen CLI")
-        steps_lines.append("   - Run qwen /specify to create specifications")
-        steps_lines.append("   - Run qwen /plan to create implementation plans")
-        steps_lines.append("   - Run qwen /tasks to generate tasks")
-        steps_lines.append("   - See QWEN.md for all available commands")
-    elif selected_ai == "opencode":
-        steps_lines.append(f"{step_num}. Use / commands with opencode")
-        steps_lines.append("   - Use /specify to create specifications")
-        steps_lines.append("   - Use /plan to create implementation plans")
-        steps_lines.append("   - Use /tasks to generate tasks")
-
-    # Removed script variant step (scripts are transparent to users)
+    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+    steps_lines.append("   [bold cyan]/constitution[/] - Establish project principles")
     step_num += 1
-    steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
+    steps_lines.append(f"{step_num}. [bold cyan]/specify[/] - Create specifications")
+    step_num += 1
+    steps_lines.append(f"{step_num}. [bold cyan]/plan[/] - Create implementation plans")
+    step_num += 1
+    steps_lines.append(f"{step_num}. [bold cyan]/tasks[/] - Generate actionable tasks")
+    step_num += 1
+    steps_lines.append(f"{step_num}. [bold cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
-    console.print()  # blank line
+    console.print()
     console.print(steps_panel)
-    
-    # Removed farewell line per user request
-
 
 @app.command()
 def check():
@@ -993,10 +971,8 @@ def check():
     show_banner()
     console.print("[bold]Checking for installed tools...[/bold]\n")
 
-    # Create tracker for checking tools
     tracker = StepTracker("Check Available Tools")
     
-    # Add all tools we want to check
     tracker.add("git", "Git version control")
     tracker.add("claude", "Claude Code CLI")
     tracker.add("gemini", "Gemini CLI")
@@ -1005,25 +981,20 @@ def check():
     tracker.add("cursor-agent", "Cursor IDE agent (optional)")
     tracker.add("opencode", "opencode")
     
-    # Check each tool
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
     gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
     qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
-    # Check for VS Code (code or code-insiders)
     code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
     if not code_ok:
         code_ok = check_tool_for_tracker("code-insiders", "https://code.visualstudio.com/insiders/", tracker)
     cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
     opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
-    
-    # Render the final tree
+
     console.print(tracker.render())
     
-    # Summary
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
     
-    # Recommendations
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
     if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or opencode_ok):

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 2025-09-18
+
+### Changed
+
+- Updated command instructions in the CLI.
+- Cleaned up the code to not render agent-specific information when it's generic.
+
+
 ## [0.0.6] - 2025-09-17
 
 ### Added
