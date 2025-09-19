@@ -714,6 +714,13 @@ def _has_shebang(file_path: Path) -> bool:
     except Exception:
         return False
 
+def _should_skip_hook(hook: Path) -> bool:
+    """Check if hook file should be skipped for permission update."""
+    return (hook.is_symlink() or
+            not hook.is_file() or
+            hook.name == "README.md" or
+            hook.name.endswith(".sample"))
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts and hooks under .specify/hooks have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -750,8 +757,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
     if hooks_root.is_dir():
         for hook in hooks_root.iterdir():
             try:
-                if (hook.is_symlink() or not hook.is_file() or
-                    hook.name == "README.md" or hook.name.endswith(".sample")):
+                if _should_skip_hook(hook):
                     continue
                 if not _has_shebang(hook):
                     continue
