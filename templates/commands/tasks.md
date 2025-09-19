@@ -1,8 +1,8 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
 scripts:
-  sh: .specify/scripts/bash/check-task-prerequisites.sh --json
-  ps: .specify/scripts/powershell/check-task-prerequisites.ps1 -Json
+  sh: scripts/bash/check-task-prerequisites.sh --json
+  ps: scripts/powershell/check-task-prerequisites.ps1 -Json
 ---
 
 Given the context provided as an argument, do this:
@@ -21,7 +21,7 @@ Given the context provided as an argument, do this:
    - Generate tasks based on what's available
 
 3. Generate tasks following the template:
-   - Use `/.specify/templates/tasks-template.md` as the base
+   - Use `/templates/tasks-template.md` as the base
    - Replace example tasks with actual tasks based on:
      * **Setup tasks**: Project init, dependencies, linting
      * **Test tasks [P]**: One per contract, one per integration scenario

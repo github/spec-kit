@@ -268,7 +268,7 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Constitutional Foundation: Enforcing Architectural Discipline
 
-At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`.specify/memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
 
 ### The Nine Articles of Development
 
