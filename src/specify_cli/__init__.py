@@ -68,8 +68,8 @@ SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
-# Embedded fallback command templates for Codex (used only if packaged templates are unavailable)
-CODEX_CMD_SPECIFY = """---
+# Embedded fallback command templates (used if packaged templates are unavailable)
+COMMAND_TEMPLATE_SPECIFY = """---
 description: Create or update the feature specification from a natural language feature description.
 scripts:
   sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
@@ -86,7 +86,7 @@ Given the feature description provided as an argument, do this:
 Note: The script creates and checks out the new branch and initializes the spec file before writing.
 """
 
-CODEX_CMD_PLAN = """---
+COMMAND_TEMPLATE_PLAN = """---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
 scripts:
   sh: scripts/bash/setup-plan.sh --json
@@ -127,7 +127,7 @@ Given the implementation details provided as an argument, do this:
 Use absolute paths with the repository root for all file operations to avoid path issues.
 """
 
-CODEX_CMD_TASKS = """---
+COMMAND_TEMPLATE_TASKS = """---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
 scripts:
   sh: scripts/bash/check-task-prerequisites.sh --json
@@ -191,12 +191,12 @@ The tasks.md should be immediately executable - each task must be specific enoug
 """
 
 
-# Utility to ensure Codex command templates use the modern schema (with scripts mapping)
-def ensure_codex_command_templates_current(commands_dir: Path) -> None:
+# Utility to ensure command templates use the modern schema (with scripts mapping)
+def ensure_command_templates_current(commands_dir: Path) -> None:
     expected = {
-        "specify.md": CODEX_CMD_SPECIFY,
-        "plan.md": CODEX_CMD_PLAN,
-        "tasks.md": CODEX_CMD_TASKS,
+        "specify.md": COMMAND_TEMPLATE_SPECIFY,
+        "plan.md": COMMAND_TEMPLATE_PLAN,
+        "tasks.md": COMMAND_TEMPLATE_TASKS,
     }
 
     def needs_upgrade(content: str) -> bool:
@@ -888,6 +888,68 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 console.print(f"  - {f}")
 
 
+def ensure_workspace_commands(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Ensure a workspace-level commands/ directory exists and has up-to-date templates."""
+    if tracker:
+        tracker.start("commands")
+
+    commands_dir = project_path / "commands"
+    seeded_from: str | None = None
+
+    try:
+        existed = commands_dir.exists()
+        if not existed:
+            commands_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            is_empty = not any(commands_dir.iterdir())
+        except FileNotFoundError:
+            is_empty = True
+
+        should_seed = not existed or is_empty
+
+        if should_seed:
+            candidates: list[tuple[str, Path]] = []
+
+            template_commands = project_path / ".specify" / "templates" / "commands"
+            if template_commands.exists() and template_commands.is_dir():
+                candidates.append(("release bundle", template_commands))
+
+            packaged_commands = None
+            for ancestor in Path(__file__).resolve().parents:
+                candidate = ancestor / "templates" / "commands"
+                if candidate.exists() and candidate.is_dir():
+                    packaged_commands = candidate
+                    break
+            if packaged_commands is not None:
+                candidates.append(("packaged defaults", packaged_commands))
+
+            for label, source in candidates:
+                try:
+                    shutil.copytree(source, commands_dir, dirs_exist_ok=True)
+                    seeded_from = label
+                    break
+                except Exception:
+                    continue
+
+            if seeded_from is None:
+                seeded_from = "embedded defaults"
+
+        ensure_command_templates_current(commands_dir)
+
+        detail = "verified" if seeded_from is None else seeded_from
+        if tracker:
+            tracker.complete("commands", detail)
+        else:
+            if seeded_from:
+                console.print(f"[cyan]Seeded workspace commands from {seeded_from}[/cyan]")
+    except Exception as exc:
+        if tracker:
+            tracker.error("commands", str(exc))
+        else:
+            console.print(f"[yellow]Warning: could not ensure commands directory ({exc})[/yellow]")
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
@@ -1054,7 +1116,7 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
-    ("chmod", "Ensure scripts executable"),
+        ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -1062,7 +1124,7 @@ def init(
         tracker.add(key, label)
 
     if selected_ai == "codex":
-        tracker.add("commands", "Ensure Codex commands")
+        tracker.add("commands", "Ensure workspace commands")
 
     # Use transient so live tree is replaced by the final static render (avoids duplicate output)
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
@@ -1075,41 +1137,12 @@ def init(
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
 
+            # Ensure /commands directory for Codex CLI workspaces only
+            if selected_ai == "codex":
+                ensure_workspace_commands(project_path, tracker=tracker)
+
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
-
-            # Codex only: if commands/ is missing, copy from template (with embedded fallback)
-            if selected_ai == "codex":
-                tracker.start("commands")
-                try:
-                    target_cmds = project_path / "commands"
-                    if not target_cmds.exists():
-                        commands_src = None
-                        for ancestor in Path(__file__).resolve().parents:
-                            candidate = ancestor / "templates" / "commands"
-                            if candidate.exists() and candidate.is_dir():
-                                commands_src = candidate
-                                break
-                        if commands_src is not None:
-                            shutil.copytree(commands_src, target_cmds, dirs_exist_ok=True)
-                            ensure_codex_command_templates_current(target_cmds)
-                            tracker.complete("commands", "added")
-                        else:
-                            template_commands = project_path / ".specify" / "templates" / "commands"
-                            if template_commands.exists():
-                                shutil.copytree(template_commands, target_cmds, dirs_exist_ok=True)
-                                ensure_codex_command_templates_current(target_cmds)
-                                tracker.complete("commands", "added from template")
-                            else:
-                                target_cmds.mkdir(parents=True, exist_ok=True)
-                                (target_cmds / "specify.md").write_text(CODEX_CMD_SPECIFY, encoding="utf-8")
-                                (target_cmds / "plan.md").write_text(CODEX_CMD_PLAN, encoding="utf-8")
-                                (target_cmds / "tasks.md").write_text(CODEX_CMD_TASKS, encoding="utf-8")
-                                tracker.complete("commands", "bootstrapped minimal")
-                    else:
-                        tracker.skip("commands", "already present")
-                except Exception as codex_error:
-                    tracker.error("commands", str(codex_error))
 
             # Git step
             if not no_git:

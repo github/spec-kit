@@ -224,7 +224,7 @@ specify init <project_name> --ai claude --ignore-agent-tools
 
 > [!NOTE]
 > Codex CLI specifics
-> - Codex CLI loads slash commands from the project workspace instead of from an IDE bundle, so `specify init --ai codex` creates a `commands/` directory (and seeds `specify.md`, `plan.md`, `tasks.md` if templates are missing) to match that expectation.
+> - `specify init --ai codex` ensures a workspace-level `commands/` directory exists (seeding `specify.md`, `plan.md`, `tasks.md` if necessary) because Codex CLI loads slash commands from the repo itself.
 > - Codex persists its working memory in `AGENTS.md`; if you do not see that file yet, run `codex /init` once inside the project to generate it.
 > - To let Codex trigger the helper scripts under `scripts/` through slash commands, open `codex /approvals` and enable “Run shell commands”.
 
