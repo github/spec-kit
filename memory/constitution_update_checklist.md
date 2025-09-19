@@ -1,13 +1,13 @@
 # Constitution Update Checklist
 
-When amending the constitution (`/memory/constitution.md`), ensure all dependent documents are updated to maintain consistency.
+When amending the constitution (`/.specify/memory/constitution.md`), ensure all dependent documents are updated to maintain consistency.
 
 ## Templates to Update
 
 ### When adding/modifying ANY article:
-- [ ] `/templates/plan-template.md` - Update Constitution Check section
-- [ ] `/templates/spec-template.md` - Update if requirements/scope affected
-- [ ] `/templates/tasks-template.md` - Update if new task types needed
+- [ ] `/.specify/templates/plan-template.md` - Update Constitution Check section
+- [ ] `/.specify/templates/spec-template.md` - Update if requirements/scope affected
+- [ ] `/.specify/templates/tasks-template.md` - Update if new task types needed
 - [ ] `/.claude/commands/plan.md` - Update if planning process changes
 - [ ] `/.claude/commands/tasks.md` - Update if task generation affected
 - [ ] `/CLAUDE.md` - Update runtime development guidelines

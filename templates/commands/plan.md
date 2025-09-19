@@ -1,8 +1,8 @@
 ---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
 scripts:
-  sh: scripts/bash/setup-plan.sh --json
-  ps: scripts/powershell/setup-plan.ps1 -Json
+  sh: .specify/scripts/bash/setup-plan.sh --json
+  ps: .specify/scripts/powershell/setup-plan.ps1 -Json
 ---
 
 Given the implementation details provided as an argument, do this:
@@ -14,10 +14,10 @@ Given the implementation details provided as an argument, do this:
    - Success criteria and acceptance criteria
    - Any technical constraints or dependencies mentioned
 
-3. Read the constitution at `/memory/constitution.md` to understand constitutional requirements.
+3. Read the constitution at `/.specify/memory/constitution.md` to understand constitutional requirements.
 
 4. Execute the implementation plan template:
-   - Load `/templates/plan-template.md` (already copied to IMPL_PLAN path)
+   - Load `/.specify/templates/plan-template.md` (already copied to IMPL_PLAN path)
    - Set Input path to FEATURE_SPEC
    - Run the Execution Flow (main) function steps 1-10
    - The template is self-contained and executable
