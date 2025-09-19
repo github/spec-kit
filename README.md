@@ -16,6 +16,7 @@
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get started](#-get-started)
+- [📽️ Video Overview](#️-video-overview)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
@@ -43,7 +44,15 @@ Initialize your project depending on the coding agent you're using:
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
-### 2. Create the spec
+### 2. Establish project principles
+
+Use the **`/constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
+
+```bash
+/constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
+```
+
+### 3. Create the spec
 
 Use the **`/specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
@@ -51,7 +60,7 @@ Use the **`/specify`** command to describe what you want to build. Focus on the 
 /specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
-### 3. Create a technical implementation plan
+### 4. Create a technical implementation plan
 
 Use the **`/plan`** command to provide your tech stack and architecture choices.
 
@@ -59,11 +68,29 @@ Use the **`/plan`** command to provide your tech stack and architecture choices.
 /plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 4. Break down and implement
+### 5. Break down into tasks
 
-Use **`/tasks`** to create an actionable task list, then ask your agent to implement the feature.
+Use **`/tasks`** to create an actionable task list from your implementation plan.
+
+```bash
+/tasks
+```
+
+### 6. Execute implementation
+
+Use **`/implement`** to execute all tasks and build your feature according to the plan.
+
+```bash
+/implement
+```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 📽️ Video Overview
+
+Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
+
+[![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
 ## 🔧 Specify CLI Reference
 
@@ -74,14 +101,14 @@ The `specify` command supports the following options:
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
-| `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`) |
+| `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `opencode`, `cursor-agent`) |
 
 ### `specify init` Arguments & Options
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, or `cursor`             |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `opencode`, or `cursor`             |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
@@ -116,6 +143,18 @@ specify init my-project --ai claude --debug
 # Check system requirements
 specify check
 ```
+
+### Available Slash Commands
+
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+
+| Command         | Description                                                           |
+|-----------------|-----------------------------------------------------------------------|
+| `/constitution` | Create or update project governing principles and development guidelines |
+| `/specify`      | Define what you want to build (requirements and user stories)        |
+| `/plan`         | Create technical implementation plans with your chosen tech stack     |
+| `/tasks`        | Generate actionable task lists for implementation                     |
+| `/implement`    | Execute all tasks to build the feature according to the plan         |
 
 ## 📚 Core philosophy
 
@@ -163,7 +202,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Cursor](https://cursor.sh/)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code) or [opencode](https://opencode.ai/)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -200,25 +239,37 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 specify init <project_name> --ai claude
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
+specify init <project_name> --ai qwen
+specify init <project_name> --ai opencode
 # Or in current directory:
 specify init --here --ai claude
 ```
 
-The CLI will check if you have Claude Code or Gemini CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Qwen CLI or opencode installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools
 ```
 
-### **STEP 1:** Bootstrap the project
+### **STEP 1:** Establish project principles
 
 Go to the project folder and run your AI agent. In our example, we're using `claude`.
 
 ![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
 
-You will know that things are configured correctly if you see the `/specify`, `/plan`, and `/tasks` commands available.
+You will know that things are configured correctly if you see the `/constitution`, `/specify`, `/plan`, `/tasks`, and `/implement` commands available.
 
-The first step should be creating a new project scaffolding. Use `/specify` command and then provide the concrete requirements for the project you want to develop.
+The first step should be establishing your project's governing principles using the `/constitution` command. This helps ensure consistent decision-making throughout all subsequent development phases:
+
+```text
+/constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
+```
+
+This step creates or updates the `/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
+
+### **STEP 2:** Create project specifications
+
+With your project principles established, you can now create the functional specifications. Use the `/specify` command and then provide the concrete requirements for the project you want to develop.
 
 >[!IMPORTANT]
 >Be as explicit as possible about _what_ you are trying to build and _why_. **Do not focus on the tech stack at this point**.
@@ -274,7 +325,7 @@ At this stage, your project folder contents should resemble the following:
 │	         └── spec.md
 ```
 
-### **STEP 2:** Functional specification clarification
+### **STEP 3:** Functional specification clarification
 
 With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt. For example, you could use a prompt like this within the same Claude Code session:
 
@@ -292,7 +343,7 @@ Read the review and acceptance checklist, and check off each item in the checkli
 
 It's important to use the interaction with Claude Code as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
 
-### **STEP 3:** Generate a plan
+### **STEP 4:** Generate a plan
 
 You can now be specific about the tech stack and other technical requirements. You can use the `/plan` command that is built into the project template with a prompt like this:
 
@@ -363,7 +414,7 @@ That's way too untargeted research. The research needs to help you solve a speci
 >[!NOTE]
 >Claude Code might be over-eager and add components that you did not ask for. Ask it to clarify the rationale and the source of the change.
 
-### **STEP 4:** Have Claude Code validate the plan
+### **STEP 5:** Have Claude Code validate the plan
 
 With the plan in place, you should have Claude Code run through it to make sure that there are no missing pieces. You can use a prompt like this:
 
@@ -382,20 +433,25 @@ You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.c
 >[!NOTE]
 >Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](.specify/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
 
-### STEP 5: Implementation
+### STEP 6: Implementation
 
-Once ready, instruct Claude Code to implement your solution (example path included):
+Once ready, use the `/implement` command to execute your implementation plan:
 
 ```text
-implement docs/specs/002-create-taskify/plan.md
+/implement
 ```
 
-Claude Code will spring into action and will start creating the implementation.
+The `/implement` command will:
+- Validate that all prerequisites are in place (constitution, spec, plan, and tasks)
+- Parse the task breakdown from `tasks.md`
+- Execute tasks in the correct order, respecting dependencies and parallel execution markers
+- Follow the TDD approach defined in your task plan
+- Provide progress updates and handle errors appropriately
 
 >[!IMPORTANT]
->Claude Code will execute local CLI commands (such as `dotnet`) - make sure you have them installed on your machine.
+>The AI agent will execute local CLI commands (such as `dotnet`, `npm`, etc.) - make sure you have the required tools installed on your machine.
 
-Once the implementation step is done, ask Claude Code to try to run the application and resolve any emerging build errors. If the application runs, but there are _runtime errors_ that are not directly available to Claude Code through CLI logs (e.g., errors rendered in browser logs), copy and paste the error in Claude Code and have it attempt to resolve it.
+Once the implementation is complete, test the application and resolve any runtime errors that may not be visible in CLI logs (e.g., browser console errors). You can copy and paste such errors back to your AI agent for resolution.
 
 </details>
 
