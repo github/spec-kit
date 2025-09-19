@@ -722,7 +722,7 @@ def _should_skip_hook(hook: Path) -> bool:
             hook.name.endswith(".sample"))
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts under .specify/scripts and hooks under .specify/hooks have execute bits (no-op on Windows)."""
+    """Ensure executable files (with shebangs) under .specify/scripts (for .sh files) and .specify/hooks (for any file with a shebang, except sample files) have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
 
