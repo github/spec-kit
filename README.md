@@ -246,7 +246,7 @@ delete any comments that you made, but you can't delete comments anybody else ma
 
 After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
 
-Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
+Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `docs/specs/001-create-taskify` directory.
 
 The produced specification should contain a set of user stories and functional requirements, as defined in the template.
 
@@ -263,9 +263,10 @@ At this stage, your project folder contents should resemble the following:
 │	 ├── get-feature-paths.sh
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
-├── specs
-│	 └── 001-create-taskify
-│	     └── spec.md
+├── docs
+│	 └── specs
+│	     └── 001-create-taskify
+│	         └── spec.md
 └── templates
     ├── plan-template.md
     ├── spec-template.md
@@ -315,16 +316,17 @@ The output of this step will include a number of implementation detail documents
 │	 ├── get-feature-paths.sh
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
-├── specs
-│	 └── 001-create-taskify
-│	     ├── contracts
-│	     │	 ├── api-spec.json
-│	     │	 └── signalr-spec.md
-│	     ├── data-model.md
-│	     ├── plan.md
-│	     ├── quickstart.md
-│	     ├── research.md
-│	     └── spec.md
+├── docs
+│	 └── specs
+│	     └── 001-create-taskify
+│	         ├── contracts
+│	         │	 ├── api-spec.json
+│	         │	 └── signalr-spec.md
+│	         ├── data-model.md
+│	         ├── plan.md
+│	         ├── quickstart.md
+│	         ├── research.md
+│	         └── spec.md
 └── templates
     ├── CLAUDE-template.md
     ├── plan-template.md
@@ -383,7 +385,7 @@ You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.c
 Once ready, instruct Claude Code to implement your solution (example path included):
 
 ```text
-implement specs/002-create-taskify/plan.md
+implement docs/specs/002-create-taskify/plan.md
 ```
 
 Claude Code will spring into action and will start creating the implementation.

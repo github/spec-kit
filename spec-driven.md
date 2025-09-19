@@ -81,7 +81,7 @@ This command transforms a simple feature description (the user-prompt) into a co
 1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003)
 2. **Branch Creation**: Generates a semantic branch name from your description and creates it automatically
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
-4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
+4. **Directory Structure**: Creates the proper `docs/specs/[branch-name]/` structure for all related documents
 
 ### The `/plan` Command
 
@@ -125,7 +125,7 @@ Total: ~12 hours of documentation work
 
 # This automatically:
 # - Creates branch "003-chat-system"
-# - Generates specs/003-chat-system/spec.md
+# - Generates docs/specs/003-chat-system/spec.md
 # - Populates it with structured requirements
 
 # Step 2: Generate implementation plan (5 minutes)
@@ -135,12 +135,12 @@ Total: ~12 hours of documentation work
 /tasks
 
 # This automatically creates:
-# - specs/003-chat-system/plan.md
-# - specs/003-chat-system/research.md (WebSocket library comparisons)
-# - specs/003-chat-system/data-model.md (Message and User schemas)
-# - specs/003-chat-system/contracts/ (WebSocket events, REST endpoints)
-# - specs/003-chat-system/quickstart.md (Key validation scenarios)
-# - specs/003-chat-system/tasks.md (Task list derived from the plan)
+# - docs/specs/003-chat-system/plan.md
+# - docs/specs/003-chat-system/research.md (WebSocket library comparisons)
+# - docs/specs/003-chat-system/data-model.md (Message and User schemas)
+# - docs/specs/003-chat-system/contracts/ (WebSocket events, REST endpoints)
+# - docs/specs/003-chat-system/quickstart.md (Key validation scenarios)
+# - docs/specs/003-chat-system/tasks.md (Task list derived from the plan)
 ```
 
 In 15 minutes, you have:

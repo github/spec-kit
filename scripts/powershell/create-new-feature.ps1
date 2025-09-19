@@ -14,7 +14,7 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
 $repoRoot = git rev-parse --show-toplevel
-$specsDir = Join-Path $repoRoot 'specs'
+$specsDir = Join-Path $repoRoot 'docs/specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 $highest = 0

@@ -19,7 +19,7 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
-SPECS_DIR="$REPO_ROOT/specs"
+SPECS_DIR="$REPO_ROOT/docs/specs"
 mkdir -p "$SPECS_DIR"
 
 HIGHEST=0

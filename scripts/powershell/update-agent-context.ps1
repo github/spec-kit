@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = git rev-parse --show-toplevel
 $currentBranch = git rev-parse --abbrev-ref HEAD
-$featureDir = Join-Path $repoRoot "specs/$currentBranch"
+$featureDir = Join-Path $repoRoot "docs/specs/$currentBranch"
 $newPlan = Join-Path $featureDir 'plan.md'
 if (-not (Test-Path $newPlan)) { Write-Error "ERROR: No plan.md found at $newPlan"; exit 1 }
 
