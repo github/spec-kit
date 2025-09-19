@@ -53,7 +53,7 @@ Use these commands to build template ZIPs from your local checkout and run the C
 
 ```bash
 chmod +x .github/workflows/scripts/create-release-packages.sh && \
-.github/workflows/scripts/create-release-packages.sh v0.0.1 && \
+.github/workflows/scripts/create-release-packages.sh v0.0.1; \
 chmod -x .github/workflows/scripts/create-release-packages.sh
 ```
 
