@@ -4,7 +4,7 @@
 param(
     [switch]$Json,
     [ValidateRange(1, 999)]
-    [int]$FeatureNum = 0,
+    [int]$FeatureNum,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
 )
@@ -63,7 +63,7 @@ $specsDir = Join-Path $repoRoot 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 # Use override if provided, otherwise auto-increment
-if ($FeatureNum -gt 0) {
+if ($PSBoundParameters.ContainsKey('FeatureNum')) {
     $featureNum = ('{0:000}' -f $FeatureNum)
 } else {
     $highest = 0
