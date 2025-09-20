@@ -154,13 +154,16 @@ build_variant() {
     opencode)
       mkdir -p "$base_dir/.opencode/command"
       generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
+    windsurf)
+      mkdir -p "$base_dir/.windsurf/workflows"
+      generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
 ALL_SCRIPTS=(sh ps)
 
 
