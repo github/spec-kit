@@ -215,7 +215,6 @@ build_variant() {
       mkdir -p "$base_dir/.codex/commands"
       generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/commands" "$script" ;;
     zed)
-      mkdir -p "$base_dir/.zed/commands"
       generate_commands zed md "\$ARGUMENTS" "$base_dir/" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
