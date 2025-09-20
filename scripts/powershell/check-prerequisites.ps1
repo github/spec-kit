@@ -48,16 +48,6 @@ EXAMPLES:
   
   # Get feature paths only (no validation)
   .\check-prerequisites.ps1 -PathsOnly
-  
-COMPATIBILITY:
-  # For task prerequisites (plan.md required)
-  .\check-prerequisites.ps1 -Json
-  
-  # For implementation prerequisites (plan.md + tasks.md required)  
-  .\check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
-  
-  # For feature paths only (no validation)
-  .\check-prerequisites.ps1 -PathsOnly
 
 "@
     exit 0
