@@ -13,6 +13,9 @@ $claudeFile = Join-Path $repoRoot 'CLAUDE.md'
 $geminiFile = Join-Path $repoRoot 'GEMINI.md'
 $copilotFile = Join-Path $repoRoot '.github/copilot-instructions.md'
 $cursorFile = Join-Path $repoRoot '.cursor/rules/specify-rules.mdc'
+$qwenFile = Join-Path $repoRoot 'QWEN.md'
+$agentsFile = Join-Path $repoRoot 'AGENTS.md'
+$windsurfFile = Join-Path $repoRoot '.windsurf/rules/specify-rules.md'
 
 Write-Output "=== Updating agent context files for feature $currentBranch ==="
 
@@ -71,21 +74,27 @@ switch ($AgentType) {
     'gemini' { Update-AgentFile $geminiFile 'Gemini CLI' }
     'copilot' { Update-AgentFile $copilotFile 'GitHub Copilot' }
     'cursor' { Update-AgentFile $cursorFile 'Cursor IDE' }
+    'qwen' { Update-AgentFile $qwenFile 'Qwen Code' }
+    'opencode' { Update-AgentFile $agentsFile 'opencode' }
+    'windsurf' { Update-AgentFile $windsurfFile 'Windsurf' }
     '' {
         foreach ($pair in @(
             @{file=$claudeFile; name='Claude Code'},
             @{file=$geminiFile; name='Gemini CLI'},
             @{file=$copilotFile; name='GitHub Copilot'},
-            @{file=$cursorFile; name='Cursor IDE'}
+            @{file=$cursorFile; name='Cursor IDE'},
+            @{file=$qwenFile; name='Qwen Code'},
+            @{file=$agentsFile; name='opencode'},
+            @{file=$windsurfFile; name='Windsurf'}
         )) {
             if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
         }
-        if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $copilotFile) -and -not (Test-Path $cursorFile)) {
+        if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $copilotFile) -and -not (Test-Path $cursorFile) -and -not (Test-Path $qwenFile) -and -not (Test-Path $agentsFile) -and -not (Test-Path $windsurfFile)) {
             Write-Output 'No agent context files found. Creating Claude Code context file by default.'
             Update-AgentFile $claudeFile 'Claude Code'
         }
     }
-    Default { Write-Error "ERROR: Unknown agent type '$AgentType'. Use: claude, gemini, copilot, cursor or leave empty for all."; exit 1 }
+    Default { Write-Error "ERROR: Unknown agent type '$AgentType'. Use: claude, gemini, copilot, cursor, qwen, opencode, windsurf or leave empty for all."; exit 1 }
 }
 
 Write-Output ''
@@ -95,4 +104,4 @@ if ($newFramework) { Write-Output "- Added framework: $newFramework" }
 if ($newDb -and $newDb -ne 'N/A') { Write-Output "- Added database: $newDb" }
 
 Write-Output ''
-Write-Output 'Usage: ./update-agent-context.ps1 [claude|gemini|copilot|cursor]'
+Write-Output 'Usage: ./update-agent-context.ps1 [claude|gemini|copilot|cursor|qwen|opencode|windsurf]'

@@ -1,6 +1,8 @@
 ---
-name: detail
-description: "Create detailed specifications for selected tasks. This follows the tasks command in the Spec-Driven Development lifecycle."
+description: Create detailed specifications for selected tasks from the tasks.md file.
+scripts:
+  sh: scripts/bash/check-task-prerequisites.sh --json
+  ps: scripts/powershell/check-task-prerequisites.ps1 -Json
 ---
 
 Create detailed specifications for selected tasks from the tasks.md file.
@@ -9,7 +11,7 @@ This command follows the `/tasks` command in the Spec-Driven Development lifecyc
 
 Given the task selection provided as an argument, do this:
 
-1. Run `scripts/check-task-prerequisites.sh --json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
+1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
 
 2. Load and validate the tasks.md file:
    - Read tasks.md from the feature directory

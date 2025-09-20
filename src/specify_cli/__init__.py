@@ -10,16 +10,16 @@
 # ]
 # ///
 """
-Spec Ops CLI - Setup tool for Spec Ops projects
+Specify CLI - Setup tool for Specify projects
 
 Usage:
-    uvx --from git+https://github.com/rHedBull/spec-ops.git specops init <project-name>
-    uvx --from git+https://github.com/rHedBull/spec-ops.git specops init --here
+    uvx specify-cli.py init <project-name>
+    uvx specify-cli.py init --here
 
 Or install globally:
-    uv tool install --from git+https://github.com/rHedBull/spec-ops.git spec-ops-cli
-    specops init <project-name>
-    specops init --here
+    uv tool install --from specify-cli.py specify-cli
+    specify init <project-name>
+    specify init --here
 """
 
 import os
@@ -30,7 +30,7 @@ import tempfile
 import shutil
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import typer
 import httpx
@@ -46,25 +46,52 @@ from typer.core import TyperGroup
 
 # For cross-platform keyboard input
 import readchar
+import ssl
+import truststore
+
+ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+client = httpx.Client(verify=ssl_context)
+
+def _github_token(cli_token: str | None = None) -> str | None:
+    return cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+
+def _github_auth_headers(cli_token: str | None = None) -> dict:
+    """Headers for GitHub REST API requests.
+    - Uses Bearer auth if token present
+    """
+    headers = {}
+    token = _github_token(cli_token)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 # Constants
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
-    "gemini": "Gemini CLI"
+    "gemini": "Gemini CLI",
+    "cursor": "Cursor",
+    "qwen": "Qwen Code",
+    "opencode": "opencode",
+    "windsurf": "Windsurf"
 }
+# Add script type choices
+SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
+
+# Claude CLI local installation path after migrate-installer
+CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
 # ASCII Art Banner
 BANNER = """
-███████╗██████╗ ███████╗ ██████╗     ██████╗ ██████╗ ███████╗
-██╔════╝██╔══██╗██╔════╝██╔════╝    ██╔═══██╗██╔══██╗██╔════╝
-███████╗██████╔╝█████╗  ██║         ██║   ██║██████╔╝███████╗
-╚════██║██╔═══╝ ██╔══╝  ██║         ██║   ██║██╔═══╝ ╚════██║
-███████║██║     ███████╗╚██████╗    ╚██████╔╝██║     ███████║
-╚══════╝╚═╝     ╚══════╝ ╚═════╝     ╚═════╝ ╚═╝     ╚══════╝
+███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
+██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
+███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝ 
+╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝  
+███████║██║     ███████╗╚██████╗██║██║        ██║   
+╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
 """
 
-TAGLINE = "Spec-Driven Development Toolkit"
+TAGLINE = "Spec Ops - Spec-Driven Development Toolkit"
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -115,7 +142,7 @@ class StepTracker:
                 pass
 
     def render(self):
-        tree = Tree(f"[bold cyan]{self.title}[/bold cyan]", guide_style="grey50")
+        tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
         for step in self.steps:
             label = step["label"]
             detail_text = step["detail"].strip() if step["detail"] else ""
@@ -208,14 +235,14 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
     def create_selection_panel():
         """Create the selection panel with current selection highlighted."""
         table = Table.grid(padding=(0, 2))
-        table.add_column(style="bright_cyan", justify="left", width=3)
+        table.add_column(style="cyan", justify="left", width=3)
         table.add_column(style="white", justify="left")
         
         for i, key in enumerate(option_keys):
             if i == selected_index:
-                table.add_row("▶", f"[bright_cyan]{key}: {options[key]}[/bright_cyan]")
+                table.add_row("▶", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
             else:
-                table.add_row(" ", f"[white]{key}: {options[key]}[/white]")
+                table.add_row(" ", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
         
         table.add_row("", "")
         table.add_row("", "[dim]Use ↑/↓ to navigate, Enter to select, Esc to cancel[/dim]")
@@ -286,9 +313,9 @@ app = typer.Typer(
 
 def show_banner():
     """Display the ASCII art banner."""
-    # Create gradient effect with different colors - orange to black
+    # Create gradient effect with different colors
     banner_lines = BANNER.strip().split('\n')
-    colors = ["bright_red", "red", "bright_yellow", "yellow", "bright_black", "black"]
+    colors = ["bright_blue", "blue", "cyan", "bright_cyan", "white", "bright_white"]
     
     styled_banner = Text()
     for i, line in enumerate(banner_lines):
@@ -307,7 +334,7 @@ def callback(ctx: typer.Context):
     # (help is handled by BannerGroup)
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
-        console.print(Align.center("[dim]Run 'specops --help' for usage information[/dim]"))
+        console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
 
 
@@ -330,8 +357,28 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
         return None
 
 
+def check_tool_for_tracker(tool: str, install_hint: str, tracker: StepTracker) -> bool:
+    """Check if a tool is installed and update tracker."""
+    if shutil.which(tool):
+        tracker.complete(tool, "available")
+        return True
+    else:
+        tracker.error(tool, f"not found - {install_hint}")
+        return False
+
+
 def check_tool(tool: str, install_hint: str) -> bool:
     """Check if a tool is installed."""
+    
+    # Special handling for Claude CLI after `claude migrate-installer`
+    # See: https://github.com/github/spec-kit/issues/123
+    # The migrate-installer command REMOVES the original executable from PATH
+    # and creates an alias at ~/.claude/local/claude instead
+    # This path should be prioritized over other claude executables in PATH
+    if tool == "claude":
+        if CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file():
+            return True
+    
     if shutil.which(tool):
         return True
     else:
@@ -372,7 +419,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
             console.print("[cyan]Initializing git repository...[/cyan]")
         subprocess.run(["git", "init"], check=True, capture_output=True)
         subprocess.run(["git", "add", "."], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Spec Ops template"], check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True)
         if not quiet:
             console.print("[green]✓[/green] Git repository initialized")
         return True
@@ -385,235 +432,356 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def copy_local_templates(source_dir: Path, project_path: Path, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None):
-    """Copy templates from local directory to project directory."""
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
+    repo_owner = "github"
+    repo_name = "spec-kit"
+    if client is None:
+        client = httpx.Client(verify=ssl_context)
     
-    # Define which directories and files to copy
-    items_to_copy = ["templates", "scripts", "memory"]
-    
-    # Special handling for .claude directory - copy from templates/.claude to project root
-    claude_source = source_dir / "templates" / ".claude"
-    claude_dest = project_path / ".claude"
-    
-    if tracker:
-        tracker.start("extract")
+    if verbose:
+        console.print("[cyan]Fetching latest release information...[/cyan]")
+    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
     try:
-        if verbose and not tracker:
-            console.print(f"[dim]Template source directory: {source_dir}[/dim]")
-            console.print(f"[dim]Items to copy: {items_to_copy}[/dim]")
-        
-        for item_name in items_to_copy:
-            source_item = source_dir / item_name
-            if verbose and not tracker:
-                console.print(f"[dim]Checking {source_item} - exists: {source_item.exists()}[/dim]")
-            
-            if source_item.exists():
-                dest_item = project_path / item_name
-                
-                if verbose and not tracker:
-                    if source_item.is_dir():
-                        sub_items = list(source_item.rglob('*'))
-                        console.print(f"[cyan]Copying directory {item_name} with {len(sub_items)} items[/cyan]")
-                        # Show subdirectories specifically
-                        subdirs = [item for item in source_item.iterdir() if item.is_dir()]
-                        if subdirs:
-                            console.print(f"[dim]  Subdirectories: {[d.name for d in subdirs]}[/dim]")
-                    else:
-                        console.print(f"[cyan]Copying file {item_name}[/cyan]")
-                
-                if source_item.is_dir():
-                    if dest_item.exists():
-                        if verbose and not tracker:
-                            console.print(f"[yellow]Merging directory:[/yellow] {item_name}")
-                        # Use shutil.copytree with dirs_exist_ok=True for proper merging
-                        shutil.copytree(source_item, dest_item, dirs_exist_ok=True)
-                    else:
-                        shutil.copytree(source_item, dest_item)
+        response = client.get(
+            api_url,
+            timeout=30,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token) or None,
+        )
+        status = response.status_code
+        if status != 200:
+            msg = f"GitHub API returned {status} for {api_url}"
+            if debug:
+                msg += f"\nResponse headers: {response.headers}\nBody (truncated 500): {response.text[:500]}"
+            raise RuntimeError(msg)
+        try:
+            release_data = response.json()
+        except ValueError as je:
+            raise RuntimeError(f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}")
+    except Exception as e:
+        console.print(f"[red]Error fetching release information[/red]")
+        console.print(Panel(str(e), title="Fetch Error", border_style="red"))
+        raise typer.Exit(1)
+    
+    # Find the template asset for the specified AI assistant
+    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
+    matching_assets = [
+        asset for asset in release_data.get("assets", [])
+        if pattern in asset["name"] and asset["name"].endswith(".zip")
+    ]
+    
+    if not matching_assets:
+        console.print(f"[red]No matching release asset found[/red] for pattern: [bold]{pattern}[/bold]")
+        asset_names = [a.get('name','?') for a in release_data.get('assets', [])]
+        console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
+        raise typer.Exit(1)
+    
+    # Use the first matching asset
+    asset = matching_assets[0]
+    download_url = asset["browser_download_url"]
+    filename = asset["name"]
+    file_size = asset["size"]
+    
+    if verbose:
+        console.print(f"[cyan]Found template:[/cyan] {filename}")
+        console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
+        console.print(f"[cyan]Release:[/cyan] {release_data['tag_name']}")
+    
+    # Download the file
+    zip_path = download_dir / filename
+    if verbose:
+        console.print(f"[cyan]Downloading template...[/cyan]")
+    
+    try:
+        # Include auth header for initial GitHub request; it won't leak across cross-origin redirects
+        with client.stream(
+            "GET",
+            download_url,
+            timeout=60,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token) or None,
+        ) as response:
+            if response.status_code != 200:
+                body_sample = response.text[:400]
+                raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
+            total_size = int(response.headers.get('content-length', 0))
+            with open(zip_path, 'wb') as f:
+                if total_size == 0:
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        f.write(chunk)
                 else:
-                    if dest_item.exists() and verbose and not tracker:
-                        console.print(f"[yellow]Overwriting file:[/yellow] {item_name}")
-                    shutil.copy2(source_item, dest_item)
-                    
-                if verbose and not tracker:
-                    console.print(f"[green]✓[/green] Copied {item_name}")
-                    # Show what was copied for directories
-                    if source_item.is_dir():
-                        sub_items = list(source_item.rglob('*'))
-                        console.print(f"    [dim]Contains {len(sub_items)} items[/dim]")
-        
-        # Copy .claude directory from templates/.claude to project root
-        if claude_source.exists():
-            if verbose and not tracker:
-                console.print("[cyan]Copying Claude Code commands...[/cyan]")
-            if claude_dest.exists():
-                shutil.rmtree(claude_dest)  # Remove existing .claude directory
-            shutil.copytree(claude_source, claude_dest)
-            if verbose and not tracker:
-                console.print("[green]✓[/green] Claude Code commands copied")
-        
+                    if show_progress:
+                        with Progress(
+                            SpinnerColumn(),
+                            TextColumn("[progress.description]{task.description}"),
+                            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                            console=console,
+                        ) as progress:
+                            task = progress.add_task("Downloading...", total=total_size)
+                            downloaded = 0
+                            for chunk in response.iter_bytes(chunk_size=8192):
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                progress.update(task, completed=downloaded)
+                    else:
+                        for chunk in response.iter_bytes(chunk_size=8192):
+                            f.write(chunk)
+    except Exception as e:
+        console.print(f"[red]Error downloading template[/red]")
+        detail = str(e)
+        if zip_path.exists():
+            zip_path.unlink()
+        console.print(Panel(detail, title="Download Error", border_style="red"))
+        raise typer.Exit(1)
+    if verbose:
+        console.print(f"Downloaded: {filename}")
+    metadata = {
+        "filename": filename,
+        "size": file_size,
+        "release": release_data["tag_name"],
+        "asset_url": download_url
+    }
+    return zip_path, metadata
+
+
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+    """Download the latest release and extract it to create a new project.
+    Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+    """
+    current_dir = Path.cwd()
+    
+    # Step: fetch + download combined
+    if tracker:
+        tracker.start("fetch", "contacting GitHub API")
+    try:
+        zip_path, meta = download_template_from_github(
+            ai_assistant,
+            current_dir,
+            script_type=script_type,
+            verbose=verbose and tracker is None,
+            show_progress=(tracker is None),
+            client=client,
+            debug=debug,
+            github_token=github_token
+        )
         if tracker:
-            tracker.complete("extract", f"copied {len(items_to_copy)} template directories + Claude commands")
-        elif verbose:
-            console.print("[green]✓[/green] Local templates copied successfully")
+            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
+            tracker.add("download", "Download template")
+            tracker.complete("download", meta['filename'])
+    except Exception as e:
+        if tracker:
+            tracker.error("fetch", str(e))
+        else:
+            if verbose:
+                console.print(f"[red]Error downloading template:[/red] {e}")
+        raise
+    
+    if tracker:
+        tracker.add("extract", "Extract template")
+        tracker.start("extract")
+    elif verbose:
+        console.print("Extracting template...")
+    
+    try:
+        # Create project directory only if not using current directory
+        if not is_current_dir:
+            project_path.mkdir(parents=True)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # List all files in the ZIP for debugging
+            zip_contents = zip_ref.namelist()
+            if tracker:
+                tracker.start("zip-list")
+                tracker.complete("zip-list", f"{len(zip_contents)} entries")
+            elif verbose:
+                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
             
+            # For current directory, extract to a temp location first
+            if is_current_dir:
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_path = Path(temp_dir)
+                    zip_ref.extractall(temp_path)
+                    
+                    # Check what was extracted
+                    extracted_items = list(temp_path.iterdir())
+                    if tracker:
+                        tracker.start("extracted-summary")
+                        tracker.complete("extracted-summary", f"temp {len(extracted_items)} items")
+                    elif verbose:
+                        console.print(f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]")
+                    
+                    # Handle GitHub-style ZIP with a single root directory
+                    source_dir = temp_path
+                    if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                        source_dir = extracted_items[0]
+                        if tracker:
+                            tracker.add("flatten", "Flatten nested directory")
+                            tracker.complete("flatten")
+                        elif verbose:
+                            console.print(f"[cyan]Found nested directory structure[/cyan]")
+                    
+                    # Copy contents to current directory
+                    for item in source_dir.iterdir():
+                        dest_path = project_path / item.name
+                        if item.is_dir():
+                            if dest_path.exists():
+                                if verbose and not tracker:
+                                    console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
+                                # Recursively copy directory contents
+                                for sub_item in item.rglob('*'):
+                                    if sub_item.is_file():
+                                        rel_path = sub_item.relative_to(item)
+                                        dest_file = dest_path / rel_path
+                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(sub_item, dest_file)
+                            else:
+                                shutil.copytree(item, dest_path)
+                        else:
+                            if dest_path.exists() and verbose and not tracker:
+                                console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
+                            shutil.copy2(item, dest_path)
+                    if verbose and not tracker:
+                        console.print(f"[cyan]Template files merged into current directory[/cyan]")
+            else:
+                # Extract directly to project directory (original behavior)
+                zip_ref.extractall(project_path)
+                
+                # Check what was extracted
+                extracted_items = list(project_path.iterdir())
+                if tracker:
+                    tracker.start("extracted-summary")
+                    tracker.complete("extracted-summary", f"{len(extracted_items)} top-level items")
+                elif verbose:
+                    console.print(f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]")
+                    for item in extracted_items:
+                        console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
+                
+                # Handle GitHub-style ZIP with a single root directory
+                if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                    # Move contents up one level
+                    nested_dir = extracted_items[0]
+                    temp_move_dir = project_path.parent / f"{project_path.name}_temp"
+                    # Move the nested directory contents to temp location
+                    shutil.move(str(nested_dir), str(temp_move_dir))
+                    # Remove the now-empty project directory
+                    project_path.rmdir()
+                    # Rename temp directory to project directory
+                    shutil.move(str(temp_move_dir), str(project_path))
+                    if tracker:
+                        tracker.add("flatten", "Flatten nested directory")
+                        tracker.complete("flatten")
+                    elif verbose:
+                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
+                    
     except Exception as e:
         if tracker:
             tracker.error("extract", str(e))
         else:
             if verbose:
-                console.print(f"[red]Error copying local templates:[/red] {e}")
-        raise
-
-
-def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> Path:
-    """Download the latest release and extract it to create a new project.
-    Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
-    """
-    # Find the spec-ops repository root - try multiple locations in order of preference
-    current_dir = Path.cwd()
-    file_dir = Path(__file__).parent.parent.parent.resolve()
-    package_dir = Path(__file__).parent
-    
-    # Check locations in order of preference:
-    # 1. Current working directory (development mode)
-    # 2. Package directory (bundled templates from pyproject.toml)
-    # 3. File directory (fallback for other installations)
-    locations_to_check = [
-        (current_dir, "current working directory", lambda: (current_dir / "templates").exists() and (current_dir / "pyproject.toml").exists()),
-        (package_dir, "package resources", lambda: (package_dir / "templates").exists()),
-        (file_dir, "package directory", lambda: (file_dir / "templates").exists()),
-    ]
-    
-    local_templates_dir = None
-    location_description = None
-    
-    for location, description, check_func in locations_to_check:
-        if check_func():
-            local_templates_dir = location
-            location_description = description
-            break
-    
-    if local_templates_dir is None:
-        # Fallback: Download from GitHub
-        if verbose and not tracker:
-            console.print("[yellow]Local templates not found, downloading from GitHub...[/yellow]")
+                console.print(f"[red]Error extracting template:[/red] {e}")
+                if debug:
+                    console.print(Panel(str(e), title="Extraction Error", border_style="red"))
+        # Clean up project directory if created and not current directory
+        if not is_current_dir and project_path.exists():
+            shutil.rmtree(project_path)
+        raise typer.Exit(1)
+    else:
         if tracker:
-            tracker.start("fetch", "downloading from GitHub")
-        
-        return download_from_github(project_path, ai_assistant, is_current_dir, verbose=verbose, tracker=tracker)
-    
-    if verbose and not tracker:
-        console.print(f"[dim]Using templates from {location_description}[/dim]")
-    
-    if tracker:
-        tracker.start("fetch", "using local templates")
-        tracker.complete("fetch", f"local directory: {local_templates_dir}")
-        tracker.add("extract", "Copy local templates")
-    elif verbose:
-        console.print(f"[cyan]Using local templates from:[/cyan] {local_templates_dir}")
-        console.print(f"[cyan]Copying to project directory:[/cyan] {project_path}")
-    
-    # Copy templates directly from local directory
-    copy_local_templates(local_templates_dir, project_path, is_current_dir, verbose=verbose, tracker=tracker)
-    return project_path
-
-
-def download_from_github(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> Path:
-    """Download templates from GitHub when not found locally."""
-    github_repo = "rHedBull/spec-ops"
-    
-    if tracker:
-        tracker.start("download", "fetching release info")
-    elif verbose:
-        console.print("[cyan]Fetching latest release from GitHub...[/cyan]")
-    
-    try:
-        # Get the latest release
-        response = httpx.get(f"https://api.github.com/repos/{github_repo}/releases/latest", timeout=10, follow_redirects=True)
-        response.raise_for_status()
-        release_data = response.json()
-        
-        # Download the source code archive
-        archive_url = release_data["zipball_url"]
+            tracker.complete("extract")
+    finally:
         if tracker:
-            tracker.complete("download", "downloading archive")
-        elif verbose:
-            console.print(f"[cyan]Downloading archive from:[/cyan] {archive_url}")
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            zip_path = temp_path / "source.zip"
-            
-            # Download the zip file
-            with httpx.stream("GET", archive_url, timeout=60, follow_redirects=True) as response:
-                response.raise_for_status()
-                with open(zip_path, "wb") as f:
-                    for chunk in response.iter_bytes():
-                        f.write(chunk)
-            
-            # Extract the zip file
-            extract_path = temp_path / "extracted"
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_path)
-            
-            # Find the extracted directory (GitHub creates a directory with repo name and commit hash)
-            extracted_dirs = [d for d in extract_path.iterdir() if d.is_dir()]
-            if not extracted_dirs:
-                raise FileNotFoundError("No directories found in downloaded archive")
-            
-            source_dir = extracted_dirs[0]  # Should be the only directory
-            
+            tracker.add("cleanup", "Remove temporary archive")
+        # Clean up downloaded ZIP file
+        if zip_path.exists():
+            zip_path.unlink()
             if tracker:
-                tracker.complete("download", "archive extracted")
-                tracker.add("extract", "Copy templates from archive")
-            
-            # Copy templates from the extracted source
-            copy_local_templates(source_dir, project_path, is_current_dir, verbose=verbose, tracker=tracker)
-    
-    except httpx.RequestError as e:
-        error_msg = f"Failed to download from GitHub: {e}"
-        if tracker:
-            tracker.error("download", error_msg)
-        else:
-            console.print(f"[red]Error:[/red] {error_msg}")
-        raise
-    except Exception as e:
-        error_msg = f"Failed to extract templates: {e}"
-        if tracker:
-            tracker.error("extract", error_msg)
-        else:
-            console.print(f"[red]Error:[/red] {error_msg}")
-        raise
+                tracker.complete("cleanup")
+            elif verbose:
+                console.print(f"Cleaned up: {zip_path.name}")
     
     return project_path
+
+
+def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
+    if os.name == "nt":
+        return  # Windows: skip silently
+    scripts_root = project_path / ".specify" / "scripts"
+    if not scripts_root.is_dir():
+        return
+    failures: list[str] = []
+    updated = 0
+    for script in scripts_root.rglob("*.sh"):
+        try:
+            if script.is_symlink() or not script.is_file():
+                continue
+            try:
+                with script.open("rb") as f:
+                    if f.read(2) != b"#!":
+                        continue
+            except Exception:
+                continue
+            st = script.stat(); mode = st.st_mode
+            if mode & 0o111:
+                continue
+            new_mode = mode
+            if mode & 0o400: new_mode |= 0o100
+            if mode & 0o040: new_mode |= 0o010
+            if mode & 0o004: new_mode |= 0o001
+            if not (new_mode & 0o100):
+                new_mode |= 0o100
+            os.chmod(script, new_mode)
+            updated += 1
+        except Exception as e:
+            failures.append(f"{script.relative_to(scripts_root)}: {e}")
+    if tracker:
+        detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
+        tracker.add("chmod", "Set script permissions recursively")
+        (tracker.error if failures else tracker.complete)("chmod", detail)
+    else:
+        if updated:
+            console.print(f"[cyan]Updated execute permissions on {updated} script(s) recursively[/cyan]")
+        if failures:
+            console.print("[yellow]Some scripts could not be updated:[/yellow]")
+            for f in failures:
+                console.print(f"  - {f}")
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, or copilot"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode or windsurf"),
+    script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
+    skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
+    github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
 ):
     """
-    Initialize a new Spec Ops project from the latest template.
+    Initialize a new Specify project from the latest template.
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, or GitHub Copilot)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode or Windsurf)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
     
     Examples:
-        specops init my-project
-        specops init my-project --ai claude
-        specops init my-project --ai gemini
-        specops init my-project --ai copilot --no-git
-        specops init --ignore-agent-tools my-project
-        specops init --here --ai claude
-        specops init --here
+        specify init my-project
+        specify init my-project --ai claude
+        specify init my-project --ai gemini
+        specify init my-project --ai copilot --no-git
+        specify init my-project --ai cursor
+        specify init my-project --ai qwen
+        specify init my-project --ai windsurf
+        specify init --ignore-agent-tools my-project
+        specify init --here --ai claude
+        specify init --here
     """
     # Show banner first
     show_banner()
@@ -650,18 +818,28 @@ def init(
             console.print(f"[red]Error:[/red] Directory '{project_name}' already exists")
             raise typer.Exit(1)
     
-    console.print(Panel.fit(
-        "[bold cyan]Spec Ops Project Setup[/bold cyan]\n"
-        f"{'Initializing in current directory:' if here else 'Creating new project:'} [green]{project_path.name}[/green]"
-        + (f"\n[dim]Path: {project_path}[/dim]" if here else ""),
-        border_style="cyan"
-    ))
+    # Create formatted setup info with column alignment
+    current_dir = Path.cwd()
+    
+    setup_lines = [
+        "[cyan]Specify Project Setup[/cyan]",
+        "",
+        f"{'Project':<15} [green]{project_path.name}[/green]",
+        f"{'Working Path':<15} [dim]{current_dir}[/dim]",
+    ]
+    
+    # Add target path only if different from working dir
+    if not here:
+        setup_lines.append(f"{'Target Path':<15} [dim]{project_path}[/dim]")
+    
+    console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
     
     # Check git only if we might need it (not --no-git)
-    git_available = True
+    # Only set to True if the user wants it and the tool is available
+    should_init_git = False
     if not no_git:
-        git_available = check_tool("git", "https://git-scm.com/downloads")
-        if not git_available:
+        should_init_git = check_tool("git", "https://git-scm.com/downloads")
+        if not should_init_git:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
     # AI assistant selection
@@ -689,16 +867,42 @@ def init(
             if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
                 console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
                 agent_tool_missing = True
-        # GitHub Copilot check is not needed as it's typically available in supported IDEs
-        
+        elif selected_ai == "qwen":
+            if not check_tool("qwen", "Install from: https://github.com/QwenLM/qwen-code"):
+                console.print("[red]Error:[/red] Qwen CLI is required for Qwen Code projects")
+                agent_tool_missing = True
+        elif selected_ai == "opencode":
+            if not check_tool("opencode", "Install from: https://opencode.ai"):
+                console.print("[red]Error:[/red] opencode CLI is required for opencode projects")
+                agent_tool_missing = True
+        # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
+
         if agent_tool_missing:
             console.print("\n[red]Required AI tool is missing![/red]")
             console.print("[yellow]Tip:[/yellow] Use --ignore-agent-tools to skip this check")
             raise typer.Exit(1)
     
+    # Determine script type (explicit, interactive, or OS default)
+    if script_type:
+        if script_type not in SCRIPT_TYPE_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
+            raise typer.Exit(1)
+        selected_script = script_type
+    else:
+        # Auto-detect default
+        default_script = "ps" if os.name == "nt" else "sh"
+        # Provide interactive selection similar to AI if stdin is a TTY
+        if sys.stdin.isatty():
+            selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
+        else:
+            selected_script = default_script
+    
+    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
+    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+    
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
-    tracker = StepTracker("Initialize Spec Ops Project")
+    tracker = StepTracker("Initialize Specify Project")
     # Flag to allow suppressing legacy headings
     sys._specify_tracker_active = True
     # Pre steps recorded as completed before live rendering
@@ -706,12 +910,15 @@ def init(
     tracker.complete("precheck", "ok")
     tracker.add("ai-select", "Select AI assistant")
     tracker.complete("ai-select", f"{selected_ai}")
+    tracker.add("script-select", "Select script type")
+    tracker.complete("script-select", selected_script)
     for key, label in [
         ("fetch", "Fetch latest release"),
         ("download", "Download template"),
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
+    ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -722,14 +929,22 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
+            # Create a httpx client with verify based on skip_tls
+            verify = not skip_tls
+            local_ssl_context = ssl_context if verify else False
+            local_client = httpx.Client(verify=local_ssl_context)
+
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+
+            # Ensure scripts are executable (POSIX)
+            ensure_executable_scripts(project_path, tracker=tracker)
 
             # Git step
             if not no_git:
                 tracker.start("git")
                 if is_git_repo(project_path):
                     tracker.complete("git", "existing repo detected")
-                elif git_available:
+                elif should_init_git:
                     if init_git_repo(project_path, quiet=True):
                         tracker.complete("git", "initialized")
                     else:
@@ -742,7 +957,16 @@ def init(
             tracker.complete("final", "project ready")
         except Exception as e:
             tracker.error("final", str(e))
-            console.print(f"\n[red]Error:[/red] {str(e)}")
+            console.print(Panel(f"Initialization failed: {e}", title="Failure", border_style="red"))
+            if debug:
+                _env_pairs = [
+                    ("Python", sys.version.split()[0]),
+                    ("Platform", sys.platform),
+                    ("CWD", str(Path.cwd())),
+                ]
+                _label_width = max(len(k) for k, _ in _env_pairs)
+                env_lines = [f"{k.ljust(_label_width)} → [bright_black]{v}[/bright_black]" for k, v in _env_pairs]
+                console.print(Panel("\n".join(env_lines), title="Debug Environment", border_style="magenta"))
             if not here and project_path.exists():
                 shutil.rmtree(project_path)
             raise typer.Exit(1)
@@ -763,57 +987,53 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    if selected_ai == "claude":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code and start using / commands with Claude Code")
-        steps_lines.append("   - Type / in any file to see available commands")
-        steps_lines.append("   - Use /specify to create specifications")
-        steps_lines.append("   - Use /plan to create implementation plans")
-        steps_lines.append("   - Use /tasks to generate tasks")
-    elif selected_ai == "gemini":
-        steps_lines.append(f"{step_num}. Use / commands with Gemini CLI")
-        steps_lines.append("   - Run gemini /specify to create specifications")
-        steps_lines.append("   - Run gemini /plan to create implementation plans")
-        steps_lines.append("   - See GEMINI.md for all available commands")
-    elif selected_ai == "copilot":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
-
-    step_num += 1
-    steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
+    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+    steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
+    steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
+    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plans")
+    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
-    console.print()  # blank line
+    console.print()
     console.print(steps_panel)
-    
-    # Removed farewell line per user request
-
 
 @app.command()
 def check():
     """Check that all required tools are installed."""
     show_banner()
-    console.print("[bold]Checking Spec Ops requirements...[/bold]\n")
+    console.print("[bold]Checking for installed tools...[/bold]\n")
+
+    tracker = StepTracker("Check Available Tools")
     
-    # Check if we have internet connectivity by trying to reach GitHub API
-    console.print("[cyan]Checking internet connectivity...[/cyan]")
-    try:
-        response = httpx.get("https://api.github.com", timeout=5, follow_redirects=True)
-        console.print("[green]✓[/green] Internet connection available")
-    except httpx.RequestError:
-        console.print("[red]✗[/red] No internet connection - required for downloading templates")
-        console.print("[yellow]Please check your internet connection[/yellow]")
+    tracker.add("git", "Git version control")
+    tracker.add("claude", "Claude Code CLI")
+    tracker.add("gemini", "Gemini CLI")
+    tracker.add("qwen", "Qwen Code CLI")
+    tracker.add("code", "VS Code (for GitHub Copilot)")
+    tracker.add("cursor-agent", "Cursor IDE agent (optional)")
+    tracker.add("windsurf", "Windsurf IDE (optional)")
+    tracker.add("opencode", "opencode")
     
-    console.print("\n[cyan]Optional tools:[/cyan]")
-    git_ok = check_tool("git", "https://git-scm.com/downloads")
+    git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
+    claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
+    gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
+    qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
+    code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
+    if not code_ok:
+        code_ok = check_tool_for_tracker("code-insiders", "https://code.visualstudio.com/insiders/", tracker)
+    cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
+    windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
+    opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
+
+    console.print(tracker.render())
     
-    console.print("\n[cyan]Optional AI tools:[/cyan]")
-    claude_ok = check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup")
-    gemini_ok = check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli")
+    console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
     
-    console.print("\n[green]✓ Spec Ops CLI is ready to use![/green]")
     if not git_ok:
-        console.print("[yellow]Consider installing git for repository management[/yellow]")
-    if not (claude_ok or gemini_ok):
-        console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
+        console.print("[dim]Tip: Install git for repository management[/dim]")
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or opencode_ok):
+        console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
 def main():
