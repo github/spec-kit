@@ -9,6 +9,8 @@
       href: installation.md
     - name: Quick Start
       href: quickstart.md
+    - name: Configuration
+      href: configuration.md
 
 # Development workflows
 - name: Development

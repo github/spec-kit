@@ -57,6 +57,12 @@ If you prefer to get the templates without checking for the right tools:
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude --ignore-agent-tools
 ```
 
+### Optional: Configure Spec Kit
+
+Commands load configuration from `.specify.yaml` at the project root when present; otherwise they fallback to `config-default.yaml`. The default file:
+- Activates only a minimal setting (constitution path) to keep initialization zero‑config.
+- Includes a commented full example showing how to reference your architecture docs, front‑end specs, and other materials. This example is optional and not required.
+
 ## Verification
 
 After initialization, you should see the following commands available in your AI agent:

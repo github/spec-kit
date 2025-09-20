@@ -20,6 +20,24 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script sh  # Force POSIX shell
 ```
 
+#### Optional: Project configuration
+
+By default, commands will use `config-default.yaml` at the project root. If you need to customize inputs (like where your constitution lives or which documents to read), add a `.specify.yaml`:
+
+```yaml
+spec-kit:
+  - constitution:
+      path: "/memory/constitution.md"
+  - specify:
+      documents:
+        - path: "docs/prd.md"
+          context: "Product requirements"
+```
+
+Notes:
+- Lookup order: `.specify.yaml` → `config-default.yaml`
+- `config-default.yaml` includes a commented full example (architecture docs, front‑end specs, etc.) to enrich the process. This example is an enhancement/extension and is not required.
+
 ### 2. Create the Spec
 
 Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.

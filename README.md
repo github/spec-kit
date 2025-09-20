@@ -18,11 +18,13 @@
 - [⚡ Get started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
+ - [🧩 Configuration](#-configuration)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
 - [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn more](#-learn-more)
+- [🛠️ Local Development](docs/local-development.md)
 - [📋 Detailed process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [👥 Maintainers](#-maintainers)
@@ -163,6 +165,37 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
 
+## 🧩 Configuration
+
+Spec Kit supports external configuration used by all slash commands to locate your constitution and any supplemental documents.
+
+- Lookup order:
+  1) `.specify.yaml` at the project root (if present)
+  2) `config-default.yaml` at the project root (fallback)
+- A minimal default is provided in `config-default.yaml` that sets only the constitution path to keep projects zero‑config by default.
+- A commented, full example is included at the top of `config-default.yaml` showing how to wire in architecture documents, front‑end specs, and other references to enrich the workflow. This example is an enhancement/extension and is not required.
+
+What you can configure under the top‑level `spec-kit` key:
+- `constitution.path`: Path to your constitution document
+- `specify.documents`: Documents to inform the `/specify` phase
+- `plan.documents`, `plan.technical_context`, `plan.additional_research`: Inputs to the `/plan` phase
+- `tasks.documents`: Inputs to the `/tasks` phase
+- `implement.documents`: Inputs to the `/implement` phase
+
+Minimal `.specify.yaml` example:
+```yaml
+spec-kit:
+  - constitution:
+      path: "/memory/constitution.md"
+```
+
+Notes:
+- Paths are resolved relative to your repository root.
+- Missing optional files are noted and skipped.
+- Each slash command loads configuration at start and prints the effective `SPEC_KIT_CONFIG` for operator visibility.
+
+For a deeper dive, see docs/configuration.md.
+
 ## 📚 Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
@@ -218,6 +251,7 @@ Our research and experimentation focus on:
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
+- **[Local Development Guide](docs/local-development.md)** - Run the CLI from source, editable installs, uvx flows, and using locally built template ZIPs
 
 ---
 

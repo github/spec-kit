@@ -108,12 +108,16 @@ ios/ or android/
 **Structure Decision**: [DEFAULT to Option 1 unless Technical Context indicates web/mobile app]
 
 ## Phase 0: Outline & Research
-1. **Extract unknowns from Technical Context** above:
+1. **Append configured Technical Context additions** (if available):
+   - If `SPEC_KIT_CONFIG.plan.technical_context` exists, append entries not already present in Technical Context
+   - Preserve formatting and `[NEEDS CLARIFICATION]` markers so they flow into research tasks
+
+2. **Extract unknowns from Technical Context** above:
    - For each NEEDS CLARIFICATION → research task
    - For each dependency → best practices task
    - For each integration → patterns task
 
-2. **Generate and dispatch research agents**:
+3. **Generate and dispatch research agents**:
    ```
    For each unknown in Technical Context:
      Task: "Research {unknown} for {feature context}"
@@ -121,12 +125,20 @@ ios/ or android/
      Task: "Find best practices for {tech} in {domain}"
    ```
 
-3. **Consolidate findings** in `research.md` using format:
+4. **Consolidate findings** in `research.md` using format:
    - Decision: [what was chosen]
    - Rationale: [why chosen]
    - Alternatives considered: [what else evaluated]
 
-**Output**: research.md with all NEEDS CLARIFICATION resolved
+5. **Execute Additional Research instructions (if configured)**:
+   - If `SPEC_KIT_CONFIG.plan.additional_research` exists, run each item as an independent research instruction using the available context (feature spec, constitution, and any plan documents)
+   - Append results to `research.md` under a top-level heading: `## Additional Research`
+   - For each instruction output, derive a clear section heading that summarizes the key subject (do not repeat the instruction verbatim). Use the following format for each section:
+     - `### {Concise Title Derived From Output}`
+     - Summary and details produced by the instruction
+     - References or source notes (if applicable)
+
+**Output**: research.md with all NEEDS CLARIFICATION resolved and (if configured) an "Additional Research" section containing the instruction-driven findings
 
 ## Phase 1: Design & Contracts
 *Prerequisites: research.md complete*
@@ -214,4 +226,4 @@ ios/ or android/
 - [ ] Complexity deviations documented
 
 ---
-*Based on Constitution v2.1.1 - See `/memory/constitution.md`*
+*Based on Constitution v2.1.1 - See `SPEC_KIT_CONFIG.constitution.path`*
