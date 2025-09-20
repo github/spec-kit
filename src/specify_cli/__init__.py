@@ -142,7 +142,7 @@ class StepTracker:
                 pass
 
     def render(self):
-        tree = Tree(f"[bold cyan]{self.title}[/bold cyan]", guide_style="grey50")
+        tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
         for step in self.steps:
             label = step["label"]
             detail_text = step["detail"].strip() if step["detail"] else ""
@@ -235,12 +235,12 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
     def create_selection_panel():
         """Create the selection panel with current selection highlighted."""
         table = Table.grid(padding=(0, 2))
-        table.add_column(style="bright_cyan", justify="left", width=3)
+        table.add_column(style="cyan", justify="left", width=3)
         table.add_column(style="white", justify="left")
         
         for i, key in enumerate(option_keys):
             if i == selected_index:
-                table.add_row("▶", f"[bright_cyan]{key}[/bright_cyan] [dim]({options[key]})[/dim]")
+                table.add_row("▶", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
             else:
                 table.add_row(" ", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
         
@@ -849,12 +849,21 @@ def init(
             console.print(f"[red]Error:[/red] Directory '{project_name}' already exists")
             raise typer.Exit(1)
     
-    console.print(Panel.fit(
-        "[bold cyan]Specify Project Setup[/bold cyan]\n"
-        f"{'Initializing in current directory:' if here else 'Creating new project:'} [green]{project_path.name}[/green]"
-        + (f"\n[dim]Path: {project_path}[/dim]" if here else ""),
-        border_style="cyan"
-    ))
+    # Create formatted setup info with column alignment
+    current_dir = Path.cwd()
+    
+    setup_lines = [
+        "[cyan]Specify Project Setup[/cyan]",
+        "",
+        f"{'Project':<15} [green]{project_path.name}[/green]",
+        f"{'Working Path':<15} [dim]{current_dir}[/dim]",
+    ]
+    
+    # Add target path only if different from working dir
+    if not here:
+        setup_lines.append(f"{'Target Path':<15} [dim]{project_path}[/dim]")
+    
+    console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
     
     # Check git only if we might need it (not --no-git)
     # Only set to True if the user wants it and the tool is available
@@ -1010,11 +1019,11 @@ def init(
         step_num = 2
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
-    steps_lines.append("   2.1 [bold cyan]/constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [bold cyan]/specify[/] - Create specifications")
-    steps_lines.append("   2.3 [bold cyan]/plan[/] - Create implementation plans")
-    steps_lines.append("   2.4 [bold cyan]/tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [bold cyan]/implement[/] - Execute implementation")
+    steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
+    steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
+    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plans")
+    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
     console.print()
