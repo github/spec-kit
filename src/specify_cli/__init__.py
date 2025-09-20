@@ -52,6 +52,19 @@ import truststore
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
+def _github_token(cli_token: str | None = None) -> str | None:
+    return cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+
+def _github_auth_headers(cli_token: str | None = None) -> dict:
+    """Headers for GitHub REST API requests.
+    - Uses Bearer auth if token present
+    """
+    headers = {}
+    token = _github_token(cli_token)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
 # Constants
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
@@ -418,7 +431,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False) -> Tuple[Path, dict]:
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
     repo_owner = "github"
     repo_name = "spec-kit"
     if client is None:
@@ -429,7 +442,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
     try:
-        response = client.get(api_url, timeout=30, follow_redirects=True)
+        response = client.get(
+            api_url,
+            timeout=30,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token) or None,
+        )
         status = response.status_code
         if status != 200:
             msg = f"GitHub API returned {status} for {api_url}"
@@ -475,7 +493,14 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        with client.stream("GET", download_url, timeout=60, follow_redirects=True) as response:
+        # Include auth header for initial GitHub request; it won't leak across cross-origin redirects
+        with client.stream(
+            "GET",
+            download_url,
+            timeout=60,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token) or None,
+        ) as response:
             if response.status_code != 200:
                 body_sample = response.text[:400]
                 raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
@@ -519,7 +544,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -536,7 +561,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             verbose=verbose and tracker is None,
             show_progress=(tracker is None),
             client=client,
-            debug=debug
+            debug=debug,
+            github_token=github_token
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -731,6 +757,7 @@ def init(
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
+    github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -897,7 +924,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
