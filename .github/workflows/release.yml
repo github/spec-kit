@@ -114,22 +114,22 @@ jobs:
           VERSION_NO_V=${VERSION_NO_V#v}
           
           gh release create ${{ steps.get_tag.outputs.new_version }} \
-            spec-kit-template-copilot-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-copilot-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-claude-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-claude-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-gemini-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-gemini-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-cursor-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-cursor-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-opencode-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-opencode-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-qwen-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-qwen-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-windsurf-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-windsurf-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-codex-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            spec-kit-template-codex-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-copilot-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-copilot-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-claude-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-claude-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-gemini-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-gemini-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-cursor-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-cursor-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-opencode-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-opencode-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-qwen-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-qwen-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-windsurf-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-windsurf-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-codex-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            .genreleases/spec-kit-template-codex-ps-${{ steps.get_tag.outputs.new_version }}.zip \
             --title "Spec Kit Templates - $VERSION_NO_V" \
             --notes-file release_notes.md
         env:

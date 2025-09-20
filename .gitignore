@@ -40,5 +40,6 @@ env/
 *.lock
 
 # Spec Kit-specific files
+.genreleases/
 *.zip
 sdd-*/
