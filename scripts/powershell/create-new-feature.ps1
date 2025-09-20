@@ -17,7 +17,7 @@ $featureDesc = ($FeatureDescription -join ' ').Trim()
 # Resolve repository root. Prefer git information when available, but fall back
 # to the script location so the workflow still functions in repositories that
 # were initialised with --no-git.
-$fallbackRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+$fallbackRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 
 try {
     $repoRoot = git rev-parse --show-toplevel 2>$null

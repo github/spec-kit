@@ -12,7 +12,7 @@ function Get-RepoRoot {
     }
     
     # Fall back to script location for non-git repos
-    return (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+    return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
 
 function Get-CurrentBranch {

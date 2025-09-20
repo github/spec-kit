@@ -22,7 +22,7 @@ fi
 # to the script location so the workflow still functions in repositories that
 # were initialised with --no-git.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FALLBACK_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FALLBACK_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)
     HAS_GIT=true
