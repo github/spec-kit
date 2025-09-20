@@ -3,9 +3,14 @@
 param([string]$AgentType)
 $ErrorActionPreference = 'Stop'
 
+# Import common functions
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+. (Join-Path $scriptDir 'common.ps1')
+
 $repoRoot = git rev-parse --show-toplevel
 $currentBranch = git rev-parse --abbrev-ref HEAD
-$featureDir = Join-Path $repoRoot "specs/$currentBranch"
+$featureId = Get-FeatureId -Branch $currentBranch
+$featureDir = Join-Path $repoRoot "specs/$featureId"
 $newPlan = Join-Path $featureDir 'plan.md'
 if (-not (Test-Path $newPlan)) { Write-Error "ERROR: No plan.md found at $newPlan"; exit 1 }
 

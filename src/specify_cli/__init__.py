@@ -416,12 +416,79 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
+def download_from_branch(ai_assistant: str, download_dir: Path, repo_owner: str, repo_name: str, repo_branch: str, script_type: str, verbose: bool, show_progress: bool, client: httpx.Client, debug: bool) -> Tuple[Path, dict]:
+    """Download template directly from a branch as an archive."""
+    download_url = f"https://github.com/{repo_owner}/{repo_name}/archive/refs/heads/{repo_branch}.zip"
+    filename = f"{repo_name}-{repo_branch}.zip"
+    zip_path = download_dir / filename
+
+    if verbose:
+        console.print(f"[cyan]Downloading from branch:[/cyan] {repo_branch}")
+        console.print(f"[cyan]URL:[/cyan] {download_url}")
+
+    try:
+        with client.stream("GET", download_url, timeout=60, follow_redirects=True) as response:
+            if response.status_code != 200:
+                body_sample = response.text[:400]
+                raise RuntimeError(f"Branch download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
+
+            total_size = int(response.headers.get('content-length', 0))
+            with open(zip_path, 'wb') as f:
+                if total_size == 0:
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        f.write(chunk)
+                else:
+                    if show_progress:
+                        with Progress(
+                            SpinnerColumn(),
+                            TextColumn("[progress.description]{task.description}"),
+                            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                            console=console,
+                        ) as progress:
+                            task = progress.add_task("Downloading...", total=total_size)
+                            downloaded = 0
+                            for chunk in response.iter_bytes(chunk_size=8192):
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                progress.update(task, completed=downloaded)
+                    else:
+                        for chunk in response.iter_bytes(chunk_size=8192):
+                            f.write(chunk)
+    except Exception as e:
+        console.print(f"[red]Error downloading template from branch[/red]")
+        detail = str(e)
+        if zip_path.exists():
+            zip_path.unlink()
+        console.print(Panel(detail, title="Download Error", border_style="red"))
+        raise typer.Exit(1)
+
+    if verbose:
+        console.print(f"Downloaded: {filename}")
+
+    metadata = {
+        "filename": filename,
+        "size": zip_path.stat().st_size,
+        "release": f"branch-{repo_branch}",
+        "asset_url": download_url
+    }
+    return zip_path, metadata
+
+
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, repo_owner: str = None, repo_name: str = None, repo_branch: str = None) -> Tuple[Path, dict]:
+    # Get repo settings from parameters, environment variables, or defaults
+    repo_owner = repo_owner or os.getenv("SPECIFY_REPO_OWNER", "github")
+    repo_name = repo_name or os.getenv("SPECIFY_REPO_NAME", "spec-kit")
+    repo_branch = repo_branch or os.getenv("SPECIFY_REPO_BRANCH")
+
     if client is None:
         client = httpx.Client(verify=ssl_context)
     
+    if repo_branch:
+        if verbose:
+            console.print(f"[cyan]Downloading template from branch {repo_branch}...[/cyan]")
+        # Use direct branch archive download
+        return download_from_branch(ai_assistant, download_dir, repo_owner, repo_name, repo_branch, script_type, verbose, show_progress, client, debug)
+
     if verbose:
         console.print("[cyan]Fetching latest release information...[/cyan]")
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
@@ -517,7 +584,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, repo_owner: str = None, repo_name: str = None, repo_branch: str = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -534,7 +601,10 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             verbose=verbose and tracker is None,
             show_progress=(tracker is None),
             client=client,
-            debug=debug
+            debug=debug,
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            repo_branch=repo_branch
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -719,6 +789,50 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 console.print(f"  - {f}")
 
 
+def install_claude_commands(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Install Claude command templates to the target project's .claude/commands/spec-kit folder."""
+    # Determine source commands directory (relative to this script's location)
+    current_file = Path(__file__).resolve()
+    repo_root = current_file.parent.parent.parent  # Go up from src/specify_cli/__init__.py to repo root
+    source_commands_dir = repo_root / "templates" / "commands"
+
+    # Target directory in the project
+    target_commands_dir = project_path / ".claude" / "commands" / "spec-kit"
+
+    if not source_commands_dir.is_dir():
+        if tracker:
+            tracker.error("claude-cmds", "source templates/commands not found")
+        else:
+            console.print("[yellow]Warning: templates/commands directory not found[/yellow]")
+        return
+
+    try:
+        # Create target directory
+        target_commands_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy all .md files from source to target
+        copied_files = []
+        for cmd_file in source_commands_dir.glob("*.md"):
+            target_file = target_commands_dir / cmd_file.name
+            shutil.copy2(cmd_file, target_file)
+            copied_files.append(cmd_file.name)
+
+        if tracker:
+            detail = f"{len(copied_files)} commands" if copied_files else "no commands found"
+            tracker.complete("claude-cmds", detail)
+        else:
+            if copied_files:
+                console.print(f"[cyan]Installed {len(copied_files)} Claude commands to .claude/commands/spec-kit[/cyan]")
+            else:
+                console.print("[yellow]No command files found to install[/yellow]")
+
+    except Exception as e:
+        if tracker:
+            tracker.error("claude-cmds", str(e))
+        else:
+            console.print(f"[red]Error installing Claude commands:[/red] {e}")
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
@@ -729,6 +843,9 @@ def init(
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
+    repo_owner: str = typer.Option(None, "--repo-owner", help="GitHub repository owner (default: 'github')"),
+    repo_name: str = typer.Option(None, "--repo-name", help="GitHub repository name (default: 'spec-kit')"),
+    repo_branch: str = typer.Option(None, "--repo-branch", help="GitHub repository branch to download from (uses releases by default)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -867,7 +984,8 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
-    ("chmod", "Ensure scripts executable"),
+        ("chmod", "Ensure scripts executable"),
+        ("claude-cmds", "Install Claude commands"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -883,10 +1001,17 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, repo_owner=repo_owner, repo_name=repo_name, repo_branch=repo_branch)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            # Install Claude commands if Claude is selected
+            if selected_ai == "claude":
+                tracker.start("claude-cmds")
+                install_claude_commands(project_path, tracker=tracker)
+            else:
+                tracker.skip("claude-cmds", f"not using Claude (using {selected_ai})")
 
             # Git step
             if not no_git:
@@ -938,6 +1063,7 @@ def init(
 
     if selected_ai == "claude":
         steps_lines.append(f"{step_num}. Open in Visual Studio Code and start using / commands with Claude Code")
+        steps_lines.append("   - Claude commands installed to .claude/commands/spec-kit")
         steps_lines.append("   - Type / in any file to see available commands")
         steps_lines.append("   - Use /specify to create specifications")
         steps_lines.append("   - Use /plan to create implementation plans")

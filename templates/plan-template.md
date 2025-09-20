@@ -3,8 +3,8 @@
 <!-- VARIANT:sh - Run `/scripts/bash/update-agent-context.sh __AGENT__` for your AI assistant -->
 <!-- VARIANT:ps - Run `/scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__` for your AI assistant -->
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+**Branch**: `[username/JIRA-123.feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[JIRA-123.feature-name]/spec.md`
 
 ## Execution Flow (/plan command scope)
 ```
@@ -125,7 +125,7 @@
 
 ### Documentation (this feature)
 ```
-specs/[###-feature]/
+specs/[JIRA-123.feature-name]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
 ├── data-model.md        # Phase 1 output (/plan command)

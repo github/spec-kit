@@ -43,6 +43,25 @@ Initialize your project depending on the coding agent you're using:
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
+#### Install from a Fork or Custom Branch
+
+To install from your own fork or a specific branch:
+
+```bash
+# Install from a fork's specific branch
+uvx --from git+https://github.com/YOUR_USERNAME/spec-kit.git@BRANCH_NAME specify init <PROJECT_NAME> \
+  --ai claude --repo-owner YOUR_USERNAME --repo-branch BRANCH_NAME
+
+# Or set environment variables
+export SPECIFY_REPO_OWNER=YOUR_USERNAME
+export SPECIFY_REPO_BRANCH=BRANCH_NAME
+uvx --from git+https://github.com/YOUR_USERNAME/spec-kit.git@BRANCH_NAME specify init <PROJECT_NAME> --ai claude
+
+# Example: Install from hnimitanakit's prps-spec branch
+uvx --from git+https://github.com/hnimitanakit/spec-kit.git@prps-spec specify init <PROJECT_NAME> \
+  --ai claude --repo-owner hnimitanakit --repo-branch prps-spec
+```
+
 ### 2. Create the spec
 
 Use the **`/specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
@@ -88,6 +107,9 @@ The `specify` command supports the following options:
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
+| `--repo-owner`         | Option   | GitHub repository owner (default: `github`)                                 |
+| `--repo-name`          | Option   | GitHub repository name (default: `spec-kit`)                                |
+| `--repo-branch`        | Option   | GitHub repository branch to download from (uses releases by default)       |
 
 ### Examples
 
@@ -112,6 +134,9 @@ specify init my-project --ai gemini --no-git
 
 # Enable debug output for troubleshooting
 specify init my-project --ai claude --debug
+
+# Install from a specific fork and branch
+specify init my-project --ai claude --repo-owner hnimitanakit --repo-branch prps-spec
 
 # Check system requirements
 specify check
@@ -246,7 +271,7 @@ delete any comments that you made, but you can't delete comments anybody else ma
 
 After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
 
-Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
+Once this step is completed, you should have a new branch created (e.g., `username/PROJ-123.create-taskify`), as well as a new specification in the `specs/PROJ-123.create-taskify` directory.
 
 The produced specification should contain a set of user stories and functional requirements, as defined in the template.
 
@@ -264,7 +289,7 @@ At this stage, your project folder contents should resemble the following:
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── 001-create-taskify
+│	 └── PROJ-123.create-taskify
 │	     └── spec.md
 └── templates
     ├── plan-template.md
@@ -316,7 +341,7 @@ The output of this step will include a number of implementation detail documents
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── 001-create-taskify
+│	 └── PROJ-123.create-taskify
 │	     ├── contracts
 │	     │	 ├── api-spec.json
 │	     │	 └── signalr-spec.md

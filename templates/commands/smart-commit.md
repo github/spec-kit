@@ -232,8 +232,8 @@ git log --pretty=format:"%h %s" -1 | grep -E "^[0-9a-f]{7} (feat|fix|docs|style|
 **Branch Naming** (following Spec Kit conventions):
 ```bash
 # Feature branches
-git checkout -b "001-user-authentication"  # Matches spec numbering
-git checkout -b "feature/user-dashboard"   # Alternative format
+git checkout -b "username/PROJ-123.user-authentication"  # Matches JIRA and spec
+git checkout -b "username/PROJ-456.user-dashboard"       # JIRA integration
 
 # Bug fix branches
 git checkout -b "fix/password-validation-issue"
@@ -334,10 +334,10 @@ $ /smart-commit "implement user authentication"
 > Y
 
 📝 Creating commit...
-[feature/001-user-auth abc1234] feat(auth): implement user authentication service
+[username/PROJ-123.user-auth abc1234] feat(auth): implement user authentication service
 
 🚀 Next actions:
-  1. Push to remote: git push -u origin feature/001-user-auth
+  1. Push to remote: git push -u origin username/PROJ-123.user-auth
   2. Create pull request
   3. Continue development
   4. Run validation: /validate implementation

@@ -6,14 +6,22 @@ get_current_branch() { git rev-parse --abbrev-ref HEAD; }
 
 check_feature_branch() {
     local branch="$1"
-    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/[A-Z]+-[0-9]+\.[a-z0-9.-]+ ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: 001-feature-name" >&2
+        echo "Feature branches should be named like: username/JIRA-123.feature-name" >&2
         return 1
     fi; return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
+get_feature_id() {
+    local branch="$1"
+    echo "$branch" | sed 's|.*/||'  # Extract JIRA-123.feature-name part
+}
+
+get_feature_dir() {
+    local feature_id=$(get_feature_id "$2")
+    echo "$1/specs/$feature_id"
+}
 
 get_feature_paths() {
     local repo_root=$(get_repo_root)

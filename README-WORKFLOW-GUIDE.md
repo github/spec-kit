@@ -98,7 +98,7 @@ Unlike traditional development that jumps straight to coding, Spec Kit follows a
 - **Requirements Definition:** Clear, testable requirements are created
 - **Validation:** Context Completeness Check ensures implementability
 
-**Output:** `specs/001-user-auth/spec.md` with comprehensive specification
+**Output:** `specs/PROJ-123.user-auth/spec.md` with comprehensive specification
 
 ---
 
@@ -116,7 +116,7 @@ Unlike traditional development that jumps straight to coding, Spec Kit follows a
 - **Validation Gates:** Quality checkpoints defined for implementation
 - **Design Documents:** Data models, API contracts, and test scenarios created
 
-**Output:** Complete implementation plan with validation gates in `specs/001-user-auth/`
+**Output:** Complete implementation plan with validation gates in `specs/PROJ-123.user-auth/`
 
 ---
 
@@ -127,7 +127,7 @@ Unlike traditional development that jumps straight to coding, Spec Kit follows a
 /tasks
 
 # Step 5: Validate before implementation
-/validate plan specs/001-user-auth/plan.md
+/validate plan specs/PROJ-123.user-auth/plan.md
 
 # Step 6: Implement following constitutional principles
 # (Manual implementation or with AI assistance)
@@ -177,7 +177,7 @@ Let's build a complete user authentication system from scratch, step by step:
 - **Requirements Definition:** Creates testable functional requirements
 - **User Scenarios:** Defines complete user journeys with acceptance criteria
 
-**Result:** `specs/001-user-auth/spec.md` with comprehensive blueprint including:
+**Result:** `specs/PROJ-123.user-auth/spec.md` with comprehensive blueprint including:
 - Complete user scenarios (login, logout, registration, password reset)
 - Functional requirements (FR-001: System MUST validate email format)
 - Context engineering with library gotchas and similar patterns
@@ -197,7 +197,7 @@ Let's build a complete user authentication system from scratch, step by step:
 - **Validation Gates:** Defines Context Completeness, Design Validation, Implementation Readiness
 - **Design Documents:** Creates data models, API contracts, test scenarios
 
-**Result:** Complete implementation plan in `specs/001-user-auth/` including:
+**Result:** Complete implementation plan in `specs/PROJ-123.user-auth/` including:
 - `plan.md` - Detailed technical implementation plan
 - `data-model.md` - User and role data structures
 - `contracts/auth-api.json` - API endpoint specifications
@@ -217,7 +217,7 @@ Let's build a complete user authentication system from scratch, step by step:
 - Each task includes validation criteria and success definitions
 - Tasks follow constitutional principles (tests before implementation)
 
-**Result:** `specs/001-user-auth/tasks.md` with numbered, actionable tasks:
+**Result:** `specs/PROJ-123.user-auth/tasks.md` with numbered, actionable tasks:
 ```
 1. CREATE database migration for users and roles tables
 2. CREATE contract tests for authentication endpoints
@@ -231,7 +231,7 @@ Let's build a complete user authentication system from scratch, step by step:
 
 ### **Step 5: Quality Validation Before Building** ✅
 ```bash
-/validate plan specs/001-user-auth/plan.md
+/validate plan specs/PROJ-123.user-auth/plan.md
 ```
 
 **What happens:**

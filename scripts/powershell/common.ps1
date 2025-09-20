@@ -11,17 +11,24 @@ function Get-CurrentBranch {
 
 function Test-FeatureBranch {
     param([string]$Branch)
-    if ($Branch -notmatch '^[0-9]{3}-') {
+    if ($Branch -notmatch '^[a-zA-Z0-9_-]+/[A-Z]+-[0-9]+\.[a-z0-9.-]+') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name"
+        Write-Output "Feature branches should be named like: username/JIRA-123.feature-name"
         return $false
     }
     return $true
 }
 
+function Get-FeatureId {
+    param([string]$Branch)
+    # Extract JIRA-123.feature-name part from username/JIRA-123.feature-name
+    return ($Branch -split '/')[-1]
+}
+
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    $featureId = Get-FeatureId -Branch $Branch
+    Join-Path $RepoRoot "specs/$featureId"
 }
 
 function Get-FeaturePathsEnv {
