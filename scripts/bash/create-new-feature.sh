@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# (Moved to scripts/bash/) Create a new feature with branch, directory structure, and template
+
 set -e
 
 JSON_MODE=false
