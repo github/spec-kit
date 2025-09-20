@@ -16,6 +16,12 @@ function Get-RepoRoot {
 }
 
 function Get-CurrentBranch {
+    # First check if SPECIFY_FEATURE environment variable is set
+    if ($env:SPECIFY_FEATURE) {
+        return $env:SPECIFY_FEATURE
+    }
+    
+    # Then check git if available
     try {
         $result = git rev-parse --abbrev-ref HEAD 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -25,7 +31,30 @@ function Get-CurrentBranch {
         # Git command failed
     }
     
-    # Default branch name for non-git repos
+    # For non-git repos, try to find the latest feature directory
+    $repoRoot = Get-RepoRoot
+    $specsDir = Join-Path $repoRoot "specs"
+    
+    if (Test-Path $specsDir) {
+        $latestFeature = ""
+        $highest = 0
+        
+        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+            if ($_.Name -match '^(\d{3})-') {
+                $num = [int]$matches[1]
+                if ($num -gt $highest) {
+                    $highest = $num
+                    $latestFeature = $_.Name
+                }
+            }
+        }
+        
+        if ($latestFeature) {
+            return $latestFeature
+        }
+    }
+    
+    # Final fallback
     return "main"
 }
 

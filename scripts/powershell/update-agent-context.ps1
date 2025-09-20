@@ -3,21 +3,30 @@
 param([string]$AgentType)
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = git rev-parse --show-toplevel
-$currentBranch = git rev-parse --abbrev-ref HEAD
-$featureDir = Join-Path $repoRoot "specs/$currentBranch"
-$newPlan = Join-Path $featureDir 'plan.md'
-if (-not (Test-Path $newPlan)) { Write-Error "ERROR: No plan.md found at $newPlan"; exit 1 }
+# Load common functions
+. "$PSScriptRoot/common.ps1"
 
-$claudeFile = Join-Path $repoRoot 'CLAUDE.md'
-$geminiFile = Join-Path $repoRoot 'GEMINI.md'
-$copilotFile = Join-Path $repoRoot '.github/copilot-instructions.md'
-$cursorFile = Join-Path $repoRoot '.cursor/rules/specify-rules.mdc'
-$qwenFile = Join-Path $repoRoot 'QWEN.md'
-$agentsFile = Join-Path $repoRoot 'AGENTS.md'
-$windsurfFile = Join-Path $repoRoot '.windsurf/rules/specify-rules.md'
+# Get all paths and variables from common functions
+$paths = Get-FeaturePathsEnv
 
-Write-Output "=== Updating agent context files for feature $currentBranch ==="
+$newPlan = $paths.IMPL_PLAN
+if (-not (Test-Path $newPlan)) { 
+    Write-Error "ERROR: No plan.md found at $newPlan"
+    if (-not $paths.HAS_GIT) {
+        Write-Output "Use: `$env:SPECIFY_FEATURE='your-feature-name' or create a new feature first"
+    }
+    exit 1 
+}
+
+$claudeFile = Join-Path $paths.REPO_ROOT 'CLAUDE.md'
+$geminiFile = Join-Path $paths.REPO_ROOT 'GEMINI.md'
+$copilotFile = Join-Path $paths.REPO_ROOT '.github/copilot-instructions.md'
+$cursorFile = Join-Path $paths.REPO_ROOT '.cursor/rules/specify-rules.mdc'
+$qwenFile = Join-Path $paths.REPO_ROOT 'QWEN.md'
+$agentsFile = Join-Path $paths.REPO_ROOT 'AGENTS.md'
+$windsurfFile = Join-Path $paths.REPO_ROOT '.windsurf/rules/specify-rules.md'
+
+Write-Output "=== Updating agent context files for feature $($paths.CURRENT_BRANCH) ==="
 
 function Get-PlanValue($pattern) {
     if (-not (Test-Path $newPlan)) { return '' }
@@ -34,12 +43,12 @@ $newProjectType = Get-PlanValue 'Project Type'
 
 function Initialize-AgentFile($targetFile, $agentName) {
     if (Test-Path $targetFile) { return }
-    $template = Join-Path $repoRoot '.specify/templates/agent-file-template.md'
+    $template = Join-Path $paths.REPO_ROOT '.specify/templates/agent-file-template.md'
     if (-not (Test-Path $template)) { Write-Error "Template not found: $template"; return }
     $content = Get-Content $template -Raw
-    $content = $content.Replace('[PROJECT NAME]', (Split-Path $repoRoot -Leaf))
+    $content = $content.Replace('[PROJECT NAME]', (Split-Path $paths.REPO_ROOT -Leaf))
     $content = $content.Replace('[DATE]', (Get-Date -Format 'yyyy-MM-dd'))
-    $content = $content.Replace('[EXTRACTED FROM ALL PLAN.MD FILES]', "- $newLang + $newFramework ($currentBranch)")
+    $content = $content.Replace('[EXTRACTED FROM ALL PLAN.MD FILES]', "- $newLang + $newFramework ($($paths.CURRENT_BRANCH))")
     if ($newProjectType -match 'web') { $structure = "backend/`nfrontend/`ntests/" } else { $structure = "src/`ntests/" }
     $content = $content.Replace('[ACTUAL STRUCTURE FROM PLANS]', $structure)
     if ($newLang -match 'Python') { $commands = 'cd src && pytest && ruff check .' }
@@ -48,18 +57,18 @@ function Initialize-AgentFile($targetFile, $agentName) {
     else { $commands = "# Add commands for $newLang" }
     $content = $content.Replace('[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]', $commands)
     $content = $content.Replace('[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]', "${newLang}: Follow standard conventions")
-    $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', "- ${currentBranch}: Added ${newLang} + ${newFramework}")
+    $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', "- $($paths.CURRENT_BRANCH): Added ${newLang} + ${newFramework}")
     $content | Set-Content $targetFile -Encoding UTF8
 }
 
 function Update-AgentFile($targetFile, $agentName) {
     if (-not (Test-Path $targetFile)) { Initialize-AgentFile $targetFile $agentName; return }
     $content = Get-Content $targetFile -Raw
-    if ($newLang -and ($content -notmatch [regex]::Escape($newLang))) { $content = $content -replace '(## Active Technologies\n)', "`$1- $newLang + $newFramework ($currentBranch)`n" }
-    if ($newDb -and $newDb -ne 'N/A' -and ($content -notmatch [regex]::Escape($newDb))) { $content = $content -replace '(## Active Technologies\n)', "`$1- $newDb ($currentBranch)`n" }
+    if ($newLang -and ($content -notmatch [regex]::Escape($newLang))) { $content = $content -replace '(## Active Technologies\n)', "`$1- $newLang + $newFramework ($($paths.CURRENT_BRANCH))`n" }
+    if ($newDb -and $newDb -ne 'N/A' -and ($content -notmatch [regex]::Escape($newDb))) { $content = $content -replace '(## Active Technologies\n)', "`$1- $newDb ($($paths.CURRENT_BRANCH))`n" }
     if ($content -match '## Recent Changes\n([\s\S]*?)(\n\n|$)') {
         $changesBlock = $matches[1].Trim().Split("`n")
-    $changesBlock = ,"- ${currentBranch}: Added ${newLang} + ${newFramework}" + $changesBlock
+    $changesBlock = ,"- $($paths.CURRENT_BRANCH): Added ${newLang} + ${newFramework}" + $changesBlock
         $changesBlock = $changesBlock | Where-Object { $_ } | Select-Object -First 3
         $joined = ($changesBlock -join "`n")
         $content = [regex]::Replace($content, '## Recent Changes\n([\s\S]*?)(\n\n|$)', "## Recent Changes`n$joined`n`n")

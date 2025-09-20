@@ -48,13 +48,17 @@ set -o pipefail
 # Configuration and Global Variables
 #==============================================================================
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-FEATURE_DIR="$REPO_ROOT/specs/$CURRENT_BRANCH"
-NEW_PLAN="$FEATURE_DIR/plan.md"
+# Get script directory and load common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
+# Get all paths and variables from common functions
+eval $(get_feature_paths)
+
+NEW_PLAN="$IMPL_PLAN"  # Alias for compatibility with existing code
 AGENT_TYPE="${1:-}"
 
-# Agent-specific file paths
+# Agent-specific file paths  
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
@@ -108,22 +112,24 @@ trap cleanup EXIT INT TERM
 #==============================================================================
 
 validate_environment() {
-    # Check if we're in a git repository
-    if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
-        log_error "Not in a git repository"
-        exit 1
-    fi
-    
-    # Check if we have a current branch
+    # Check if we have a current branch/feature (git or non-git)
     if [[ -z "$CURRENT_BRANCH" ]]; then
-        log_error "Unable to determine current git branch"
+        log_error "Unable to determine current feature"
+        if [[ "$HAS_GIT" == "true" ]]; then
+            log_info "Make sure you're on a feature branch"
+        else
+            log_info "Set SPECIFY_FEATURE environment variable or create a feature first"
+        fi
         exit 1
     fi
     
     # Check if plan.md exists
     if [[ ! -f "$NEW_PLAN" ]]; then
         log_error "No plan.md found at $NEW_PLAN"
-        log_info "Make sure you're on a feature branch with a corresponding spec directory"
+        log_info "Make sure you're working on a feature with a corresponding spec directory"
+        if [[ "$HAS_GIT" != "true" ]]; then
+            log_info "Use: export SPECIFY_FEATURE=your-feature-name or create a new feature first"
+        fi
         exit 1
     fi
     
@@ -142,9 +148,9 @@ extract_plan_field() {
     local field_pattern="$1"
     local plan_file="$2"
     
-    grep "^**${field_pattern}**: " "$plan_file" 2>/dev/null | \
+    grep "^\*\*${field_pattern}\*\*: " "$plan_file" 2>/dev/null | \
         head -1 | \
-        sed "s/^**${field_pattern}**: //" | \
+        sed "s|^\*\*${field_pattern}\*\*: ||" | \
         grep -v "NEEDS CLARIFICATION" | \
         grep -v "^N/A$" || echo ""
 }
@@ -196,12 +202,9 @@ get_project_structure() {
     local project_type="$1"
     
     if [[ "$project_type" == *"web"* ]]; then
-        echo "backend/
-frontend/
-tests/"
+        echo "backend/\\nfrontend/\\ntests/"
     else
-        echo "src/
-tests/"
+        echo "src/\\ntests/"
     fi
 }
 
@@ -267,22 +270,26 @@ create_new_agent_file() {
         "s/\[PROJECT NAME\]/$project_name/"
         "s/\[DATE\]/$current_date/"
         "s/\[EXTRACTED FROM ALL PLAN.MD FILES\]/- $NEW_LANG + $NEW_FRAMEWORK ($CURRENT_BRANCH)/"
-        "s|\[ACTUAL STRUCTURE FROM PLANS\]|$project_structure|"
+        "s|\[ACTUAL STRUCTURE FROM PLANS\]|$project_structure|g"
         "s|\[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES\]|$commands|"
         "s|\[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE\]|$language_conventions|"
         "s|\[LAST 3 FEATURES AND WHAT THEY ADDED\]|- $CURRENT_BRANCH: Added $NEW_LANG + $NEW_FRAMEWORK|"
     )
     
     for substitution in "${substitutions[@]}"; do
-        if ! sed -i.bak "$substitution" "$temp_file"; then
+        if ! sed -i.bak -e "$substitution" "$temp_file"; then
             log_error "Failed to perform substitution: $substitution"
             rm -f "$temp_file" "$temp_file.bak"
             return 1
         fi
     done
     
+    # Convert \n sequences to actual newlines
+    sed -i.bak2 's/\\n/\
+/g' "$temp_file"
+    
     # Clean up backup files
-    rm -f "$temp_file.bak"
+    rm -f "$temp_file.bak" "$temp_file.bak2"
     
     return 0
 }

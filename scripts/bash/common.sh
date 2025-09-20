@@ -14,11 +14,47 @@ get_repo_root() {
 
 # Get current branch, with fallback for non-git repositories
 get_current_branch() {
+    # First check if SPECIFY_FEATURE environment variable is set
+    if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
+        echo "$SPECIFY_FEATURE"
+        return
+    fi
+    
+    # Then check git if available
     if git rev-parse --abbrev-ref HEAD >/dev/null 2>&1; then
         git rev-parse --abbrev-ref HEAD
-    else
-        echo "main"  # Default branch name for non-git repos
+        return
     fi
+    
+    # For non-git repos, try to find the latest feature directory
+    local repo_root=$(get_repo_root)
+    local specs_dir="$repo_root/specs"
+    
+    if [[ -d "$specs_dir" ]]; then
+        local latest_feature=""
+        local highest=0
+        
+        for dir in "$specs_dir"/*; do
+            if [[ -d "$dir" ]]; then
+                local dirname=$(basename "$dir")
+                if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
+                    local number=${BASH_REMATCH[1]}
+                    number=$((10#$number))
+                    if [[ "$number" -gt "$highest" ]]; then
+                        highest=$number
+                        latest_feature=$dirname
+                    fi
+                fi
+            fi
+        done
+        
+        if [[ -n "$latest_feature" ]]; then
+            echo "$latest_feature"
+            return
+        fi
+    fi
+    
+    echo "main"  # Final fallback
 }
 
 # Check if we have git available
