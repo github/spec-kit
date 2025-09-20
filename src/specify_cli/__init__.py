@@ -818,12 +818,21 @@ def init(
             console.print(f"[red]Error:[/red] Directory '{project_name}' already exists")
             raise typer.Exit(1)
     
-    console.print(Panel.fit(
-        "[cyan]Specify Project Setup[/cyan]\n"
-        f"{'Initializing in current directory:' if here else 'Creating new project:'} [green]{project_path.name}[/green]"
-        + (f"\n[dim]Path: {project_path}[/dim]" if here else ""),
-        border_style="cyan"
-    ))
+    # Create formatted setup info with column alignment
+    current_dir = Path.cwd()
+    
+    setup_lines = [
+        "[cyan]Specify Project Setup[/cyan]",
+        "",
+        f"{'Project':<15} [green]{project_path.name}[/green]",
+        f"{'Working Path':<15} [dim]{current_dir}[/dim]",
+    ]
+    
+    # Add target path only if different from working dir
+    if not here:
+        setup_lines.append(f"{'Target Path':<15} [dim]{project_path}[/dim]")
+    
+    console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
     
     # Check git only if we might need it (not --no-git)
     # Only set to True if the user wants it and the tool is available
