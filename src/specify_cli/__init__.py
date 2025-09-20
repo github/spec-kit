@@ -729,7 +729,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                     console.print(f"Cleaned up: {zip_path.name}")
         else:
           tracker.complete("cleanup")
-    
+
     return project_path
 
 
