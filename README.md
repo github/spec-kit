@@ -23,6 +23,7 @@
 - [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn more](#-learn-more)
+- [🛠️ Local Development](docs/local-development.md)
 - [📋 Detailed process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [👥 Maintainers](#-maintainers)
@@ -218,6 +219,7 @@ Our research and experimentation focus on:
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
+- **[Local Development Guide](docs/local-development.md)** - Run the CLI from source, editable installs, uvx flows, and using locally built template ZIPs
 
 ---
 

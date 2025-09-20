@@ -4,6 +4,12 @@ This guide shows how to iterate on the `specify` CLI locally without publishing 
 
 > Scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants. The CLI auto-selects based on OS unless you pass `--script sh|ps`.
 
+## Development Workflow (Checklist)
+- Test the `specify` CLI flows (`/specify`, `/plan`, `/tasks`) for your changes
+- Verify templates in `templates/` render and behave as expected
+- Test scripts in `scripts/` for both `sh` and `ps` variants where applicable
+- Update `memory/constitution.md` if you changed core process expectations
+
 ## 1. Clone and Switch Branches
 
 ```bash
@@ -85,6 +91,44 @@ specify-dev() { uvx --from /mnt/c/GitHub/spec-kit specify "$@"; }
 specify-dev --help
 ```
 
+### 4b. Use Locally Built Templates (No Network)
+
+Build the per-agent, per-script template archives locally and point the CLI at one ZIP via `SPECIFY_TEMPLATE_ZIP`.
+
+- Build on Linux
+
+```bash
+chmod +x .github/workflows/scripts/create-release-packages.sh && \
+.github/workflows/scripts/create-release-packages.sh v0.0.1; \
+chmod -x .github/workflows/scripts/create-release-packages.sh
+```
+
+- Build on macOS (use Docker for GNU tools like `cp --parents`)
+
+```bash
+docker run --rm -it -v "$PWD":/w -w /w ubuntu:24.04 bash -lc "apt-get update && apt-get install -y zip && chmod +x .github/workflows/scripts/create-release-packages.sh && .github/workflows/scripts/create-release-packages.sh v0.0.1 && chmod -x .github/workflows/scripts/create-release-packages.sh"
+```
+
+- (Optional) Build only specific variants
+
+```bash
+AGENTS=claude,cursor SCRIPTS=sh .github/workflows/scripts/create-release-packages.sh v0.0.1
+```
+
+- Run the CLI against a local ZIP (no network)
+
+```bash
+SPECIFY_TEMPLATE_ZIP=/abs/path/spec-kit-template-claude-sh-v0.0.1.zip \
+uvx --refresh --no-cache --from /abs/path/to/spec-kit \
+  specify init --here --ai claude --script sh --ignore-agent-tools
+```
+
+Notes:
+- Keep `--ai` and `--script` consistent with the ZIP variant you built.
+- On Linux, ensure `zip` is installed. On macOS, prefer the Docker method above.
+- Artifacts are git-ignored by default (`spec-kit-template-*-v*.zip`, `sdd-*-package-*`).
+- This flow mirrors the release packaging; it’s ideal for verifying template layout and agent-specific directories (Claude, Cursor, Copilot, Qwen, Gemini, opencode, Windsurf).
+
 ## 5. Testing Script Permission Logic
 
 After running an `init`, check that shell scripts are executable on POSIX systems:
@@ -142,6 +186,7 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 | Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit specify ...` |
 | Git branch uvx | `uvx --from git+URL@branch specify ...` |
 | Build wheel | `uv build` |
+| Use locally built template | `SPECIFY_TEMPLATE_ZIP=… uvx --from … specify init …` |
 
 ## 11. Cleaning Up
 
@@ -165,4 +210,3 @@ rm -rf .venv dist build *.egg-info
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied
 - (Optional) Tag a release once changes land in `main`
-
