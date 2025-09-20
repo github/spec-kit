@@ -66,8 +66,12 @@ generate_commands() {
       { print }
     ')
     
-    # Apply other substitutions
-    body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
+  # Apply other substitutions
+    body=$(printf '%s\n' "$body" \
+      | sed "s/{ARGS}/$arg_format/g" \
+      | sed "s/__AGENT__/$agent/g" \
+      | sed 's@/config-default.yaml@.specify/config-default.yaml@g' \
+      | rewrite_paths)
     
     case $ext in
       toml)
@@ -110,6 +114,15 @@ build_variant() {
   fi
   
   [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+  
+  # Copy root config-default.yaml to .specify and rewrite its internal paths
+  if [[ -f config-default.yaml ]]; then
+    mkdir -p "$base_dir/.specify"
+    cp config-default.yaml "$base_dir/.specify/config-default.yaml"
+    tmp_cfg=$(mktemp)
+    rewrite_paths < "$base_dir/.specify/config-default.yaml" > "$tmp_cfg" && mv "$tmp_cfg" "$base_dir/.specify/config-default.yaml"
+    echo "Copied config-default.yaml -> .specify/config-default.yaml (paths rewritten)"
+  fi
   # Inject variant into plan-template.md within .specify/templates if present
   local plan_tpl="$base_dir/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
