@@ -210,3 +210,48 @@ rm -rf .venv dist build *.egg-info
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied
 - (Optional) Tag a release once changes land in `main`
+
+## 14. Distributing and testing your fork
+
+You can point the CLI at a different GitHub repository (e.g., your fork) for template downloads without changing code. Set these environment variables before running `specify`:
+
+- `SPECIFY_REPO_OWNER` — GitHub user/org that owns the repo
+- `SPECIFY_REPO_NAME` — Repository name
+
+The CLI queries `https://api.github.com/repos/<owner>/<repo>/releases/latest` and selects the first asset whose filename contains `spec-kit-template-{ai}-{script}` and ends with `.zip`.
+
+Recommended asset naming (matches release packaging scripts):
+`spec-kit-template-<agent>-<script>-vX.Y.Z.zip` (e.g., `spec-kit-template-claude-sh-v0.0.1.zip`).
+
+Steps to distribute/test your fork:
+1. Fork this repo and push your changes.
+2. Build template archives using the release packaging script (see section 4b for examples).
+3. Draft a GitHub Release on your fork and upload the ZIP assets.
+4. Export env var overrides and run the CLI against your fork’s release.
+
+Bash/Zsh:
+```bash
+export SPECIFY_REPO_OWNER=your-gh-username-or-org
+export SPECIFY_REPO_NAME=your-spec-kit-repo
+# Optional if private/rate-limited
+export GH_TOKEN=ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+specify init my-forked-test --ai claude --script sh --ignore-agent-tools
+```
+
+PowerShell:
+```powershell
+$env:SPECIFY_REPO_OWNER = 'your-gh-username-or-org'
+$env:SPECIFY_REPO_NAME = 'your-spec-kit-repo'
+# Optional if private/rate-limited
+$env:GH_TOKEN = 'ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+
+specify init my-forked-test --ai claude --script ps --ignore-agent-tools
+```
+
+Notes:
+- If no asset matches, the CLI prints the available asset names—verify your filenames include `spec-kit-template-{ai}-{script}` and end with `.zip`.
+- Use `GITHUB_TOKEN` or `GH_TOKEN` for private forks or to avoid GitHub API rate limits.
+- Clear the overrides to return to upstream defaults:
+  - Bash: `unset SPECIFY_REPO_OWNER SPECIFY_REPO_NAME`
+  - PowerShell: `Remove-Item Env:SPECIFY_REPO_OWNER,Env:SPECIFY_REPO_NAME -ErrorAction SilentlyContinue`

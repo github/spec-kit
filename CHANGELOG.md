@@ -5,6 +5,12 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.10] - 2025-09-20
+
+### Added
+
+- Environment variable overrides for GitHub template source: `SPECIFY_REPO_OWNER` and `SPECIFY_REPO_NAME` now control which repository is queried in `download_template_from_github`.
+
 ## [0.0.9] - 2025-09-19
 
 ### Changed
@@ -56,4 +62,3 @@ N/A
 ### Changed
 
 N/A
-
