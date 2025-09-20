@@ -209,7 +209,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code), [opencode](https://opencode.ai/), or [Windsurf](https://windsurf.com/)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code), [opencode](https://opencode.ai/), [Codex CLI](https://github.com/openai/codex), or [Windsurf](https://windsurf.com/)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -246,18 +246,29 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 specify init <project_name> --ai claude
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
+specify init <project_name> --ai cursor
 specify init <project_name> --ai qwen
 specify init <project_name> --ai opencode
+specify init <project_name> --ai codex
 specify init <project_name> --ai windsurf
 # Or in current directory:
 specify init --here --ai claude
+specify init --here --ai codex
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, or opencode installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, or Codex CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools
 ```
+
+> [!NOTE]
+> Codex CLI specifics
+> - `specify init --ai codex` seeds `commands/*.md` in your repo and automatically mirrors them into `${CODEX_HOME:-~/.codex}/prompts` so Codex picks up `/specify`, `/plan`, and `/tasks` immediately.
+> - If Codex was running during installation, restart the CLI once so it reloads the refreshed slash commands.
+> - Codex persists its working memory in `AGENTS.md`; if you do not see that file yet, run `codex /init` once inside the project to generate it.
+> - When Codex is configured to run helper scripts, open `codex /approvals` and enable “Run shell commands”.
+> - If you point `CODEX_HOME` at the project (for per-repo isolation) the installer adds ignore rules for Codex session artifacts to `.gitignore`; adjust them as needed for your workflow.
 
 ### **STEP 1:** Establish project principles
 
