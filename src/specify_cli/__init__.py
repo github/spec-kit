@@ -53,17 +53,13 @@ ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
 def _github_token(cli_token: str | None = None) -> str | None:
-    return cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+    """Return sanitized GitHub token (cli arg takes precedence) or None."""
+    return ((cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN") or "").strip()) or None
 
 def _github_auth_headers(cli_token: str | None = None) -> dict:
-    """Headers for GitHub REST API requests.
-    - Uses Bearer auth if token present
-    """
-    headers = {}
+    """Return Authorization header dict only when a non-empty token exists."""
     token = _github_token(cli_token)
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 # Constants
 AI_CHOICES = {
@@ -598,7 +594,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
             api_url,
             timeout=30,
             follow_redirects=True,
-            headers=_github_auth_headers(github_token) or None,
+            headers=_github_auth_headers(github_token),
         )
         status = response.status_code
         if status != 200:
@@ -667,7 +663,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
             download_url,
             timeout=60,
             follow_redirects=True,
-            headers=_github_auth_headers(github_token) or None,
+            headers=_github_auth_headers(github_token),
         ) as response:
             if response.status_code != 200:
                 body_sample = response.text[:400]
