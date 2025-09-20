@@ -101,20 +101,21 @@ The `specify` command supports the following options:
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
-| `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `opencode`, `cursor-agent`) |
+| `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`) |
 
 ### `specify init` Arguments & Options
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `opencode`, or `cursor`             |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, or `windsurf` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
+| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
 
 ### Examples
 
@@ -128,6 +129,9 @@ specify init my-project --ai claude
 # Initialize with Cursor support
 specify init my-project --ai cursor
 
+# Initialize with Windsurf support
+specify init my-project --ai windsurf
+
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specify init my-project --ai copilot --script ps
 
@@ -139,6 +143,9 @@ specify init my-project --ai gemini --no-git
 
 # Enable debug output for troubleshooting
 specify init my-project --ai claude --debug
+
+# Use GitHub token for API requests (helpful for corporate environments)
+specify init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
 specify check
@@ -202,7 +209,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code) or [opencode](https://opencode.ai/)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code), [opencode](https://opencode.ai/), or [Windsurf](https://windsurf.com/)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -241,11 +248,12 @@ specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
 specify init <project_name> --ai qwen
 specify init <project_name> --ai opencode
+specify init <project_name> --ai windsurf
 # Or in current directory:
 specify init --here --ai claude
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Qwen CLI or opencode installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, or opencode installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools
