@@ -64,16 +64,6 @@ EXAMPLES:
   # Get feature paths only (no validation)
   ./check-prerequisites.sh --paths-only
   
-COMPATIBILITY:
-  # For task prerequisites (plan.md required)
-  ./check-prerequisites.sh --json
-  
-  # For implementation prerequisites (plan.md + tasks.md required)  
-  ./check-prerequisites.sh --json --require-tasks --include-tasks
-  
-  # For feature paths only (no validation)
-  ./check-prerequisites.sh --paths-only
-
 EOF
             exit 0
             ;;
