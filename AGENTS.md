@@ -35,6 +35,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Gemini CLI** | `.gemini/commands/` | TOML | `gemini` | Google's Gemini CLI |
 | **GitHub Copilot** | `.github/prompts/` | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code |
 | **Cursor** | `.cursor/commands/` | Markdown | `cursor-agent` | Cursor CLI |
+| **Kilo Code** | `.kilocode/workflows/` | Markdown | N/A (IDE-based) | AI coding agent extension for VS Code, JetBrains, Cursor, Windsurf |
 | **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | Alibaba's Qwen Code CLI |
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
 | **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows |
@@ -50,9 +51,10 @@ Add the new agent to the `AI_CHOICES` dictionary in `src/specify_cli/__init__.py
 ```python
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
-    "claude": "Claude Code", 
+    "claude": "Claude Code",
     "gemini": "Gemini CLI",
     "cursor": "Cursor",
+    "kilocode": "Kilo Code",
     "qwen": "Qwen Code",
     "opencode": "opencode",
     "windsurf": "Windsurf"  # Add new agent here
@@ -73,7 +75,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 
 ##### Add to ALL_AGENTS array:
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
+ALL_AGENTS=(claude gemini copilot cursor kilocode qwen opencode windsurf)
 ```
 
 ##### Add case statement for directory structure:
@@ -163,12 +165,14 @@ Require a command-line tool to be installed:
 ### IDE-Based Agents
 Work within integrated development environments:
 - **GitHub Copilot**: Built into VS Code/compatible editors
+- **Cursor**: Built into Cursor IDE
+- **Kilo Code**: AI coding agent extension for VS Code, JetBrains, Cursor, Windsurf
 - **Windsurf**: Built into Windsurf IDE
 
 ## Command File Formats
 
 ### Markdown Format
-Used by: Claude, Cursor, opencode, Windsurf
+Used by: Claude, Cursor, Kilo Code, opencode, Windsurf
 
 ```markdown
 ---
@@ -195,6 +199,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
 - **IDE agents**: Follow IDE-specific patterns:
   - Copilot: `.github/prompts/`
   - Cursor: `.cursor/commands/`
+  - Kilo Code: `.kilocode/workflows/`
   - Windsurf: `.windsurf/workflows/`
 
 ## Argument Patterns
