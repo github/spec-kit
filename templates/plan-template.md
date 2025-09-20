@@ -13,21 +13,29 @@
 2. Fill Technical Context (scan for NEEDS CLARIFICATION)
    → Detect Project Type from context (web=frontend+backend, mobile=app+api)
    → Set Structure Decision based on project type
-3. Evaluate Constitution Check section below
+3. Fill Implementation Blueprint section
+   → Extract context items from spec's Context Engineering section
+   → Document known patterns and gotchas
+   → Run Context Completeness Gate
+4. Evaluate Constitution Check section below
    → If violations exist: Document in Complexity Tracking
    → If no justification possible: ERROR "Simplify approach first"
    → Update Progress Tracking: Initial Constitution Check
-4. Execute Phase 0 → research.md
+5. Execute Phase 0 → research.md
    → If NEEDS CLARIFICATION remain: ERROR "Resolve unknowns"
-5. Execute Phase 1 → contracts, data-model.md, quickstart.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, or `GEMINI.md` for Gemini CLI).
-6. Re-evaluate Constitution Check section
+6. Execute Phase 1 → contracts, data-model.md, quickstart.md, agent-specific template file
+   → Run Design Validation Gate after each deliverable
+   → If gates fail: Document issues and remediate
+7. Re-evaluate Constitution Check section
    → If new violations: Refactor design, return to Phase 1
    → Update Progress Tracking: Post-Design Constitution Check
-7. Plan Phase 2 → Describe task generation approach (DO NOT create tasks.md)
-8. STOP - Ready for /tasks command
+8. Run Implementation Readiness Gate
+   → If fails: ERROR "Prerequisites not met for implementation"
+9. Plan Phase 2 → Describe task generation approach (DO NOT create tasks.md)
+10. STOP - Ready for /tasks command
 ```
 
-**IMPORTANT**: The /plan command STOPS at step 7. Phases 2-4 are executed by other commands:
+**IMPORTANT**: The /plan command STOPS at step 10. Phases 2-4 are executed by other commands:
 - Phase 2: /tasks command creates tasks.md
 - Phase 3-4: Implementation execution (manual or via tools)
 
@@ -44,6 +52,41 @@
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
 **Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
 **Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+
+## Implementation Blueprint *(enhanced from context engineering)*
+
+### Context Integration
+**Codebase Files to Reference**:
+- List key files from spec's Context Engineering section that contain patterns to follow
+- Note specific functions, classes, or patterns to extract
+
+**Library Gotchas** (from ai_docs/library_gotchas.md):
+- [Library name]: [Critical gotcha that affects this implementation]
+- [Library name]: [Version-specific behavior to watch for]
+
+**Known Implementation Patterns**:
+- [Pattern name]: Used in [file/feature] for [similar use case]
+- [Pattern name]: Avoid [anti-pattern] seen in [location]
+
+### Pre-Implementation Validation Gates
+
+**Context Completeness Gate**:
+- [ ] All Context Engineering items from spec are actionable
+- [ ] Required documentation accessible (URLs work, files exist)
+- [ ] Library versions confirmed and gotchas documented
+- [ ] Similar feature patterns identified and understood
+
+**Design Validation Gate**:
+- [ ] Data model aligns with functional requirements
+- [ ] API contracts cover all user scenarios
+- [ ] Integration points identified and documented
+- [ ] Error handling approach defined
+
+**Implementation Readiness Gate**:
+- [ ] All external dependencies available and accessible
+- [ ] Development environment requirements documented
+- [ ] Testing strategy covers contract, integration, and unit levels
+- [ ] Performance benchmarks established (if applicable)
 
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
@@ -231,8 +274,11 @@ ios/ or android/
 - [ ] Phase 5: Validation passed
 
 **Gate Status**:
+- [ ] Context Completeness Gate: PASS
 - [ ] Initial Constitution Check: PASS
+- [ ] Design Validation Gate: PASS
 - [ ] Post-Design Constitution Check: PASS
+- [ ] Implementation Readiness Gate: PASS
 - [ ] All NEEDS CLARIFICATION resolved
 - [ ] Complexity deviations documented
 

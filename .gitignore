@@ -38,3 +38,7 @@ env/
 .env
 .env.local
 *.lock
+
+.claude
+.serena
+CLAUDE.md
