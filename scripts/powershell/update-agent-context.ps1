@@ -77,6 +77,7 @@ switch ($AgentType) {
     'qwen' { Update-AgentFile $qwenFile 'Qwen Code' }
     'opencode' { Update-AgentFile $agentsFile 'opencode' }
     'windsurf' { Update-AgentFile $windsurfFile 'Windsurf' }
+    'codex'    { Update-AgentFile $agentsFile 'Codex CLI' }
     '' {
         foreach ($pair in @(
             @{file=$claudeFile; name='Claude Code'},
@@ -85,7 +86,8 @@ switch ($AgentType) {
             @{file=$cursorFile; name='Cursor IDE'},
             @{file=$qwenFile; name='Qwen Code'},
             @{file=$agentsFile; name='opencode'},
-            @{file=$windsurfFile; name='Windsurf'}
+            @{file=$windsurfFile; name='Windsurf'},
+            @{file=$agentsFile; name='Codex CLI'}
         )) {
             if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
         }
@@ -94,7 +96,7 @@ switch ($AgentType) {
             Update-AgentFile $claudeFile 'Claude Code'
         }
     }
-    Default { Write-Error "ERROR: Unknown agent type '$AgentType'. Use: claude, gemini, copilot, cursor, qwen, opencode, windsurf or leave empty for all."; exit 1 }
+    Default { Write-Error "ERROR: Unknown agent type '$AgentType'. Use: claude, gemini, copilot, cursor, qwen, opencode, windsurf, codex or leave empty for all."; exit 1 }
 }
 
 Write-Output ''
@@ -104,4 +106,4 @@ if ($newFramework) { Write-Output "- Added framework: $newFramework" }
 if ($newDb -and $newDb -ne 'N/A') { Write-Output "- Added database: $newDb" }
 
 Write-Output ''
-Write-Output 'Usage: ./update-agent-context.ps1 [claude|gemini|copilot|cursor|qwen|opencode|windsurf]'
+Write-Output 'Usage: ./update-agent-context.ps1 [claude|gemini|copilot|cursor|qwen|opencode|windsurf|codex]'

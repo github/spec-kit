@@ -69,7 +69,8 @@ AI_CHOICES = {
     "cursor": "Cursor",
     "qwen": "Qwen Code",
     "opencode": "opencode",
-    "windsurf": "Windsurf"
+    "codex": "Codex CLI",
+    "windsurf": "Windsurf",
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -461,20 +462,21 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         raise typer.Exit(1)
     
     # Find the template asset for the specified AI assistant
+    assets = release_data.get("assets", [])
     pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
     matching_assets = [
-        asset for asset in release_data.get("assets", [])
+        asset for asset in assets
         if pattern in asset["name"] and asset["name"].endswith(".zip")
     ]
-    
-    if not matching_assets:
-        console.print(f"[red]No matching release asset found[/red] for pattern: [bold]{pattern}[/bold]")
-        asset_names = [a.get('name','?') for a in release_data.get('assets', [])]
+
+    asset = matching_assets[0] if matching_assets else None
+
+    if asset is None:
+        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
+        asset_names = [a.get('name', '?') for a in assets]
         console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
-    
-    # Use the first matching asset
-    asset = matching_assets[0]
+
     download_url = asset["browser_download_url"]
     filename = asset["name"]
     file_size = asset["size"]
@@ -483,14 +485,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(f"[cyan]Found template:[/cyan] {filename}")
         console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
         console.print(f"[cyan]Release:[/cyan] {release_data['tag_name']}")
-    
-    # Download the file
+
     zip_path = download_dir / filename
     if verbose:
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        # Include auth header for initial GitHub request; it won't leak across cross-origin redirects
         with client.stream(
             "GET",
             download_url,
@@ -743,11 +743,10 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
-
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode or windsurf"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, or windsurf"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -761,7 +760,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode or Windsurf)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, or Windsurf)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -774,9 +773,12 @@ def init(
         specify init my-project --ai copilot --no-git
         specify init my-project --ai cursor
         specify init my-project --ai qwen
+        specify init my-project --ai opencode
+        specify init my-project --ai codex
         specify init my-project --ai windsurf
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
+        specify init --here --ai codex
         specify init --here
     """
     # Show banner first
@@ -871,6 +873,10 @@ def init(
             if not check_tool("opencode", "Install from: https://opencode.ai"):
                 console.print("[red]Error:[/red] opencode CLI is required for opencode projects")
                 agent_tool_missing = True
+        elif selected_ai == "codex":
+            if not check_tool("codex", "Install from: https://github.com/openai/codex"):
+                console.print("[red]Error:[/red] Codex CLI is required for Codex projects")
+                agent_tool_missing = True
         # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
 
         if agent_tool_missing:
@@ -914,7 +920,7 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
-    ("chmod", "Ensure scripts executable"),
+        ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -1010,6 +1016,7 @@ def check():
     tracker.add("cursor-agent", "Cursor IDE agent (optional)")
     tracker.add("windsurf", "Windsurf IDE (optional)")
     tracker.add("opencode", "opencode")
+    tracker.add("codex", "Codex CLI")
     
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
@@ -1021,14 +1028,15 @@ def check():
     cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
     windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
     opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
+    codex_ok = check_tool_for_tracker("codex", "https://github.com/openai/codex", tracker)
 
     console.print(tracker.render())
-    
+
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
-    
+
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or opencode_ok):
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or opencode_ok or codex_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
