@@ -240,9 +240,9 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
         
         for i, key in enumerate(option_keys):
             if i == selected_index:
-                table.add_row("▶", f"[bright_cyan]{key}: {options[key]}[/bright_cyan]")
+                table.add_row("▶", f"[bright_cyan]{key}[/bright_cyan] [dim]({options[key]})[/dim]")
             else:
-                table.add_row(" ", f"[white]{key}: {options[key]}[/white]")
+                table.add_row(" ", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
         
         table.add_row("", "")
         table.add_row("", "[dim]Use ↑/↓ to navigate, Enter to select, Esc to cancel[/dim]")

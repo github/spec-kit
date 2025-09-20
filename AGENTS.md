@@ -10,6 +10,10 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ---
 
+## General practices
+
+- Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
+
 ## Adding New Agent Support
 
 This section explains how to add support for new AI agents/assistants to the Specify CLI. Use this guide as a reference when integrating new AI tools into the Spec-Driven Development workflow.
