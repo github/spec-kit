@@ -1,8 +1,8 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
 scripts:
-  sh: scripts/bash/check-task-prerequisites.sh --json
-  ps: scripts/powershell/check-task-prerequisites.ps1 -Json
+  sh: scripts/bash/check-prerequisites.sh --json
+  ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
 Given the context provided as an argument, do this:
