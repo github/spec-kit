@@ -461,7 +461,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(Panel(str(e), title="Fetch Error", border_style="red"))
         raise typer.Exit(1)
     
-    # Find the template asset for the specified AI assistant (with fallback for Codex)
+    # Find the template asset for the specified AI assistant
     assets = release_data.get("assets", [])
     pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
     matching_assets = [
@@ -470,17 +470,6 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     ]
 
     asset = matching_assets[0] if matching_assets else None
-
-    if asset is None and ai_assistant == "codex":
-        fallback_pattern = f"spec-kit-template-copilot-{script_type}"
-        fallback_assets = [
-            asset for asset in assets
-            if fallback_pattern in asset["name"] and asset["name"].endswith(".zip")
-        ]
-        if fallback_assets:
-            asset = fallback_assets[0]
-            if verbose:
-                console.print("[yellow]No Codex-specific template found; falling back to GitHub Copilot template.[/yellow]")
 
     if asset is None:
         console.print(
