@@ -25,7 +25,7 @@ fi
 
 echo "Building release packages for $NEW_VERSION"
 
-rm -rf sdd-package-base* sdd-*-package-* spec-kit-template-*-${NEW_VERSION}.zip || true
+rm -rf sdd-package-base* sdd-*-package-* spec-kit-template-*-"${NEW_VERSION}".zip || true
 
 rewrite_paths() {
   sed -E \
@@ -119,7 +119,6 @@ build_variant() {
     if [[ -n $script_command ]]; then
       # Always prefix with .specify/ for plan usage
       script_command=".specify/$script_command"
-      tmp_file=$(mktemp)
       # Replace {SCRIPT} placeholder with the script command and __AGENT__ with agent name
       substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g")
       # Strip YAML frontmatter from plan template output (keep body only)
@@ -129,6 +128,11 @@ build_variant() {
       echo "Warning: no plan-template script command found for $script in YAML frontmatter" >&2
     fi
   fi
+  # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
+  #   * Markdown/prompt (claude, copilot, cursor, opencode): $ARGUMENTS
+  #   * TOML (gemini, qwen): {{args}}
+  # This keeps formats readable without extra abstraction.
+
   case $agent in
     claude)
       mkdir -p "$base_dir/.claude/commands"
@@ -145,19 +149,23 @@ build_variant() {
       generate_commands cursor md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
-      generate_commands qwen md "\$ARGUMENTS" "$base_dir/.qwen/commands" "$script"
+      generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
       [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
     opencode)
       mkdir -p "$base_dir/.opencode/command"
       generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
+    windsurf)
+      mkdir -p "$base_dir/.windsurf/workflows"
+      generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
 ALL_SCRIPTS=(sh ps)
+
 
 norm_list() {
   # convert comma+space separated -> space separated unique while preserving order of first occurrence
@@ -165,11 +173,11 @@ norm_list() {
 }
 
 validate_subset() {
-  local type=$1; shift; local -n allowed=$1; shift; local items=($@)
+  local type=$1; shift; local -n allowed=$1; shift; local items=("$@")
   local ok=1
   for it in "${items[@]}"; do
     local found=0
-    for a in "${allowed[@]}"; do [[ $it == $a ]] && { found=1; break; }; done
+    for a in "${allowed[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
     if [[ $found -eq 0 ]]; then
       echo "Error: unknown $type '$it' (allowed: ${allowed[*]})" >&2
       ok=0
@@ -179,17 +187,17 @@ validate_subset() {
 }
 
 if [[ -n ${AGENTS:-} ]]; then
-  AGENT_LIST=($(printf '%s' "$AGENTS" | norm_list))
+  mapfile -t AGENT_LIST < <(printf '%s' "$AGENTS" | norm_list)
   validate_subset agent ALL_AGENTS "${AGENT_LIST[@]}" || exit 1
 else
-  AGENT_LIST=(${ALL_AGENTS[@]})
+  AGENT_LIST=("${ALL_AGENTS[@]}")
 fi
 
 if [[ -n ${SCRIPTS:-} ]]; then
-  SCRIPT_LIST=($(printf '%s' "$SCRIPTS" | norm_list))
+  mapfile -t SCRIPT_LIST < <(printf '%s' "$SCRIPTS" | norm_list)
   validate_subset script ALL_SCRIPTS "${SCRIPT_LIST[@]}" || exit 1
 else
-  SCRIPT_LIST=(${ALL_SCRIPTS[@]})
+  SCRIPT_LIST=("${ALL_SCRIPTS[@]}")
 fi
 
 echo "Agents: ${AGENT_LIST[*]}"
@@ -202,4 +210,4 @@ for agent in "${AGENT_LIST[@]}"; do
 done
 
 echo "Archives:"
-ls -1 spec-kit-template-*-${NEW_VERSION}.zip
+ls -1 spec-kit-template-*-"${NEW_VERSION}".zip

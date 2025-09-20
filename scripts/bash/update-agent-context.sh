@@ -4,7 +4,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 FEATURE_DIR="$REPO_ROOT/specs/$CURRENT_BRANCH"
 NEW_PLAN="$FEATURE_DIR/plan.md"
-CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"; GEMINI_FILE="$REPO_ROOT/GEMINI.md"; COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"; CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"; QWEN_FILE="$REPO_ROOT/QWEN.md"; AGENTS_FILE="$REPO_ROOT/AGENTS.md"
+CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"; GEMINI_FILE="$REPO_ROOT/GEMINI.md"; COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"; CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"; QWEN_FILE="$REPO_ROOT/QWEN.md"; AGENTS_FILE="$REPO_ROOT/AGENTS.md"; WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 AGENT_TYPE="$1"
 [ -f "$NEW_PLAN" ] || { echo "ERROR: No plan.md found at $NEW_PLAN"; exit 1; }
 echo "=== Updating agent context files for feature $CURRENT_BRANCH ==="
@@ -13,7 +13,7 @@ NEW_FRAMEWORK=$(grep "^**Primary Dependencies**: " "$NEW_PLAN" 2>/dev/null | hea
 NEW_DB=$(grep "^**Storage**: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^**Storage**: //' | grep -v "N/A" | grep -v "NEEDS CLARIFICATION" || echo "")
 NEW_PROJECT_TYPE=$(grep "^**Project Type**: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^**Project Type**: //' || echo "")
 update_agent_file() { local target_file="$1" agent_name="$2"; echo "Updating $agent_name context file: $target_file"; local temp_file=$(mktemp); if [ ! -f "$target_file" ]; then
-  echo "Creating new $agent_name context file..."; if [ -f "$REPO_ROOT/.specify/templates/agent-file-template.md" ]; then cp "$REPO_ROOT/templates/agent-file-template.md" "$temp_file"; else echo "ERROR: Template not found"; return 1; fi;
+  echo "Creating new $agent_name context file..."; if [ -f "$REPO_ROOT/.specify/templates/agent-file-template.md" ]; then cp "$REPO_ROOT/.specify/templates/agent-file-template.md" "$temp_file"; else echo "ERROR: Template not found"; return 1; fi;
   sed -i.bak "s/\[PROJECT NAME\]/$(basename $REPO_ROOT)/" "$temp_file"; sed -i.bak "s/\[DATE\]/$(date +%Y-%m-%d)/" "$temp_file"; sed -i.bak "s/\[EXTRACTED FROM ALL PLAN.MD FILES\]/- $NEW_LANG + $NEW_FRAMEWORK ($CURRENT_BRANCH)/" "$temp_file";
   if [[ "$NEW_PROJECT_TYPE" == *"web"* ]]; then sed -i.bak "s|\[ACTUAL STRUCTURE FROM PLANS\]|backend/\nfrontend/\ntests/|" "$temp_file"; else sed -i.bak "s|\[ACTUAL STRUCTURE FROM PLANS\]|src/\ntests/|" "$temp_file"; fi;
   if [[ "$NEW_LANG" == *"Python"* ]]; then COMMANDS="cd src && pytest && ruff check ."; elif [[ "$NEW_LANG" == *"Rust"* ]]; then COMMANDS="cargo test && cargo clippy"; elif [[ "$NEW_LANG" == *"JavaScript"* ]] || [[ "$NEW_LANG" == *"TypeScript"* ]]; then COMMANDS="npm test && npm run lint"; else COMMANDS="# Add commands for $NEW_LANG"; fi; sed -i.bak "s|\[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES\]|$COMMANDS|" "$temp_file";
@@ -55,13 +55,15 @@ case "$AGENT_TYPE" in
   qwen) update_agent_file "$QWEN_FILE" "Qwen Code" ;;
   opencode) update_agent_file "$AGENTS_FILE" "opencode" ;;
   codex) update_agent_file "$AGENTS_FILE" "Codex CLI" ;;
+  windsurf) update_agent_file "$WINDSURF_FILE" "Windsurf" ;;
   "") [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"; \
        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI"; \
        [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"; \
        [ -f "$CURSOR_FILE" ] && update_agent_file "$CURSOR_FILE" "Cursor IDE"; \
        [ -f "$QWEN_FILE" ] && update_agent_file "$QWEN_FILE" "Qwen Code"; \
        [ -f "$AGENTS_FILE" ] && update_agent_file "$AGENTS_FILE" "Codex/opencode"; \
-       if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$CURSOR_FILE" ] && [ ! -f "$QWEN_FILE" ] && [ ! -f "$AGENTS_FILE" ]; then update_agent_file "$CLAUDE_FILE" "Claude Code"; fi ;;
-  *) echo "ERROR: Unknown agent type '$AGENT_TYPE' (expected claude|gemini|copilot|cursor|qwen|opencode|codex)"; exit 1 ;;
+       [ -f "$WINDSURF_FILE" ] && update_agent_file "$WINDSURF_FILE" "Windsurf"; \
+       if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$CURSOR_FILE" ] && [ ! -f "$QWEN_FILE" ] && [ ! -f "$AGENTS_FILE" ] && [ ! -f "$WINDSURF_FILE" ]; then update_agent_file "$CLAUDE_FILE" "Claude Code"; fi ;;
+  *) echo "ERROR: Unknown agent type '$AGENT_TYPE' (expected claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf)"; exit 1 ;;
 esac
-echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex]"
+echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf]"

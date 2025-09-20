@@ -52,6 +52,19 @@ import truststore
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
+def _github_token(cli_token: str | None = None) -> str | None:
+    return cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+
+def _github_auth_headers(cli_token: str | None = None) -> dict:
+    """Headers for GitHub REST API requests.
+    - Uses Bearer auth if token present
+    """
+    headers = {}
+    token = _github_token(cli_token)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
 # Constants
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
@@ -61,6 +74,7 @@ AI_CHOICES = {
     "qwen": "Qwen Code",
     "opencode": "opencode",
     "codex": "Codex CLI",
+    "windsurf": "Windsurf",
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -228,7 +242,7 @@ BANNER = """
 ╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
 """
 
-TAGLINE = "Spec-Driven Development Toolkit"
+TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -279,7 +293,7 @@ class StepTracker:
                 pass
 
     def render(self):
-        tree = Tree(f"[bold cyan]{self.title}[/bold cyan]", guide_style="grey50")
+        tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
         for step in self.steps:
             label = step["label"]
             detail_text = step["detail"].strip() if step["detail"] else ""
@@ -372,14 +386,14 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
     def create_selection_panel():
         """Create the selection panel with current selection highlighted."""
         table = Table.grid(padding=(0, 2))
-        table.add_column(style="bright_cyan", justify="left", width=3)
+        table.add_column(style="cyan", justify="left", width=3)
         table.add_column(style="white", justify="left")
         
         for i, key in enumerate(option_keys):
             if i == selected_index:
-                table.add_row("▶", f"[bright_cyan]{key}: {options[key]}[/bright_cyan]")
+                table.add_row("▶", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
             else:
-                table.add_row(" ", f"[white]{key}: {options[key]}[/white]")
+                table.add_row(" ", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
         
         table.add_row("", "")
         table.add_row("", "[dim]Use ↑/↓ to navigate, Enter to select, Esc to cancel[/dim]")
@@ -569,7 +583,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False) -> Tuple[Path, dict]:
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
     repo_owner = "github"
     repo_name = "spec-kit"
     if client is None:
@@ -580,7 +594,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
     try:
-        response = client.get(api_url, timeout=30, follow_redirects=True)
+        response = client.get(
+            api_url,
+            timeout=30,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token) or None,
+        )
         status = response.status_code
         if status != 200:
             msg = f"GitHub API returned {status} for {api_url}"
@@ -642,7 +661,14 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        with client.stream("GET", download_url, timeout=60, follow_redirects=True) as response:
+        # Include auth header for initial GitHub request; it won't leak across cross-origin redirects
+        with client.stream(
+            "GET",
+            download_url,
+            timeout=60,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token) or None,
+        ) as response:
             if response.status_code != 200:
                 body_sample = response.text[:400]
                 raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
@@ -686,7 +712,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -703,7 +729,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             verbose=verbose and tracker is None,
             show_progress=(tracker is None),
             client=client,
-            debug=debug
+            debug=debug,
+            github_token=github_token
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -1071,20 +1098,21 @@ def sync_codex_prompts(project_path: Path, tracker: StepTracker | None = None) -
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, or codex"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, or windsurf"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
+    github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
 ):
     """
     Initialize a new Specify project from the latest template.
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, or Codex CLI)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, or Windsurf)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -1099,6 +1127,7 @@ def init(
         specify init my-project --ai qwen
         specify init my-project --ai opencode
         specify init my-project --ai codex
+        specify init my-project --ai windsurf
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here --ai codex
@@ -1139,12 +1168,21 @@ def init(
             console.print(f"[red]Error:[/red] Directory '{project_name}' already exists")
             raise typer.Exit(1)
     
-    console.print(Panel.fit(
-        "[bold cyan]Specify Project Setup[/bold cyan]\n"
-        f"{'Initializing in current directory:' if here else 'Creating new project:'} [green]{project_path.name}[/green]"
-        + (f"\n[dim]Path: {project_path}[/dim]" if here else ""),
-        border_style="cyan"
-    ))
+    # Create formatted setup info with column alignment
+    current_dir = Path.cwd()
+    
+    setup_lines = [
+        "[cyan]Specify Project Setup[/cyan]",
+        "",
+        f"{'Project':<15} [green]{project_path.name}[/green]",
+        f"{'Working Path':<15} [dim]{current_dir}[/dim]",
+    ]
+    
+    # Add target path only if different from working dir
+    if not here:
+        setup_lines.append(f"{'Target Path':<15} [dim]{project_path}[/dim]")
+    
+    console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
     
     # Check git only if we might need it (not --no-git)
     # Only set to True if the user wants it and the tool is available
@@ -1254,7 +1292,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             # Ensure /commands directory for Codex CLI workspaces only
             if selected_ai == "codex":
@@ -1312,48 +1350,18 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    if selected_ai == "claude":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code and start using / commands with Claude Code")
-        steps_lines.append("   - Type / in any file to see available commands")
-        steps_lines.append("   - Use /specify to create specifications")
-        steps_lines.append("   - Use /plan to create implementation plans")
-        steps_lines.append("   - Use /tasks to generate tasks")
-    elif selected_ai == "gemini":
-        steps_lines.append(f"{step_num}. Use / commands with Gemini CLI")
-        steps_lines.append("   - Run gemini /specify to create specifications")
-        steps_lines.append("   - Run gemini /plan to create implementation plans")
-        steps_lines.append("   - Run gemini /tasks to generate tasks")
-        steps_lines.append("   - See GEMINI.md for all available commands")
-    elif selected_ai == "copilot":
-        steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
-    elif selected_ai == "qwen":
-        steps_lines.append(f"{step_num}. Use / commands with Qwen CLI")
-        steps_lines.append("   - Run qwen /specify to create specifications")
-        steps_lines.append("   - Run qwen /plan to create implementation plans")
-        steps_lines.append("   - Run qwen /tasks to generate tasks")
-        steps_lines.append("   - See QWEN.md for all available commands")
-    elif selected_ai == "opencode":
-        steps_lines.append(f"{step_num}. Use / commands with opencode")
-        steps_lines.append("   - Use /specify to create specifications")
-        steps_lines.append("   - Use /plan to create implementation plans")
-        steps_lines.append("   - Use /tasks to generate tasks")
-    elif selected_ai == "codex":
-        steps_lines.append(f"{step_num}. Use / commands with Codex CLI")
-        steps_lines.append("   - Run codex /specify to create specifications")
-        steps_lines.append("   - Run codex /plan to create implementation plans")
-        steps_lines.append("   - Run codex /tasks to generate task lists")
-        steps_lines.append("   - See AGENTS.md for bundled commands")
-
-    # Removed script variant step (scripts are transparent to users)
-    step_num += 1
-    steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
+    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+    steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
+    steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
+    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plans")
+    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
+    if selected_ai == "codex":
+        steps_lines.append("   2.6 [cyan]Codex CLI[/] - Restart Codex if slash commands are missing; commands mirror into AGENTS.md")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
-    console.print()  # blank line
+    console.print()
     console.print(steps_panel)
-    
-    # Removed farewell line per user request
-
 
 @app.command()
 def check():
@@ -1361,43 +1369,37 @@ def check():
     show_banner()
     console.print("[bold]Checking for installed tools...[/bold]\n")
 
-    # Create tracker for checking tools
     tracker = StepTracker("Check Available Tools")
     
-    # Add all tools we want to check
     tracker.add("git", "Git version control")
     tracker.add("claude", "Claude Code CLI")
     tracker.add("gemini", "Gemini CLI")
     tracker.add("qwen", "Qwen Code CLI")
     tracker.add("code", "VS Code (for GitHub Copilot)")
     tracker.add("cursor-agent", "Cursor IDE agent (optional)")
+    tracker.add("windsurf", "Windsurf IDE (optional)")
     tracker.add("opencode", "opencode")
     tracker.add("codex", "Codex CLI")
     
-    # Check each tool
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
     gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
     qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
-    # Check for VS Code (code or code-insiders)
     code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
     if not code_ok:
         code_ok = check_tool_for_tracker("code-insiders", "https://code.visualstudio.com/insiders/", tracker)
     cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
+    windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
     opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
     codex_ok = check_tool_for_tracker("codex", "https://github.com/openai/codex", tracker)
-    
-    # Render the final tree
+
     console.print(tracker.render())
 
-    # Summary
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
 
-    # Recommendations
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or opencode_ok or codex_ok):
-        console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or opencode_ok or codex_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
