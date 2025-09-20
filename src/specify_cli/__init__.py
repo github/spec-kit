@@ -142,7 +142,7 @@ class StepTracker:
                 pass
 
     def render(self):
-        tree = Tree(f"[bold cyan]{self.title}[/bold cyan]", guide_style="grey50")
+        tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
         for step in self.steps:
             label = step["label"]
             detail_text = step["detail"].strip() if step["detail"] else ""
@@ -819,7 +819,7 @@ def init(
             raise typer.Exit(1)
     
     console.print(Panel.fit(
-        "[bold cyan]Specify Project Setup[/bold cyan]\n"
+        "[cyan]Specify Project Setup[/cyan]\n"
         f"{'Initializing in current directory:' if here else 'Creating new project:'} [green]{project_path.name}[/green]"
         + (f"\n[dim]Path: {project_path}[/dim]" if here else ""),
         border_style="cyan"
@@ -979,11 +979,11 @@ def init(
         step_num = 2
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
-    steps_lines.append("   2.1 [bold cyan]/constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [bold cyan]/specify[/] - Create specifications")
-    steps_lines.append("   2.3 [bold cyan]/plan[/] - Create implementation plans")
-    steps_lines.append("   2.4 [bold cyan]/tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [bold cyan]/implement[/] - Execute implementation")
+    steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
+    steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
+    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plans")
+    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
     console.print()
