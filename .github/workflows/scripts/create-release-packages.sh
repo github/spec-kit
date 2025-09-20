@@ -40,9 +40,20 @@ generate_commands() {
 
   if [[ "$agent" == "zed" ]]; then
     local rules_file="$output_dir/.rules"
-    echo "# Zed rules file" > "$rules_file"
-    echo "# Whenever called with /<command_name> context, follow these rules" >> "$rules_file"
-    echo "" >> "$rules_file"
+    # Define slash command handling rules
+    cat > "$rules_file" <<'EOF'
+# Agent Slash Commands
+When prompted with a slash command (/command), you should consume the definition below and execute accordingly.
+If no definition is found, respond that the command is undefined or prompt the user for clarification.
+
+# Template for defining new slash commands:
+# <agent_slash_command>
+#   name: <command_name>
+#   description: <short description>
+#   body: <instructions for execution, including placeholders {SCRIPT}, {ARGS}, etc.>
+# </agent_slash_command>
+
+EOF
 
     # Iterate over all templates and append rules
     for template in templates/commands/*.md; do
@@ -65,24 +76,25 @@ generate_commands() {
       # Replace placeholders
       body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
 
-      # Remove scripts section from frontmatter
-      body=$(printf '%s\n' "$body" | awk '
-        /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
-        in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
-        in_frontmatter && /^[a-zA-Z].*:/ && skip_scripts { skip_scripts=0 }
-        in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
-        { print }
+      # Remove entire frontmatter
+      body=$(printf '%s\n' "$file_content" | awk '
+        BEGIN{skip=0}
+        /^---$/ {skip = !skip; next}
+        !skip {print}
       ')
 
       # Apply other substitutions
       body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
 
-      # Append this template’s rule to the .rules file
+      # Append the command as a slash-command block following the template
       {
-        echo "---"
+        echo "<agent_slash_command>"
+        echo "name: $name"
         echo "description: $description"
-        echo "---"
-        echo "$body"
+        echo "body: |"
+        # Indent body by two spaces for YAML-style multiline
+        printf '%s\n' "$body" | sed 's/^/  /'
+        echo "</agent_slash_command>"
         echo ""
       } >> "$rules_file"
     done
