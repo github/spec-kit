@@ -41,6 +41,23 @@ $newTesting = Get-PlanValue 'Testing'
 $newDb = Get-PlanValue 'Storage'
 $newProjectType = Get-PlanValue 'Project Type'
 
+function Format-TechnologyStack($lang, $framework) {
+    $parts = @()
+    
+    # Add non-empty parts (excluding "NEEDS CLARIFICATION" and "N/A")
+    if ($lang -and $lang -ne 'NEEDS CLARIFICATION') { $parts += $lang }
+    if ($framework -and $framework -ne 'NEEDS CLARIFICATION' -and $framework -ne 'N/A') { $parts += $framework }
+    
+    # Join with proper formatting
+    if ($parts.Count -eq 0) {
+        return ''
+    } elseif ($parts.Count -eq 1) {
+        return $parts[0]
+    } else {
+        return ($parts -join ' + ')
+    }
+}
+
 function Initialize-AgentFile($targetFile, $agentName) {
     if (Test-Path $targetFile) { return }
     $template = Join-Path $paths.REPO_ROOT '.specify/templates/agent-file-template.md'
@@ -48,7 +65,13 @@ function Initialize-AgentFile($targetFile, $agentName) {
     $content = Get-Content $template -Raw
     $content = $content.Replace('[PROJECT NAME]', (Split-Path $paths.REPO_ROOT -Leaf))
     $content = $content.Replace('[DATE]', (Get-Date -Format 'yyyy-MM-dd'))
-    $content = $content.Replace('[EXTRACTED FROM ALL PLAN.MD FILES]', "- $newLang + $newFramework ($($paths.CURRENT_BRANCH))")
+    
+    $techStack = Format-TechnologyStack $newLang $newFramework
+    if ($techStack) {
+        $content = $content.Replace('[EXTRACTED FROM ALL PLAN.MD FILES]', "- $techStack ($($paths.CURRENT_BRANCH))")
+    } else {
+        $content = $content.Replace('[EXTRACTED FROM ALL PLAN.MD FILES]', '')
+    }
     if ($newProjectType -match 'web') { $structure = "backend/`nfrontend/`ntests/" } else { $structure = "src/`ntests/" }
     $content = $content.Replace('[ACTUAL STRUCTURE FROM PLANS]', $structure)
     if ($newLang -match 'Python') { $commands = 'cd src && pytest && ruff check .' }
@@ -57,18 +80,38 @@ function Initialize-AgentFile($targetFile, $agentName) {
     else { $commands = "# Add commands for $newLang" }
     $content = $content.Replace('[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]', $commands)
     $content = $content.Replace('[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]', "${newLang}: Follow standard conventions")
-    $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', "- $($paths.CURRENT_BRANCH): Added ${newLang} + ${newFramework}")
+    
+    $techStack = Format-TechnologyStack $newLang $newFramework
+    if ($techStack) {
+        $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', "- $($paths.CURRENT_BRANCH): Added $techStack")
+    } else {
+        $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', '')
+    }
     $content | Set-Content $targetFile -Encoding UTF8
 }
 
 function Update-AgentFile($targetFile, $agentName) {
     if (-not (Test-Path $targetFile)) { Initialize-AgentFile $targetFile $agentName; return }
     $content = Get-Content $targetFile -Raw
-    if ($newLang -and ($content -notmatch [regex]::Escape($newLang))) { $content = $content -replace '(## Active Technologies\n)', "`$1- $newLang + $newFramework ($($paths.CURRENT_BRANCH))`n" }
-    if ($newDb -and $newDb -ne 'N/A' -and ($content -notmatch [regex]::Escape($newDb))) { $content = $content -replace '(## Active Technologies\n)', "`$1- $newDb ($($paths.CURRENT_BRANCH))`n" }
+    
+    $techStack = Format-TechnologyStack $newLang $newFramework
+    if ($techStack -and ($content -notmatch [regex]::Escape($techStack))) { 
+        $content = $content -replace '(## Active Technologies\n)', "`$1- $techStack ($($paths.CURRENT_BRANCH))`n" 
+    }
+    
+    if ($newDb -and $newDb -ne 'N/A' -and $newDb -ne 'NEEDS CLARIFICATION' -and ($content -notmatch [regex]::Escape($newDb))) { 
+        $content = $content -replace '(## Active Technologies\n)', "`$1- $newDb ($($paths.CURRENT_BRANCH))`n" 
+    }
+    
     if ($content -match '## Recent Changes\n([\s\S]*?)(\n\n|$)') {
         $changesBlock = $matches[1].Trim().Split("`n")
-    $changesBlock = ,"- $($paths.CURRENT_BRANCH): Added ${newLang} + ${newFramework}" + $changesBlock
+        
+        if ($techStack) {
+            $changesBlock = ,"- $($paths.CURRENT_BRANCH): Added $techStack" + $changesBlock
+        } elseif ($newDb -and $newDb -ne 'N/A' -and $newDb -ne 'NEEDS CLARIFICATION') {
+            $changesBlock = ,"- $($paths.CURRENT_BRANCH): Added $newDb" + $changesBlock
+        }
+        
         $changesBlock = $changesBlock | Where-Object { $_ } | Select-Object -First 3
         $joined = ($changesBlock -join "`n")
         $content = [regex]::Replace($content, '## Recent Changes\n([\s\S]*?)(\n\n|$)', "## Recent Changes`n$joined`n`n")
