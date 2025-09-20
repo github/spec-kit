@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor qwen opencode windsurf codex (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor qwen opencode windsurf codex zed (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -37,6 +37,60 @@ rewrite_paths() {
 generate_commands() {
   local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5
   mkdir -p "$output_dir"
+
+  if [[ "$agent" == "zed" ]]; then
+    local rules_file="$output_dir/.rules"
+    echo "# Zed rules file" > "$rules_file"
+    echo "# Whenever called with /<command_name> context, follow these rules" >> "$rules_file"
+    echo "" >> "$rules_file"
+
+    # Iterate over all templates and append rules
+    for template in templates/commands/*.md; do
+      [[ -f "$template" ]] || continue
+      local name description script_command body
+      name=$(basename "$template" .md)
+      
+      # Normalize line endings
+      file_content=$(tr -d '\r' < "$template")
+      
+      # Extract description and script command for this variant
+      description=$(printf '%s\n' "$file_content" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
+      script_command=$(printf '%s\n' "$file_content" | awk -v sv="$script_variant" '/^[[:space:]]*'"$script_variant"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, ""); print; exit}')
+      
+      if [[ -z $script_command ]]; then
+        echo "Warning: no script command found for $script_variant in $template" >&2
+        script_command="(Missing script command for $script_variant)"
+      fi
+
+      # Replace placeholders
+      body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
+
+      # Remove scripts section from frontmatter
+      body=$(printf '%s\n' "$body" | awk '
+        /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
+        in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
+        in_frontmatter && /^[a-zA-Z].*:/ && skip_scripts { skip_scripts=0 }
+        in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
+        { print }
+      ')
+
+      # Apply other substitutions
+      body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
+
+      # Append this template’s rule to the .rules file
+      {
+        echo "---"
+        echo "description: $description"
+        echo "---"
+        echo "$body"
+        echo ""
+      } >> "$rules_file"
+    done
+
+    return 0
+  fi
+
+  # Normal agent behavior for all other agents
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
     local name description script_command body
@@ -160,13 +214,16 @@ build_variant() {
     codex)
       mkdir -p "$base_dir/.codex/commands"
       generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/commands" "$script" ;;
+    zed)
+      mkdir -p "$base_dir/.zed/commands"
+      generate_commands zed md "\$ARGUMENTS" "$base_dir/" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex zed)
 ALL_SCRIPTS=(sh ps)
 
 
