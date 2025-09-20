@@ -235,14 +235,14 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
     def create_selection_panel():
         """Create the selection panel with current selection highlighted."""
         table = Table.grid(padding=(0, 2))
-        table.add_column(style="bright_cyan", justify="left", width=3)
+        table.add_column(style="bright_blue", justify="left", width=3)
         table.add_column(style="white", justify="left")
         
         for i, key in enumerate(option_keys):
             if i == selected_index:
-                table.add_row("▶", f"[bright_cyan]{key}[/bright_cyan] [dim]({options[key]})[/dim]")
+                table.add_row("▶", f"[bright_blue]{key}[/bright_blue] [dim]({options[key]})[/dim]")
             else:
-                table.add_row(" ", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
+                table.add_row(" ", f"[blue]{key}[/blue] [dim]({options[key]})[/dim]")
         
         table.add_row("", "")
         table.add_row("", "[dim]Use ↑/↓ to navigate, Enter to select, Esc to cancel[/dim]")
@@ -250,7 +250,7 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
         return Panel(
             table,
             title=f"[bold]{prompt_text}[/bold]",
-            border_style="cyan",
+            border_style="blue",
             padding=(1, 2)
         )
     
