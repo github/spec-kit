@@ -25,33 +25,13 @@ jobs:
       - name: Get latest tag
         id: get_tag
         run: |
-          # Get the latest tag, or use v0.0.0 if no tags exist
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-          
-          # Extract version number and increment
-          VERSION=$(echo $LATEST_TAG | sed 's/v//')
-          IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
-          MAJOR=${VERSION_PARTS[0]:-0}
-          MINOR=${VERSION_PARTS[1]:-0}
-          PATCH=${VERSION_PARTS[2]:-0}
-          
-          # Increment patch version
-          PATCH=$((PATCH + 1))
-          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
-          
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "New version will be: $NEW_VERSION"
+          chmod +x .github/workflows/scripts/get-next-version.sh
+          .github/workflows/scripts/get-next-version.sh
       - name: Check if release already exists
         id: check_release
         run: |
-          if gh release view ${{ steps.get_tag.outputs.new_version }} >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Release ${{ steps.get_tag.outputs.new_version }} already exists, skipping..."
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Release ${{ steps.get_tag.outputs.new_version }} does not exist, proceeding..."
-          fi
+          chmod +x .github/workflows/scripts/check-release-exists.sh
+          .github/workflows/scripts/check-release-exists.sh ${{ steps.get_tag.outputs.new_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Create release package variants
@@ -63,85 +43,17 @@ jobs:
         if: steps.check_release.outputs.exists == 'false'
         id: release_notes
         run: |
-          # Get commits since last tag
-          LAST_TAG=${{ steps.get_tag.outputs.latest_tag }}
-          if [ "$LAST_TAG" = "v0.0.0" ]; then
-            # Check how many commits we have and use that as the limit
-            COMMIT_COUNT=$(git rev-list --count HEAD)
-            if [ "$COMMIT_COUNT" -gt 10 ]; then
-              COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~10..HEAD)
-            else
-              COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~$COMMIT_COUNT..HEAD 2>/dev/null || git log --oneline --pretty=format:"- %s")
-            fi
-          else
-            COMMITS=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
-          fi
-          
-          # Create release notes
-          cat > release_notes.md << EOF
-          Template release ${{ steps.get_tag.outputs.new_version }}
-
-          Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, Cursor, Qwen, opencode, Windsurf, and Codex.
-
-          Now includes per-script variants for POSIX shell (sh) and PowerShell (ps).
-
-          Download the template for your preferred AI assistant + script type:
-          - spec-kit-template-copilot-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-copilot-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-claude-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-claude-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-gemini-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-gemini-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-cursor-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-cursor-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-opencode-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-opencode-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-qwen-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-qwen-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-windsurf-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-windsurf-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-codex-sh-${{ steps.get_tag.outputs.new_version }}.zip
-          - spec-kit-template-codex-ps-${{ steps.get_tag.outputs.new_version }}.zip
-          EOF
-          
-          echo "Generated release notes:"
-          cat release_notes.md
+          chmod +x .github/workflows/scripts/generate-release-notes.sh
+          .github/workflows/scripts/generate-release-notes.sh ${{ steps.get_tag.outputs.new_version }} ${{ steps.get_tag.outputs.latest_tag }}
       - name: Create GitHub Release
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          # Remove 'v' prefix from version for release title
-          VERSION_NO_V=${{ steps.get_tag.outputs.new_version }}
-          VERSION_NO_V=${VERSION_NO_V#v}
-          
-          gh release create ${{ steps.get_tag.outputs.new_version }} \
-            .genreleases/spec-kit-template-copilot-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-copilot-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-claude-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-claude-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-gemini-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-gemini-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-cursor-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-cursor-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-opencode-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-opencode-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-qwen-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-qwen-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-windsurf-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-windsurf-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-codex-sh-${{ steps.get_tag.outputs.new_version }}.zip \
-            .genreleases/spec-kit-template-codex-ps-${{ steps.get_tag.outputs.new_version }}.zip \
-            --title "Spec Kit Templates - $VERSION_NO_V" \
-            --notes-file release_notes.md
+          chmod +x .github/workflows/scripts/create-github-release.sh
+          .github/workflows/scripts/create-github-release.sh ${{ steps.get_tag.outputs.new_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Update version in pyproject.toml (for release artifacts only)
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          # Update version in pyproject.toml (remove 'v' prefix for Python versioning)
-          VERSION=${{ steps.get_tag.outputs.new_version }}
-          PYTHON_VERSION=${VERSION#v}
-          
-          if [ -f "pyproject.toml" ]; then
-            sed -i "s/version = \".*\"/version = \"$PYTHON_VERSION\"/" pyproject.toml
-            echo "Updated pyproject.toml version to $PYTHON_VERSION (for release artifacts only)"
-          fi
+          chmod +x .github/workflows/scripts/update-version.sh
+          .github/workflows/scripts/update-version.sh ${{ steps.get_tag.outputs.new_version }}
