@@ -38,3 +38,7 @@ env/
 .env
 .env.local
 *.lock
+
+# Build artifacts
+spec-kit-template-*-*-v*.zip
+sdd-*-package-*

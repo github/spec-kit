@@ -436,7 +436,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     repo_name = "spec-kit"
     if client is None:
         client = httpx.Client(verify=ssl_context)
-    
+
     if verbose:
         console.print("[cyan]Fetching latest release information...[/cyan]")
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
@@ -551,30 +551,58 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     current_dir = Path.cwd()
     
     # Step: fetch + download combined
-    if tracker:
-        tracker.start("fetch", "contacting GitHub API")
-    try:
-        zip_path, meta = download_template_from_github(
-            ai_assistant,
-            current_dir,
-            script_type=script_type,
-            verbose=verbose and tracker is None,
-            show_progress=(tracker is None),
-            client=client,
-            debug=debug,
-            github_token=github_token
-        )
+    zip_path: Path
+    meta: dict
+    cleanup_required = True
+
+    # Env override for local testing: SPECIFY_TEMPLATE_ZIP=/path/to/spec-kit-template-*.zip
+    env_zip = os.environ.get("SPECIFY_TEMPLATE_ZIP")
+    if env_zip:
+        candidate = Path(env_zip).expanduser().resolve()
+        if not candidate.exists() or not candidate.is_file():
+            raise typer.Exit(f"SPECIFY_TEMPLATE_ZIP does not exist or is not a file: {candidate}")
+        if candidate.suffix.lower() != ".zip":
+            raise typer.Exit(f"SPECIFY_TEMPLATE_ZIP must point to a .zip file: {candidate}")
+        # Do not delete a user-provided local archive in cleanup
+        cleanup_required = False
+        zip_path = candidate
+        meta = {
+            "filename": candidate.name,
+            "size": candidate.stat().st_size,
+            "release": "ENV-OVERRIDE",
+        }
         if tracker:
-            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
+            tracker.start("fetch", "using SPECIFY_TEMPLATE_ZIP")
+            tracker.complete("fetch", "env override")
             tracker.add("download", "Download template")
-            tracker.complete("download", meta['filename'])
-    except Exception as e:
+            tracker.complete("download", candidate.name)
+        elif verbose:
+            console.print(f"[cyan]Using local template ZIP:[/cyan] {candidate}")
+    else:
         if tracker:
-            tracker.error("fetch", str(e))
-        else:
-            if verbose:
-                console.print(f"[red]Error downloading template:[/red] {e}")
-        raise
+            tracker.start("fetch", "contacting GitHub API")
+        try:
+            zip_path, meta = download_template_from_github(
+                ai_assistant,
+                current_dir,
+                script_type=script_type,
+                verbose=verbose and tracker is None,
+                show_progress=(tracker is None),
+                client=client,
+                debug=debug,
+                github_token=github_token,
+            )
+            if tracker:
+                tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
+                tracker.add("download", "Download template")
+                tracker.complete("download", meta['filename'])
+        except Exception as e:
+            if tracker:
+                tracker.error("fetch", str(e))
+            else:
+                if verbose:
+                    console.print(f"[red]Error downloading template:[/red] {e}")
+            raise
     
     if tracker:
         tracker.add("extract", "Extract template")
@@ -689,15 +717,18 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
         if tracker:
             tracker.complete("extract")
     finally:
-        if tracker:
-            tracker.add("cleanup", "Remove temporary archive")
-        # Clean up downloaded ZIP file
-        if zip_path.exists():
-            zip_path.unlink()
+        if cleanup_required:
             if tracker:
-                tracker.complete("cleanup")
-            elif verbose:
-                console.print(f"Cleaned up: {zip_path.name}")
+                tracker.add("cleanup", "Remove temporary archive")
+            # Clean up downloaded ZIP file
+            if zip_path.exists():
+                zip_path.unlink()
+                if tracker:
+                    tracker.complete("cleanup")
+                elif verbose:
+                    console.print(f"Cleaned up: {zip_path.name}")
+        else:
+          tracker.complete("cleanup")
     
     return project_path
 

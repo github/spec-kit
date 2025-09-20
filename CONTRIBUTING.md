@@ -45,6 +45,36 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
+### Build and install locally
+
+Use these commands to build template ZIPs from your local checkout and run the CLI against them without publishing a release.
+
+- Build on Linux
+
+```bash
+chmod +x .github/workflows/scripts/create-release-packages.sh && \
+.github/workflows/scripts/create-release-packages.sh v0.0.1 && \
+chmod -x .github/workflows/scripts/create-release-packages.sh
+```
+
+- Build on macOS (using Docker for GNU tools)
+
+```bash
+docker run --rm -it -v "$PWD":/w -w /w ubuntu:24.04 bash -lc "apt-get update && apt-get install -y zip && chmod +x .github/workflows/scripts/create-release-packages.sh && .github/workflows/scripts/create-release-packages.sh v0.0.1 && chmod -x .github/workflows/scripts/create-release-packages.sh"
+```
+
+- Install/use the locally built ZIP with uvx
+
+```bash
+SPECIFY_TEMPLATE_ZIP=$SPECIFY_PROJECT_DIR/spec-kit-template-claude-sh-v0.0.1.zip \
+uvx --refresh --no-cache --from $SPECIFY_PROJECT_DIR specify init --here --ai claude --script sh --ignore-agent-tools
+```
+
+Notes:
+- Replace `$SPECIFY_PROJECT_DIR` with the absolute path to your spec-kit working directory.
+- `--refresh --no-cache` ensures uvx does not reuse an older cached build of the CLI.
+- Keep `--ai`/`--script` consistent with the ZIP variant you built.
+
 ## Resources
 
 - [Spec-Driven Development Methodology](./spec-driven.md)
