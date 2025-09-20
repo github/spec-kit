@@ -472,15 +472,11 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     asset = matching_assets[0] if matching_assets else None
 
     if asset is None:
-        console.print(
-            f"[red]No matching release asset found[/red] for AI assistant "
-            f"[bold]{ai_assistant}[/bold] (pattern: {pattern})"
-        )
+        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
         asset_names = [a.get('name', '?') for a in assets]
         console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
 
-    # Use the resolved asset
     download_url = asset["browser_download_url"]
     filename = asset["name"]
     file_size = asset["size"]
@@ -489,14 +485,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(f"[cyan]Found template:[/cyan] {filename}")
         console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
         console.print(f"[cyan]Release:[/cyan] {release_data['tag_name']}")
-    
-    # Download the file
+
     zip_path = download_dir / filename
     if verbose:
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
-        # Include auth header for initial GitHub request; it won't leak across cross-origin redirects
         with client.stream(
             "GET",
             download_url,
