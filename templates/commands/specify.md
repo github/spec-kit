@@ -5,7 +5,9 @@ scripts:
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
-Given the feature description provided as an argument, do this:
+The text the user typed after `/specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided a truly empty command.
+
+Given that feature description, do this:
 
 1. Run the script `{SCRIPT}` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
 2. Load `templates/spec-template.md` to understand required sections.

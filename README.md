@@ -224,9 +224,11 @@ specify init <project_name> --ai claude --ignore-agent-tools
 
 > [!NOTE]
 > Codex CLI specifics
-> - `specify init --ai codex` ensures a workspace-level `commands/` directory exists (seeding `specify.md`, `plan.md`, `tasks.md` if necessary) because Codex CLI loads slash commands from the repo itself.
+> - `specify init --ai codex` seeds `commands/*.md` in your repo and automatically mirrors them into `${CODEX_HOME:-~/.codex}/prompts` so Codex picks up `/specify`, `/plan`, and `/tasks` immediately.
+> - If Codex was running during installation, restart the CLI once so it reloads the refreshed slash commands.
 > - Codex persists its working memory in `AGENTS.md`; if you do not see that file yet, run `codex /init` once inside the project to generate it.
-> - To let Codex trigger the helper scripts under `scripts/` through slash commands, open `codex /approvals` and enable “Run shell commands”.
+> - When Codex is configured to run helper scripts, open `codex /approvals` and enable “Run shell commands”.
+> - If you point `CODEX_HOME` at the project (for per-repo isolation) the installer adds ignore rules for Codex session artifacts to `.gitignore`; adjust them as needed for your workflow.
 
 ### **STEP 1:** Bootstrap the project
 

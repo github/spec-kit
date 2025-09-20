@@ -18,7 +18,21 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
+# Resolve repository root. Prefer git information when available, but fall back
+# to the script location so the workflow still functions in repositories that
+# were initialised with --no-git.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FALLBACK_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if git rev-parse --show-toplevel >/dev/null 2>&1; then
+    REPO_ROOT=$(git rev-parse --show-toplevel)
+    HAS_GIT=true
+else
+    REPO_ROOT="$FALLBACK_ROOT"
+    HAS_GIT=false
+fi
+
+cd "$REPO_ROOT"
+
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
@@ -40,7 +54,11 @@ BRANCH_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/
 WORDS=$(echo "$BRANCH_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
 BRANCH_NAME="${FEATURE_NUM}-${WORDS}"
 
-git checkout -b "$BRANCH_NAME"
+if [ "$HAS_GIT" = true ]; then
+    git checkout -b "$BRANCH_NAME"
+else
+    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 mkdir -p "$FEATURE_DIR"

@@ -950,6 +950,124 @@ def ensure_workspace_commands(project_path: Path, tracker: StepTracker | None = 
             console.print(f"[yellow]Warning: could not ensure commands directory ({exc})[/yellow]")
 
 
+def _resolve_codex_home() -> Path:
+    env_value = os.environ.get("CODEX_HOME")
+    if env_value:
+        return Path(env_value).expanduser()
+    return Path.home() / ".codex"
+
+
+def _ensure_gitignore_entries(project_path: Path, entries: list[str]) -> None:
+    if not entries:
+        return
+
+    gitignore_path = project_path / ".gitignore"
+
+    existing_text = ""
+    existing: set[str] = set()
+    if gitignore_path.exists():
+        try:
+            existing_text = gitignore_path.read_text(encoding="utf-8")
+            existing = {line.strip() for line in existing_text.splitlines()}
+        except Exception:
+            return
+
+    new_entries = [entry for entry in entries if entry not in existing]
+    if not new_entries:
+        return
+
+    try:
+        with gitignore_path.open("a", encoding="utf-8") as fh:
+            if existing_text and not existing_text.endswith("\n"):
+                fh.write("\n")
+            for entry in new_entries:
+                fh.write(f"{entry}\n")
+    except Exception:
+        return
+
+
+def sync_codex_prompts(project_path: Path, tracker: StepTracker | None = None) -> None:
+    if tracker:
+        tracker.start("codex-prompts")
+
+    commands_dir = project_path / "commands"
+    if not commands_dir.is_dir():
+        if tracker:
+            tracker.skip("codex-prompts", "no commands directory")
+        return
+
+    try:
+        codex_home = _resolve_codex_home()
+        prompts_dir = (codex_home / "prompts").expanduser()
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+
+        if not os.access(prompts_dir, os.W_OK):
+            raise PermissionError(f"Codex prompts directory not writable: {prompts_dir}")
+
+        expected: set[str] = set()
+        copied = 0
+        skipped = 0
+
+        for source in sorted(commands_dir.glob("*.md")):
+            if not source.is_file():
+                continue
+            dest_name = source.name
+            dest_path = prompts_dir / dest_name
+            expected.add(dest_name)
+
+            data = source.read_bytes()
+            if dest_path.exists():
+                try:
+                    if dest_path.read_bytes() == data:
+                        skipped += 1
+                        continue
+                except Exception:
+                    pass
+            dest_path.write_bytes(data)
+            copied += 1
+
+        # Clean up any legacy spec-kit-prefixed prompts from earlier installer versions
+        for legacy in prompts_dir.glob("spec-kit-*.md"):
+            try:
+                legacy.unlink()
+            except Exception:
+                continue
+
+        detail_bits = []
+        if copied:
+            detail_bits.append(f"{copied} updated")
+        if skipped:
+            detail_bits.append(f"{skipped} unchanged")
+        detail = ", ".join(detail_bits) if detail_bits else "ok"
+
+        if tracker:
+            tracker.complete("codex-prompts", detail)
+
+        # If CODEX_HOME lives inside this project, make sure generated files stay untracked
+        try:
+            codex_home_relative = codex_home.resolve().relative_to(project_path.resolve())
+        except Exception:
+            return
+
+        codex_prefix = codex_home_relative.as_posix()
+        if codex_prefix == ".":
+            return
+        ignore_entries = [
+            f"{codex_prefix}/*.json",
+            f"{codex_prefix}/*.jsonl",
+            f"{codex_prefix}/*.toml",
+            f"{codex_prefix}/log",
+            f"{codex_prefix}/sessions",
+        ]
+        _ensure_gitignore_entries(project_path, ignore_entries)
+
+    except Exception as exc:
+        if tracker:
+            tracker.error("codex-prompts", str(exc))
+        else:
+            console.print(f"[yellow]Warning: could not sync Codex prompts ({exc})[/yellow]")
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
@@ -1125,6 +1243,7 @@ def init(
 
     if selected_ai == "codex":
         tracker.add("commands", "Ensure workspace commands")
+        tracker.add("codex-prompts", "Sync Codex prompts")
 
     # Use transient so live tree is replaced by the final static render (avoids duplicate output)
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
@@ -1140,6 +1259,7 @@ def init(
             # Ensure /commands directory for Codex CLI workspaces only
             if selected_ai == "codex":
                 ensure_workspace_commands(project_path, tracker=tracker)
+                sync_codex_prompts(project_path, tracker=tracker)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
