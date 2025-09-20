@@ -4,7 +4,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 FEATURE_DIR="$REPO_ROOT/specs/$CURRENT_BRANCH"
 NEW_PLAN="$FEATURE_DIR/plan.md"
-CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"; GEMINI_FILE="$REPO_ROOT/GEMINI.md"; COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"; CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"; QWEN_FILE="$REPO_ROOT/QWEN.md"; AGENTS_FILE="$REPO_ROOT/AGENTS.md"; WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
+CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"; GEMINI_FILE="$REPO_ROOT/GEMINI.md"; COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"; CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"; KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"; QWEN_FILE="$REPO_ROOT/QWEN.md"; AGENTS_FILE="$REPO_ROOT/AGENTS.md"; WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 AGENT_TYPE="$1"
 [ -f "$NEW_PLAN" ] || { echo "ERROR: No plan.md found at $NEW_PLAN"; exit 1; }
 echo "=== Updating agent context files for feature $CURRENT_BRANCH ==="
@@ -52,6 +52,7 @@ case "$AGENT_TYPE" in
   gemini) update_agent_file "$GEMINI_FILE" "Gemini CLI" ;;
   copilot) update_agent_file "$COPILOT_FILE" "GitHub Copilot" ;;
   cursor) update_agent_file "$CURSOR_FILE" "Cursor IDE" ;;
+  kilocode) update_agent_file "$KILOCODE_FILE" "Kilo Code" ;;
   qwen) update_agent_file "$QWEN_FILE" "Qwen Code" ;;
   opencode) update_agent_file "$AGENTS_FILE" "opencode" ;;
   windsurf) update_agent_file "$WINDSURF_FILE" "Windsurf" ;;
@@ -59,10 +60,11 @@ case "$AGENT_TYPE" in
        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI"; \
        [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"; \
        [ -f "$CURSOR_FILE" ] && update_agent_file "$CURSOR_FILE" "Cursor IDE"; \
+       [ -f "$KILOCODE_FILE" ] && update_agent_file "$KILOCODE_FILE" "Kilo Code"; \
        [ -f "$QWEN_FILE" ] && update_agent_file "$QWEN_FILE" "Qwen Code"; \
        [ -f "$AGENTS_FILE" ] && update_agent_file "$AGENTS_FILE" "opencode"; \
        [ -f "$WINDSURF_FILE" ] && update_agent_file "$WINDSURF_FILE" "Windsurf"; \
-       if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$CURSOR_FILE" ] && [ ! -f "$QWEN_FILE" ] && [ ! -f "$AGENTS_FILE" ] && [ ! -f "$WINDSURF_FILE" ]; then update_agent_file "$CLAUDE_FILE" "Claude Code"; fi ;;
-  *) echo "ERROR: Unknown agent type '$AGENT_TYPE' (expected claude|gemini|copilot|cursor|qwen|opencode|windsurf)"; exit 1 ;;
+       if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ] && [ ! -f "$CURSOR_FILE" ] && [ ! -f "$KILOCODE_FILE" ] && [ ! -f "$QWEN_FILE" ] && [ ! -f "$AGENTS_FILE" ] && [ ! -f "$WINDSURF_FILE" ]; then update_agent_file "$CLAUDE_FILE" "Claude Code"; fi ;;
+  *) echo "ERROR: Unknown agent type '$AGENT_TYPE' (expected claude|gemini|copilot|cursor|kilocode|qwen|opencode|windsurf)"; exit 1 ;;
 esac
-echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|windsurf]"
+echo; echo "Summary of changes:"; [ -n "$NEW_LANG" ] && echo "- Added language: $NEW_LANG"; [ -n "$NEW_FRAMEWORK" ] && echo "- Added framework: $NEW_FRAMEWORK"; [ -n "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ] && echo "- Added database: $NEW_DB"; echo; echo "Usage: $0 [claude|gemini|copilot|cursor|kilocode|qwen|opencode|windsurf]"

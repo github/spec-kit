@@ -129,7 +129,7 @@ build_variant() {
     fi
   fi
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
-  #   * Markdown/prompt (claude, copilot, cursor, opencode): $ARGUMENTS
+  #   * Markdown/prompt (claude, copilot, cursor, kilocode, opencode): $ARGUMENTS
   #   * TOML (gemini, qwen): {{args}}
   # This keeps formats readable without extra abstraction.
 
@@ -147,6 +147,9 @@ build_variant() {
     cursor)
       mkdir -p "$base_dir/.cursor/commands"
       generate_commands cursor md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
+    kilocode)
+      mkdir -p "$base_dir/.kilocode/workflows"
+      generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
       generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
@@ -163,7 +166,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
+ALL_AGENTS=(claude gemini copilot cursor kilocode qwen opencode windsurf)
 ALL_SCRIPTS=(sh ps)
 
 

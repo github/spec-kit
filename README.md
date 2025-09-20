@@ -108,7 +108,7 @@ The `specify` command supports the following options:
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, or `windsurf` |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `kilocode`, `qwen`, `opencode`, or `windsurf` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
@@ -128,6 +128,9 @@ specify init my-project --ai claude
 
 # Initialize with Cursor support
 specify init my-project --ai cursor
+
+# Initialize with Kilo Code support
+specify init my-project --ai kilocode
 
 # Initialize with Windsurf support
 specify init my-project --ai windsurf
@@ -209,7 +212,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS** (or WSL2 on Windows)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code), [opencode](https://opencode.ai/), or [Windsurf](https://windsurf.com/)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Kilo Code](https://kilocode.ai/), [Qwen CLI](https://github.com/QwenLM/qwen-code), [opencode](https://opencode.ai/), or [Windsurf](https://windsurf.com/)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -248,6 +251,7 @@ specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
 specify init <project_name> --ai qwen
 specify init <project_name> --ai opencode
+specify init <project_name> --ai kilocode
 specify init <project_name> --ai windsurf
 # Or in current directory:
 specify init --here --ai claude
