@@ -66,7 +66,7 @@ function Update-AgentFile($targetFile, $agentName) {
     }
     $content = [regex]::Replace($content, 'Last updated: \d{4}-\d{2}-\d{2}', "Last updated: $(Get-Date -Format 'yyyy-MM-dd')")
     $content | Set-Content $targetFile -Encoding UTF8
-    Write-Output "✅ $agentName context file updated successfully"
+    Write-Output "✓ $agentName context file updated successfully"
 }
 
 switch ($AgentType) {
