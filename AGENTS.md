@@ -67,7 +67,16 @@ Update all help text and examples to include the new agent:
 - Function docstrings and examples
 - Error messages with agent lists
 
-#### 3. Update Release Package Script
+#### 3. Update README Documentation
+
+Update the **Supported AI Agents** section in `README.md` to include the new agent:
+
+- Add the new agent to the table with appropriate support level (Full/Partial)
+- Include the agent's official website link
+- Add any relevant notes about the agent's implementation
+- Ensure the table formatting remains aligned and consistent
+
+#### 4. Update Release Package Script
 
 Modify `.github/workflows/scripts/create-release-packages.sh`:
 
