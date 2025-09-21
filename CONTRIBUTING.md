@@ -11,7 +11,7 @@ These are one time installations required to be able to test your changes locall
 1. Install [Python 3.11+](https://www.python.org/downloads/)
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
-1. Have an AI coding agent available: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Qwen Code](https://github.com/QwenLM/qwen-code). We're working on adding support for other agents as well.
+1. Have an [AI coding agent available](README.md#-supported-ai-agents)
 
 ## Submitting a pull request
 

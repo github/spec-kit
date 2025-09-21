@@ -86,7 +86,19 @@ case $agent in
 esac
 ```
 
-#### 4. Update Agent Context Scripts
+#### 4. Update GitHub Release Script
+
+Modify `.github/workflows/scripts/create-github-release.sh` to include the new agent's packages:
+
+```bash
+gh release create "$VERSION" \
+  # ... existing packages ...
+  .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
+  # Add new agent packages here
+```
+
+#### 5. Update Agent Context Scripts
 
 ##### Bash script (`scripts/bash/update-agent-context.sh`):
 
@@ -132,7 +144,7 @@ switch ($AgentType) {
 }
 ```
 
-#### 5. Update CLI Tool Checks (Optional)
+#### 6. Update CLI Tool Checks (Optional)
 
 For agents that require CLI tools, add checks in the `check()` command and agent validation:
 
