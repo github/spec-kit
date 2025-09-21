@@ -1,11 +1,15 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
 scripts:
-  sh: scripts/bash/check-task-prerequisites.sh --json
-  ps: scripts/powershell/check-task-prerequisites.ps1 -Json
+  sh: scripts/bash/check-prerequisites.sh --json
+  ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
-Given the context provided as an argument, do this:
+The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+
+User input:
+
+$ARGUMENTS
 
 1. Load Spec Kit configuration:
    - Check for `/.specify.yaml` at the host project root; if it exists, load that file

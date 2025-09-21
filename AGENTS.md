@@ -59,6 +59,23 @@ AI_CHOICES = {
 }
 ```
 
+Also update the `agent_folder_map` in the same file to include the new agent's folder for the security notice:
+
+```python
+agent_folder_map = {
+    "claude": ".claude/",
+    "gemini": ".gemini/",
+    "cursor": ".cursor/",
+    "qwen": ".qwen/",
+    "opencode": ".opencode/",
+    "codex": ".codex/",
+    "windsurf": ".windsurf/",  # Add new agent folder here
+    "kilocode": ".kilocode/",
+    "auggie": ".auggie/",
+    "copilot": ".github/"
+}
+```
+
 #### 2. Update CLI Help Text
 
 Update all help text and examples to include the new agent:
@@ -67,7 +84,16 @@ Update all help text and examples to include the new agent:
 - Function docstrings and examples
 - Error messages with agent lists
 
-#### 3. Update Release Package Script
+#### 3. Update README Documentation
+
+Update the **Supported AI Agents** section in `README.md` to include the new agent:
+
+- Add the new agent to the table with appropriate support level (Full/Partial)
+- Include the agent's official website link
+- Add any relevant notes about the agent's implementation
+- Ensure the table formatting remains aligned and consistent
+
+#### 4. Update Release Package Script
 
 Modify `.github/workflows/scripts/create-release-packages.sh`:
 
@@ -86,7 +112,19 @@ case $agent in
 esac
 ```
 
-#### 4. Update Agent Context Scripts
+#### 4. Update GitHub Release Script
+
+Modify `.github/workflows/scripts/create-github-release.sh` to include the new agent's packages:
+
+```bash
+gh release create "$VERSION" \
+  # ... existing packages ...
+  .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
+  # Add new agent packages here
+```
+
+#### 5. Update Agent Context Scripts
 
 ##### Bash script (`scripts/bash/update-agent-context.sh`):
 
@@ -132,7 +170,7 @@ switch ($AgentType) {
 }
 ```
 
-#### 5. Update CLI Tool Checks (Optional)
+#### 6. Update CLI Tool Checks (Optional)
 
 For agents that require CLI tools, add checks in the `check()` command and agent validation:
 

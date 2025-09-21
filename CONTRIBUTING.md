@@ -11,7 +11,7 @@ These are one time installations required to be able to test your changes locall
 1. Install [Python 3.11+](https://www.python.org/downloads/)
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
-1. Have an AI coding agent available: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Qwen Code](https://github.com/QwenLM/qwen-code). We're working on adding support for other agents as well.
+1. Have an [AI coding agent available](README.md#-supported-ai-agents)
 
 ## Submitting a pull request
 
@@ -39,6 +39,33 @@ Here are a few things you can do that will increase the likelihood of your pull 
 ## Development workflow
 
 See `docs/local-development.md` for up-to-date, end-to-end instructions.
+
+## AI contributions in Spec Kit
+
+We welcome and encourage the use of AI tools to help improve Spec Kit! Many valuable contributions have been enhanced with AI assistance for code generation, issue detection, and feature definition.
+
+### What we're looking for
+
+When submitting AI-assisted contributions, please ensure they include:
+
+- **Human understanding and testing** - You've personally tested the changes and understand what they do
+- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals  
+- **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
+- **Your own analysis** - Share your thoughts on the end-to-end developer experience
+
+### What we'll close
+
+We reserve the right to close contributions that appear to be:
+
+- Untested changes submitted without verification
+- Generic suggestions that don't address specific Spec Kit needs
+- Bulk submissions that show no human review or understanding
+
+### Guidelines for success
+
+The key is demonstrating that you understand and have validated your proposed changes. If a maintainer can easily tell that a contribution was generated entirely by AI without human input or testing, it likely needs more work before submission.
+
+Contributors who consistently submit low-effort AI-generated changes may be restricted from further contributions at the maintainers' discretion.
 
 ## Resources
 
