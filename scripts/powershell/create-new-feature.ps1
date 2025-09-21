@@ -17,7 +17,28 @@ $featureDesc = ($FeatureDescription -join ' ').Trim()
 # Resolve repository root. Prefer git information when available, but fall back
 # to the script location so the workflow still functions in repositories that
 # were initialised with --no-git.
-$fallbackRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
+function Find-RepositoryRoot {
+    param(
+        [string]$StartDir,
+        [string[]]$Markers = @('.git', 'README.md')
+    )
+    $current = Resolve-Path $StartDir
+    while ($true) {
+        foreach ($marker in $Markers) {
+            if (Test-Path (Join-Path $current $marker)) {
+                return $current
+            }
+        }
+        $parent = Split-Path $current -Parent
+        if ($parent -eq $current) {
+            break
+        }
+        $current = $parent
+    }
+    # If no marker found, fall back to script root
+    return (Resolve-Path $StartDir)
+}
+$fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 
 try {
     $repoRoot = git rev-parse --show-toplevel 2>$null
