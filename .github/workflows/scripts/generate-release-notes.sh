@@ -28,29 +28,8 @@ fi
 
 # Create release notes
 cat > release_notes.md << EOF
-Template release $NEW_VERSION
+This is the latest set of releases that you can use with your agent of choice. We recommend using the Specify CLI to scaffold your projects, however you can download these independently and manage them yourself.
 
-Updated specification-driven development templates for GitHub Copilot, Claude Code, Gemini CLI, Cursor, Qwen, opencode, Windsurf, and Codex.
-
-Now includes per-script variants for POSIX shell (sh) and PowerShell (ps).
-
-Download the template for your preferred AI assistant + script type:
-- spec-kit-template-copilot-sh-$NEW_VERSION.zip
-- spec-kit-template-copilot-ps-$NEW_VERSION.zip
-- spec-kit-template-claude-sh-$NEW_VERSION.zip
-- spec-kit-template-claude-ps-$NEW_VERSION.zip
-- spec-kit-template-gemini-sh-$NEW_VERSION.zip
-- spec-kit-template-gemini-ps-$NEW_VERSION.zip
-- spec-kit-template-cursor-sh-$NEW_VERSION.zip
-- spec-kit-template-cursor-ps-$NEW_VERSION.zip
-- spec-kit-template-opencode-sh-$NEW_VERSION.zip
-- spec-kit-template-opencode-ps-$NEW_VERSION.zip
-- spec-kit-template-qwen-sh-$NEW_VERSION.zip
-- spec-kit-template-qwen-ps-$NEW_VERSION.zip
-- spec-kit-template-windsurf-sh-$NEW_VERSION.zip
-- spec-kit-template-windsurf-ps-$NEW_VERSION.zip
-- spec-kit-template-codex-sh-$NEW_VERSION.zip
-- spec-kit-template-codex-ps-$NEW_VERSION.zip
 EOF
 
 echo "Generated release notes:"
