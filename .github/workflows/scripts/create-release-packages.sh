@@ -124,8 +124,8 @@ build_variant() {
   fi
   case $agent in
     claude)
-      mkdir -p "$base_dir/.claude/commands"
-      generate_commands claude md "\$ARGUMENTS" "$base_dir/.claude/commands" "$script" ;;
+      mkdir -p "$base_dir/.claude/commands/spec-kit"
+      generate_commands claude md "\$ARGUMENTS" "$base_dir/.claude/commands/spec-kit" "$script" ;;
     gemini)
       mkdir -p "$base_dir/.gemini/commands"
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
