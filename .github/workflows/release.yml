@@ -102,6 +102,8 @@ jobs:
           - spec-kit-template-windsurf-ps-${{ steps.get_tag.outputs.new_version }}.zip
           - spec-kit-template-codex-sh-${{ steps.get_tag.outputs.new_version }}.zip
           - spec-kit-template-codex-ps-${{ steps.get_tag.outputs.new_version }}.zip
+          - spec-kit-template-zed-sh-${{ steps.get_tag.outputs.new_version }}.zip
+          - spec-kit-template-zed-ps-${{ steps.get_tag.outputs.new_version }}.zip
           EOF
           
           echo "Generated release notes:"
@@ -130,6 +132,8 @@ jobs:
             spec-kit-template-windsurf-ps-${{ steps.get_tag.outputs.new_version }}.zip \
             spec-kit-template-codex-sh-${{ steps.get_tag.outputs.new_version }}.zip \
             spec-kit-template-codex-ps-${{ steps.get_tag.outputs.new_version }}.zip \
+            spec-kit-template-zed-sh-${{ steps.get_tag.outputs.new_version }}.zip \
+            spec-kit-template-zed-ps-${{ steps.get_tag.outputs.new_version }}.zip \
             --title "Spec Kit Templates - $VERSION_NO_V" \
             --notes-file release_notes.md
         env:

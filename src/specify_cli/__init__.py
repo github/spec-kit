@@ -71,6 +71,7 @@ AI_CHOICES = {
     "opencode": "opencode",
     "codex": "Codex CLI",
     "windsurf": "Windsurf",
+    "zed": "Zed",
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -746,7 +747,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, or windsurf"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf or zed"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -760,7 +761,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, or Windsurf)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf or Zed)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -776,6 +777,7 @@ def init(
         specify init my-project --ai opencode
         specify init my-project --ai codex
         specify init my-project --ai windsurf
+        specify init my-project --ai zed
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here --ai codex
