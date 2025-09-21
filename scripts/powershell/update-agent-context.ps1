@@ -340,8 +340,12 @@ function Update-AgentFile {
     if (-not (Test-Path $TargetFile)) {
         if (New-AgentFile -TargetFile $TargetFile -ProjectName $projectName -Date $date) { Write-Success "Created new $AgentName context file" } else { Write-Err 'Failed to create new agent file'; return $false }
     } else {
-        if (-not (Get-Item $TargetFile).Attributes) { Write-Err "Cannot access existing file: $TargetFile"; return $false }
-        if (Update-ExistingAgentFile -TargetFile $TargetFile -Date $date) { Write-Success "Updated existing $AgentName context file" } else { Write-Err 'Failed to update agent file'; return $false }
+        try {
+            if (Update-ExistingAgentFile -TargetFile $TargetFile -Date $date) { Write-Success "Updated existing $AgentName context file" } else { Write-Err 'Failed to update agent file'; return $false }
+        } catch {
+            Write-Err "Cannot access or update existing file: $TargetFile. $_"
+            return $false
+        }
     }
     return $true
 }
