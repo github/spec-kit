@@ -143,6 +143,8 @@ build_variant() {
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
       [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md "$base_dir/GEMINI.md" ;;
     copilot)
+      mkdir -p "$base_dir/.github/prompts"
+      generate_commands copilot md "\$ARGUMENTS" "$base_dir/.github/prompts" "$script"
       [[ -f agent_templates/copilot/copilot-instructions.md ]] && cp agent_templates/copilot/copilot-instructions.md "$base_dir/.github/copilot-instructions.md" ;;
     cursor)
       mkdir -p "$base_dir/.cursor/commands"
