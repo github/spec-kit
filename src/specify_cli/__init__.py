@@ -474,11 +474,43 @@ def download_from_branch(ai_assistant: str, download_dir: Path, repo_owner: str,
     return zip_path, metadata
 
 
+def detect_uvx_repo_info() -> tuple[str | None, str | None, str | None]:
+    """Detect if we're running from uvx --from and extract repo info.
+
+    Returns: (repo_owner, repo_name, repo_branch) or (None, None, None) if not detected
+    """
+    # Check command line args for uvx patterns
+    import re
+
+    cmdline = " ".join(sys.argv)
+    git_url_match = re.search(r'git\+https://github\.com/([^/]+)/([^/.@\s]+)(?:\.git)?(?:@([^/\s]+))?', cmdline)
+
+    if git_url_match:
+        owner, repo, branch = git_url_match.groups()
+        return owner, repo, branch or None
+
+    # Check environment variables that uvx might set
+    for env_var in os.environ:
+        if "github.com" in os.environ[env_var]:
+            git_match = re.search(r'github\.com/([^/]+)/([^/.]+)(?:\.git)?(?:/tree/([^/\s]+))?', os.environ[env_var])
+            if git_match:
+                owner, repo, branch = git_match.groups()
+                return owner, repo, branch
+
+    return None, None, None
+
+
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, repo_owner: str = None, repo_name: str = None, repo_branch: str = None) -> Tuple[Path, dict]:
-    # Get repo settings from parameters, environment variables, or defaults
-    repo_owner = repo_owner or os.getenv("SPECIFY_REPO_OWNER", "github")
-    repo_name = repo_name or os.getenv("SPECIFY_REPO_NAME", "spec-kit")
-    repo_branch = repo_branch or os.getenv("SPECIFY_REPO_BRANCH")
+    # Auto-detect repo info if running from uvx --from
+    detected_owner, detected_name, detected_branch = detect_uvx_repo_info()
+
+    # Get repo settings from parameters, environment variables, uvx detection, or defaults
+    repo_owner = repo_owner or os.getenv("SPECIFY_REPO_OWNER") or detected_owner or "github"
+    repo_name = repo_name or os.getenv("SPECIFY_REPO_NAME") or detected_name or "spec-kit"
+    repo_branch = repo_branch or os.getenv("SPECIFY_REPO_BRANCH") or detected_branch
+
+    if verbose and (detected_owner or detected_name or detected_branch):
+        console.print(f"[dim]Auto-detected from uvx: {detected_owner}/{detected_name}@{detected_branch or 'main'}[/dim]")
 
     if client is None:
         client = httpx.Client(verify=ssl_context)
@@ -791,15 +823,28 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 
 def install_claude_commands(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Install Claude command templates to the target project's .claude/commands/spec-kit folder."""
-    # Determine source commands directory (relative to this script's location)
     current_file = Path(__file__).resolve()
-    repo_root = current_file.parent.parent.parent  # Go up from src/specify_cli/__init__.py to repo root
-    source_commands_dir = repo_root / "templates" / "commands"
+
+    # Try multiple possible locations for templates
+    possible_locations = [
+        # Development/repo location
+        current_file.parent.parent.parent / "templates" / "commands",
+        # Package wheel location (when installed with include)
+        current_file.parent.parent / "templates" / "commands",
+        # Alternative package location
+        current_file.parent / "templates" / "commands",
+    ]
+
+    source_commands_dir = None
+    for location in possible_locations:
+        if location.is_dir() and list(location.glob("*.md")):
+            source_commands_dir = location
+            break
 
     # Target directory in the project
     target_commands_dir = project_path / ".claude" / "commands" / "spec-kit"
 
-    if not source_commands_dir.is_dir():
+    if source_commands_dir is None:
         if tracker:
             tracker.error("claude-cmds", "source templates/commands not found")
         else:

@@ -1,0 +1,2 @@
+include templates/commands/*.md
+recursive-include templates *

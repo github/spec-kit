@@ -48,7 +48,10 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 To install from your own fork or a specific branch:
 
 ```bash
-# Install from a fork's specific branch
+# Automatic detection (recommended) - CLI auto-detects fork/branch from uvx command
+uvx --from git+https://github.com/YOUR_USERNAME/spec-kit.git@BRANCH_NAME specify init <PROJECT_NAME> --ai claude
+
+# Manual specification (if you need to override auto-detection)
 uvx --from git+https://github.com/YOUR_USERNAME/spec-kit.git@BRANCH_NAME specify init <PROJECT_NAME> \
   --ai claude --repo-owner YOUR_USERNAME --repo-branch BRANCH_NAME
 
@@ -57,10 +60,11 @@ export SPECIFY_REPO_OWNER=YOUR_USERNAME
 export SPECIFY_REPO_BRANCH=BRANCH_NAME
 uvx --from git+https://github.com/YOUR_USERNAME/spec-kit.git@BRANCH_NAME specify init <PROJECT_NAME> --ai claude
 
-# Example: Install from hnimitanakit's prps-spec branch
-uvx --from git+https://github.com/hnimitanakit/spec-kit.git@prps-spec specify init <PROJECT_NAME> \
-  --ai claude --repo-owner hnimitanakit --repo-branch prps-spec
+# Example: Install from hnimitanakit's prps-spec branch (auto-detection)
+uvx --from git+https://github.com/hnimitanakit/spec-kit.git@prps-spec specify init <PROJECT_NAME> --ai claude
 ```
+
+**Auto-Detection Feature**: When using `uvx --from` with a GitHub URL, the CLI automatically detects the repository owner and branch, eliminating the need to manually specify `--repo-owner` and `--repo-branch` flags. This ensures you download templates from the same fork/branch you're running the CLI from.
 
 ### 2. Create the spec
 
@@ -107,9 +111,9 @@ The `specify` command supports the following options:
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
-| `--repo-owner`         | Option   | GitHub repository owner (default: `github`)                                 |
-| `--repo-name`          | Option   | GitHub repository name (default: `spec-kit`)                                |
-| `--repo-branch`        | Option   | GitHub repository branch to download from (uses releases by default)       |
+| `--repo-owner`         | Option   | GitHub repository owner (default: `github`, auto-detected from `uvx --from`) |
+| `--repo-name`          | Option   | GitHub repository name (default: `spec-kit`, auto-detected from `uvx --from`) |
+| `--repo-branch`        | Option   | GitHub repository branch to download from (uses releases by default, auto-detected from `uvx --from`) |
 
 ### Examples
 
@@ -135,8 +139,11 @@ specify init my-project --ai gemini --no-git
 # Enable debug output for troubleshooting
 specify init my-project --ai claude --debug
 
-# Install from a specific fork and branch
+# Install from a specific fork and branch (manual override)
 specify init my-project --ai claude --repo-owner hnimitanakit --repo-branch prps-spec
+
+# Install from fork with auto-detection (using uvx)
+uvx --from git+https://github.com/hnimitanakit/spec-kit.git@prps-spec specify init my-project --ai claude
 
 # Check system requirements
 specify check
