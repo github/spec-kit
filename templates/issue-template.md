@@ -1,6 +1,6 @@
 # Issue Specification: [ISSUE NAME]
 
-**Issue Number**: `[###-issue-name]`  
+**Issue Number**: `[001-dashboard-loading]`  
 **Created**: [DATE]  
 **Status**: Draft  
 **Input**: Issue description: "$ARGUMENTS"

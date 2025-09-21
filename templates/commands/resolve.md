@@ -48,7 +48,7 @@ $ARGUMENTS
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if resolution cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
+   - **IMPORTANT** For completed tasks, make sure to mark the task off as [x] in the tasks file.
 
 7. Completion validation:
    - Verify all required tasks are completed

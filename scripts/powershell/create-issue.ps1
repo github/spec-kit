@@ -80,10 +80,23 @@ if (Test-Path $issuesDir) {
 $next = $highest + 1
 $issueNum = "{0:D3}" -f $next
 
-# Create branch name from issue description
-$issueName = $issueDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-+', '-' -replace '^-|-$', ''
-$words = ($issueName -split '-' | Where-Object { $_ -ne '' } | Select-Object -First 3) -join '-'
-$issueName = "$issueNum-$words"
+# Align issue name generation logic with bash version
+$issueName = $issueDesc.ToLower()
+$issueName = $issueName -replace '[^a-z0-9 ]', ''           # Remove all non-alphanumeric and non-space
+$issueName = $issueName -replace '\s+', '-'                 # Replace spaces with single dash
+$issueName = $issueName -replace '-+', '-'                  # Collapse multiple dashes
+$issueName = $issueName -replace '^-|-$', ''                # Trim leading/trailing dashes
+
+# Split the slug into words, filter empty, take first 3, join with dashes
+$issueWords = $issueName -split '-' | Where-Object { $_ -ne '' } | Select-Object -First 3
+$issueWords = $issueWords -join '-'
+
+# If no words found, fallback to 'issue'
+if ([string]::IsNullOrEmpty($issueWords)) {
+    $issueWords = 'issue'
+}
+
+$issueName = "$issueNum-$issueWords"
 
 if ($hasGit) {
     git checkout -b $issueName

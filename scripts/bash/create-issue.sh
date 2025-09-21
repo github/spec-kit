@@ -67,9 +67,24 @@ fi
 NEXT=$((HIGHEST + 1))
 ISSUE_NUM=$(printf "%03d" "$NEXT")
 
-ISSUE_NAME=$(echo "$ISSUE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
-WORDS=$(echo "$ISSUE_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
-ISSUE_NAME="${ISSUE_NUM}-${WORDS}"
+# Normalize the issue description to create a slug
+ISSUE_SLUG=$(echo "$ISSUE_DESCRIPTION" | tr '[:upper:]' '[:lower:]')
+ISSUE_SLUG=$(echo "$ISSUE_SLUG" | sed 's/[^a-z0-9]/-/g')
+ISSUE_SLUG=$(echo "$ISSUE_SLUG" | sed 's/-\+/-/g')
+ISSUE_SLUG=$(echo "$ISSUE_SLUG" | sed 's/^-//')
+ISSUE_SLUG=$(echo "$ISSUE_SLUG" | sed 's/-$//')
+
+# Split the slug into words, filter empty, take first 3, join with dashes
+ISSUE_WORDS=$(echo "$ISSUE_SLUG" | tr '-' '\n' | grep -v '^$')
+ISSUE_WORDS=$(echo "$ISSUE_WORDS" | head -3)
+ISSUE_WORDS=$(echo "$ISSUE_WORDS" | tr '\n' '-' | sed 's/-$//')
+
+# If no words found, fallback to 'issue'
+if [ -z "$ISSUE_WORDS" ]; then
+    ISSUE_WORDS="issue"
+fi
+
+ISSUE_NAME="${ISSUE_NUM}-${ISSUE_WORDS}"
 
 if [ "$HAS_GIT" = true ]; then
     git checkout -b "$ISSUE_NAME"
