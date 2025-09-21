@@ -1013,13 +1013,10 @@ def init(
     console.print()
     console.print(steps_panel)
 
-    # Add Codex warning if using Codex
     if selected_ai == "codex":
         warning_text = """[bold yellow]Important Note:[/bold yellow]
 
-Custom prompts do not yet support arguments in Codex. You may need to manually 
-specify additional project instructions directly in prompt files located in 
-[cyan].codex/prompts/[/cyan].
+Custom prompts do not yet support arguments in Codex. You may need to manually specify additional project instructions directly in prompt files located in [cyan].codex/prompts/[/cyan].
 
 For more information, see: [cyan]https://github.com/openai/codex/issues/2890[/cyan]"""
         
