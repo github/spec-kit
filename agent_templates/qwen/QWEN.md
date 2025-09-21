@@ -20,6 +20,10 @@ Auto-generated from all feature plans. Last updated: [DATE]
 [LAST 3 FEATURES AND WHAT THEY ADDED]
 
 ## Qwen Code Specifics
+<!--
+NOTE: The command specification (TOML format, {{args}} placeholders, directory structure) is intentionally identical to the Gemini agent template for consistency across agents. See agent_templates/gemini/GEMINI.md for details. Any changes to the command format should be reflected in both templates.
+-->
+
 - Use TOML command format with {{args}} placeholders
 - Commands are stored in `.qwen/commands/` directory
 - Use `qwen` CLI tool for execution
