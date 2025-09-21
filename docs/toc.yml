@@ -15,3 +15,5 @@
   items:
     - name: Local Development
       href: local-development.md
+    - name: Issue-Resolution Flow
+      href: issue-resolution-flow.md

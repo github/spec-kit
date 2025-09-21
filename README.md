@@ -85,7 +85,45 @@ Use **`/implement`** to execute all tasks and build your feature according to th
 /implement
 ```
 
+## Issue-Resolution Flow
+
+For bug fixes, improvements, and issue resolution, use the issue-resolution workflow:
+
+### 7. Create issue specification
+
+Use **`/issue`** to create a structured issue specification for bug reports or feature requests.
+
+```bash
+/issue The login form is not validating email addresses correctly. Users can submit invalid emails and the system accepts them, causing problems in the user database.
+```
+
+### 8. Plan issue resolution
+
+Use **`/plan`** to create a technical implementation plan for resolving the issue.
+
+```bash
+/plan Fix email validation by implementing proper regex validation on the frontend and backend. Add comprehensive error handling and user feedback.
+```
+
+### 9. Generate resolution tasks
+
+Use **`/tasks`** to create an actionable task list for issue resolution.
+
+```bash
+/tasks
+```
+
+### 10. Execute issue resolution
+
+Use **`/resolve`** to execute all tasks and resolve the issue according to the plan.
+
+```bash
+/resolve
+```
+
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+For issue-resolution workflows, see our [Issue-Resolution Flow guide](./docs/issue-resolution-flow.md).
 
 ## 📽️ Video Overview
 
@@ -178,6 +216,8 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/plan`         | Create technical implementation plans with your chosen tech stack     |
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
+| `/issue`        | Create issue specifications for issue-resolution flow                |
+| `/resolve`      | Execute issue resolution by processing tasks defined in the issue    |
 
 ### Environment Variables
 
@@ -201,6 +241,7 @@ Spec-Driven Development is a structured process that emphasizes:
 | **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+| **Issue-Resolution Flow** | Problem resolution | <ul><li>Create structured issue specifications</li><li>Investigate root causes systematically</li><li>Plan and execute targeted fixes</li><li>Validate resolutions and prevent regressions</li></ul> |
 
 ## 🎯 Experimental goals
 
@@ -227,6 +268,7 @@ Our research and experimentation focus on:
 - Validate the concept of parallel implementation exploration
 - Provide robust iterative feature development workflows
 - Extend processes to handle upgrades and modernization tasks
+- Support structured issue resolution and bug fixing workflows
 
 ## 🔧 Prerequisites
 
@@ -241,6 +283,7 @@ If you encounter issues with an agent, please open an issue so we can refine the
 ## 📖 Learn more
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+- **[Issue-Resolution Flow Guide](./docs/issue-resolution-flow.md)** - Structured approach to bug fixes and issue resolution
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
@@ -481,6 +524,74 @@ The `/implement` command will:
 >The AI agent will execute local CLI commands (such as `dotnet`, `npm`, etc.) - make sure you have the required tools installed on your machine.
 
 Once the implementation is complete, test the application and resolve any runtime errors that may not be visible in CLI logs (e.g., browser console errors). You can copy and paste such errors back to your AI agent for resolution.
+
+### Issue-Resolution Flow
+
+For bug fixes, improvements, and issue resolution, follow this structured approach:
+
+#### **STEP 1:** Create issue specification
+
+Use the `/issue` command to create a structured issue specification:
+
+```text
+/issue The user dashboard is not loading properly. When users click on the dashboard link, they see a blank page instead of their data. This happens consistently for all users and started after the last deployment.
+```
+
+This creates an issue specification in `issues/###-issue-name/issue.md` with:
+- Problem statement and impact assessment
+- Current vs expected behavior
+- Reproduction steps
+- Issue requirements and constraints
+
+#### **STEP 2:** Plan issue resolution
+
+Use the `/plan` command to create a technical implementation plan for resolving the issue:
+
+```text
+/plan Investigate the dashboard loading issue by checking the API endpoints, database connections, and frontend routing. Implement proper error handling and logging to prevent similar issues in the future.
+```
+
+This generates the same planning artifacts as feature development but focused on issue resolution:
+- Technical investigation plan
+- Root cause analysis approach
+- Implementation strategy for the fix
+- Testing and validation plan
+
+#### **STEP 3:** Generate resolution tasks
+
+Use `/tasks` to create an actionable task list for issue resolution:
+
+```text
+/tasks
+```
+
+This creates a task breakdown focused on:
+- Investigation and debugging tasks
+- Fix implementation tasks
+- Testing and validation tasks
+- Documentation and prevention tasks
+
+#### **STEP 4:** Execute issue resolution
+
+Use `/resolve` to execute the issue resolution plan:
+
+```text
+/resolve
+```
+
+The `/resolve` command will:
+- Validate that all prerequisites are in place (issue spec, plan, and tasks)
+- Parse the task breakdown from `tasks.md`
+- Execute tasks in the correct order, respecting dependencies
+- Follow the investigation → fix → test → validate approach
+- Provide progress updates and handle errors appropriately
+
+#### **Key Differences from Feature Development**
+
+- **Issue Focus**: Commands work with `issues/` directory instead of `specs/`
+- **Problem-Oriented**: Templates focus on problem identification rather than feature definition
+- **Investigation First**: Tasks prioritize investigation and root cause analysis
+- **Fix Validation**: Resolution includes specific testing to ensure the issue is resolved
 
 </details>
 
