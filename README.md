@@ -163,6 +163,12 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
 
+### Environment Variables
+
+| Variable         | Description                                                                                    |
+|------------------|------------------------------------------------------------------------------------------------|
+| `SPECIFY_FEATURE` | Override feature detection for non-git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/plan` or follow-up commands. |
+
 ## 📚 Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
