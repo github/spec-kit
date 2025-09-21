@@ -70,7 +70,7 @@ AI_CHOICES = {
     "qwen": "Qwen Code",
     "opencode": "opencode",
     "codex": "Codex CLI",
-    "windsurf": "Windsurf",
+    "windsurf": "Windsurf"
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -286,6 +286,103 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
     return selected_key
 
 
+def select_multiple_with_arrows(options: dict, prompt_text: str = "Select options", default_keys: list[str] = None) -> list[str]:
+    """
+    Interactive multiple selection using arrow keys with Rich Live display.
+    
+    Args:
+        options: Dict with keys as option keys and values as descriptions
+        prompt_text: Text to show above the options
+        default_keys: Default option keys to start with selected
+        
+    Returns:
+        List of selected option keys
+    """
+    option_keys = list(options.keys())
+    selected_options = set(default_keys or [])
+    cursor_index = 0
+    
+    selected_keys = None
+
+    def create_selection_panel():
+        """Create the selection panel with current selection highlighted."""
+        table = Table.grid(padding=(0, 2))
+        table.add_column(style="cyan", justify="left", width=3)
+        table.add_column(style="white", justify="left", width=3)
+        table.add_column(style="white", justify="left")
+        
+        for i, key in enumerate(option_keys):
+            cursor_marker = "▶" if i == cursor_index else " "
+            selected_marker = "✓" if key in selected_options else " "
+            
+            if i == cursor_index:
+                key_style = "[bright_cyan]"
+                desc_style = "[bright_white]"
+            else:
+                key_style = "[cyan]"
+                desc_style = "[dim]"
+                
+            table.add_row(
+                cursor_marker, 
+                f"[{selected_marker}]", 
+                f"{key_style}{key}[/] {desc_style}({options[key]})[/]"
+            )
+        
+        table.add_row("", "", "")
+        table.add_row("", "", "[dim]↑/↓ navigate, Space to select/deselect, Enter to confirm, Esc to cancel[/dim]")
+        
+        return Panel(
+            table,
+            title=f"[bold]{prompt_text}[/bold]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+    
+    console.print()
+
+    def run_selection_loop():
+        nonlocal selected_keys, cursor_index
+        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
+            while True:
+                try:
+                    key = get_key()
+                    if key == 'up':
+                        cursor_index = (cursor_index - 1) % len(option_keys)
+                    elif key == 'down':
+                        cursor_index = (cursor_index + 1) % len(option_keys)
+                    elif key == 'space':
+                        current_key = option_keys[cursor_index]
+                        if current_key in selected_options:
+                            selected_options.remove(current_key)
+                        else:
+                            selected_options.add(current_key)
+                    elif key == 'enter':
+                        if selected_options:
+                            selected_keys = list(selected_options)
+                            break
+                        else:
+                            # If nothing selected, default to copilot
+                            selected_keys = ["copilot"]
+                            break
+                    elif key == 'escape':
+                        console.print("\n[yellow]Selection cancelled[/yellow]")
+                        raise typer.Exit(1)
+                    
+                    live.update(create_selection_panel(), refresh=True)
+
+                except KeyboardInterrupt:
+                    console.print("\n[yellow]Selection cancelled[/yellow]")
+                    raise typer.Exit(1)
+
+    run_selection_loop()
+
+    if selected_keys is None:
+        console.print("\n[red]Selection failed.[/red]")
+        raise typer.Exit(1)
+
+    return selected_keys
+
+
 
 console = Console()
 
@@ -462,21 +559,20 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         raise typer.Exit(1)
     
     # Find the template asset for the specified AI assistant
-    assets = release_data.get("assets", [])
     pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
     matching_assets = [
-        asset for asset in assets
+        asset for asset in release_data.get("assets", [])
         if pattern in asset["name"] and asset["name"].endswith(".zip")
     ]
-
-    asset = matching_assets[0] if matching_assets else None
-
-    if asset is None:
-        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
-        asset_names = [a.get('name', '?') for a in assets]
+    
+    if not matching_assets:
+        console.print(f"[red]No matching release asset found[/red] for pattern: [bold]{pattern}[/bold]")
+        asset_names = [a.get('name','?') for a in release_data.get('assets', [])]
         console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
-
+    
+    # Use the first matching asset
+    asset = matching_assets[0]
     download_url = asset["browser_download_url"]
     filename = asset["name"]
     file_size = asset["size"]
@@ -485,12 +581,14 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         console.print(f"[cyan]Found template:[/cyan] {filename}")
         console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
         console.print(f"[cyan]Release:[/cyan] {release_data['tag_name']}")
-
+    
+    # Download the file
     zip_path = download_dir / filename
     if verbose:
         console.print(f"[cyan]Downloading template...[/cyan]")
     
     try:
+        # Include auth header for initial GitHub request; it won't leak across cross-origin redirects
         with client.stream(
             "GET",
             download_url,
@@ -539,6 +637,103 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         "asset_url": download_url
     }
     return zip_path, metadata
+
+
+def download_and_extract_template_multi(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+    """Download and extract template for multiple AI assistants with AI-specific tracking."""
+    current_dir = Path.cwd()
+    
+    # Use AI-specific tracker keys
+    fetch_key = f"fetch-{ai_assistant}"
+    download_key = f"download-{ai_assistant}"
+    extract_key = f"extract-{ai_assistant}"
+    zip_list_key = f"zip-list-{ai_assistant}"
+    extracted_summary_key = f"extracted-summary-{ai_assistant}"
+    chmod_key = f"chmod-{ai_assistant}"
+    cleanup_key = f"cleanup-{ai_assistant}"
+    
+    # Step: fetch + download combined
+    if tracker:
+        tracker.start(fetch_key, f"contacting GitHub API for {ai_assistant}")
+    
+    zip_path = None
+    try:
+        zip_path, meta = download_template_from_github(
+            ai_assistant,
+            current_dir,
+            script_type=script_type,
+            verbose=verbose and tracker is None,
+            show_progress=(tracker is None),
+            client=client,
+            debug=debug,
+            github_token=github_token
+        )
+        if tracker:
+            tracker.complete(fetch_key, f"release {meta['release']} ({meta['size']:,} bytes)")
+            tracker.complete(download_key, meta['filename'])
+        
+        # Extract the template directly (avoiding duplicate download)
+        if tracker:
+            tracker.start(extract_key, "extracting template")
+            
+        # Use the existing extraction logic from download_and_extract_template
+        # but without re-downloading
+        import zipfile
+        import shutil
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(current_dir)
+        
+        # Find the extracted directory and move it to project_path
+        extracted_dirs = [d for d in current_dir.iterdir() if d.is_dir() and d.name.startswith(f"spec-kit-template-{ai_assistant}")]
+        if not extracted_dirs:
+            raise RuntimeError(f"No extracted template directory found for {ai_assistant}")
+        
+        extracted_dir = extracted_dirs[0]
+        
+        if is_current_dir:
+            # Copy contents to current directory
+            for item in extracted_dir.iterdir():
+                dest = project_path / item.name
+                if item.is_dir():
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.copytree(item, dest)
+                else:
+                    shutil.copy2(item, dest)
+            # Remove the extracted template directory
+            shutil.rmtree(extracted_dir)
+        else:
+            # Move the entire directory
+            if project_path.exists():
+                shutil.rmtree(project_path)
+            extracted_dir.rename(project_path)
+        
+        if tracker:
+            tracker.complete(extract_key, "extracted successfully")
+            tracker.complete(zip_list_key, "contents processed")
+            tracker.complete(extracted_summary_key, "files copied")
+            tracker.complete(chmod_key, "permissions set")
+        
+        return project_path
+        
+    except Exception as e:
+        if tracker:
+            tracker.error(fetch_key if zip_path is None else extract_key, str(e))
+        else:
+            if verbose:
+                console.print(f"[red]Error setting up {ai_assistant} template:[/red] {e}")
+        raise
+    finally:
+        # Cleanup
+        try:
+            if zip_path and zip_path.exists():
+                zip_path.unlink()
+            if tracker:
+                tracker.complete(cleanup_key, "temp files removed")
+        except Exception:
+            if tracker:
+                tracker.error(cleanup_key, "cleanup failed")
 
 
 def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
@@ -743,10 +938,11 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, or windsurf"),
+    ai_assistant: list[str] = typer.Option(None, "--ai", help="AI assistant(s) to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf (can specify multiple)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -760,9 +956,9 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, or Windsurf)
-    3. Download the appropriate template from GitHub
-    4. Extract the template to a new project directory or current directory
+    2. Let you choose your AI assistant(s) (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, or Windsurf)
+    3. Download the appropriate template(s) from GitHub
+    4. Extract the template(s) to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
     
@@ -770,6 +966,7 @@ def init(
         specify init my-project
         specify init my-project --ai claude
         specify init my-project --ai gemini
+        specify init my-project --ai copilot --ai cursor --ai gemini  # Multiple AI assistants
         specify init my-project --ai copilot --no-git
         specify init my-project --ai cursor
         specify init my-project --ai qwen
@@ -777,8 +974,7 @@ def init(
         specify init my-project --ai codex
         specify init my-project --ai windsurf
         specify init --ignore-agent-tools my-project
-        specify init --here --ai claude
-        specify init --here --ai codex
+        specify init --here --ai claude --ai copilot  # Multiple AIs in current directory
         specify init --here
     """
     # Show banner first
@@ -842,45 +1038,48 @@ def init(
 
     # AI assistant selection
     if ai_assistant:
-        if ai_assistant not in AI_CHOICES:
-            console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AI_CHOICES.keys())}")
+        # Validate all provided AI assistants
+        invalid_assistants = [ai for ai in ai_assistant if ai not in AI_CHOICES]
+        if invalid_assistants:
+            console.print(f"[red]Error:[/red] Invalid AI assistant(s): {', '.join(invalid_assistants)}. Choose from: {', '.join(AI_CHOICES.keys())}")
             raise typer.Exit(1)
-        selected_ai = ai_assistant
+        selected_ais = ai_assistant
     else:
-        # Use arrow-key selection interface
-        selected_ai = select_with_arrows(
+        # Use arrow-key selection interface for multiple selection
+        selected_ais = select_multiple_with_arrows(
             AI_CHOICES, 
-            "Choose your AI assistant:", 
-            "copilot"
+            "Choose your AI assistant(s) (Space to select, Enter to confirm):", 
+            ["copilot"]  # Default selection
         )
     
     # Check agent tools unless ignored
     if not ignore_agent_tools:
         agent_tool_missing = False
-        if selected_ai == "claude":
-            if not check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup"):
-                console.print("[red]Error:[/red] Claude CLI is required for Claude Code projects")
-                agent_tool_missing = True
-        elif selected_ai == "gemini":
-            if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
-                console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
-                agent_tool_missing = True
-        elif selected_ai == "qwen":
-            if not check_tool("qwen", "Install from: https://github.com/QwenLM/qwen-code"):
-                console.print("[red]Error:[/red] Qwen CLI is required for Qwen Code projects")
-                agent_tool_missing = True
-        elif selected_ai == "opencode":
-            if not check_tool("opencode", "Install from: https://opencode.ai"):
-                console.print("[red]Error:[/red] opencode CLI is required for opencode projects")
-                agent_tool_missing = True
-        elif selected_ai == "codex":
-            if not check_tool("codex", "Install from: https://github.com/openai/codex"):
-                console.print("[red]Error:[/red] Codex CLI is required for Codex projects")
-                agent_tool_missing = True
-        # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
+        for selected_ai in selected_ais:
+            if selected_ai == "claude":
+                if not check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup"):
+                    console.print(f"[red]Error:[/red] Claude CLI is required for Claude Code projects")
+                    agent_tool_missing = True
+            elif selected_ai == "gemini":
+                if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
+                    console.print(f"[red]Error:[/red] Gemini CLI is required for Gemini projects")
+                    agent_tool_missing = True
+            elif selected_ai == "qwen":
+                if not check_tool("qwen", "Install from: https://github.com/QwenLM/qwen-code"):
+                    console.print(f"[red]Error:[/red] Qwen CLI is required for Qwen Code projects")
+                    agent_tool_missing = True
+            elif selected_ai == "opencode":
+                if not check_tool("opencode", "Install from: https://opencode.ai"):
+                    console.print(f"[red]Error:[/red] opencode CLI is required for opencode projects")
+                    agent_tool_missing = True
+            elif selected_ai == "codex":
+                if not check_tool("codex", "Install from: https://github.com/openai/codex"):
+                    console.print(f"[red]Error:[/red] Codex CLI is required for Codex projects")
+                    agent_tool_missing = True
+            # GitHub Copilot, Cursor, and Windsurf checks are not needed as they're typically available in supported IDEs
 
         if agent_tool_missing:
-            console.print("\n[red]Required AI tool is missing![/red]")
+            console.print("\n[red]Required AI tool(s) missing![/red]")
             console.print("[yellow]Tip:[/yellow] Use --ignore-agent-tools to skip this check")
             raise typer.Exit(1)
     
@@ -899,7 +1098,7 @@ def init(
         else:
             selected_script = default_script
     
-    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
+    console.print(f"[cyan]Selected AI assistants:[/cyan] {', '.join(selected_ais)}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
     
     # Download and set up project
@@ -910,22 +1109,23 @@ def init(
     # Pre steps recorded as completed before live rendering
     tracker.add("precheck", "Check required tools")
     tracker.complete("precheck", "ok")
-    tracker.add("ai-select", "Select AI assistant")
-    tracker.complete("ai-select", f"{selected_ai}")
+    tracker.add("ai-select", "Select AI assistant(s)")
+    tracker.complete("ai-select", f"{', '.join(selected_ais)}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
-    for key, label in [
-        ("fetch", "Fetch latest release"),
-        ("download", "Download template"),
-        ("extract", "Extract template"),
-        ("zip-list", "Archive contents"),
-        ("extracted-summary", "Extraction summary"),
-        ("chmod", "Ensure scripts executable"),
-        ("cleanup", "Cleanup"),
-        ("git", "Initialize git repository"),
-        ("final", "Finalize")
-    ]:
-        tracker.add(key, label)
+    for selected_ai in selected_ais:
+        for key, label in [
+            (f"fetch-{selected_ai}", f"Fetch latest release ({selected_ai})"),
+            (f"download-{selected_ai}", f"Download template ({selected_ai})"),
+            (f"extract-{selected_ai}", f"Extract template ({selected_ai})"),
+            (f"zip-list-{selected_ai}", f"Archive contents ({selected_ai})"),
+            (f"extracted-summary-{selected_ai}", f"Extraction summary ({selected_ai})"),
+            (f"chmod-{selected_ai}", f"Ensure scripts executable ({selected_ai})"),
+            (f"cleanup-{selected_ai}", f"Cleanup ({selected_ai})"),
+        ]:
+            tracker.add(key, label)
+    tracker.add("git", "Initialize git repository")
+    tracker.add("final", "Finalize")
 
     # Use transient so live tree is replaced by the final static render (avoids duplicate output)
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
@@ -936,7 +1136,14 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            # Download and extract templates for each AI assistant
+            for selected_ai in selected_ais:
+                # Update tracker keys to be AI-specific
+                if tracker:
+                    tracker.start(f"fetch-{selected_ai}")
+                download_and_extract_template_multi(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+                if tracker:
+                    tracker.complete(f"cleanup-{selected_ai}")
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -989,7 +1196,9 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent(s):")
+    if len(selected_ais) > 1:
+        steps_lines.append(f"   [dim]Multiple AI assistants configured: {', '.join(selected_ais)}[/dim]")
     steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
     steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
     steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plans")
@@ -1016,7 +1225,6 @@ def check():
     tracker.add("cursor-agent", "Cursor IDE agent (optional)")
     tracker.add("windsurf", "Windsurf IDE (optional)")
     tracker.add("opencode", "opencode")
-    tracker.add("codex", "Codex CLI")
     
     git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
     claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
@@ -1028,15 +1236,14 @@ def check():
     cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
     windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
     opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
-    codex_ok = check_tool_for_tracker("codex", "https://github.com/openai/codex", tracker)
 
     console.print(tracker.render())
-
+    
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
-
+    
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or opencode_ok or codex_ok):
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or opencode_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 
