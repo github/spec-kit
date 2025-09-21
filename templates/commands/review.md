@@ -90,6 +90,13 @@ git diff main...HEAD
 
 Check if implementation follows context engineering principles:
 
+**ULTRATHINK**: Before evaluating patterns, deeply analyze:
+- Why were these specific patterns chosen over alternatives?
+- What are the long-term implications of pattern choices?
+- Are there hidden coupling issues between components?
+- How will these patterns affect future feature development?
+- What failure modes are introduced by the chosen architecture?
+
 **Pattern Consistency**:
 - [ ] Similar features implemented with consistent patterns
 - [ ] Established codebase conventions followed

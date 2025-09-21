@@ -12,6 +12,14 @@ Given the feature description provided as an argument, do this:
 ### Phase 1: Research & Context Gathering
 **Before creating the specification, conduct systematic research to ensure comprehensive context:**
 
+**ULTRATHINK**: Before proceeding with research, deeply analyze the feature description to identify:
+- Hidden complexity that isn't immediately apparent
+- Potential architectural implications and system-wide impacts
+- Critical assumptions that need validation
+- Similar features that failed or succeeded and why
+- Long-term maintenance and evolution considerations
+- User experience implications beyond the obvious requirements
+
 1. **Codebase Research**:
    - Search for similar features in the codebase using patterns from the feature description
    - Identify existing libraries, services, or components that might be relevant

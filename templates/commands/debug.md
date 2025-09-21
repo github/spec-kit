@@ -104,6 +104,13 @@ git diff HEAD~5 HEAD
 
 ### 5. Root Cause Analysis
 
+**ULTRATHINK**: Before applying standard debugging techniques, deeply analyze:
+- What systemic conditions enabled this problem to manifest?
+- What assumptions in the original design were flawed or incomplete?
+- How do organizational processes contribute to this class of problem?
+- What are the second and third-order effects of potential solutions?
+- What would a bulletproof solution look like, and why wasn't it built initially?
+
 **Why Analysis** (5 Whys technique):
 1. **Why did this specific failure occur?**
 2. **Why wasn't this caught earlier?**

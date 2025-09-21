@@ -13,10 +13,14 @@
 2. Fill Technical Context (scan for NEEDS CLARIFICATION)
    → Detect Project Type from context (web=frontend+backend, mobile=app+api)
    → Set Structure Decision based on project type
+   → ULTRATHINK: Analyze technical context for hidden dependencies, scaling implications,
+     performance bottlenecks, security considerations, and integration complexity
 3. Fill Implementation Blueprint section
    → Extract context items from spec's Context Engineering section
    → Document known patterns and gotchas
    → Run Context Completeness Gate
+   → ULTRATHINK: Evaluate architectural decisions against long-term maintainability,
+     system evolution, and potential failure modes
 4. Evaluate Constitution Check section below
    → If violations exist: Document in Complexity Tracking
    → If no justification possible: ERROR "Simplify approach first"
