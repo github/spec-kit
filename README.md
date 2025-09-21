@@ -17,6 +17,7 @@
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
+- [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
@@ -92,6 +93,21 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 [![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
+## 🤖 Supported AI Agents
+
+| Agent                                                     | Support | Notes                                             |
+|-----------------------------------------------------------|---------|---------------------------------------------------|
+| [Claude Code](https://www.anthropic.com/claude-code)      | ✅ |                                                   |
+| [GitHub Copilot](https://code.visualstudio.com/)          | ✅ |                                                   |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | ✅ |                                                   |
+| [Cursor](https://cursor.sh/)                              | ✅ |                                                   |
+| [Qwen Code](https://github.com/QwenLM/qwen-code)          | ✅ |                                                   |
+| [opencode](https://opencode.ai/)                          | ✅ |                                                   |
+| [Windsurf](https://windsurf.com/)                         | ✅ |                                                   |
+| [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
+| [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
+| [Codex CLI](https://github.com/openai/codex)              | ⚠️ | Codex [does not support](https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
+
 ## 🔧 Specify CLI Reference
 
 The `specify` command supports the following options:
@@ -108,7 +124,7 @@ The `specify` command supports the following options:
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, `codex`, or `windsurf` |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, or `auggie` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
@@ -163,6 +179,12 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
 
+### Environment Variables
+
+| Variable         | Description                                                                                    |
+|------------------|------------------------------------------------------------------------------------------------|
+| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/plan` or follow-up commands. |
+
 ## 📚 Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
@@ -213,6 +235,8 @@ Our research and experimentation focus on:
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
+
+If you encounter issues with an agent, please open an issue so we can refine the integration.
 
 ## 📖 Learn more
 

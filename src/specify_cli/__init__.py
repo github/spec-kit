@@ -72,6 +72,8 @@ AI_CHOICES = {
     "opencode": "opencode",
     "codex": "Codex CLI",
     "windsurf": "Windsurf",
+    "kilocode": "Kilo Code",
+    "auggie": "Auggie CLI",
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -355,13 +357,13 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
         return None
 
 
-def check_tool_for_tracker(tool: str, install_hint: str, tracker: StepTracker) -> bool:
+def check_tool_for_tracker(tool: str, tracker: StepTracker) -> bool:
     """Check if a tool is installed and update tracker."""
     if shutil.which(tool):
         tracker.complete(tool, "available")
         return True
     else:
-        tracker.error(tool, f"not found - {install_hint}")
+        tracker.error(tool, "not found")
         return False
 
 
@@ -747,7 +749,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, or windsurf"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, or auggie"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -761,7 +763,7 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, or Windsurf)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf, Kilo Code, or Auggie CLI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
@@ -777,6 +779,7 @@ def init(
         specify init my-project --ai opencode
         specify init my-project --ai codex
         specify init my-project --ai windsurf
+        specify init my-project --ai auggie
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here --ai codex
@@ -877,6 +880,10 @@ def init(
         elif selected_ai == "codex":
             if not check_tool("codex", "Install from: https://github.com/openai/codex"):
                 console.print("[red]Error:[/red] Codex CLI is required for Codex projects")
+                agent_tool_missing = True
+        elif selected_ai == "auggie":
+            if not check_tool("auggie", "Install from: https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"):
+                console.print("[red]Error:[/red] Auggie CLI is required for Auggie CLI projects")
                 agent_tool_missing = True
         # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
 
@@ -981,6 +988,32 @@ def init(
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
     
+    # Agent folder security notice
+    agent_folder_map = {
+        "claude": ".claude/",
+        "gemini": ".gemini/",
+        "cursor": ".cursor/",
+        "qwen": ".qwen/",
+        "opencode": ".opencode/",
+        "codex": ".codex/",
+        "windsurf": ".windsurf/",
+        "kilocode": ".kilocode/",
+        "auggie": ".auggie/",
+        "copilot": ".github/"
+    }
+    
+    if selected_ai in agent_folder_map:
+        agent_folder = agent_folder_map[selected_ai]
+        security_notice = Panel(
+            f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
+            f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
+            title="[yellow]Agent Folder Security[/yellow]",
+            border_style="yellow",
+            padding=(1, 2)
+        )
+        console.print()
+        console.print(security_notice)
+    
     # Boxed "Next steps" section
     steps_lines = []
     if not here:
@@ -1009,17 +1042,14 @@ def init(
     steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
     steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
 
-    steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
+    steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
     console.print(steps_panel)
 
-    # Add Codex warning if using Codex
     if selected_ai == "codex":
         warning_text = """[bold yellow]Important Note:[/bold yellow]
 
-Custom prompts do not yet support arguments in Codex. You may need to manually 
-specify additional project instructions directly in prompt files located in 
-[cyan].codex/prompts/[/cyan].
+Custom prompts do not yet support arguments in Codex. You may need to manually specify additional project instructions directly in prompt files located in [cyan].codex/prompts/[/cyan].
 
 For more information, see: [cyan]https://github.com/openai/codex/issues/2890[/cyan]"""
         
@@ -1039,23 +1069,27 @@ def check():
     tracker.add("claude", "Claude Code CLI")
     tracker.add("gemini", "Gemini CLI")
     tracker.add("qwen", "Qwen Code CLI")
-    tracker.add("code", "VS Code (for GitHub Copilot)")
-    tracker.add("cursor-agent", "Cursor IDE agent (optional)")
-    tracker.add("windsurf", "Windsurf IDE (optional)")
+    tracker.add("code", "Visual Studio Code")
+    tracker.add("code-insiders", "Visual Studio Code Insiders")
+    tracker.add("cursor-agent", "Cursor IDE agent")
+    tracker.add("windsurf", "Windsurf IDE")
+    tracker.add("kilocode", "Kilo Code IDE")
     tracker.add("opencode", "opencode")
     tracker.add("codex", "Codex CLI")
+    tracker.add("auggie", "Auggie CLI")
     
-    git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
-    claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
-    gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
-    qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
-    code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
-    if not code_ok:
-        code_ok = check_tool_for_tracker("code-insiders", "https://code.visualstudio.com/insiders/", tracker)
-    cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
-    windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
-    opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
-    codex_ok = check_tool_for_tracker("codex", "https://github.com/openai/codex", tracker)
+    git_ok = check_tool_for_tracker("git", tracker)
+    claude_ok = check_tool_for_tracker("claude", tracker)  
+    gemini_ok = check_tool_for_tracker("gemini", tracker)
+    qwen_ok = check_tool_for_tracker("qwen", tracker)
+    code_ok = check_tool_for_tracker("code", tracker)
+    code_insiders_ok = check_tool_for_tracker("code-insiders", tracker)
+    cursor_ok = check_tool_for_tracker("cursor-agent", tracker)
+    windsurf_ok = check_tool_for_tracker("windsurf", tracker)
+    kilocode_ok = check_tool_for_tracker("kilocode", tracker)
+    opencode_ok = check_tool_for_tracker("opencode", tracker)
+    codex_ok = check_tool_for_tracker("codex", tracker)
+    auggie_ok = check_tool_for_tracker("auggie", tracker)
 
     console.print(tracker.render())
 
@@ -1063,7 +1097,7 @@ def check():
 
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or opencode_ok or codex_ok):
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or kilocode_ok or opencode_ok or codex_ok or auggie_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 

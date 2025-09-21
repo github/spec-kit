@@ -163,13 +163,19 @@ build_variant() {
     codex)
       mkdir -p "$base_dir/.codex/prompts"
       generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" ;;
+    kilocode)
+      mkdir -p "$base_dir/.kilocode/workflows"
+      generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
+    auggie)
+      mkdir -p "$base_dir/.augment/commands"
+      generate_commands auggie md "\$ARGUMENTS" "$base_dir/.augment/commands" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie)
 ALL_SCRIPTS=(sh ps)
 
 

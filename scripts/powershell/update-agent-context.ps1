@@ -25,7 +25,7 @@ Relies on common helper functions in common.ps1
 #>
 param(
     [Parameter(Position=0)]
-    [ValidateSet('claude','gemini','copilot','cursor','qwen','opencode','codex','windsurf')]
+    [ValidateSet('claude','gemini','copilot','cursor','qwen','opencode','codex','windsurf','kilocode','auggie')]
     [string]$AgentType
 )
 
@@ -51,6 +51,8 @@ $CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/specify-rules.mdc'
 $QWEN_FILE     = Join-Path $REPO_ROOT 'QWEN.md'
 $AGENTS_FILE   = Join-Path $REPO_ROOT 'AGENTS.md'
 $WINDSURF_FILE = Join-Path $REPO_ROOT '.windsurf/rules/specify-rules.md'
+$KILOCODE_FILE = Join-Path $REPO_ROOT '.kilocode/rules/specify-rules.md'
+$AUGGIE_FILE   = Join-Path $REPO_ROOT '.augment/rules/specify-rules.md'
 
 $TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
 
@@ -370,7 +372,9 @@ function Update-SpecificAgent {
         'opencode' { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'opencode' }
         'codex'    { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex CLI' }
         'windsurf' { Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf' }
-        default { Write-Err "Unknown agent type '$Type'"; Write-Err 'Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf'; return $false }
+        'kilocode' { Update-AgentFile -TargetFile $KILOCODE_FILE -AgentName 'Kilo Code' }
+        'auggie'   { Update-AgentFile -TargetFile $AUGGIE_FILE   -AgentName 'Auggie CLI' }
+        default { Write-Err "Unknown agent type '$Type'"; Write-Err 'Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie'; return $false }
     }
 }
 
@@ -384,6 +388,8 @@ function Update-AllExistingAgents {
     if (Test-Path $QWEN_FILE)     { if (-not (Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code')) { $ok = $false }; $found = $true }
     if (Test-Path $AGENTS_FILE)   { if (-not (Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex/opencode')) { $ok = $false }; $found = $true }
     if (Test-Path $WINDSURF_FILE) { if (-not (Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf')) { $ok = $false }; $found = $true }
+    if (Test-Path $KILOCODE_FILE) { if (-not (Update-AgentFile -TargetFile $KILOCODE_FILE -AgentName 'Kilo Code')) { $ok = $false }; $found = $true }
+    if (Test-Path $AUGGIE_FILE)   { if (-not (Update-AgentFile -TargetFile $AUGGIE_FILE   -AgentName 'Auggie CLI')) { $ok = $false }; $found = $true }
     if (-not $found) {
         Write-Info 'No existing agent files found, creating default Claude file...'
         if (-not (Update-AgentFile -TargetFile $CLAUDE_FILE -AgentName 'Claude Code')) { $ok = $false }
@@ -398,7 +404,7 @@ function Print-Summary {
     if ($NEW_FRAMEWORK) { Write-Host "  - Added framework: $NEW_FRAMEWORK" }
     if ($NEW_DB -and $NEW_DB -ne 'N/A') { Write-Host "  - Added database: $NEW_DB" }
     Write-Host ''
-    Write-Info 'Usage: ./update-agent-context.ps1 [-AgentType claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf]'
+    Write-Info 'Usage: ./update-agent-context.ps1 [-AgentType claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie]'
 }
 
 function Main {

@@ -5,6 +5,19 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.13] - 2025-09-21
+
+### Added
+
+- Support for Kilo Code. Thank you [@shahrukhkhan489](https://github.com/shahrukhkhan489) with [#394](https://github.com/github/spec-kit/pull/394).
+- Support for Auggie CLI. Thank you [@hungthai1401](https://github.com/hungthai1401) with [#137](https://github.com/github/spec-kit/pull/137).
+- Agent folder security notice displayed after project provisioning completion, warning users that some agents may store credentials or auth tokens in their agent folders and recommending adding relevant folders to `.gitignore` to prevent accidental credential leakage.
+
+### Changed
+
+- Warning displayed to ensure that folks are aware that they might need to add their agent folder to `.gitignore`.
+- Cleaned up the `check` command output.
+
 ## [0.0.12] - 2025-09-21
 
 ### Changed
