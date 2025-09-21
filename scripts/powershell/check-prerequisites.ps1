@@ -58,8 +58,8 @@ EXAMPLES:
 
 # Get feature paths and validate branch
 $paths = Get-FeaturePathsEnv
-$hasGit = Test-Path (Join-Path $paths.REPO_ROOT ".git")
-if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$hasGit)) { 
+
+if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT)) { 
     exit 1 
 }
 
