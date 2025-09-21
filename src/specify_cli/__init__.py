@@ -821,61 +821,44 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 console.print(f"  - {f}")
 
 
-def install_claude_commands(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Install Claude command templates to the target project's .claude/commands/spec-kit folder."""
-    current_file = Path(__file__).resolve()
+def move_claude_commands(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Move Claude commands to the spec-kit subfolder if needed."""
+    claude_dir = project_path / ".claude" / "commands"
+    target_dir = claude_dir / "spec-kit"
 
-    # Try multiple possible locations for templates
-    possible_locations = [
-        # Development/repo location
-        current_file.parent.parent.parent / "templates" / "commands",
-        # Package wheel location (when installed with include)
-        current_file.parent.parent / "templates" / "commands",
-        # Alternative package location
-        current_file.parent / "templates" / "commands",
-    ]
-
-    source_commands_dir = None
-    for location in possible_locations:
-        if location.is_dir() and list(location.glob("*.md")):
-            source_commands_dir = location
-            break
-
-    # Target directory in the project
-    target_commands_dir = project_path / ".claude" / "commands" / "spec-kit"
-
-    if source_commands_dir is None:
+    # Check if commands already in correct location
+    if target_dir.exists() and list(target_dir.glob("*.md")):
         if tracker:
-            tracker.error("claude-cmds", "source templates/commands not found")
-        else:
-            console.print("[yellow]Warning: templates/commands directory not found[/yellow]")
+            cmd_count = len(list(target_dir.glob("*.md")))
+            tracker.complete("claude-cmds", f"{cmd_count} commands already in place")
         return
 
-    try:
-        # Create target directory
-        target_commands_dir.mkdir(parents=True, exist_ok=True)
+    # Check if commands are in parent directory
+    if claude_dir.exists() and list(claude_dir.glob("*.md")):
+        try:
+            # Create target directory
+            target_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy all .md files from source to target
-        copied_files = []
-        for cmd_file in source_commands_dir.glob("*.md"):
-            target_file = target_commands_dir / cmd_file.name
-            shutil.copy2(cmd_file, target_file)
-            copied_files.append(cmd_file.name)
+            # Move .md files to spec-kit subfolder
+            moved_files = []
+            for cmd_file in claude_dir.glob("*.md"):
+                target_file = target_dir / cmd_file.name
+                shutil.move(str(cmd_file), str(target_file))
+                moved_files.append(cmd_file.name)
 
-        if tracker:
-            detail = f"{len(copied_files)} commands" if copied_files else "no commands found"
-            tracker.complete("claude-cmds", detail)
-        else:
-            if copied_files:
-                console.print(f"[cyan]Installed {len(copied_files)} Claude commands to .claude/commands/spec-kit[/cyan]")
+            if tracker:
+                detail = f"moved {len(moved_files)} commands to spec-kit folder"
+                tracker.complete("claude-cmds", detail)
             else:
-                console.print("[yellow]No command files found to install[/yellow]")
-
-    except Exception as e:
+                console.print(f"[cyan]Moved {len(moved_files)} Claude commands to .claude/commands/spec-kit[/cyan]")
+        except Exception as e:
+            if tracker:
+                tracker.error("claude-cmds", str(e))
+            else:
+                console.print(f"[red]Error moving Claude commands:[/red] {e}")
+    else:
         if tracker:
-            tracker.error("claude-cmds", str(e))
-        else:
-            console.print(f"[red]Error installing Claude commands:[/red] {e}")
+            tracker.skip("claude-cmds", "no commands found in template")
 
 
 @app.command()
@@ -1030,7 +1013,7 @@ def init(
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
-        ("claude-cmds", "Install Claude commands"),
+        ("claude-cmds", "Organize Claude commands"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -1051,10 +1034,10 @@ def init(
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
 
-            # Install Claude commands if Claude is selected
+            # Move Claude commands if Claude is selected
             if selected_ai == "claude":
                 tracker.start("claude-cmds")
-                install_claude_commands(project_path, tracker=tracker)
+                move_claude_commands(project_path, tracker=tracker)
             else:
                 tracker.skip("claude-cmds", f"not using Claude (using {selected_ai})")
 
