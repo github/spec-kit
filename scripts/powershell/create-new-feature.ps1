@@ -35,13 +35,13 @@ $branchName = "$featureNum-$([string]::Join('-', $words))"
 
 # Enhanced branching logic: prioritize develop > main > master > current
 function Get-BaseBranch {
-    git show-ref --verify --quiet refs/heads/develop 2>$null
+    git show-ref --verify --quiet refs/heads/develop -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -eq 0) { return 'develop' }
     
-    git show-ref --verify --quiet refs/heads/main 2>$null
+    git show-ref --verify --quiet refs/heads/main -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -eq 0) { return 'main' }
     
-    git show-ref --verify --quiet refs/heads/master 2>$null
+    git show-ref --verify --quiet refs/heads/master -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -eq 0) { return 'master' }
     
     return (git branch --show-current)

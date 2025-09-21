@@ -12,6 +12,8 @@ if (-not (Test-Path $newPlan)) { Write-Error "ERROR: No plan.md found at $newPla
 $claudeFile = Join-Path $repoRoot 'CLAUDE.md'
 $geminiFile = Join-Path $repoRoot 'GEMINI.md'
 $copilotFile = Join-Path $repoRoot '.github/copilot-instructions.md'
+# NOTE: Breaking change! The Cursor context file path has changed from '.cursor/rules/specify-rules.mdc' to '.cursor/commands/specify-rules.md'.
+# If you have existing Cursor configurations, update them to use the new path.
 $cursorFile = Join-Path $repoRoot '.cursor/commands/specify-rules.md'
 $qwenFile = Join-Path $repoRoot 'QWEN.md'
 $agentsFile = Join-Path $repoRoot 'AGENTS.md'
@@ -94,7 +96,7 @@ switch ($AgentType) {
             if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
         }
         if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $copilotFile) -and -not (Test-Path $cursorFile) -and -not (Test-Path $qwenFile) -and -not (Test-Path $agentsFile) -and -not (Test-Path $windsurfFile)) {
-            Write-Error 'WARNING: No agent files found and no agent specified. Please specify an agent type.'
+            Write-Warning 'No agent files found and no agent specified. Please specify an agent type.'
             exit 1
         }
     }
