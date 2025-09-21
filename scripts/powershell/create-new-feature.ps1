@@ -15,12 +15,12 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
 # Resolve repository root. Prefer git information when available, but fall back
-# to the script location so the workflow still functions in repositories that
+# to searching for repository markers so the workflow still functions in repositories that
 # were initialised with --no-git.
 function Find-RepositoryRoot {
     param(
         [string]$StartDir,
-        [string[]]$Markers = @('.git', 'README.md')
+        [string[]]$Markers = @('.git', '.specify')
     )
     $current = Resolve-Path $StartDir
     while ($true) {
@@ -31,14 +31,17 @@ function Find-RepositoryRoot {
         }
         $parent = Split-Path $current -Parent
         if ($parent -eq $current) {
-            break
+            # Reached filesystem root without finding markers
+            return $null
         }
         $current = $parent
     }
-    # If no marker found, fall back to script root
-    return (Resolve-Path $StartDir)
 }
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
+if (-not $fallbackRoot) {
+    Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
+    exit 1
+}
 
 try {
     $repoRoot = git rev-parse --show-toplevel 2>$null
