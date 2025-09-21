@@ -67,6 +67,7 @@ QWEN_FILE="$REPO_ROOT/QWEN.md"
 AGENTS_FILE="$REPO_ROOT/AGENTS.md"
 WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
+AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -572,9 +573,12 @@ update_specific_agent() {
         kilocode)
             update_agent_file "$KILOCODE_FILE" "Kilo Code"
             ;;
+        auggie)
+            update_agent_file "$AUGGIE_FILE" "Auggie CLI"
+            ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode"
+            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie"
             exit 1
             ;;
     esac
@@ -623,6 +627,11 @@ update_all_existing_agents() {
         update_agent_file "$KILOCODE_FILE" "Kilo Code"
         found_agent=true
     fi
+
+    if [[ -f "$AUGGIE_FILE" ]]; then
+        update_agent_file "$AUGGIE_FILE" "Auggie CLI"
+        found_agent=true
+    fi
     
     # If no agent files exist, create a default Claude file
     if [[ "$found_agent" == false ]]; then
@@ -647,7 +656,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie]"
 }
 
 #==============================================================================

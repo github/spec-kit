@@ -34,5 +34,7 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-codex-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-kilocode-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-kilocode-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-auggie-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-auggie-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \
   --notes-file release_notes.md

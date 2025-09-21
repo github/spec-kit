@@ -59,6 +59,23 @@ AI_CHOICES = {
 }
 ```
 
+Also update the `agent_folder_map` in the same file to include the new agent's folder for the security notice:
+
+```python
+agent_folder_map = {
+    "claude": ".claude/",
+    "gemini": ".gemini/",
+    "cursor": ".cursor/",
+    "qwen": ".qwen/",
+    "opencode": ".opencode/",
+    "codex": ".codex/",
+    "windsurf": ".windsurf/",  # Add new agent folder here
+    "kilocode": ".kilocode/",
+    "auggie": ".auggie/",
+    "copilot": ".github/"
+}
+```
+
 #### 2. Update CLI Help Text
 
 Update all help text and examples to include the new agent:
