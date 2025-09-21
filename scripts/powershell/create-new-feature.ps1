@@ -33,6 +33,22 @@ $branchName = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}',
 $words = ($branchName -split '-') | Where-Object { $_ } | Select-Object -First 3
 $branchName = "$featureNum-$([string]::Join('-', $words))"
 
+# Enhanced branching logic: prioritize develop > main > master > current
+function Get-BaseBranch {
+    git show-ref --verify --quiet refs/heads/develop 2>$null
+    if ($LASTEXITCODE -eq 0) { return 'develop' }
+    
+    git show-ref --verify --quiet refs/heads/main 2>$null
+    if ($LASTEXITCODE -eq 0) { return 'main' }
+    
+    git show-ref --verify --quiet refs/heads/master 2>$null
+    if ($LASTEXITCODE -eq 0) { return 'master' }
+    
+    return (git branch --show-current)
+}
+
+$baseBranch = Get-BaseBranch
+git checkout $baseBranch | Out-Null
 git checkout -b $branchName | Out-Null
 
 $featureDir = Join-Path $specsDir $branchName
@@ -43,10 +59,11 @@ $specFile = Join-Path $featureDir 'spec.md'
 if (Test-Path $template) { Copy-Item $template $specFile -Force } else { New-Item -ItemType File -Path $specFile | Out-Null }
 
 if ($Json) {
-    $obj = [PSCustomObject]@{ BRANCH_NAME = $branchName; SPEC_FILE = $specFile; FEATURE_NUM = $featureNum }
+    $obj = [PSCustomObject]@{ BRANCH_NAME = $branchName; SPEC_FILE = $specFile; FEATURE_NUM = $featureNum; BASE_BRANCH = $baseBranch }
     $obj | ConvertTo-Json -Compress
 } else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
+    Write-Output "BASE_BRANCH: $baseBranch"
 }

@@ -12,7 +12,7 @@ if (-not (Test-Path $newPlan)) { Write-Error "ERROR: No plan.md found at $newPla
 $claudeFile = Join-Path $repoRoot 'CLAUDE.md'
 $geminiFile = Join-Path $repoRoot 'GEMINI.md'
 $copilotFile = Join-Path $repoRoot '.github/copilot-instructions.md'
-$cursorFile = Join-Path $repoRoot '.cursor/rules/specify-rules.mdc'
+$cursorFile = Join-Path $repoRoot '.cursor/commands/specify-rules.md'
 $qwenFile = Join-Path $repoRoot 'QWEN.md'
 $agentsFile = Join-Path $repoRoot 'AGENTS.md'
 $windsurfFile = Join-Path $repoRoot '.windsurf/rules/specify-rules.md'
@@ -49,6 +49,8 @@ function Initialize-AgentFile($targetFile, $agentName) {
     $content = $content.Replace('[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]', $commands)
     $content = $content.Replace('[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]', "${newLang}: Follow standard conventions")
     $content = $content.Replace('[LAST 3 FEATURES AND WHAT THEY ADDED]', "- ${currentBranch}: Added ${newLang} + ${newFramework}")
+    $parentDir = Split-Path $targetFile -Parent
+    if ($parentDir -and -not (Test-Path $parentDir)) { New-Item -ItemType Directory -Path $parentDir -Force | Out-Null }
     $content | Set-Content $targetFile -Encoding UTF8
 }
 
@@ -92,8 +94,8 @@ switch ($AgentType) {
             if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
         }
         if (-not (Test-Path $claudeFile) -and -not (Test-Path $geminiFile) -and -not (Test-Path $copilotFile) -and -not (Test-Path $cursorFile) -and -not (Test-Path $qwenFile) -and -not (Test-Path $agentsFile) -and -not (Test-Path $windsurfFile)) {
-            Write-Output 'No agent context files found. Creating Claude Code context file by default.'
-            Update-AgentFile $claudeFile 'Claude Code'
+            Write-Error 'WARNING: No agent files found and no agent specified. Please specify an agent type.'
+            exit 1
         }
     }
     Default { Write-Error "ERROR: Unknown agent type '$AgentType'. Use: claude, gemini, copilot, cursor, qwen, opencode, windsurf, codex or leave empty for all."; exit 1 }
