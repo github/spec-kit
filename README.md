@@ -8,7 +8,7 @@
     <strong>An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.</strong>
 </p>
 
-[![Release](https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg)](https://github.com/github/spec-kit/actions/workflows/release.yml)
+[![Release](https://github.com/guercheLE/spec-kit/actions/workflows/release.yml/badge.svg)](https://github.com/guercheLE/spec-kit/actions/workflows/release.yml)
 
 ---
 
@@ -17,6 +17,7 @@
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
+- [✨ What's New in Version 0.0.11](#-whats-new-in-version-0011)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [📚 Core philosophy](#-core-philosophy)
 - [🌟 Development phases](#-development-phases)
@@ -41,7 +42,7 @@ Spec-Driven Development **flips the script** on traditional software development
 Initialize your project depending on the coding agent you're using:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/guercheLE/spec-kit.git specify init <PROJECT_NAME>
 ```
 
 ### 2. Establish project principles
@@ -91,6 +92,25 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
 
 [![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
+
+## ✨ What's New in Version 0.0.11
+
+### 🔄 Orchestrated Workflows
+- **Complete Feature Development**: New `/feature-workflow` command automates the entire development cycle from specification to implementation
+- **MVP to Full Product Transition**: Enhanced `/mvp-to-full` command provides intelligent orchestration for scaling minimum viable products
+- **Project State Analysis**: Automatic detection of greenfield vs brownfield projects with tailored workflow recommendations
+
+### 🎯 Enhanced Resumption Capabilities  
+- **Intelligent Resumption**: Advanced analysis tools that understand where your project left off and provide specific next steps
+- **Completion Assessment**: Automated evaluation of specification, planning, and implementation status
+- **Context-Aware Instructions**: Generated guidance that adapts to your project's current state and development phase
+
+### 🤖 Improved AI Integration
+- **GitHub Copilot Enhancement**: Dedicated context instructions and integration templates for better Copilot collaboration
+- **Multi-Agent Orchestration**: Enhanced support for switching between different AI assistants within the same project
+- **Agent-Specific Templates**: Optimized command templates for each supported AI assistant
+
+For detailed information about resumable execution, see our [comprehensive resumption guide](./docs/resumable-execution.md).
 
 ## 🔧 Specify CLI Reference
 
@@ -163,6 +183,18 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
 
+### 🚀 New Orchestrated Workflow Commands
+
+Spec Kit now includes powerful orchestrated workflows for streamlined development:
+
+| Command         | Description                                                           |
+|-----------------|-----------------------------------------------------------------------|
+| `/mvp-to-full`  | Orchestrate transition from MVP to full product with detailed analysis |
+| `/feature-workflow` | Execute complete feature development workflow (specify → plan → tasks → implement) |
+| `/analyze-completion` | Analyze project completion status and generate resumption instructions |
+
+These workflows provide automated end-to-end processes that combine multiple steps into cohesive development cycles.
+
 ## 📚 Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
@@ -217,6 +249,8 @@ Our research and experimentation focus on:
 ## 📖 Learn more
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+- **[Resumable Execution Guide](./docs/resumable-execution.md)** - Comprehensive guide to project resumption and continuation strategies
+- **[Multiple AI Assistants Guide](./docs/multiple-ai-assistants.md)** - Working with different AI agents in your workflow
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
@@ -490,7 +524,7 @@ rm gcm-linux_amd64.2.6.1.deb
 
 ## 💬 Support
 
-For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
+For support, please open a [GitHub issue](https://github.com/guercheLE/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
 ## 🙏 Acknowledgements
 
