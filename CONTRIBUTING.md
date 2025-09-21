@@ -45,7 +45,7 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
-## AI Contributions in Spec Kit
+## AI contributions in Spec Kit
 
 We leverage AI and AI agents for help with this project and value contributions that also use AI to detect issues and improve Spec Kit.
 
