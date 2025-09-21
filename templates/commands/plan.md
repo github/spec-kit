@@ -5,6 +5,12 @@ scripts:
   ps: scripts/powershell/setup-plan.ps1 -Json
 ---
 
+The user input to you can be provided directly by the agent or in `$ARGUMENTS` - you **MUST** consider it before proceeding with the prompt (if not empty).
+
+User input:
+
+$ARGUMENTS
+
 Given the implementation details provided as an argument, do this:
 
 1. Run `{SCRIPT}` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.

@@ -5,7 +5,11 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
-Given the context provided as an argument, do this:
+The user input to you can be provided directly by the agent or in `$ARGUMENTS` - you **MUST** consider it before proceeding with the prompt (if not empty).
+
+User input:
+
+$ARGUMENTS
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
 2. Load and analyze available design documents:
