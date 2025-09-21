@@ -18,13 +18,6 @@ These are one time installations required to be able to test your changes locall
 >[!NOTE]
 >If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
->[!IMPORTANT]
->We leverage AI and AI agents for help with this project and value contributions that also use AI to detect issues and improve Spec Kit. However, to help the team focus on important issues and features, we will close issues and PRs that are **low-effort AI-generated changes**. If you are submitting an AI generated issue or pull request, please include **concrete test cases**, **scenarios**, and an outline of the **end-to-end developer experience** with your suggested change.
->
->This means that you need to be supervising the changes and be able to explain why the change is necessary within the Spec Kit scope.
->
->If you are identified as submitting a large number of AI-generated changes that fall in the category above, the team might, at their discretion, block your account from further contributing to Spec Kit.
-
 1. Fork and clone the repository
 1. Configure and install the dependencies: `uv sync`
 1. Make sure the CLI works on your machine: `uv run specify --help`
@@ -51,6 +44,18 @@ When working on spec-kit:
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+
+## AI Contributions in Spec Kit
+
+We leverage AI and AI agents for help with this project and value contributions that also use AI to detect issues and improve Spec Kit.
+
+However, to help the team focus on important issues and features, we will close issues and PRs that are **low-effort AI-generated changes**. This includes changes or reports that have not been tested, clearly had no human input, and that aren't aligned with the overall project.
+
+If you are submitting an AI generated issue or pull request, please include **concrete test cases**, **scenarios**, and an outline of the **end-to-end developer experience** with your suggested change that were **written by you**. If someone can easily spot that a contribution is entirely AI-generated without your input, you have more work to do.
+
+In practice, this means that you need to understand the changes that you're requesting and be able to explain why the change is necessary within the Spec Kit scope.
+
+If you are identified as submitting a large number of AI-generated changes that fall in the category above, the team might, at their discretion, block your account from further contributing to Spec Kit.
 
 ## Resources
 
