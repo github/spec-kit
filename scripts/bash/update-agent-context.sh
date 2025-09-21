@@ -291,15 +291,20 @@ create_new_agent_file() {
     local language_conventions
     language_conventions=$(get_language_conventions "$NEW_LANG")
     
-    # Perform substitutions with error checking
+    # Perform substitutions with error checking using safer approach
+    # Escape special characters for sed by using a different delimiter or escaping
+    local escaped_lang=$(printf '%s\n' "$NEW_LANG" | sed 's/[[\.*^$()+{}|]/\\&/g')
+    local escaped_framework=$(printf '%s\n' "$NEW_FRAMEWORK" | sed 's/[[\.*^$()+{}|]/\\&/g')
+    local escaped_branch=$(printf '%s\n' "$CURRENT_BRANCH" | sed 's/[[\.*^$()+{}|]/\\&/g')
+    
     local substitutions=(
-        "s/\[PROJECT NAME\]/$project_name/"
-        "s/\[DATE\]/$current_date/"
-        "s/\[EXTRACTED FROM ALL PLAN.MD FILES\]/- $NEW_LANG + $NEW_FRAMEWORK ($CURRENT_BRANCH)/"
+        "s|\[PROJECT NAME\]|$project_name|"
+        "s|\[DATE\]|$current_date|"
+        "s|\[EXTRACTED FROM ALL PLAN.MD FILES\]|- $escaped_lang + $escaped_framework ($escaped_branch)|"
         "s|\[ACTUAL STRUCTURE FROM PLANS\]|$project_structure|g"
         "s|\[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES\]|$commands|"
         "s|\[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE\]|$language_conventions|"
-        "s|\[LAST 3 FEATURES AND WHAT THEY ADDED\]|- $CURRENT_BRANCH: Added $NEW_LANG + $NEW_FRAMEWORK|"
+        "s|\[LAST 3 FEATURES AND WHAT THEY ADDED\]|- $escaped_branch: Added $escaped_lang + $escaped_framework|"
     )
     
     for substitution in "${substitutions[@]}"; do
