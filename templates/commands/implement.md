@@ -5,7 +5,7 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
-The user input to you can be provided directly by the agent or in `$ARGUMENTS` - you **MUST** consider it before proceeding with the prompt (if not empty).
+The user input to you can be provided directly by the agent or as an argument parameter - you **MUST** consider it before proceeding with the prompt (if not empty).
 
 User input:
 
