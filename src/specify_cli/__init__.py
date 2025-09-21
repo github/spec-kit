@@ -617,7 +617,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, repo_owner: str = None, repo_name: str = None, repo_branch: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, repo_owner: str = None, repo_name: str = None, repo_branch: str = None, force: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -699,29 +699,41 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                     for item in source_dir.iterdir():
                         dest_path = project_path / item.name
 
-                        # Skip specs folder if it already exists to preserve user documentation
-                        if item.name == "specs" and dest_path.exists():
+                        # Skip specs folder if it already exists to preserve user documentation (unless force)
+                        if item.name == "specs" and dest_path.exists() and not force:
                             if verbose and not tracker:
                                 console.print(f"[cyan]Preserving existing specs folder[/cyan]")
                             continue
 
                         if item.is_dir():
                             if dest_path.exists():
-                                if verbose and not tracker:
-                                    console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
-                                # Recursively copy directory contents
-                                for sub_item in item.rglob('*'):
-                                    if sub_item.is_file():
-                                        rel_path = sub_item.relative_to(item)
-                                        dest_file = dest_path / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(sub_item, dest_file)
+                                if force:
+                                    if verbose and not tracker:
+                                        console.print(f"[yellow]Force overwriting directory:[/yellow] {item.name}")
+                                    shutil.rmtree(dest_path)
+                                    shutil.copytree(item, dest_path)
+                                else:
+                                    if verbose and not tracker:
+                                        console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
+                                    # Recursively copy directory contents
+                                    for sub_item in item.rglob('*'):
+                                        if sub_item.is_file():
+                                            rel_path = sub_item.relative_to(item)
+                                            dest_file = dest_path / rel_path
+                                            dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                            shutil.copy2(sub_item, dest_file)
                             else:
                                 shutil.copytree(item, dest_path)
                         else:
-                            if dest_path.exists() and verbose and not tracker:
-                                console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
-                            shutil.copy2(item, dest_path)
+                            if dest_path.exists():
+                                if force:
+                                    if verbose and not tracker:
+                                        console.print(f"[yellow]Force overwriting file:[/yellow] {item.name}")
+                                    shutil.copy2(item, dest_path)
+                                elif verbose and not tracker:
+                                    console.print(f"[dim]Skipping existing file:[/dim] {item.name}")
+                            else:
+                                shutil.copy2(item, dest_path)
                     if verbose and not tracker:
                         console.print(f"[cyan]Template files merged into current directory[/cyan]")
             else:
@@ -1060,6 +1072,7 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
+    force: bool = typer.Option(False, "--force", help="Force overwrite existing files when using --here"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     repo_owner: str = typer.Option(None, "--repo-owner", help="GitHub repository owner (default: 'github')"),
@@ -1086,6 +1099,7 @@ def init(
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here
+        specify init --here --force --ai claude  # Force overwrite existing template files
     """
     # Show banner first
     show_banner()
@@ -1094,9 +1108,13 @@ def init(
     if here and project_name:
         console.print("[red]Error:[/red] Cannot specify both project name and --here flag")
         raise typer.Exit(1)
-    
+
     if not here and not project_name:
         console.print("[red]Error:[/red] Must specify either a project name or use --here flag")
+        raise typer.Exit(1)
+
+    if force and not here:
+        console.print("[red]Error:[/red] --force can only be used with --here flag")
         raise typer.Exit(1)
     
     # Determine project directory
@@ -1107,9 +1125,14 @@ def init(
         # Check if current directory has any files
         existing_items = list(project_path.iterdir())
         if existing_items:
-            console.print(f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)")
-            console.print("[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]")
-            
+            if force:
+                console.print(f"[red]Warning:[/red] --force will overwrite existing template files ({len(existing_items)} items)")
+                console.print("[red]This will replace .specify/, .claude/, and other template files with fresh versions[/red]")
+                console.print("[yellow]Tip: specs/ folder will be preserved unless it doesn't exist in the template[/yellow]")
+            else:
+                console.print(f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)")
+                console.print("[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]")
+
             # Ask for confirmation
             response = typer.confirm("Do you want to continue?")
             if not response:
@@ -1220,7 +1243,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, repo_owner=repo_owner, repo_name=repo_name, repo_branch=repo_branch)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, repo_owner=repo_owner, repo_name=repo_name, repo_branch=repo_branch, force=force)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
