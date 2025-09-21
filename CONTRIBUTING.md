@@ -47,15 +47,30 @@ When working on spec-kit:
 
 ## AI contributions in Spec Kit
 
-We leverage AI and AI agents for help with this project and value contributions that also use AI to detect issues and improve Spec Kit.
+We welcome and encourage the use of AI tools to help improve Spec Kit! Many valuable contributions have been enhanced with AI assistance for code generation, issue detection, and feature definition.
 
-However, to help the team focus on important issues and features, we will close issues and PRs that are **low-effort AI-generated changes**. This includes changes or reports that have not been tested, clearly had no human input, and that aren't aligned with the overall project.
+### What we're looking for
 
-If you are submitting an AI generated issue or pull request, please include **concrete test cases**, **scenarios**, and an outline of the **end-to-end developer experience** with your suggested change that were **written by you**. If someone can easily spot that a contribution is entirely AI-generated without your input, you have more work to do.
+When submitting AI-assisted contributions, please ensure they include:
 
-In practice, this means that you need to understand the changes that you're requesting and be able to explain why the change is necessary within the Spec Kit scope.
+- **Human understanding and testing** - You've personally tested the changes and understand what they do
+- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals  
+- **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
+- **Your own analysis** - Share your thoughts on the end-to-end developer experience
 
-If you are identified as submitting a large number of AI-generated changes that fall in the category above, the team might, at their discretion, block your account from further contributing to Spec Kit.
+### What we'll close
+
+We reserve the right to close contributions that appear to be:
+
+- Untested changes submitted without verification
+- Generic suggestions that don't address specific Spec Kit needs
+- Bulk submissions that show no human review or understanding
+
+### Guidelines for success
+
+The key is demonstrating that you understand and have validated your proposed changes. If a maintainer can easily tell that a contribution was generated entirely by AI without human input or testing, it likely needs more work before submission.
+
+Contributors who consistently submit low-effort AI-generated changes may be restricted from further contributions at the maintainers' discretion.
 
 ## Resources
 
