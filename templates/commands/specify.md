@@ -5,7 +5,9 @@ scripts:
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
-Given the feature description provided as an argument, do this:
+The text the user typed after `/specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
+
+Given that feature description, do this:
 
 1. Load Spec Kit configuration:
    - Check for `/.specify.yaml` at the host project root; if it exists, load that file
