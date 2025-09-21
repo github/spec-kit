@@ -115,6 +115,31 @@ implement specs/002-create-taskify/plan.md
 - **Validate** the plan before coding begins
 - **Let the AI agent handle** the implementation details
 
+## Advanced Workflows
+
+### Automated Feature Orchestration
+
+For teams managing multiple features or complex dependency chains, the Spec Kit provides orchestrated workflow scripts that automate the complete feature development lifecycle:
+
+**Linux/macOS (Bash)**:
+```bash
+.specify/scripts/bash/execute-feature-workflow.sh "feature-name" "feature description" "optional-dependencies"
+```
+
+**Windows (PowerShell)**:
+```powershell
+.specify/scripts/powershell/execute-feature-workflow.ps1 "feature-name" "feature description" "optional-dependencies"
+```
+
+These scripts automatically:
+1. Create feature specifications with proper branching
+2. Auto-clarify specification requirements
+3. Generate implementation plans
+4. Create task breakdowns with dependency management
+5. Produce execution summaries for team coordination
+
+This is particularly useful for MVP-to-Full product development where multiple features need coordinated execution.
+
 ## Next Steps
 
 - Read the complete methodology for in-depth guidance
