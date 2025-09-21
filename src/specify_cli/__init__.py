@@ -357,13 +357,13 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
         return None
 
 
-def check_tool_for_tracker(tool: str, install_hint: str, tracker: StepTracker) -> bool:
+def check_tool_for_tracker(tool: str, tracker: StepTracker) -> bool:
     """Check if a tool is installed and update tracker."""
     if shutil.which(tool):
         tracker.complete(tool, "available")
         return True
     else:
-        tracker.error(tool, f"not found - {install_hint}")
+        tracker.error(tool, "not found")
         return False
 
 
@@ -1071,25 +1071,25 @@ def check():
     tracker.add("qwen", "Qwen Code CLI")
     tracker.add("code", "Visual Studio Code")
     tracker.add("code-insiders", "Visual Studio Code Insiders")
-    tracker.add("cursor-agent", "Cursor IDE agent (optional)")
-    tracker.add("windsurf", "Windsurf IDE (optional)")
-    tracker.add("kilocode", "Kilo Code IDE (optional)")
+    tracker.add("cursor-agent", "Cursor IDE agent")
+    tracker.add("windsurf", "Windsurf IDE")
+    tracker.add("kilocode", "Kilo Code IDE")
     tracker.add("opencode", "opencode")
     tracker.add("codex", "Codex CLI")
-    tracker.add("auggie", "Auggie CLI (optional)")
+    tracker.add("auggie", "Auggie CLI")
     
-    git_ok = check_tool_for_tracker("git", "https://git-scm.com/downloads", tracker)
-    claude_ok = check_tool_for_tracker("claude", "https://docs.anthropic.com/en/docs/claude-code/setup", tracker)  
-    gemini_ok = check_tool_for_tracker("gemini", "https://github.com/google-gemini/gemini-cli", tracker)
-    qwen_ok = check_tool_for_tracker("qwen", "https://github.com/QwenLM/qwen-code", tracker)
-    code_ok = check_tool_for_tracker("code", "https://code.visualstudio.com/", tracker)
-    code_insiders_ok = check_tool_for_tracker("code-insiders", "https://code.visualstudio.com/insiders/", tracker)
-    cursor_ok = check_tool_for_tracker("cursor-agent", "https://cursor.sh/", tracker)
-    windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
-    kilocode_ok = check_tool_for_tracker("kilocode", "https://kilocode.com/", tracker)
-    opencode_ok = check_tool_for_tracker("opencode", "https://opencode.ai/", tracker)
-    codex_ok = check_tool_for_tracker("codex", "https://github.com/openai/codex", tracker)
-    auggie_ok = check_tool_for_tracker("auggie", "https://auggie.io/", tracker)
+    git_ok = check_tool_for_tracker("git", tracker)
+    claude_ok = check_tool_for_tracker("claude", tracker)  
+    gemini_ok = check_tool_for_tracker("gemini", tracker)
+    qwen_ok = check_tool_for_tracker("qwen", tracker)
+    code_ok = check_tool_for_tracker("code", tracker)
+    code_insiders_ok = check_tool_for_tracker("code-insiders", tracker)
+    cursor_ok = check_tool_for_tracker("cursor-agent", tracker)
+    windsurf_ok = check_tool_for_tracker("windsurf", tracker)
+    kilocode_ok = check_tool_for_tracker("kilocode", tracker)
+    opencode_ok = check_tool_for_tracker("opencode", tracker)
+    codex_ok = check_tool_for_tracker("codex", tracker)
+    auggie_ok = check_tool_for_tracker("auggie", tracker)
 
     console.print(tracker.render())
 
