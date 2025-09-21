@@ -11,7 +11,7 @@ function Get-CurrentBranch {
 
 function Test-FeatureBranch {
     param([string]$Branch)
-    if ($Branch -notmatch '^[a-zA-Z0-9_-]+/[A-Z]+-[0-9]+\.[a-z0-9.-]+') {
+    if ($Branch -notmatch '^[a-zA-Z0-9_-]+/[a-zA-Z]+-[0-9]+\.[a-z0-9.-]+') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
         Write-Output "Feature branches should be named like: username/JIRA-123.feature-name"
         return $false
