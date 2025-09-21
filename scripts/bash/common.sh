@@ -8,7 +8,7 @@ get_repo_root() {
     else
         # Fall back to script location for non-git repos
         local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        cd "$script_dir/../../.." && pwd
+        (cd "$script_dir/../../.." && pwd)
     fi
 }
 
