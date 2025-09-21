@@ -23,6 +23,7 @@ Or install globally:
 """
 
 import os
+import re
 import subprocess
 import sys
 import zipfile
@@ -480,8 +481,6 @@ def detect_uvx_repo_info() -> tuple[str | None, str | None, str | None]:
     Returns: (repo_owner, repo_name, repo_branch) or (None, None, None) if not detected
     """
     # Check command line args for uvx patterns
-    import re
-
     cmdline = " ".join(sys.argv)
     git_url_match = re.search(r'git\+https://github\.com/([^/]+)/([^/.@\s]+)(?:\.git)?(?:@([^/\s]+))?', cmdline)
 
@@ -772,7 +771,14 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                 tracker.complete("cleanup")
             elif verbose:
                 console.print(f"Cleaned up: {zip_path.name}")
-    
+
+    # Transform branch structure if needed (detect if this was a branch download)
+    try:
+        transform_branch_structure(project_path, ai_assistant, script_type, tracker)
+    except Exception as e:
+        if verbose and not tracker:
+            console.print(f"[yellow]Warning: Could not transform branch structure: {e}[/yellow]")
+
     return project_path
 
 
@@ -859,6 +865,182 @@ def move_claude_commands(project_path: Path, tracker: StepTracker | None = None)
     else:
         if tracker:
             tracker.skip("claude-cmds", "no commands found in template")
+
+
+def transform_branch_structure(project_path: Path, ai_assistant: str, script_type: str, tracker: StepTracker | None = None) -> None:
+    """Transform raw branch download structure to match release package structure."""
+    if tracker:
+        tracker.add("transform", "Transform branch structure")
+        tracker.start("transform")
+
+    # Check if this is a raw branch download (has memory/, scripts/, templates/ at root)
+    has_raw_structure = any((project_path / dirname).exists() for dirname in ["memory", "scripts", "templates"])
+    if not has_raw_structure:
+        if tracker:
+            tracker.skip("transform", "already packaged")
+        return
+
+    try:
+        # Create .specify directory
+        specify_dir = project_path / ".specify"
+        specify_dir.mkdir(exist_ok=True)
+
+        # Move directories to .specify/
+        for dirname in ["memory", "scripts", "templates"]:
+            src_dir = project_path / dirname
+            if src_dir.exists():
+                dest_dir = specify_dir / dirname
+                if dest_dir.exists():
+                    shutil.rmtree(dest_dir)
+                src_dir.rename(dest_dir)
+
+        # Filter scripts by variant and restructure
+        scripts_dir = specify_dir / "scripts"
+        if scripts_dir.exists():
+            # Keep only the relevant script variant
+            if script_type == "sh":
+                # Keep bash subdirectory, remove powershell
+                bash_dir = scripts_dir / "bash"
+                powershell_dir = scripts_dir / "powershell"
+                if powershell_dir.exists():
+                    shutil.rmtree(powershell_dir)
+            else:  # ps
+                # Keep powershell subdirectory, remove bash
+                bash_dir = scripts_dir / "bash"
+                powershell_dir = scripts_dir / "powershell"
+                if bash_dir.exists():
+                    shutil.rmtree(bash_dir)
+
+        # Generate AI-specific commands from templates
+        templates_dir = specify_dir / "templates"
+        commands_dir = templates_dir / "commands" if templates_dir.exists() else None
+
+        if commands_dir and commands_dir.exists() and list(commands_dir.glob("*.md")):
+            generate_ai_commands(project_path, ai_assistant, script_type, commands_dir)
+
+        if tracker:
+            tracker.complete("transform", f"restructured for {ai_assistant}")
+
+    except Exception as e:
+        if tracker:
+            tracker.error("transform", str(e))
+        else:
+            console.print(f"[red]Error transforming branch structure:[/red] {e}")
+        raise
+
+
+def generate_ai_commands(project_path: Path, ai_assistant: str, script_type: str, commands_dir: Path) -> None:
+    """Generate AI-specific commands from templates/commands/*.md files."""
+
+    def rewrite_paths(content: str) -> str:
+        """Rewrite paths to use .specify/ prefix."""
+        content = re.sub(r'(/?)memory/', r'.specify/memory/', content)
+        content = re.sub(r'(/?)scripts/', r'.specify/scripts/', content)
+        content = re.sub(r'(/?)templates/', r'.specify/templates/', content)
+        return content
+
+    def extract_yaml_field(content: str, field: str) -> str:
+        """Extract a field from YAML frontmatter."""
+        pattern = rf'^{field}:\s*(.+)$'
+        match = re.search(pattern, content, re.MULTILINE)
+        return match.group(1).strip() if match else ""
+
+    def extract_script_command(content: str, script_variant: str) -> str:
+        """Extract script command for specific variant from YAML frontmatter."""
+        pattern = rf'^\s*{script_variant}:\s*(.+)$'
+        match = re.search(pattern, content, re.MULTILINE)
+        return match.group(1).strip() if match else f"(Missing script command for {script_variant})"
+
+    def clean_yaml_frontmatter(content: str) -> str:
+        """Remove scripts section from YAML frontmatter."""
+        lines = content.split('\n')
+        result = []
+        in_frontmatter = False
+        skip_scripts = False
+        dash_count = 0
+
+        for line in lines:
+            if line == '---':
+                dash_count += 1
+                if dash_count == 1:
+                    in_frontmatter = True
+                elif dash_count == 2:
+                    in_frontmatter = False
+                result.append(line)
+                continue
+
+            if in_frontmatter and line == 'scripts:':
+                skip_scripts = True
+                continue
+
+            if in_frontmatter and skip_scripts and re.match(r'^[a-zA-Z].*:', line):
+                skip_scripts = False
+
+            if in_frontmatter and skip_scripts and re.match(r'^\s+', line):
+                continue
+
+            result.append(line)
+
+        return '\n'.join(result)
+
+    # Create appropriate directory structure for each AI assistant
+    if ai_assistant == "claude":
+        target_dir = project_path / ".claude" / "commands" / "spec-kit"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        arg_format = "$ARGUMENTS"
+        ext = "md"
+    elif ai_assistant == "gemini":
+        target_dir = project_path / ".gemini" / "commands"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        arg_format = "{{args}}"
+        ext = "toml"
+        # Copy GEMINI.md if it exists
+        gemini_md = project_path / ".specify" / "agent_templates" / "gemini" / "GEMINI.md"
+        if gemini_md.exists():
+            shutil.copy2(gemini_md, project_path / "GEMINI.md")
+    elif ai_assistant == "copilot":
+        target_dir = project_path / ".github" / "prompts"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        arg_format = "$ARGUMENTS"
+        ext = "prompt.md"
+    elif ai_assistant == "cursor":
+        target_dir = project_path / ".cursor" / "commands"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        arg_format = "$ARGUMENTS"
+        ext = "md"
+    else:
+        return
+
+    # Process each command template
+    for template_file in commands_dir.glob("*.md"):
+        try:
+            content = template_file.read_text(encoding='utf-8')
+            name = template_file.stem
+
+            # Extract metadata
+            description = extract_yaml_field(content, 'description')
+            script_command = extract_script_command(content, script_type)
+
+            # Apply substitutions
+            content = content.replace('{SCRIPT}', script_command)
+            content = content.replace('{ARGS}', arg_format)
+            content = content.replace('__AGENT__', ai_assistant)
+            content = rewrite_paths(content)
+            content = clean_yaml_frontmatter(content)
+
+            # Write command file in appropriate format
+            output_file = target_dir / f"{name}.{ext}"
+            if ext == "toml":
+                # TOML format for Gemini
+                toml_content = f'description = "{description}"\n\nprompt = """\n{content}\n"""'
+                output_file.write_text(toml_content, encoding='utf-8')
+            else:
+                # Markdown format for others
+                output_file.write_text(content, encoding='utf-8')
+
+        except Exception as e:
+            console.print(f"[yellow]Warning: Failed to process command template {template_file.name}: {e}[/yellow]")
+            continue
 
 
 @app.command()
