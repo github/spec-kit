@@ -382,8 +382,6 @@ def check_tool(tool: str, install_hint: str) -> bool:
     if shutil.which(tool):
         return True
     else:
-        console.print(f"[yellow]⚠️  {tool} not found[/yellow]")
-        console.print(f"   Install with: [cyan]{install_hint}[/cyan]")
         return False
 
 
@@ -817,7 +815,15 @@ def init(
         project_path = Path(project_name).resolve()
         # Check if project directory already exists
         if project_path.exists():
-            console.print(f"[red]Error:[/red] Directory '{project_name}' already exists")
+            error_panel = Panel(
+                f"Directory '[cyan]{project_name}[/cyan]' already exists\n"
+                "Please choose a different project name or remove the existing directory.",
+                title="[red]Directory Conflict[/red]",
+                border_style="red",
+                padding=(1, 2)
+            )
+            console.print()
+            console.print(error_panel)
             raise typer.Exit(1)
     
     # Create formatted setup info with column alignment
@@ -861,35 +867,45 @@ def init(
     # Check agent tools unless ignored
     if not ignore_agent_tools:
         agent_tool_missing = False
+        install_url = ""
         if selected_ai == "claude":
-            if not check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup"):
-                console.print("[red]Error:[/red] Claude CLI is required for Claude Code projects")
+            if not check_tool("claude", "https://docs.anthropic.com/en/docs/claude-code/setup"):
+                install_url = "https://docs.anthropic.com/en/docs/claude-code/setup"
                 agent_tool_missing = True
         elif selected_ai == "gemini":
-            if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
-                console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
+            if not check_tool("gemini", "https://github.com/google-gemini/gemini-cli"):
+                install_url = "https://github.com/google-gemini/gemini-cli"
                 agent_tool_missing = True
         elif selected_ai == "qwen":
-            if not check_tool("qwen", "Install from: https://github.com/QwenLM/qwen-code"):
-                console.print("[red]Error:[/red] Qwen CLI is required for Qwen Code projects")
+            if not check_tool("qwen", "https://github.com/QwenLM/qwen-code"):
+                install_url = "https://github.com/QwenLM/qwen-code"
                 agent_tool_missing = True
         elif selected_ai == "opencode":
-            if not check_tool("opencode", "Install from: https://opencode.ai"):
-                console.print("[red]Error:[/red] opencode CLI is required for opencode projects")
+            if not check_tool("opencode", "https://opencode.ai"):
+                install_url = "https://opencode.ai"
                 agent_tool_missing = True
         elif selected_ai == "codex":
-            if not check_tool("codex", "Install from: https://github.com/openai/codex"):
-                console.print("[red]Error:[/red] Codex CLI is required for Codex projects")
+            if not check_tool("codex", "https://github.com/openai/codex"):
+                install_url = "https://github.com/openai/codex"
                 agent_tool_missing = True
         elif selected_ai == "auggie":
-            if not check_tool("auggie", "Install from: https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"):
-                console.print("[red]Error:[/red] Auggie CLI is required for Auggie CLI projects")
+            if not check_tool("auggie", "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"):
+                install_url = "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"
                 agent_tool_missing = True
         # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
 
         if agent_tool_missing:
-            console.print("\n[red]Required AI tool is missing![/red]")
-            console.print("[yellow]Tip:[/yellow] Use --ignore-agent-tools to skip this check")
+            error_panel = Panel(
+                f"[cyan]{selected_ai}[/cyan] not found\n"
+                f"Install with: [cyan]{install_url}[/cyan]\n"
+                f"{AI_CHOICES[selected_ai]} is required to continue with this project type.\n\n"
+                "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
+                title="[red]Agent Detection Error[/red]",
+                border_style="red",
+                padding=(1, 2)
+            )
+            console.print()
+            console.print(error_panel)
             raise typer.Exit(1)
     
     # Determine script type (explicit, interactive, or OS default)
