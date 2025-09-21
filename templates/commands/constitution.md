@@ -2,7 +2,7 @@
 description: Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync.
 ---
 
-The user input to you can be provided directly by the agent or as an argument parameter - you **MUST** consider it before proceeding with the prompt (if not empty).
+The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
 
 User input:
 
