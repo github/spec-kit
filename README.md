@@ -319,10 +319,9 @@ At this stage, your project folder contents should resemble the following:
 │	 ├── constitution.md
 │	 └── constitution_update_checklist.md
 ├── scripts
-│	 ├── check-task-prerequisites.sh
+│	 ├── check-prerequisites.sh
 │	 ├── common.sh
 │	 ├── create-new-feature.sh
-│	 ├── get-feature-paths.sh
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
@@ -371,10 +370,9 @@ The output of this step will include a number of implementation detail documents
 │	 ├── constitution.md
 │	 └── constitution_update_checklist.md
 ├── scripts
-│	 ├── check-task-prerequisites.sh
+│	 ├── check-prerequisites.sh
 │	 ├── common.sh
 │	 ├── create-new-feature.sh
-│	 ├── get-feature-paths.sh
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs

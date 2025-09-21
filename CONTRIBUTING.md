@@ -45,6 +45,33 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
+## AI contributions in Spec Kit
+
+We welcome and encourage the use of AI tools to help improve Spec Kit! Many valuable contributions have been enhanced with AI assistance for code generation, issue detection, and feature definition.
+
+### What we're looking for
+
+When submitting AI-assisted contributions, please ensure they include:
+
+- **Human understanding and testing** - You've personally tested the changes and understand what they do
+- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals  
+- **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
+- **Your own analysis** - Share your thoughts on the end-to-end developer experience
+
+### What we'll close
+
+We reserve the right to close contributions that appear to be:
+
+- Untested changes submitted without verification
+- Generic suggestions that don't address specific Spec Kit needs
+- Bulk submissions that show no human review or understanding
+
+### Guidelines for success
+
+The key is demonstrating that you understand and have validated your proposed changes. If a maintainer can easily tell that a contribution was generated entirely by AI without human input or testing, it likely needs more work before submission.
+
+Contributors who consistently submit low-effort AI-generated changes may be restricted from further contributions at the maintainers' discretion.
+
 ## Resources
 
 - [Spec-Driven Development Methodology](./spec-driven.md)

@@ -1,11 +1,15 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
 scripts:
-  sh: scripts/bash/check-implementation-prerequisites.sh --json
-  ps: scripts/powershell/check-implementation-prerequisites.ps1 -Json
+  sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
-Given the current feature context, do this:
+The user input to you can be provided directly by the agent or in `$ARGUMENTS` - you **MUST** consider it before proceeding with the prompt (if not empty).
+
+User input:
+
+$ARGUMENTS
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
 
