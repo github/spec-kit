@@ -297,14 +297,37 @@ create_new_agent_file() {
     local escaped_framework=$(printf '%s\n' "$NEW_FRAMEWORK" | sed 's/[[\.*^$()+{}|]/\\&/g')
     local escaped_branch=$(printf '%s\n' "$CURRENT_BRANCH" | sed 's/[[\.*^$()+{}|]/\\&/g')
     
+    # Build technology stack and recent change strings conditionally
+    local tech_stack
+    if [[ -n "$escaped_lang" && -n "$escaped_framework" ]]; then
+        tech_stack="- $escaped_lang + $escaped_framework ($escaped_branch)"
+    elif [[ -n "$escaped_lang" ]]; then
+        tech_stack="- $escaped_lang ($escaped_branch)"
+    elif [[ -n "$escaped_framework" ]]; then
+        tech_stack="- $escaped_framework ($escaped_branch)"
+    else
+        tech_stack="- ($escaped_branch)"
+    fi
+
+    local recent_change
+    if [[ -n "$escaped_lang" && -n "$escaped_framework" ]]; then
+        recent_change="- $escaped_branch: Added $escaped_lang + $escaped_framework"
+    elif [[ -n "$escaped_lang" ]]; then
+        recent_change="- $escaped_branch: Added $escaped_lang"
+    elif [[ -n "$escaped_framework" ]]; then
+        recent_change="- $escaped_branch: Added $escaped_framework"
+    else
+        recent_change="- $escaped_branch: Added"
+    fi
+
     local substitutions=(
         "s|\[PROJECT NAME\]|$project_name|"
         "s|\[DATE\]|$current_date|"
-        "s|\[EXTRACTED FROM ALL PLAN.MD FILES\]|- $escaped_lang + $escaped_framework ($escaped_branch)|"
+        "s|\[EXTRACTED FROM ALL PLAN.MD FILES\]|$tech_stack|"
         "s|\[ACTUAL STRUCTURE FROM PLANS\]|$project_structure|g"
         "s|\[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES\]|$commands|"
         "s|\[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE\]|$language_conventions|"
-        "s|\[LAST 3 FEATURES AND WHAT THEY ADDED\]|- $escaped_branch: Added $escaped_lang + $escaped_framework|"
+        "s|\[LAST 3 FEATURES AND WHAT THEY ADDED\]|$recent_change|"
     )
     
     for substitution in "${substitutions[@]}"; do
@@ -424,6 +447,11 @@ update_existing_agent_file() {
             echo "$line" >> "$temp_file"
         fi
     done < "$target_file"
+    
+    # Post-loop check: if we're still in the Active Technologies section and haven't added new entries
+    if [[ $in_tech_section == true ]] && [[ $tech_entries_added == false ]] && [[ ${#new_tech_entries[@]} -gt 0 ]]; then
+        printf '%s\n' "${new_tech_entries[@]}" >> "$temp_file"
+    fi
     
     # Move temp file to target atomically
     if ! mv "$temp_file" "$target_file"; then

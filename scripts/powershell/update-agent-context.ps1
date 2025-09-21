@@ -319,6 +319,11 @@ function Update-ExistingAgentFile {
         $output.Add($line)
     }
 
+    # Post-loop check: if we're still in the Active Technologies section and haven't added new entries
+    if ($inTech -and -not $techAdded -and $newTechEntries.Count -gt 0) {
+        $newTechEntries | ForEach-Object { $output.Add($_) }
+    }
+
     Set-Content -LiteralPath $TargetFile -Value ($output -join [Environment]::NewLine)
     return $true
 }
