@@ -161,8 +161,8 @@ build_variant() {
       mkdir -p "$base_dir/.windsurf/workflows"
       generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
     codex)
-      mkdir -p "$base_dir/.codex/commands"
-      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/commands" "$script" ;;
+      mkdir -p "$base_dir/.codex/prompts"
+      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"

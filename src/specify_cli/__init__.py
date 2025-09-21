@@ -28,6 +28,7 @@ import sys
 import zipfile
 import tempfile
 import shutil
+import shlex
 import json
 from pathlib import Path
 from typing import Optional, Tuple
@@ -983,11 +984,23 @@ def init(
     # Boxed "Next steps" section
     steps_lines = []
     if not here:
-        steps_lines.append(f"1. [bold green]cd {project_name}[/bold green]")
+        steps_lines.append(f"1. Go to the project folder: [cyan]cd {project_name}[/cyan]")
         step_num = 2
     else:
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
+
+    # Add Codex-specific setup step if needed
+    if selected_ai == "codex":
+        codex_path = project_path / ".codex"
+        quoted_path = shlex.quote(str(codex_path))
+        if os.name == "nt":  # Windows
+            cmd = f"setx CODEX_HOME {quoted_path}"
+        else:  # Unix-like systems
+            cmd = f"export CODEX_HOME={quoted_path}"
+        
+        steps_lines.append(f"{step_num}. Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]")
+        step_num += 1
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
     steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
@@ -999,6 +1012,20 @@ def init(
     steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
     console.print()
     console.print(steps_panel)
+
+    # Add Codex warning if using Codex
+    if selected_ai == "codex":
+        warning_text = """[bold yellow]Important Note:[/bold yellow]
+
+Custom prompts do not yet support arguments in Codex. You may need to manually 
+specify additional project instructions directly in prompt files located in 
+[cyan].codex/prompts/[/cyan].
+
+For more information, see: [cyan]https://github.com/openai/codex/issues/2890[/cyan]"""
+        
+        warning_panel = Panel(warning_text, title="Slash Commands in Codex", border_style="yellow", padding=(1,2))
+        console.print()
+        console.print(warning_panel)
 
 @app.command()
 def check():
