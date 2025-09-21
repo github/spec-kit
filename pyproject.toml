@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.0.14"
+version = "0.0.13"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [

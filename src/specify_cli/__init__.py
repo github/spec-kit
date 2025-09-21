@@ -998,7 +998,7 @@ def init(
         "codex": ".codex/",
         "windsurf": ".windsurf/",
         "kilocode": ".kilocode/",
-        "auggie": ".auggie/",
+        "auggie": ".augment/",
         "copilot": ".github/"
     }
     
