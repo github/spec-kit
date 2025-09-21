@@ -430,7 +430,9 @@ def download_from_branch(ai_assistant: str, download_dir: Path, repo_owner: str,
     try:
         with client.stream("GET", download_url, timeout=60, follow_redirects=True) as response:
             if response.status_code != 200:
-                body_sample = response.text[:400]
+                # Read response content for error message
+                error_content = b"".join(response.iter_bytes(chunk_size=1024))
+                body_sample = error_content.decode('utf-8', errors='ignore')[:400]
                 raise RuntimeError(f"Branch download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
 
             total_size = int(response.headers.get('content-length', 0))
@@ -696,6 +698,13 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                     # Copy contents to current directory
                     for item in source_dir.iterdir():
                         dest_path = project_path / item.name
+
+                        # Skip specs folder if it already exists to preserve user documentation
+                        if item.name == "specs" and dest_path.exists():
+                            if verbose and not tracker:
+                                console.print(f"[cyan]Preserving existing specs folder[/cyan]")
+                            continue
+
                         if item.is_dir():
                             if dest_path.exists():
                                 if verbose and not tracker:

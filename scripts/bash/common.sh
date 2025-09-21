@@ -6,9 +6,9 @@ get_current_branch() { git rev-parse --abbrev-ref HEAD; }
 
 check_feature_branch() {
     local branch="$1"
-    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/[A-Z]+-[0-9]+\.[a-z0-9.-]+ ]]; then
+    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/[A-Z]+-[0-9]+\. ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: username/JIRA-123.feature-name" >&2
+        echo "Feature branches should be named like: username/JIRA-123.anything" >&2
         return 1
     fi; return 0
 }
