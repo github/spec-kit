@@ -29,15 +29,15 @@ Specify supports multiple AI agents by generating agent-specific command files a
 
 ### Current Supported Agents
 
-| Agent | Directory | Format | CLI Tool | Description |
-|-------|-----------|---------|----------|-------------|
-| **Claude Code** | `.claude/commands/` | Markdown | `claude` | Anthropic's Claude Code CLI |
-| **Gemini CLI** | `.gemini/commands/` | TOML | `gemini` | Google's Gemini CLI |
-| **GitHub Copilot** | `.github/prompts/` | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code |
-| **Cursor** | `.cursor/commands/` | Markdown | `cursor-agent` | Cursor CLI |
-| **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | Alibaba's Qwen Code CLI |
-| **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
-| **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows |
+| Agent | Directory | Format | CLI Tool | Context File | Description |
+|-------|-----------|---------|----------|--------------|-------------|
+| **Claude Code** | `.claude/commands/` | Markdown | `claude` | `CLAUDE.md` | Anthropic's Claude Code CLI |
+| **Gemini CLI** | `.gemini/commands/` | TOML | `gemini` | `GEMINI.md` | Google's Gemini CLI |
+| **GitHub Copilot** | N/A (IDE-based) | N/A | N/A (IDE-based) | `.github/copilot-instructions.md` | GitHub Copilot in VS Code |
+| **Cursor** | `.cursor/commands/` | Markdown | `cursor-agent` | `.cursor/rules/specify-rules.mdc` | Cursor CLI |
+| **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | `QWEN.md` | Alibaba's Qwen Code CLI |
+| **opencode** | `.opencode/command/` | Markdown | `opencode` | `AGENTS.md` | opencode CLI |
+| **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | `.windsurf/rules/specify-rules.md` | Windsurf IDE workflows |
 
 ### Step-by-Step Integration Guide
 
@@ -191,11 +191,16 @@ Command content with {SCRIPT} and {{args}} placeholders.
 
 ## Directory Conventions
 
-- **CLI agents**: Usually `.<agent-name>/commands/`
+- **CLI agents**: Usually `.<agent-name>/commands/` for commands
 - **IDE agents**: Follow IDE-specific patterns:
-  - Copilot: `.github/prompts/`
-  - Cursor: `.cursor/commands/`
-  - Windsurf: `.windsurf/workflows/`
+  - Cursor: `.cursor/commands/` for commands, `.cursor/rules/specify-rules.mdc` for context
+  - Windsurf: `.windsurf/workflows/` for commands, `.windsurf/rules/specify-rules.md` for context
+- **Context files**: Agent-specific instruction files that provide project context:
+  - Claude: `CLAUDE.md`
+  - Gemini: `GEMINI.md`  
+  - Copilot: `.github/copilot-instructions.md`
+  - Qwen: `QWEN.md`
+  - opencode: `AGENTS.md`
 
 ## Argument Patterns
 
