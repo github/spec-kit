@@ -311,8 +311,8 @@ create_new_agent_file() {
     done
     
     # Convert \n sequences to actual newlines
-    sed -i.bak2 's/\\n/\
-/g' "$temp_file"
+    newline=$(printf '\n')
+    sed -i.bak2 "s/\\\\n/${newline}/g" "$temp_file"
     
     # Clean up backup files
     rm -f "$temp_file.bak" "$temp_file.bak2"
