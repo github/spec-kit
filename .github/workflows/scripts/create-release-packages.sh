@@ -42,16 +42,16 @@ generate_commands() {
     local rules_file="$output_dir/.rules"
     # Define slash command handling rules
     cat > "$rules_file" <<'EOF'
-# Agent Slash Commands
-When prompted with a slash command (/command), you should consume the definition below and execute accordingly.
+# Agent Commands
+When prompted with a command, you should consume the definition below and execute accordingly.
 If no definition is found, respond that the command is undefined or prompt the user for clarification.
 
-# Template for defining new slash commands:
-# <agent_slash_command>
+# Template for defining new commands:
+# <agent_command>
 #   name: <command_name>
 #   description: <short description>
 #   body: <instructions for execution, including placeholders {SCRIPT}, {ARGS}, etc.>
-# </agent_slash_command>
+# </agent_command>
 
 EOF
 
@@ -86,15 +86,15 @@ EOF
       # Apply other substitutions
       body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
 
-      # Append the command as a slash-command block following the template
+      # Append the command as a command block following the template
       {
-        echo "<agent_slash_command>"
+        echo "<agent_command>"
         echo "name: $name"
         echo "description: $description"
         echo "body: |"
         # Indent body by two spaces for YAML-style multiline
         printf '%s\n' "$body" | sed 's/^/  /'
-        echo "</agent_slash_command>"
+        echo "</agent_command>"
         echo ""
       } >> "$rules_file"
     done
