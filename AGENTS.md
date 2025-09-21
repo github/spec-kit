@@ -33,7 +33,6 @@ Specify supports multiple AI agents by generating agent-specific command files a
 |-------|-----------|---------|----------|--------------|-------------|
 | **Claude Code** | `.claude/commands/` | Markdown | `claude` | `CLAUDE.md` | Anthropic's Claude Code CLI |
 | **Gemini CLI** | `.gemini/commands/` | TOML | `gemini` | `GEMINI.md` | Google's Gemini CLI |
-| **GitHub Copilot** | N/A (IDE-based) | N/A | N/A (IDE-based) | `.github/copilot-instructions.md` | GitHub Copilot in VS Code |
 | **Cursor** | `.cursor/commands/` | Markdown | `cursor-agent` | `.cursor/rules/specify-rules.mdc` | Cursor CLI |
 | **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | `QWEN.md` | Alibaba's Qwen Code CLI |
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | `AGENTS.md` | opencode CLI |
@@ -198,7 +197,6 @@ Command content with {SCRIPT} and {{args}} placeholders.
 - **Context files**: Agent-specific instruction files that provide project context:
   - Claude: `CLAUDE.md`
   - Gemini: `GEMINI.md`  
-  - Copilot: `.github/copilot-instructions.md`
   - Qwen: `QWEN.md`
   - opencode: `AGENTS.md`
 
