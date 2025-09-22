@@ -74,6 +74,7 @@ AI_CHOICES = {
     "windsurf": "Windsurf",
     "kilocode": "Kilo Code",
     "auggie": "Auggie CLI",
+    "roo": "Roo Code",
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -1015,7 +1016,8 @@ def init(
         "windsurf": ".windsurf/",
         "kilocode": ".kilocode/",
         "auggie": ".augment/",
-        "copilot": ".github/"
+        "copilot": ".github/",
+        "roo": ".roo/"
     }
     
     if selected_ai in agent_folder_map:
