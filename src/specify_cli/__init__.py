@@ -753,6 +753,7 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
+    force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
@@ -783,6 +784,7 @@ def init(
         specify init --here --ai claude
         specify init --here --ai codex
         specify init --here
+        specify init --here --force  # Skip confirmation when current directory not empty
     """
     # Show banner first
     show_banner()
@@ -806,12 +808,14 @@ def init(
         if existing_items:
             console.print(f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)")
             console.print("[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]")
-            
-            # Ask for confirmation
-            response = typer.confirm("Do you want to continue?")
-            if not response:
-                console.print("[yellow]Operation cancelled[/yellow]")
-                raise typer.Exit(0)
+            if force:
+                console.print("[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]")
+            else:
+                # Ask for confirmation
+                response = typer.confirm("Do you want to continue?")
+                if not response:
+                    console.print("[yellow]Operation cancelled[/yellow]")
+                    raise typer.Exit(0)
     else:
         project_path = Path(project_name).resolve()
         # Check if project directory already exists
