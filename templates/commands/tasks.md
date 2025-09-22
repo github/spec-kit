@@ -72,6 +72,21 @@ $ARGUMENTS
    - Dependency notes
    - Parallel execution guidance
 
+10. Prepare a System Context section for the research.md document:
+   - The available design documents (e.e. research.md, data-model.md) are 
+     meant to provide *ALL* the information and context required for an AI
+     coding to implement the tasks consistently within a potentially complex
+     codebase.
+   - The AI coding assistant is expected to rely on the available design
+     documents for ALL the information it needs to implement the tasks
+   - Think hard to determine what additional information is required from
+     the documents and context to fully and best implement the tasks and append that 
+     information to the research.md document under a "System Context" heading.
+   - Think hard to analyze the existing codebase and prepare a detailed summary
+     to help an AI coding assistant fully and best implement these tasks,
+     append the summary to the research.md document under a "Codebase Summary"
+     heading.
+
 Context for task generation: {ARGS}
 
 The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
