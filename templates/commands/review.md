@@ -46,6 +46,8 @@ semantics:
 
     - **REQUIRED**: Read `tasks.md` for the complete task list and execution plan
     - **REQUIRED**: Read `plan.md` for tech stack, architecture, and file structure
+    - **REQUIRED**: Read `spec.md` within `FEATURE_DIR`; extract the `Requirements` section and flag a missing or malformed
+      spec as `[Open Question]`
     - **IF EXISTS**: Read `data-model.md` for entities and relationships
     - **IF EXISTS**: Read `contracts/` for API specifications and test requirements
     - **IF EXISTS**: Read `research.md` for technical decisions and constraints
@@ -74,6 +76,8 @@ semantics:
       as `REVIEW_SCOPE_HINTS`
     - Capture explicit guardrails, risk registers, checklist items, or out-of-scope statements and store them as
       `REVIEW_DIRECTIVES`
+    - Parse the `Requirements` section of `spec.md` to build `SPEC_REQUIREMENTS`; for each requirement capture `id`
+      (e.g., `FR-###`), verbatim rule text, related acceptance scenarios/tests, and any embedded clarification markers
     - Start a `CONTROL_INVENTORY` by mapping each cross-cutting control mandated in the gathered documents (e.g., logging,
       authentication, telemetry, storage, observability) to the code assets or services that already implement it; record
       the path locator, purpose, and reuse guidance in a structured format that can be emitted with review outputs
@@ -94,11 +98,16 @@ semantics:
           and `.claude/commands/implement.md` (unchanged from v1)
         - **Global Normative Requirements (baseline)** from this playbook (see **Requirements Catalog**)
         - Additional controlling documents from `SPEC_KIT_CONFIG`, `AVAILABLE_DOCS`, and operator-provided standards digests
-    - Read each document and **extract explicit mandates** (architecture boundaries, logging strategy, dependency policy,
-      quality gates, testing posture, risk controls), appending them to `REVIEW_REQUIREMENTS` with:
-        - `id`, `name`, `level` (MUST/SHOULD/MAY), `rule` (one sentence), `rationale`, `source`
+        - Feature-level directives from `SPEC_REQUIREMENTS`, preserving their IDs and original wording
+   - Read each document and **extract explicit mandates** (architecture boundaries, logging strategy, dependency policy,
+     quality gates, quality controls governance, testing posture, risk controls), appending them to `REVIEW_REQUIREMENTS`
+      with:
+       - `id`, `name`, `level` (MUST/SHOULD/MAY), `rule` (one sentence),
+         `rationale`, `source`
     - Keep `CONTROL_INVENTORY` in sync with these mandates by capturing canonical implementations, known extension points,
       and noted gaps that require follow-up; flag missing controls as provisional entries pending remediation
+    - For every entry in `SPEC_REQUIREMENTS`, append a matching record to `REVIEW_REQUIREMENTS` with `source_requirement`
+      set to the original `FR-###`; initialize each entry with `status="unverified"` until evidence or findings resolve it
     - Treat these requirements as authoritative; flag any observed deviation
     - When a mandate is ambiguous, raise `[Open Question]` entries, resolve them, and record outcomes in the decision log
 
@@ -107,6 +116,9 @@ semantics:
     - **Context Gate**: required dossier files exist; else → `Blocked: Missing Context`
     - **Change Intent Gate**: change aligns with POR; else → `Blocked: Scope Mismatch`
     - **Unknowns Gate**: unresolved `[NEEDS CLARIFICATION: …]` → `Needs Clarification`
+    - **Requirements Coverage Gate**: every `FR-###` in `SPEC_REQUIREMENTS` maps to implementation/test evidence, an
+      explicit finding, or a documented clarification request; otherwise → `Changes Requested` (missing implementation),
+      `Needs Clarification` (ambiguous requirement), or `Blocked: Scope Mismatch` (requirement intentionally deferred)
     - **Separation of Duties Gate**: author cannot self-approve; emergency bypasses are exceptional and auditable
     - **Code Owners Gate**: changes under owned paths require owner approval (if CODEOWNERS configured)
     - **Quality Controls Gate**: linting/typing/formatting/CI guardrails untouched unless explicitly in scope; unexpected
@@ -120,7 +132,7 @@ semantics:
 
 9. Collect objective evidence
 
-    - Identify mandatory quality commands from `REVIEW_REQUIREMENTS` (e.g., lint, typecheck, unit tests, integration tests,
+    - Identify mandatory quality commands from `REVIEW_REQUIREMENTS` (e.g., lint, typecheck, test,
       build, contract checks); execute them repo-wide unless governance specifies a narrower scope
     - Capture pass/fail status and key diagnostics for each command; aggregate multiple errors per category into single
       findings
@@ -132,6 +144,8 @@ semantics:
 10. Analyze implementation changes
 
     - Review diffs/files for compliance with each item in `REVIEW_REQUIREMENTS`
+    - For each `FR-###` requirement, trace implementation changes and associated tests; cite concrete files, commands, or
+      scenarios that satisfy the requirement, and open findings when evidence is absent or contradictory
     - Map changes to architecture layers or boundaries; flag violations or missing abstractions with proposed remediations
     - Verify cross-cutting controls (validation, logging, error handling, accessibility, performance, security,
       observability) adhere to the mandates
@@ -161,6 +175,8 @@ semantics:
     - Capture **Dependency Audit Summary** details: baseline vs current severity counts, new CVEs, deprecated packages,
       justifications, and version currency observations.
     - Update the **Requirements Compliance Checklist** with pass/fail status and notes per requirement group.
+    - Generate a **Requirements Coverage Table** sourced from `SPEC_REQUIREMENTS` with columns for requirement id, summary,
+      implementation evidence, validating tests, and linked finding/clarification ids.
     - Append the **Decision Log** with resolved assumptions, constitutional interpretations, control reuse, and
       remediation-audit outcomes.
     - Ensure the **Remediation Logging** section is populated per Step 12 when high-severity findings or non-approved

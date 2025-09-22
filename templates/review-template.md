@@ -130,6 +130,14 @@ The project demonstrates established control patterns:
 - **Deprecated Packages**: {DEPENDENCY_DEPRECATED_PACKAGES}
 - **Justifications / Version Currency**: {DEPENDENCY_JUSTIFICATIONS}
 
+## Requirements Coverage Table
+
+| Requirement | Summary | Implementation Evidence | Validating Tests | Linked Findings / Clarifications |
+|-------------|---------|-------------------------|------------------|-----------------------------------|
+| **FR-###** | {REQ_SUMMARY_1} | {REQ_EVIDENCE_1_FILES} | {REQ_TESTS_1} | {REQ_LINKS_1} |
+| **FR-###** | {REQ_SUMMARY_2} | {REQ_EVIDENCE_2_FILES} | {REQ_TESTS_2} | {REQ_LINKS_2} |
+| **FR-###** | {REQ_SUMMARY_3} | {REQ_EVIDENCE_3_FILES} | {REQ_TESTS_3} | {REQ_LINKS_3} |
+
 ## Requirements Compliance Checklist
 
 | Requirement Group | Status | Notes |
