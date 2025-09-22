@@ -220,20 +220,8 @@ semantics:
 
 ### Governance & Process
 
-- **GOV-01 Policy & Scope** — **MUST**: A published code-review policy defines when review is required, who may approve,
-  and any exemptions. *Rationale*: Organizational control; auditability. *Source*: NIST SSDF PW.7.
-- **GOV-02 Peer Review for Protected Branches** — **MUST**: All merges to protected branches require peer review.
-  *Rationale*: Process integrity. *Source*: Platform enforcement + Microsoft Playbook.
-- **GOV-03 Code Owners** — **MUST**: Owned paths require owner approval (where supported). *Rationale*: Expertise and
-  risk control. *Source*: Platform + CIS supply-chain guidance.
-- **GOV-04 Separation of Duties** — **MUST**: Authors cannot self-approve; emergency bypasses are exceptional, logged,
-  and post-reviewed. *Rationale*: Change-control integrity. *Source*: SOC2/ISO change management norms.
-- **GOV-05 Small, Focused Changes** — **SHOULD**: Prefer small, coherent CLs with clear descriptions and linked issues.
+- **GOV-01 Small, Focused Changes** — **SHOULD**: Prefer small, coherent CLs with clear descriptions and linked issues.
   *Rationale*: Improves review quality and speed. *Source*: Google Eng Practices.
-- **GOV-06 Review SLAs** — **SHOULD**: First response within one business day; stale reviews escalated. *Rationale*:
-  Flow efficiency. *Source*: Google Eng Practices.
-- **GOV-07 Traceability** — **MUST**: Record reviewers, outcomes, timestamps, and linked issues in the PR. *Rationale*:
-  Audit trail, learning. *Source*: NIST SSDF PW.7.
 
 ### Security & Privacy
 
