@@ -192,6 +192,51 @@ elif selected_ai == "windsurf":
 
 **Note**: Skip CLI checks for IDE-based agents (Copilot, Windsurf).
 
+#### 7. Update Devcontainer files (Optional)
+
+For agents that have VS Code extensions or require CLI installation, update the devcontainer configuration files:
+
+##### VS Code Extension-based Agents
+
+For agents available as VS Code extensions, add them to `.devcontainer/devcontainer.json`:
+
+```json
+{
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // ... existing extensions ...
+        // [New Agent Name]
+        "[New Agent Extension ID]"
+      ]
+    }
+  }
+}
+```
+
+##### CLI-based Agents
+
+For agents that require CLI tools, add installation commands to `.devcontainer/post-create.sh`:
+
+```bash
+#!/bin/bash
+
+# Existing installations...
+
+echo -e "\n🤖 Installing [New Agent Name] CLI..."
+# run_command "bun add --global [agent-cli-package]@latest" # Example for node-based CLI
+# or other installation instructions (must be non-interactive and compatible with Linux Debian "Trixie" or later)...
+echo "✅ Done"
+
+```
+
+**Quick Tips:**
+
+- **Extension-based agents**: Add to the `extensions` array in `devcontainer.json`
+- **CLI-based agents**: Add installation scripts to `post-create.sh`
+- **Hybrid agents**: May require both extension and CLI installation
+- **Test thoroughly**: Ensure installations work in the devcontainer environment
+
 ## Agent Categories
 
 ### CLI-Based Agents
@@ -201,6 +246,7 @@ Require a command-line tool to be installed:
 - **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
+- **Amazon Q Developer CLI**: `q` CLI
 
 ### IDE-Based Agents
 Work within integrated development environments:
