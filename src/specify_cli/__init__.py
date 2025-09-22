@@ -1067,9 +1067,11 @@ def init(
     if selected_ai == "codex":
         warning_text = """[bold yellow]Important Note:[/bold yellow]
 
-Custom prompts do not yet support arguments in Codex. You may need to manually specify additional project instructions directly in prompt files located in [cyan].codex/prompts/[/cyan].
+Custom prompts do not yet support arguments in Codex. In the short-term (until Codex supports arguments) use this workaround pattern:
 
-For more information, see: [cyan]https://github.com/openai/codex/issues/2890[/cyan]"""
+Instead of using [cyan]/specify[/cyan] with arguments, you can use the command [cyan]/discuss[/cyan] where you will discuss the feature back and forth with the LLM to align on the basics. Then you can use the [cyan]/feature[/cyan] command to create the specification from the previous discussion, just like [cyan]/specify[/cyan] would.
+
+To upvote the feature request for argument support in Codex, see: [cyan]https://github.com/openai/codex/issues/2890[/cyan]"""
         
         warning_panel = Panel(warning_text, title="Slash Commands in Codex", border_style="yellow", padding=(1,2))
         console.print()
