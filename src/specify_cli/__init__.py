@@ -896,8 +896,8 @@ def init(
                 install_url = "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"
                 agent_tool_missing = True
         elif selected_ai == "iflow":
-            if not check_tool("iflow", "https://iflow.ai/cli"):
-                install_url = "https://iflow.ai/cli"
+            if not check_tool("iflow", "https://platform.iflow.cn/cli/quickstart"):
+                install_url = "https://platform.iflow.cn/cli/quickstart"
                 agent_tool_missing = True
         # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
 
