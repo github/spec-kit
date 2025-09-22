@@ -47,14 +47,14 @@ $ARGUMENTS
    - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
    - **Assumption Handling**:
       - When evaluating possible solutions:
-         - possible solutions **MUST** be evaluated to ensure that the Requirements described in spec.md are still achievable
-         - you may NOT factor in "Time vs Value Trade-Off", you are an AI with amazing capabilities and near endless capacity
-      - When making assumptions, if there is no clear solution, ask the user for advice by clarifying the research.md doc and **STOP**.
-      - Decisions for assumptions must be output with reasoning prefixed with "[ASSUMPTION]".
+         - Every potential solution **MUST** confirm the requirements in spec.md remain fully achievable
+         - Do **NOT** weigh time-versus-value trade-offs; operate as an AI with effectively unlimited capacity
+      - If no clear path exists, HALT immediately, seek explicit guidance from the user, and record the clarification in research.md.
+      - Whenever you adopt an assumption, output the reasoning prefixed with "[ASSUMPTION]".
    - **Plan Deviation**:
-      - Try **VERY** hard to follow the plan and task intent.
+      - Do not deviate from the plan or task intent unless absolutely unavoidable.
       - If you cannot proceed without a deviation from the plan or task intent, explain the situation to the user and 
-        ask the user for advice by clarifying the research.md doc and **STOP**.
+        HALT immediately, seek explicit guidance from the user, and record the clarification in research.md.
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Code Quality Gates**: You **MUST** ensure code quality gates are satisfied quickly per task and extensively per phase
