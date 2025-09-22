@@ -774,7 +774,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 os.chmod(hook, new_mode)
                 updated += 1
             except Exception as e:
-                failures.append(f"hooks/{hook.name}: {e}")
+                failures.append(f"hooks/{hook.relative_to(hooks_root)}: {e}")
 
     if tracker:
         detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
