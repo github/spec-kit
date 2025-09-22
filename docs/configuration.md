@@ -24,35 +24,42 @@ Configuration is defined under the top‑level `spec-kit` key. The canonical str
 ```yaml
 spec-kit:
   - constitution:
-      path: "/memory/constitution.md"
+      path: "CONSTITUTION.md"
+      documents:
+        - path: "docs/architecture.md"
+          context: "Documents the architecture of the project and should be considered a primary source of truth."
+        - path: "docs/ui-architecture.md"
+          context: "Documents the UI architecture of the project and should be considered a primary source of truth."
   - specify:
       documents:
         - path: "docs/prd.md"
-          context: "Product requirements"
+          context: "Documents the product requirements and should be considered a primary source of truth."
+        - path: "docs/front-end-spec.md"
+          context: "Documents the front-end specifications and should be considered a primary source of truth."
   - plan:
       technical_context:
         - "**Coding Standards**: [NEEDS CLARIFICATION]"
       additional_research:
-        - "Analyse the architecture documents and prepare a summary of relevant sections as they relate to the implementation plan."
+        - "Analyse the architecture documents and prepare a summary of the relevant sections as they relate to the implementation of the plan."
       documents:
         - path: "docs/architecture.md"
-          context: "Primary architecture reference"
+          context: "Documents the architecture of the project and should be considered a primary source of truth."
         - path: "docs/ui-architecture.md"
-          context: "UI architecture reference"
+          context: "Documents the UI architecture of the project and should be considered a primary source of truth."
         - path: "docs/front-end-spec.md"
-          context: "Front‑end specifications"
+          context: "Documents the front-end specifications and should be considered a primary source of truth."
   - tasks:
       documents:
         - path: "docs/architecture.md"
-          context: "Architecture reference"
+          context: "Documents the architecture of the project and should be considered a primary source of truth."
         - path: "docs/ui-architecture.md"
-          context: "UI architecture reference"
+          context: "Documents the UI architecture of the project and should be considered a primary source of truth."
         - path: "docs/front-end-spec.md"
-          context: "Front‑end specifications"
+          context: "Documents the front-end specifications and should be considered a primary source of truth."
   - implement:
       documents:
         - path: "docs/work-flow.md"
-          context: "Implementation workflow reference"
+          context: "Documents the implementation work-flow for the project and should be considered a primary source of truth."
 ```
 
 Notes:
