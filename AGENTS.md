@@ -38,6 +38,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | Alibaba's Qwen Code CLI |
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
 | **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows |
+| **iFlow CLI** | `.iflow/commands/` | TOML/Markdown | `iflow` | Alibaba's iFlow CLI |
 
 ### Step-by-Step Integration Guide
 
@@ -55,7 +56,8 @@ AI_CHOICES = {
     "cursor": "Cursor",
     "qwen": "Qwen Code",
     "opencode": "opencode",
-    "windsurf": "Windsurf"  # Add new agent here
+    "windsurf": "Windsurf",  # Add new agent here
+    "iflow": "iFlow CLI",
 }
 ```
 
@@ -70,6 +72,7 @@ agent_folder_map = {
     "opencode": ".opencode/",
     "codex": ".codex/",
     "windsurf": ".windsurf/",  # Add new agent folder here
+    "iflow": ".iflow/",
     "kilocode": ".kilocode/",
     "auggie": ".auggie/",
     "copilot": ".github/"
@@ -99,7 +102,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 
 ##### Add to ALL_AGENTS array:
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf iflow)
 ```
 
 ##### Add case statement for directory structure:

@@ -75,6 +75,7 @@ AI_CHOICES = {
     "kilocode": "Kilo Code",
     "auggie": "Auggie CLI",
     "roo": "Roo Code",
+    "iflow": "iFlow CLI",
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -748,7 +749,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, or auggie"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, auggie, or iflow"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -779,6 +780,7 @@ def init(
         specify init my-project --ai codex
         specify init my-project --ai windsurf
         specify init my-project --ai auggie
+        specify init my-project --ai iflow
         specify init --ignore-agent-tools my-project
         specify init --here --ai claude
         specify init --here --ai codex
@@ -892,6 +894,10 @@ def init(
         elif selected_ai == "auggie":
             if not check_tool("auggie", "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"):
                 install_url = "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"
+                agent_tool_missing = True
+        elif selected_ai == "iflow":
+            if not check_tool("iflow", "https://iflow.ai/cli"):
+                install_url = "https://iflow.ai/cli"
                 agent_tool_missing = True
         # GitHub Copilot and Cursor checks are not needed as they're typically available in supported IDEs
 
@@ -1017,7 +1023,8 @@ def init(
         "kilocode": ".kilocode/",
         "auggie": ".augment/",
         "copilot": ".github/",
-        "roo": ".roo/"
+        "roo": ".roo/",
+        "iflow": ".iflow/"
     }
     
     if selected_ai in agent_folder_map:
@@ -1095,6 +1102,7 @@ def check():
     tracker.add("opencode", "opencode")
     tracker.add("codex", "Codex CLI")
     tracker.add("auggie", "Auggie CLI")
+    tracker.add("iflow", "iFlow CLI")
     
     git_ok = check_tool_for_tracker("git", tracker)
     claude_ok = check_tool_for_tracker("claude", tracker)  
@@ -1108,6 +1116,7 @@ def check():
     opencode_ok = check_tool_for_tracker("opencode", tracker)
     codex_ok = check_tool_for_tracker("codex", tracker)
     auggie_ok = check_tool_for_tracker("auggie", tracker)
+    iflow_ok = check_tool_for_tracker("iflow", tracker)
 
     console.print(tracker.render())
 
@@ -1115,7 +1124,7 @@ def check():
 
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or kilocode_ok or opencode_ok or codex_ok or auggie_ok):
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or kilocode_ok or opencode_ok or codex_ok or auggie_ok or iflow_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 

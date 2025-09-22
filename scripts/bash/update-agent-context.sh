@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, iFlow
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf
+# Agent types: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|iflow
 # Leave empty to update all existing agent files
 
 set -e
@@ -64,6 +64,7 @@ GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
 CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
 QWEN_FILE="$REPO_ROOT/QWEN.md"
+IFLOW_FILE="$REPO_ROOT/IFLOW.md"
 AGENTS_FILE="$REPO_ROOT/AGENTS.md"
 WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
@@ -580,9 +581,12 @@ update_specific_agent() {
         roo)
             update_agent_file "$ROO_FILE" "Roo Code"
             ;;
+        iflow)
+            update_agent_file "$IFLOW_FILE" "iFlow CLI"
+            ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo"
+            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo|iflow"
             exit 1
             ;;
     esac
@@ -642,6 +646,11 @@ update_all_existing_agents() {
         found_agent=true
     fi
     
+    if [[ -f "$IFLOW_FILE" ]]; then
+        update_agent_file "$IFLOW_FILE" "iFlow CLI"
+        found_agent=true
+    fi
+
     # If no agent files exist, create a default Claude file
     if [[ "$found_agent" == false ]]; then
         log_info "No existing agent files found, creating default Claude file..."
@@ -665,7 +674,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo|iflow]"
 }
 
 #==============================================================================
