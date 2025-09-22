@@ -1,27 +1,24 @@
 ---
-
-description:
-Run a scope-driven review that enforces project governance, quality gates, and
-risk controls
+description: |
+  Run a scope-driven review that enforces project governance, quality gates, and
+  risk controls
 version: 2.0
 semantics:
-
-- Levels use RFC 2119 / BCP 14 (MUST/SHOULD/MAY).
+  levels: Levels use RFC 2119 / BCP 14 (MUST/SHOULD/MAY).
   authoritative_sources:
-- NIST SSDF v1.1 (SP 800-218) PW.7–PW.8
-- OWASP ASVS v4.x; OWASP Code Review Guide; OWASP SAMM
-- ISO/IEC 27002:2022 (8.28 Secure Coding); ISO/IEC 27001 ISMS
-- PCI DSS 4.0 (esp. 6.3.2 code review before release)
-- GDPR Article 25 (Data Protection by Design & Default), CCPA
-- SLSA v1.0 (supply chain provenance)
-- Google Engineering Practices (Small CLs, Speed, What to look for)
-- Microsoft Engineering Playbook (Code Reviews)
-- WCAG 2.2 (Level AA)
-- Google SRE (launch/readiness checklists)
+    - NIST SSDF v1.1 (SP 800-218) PW.7–PW.8
+    - OWASP ASVS v4.x; OWASP Code Review Guide; OWASP SAMM
+    - ISO/IEC 27002:2022 (8.28 Secure Coding); ISO/IEC 27001 ISMS
+    - PCI DSS 4.0 (esp. 6.3.2 code review before release)
+    - GDPR Article 25 (Data Protection by Design & Default), CCPA
+    - SLSA v1.0 (supply chain provenance)
+    - Google Engineering Practices (Small CLs, Speed, What to look for)
+    - Microsoft Engineering Playbook (Code Reviews)
+    - WCAG 2.2 (Level AA)
+    - Google SRE (launch/readiness checklists)
   notes:
-- This playbook is stack-agnostic and applies to any language or runtime.
-- Always use absolute paths from the repository root for all file operations.
-
+    - This playbook is stack-agnostic and applies to any language or runtime.
+    - Always use absolute paths from the repository root for all file operations.
 ---
 
 # Code Review Playbook
