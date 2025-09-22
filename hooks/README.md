@@ -164,9 +164,10 @@ echo "Specification $FEATURE_NUM completed: $SPEC_FILE" | mail -s "Spec Ready" t
 - **Cross-platform**: System automatically detects and uses appropriate hook format.
 
 ### Hook Execution
-- Hooks are called with multiple arguments: feature description, feature number, branch name, spec file path
+- Hook arguments vary by type:
+  - `pre-specify` and `prepare-feature-num`: receive only feature description (`$1`)
+  - `post-checkout` and `post-specify`: receive feature description (`$1`) and have access to environment variables (BRANCH_NAME, SPEC_FILE, FEATURE_NUM)
 - The `prepare-feature-num` hook should output only the number to stdout
-- All hooks have access to environment variables (BRANCH_NAME, SPEC_FILE, FEATURE_NUM) in addition to explicit arguments
 - Failed hooks generate warnings but don't stop the specification process
 - Non-existent or non-executable hook files are safely ignored
 
