@@ -1,24 +1,24 @@
 ---
-description: Create or update the feature specification from a natural language feature description.
+description: 自然言語の機能説明から機能仕様を作成または更新します。
 scripts:
   sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+ユーザー入力は、エージェントから直接提供されるか、コマンド引数として提供される場合があります - プロンプトに進む前に、（空でない場合は）**必ず**考慮してください。
 
-User input:
+ユーザー入力:
 
 $ARGUMENTS
 
-The text the user typed after `/specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
+ユーザーがトリガーメッセージ内で`/specify`の後に入力したテキスト**が**機能説明です。下に`{ARGS}`が文字通り表示されていても、この会話で常に利用可能であると仮定してください。空のコマンドを提供した場合を除き、ユーザーに繰り返しを求めないでください。
 
-Given that feature description, do this:
+その機能説明を踏まえて、以下を実行してください：
 
-1. Run the script `{SCRIPT}` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
-  **IMPORTANT** You must only ever run this script once. The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for.
-2. Load `templates/spec-template.md` to understand required sections.
-3. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
-4. Report completion with branch name, spec file path, and readiness for the next phase.
+1. リポジトリルートからスクリプト`{SCRIPT}`を実行し、BRANCH_NAMEとSPEC_FILEのJSON出力を解析します。すべてのファイルパスは絶対パスである必要があります。
+  **重要** このスクリプトは一度だけ実行してください。JSONはターミナルの出力として提供されます - 探している実際のコンテンツを取得するために常にそれを参照してください。
+2. 必要なセクションを理解するために`templates/spec-template.md`を読み込みます。
+3. テンプレート構造を使用してSPEC_FILEに仕様を書き込み、セクションの順序と見出しを保持しながらプレースホルダーを機能説明（引数）から導出した具体的な詳細で置換します。
+4. ブランチ名、仕様ファイルパス、および次のフェーズへの準備状態とともに完了を報告します。
 
-Note: The script creates and checks out the new branch and initializes the spec file before writing.
+注意: スクリプトは新しいブランチを作成してチェックアウトし、書き込み前に仕様ファイルを初期化します。
