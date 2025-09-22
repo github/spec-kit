@@ -72,6 +72,7 @@ agent_folder_map = {
     "windsurf": ".windsurf/",  # Add new agent folder here
     "kilocode": ".kilocode/",
     "auggie": ".auggie/",
+    "roocode": ".roo/",
     "copilot": ".github/"
 }
 ```
@@ -99,7 +100,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 
 ##### Add to ALL_AGENTS array:
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roocode)
 ```
 
 ##### Add case statement for directory structure:
