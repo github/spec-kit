@@ -60,16 +60,17 @@ WORDS=$(echo "$FEATURE_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-
 # Create branch name: username/JIRA-123.feature-name
 BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${WORDS}"
 
-# Feature directory uses just JIRA-123.feature-name
-FEATURE_ID="${JIRA_KEY}.${WORDS}"
+# Create spec filename using JIRA-key-feature-name format
+SPEC_FILENAME="${JIRA_KEY}-${WORDS}.md"
 
 git checkout -b "$BRANCH_NAME"
 
-FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
-mkdir -p "$FEATURE_DIR"
-
+# Create spec file directly in specs directory (flat structure)
 TEMPLATE="$REPO_ROOT/templates/spec-template.md"
-SPEC_FILE="$FEATURE_DIR/spec.md"
+SPEC_FILE="$SPECS_DIR/$SPEC_FILENAME"
+
+# Keep FEATURE_ID for backward compatibility with other scripts
+FEATURE_ID="${JIRA_KEY}.${WORDS}"
 if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
 
 if $JSON_MODE; then

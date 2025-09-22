@@ -26,18 +26,23 @@ get_feature_dir() {
 get_feature_paths() {
     local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
-    local feature_dir=$(get_feature_dir "$repo_root" "$current_branch")
+    local feature_id=$(get_feature_id "$current_branch")
+    local specs_dir="$repo_root/specs"
+
+    # Convert PROJ-123.feature-name to PROJ-123-feature-name for flat file structure
+    local file_prefix=$(echo "$feature_id" | sed 's/\./-/')
+
     cat <<EOF
 REPO_ROOT='$repo_root'
 CURRENT_BRANCH='$current_branch'
-FEATURE_DIR='$feature_dir'
-FEATURE_SPEC='$feature_dir/spec.md'
-IMPL_PLAN='$feature_dir/plan.md'
-TASKS='$feature_dir/tasks.md'
-RESEARCH='$feature_dir/research.md'
-DATA_MODEL='$feature_dir/data-model.md'
-QUICKSTART='$feature_dir/quickstart.md'
-CONTRACTS_DIR='$feature_dir/contracts'
+FEATURE_DIR='$specs_dir'
+FEATURE_SPEC='$specs_dir/${file_prefix}.md'
+IMPL_PLAN='$specs_dir/${file_prefix}-plan.md'
+TASKS='$specs_dir/${file_prefix}-tasks.md'
+RESEARCH='$specs_dir/${file_prefix}-research.md'
+DATA_MODEL='$specs_dir/${file_prefix}-data-model.md'
+QUICKSTART='$specs_dir/${file_prefix}-quickstart.md'
+CONTRACTS_DIR='$specs_dir/${file_prefix}-contracts'
 EOF
 }
 
