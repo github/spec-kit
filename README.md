@@ -244,6 +244,37 @@ If you encounter issues with an agent, please open an issue so we can refine the
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
+## 🖋️ Story Kit（小说创作流程套件）
+
+我们基于 Spec Kit 的流程扩展出 **Story Kit**，专注于长篇小说或系列叙事创作。Story Kit 仍然遵循 `/constitution → /specify → /plan → /tasks → /implement` 的结构，但模板与命令提示针对故事创作进行了重新设计：
+
+- `/constitution` 帮你建立创作原则、敏感边界、协作模式（guided/auto/hybrid/sandbox）。
+- `/specify` 会把灵感转化为 Story Blueprint，主动列出 Story Kit 的理解与待澄清问题。
+- `/plan` 生成世界观文档、角色档案、章节大纲，以及协作停顿点，并设定主时间线的分段规则。
+- `/tasks` 将创作拆分为研究、角色深潜、场景大纲、草稿、修订等阶段，自动生成章节参考包任务与 `[AUTO]`、`[REVIEW]` 标签。
+- `/implement` 可根据协作模式自动推进或阶段性等待作者指令，章节确认后会提示更新时间线与角色档案。
+
+### 快速开始
+
+```bash
+# 使用 uvx 直接从仓库加载 Story Kit CLI
+uvx --from git+https://github.com/github/spec-kit.git storyfy init my-novel --ai claude --interaction guided
+
+# 自定义时间线分段（例如每 30 章一个文件）
+uvx --from git+https://github.com/github/spec-kit.git storyfy init epic --ai gemini --interaction hybrid --timeline-span 30
+
+# 或在当前目录初始化（需为空或可合并）
+uvx --from git+https://github.com/github/spec-kit.git storyfy init --here --interaction auto
+```
+
+初始化后，你会在项目中看到 `templates/`、`memory/`、`.specify/` 等目录，其内容已针对小说创作定制：
+- `references/` 用于存放章节参考包；
+- `drafts/confirm/` 归档已确认的稿件；
+- `timeline/` 与 `specs/.../timeline/` 存放分段的主时间线。
+Story Kit 的命令文件会自动放置在 `.claude/commands/`、`.gemini/commands/`、`.cursor/commands/` 等目录，你可以直接在对应的 AI 助手中调用。
+
+> Story Kit 当前为 Beta 版本，欢迎根据你的创作流程调整模板。若发现流程缺口或想增加新的协作模式，欢迎提 Issue 或 PR。
+
 ---
 
 ## 📋 Detailed process
