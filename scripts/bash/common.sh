@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
+# Set working directory
+WORKING_DIR="$(pwd)"
+
 # Get repository root, with fallback for non-git repositories
 get_repo_root() {
     if git rev-parse --show-toplevel >/dev/null 2>&1; then
@@ -28,7 +31,7 @@ get_current_branch() {
     
     # For non-git repos, try to find the latest feature directory
     local repo_root=$(get_repo_root)
-    local specs_dir="$repo_root/specs"
+    local specs_dir="$WORKING_DIR/specs"
     
     if [[ -d "$specs_dir" ]]; then
         local latest_feature=""
@@ -81,7 +84,7 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
+get_feature_dir() { echo "$WORKING_DIR/specs/$2"; }
 
 get_feature_paths() {
     local repo_root=$(get_repo_root)
@@ -92,10 +95,10 @@ get_feature_paths() {
         has_git_repo="true"
     fi
     
-    local feature_dir=$(get_feature_dir "$repo_root" "$current_branch")
+    local feature_dir=$(get_feature_dir "$WORKING_DIR" "$current_branch")
     
     cat <<EOF
-REPO_ROOT='$repo_root'
+WORKING_DIR='$WORKING_DIR'
 CURRENT_BRANCH='$current_branch'
 HAS_GIT='$has_git_repo'
 FEATURE_DIR='$feature_dir'

@@ -37,25 +37,25 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Acquire environment paths
 $envData = Get-FeaturePathsEnv
-$REPO_ROOT     = $envData.REPO_ROOT
+$WORKING_DIR   = $envData.WORKING_DIR
 $CURRENT_BRANCH = $envData.CURRENT_BRANCH
 $HAS_GIT       = $envData.HAS_GIT
 $IMPL_PLAN     = $envData.IMPL_PLAN
 $NEW_PLAN = $IMPL_PLAN
 
 # Agent file paths
-$CLAUDE_FILE   = Join-Path $REPO_ROOT 'CLAUDE.md'
-$GEMINI_FILE   = Join-Path $REPO_ROOT 'GEMINI.md'
-$COPILOT_FILE  = Join-Path $REPO_ROOT '.github/copilot-instructions.md'
-$CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/specify-rules.mdc'
-$QWEN_FILE     = Join-Path $REPO_ROOT 'QWEN.md'
-$AGENTS_FILE   = Join-Path $REPO_ROOT 'AGENTS.md'
-$WINDSURF_FILE = Join-Path $REPO_ROOT '.windsurf/rules/specify-rules.md'
-$KILOCODE_FILE = Join-Path $REPO_ROOT '.kilocode/rules/specify-rules.md'
-$AUGGIE_FILE   = Join-Path $REPO_ROOT '.augment/rules/specify-rules.md'
-$ROO_FILE      = Join-Path $REPO_ROOT '.roo/rules/specify-rules.md'
+$CLAUDE_FILE   = Join-Path $WORKING_DIR 'CLAUDE.md'
+$GEMINI_FILE   = Join-Path $WORKING_DIR 'GEMINI.md'
+$COPILOT_FILE  = Join-Path $WORKING_DIR '.github/copilot-instructions.md'
+$CURSOR_FILE   = Join-Path $WORKING_DIR '.cursor/rules/specify-rules.mdc'
+$QWEN_FILE     = Join-Path $WORKING_DIR 'QWEN.md'
+$AGENTS_FILE   = Join-Path $WORKING_DIR 'AGENTS.md'
+$WINDSURF_FILE = Join-Path $WORKING_DIR '.windsurf/rules/specify-rules.md'
+$KILOCODE_FILE = Join-Path $WORKING_DIR '.kilocode/rules/specify-rules.md'
+$AUGGIE_FILE   = Join-Path $WORKING_DIR '.augment/rules/specify-rules.md'
+$ROO_FILE      = Join-Path $WORKING_DIR '.roo/rules/specify-rules.md'
 
-$TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
+$TEMPLATE_FILE = Join-Path $WORKING_DIR '.specify/templates/agent-file-template.md'
 
 # Parsed plan data placeholders
 $script:NEW_LANG = ''
@@ -265,7 +265,7 @@ function Update-ExistingAgentFile {
         [Parameter(Mandatory=$true)]
         [datetime]$Date
     )
-    if (-not (Test-Path $TargetFile)) { return (New-AgentFile -TargetFile $TargetFile -ProjectName (Split-Path $REPO_ROOT -Leaf) -Date $Date) }
+    if (-not (Test-Path $TargetFile)) { return (New-AgentFile -TargetFile $TargetFile -ProjectName (Split-Path $WORKING_DIR -Leaf) -Date $Date) }
 
     $techStack = Format-TechnologyStack -Lang $NEW_LANG -Framework $NEW_FRAMEWORK
     $newTechEntries = @()
@@ -340,7 +340,7 @@ function Update-AgentFile {
     )
     if (-not $TargetFile -or -not $AgentName) { Write-Err 'Update-AgentFile requires TargetFile and AgentName'; return $false }
     Write-Info "Updating $AgentName context file: $TargetFile"
-    $projectName = Split-Path $REPO_ROOT -Leaf
+    $projectName = Split-Path $WORKING_DIR -Leaf
     $date = Get-Date
 
     $dir = Split-Path -Parent $TargetFile

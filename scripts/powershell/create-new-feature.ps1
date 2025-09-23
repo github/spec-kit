@@ -14,50 +14,22 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 }
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
-# Resolve repository root. Prefer git information when available, but fall back
-# to searching for repository markers so the workflow still functions in repositories that
-# were initialised with --no-git.
-function Find-RepositoryRoot {
-    param(
-        [string]$StartDir,
-        [string[]]$Markers = @('.git', '.specify')
-    )
-    $current = Resolve-Path $StartDir
-    while ($true) {
-        foreach ($marker in $Markers) {
-            if (Test-Path (Join-Path $current $marker)) {
-                return $current
-            }
-        }
-        $parent = Split-Path $current -Parent
-        if ($parent -eq $current) {
-            # Reached filesystem root without finding markers
-            return $null
-        }
-        $current = $parent
-    }
-}
-$fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
-if (-not $fallbackRoot) {
-    Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
-    exit 1
-}
+# Set working directory
+$workingDir = Get-Location
 
+# Check git availability
 try {
-    $repoRoot = git rev-parse --show-toplevel 2>$null
+    git rev-parse --show-toplevel 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
         $hasGit = $true
     } else {
-        throw "Git not available"
+        $hasGit = $false
     }
 } catch {
-    $repoRoot = $fallbackRoot
     $hasGit = $false
 }
 
-Set-Location $repoRoot
-
-$specsDir = Join-Path $repoRoot 'specs'
+$specsDir = Join-Path $workingDir 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 $highest = 0
@@ -89,7 +61,7 @@ if ($hasGit) {
 $featureDir = Join-Path $specsDir $branchName
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
-$template = Join-Path $repoRoot 'templates/spec-template.md'
+$template = Join-Path $workingDir 'templates/spec-template.md'
 $specFile = Join-Path $featureDir 'spec.md'
 if (Test-Path $template) { 
     Copy-Item $template $specFile -Force 

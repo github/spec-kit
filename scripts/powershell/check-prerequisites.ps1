@@ -67,7 +67,7 @@ if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GI
 if ($PathsOnly) {
     if ($Json) {
         [PSCustomObject]@{
-            REPO_ROOT    = $paths.REPO_ROOT
+            WORKING_DIR  = $paths.WORKING_DIR
             BRANCH       = $paths.CURRENT_BRANCH
             FEATURE_DIR  = $paths.FEATURE_DIR
             FEATURE_SPEC = $paths.FEATURE_SPEC
@@ -75,7 +75,7 @@ if ($PathsOnly) {
             TASKS        = $paths.TASKS
         } | ConvertTo-Json -Compress
     } else {
-        Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
+        Write-Output "WORKING_DIR: $($paths.WORKING_DIR)"
         Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
         Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
         Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
