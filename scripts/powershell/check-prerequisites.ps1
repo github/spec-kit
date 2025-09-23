@@ -63,14 +63,25 @@ if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GI
     exit 1 
 }
 
-# If paths-only mode, output paths and exit
+# If paths-only mode, output paths and exit (support combined -Json -PathsOnly)
 if ($PathsOnly) {
-    Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
-    Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
-    Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
-    Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
-    Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
-    Write-Output "TASKS: $($paths.TASKS)"
+    if ($Json) {
+        [PSCustomObject]@{
+            REPO_ROOT    = $paths.REPO_ROOT
+            BRANCH       = $paths.CURRENT_BRANCH
+            FEATURE_DIR  = $paths.FEATURE_DIR
+            FEATURE_SPEC = $paths.FEATURE_SPEC
+            IMPL_PLAN    = $paths.IMPL_PLAN
+            TASKS        = $paths.TASKS
+        } | ConvertTo-Json -Compress
+    } else {
+        Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
+        Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
+        Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
+        Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
+        Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
+        Write-Output "TASKS: $($paths.TASKS)"
+    }
     exit 0
 }
 

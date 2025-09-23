@@ -753,6 +753,7 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
+    force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
@@ -783,6 +784,7 @@ def init(
         specify init --here --ai claude
         specify init --here --ai codex
         specify init --here
+        specify init --here --force  # Skip confirmation when current directory not empty
     """
     # Show banner first
     show_banner()
@@ -806,12 +808,14 @@ def init(
         if existing_items:
             console.print(f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)")
             console.print("[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]")
-            
-            # Ask for confirmation
-            response = typer.confirm("Do you want to continue?")
-            if not response:
-                console.print("[yellow]Operation cancelled[/yellow]")
-                raise typer.Exit(0)
+            if force:
+                console.print("[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]")
+            else:
+                # Ask for confirmation
+                response = typer.confirm("Do you want to continue?")
+                if not response:
+                    console.print("[yellow]Operation cancelled[/yellow]")
+                    raise typer.Exit(0)
     else:
         project_path = Path(project_name).resolve()
         # Check if project directory already exists
@@ -1056,9 +1060,11 @@ def init(
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
     steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
     steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
-    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plans")
-    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
+    steps_lines.append("   2.3 [cyan]/clarify[/] - Clarify and de-risk specification (run before [cyan]/plan[/cyan])")
+    steps_lines.append("   2.4 [cyan]/plan[/] - Create implementation plans")
+    steps_lines.append("   2.5 [cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.6 [cyan]/analyze[/] - Validate alignment & surface inconsistencies (read-only)")
+    steps_lines.append("   2.7 [cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
