@@ -39,7 +39,7 @@ Execution steps:
 
 4. Detection passes:
    A. Duplication detection:
-      - Identify near-duplicate requirements (similarity > ~0.85 cosine or high token overlap). Mark lower-quality phrasing for consolidation.
+      - Identify near-duplicate requirements. Mark lower-quality phrasing for consolidation.
    B. Ambiguity detection:
       - Flag vague adjectives (fast, scalable, secure, intuitive, robust) lacking measurable criteria.
       - Flag unresolved placeholders (TODO, TKTK, ???, <placeholder>, etc.).
@@ -58,6 +58,7 @@ Execution steps:
       - Terminology drift (same concept named differently across files).
       - Data entities referenced in plan but absent in spec (or vice versa).
       - Task ordering contradictions (e.g., integration tasks before foundational setup tasks without dependency note).
+      - Conflicting requirements (e.g., one requires to use Next.js while other says to use Vue as the framework).
 
 5. Severity assignment heuristic:
    - CRITICAL: Violates constitution MUST, missing core spec artifact, or requirement with zero coverage that blocks baseline functionality.
