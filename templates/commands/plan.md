@@ -1,46 +1,46 @@
 ---
-description: Execute the implementation planning workflow using the plan template to generate design artifacts.
+description: Voer de implementatieplanning workflow uit met behulp van de plan template om ontwerpartefacten te genereren.
 scripts:
   sh: scripts/bash/setup-plan.sh --json
   ps: scripts/powershell/setup-plan.ps1 -Json
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+De gebruikersinvoer kan direct door de agent of als commandoargument worden verstrekt - je **MOET** dit overwegen voordat je doorgaat met de prompt (indien niet leeg).
 
-User input:
+Gebruikersinvoer:
 
 $ARGUMENTS
 
-Given the implementation details provided as an argument, do this:
+Gegeven de implementatiedetails verstrekt als argument, doe dit:
 
-1. Run `{SCRIPT}` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.
-   - BEFORE proceeding, inspect FEATURE_SPEC for a `## Clarifications` section with at least one `Session` subheading. If missing or clearly ambiguous areas remain (vague adjectives, unresolved critical choices), PAUSE and instruct the user to run `/clarify` first to reduce rework. Only continue if: (a) Clarifications exist OR (b) an explicit user override is provided (e.g., "proceed without clarification"). Do not attempt to fabricate clarifications yourself.
-2. Read and analyze the feature specification to understand:
-   - The feature requirements and user stories
-   - Functional and non-functional requirements
-   - Success criteria and acceptance criteria
-   - Any technical constraints or dependencies mentioned
+1. Voer `{SCRIPT}` uit vanaf de repo root en parseer JSON voor FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. Alle toekomstige bestandspaden moeten absoluut zijn.
+   - VOORDAT je doorgaat, inspecteer FEATURE_SPEC voor een `## Verduidelijkingen` sectie met ten minste één `Sessie` subkop. Indien ontbrekend of duidelijk dubbelzinnige gebieden blijven (vage bijvoeglijke naamwoorden, onopgeloste kritieke keuzes), PAUZEER en instrueer de gebruiker om eerst `/clarify` uit te voeren om herwerk te verminderen. Ga alleen door indien: (a) Verduidelijkingen bestaan OF (b) een expliciete gebruiker override wordt verstrekt (bijv. "ga door zonder verduidelijking"). Probeer niet zelf verduidelijkingen te fabriceren.
+2. Lees en analyseer de functiespecificatie om te begrijpen:
+   - De functievereisten en gebruikersverhalen
+   - Functionele en niet-functionele vereisten
+   - Succescriteria en acceptatiecriteria
+   - Eventuele technische beperkingen of afhankelijkheden genoemd
 
-3. Read the constitution at `/memory/constitution.md` to understand constitutional requirements.
+3. Lees de grondwet op `/memory/constitution.md` om grondwettelijke vereisten te begrijpen.
 
-4. Execute the implementation plan template:
-   - Load `/templates/plan-template.md` (already copied to IMPL_PLAN path)
-   - Set Input path to FEATURE_SPEC
-   - Run the Execution Flow (main) function steps 1-9
-   - The template is self-contained and executable
-   - Follow error handling and gate checks as specified
-   - Let the template guide artifact generation in $SPECS_DIR:
-     * Phase 0 generates research.md
-     * Phase 1 generates data-model.md, contracts/, quickstart.md
-     * Phase 2 generates tasks.md
-   - Incorporate user-provided details from arguments into Technical Context: {ARGS}
-   - Update Progress Tracking as you complete each phase
+4. Voer de implementatieplan template uit:
+   - Laad `/templates/plan-template.md` (reeds gekopieerd naar IMPL_PLAN pad)
+   - Stel Invoerpad in op FEATURE_SPEC
+   - Voer de Uitvoeringsstroom (hoofdfunctie) stappen 1-9 uit
+   - De template is zelfstandig en uitvoerbaar
+   - Volg foutafhandeling en poortcontroles zoals gespecificeerd
+   - Laat de template artefactgeneratie leiden in $SPECS_DIR:
+     * Fase 0 genereert research.md
+     * Fase 1 genereert data-model.md, contracts/, quickstart.md
+     * Fase 2 genereert tasks.md
+   - Incorporeer gebruiker-verstrekte details uit argumenten in Technische Context: {ARGS}
+   - Update Voortgangsvolging terwijl je elke fase voltooit
 
-5. Verify execution completed:
-   - Check Progress Tracking shows all phases complete
-   - Ensure all required artifacts were generated
-   - Confirm no ERROR states in execution
+5. Verifieer uitvoering voltooid:
+   - Controleer Voortgangsvolging toont alle fasen voltooid
+   - Zorg dat alle vereiste artefacten gegenereerd werden
+   - Bevestig geen FOUT staten in uitvoering
 
-6. Report results with branch name, file paths, and generated artifacts.
+6. Rapporteer resultaten met branch naam, bestandspaden, en gegenereerde artefacten.
 
-Use absolute paths with the repository root for all file operations to avoid path issues.
+Gebruik absolute paden met de repository root voor alle bestandsoperaties om padproblemen te vermijden.

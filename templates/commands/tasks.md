@@ -1,65 +1,65 @@
 ---
-description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
+description: Genereer een uitvoerbare, afhankelijkheid-geordende tasks.md voor de functie gebaseerd op beschikbare ontwerpartefacten.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+De gebruikersinvoer kan direct door de agent of als commandoargument worden verstrekt - je **MOET** dit overwegen voordat je doorgaat met de prompt (indien niet leeg).
 
-User input:
+Gebruikersinvoer:
 
 $ARGUMENTS
 
-1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
-2. Load and analyze available design documents:
-   - Always read plan.md for tech stack and libraries
-   - IF EXISTS: Read data-model.md for entities
-   - IF EXISTS: Read contracts/ for API endpoints
-   - IF EXISTS: Read research.md for technical decisions
-   - IF EXISTS: Read quickstart.md for test scenarios
+1. Voer `{SCRIPT}` uit vanaf repo root en parseer FEATURE_DIR en AVAILABLE_DOCS lijst. Alle paden moeten absoluut zijn.
+2. Laad en analyseer beschikbare ontwerpdocumenten:
+   - Lees altijd plan.md voor tech stack en bibliotheken
+   - INDIEN BESTAAT: Lees data-model.md voor entiteiten
+   - INDIEN BESTAAT: Lees contracts/ voor API endpoints
+   - INDIEN BESTAAT: Lees research.md voor technische beslissingen
+   - INDIEN BESTAAT: Lees quickstart.md voor testscenario's
 
-   Note: Not all projects have all documents. For example:
-   - CLI tools might not have contracts/
-   - Simple libraries might not need data-model.md
-   - Generate tasks based on what's available
+   Opmerking: Niet alle projecten hebben alle documenten. Bijvoorbeeld:
+   - CLI tools hebben mogelijk geen contracts/
+   - Eenvoudige bibliotheken hebben mogelijk geen data-model.md nodig
+   - Genereer taken gebaseerd op wat beschikbaar is
 
-3. Generate tasks following the template:
-   - Use `/templates/tasks-template.md` as the base
-   - Replace example tasks with actual tasks based on:
-     * **Setup tasks**: Project init, dependencies, linting
-     * **Test tasks [P]**: One per contract, one per integration scenario
-     * **Core tasks**: One per entity, service, CLI command, endpoint
-     * **Integration tasks**: DB connections, middleware, logging
-     * **Polish tasks [P]**: Unit tests, performance, docs
+3. Genereer taken volgens de template:
+   - Gebruik `/templates/tasks-template.md` als basis
+   - Vervang voorbeeldtaken met werkelijke taken gebaseerd op:
+     * **Setup taken**: Project init, afhankelijkheden, linting
+     * **Test taken [P]**: Een per contract, een per integratiescenario
+     * **Kerntaken**: Een per entiteit, service, CLI commando, endpoint
+     * **Integratietaken**: DB verbindingen, middleware, logging
+     * **Polish taken [P]**: Unit tests, prestaties, docs
 
-4. Task generation rules:
-   - Each contract file → contract test task marked [P]
-   - Each entity in data-model → model creation task marked [P]
-   - Each endpoint → implementation task (not parallel if shared files)
-   - Each user story → integration test marked [P]
-   - Different files = can be parallel [P]
-   - Same file = sequential (no [P])
+4. Taakgeneratieregels:
+   - Elk contractbestand → contract testtaak gemarkeerd [P]
+   - Elke entiteit in data-model → modelcreatietaak gemarkeerd [P]
+   - Elk endpoint → implementatietaak (niet parallel bij gedeelde bestanden)
+   - Elk gebruikersverhaal → integratietest gemarkeerd [P]
+   - Verschillende bestanden = kunnen parallel [P]
+   - Zelfde bestand = sequentieel (geen [P])
 
-5. Order tasks by dependencies:
-   - Setup before everything
-   - Tests before implementation (TDD)
-   - Models before services
-   - Services before endpoints
-   - Core before integration
-   - Everything before polish
+5. Orden taken op afhankelijkheden:
+   - Setup voor alles
+   - Tests voor implementatie (TDD)
+   - Modellen voor services
+   - Services voor endpoints
+   - Kern voor integratie
+   - Alles voor polish
 
-6. Include parallel execution examples:
-   - Group [P] tasks that can run together
-   - Show actual Task agent commands
+6. Voeg parallelle uitvoeringsvoorbeelden toe:
+   - Groepeer [P] taken die samen kunnen lopen
+   - Toon werkelijke Taak agent commando's
 
-7. Create FEATURE_DIR/tasks.md with:
-   - Correct feature name from implementation plan
-   - Numbered tasks (T001, T002, etc.)
-   - Clear file paths for each task
-   - Dependency notes
-   - Parallel execution guidance
+7. Maak FEATURE_DIR/tasks.md met:
+   - Correcte functienaam uit implementatieplan
+   - Genummerde taken (T001, T002, etc.)
+   - Duidelijke bestandspaden voor elke taak
+   - Afhankelijkheidsnotities
+   - Parallelle uitvoeringsbegeleiding
 
-Context for task generation: {ARGS}
+Context voor taakgeneratie: {ARGS}
 
-The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
+De tasks.md zou onmiddellijk uitvoerbaar moeten zijn - elke taak moet specifiek genoeg zijn dat een LLM het kan voltooien zonder aanvullende context.

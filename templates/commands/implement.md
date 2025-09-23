@@ -1,59 +1,59 @@
 ---
-description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+description: Voer het implementatieplan uit door alle taken gedefinieerd in tasks.md te verwerken en uit te voeren
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
-The user input can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+De gebruikersinvoer kan direct door de agent of als commandoargument worden verstrekt - je **MOET** dit overwegen voordat je doorgaat met de prompt (indien niet leeg).
 
-User input:
+Gebruikersinvoer:
 
 $ARGUMENTS
 
-1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
+1. Voer `{SCRIPT}` uit vanaf repo root en parseer FEATURE_DIR en AVAILABLE_DOCS lijst. Alle paden moeten absoluut zijn.
 
-2. Load and analyze the implementation context:
-   - **REQUIRED**: Read tasks.md for the complete task list and execution plan
-   - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
-   - **IF EXISTS**: Read data-model.md for entities and relationships
-   - **IF EXISTS**: Read contracts/ for API specifications and test requirements
-   - **IF EXISTS**: Read research.md for technical decisions and constraints
-   - **IF EXISTS**: Read quickstart.md for integration scenarios
+2. Laad en analyseer de implementatiecontext:
+   - **VEREIST**: Lees tasks.md voor de complete takenlijst en uitvoeringsplan
+   - **VEREIST**: Lees plan.md voor tech stack, architectuur, en bestandsstructuur
+   - **INDIEN BESTAAT**: Lees data-model.md voor entiteiten en relaties
+   - **INDIEN BESTAAT**: Lees contracts/ voor API specificaties en testvereisten
+   - **INDIEN BESTAAT**: Lees research.md voor technische beslissingen en beperkingen
+   - **INDIEN BESTAAT**: Lees quickstart.md voor integratiescenario's
 
-3. Parse tasks.md structure and extract:
-   - **Task phases**: Setup, Tests, Core, Integration, Polish
-   - **Task dependencies**: Sequential vs parallel execution rules
-   - **Task details**: ID, description, file paths, parallel markers [P]
-   - **Execution flow**: Order and dependency requirements
+3. Parseer tasks.md structuur en extraheer:
+   - **Taakfasen**: Setup, Tests, Kern, Integratie, Polish
+   - **Taakafhankelijkheden**: Sequentiële vs parallelle uitvoeringsregels
+   - **Taakdetails**: ID, beschrijving, bestandspaden, parallelle markeringen [P]
+   - **Uitvoeringsstroom**: Volgorde en afhankelijkheidsvereisten
 
-4. Execute implementation following the task plan:
-   - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
-   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
-   - **File-based coordination**: Tasks affecting the same files must run sequentially
-   - **Validation checkpoints**: Verify each phase completion before proceeding
+4. Voer implementatie uit volgens het takenplan:
+   - **Fase-bij-fase uitvoering**: Voltooi elke fase voor overgang naar de volgende
+   - **Respecteer afhankelijkheden**: Voer sequentiële taken op volgorde uit, parallelle taken [P] kunnen samen lopen  
+   - **Volg TDD aanpak**: Voer testtaken uit voor hun corresponderende implementatietaken
+   - **Bestand-gebaseerde coördinatie**: Taken die dezelfde bestanden beïnvloeden moeten sequentieel lopen
+   - **Validatie checkpoints**: Verifieer elke fase voltooiing voor verdergaan
 
-5. Implementation execution rules:
-   - **Setup first**: Initialize project structure, dependencies, configuration
-   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
-   - **Core development**: Implement models, services, CLI commands, endpoints
-   - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+5. Implementatie uitvoeringsregels:
+   - **Setup eerst**: Initialiseer projectstructuur, afhankelijkheden, configuratie
+   - **Tests voor code**: Indien je tests moet schrijven voor contracten, entiteiten, en integratiescenario's
+   - **Kernontwikkeling**: Implementeer modellen, services, CLI commando's, endpoints
+   - **Integratiewerk**: Database verbindingen, middleware, logging, externe services
+   - **Polish en validatie**: Unit tests, prestatie optimalisatie, documentatie
 
-6. Progress tracking and error handling:
-   - Report progress after each completed task
-   - Halt execution if any non-parallel task fails
-   - For parallel tasks [P], continue with successful tasks, report failed ones
-   - Provide clear error messages with context for debugging
-   - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
+6. Voortgangsvolging en foutafhandeling:
+   - Rapporteer voortgang na elke voltooide taak
+   - Stop uitvoering als een niet-parallelle taak faalt
+   - Voor parallelle taken [P], ga door met succesvolle taken, rapporteer gefaalde
+   - Geef duidelijke foutmeldingen met context voor debugging
+   - Stel volgende stappen voor als implementatie niet kan doorgaan
+   - **BELANGRIJK** Voor voltooide taken, zorg ervoor de taak af te vinken als [X] in het takenbestand.
 
-7. Completion validation:
-   - Verify all required tasks are completed
-   - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
-   - Confirm the implementation follows the technical plan
-   - Report final status with summary of completed work
+7. Voltooiingsvalidatie:
+   - Verifieer dat alle vereiste taken voltooid zijn
+   - Controleer dat geïmplementeerde functies overeenkomen met de oorspronkelijke specificatie
+   - Valideer dat tests slagen en dekking vereisten voldoet
+   - Bevestig dat de implementatie het technische plan volgt
+   - Rapporteer eindstatus met samenvatting van voltooid werk
 
-Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/tasks` first to regenerate the task list.
+Opmerking: Dit commando gaat uit van een complete taakuitsplitsing in tasks.md. Als taken incompleet of ontbrekend zijn, stel voor om eerst `/tasks` uit te voeren om de takenlijst te regenereren.

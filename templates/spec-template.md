@@ -1,116 +1,116 @@
-# Feature Specification: [FEATURE NAME]
+# Functiespecificatie: [FEATURE NAME]
 
-**Feature Branch**: `[###-feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
-**Input**: User description: "$ARGUMENTS"
+**Functie Branch**: `[###-feature-name]`  
+**Aangemaakt**: [DATE]  
+**Status**: Concept  
+**Invoer**: Gebruikersbeschrijving: "$ARGUMENTS"
 
-## Execution Flow (main)
+## Uitvoeringsstroom (hoofdfunctie)
 ```
-1. Parse user description from Input
-   → If empty: ERROR "No feature description provided"
-2. Extract key concepts from description
-   → Identify: actors, actions, data, constraints
-3. For each unclear aspect:
-   → Mark with [NEEDS CLARIFICATION: specific question]
-4. Fill User Scenarios & Testing section
-   → If no clear user flow: ERROR "Cannot determine user scenarios"
-5. Generate Functional Requirements
-   → Each requirement must be testable
-   → Mark ambiguous requirements
-6. Identify Key Entities (if data involved)
-7. Run Review Checklist
-   → If any [NEEDS CLARIFICATION]: WARN "Spec has uncertainties"
-   → If implementation details found: ERROR "Remove tech details"
-8. Return: SUCCESS (spec ready for planning)
+1. Parseer gebruikersbeschrijving van Invoer
+   → Indien leeg: FOUT "Geen functiebeschrijving opgegeven"
+2. Haal kernconcepten uit beschrijving
+   → Identificeer: actoren, acties, gegevens, beperkingen
+3. Voor elk onduidelijk aspect:
+   → Markeer met [VERDUIDELIJKING NODIG: specifieke vraag]
+4. Vul Gebruikersscenario's & Testen sectie in
+   → Indien geen duidelijke gebruikersstroom: FOUT "Kan gebruikersscenario's niet bepalen"
+5. Genereer Functionele Vereisten
+   → Elke vereiste moet testbaar zijn
+   → Markeer dubbelzinnige vereisten
+6. Identificeer Kernentiteiten (indien gegevens betrokken)
+7. Voer Beoordelingschecklist uit
+   → Indien [VERDUIDELIJKING NODIG]: WAARSCHUWING "Spec heeft onzekerheden"
+   → Indien implementatiedetails gevonden: FOUT "Verwijder technische details"
+8. Retourneer: SUCCES (spec klaar voor planning)
 ```
 
 ---
 
-## ⚡ Quick Guidelines
-- ✅ Focus on WHAT users need and WHY
-- ❌ Avoid HOW to implement (no tech stack, APIs, code structure)
-- 👥 Written for business stakeholders, not developers
+## ⚡ Snelle Richtlijnen
+- ✅ Focus op WAT gebruikers nodig hebben en WAAROM
+- ❌ Vermijd HOE te implementeren (geen tech stack, API's, codestructuur)
+- 👥 Geschreven voor bedrijfsstakeholders, niet ontwikkelaars
 
-### Section Requirements
-- **Mandatory sections**: Must be completed for every feature
-- **Optional sections**: Include only when relevant to the feature
-- When a section doesn't apply, remove it entirely (don't leave as "N/A")
+### Sectievereisten
+- **Verplichte secties**: Moeten worden voltooid voor elke functie
+- **Optionele secties**: Alleen opnemen wanneer relevant voor de functie
+- Wanneer een sectie niet van toepassing is, verwijder deze volledig (laat niet staan als "N.v.t.")
 
-### For AI Generation
-When creating this spec from a user prompt:
-1. **Mark all ambiguities**: Use [NEEDS CLARIFICATION: specific question] for any assumption you'd need to make
-2. **Don't guess**: If the prompt doesn't specify something (e.g., "login system" without auth method), mark it
-3. **Think like a tester**: Every vague requirement should fail the "testable and unambiguous" checklist item
-4. **Common underspecified areas**:
-   - User types and permissions
-   - Data retention/deletion policies  
-   - Performance targets and scale
-   - Error handling behaviors
-   - Integration requirements
-   - Security/compliance needs
-
----
-
-## User Scenarios & Testing *(mandatory)*
-
-### Primary User Story
-[Describe the main user journey in plain language]
-
-### Acceptance Scenarios
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-2. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
-### Edge Cases
-- What happens when [boundary condition]?
-- How does system handle [error scenario]?
-
-## Requirements *(mandatory)*
-
-### Functional Requirements
-- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
-- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
-- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
-- **FR-005**: System MUST [behavior, e.g., "log all security events"]
-
-*Example of marking unclear requirements:*
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
-
-### Key Entities *(include if feature involves data)*
-- **[Entity 1]**: [What it represents, key attributes without implementation]
-- **[Entity 2]**: [What it represents, relationships to other entities]
+### Voor AI Generatie
+Bij het maken van deze spec vanuit een gebruikersprompt:
+1. **Markeer alle dubbelzinnigheden**: Gebruik [VERDUIDELIJKING NODIG: specifieke vraag] voor elke aanname die je zou moeten maken
+2. **Gok niet**: Als de prompt iets niet specificeert (bijv. "inlogsysteem" zonder auth methode), markeer het
+3. **Denk als een tester**: Elke vage vereiste zou moeten falen op het "testbaar en ondubbelzinnig" checklist item
+4. **Veelvoorkomende ondergespecificeerde gebieden**:
+   - Gebruikerstypes en machtigingen
+   - Gegevensbehoud/verwijderingsbeleid  
+   - Prestatiedoelen en schaal
+   - Foutafhandelingsgedrag
+   - Integratievereisten
+   - Beveiliging/compliance behoeften
 
 ---
 
-## Review & Acceptance Checklist
-*GATE: Automated checks run during main() execution*
+## Gebruikersscenario's & Testen *(verplicht)*
 
-### Content Quality
-- [ ] No implementation details (languages, frameworks, APIs)
-- [ ] Focused on user value and business needs
-- [ ] Written for non-technical stakeholders
-- [ ] All mandatory sections completed
+### Primair Gebruikersverhaal
+[Beschrijf de hoofdgebruikersreis in gewone taal]
 
-### Requirement Completeness
-- [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous  
-- [ ] Success criteria are measurable
-- [ ] Scope is clearly bounded
-- [ ] Dependencies and assumptions identified
+### Acceptatiescenario's
+1. **Gegeven** [beginstaat], **Wanneer** [actie], **Dan** [verwachte uitkomst]
+2. **Gegeven** [beginstaat], **Wanneer** [actie], **Dan** [verwachte uitkomst]
+
+### Randgevallen
+- Wat gebeurt er wanneer [grensvoorwaarde]?
+- Hoe gaat het systeem om met [foutscenario]?
+
+## Vereisten *(verplicht)*
+
+### Functionele Vereisten
+- **FV-001**: Systeem MOET [specifieke mogelijkheid, bijv. "gebruikers toestaan accounts aan te maken"]
+- **FV-002**: Systeem MOET [specifieke mogelijkheid, bijv. "e-mailadressen valideren"]  
+- **FV-003**: Gebruikers MOETEN [kerninteractie, bijv. "hun wachtwoord kunnen resetten"]
+- **FV-004**: Systeem MOET [gegevensvereiste, bijv. "gebruikersvoorkeuren bewaren"]
+- **FV-005**: Systeem MOET [gedrag, bijv. "alle beveiligingsgebeurtenissen loggen"]
+
+*Voorbeeld van markeren onduidelijke vereisten:*
+- **FV-006**: Systeem MOET gebruikers authenticeren via [VERDUIDELIJKING NODIG: auth methode niet gespecificeerd - email/wachtwoord, SSO, OAuth?]
+- **FV-007**: Systeem MOET gebruikersgegevens bewaren voor [VERDUIDELIJKING NODIG: bewaringsperiode niet gespecificeerd]
+
+### Kernentiteiten *(opnemen indien functie gegevens behelst)*
+- **[Entiteit 1]**: [Wat het vertegenwoordigt, kernattributen zonder implementatie]
+- **[Entiteit 2]**: [Wat het vertegenwoordigt, relaties tot andere entiteiten]
 
 ---
 
-## Execution Status
-*Updated by main() during processing*
+## Beoordeling & Acceptatiechecklist
+*POORT: Geautomatiseerde controles uitgevoerd tijdens main() uitvoering*
 
-- [ ] User description parsed
-- [ ] Key concepts extracted
-- [ ] Ambiguities marked
-- [ ] User scenarios defined
-- [ ] Requirements generated
-- [ ] Entities identified
-- [ ] Review checklist passed
+### Contentkwaliteit
+- [ ] Geen implementatiedetails (talen, frameworks, API's)
+- [ ] Gericht op gebruikerswaarde en bedrijfsbehoeften
+- [ ] Geschreven voor niet-technische stakeholders
+- [ ] Alle verplichte secties voltooid
+
+### Vereistenvolledigheid
+- [ ] Geen [VERDUIDELIJKING NODIG] markeringen over
+- [ ] Vereisten zijn testbaar en ondubbelzinnig  
+- [ ] Succescriteria zijn meetbaar
+- [ ] Scope is duidelijk afgebakend
+- [ ] Afhankelijkheden en aannames geïdentificeerd
+
+---
+
+## Uitvoeringsstatus
+*Bijgewerkt door main() tijdens verwerking*
+
+- [ ] Gebruikersbeschrijving geparseerd
+- [ ] Kernconcepten geëxtraheerd
+- [ ] Dubbelzinnigheden gemarkeerd
+- [ ] Gebruikersscenario's gedefinieerd
+- [ ] Vereisten gegenereerd
+- [ ] Entiteiten geïdentificeerd
+- [ ] Beoordelingschecklist geslaagd
 
 ---

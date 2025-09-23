@@ -1,24 +1,24 @@
 ---
-description: Create or update the feature specification from a natural language feature description.
+description: Maak of update de functiespecificatie vanuit een natuurlijke taal functiebeschrijving.
 scripts:
   sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+De gebruikersinvoer kan direct door de agent of als commandoargument worden verstrekt - je **MOET** dit overwegen voordat je doorgaat met de prompt (indien niet leeg).
 
-User input:
+Gebruikersinvoer:
 
 $ARGUMENTS
 
-The text the user typed after `/specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
+De tekst die de gebruiker typte na `/specify` in het triggerend bericht **is** de functiebeschrijving. Neem aan dat je het altijd beschikbaar hebt in dit gesprek zelfs als `{ARGS}` letterlijk hieronder verschijnt. Vraag de gebruiker niet het te herhalen tenzij ze een leeg commando gaven.
 
-Given that feature description, do this:
+Gegeven die functiebeschrijving, doe dit:
 
-1. Run the script `{SCRIPT}` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
-  **IMPORTANT** You must only ever run this script once. The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for.
-2. Load `templates/spec-template.md` to understand required sections.
-3. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
-4. Report completion with branch name, spec file path, and readiness for the next phase.
+1. Voer het script `{SCRIPT}` uit vanaf repo root en parseer zijn JSON uitvoer voor BRANCH_NAME en SPEC_FILE. Alle bestandspaden moeten absoluut zijn.
+  **BELANGRIJK** Je moet dit script slechts eenmaal uitvoeren. De JSON wordt verstrekt in de terminal als uitvoer - verwijs er altijd naar om de werkelijke inhoud te krijgen die je zoekt.
+2. Laad `templates/spec-template.md` om vereiste secties te begrijpen.
+3. Schrijf de specificatie naar SPEC_FILE met behulp van de template structuur, vervang placeholders met concrete details afgeleid uit de functiebeschrijving (argumenten) terwijl sectievolgorde en koppen behouden blijven.
+4. Rapporteer voltooiing met branch naam, spec bestandspad, en gereedheid voor de volgende fase.
 
-Note: The script creates and checks out the new branch and initializes the spec file before writing.
+Opmerking: Het script maakt en checkt de nieuwe branch uit en initialiseert het spec bestand voor schrijven.

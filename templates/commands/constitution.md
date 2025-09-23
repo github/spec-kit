@@ -1,73 +1,73 @@
 ---
-description: Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync.
+description: Maak of update de projectgrondwet vanuit interactieve of verstrekte principe invoeren, zorg dat alle afhankelijke templates gesynchroniseerd blijven.
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+De gebruikersinvoer kan direct door de agent of als commandoargument worden verstrekt - je **MOET** dit overwegen voordat je doorgaat met de prompt (indien niet leeg).
 
-User input:
+Gebruikersinvoer:
 
 $ARGUMENTS
 
-You are updating the project constitution at `/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
+Je bent de projectgrondwet aan het bijwerken op `/memory/constitution.md`. Dit bestand is een TEMPLATE met placeholder tokens in vierkante haken (bijv. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Je taak is om (a) concrete waarden te verzamelen/afleiden, (b) de template precies in te vullen, en (c) eventuele wijzigingen door te geven aan afhankelijke artefacten.
 
-Follow this execution flow:
+Volg deze uitvoeringsstroom:
 
-1. Load the existing constitution template at `/memory/constitution.md`.
-   - Identify every placeholder token of the form `[ALL_CAPS_IDENTIFIER]`.
-   **IMPORTANT**: The user might require less or more principles than the ones used in the template. If a number is specified, respect that - follow the general template. You will update the doc accordingly.
+1. Laad de bestaande grondwet template op `/memory/constitution.md`.
+   - Identificeer elke placeholder token van de vorm `[ALL_CAPS_IDENTIFIER]`.
+   **BELANGRIJK**: De gebruiker kan minder of meer principes nodig hebben dan degene gebruikt in de template. Als een aantal gespecificeerd is, respecteer dat - volg de algemene template. Je zult het document dienovereenkomstig bijwerken.
 
-2. Collect/derive values for placeholders:
-   - If user input (conversation) supplies a value, use it.
-   - Otherwise infer from existing repo context (README, docs, prior constitution versions if embedded).
-   - For governance dates: `RATIFICATION_DATE` is the original adoption date (if unknown ask or mark TODO), `LAST_AMENDED_DATE` is today if changes are made, otherwise keep previous.
-   - `CONSTITUTION_VERSION` must increment according to semantic versioning rules:
-     * MAJOR: Backward incompatible governance/principle removals or redefinitions.
-     * MINOR: New principle/section added or materially expanded guidance.
-     * PATCH: Clarifications, wording, typo fixes, non-semantic refinements.
-   - If version bump type ambiguous, propose reasoning before finalizing.
+2. Verzamel/leid waarden af voor placeholders:
+   - Als gebruikersinvoer (gesprek) een waarde levert, gebruik die.
+   - Anders afleiden uit bestaande repo context (README, docs, eerdere grondwet versies indien ingebed).
+   - Voor governance data: `RATIFICATION_DATE` is de oorspronkelijke adoptiedatum (indien onbekend vraag of markeer TODO), `LAST_AMENDED_DATE` is vandaag indien wijzigingen gemaakt, anders behoud vorige.
+   - `CONSTITUTION_VERSION` moet incrementeren volgens semantic versioning regels:
+     * MAJOR: Achterwaarts incompatibele governance/principe verwijderingen of herdefinities.
+     * MINOR: Nieuw principe/sectie toegevoegd of materieel uitgebreide begeleiding.
+     * PATCH: Verduidelijkingen, bewoordingen, typfouten fixes, niet-semantische verfijningen.
+   - Indien versie bump type dubbelzinnig, stel redenering voor alvorens te finaliseren.
 
-3. Draft the updated constitution content:
-   - Replace every placeholder with concrete text (no bracketed tokens left except intentionally retained template slots that the project has chosen not to define yet—explicitly justify any left).
-   - Preserve heading hierarchy and comments can be removed once replaced unless they still add clarifying guidance.
-   - Ensure each Principle section: succinct name line, paragraph (or bullet list) capturing non‑negotiable rules, explicit rationale if not obvious.
-   - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
+3. Stel de bijgewerkte grondwet inhoud op:
+   - Vervang elke placeholder met concrete tekst (geen haakjes tokens over behalve opzettelijk behouden template slots die het project heeft gekozen nog niet te definiëren—rechtvaardig expliciet eventuele overgebleven).
+   - Behoud koppenstructuur en opmerkingen kunnen verwijderd worden eenmaal vervangen tenzij ze nog steeds verduidelijkende begeleiding toevoegen.
+   - Zorg dat elke Principe sectie: beknopte naamlijn, paragraaf (of bullet lijst) die niet-onderhandelbare regels vastlegt, expliciete rationale indien niet voor de hand liggend.
+   - Zorg dat Governance sectie wijzigingsprocedure, versioning beleid, en compliance review verwachtingen vermeldt.
 
-4. Consistency propagation checklist (convert prior checklist into active validations):
-   - Read `/templates/plan-template.md` and ensure any "Constitution Check" or rules align with updated principles.
-   - Read `/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
-   - Read `/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
-   - Read each command file in `/templates/commands/*.md` (including this one) to verify no outdated references (agent-specific names like CLAUDE only) remain when generic guidance is required.
-   - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
+4. Consistentie propagatie checklist (converteer eerdere checklist naar actieve validaties):
+   - Lees `/templates/plan-template.md` en zorg dat elke "Grondwetcontrole" of regels afstemmen met bijgewerkte principes.
+   - Lees `/templates/spec-template.md` voor bereik/vereisten afstemming—update indien grondwet verplichte secties of beperkingen toevoegt/verwijdert.
+   - Lees `/templates/tasks-template.md` en zorg dat taakcategorisatie nieuwe of verwijderde principe-gedreven taaktypes reflecteert (bijv. observeerbaarheid, versioning, test discipline).
+   - Lees elk commandobestand in `/templates/commands/*.md` (inclusief deze) om te verifiëren dat geen verouderde referenties (agent-specifieke namen zoals CLAUDE alleen) blijven wanneer generieke begeleiding vereist is.
+   - Lees eventuele runtime begeleiding docs (bijv. `README.md`, `docs/quickstart.md`, of agent-specifieke begeleiding bestanden indien aanwezig). Update referenties naar gewijzigde principes.
 
-5. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
-   - Version change: old → new
-   - List of modified principles (old title → new title if renamed)
-   - Added sections
-   - Removed sections
-   - Templates requiring updates (✅ updated / ⚠ pending) with file paths
-   - Follow-up TODOs if any placeholders intentionally deferred.
+5. Produceer een Sync Impact Rapport (voeg vooraan toe als HTML commentaar bovenaan het grondwetbestand na update):
+   - Versie wijziging: oud → nieuw
+   - Lijst van gewijzigde principes (oude titel → nieuwe titel indien hernoemd)
+   - Toegevoegde secties
+   - Verwijderde secties
+   - Templates die updates vereisen (✅ bijgewerkt / ⚠ in behandeling) met bestandspaden
+   - Vervolg TODOs indien placeholders opzettelijk uitgesteld.
 
-6. Validation before final output:
-   - No remaining unexplained bracket tokens.
-   - Version line matches report.
-   - Dates ISO format YYYY-MM-DD.
-   - Principles are declarative, testable, and free of vague language ("should" → replace with MUST/SHOULD rationale where appropriate).
+6. Validatie voor einduitvoer:
+   - Geen overgebleven onverklaarde haakjes tokens.
+   - Versielijn komt overeen met rapport.
+   - Data ISO formaat YYYY-MM-DD.
+   - Principes zijn declaratief, testbaar, en vrij van vage taal ("zou" → vervang met MOET/ZOU rationale waar geschikt).
 
-7. Write the completed constitution back to `/memory/constitution.md` (overwrite).
+7. Schrijf de voltooide grondwet terug naar `/memory/constitution.md` (overschrijf).
 
-8. Output a final summary to the user with:
-   - New version and bump rationale.
-   - Any files flagged for manual follow-up.
-   - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
+8. Geef een eindsamenvatting uit naar de gebruiker met:
+   - Nieuwe versie en bump rationale.
+   - Eventuele bestanden gemarkeerd voor handmatige opvolging.
+   - Voorgesteld commit bericht (bijv. `docs: wijzig grondwet naar vX.Y.Z (principe toevoegingen + governance update)`).
 
-Formatting & Style Requirements:
-- Use Markdown headings exactly as in the template (do not demote/promote levels).
-- Wrap long rationale lines to keep readability (<100 chars ideally) but do not hard enforce with awkward breaks.
-- Keep a single blank line between sections.
-- Avoid trailing whitespace.
+Formattering & Stijlvereisten:
+- Gebruik Markdown koppen precies zoals in de template (demoveer/promoveer niveaus niet).
+- Wrap lange rationale regels om leesbaarheid te behouden (<100 tekens ideaal) maar dwing niet hard af met onhandige breaks.
+- Houd een enkele lege regel tussen secties.
+- Vermijd trailing whitespace.
 
-If the user supplies partial updates (e.g., only one principle revision), still perform validation and version decision steps.
+Indien de gebruiker gedeeltelijke updates levert (bijv. slechts één principe revisie), voer nog steeds validatie en versie beslissing stappen uit.
 
-If critical info missing (e.g., ratification date truly unknown), insert `TODO(<FIELD_NAME>): explanation` and include in the Sync Impact Report under deferred items.
+Indien kritieke info ontbreekt (bijv. ratificatiedatum werkelijk onbekend), voeg `TODO(<FIELD_NAME>): uitleg` in en voeg toe in het Sync Impact Rapport onder uitgestelde items.
 
-Do not create a new template; always operate on the existing `/memory/constitution.md` file.
+Maak geen nieuwe template; opereer altijd op het bestaande `/memory/constitution.md` bestand.

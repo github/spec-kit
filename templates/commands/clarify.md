@@ -1,161 +1,161 @@
 ---
-description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec.
+description: Identificeer ondergespecificeerde gebieden in de huidige functiespec door maximaal 5 zeer gerichte verduidelijkingsvragen te stellen en antwoorden terug te coderen in de spec.
 scripts:
    sh: scripts/bash/check-prerequisites.sh --json --paths-only
    ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+De gebruikersinvoer kan direct door de agent of als commandoargument worden verstrekt - je **MOET** dit overwegen voordat je doorgaat met de prompt (indien niet leeg).
 
-User input:
+Gebruikersinvoer:
 
 $ARGUMENTS
 
-Goal: Detect and reduce ambiguity or missing decision points in the active feature specification and record the clarifications directly in the spec file.
+Doel: Detecteer en verminder dubbelzinnigheid of ontbrekende beslissingspunten in de actieve functiespecificatie en registreer de verduidelijkingen direct in het specbestand.
 
-Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `/plan`. If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, but must warn that downstream rework risk increases.
+Opmerking: Deze verduidelijkingsworkflow wordt verwacht uit te voeren (en te voltooien) VOORDAT `/plan` wordt aangeroepen. Als de gebruiker expliciet stelt dat ze verduidelijking overslaan (bijv. verkennende spike), mag je doorgaan, maar moet waarschuwen dat downstream herwerk risico toeneemt.
 
-Execution steps:
+Uitvoeringsstappen:
 
-1. Run `{SCRIPT}` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
+1. Voer `{SCRIPT}` uit vanaf repo root **eenmaal** (gecombineerde `--json --paths-only` mode / `-Json -PathsOnly`). Parseer minimale JSON payload velden:
    - `FEATURE_DIR`
    - `FEATURE_SPEC`
-   - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)
-   - If JSON parsing fails, abort and instruct user to re-run `/specify` or verify feature branch environment.
+   - (Optioneel vastleggen `IMPL_PLAN`, `TASKS` voor toekomstige gekoppelde flows.)
+   - Indien JSON parsing faalt, breek af en instrueer gebruiker om `/specify` opnieuw uit te voeren of functie branch omgeving te verifiëren.
 
-2. Load the current spec file. Perform a structured ambiguity & coverage scan using this taxonomy. For each category, mark status: Clear / Partial / Missing. Produce an internal coverage map used for prioritization (do not output raw map unless no questions will be asked).
+2. Laad het huidige specbestand. Voer een gestructureerde dubbelzinnigheid & dekkingsscan uit met behulp van deze taxonomie. Voor elke categorie, markeer status: Duidelijk / Gedeeltelijk / Ontbrekend. Produceer een interne dekkingskaart gebruikt voor prioritering (geef ruwe kaart niet uit tenzij geen vragen gesteld worden).
 
-   Functional Scope & Behavior:
-   - Core user goals & success criteria
-   - Explicit out-of-scope declarations
-   - User roles / personas differentiation
+   Functionele Bereik & Gedrag:
+   - Kern gebruikersdoelen & succescriteria
+   - Expliciete buiten-bereik verklaringen
+   - Gebruikersrollen / persona's differentiatie
 
-   Domain & Data Model:
-   - Entities, attributes, relationships
-   - Identity & uniqueness rules
-   - Lifecycle/state transitions
-   - Data volume / scale assumptions
+   Domein & Datamodel:
+   - Entiteiten, attributen, relaties
+   - Identiteit & uniciteitsregels
+   - Levenscyclus/staat transities
+   - Datavolume / schaal aannames
 
-   Interaction & UX Flow:
-   - Critical user journeys / sequences
-   - Error/empty/loading states
-   - Accessibility or localization notes
+   Interactie & UX Flow:
+   - Kritieke gebruikersreizen / sequenties
+   - Fout/leeg/laad staten
+   - Toegankelijkheid of lokalisatie notities
 
-   Non-Functional Quality Attributes:
-   - Performance (latency, throughput targets)
-   - Scalability (horizontal/vertical, limits)
-   - Reliability & availability (uptime, recovery expectations)
-   - Observability (logging, metrics, tracing signals)
-   - Security & privacy (authN/Z, data protection, threat assumptions)
-   - Compliance / regulatory constraints (if any)
+   Niet-Functionele Kwaliteitsattributen:
+   - Prestaties (latentie, doorvoer doelen)
+   - Schaalbaarheid (horizontaal/verticaal, limieten)
+   - Betrouwbaarheid & beschikbaarheid (uptime, herstel verwachtingen)
+   - Observeerbaarheid (logging, metrieken, tracing signalen)
+   - Beveiliging & privacy (authN/Z, gegevensbescherming, dreigingsaannames)
+   - Compliance / regulatoire beperkingen (indien van toepassing)
 
-   Integration & External Dependencies:
-   - External services/APIs and failure modes
-   - Data import/export formats
-   - Protocol/versioning assumptions
+   Integratie & Externe Afhankelijkheden:
+   - Externe services/API's en faalmodi
+   - Data import/export formaten
+   - Protocol/versioning aannames
 
-   Edge Cases & Failure Handling:
-   - Negative scenarios
+   Randgevallen & Faalafhandeling:
+   - Negatieve scenario's
    - Rate limiting / throttling
-   - Conflict resolution (e.g., concurrent edits)
+   - Conflictoplossing (bijv. gelijktijdige bewerkingen)
 
-   Constraints & Tradeoffs:
-   - Technical constraints (language, storage, hosting)
-   - Explicit tradeoffs or rejected alternatives
+   Beperkingen & Afwegingen:
+   - Technische beperkingen (taal, opslag, hosting)
+   - Expliciete afwegingen of afgewezen alternatieven
 
-   Terminology & Consistency:
-   - Canonical glossary terms
-   - Avoided synonyms / deprecated terms
+   Terminologie & Consistentie:
+   - Canonieke glossarium termen
+   - Vermeden synoniemen / afgekeurde termen
 
-   Completion Signals:
-   - Acceptance criteria testability
-   - Measurable Definition of Done style indicators
+   Voltooiingssignalen:
+   - Acceptatiecriteria testbaarheid
+   - Meetbare Definition of Done stijl indicatoren
 
    Misc / Placeholders:
-   - TODO markers / unresolved decisions
-   - Ambiguous adjectives ("robust", "intuitive") lacking quantification
+   - TODO markeringen / onopgeloste beslissingen
+   - Dubbelzinnige bijvoeglijke naamwoorden ("robuust", "intuïtief") die kwantificatie missen
 
-   For each category with Partial or Missing status, add a candidate question opportunity unless:
-   - Clarification would not materially change implementation or validation strategy
-   - Information is better deferred to planning phase (note internally)
+   Voor elke categorie met Gedeeltelijke of Ontbrekende status, voeg een kandidaat vraagmogelijkheid toe tenzij:
+   - Verduidelijking zou implementatie of validatiestrategie niet materieel veranderen
+   - Informatie is beter uitgesteld naar planningsfase (noteer intern)
 
-3. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5). Do NOT output them all at once. Apply these constraints:
-    - Maximum of 5 total questions across the whole session.
-    - Each question must be answerable with EITHER:
-       * A short multiple‑choice selection (2–5 distinct, mutually exclusive options), OR
-       * A one-word / short‑phrase answer (explicitly constrain: "Answer in <=5 words").
-   - Only include questions whose answers materially impact architecture, data modeling, task decomposition, test design, UX behavior, operational readiness, or compliance validation.
-   - Ensure category coverage balance: attempt to cover the highest impact unresolved categories first; avoid asking two low-impact questions when a single high-impact area (e.g., security posture) is unresolved.
-   - Exclude questions already answered, trivial stylistic preferences, or plan-level execution details (unless blocking correctness).
-   - Favor clarifications that reduce downstream rework risk or prevent misaligned acceptance tests.
-   - If more than 5 categories remain unresolved, select the top 5 by (Impact * Uncertainty) heuristic.
+3. Genereer (intern) een geprioriteerde wachtrij van kandidaat verduidelijkingsvragen (maximaal 5). Geef ze NIET allemaal tegelijk uit. Pas deze beperkingen toe:
+    - Maximaal 5 totale vragen over de hele sessie.
+    - Elke vraag moet beantwoordbaar zijn met OFWEL:
+       * Een korte meerkeuze selectie (2–5 onderscheiden, wederzijds exclusieve opties), OF
+       * Een één-woord / korte-zin antwoord (expliciet beperken: "Antwoord in <=5 woorden").
+   - Voeg alleen vragen toe waarvan antwoorden materieel impact hebben op architectuur, datamodellering, taakdecompositie, testontwerp, UX gedrag, operationele gereedheid, of compliance validatie.
+   - Zorg voor categorie dekkingsbalans: probeer eerst de hoogste impact onopgeloste categorieën te dekken; vermijd twee lage-impact vragen te stellen wanneer een enkele hoge-impact gebied (bijv. beveiligingshouding) onopgelost is.
+   - Sluit reeds beantwoorde vragen, triviale stilistische voorkeuren, of plan-niveau uitvoeringsdetails uit (tenzij correctheid blokkeren).
+   - Geef voorkeur aan verduidelijkingen die downstream herwerk risico verminderen of misgelijnde acceptatietests voorkomen.
+   - Indien meer dan 5 categorieën onopgelost blijven, selecteer de top 5 door (Impact * Onzekerheid) heuristiek.
 
-4. Sequential questioning loop (interactive):
-    - Present EXACTLY ONE question at a time.
-    - For multiple‑choice questions render options as a Markdown table:
+4. Sequentiële vragenloop (interactief):
+    - Presenteer PRECIES ÉÉN vraag tegelijk.
+    - Voor meerkeuze vragen render opties als een Markdown tabel:
 
-       | Option | Description |
-       |--------|-------------|
-       | A | <Option A description> |
-       | B | <Option B description> |
-       | C | <Option C description> | (add D/E as needed up to 5)
-       | Short | Provide a different short answer (<=5 words) | (Include only if free-form alternative is appropriate)
+       | Optie | Beschrijving |
+       |-------|-------------|
+       | A | <Optie A beschrijving> |
+       | B | <Optie B beschrijving> |
+       | C | <Optie C beschrijving> | (voeg D/E toe indien nodig tot 5)
+       | Kort | Geef een ander kort antwoord (<=5 woorden) | (Voeg alleen toe indien vrije-vorm alternatief geschikt is)
 
-    - For short‑answer style (no meaningful discrete options), output a single line after the question: `Format: Short answer (<=5 words)`.
-    - After the user answers:
-       * Validate the answer maps to one option or fits the <=5 word constraint.
-       * If ambiguous, ask for a quick disambiguation (count still belongs to same question; do not advance).
-       * Once satisfactory, record it in working memory (do not yet write to disk) and move to the next queued question.
-    - Stop asking further questions when:
-       * All critical ambiguities resolved early (remaining queued items become unnecessary), OR
-       * User signals completion ("done", "good", "no more"), OR
-       * You reach 5 asked questions.
-    - Never reveal future queued questions in advance.
-    - If no valid questions exist at start, immediately report no critical ambiguities.
+    - Voor kort-antwoord stijl (geen betekenisvolle discrete opties), geef een enkele regel uit na de vraag: `Formaat: Kort antwoord (<=5 woorden)`.
+    - Na het antwoord van de gebruiker:
+       * Valideer dat het antwoord naar een optie wijst of binnen de <=5 woorden beperking past.
+       * Indien dubbelzinnig, vraag om snelle disambiguatie (tel hoort nog steeds bij dezelfde vraag; ga niet verder).
+       * Eenmaal bevredigend, registreer het in werkgeheugen (schrijf nog niet naar schijf) en ga naar de volgende wachtrijvraag.
+    - Stop met verdere vragen stellen wanneer:
+       * Alle kritieke dubbelzinnigheden vroeg opgelost (overgebleven wachtrij items worden onnodig), OF
+       * Gebruiker geeft voltooiing aan ("klaar", "goed", "geen meer"), OF
+       * Je bereikt 5 gestelde vragen.
+    - Onthul nooit toekomstige wachtrijvragen vooraf.
+    - Indien geen geldige vragen bestaan bij start, rapporteer onmiddellijk geen kritieke dubbelzinnigheden.
 
-5. Integration after EACH accepted answer (incremental update approach):
-    - Maintain in-memory representation of the spec (loaded once at start) plus the raw file contents.
-    - For the first integrated answer in this session:
-       * Ensure a `## Clarifications` section exists (create it just after the highest-level contextual/overview section per the spec template if missing).
-       * Under it, create (if not present) a `### Session YYYY-MM-DD` subheading for today.
-    - Append a bullet line immediately after acceptance: `- Q: <question> → A: <final answer>`.
-    - Then immediately apply the clarification to the most appropriate section(s):
-       * Functional ambiguity → Update or add a bullet in Functional Requirements.
-       * User interaction / actor distinction → Update User Stories or Actors subsection (if present) with clarified role, constraint, or scenario.
-       * Data shape / entities → Update Data Model (add fields, types, relationships) preserving ordering; note added constraints succinctly.
-       * Non-functional constraint → Add/modify measurable criteria in Non-Functional / Quality Attributes section (convert vague adjective to metric or explicit target).
-       * Edge case / negative flow → Add a new bullet under Edge Cases / Error Handling (or create such subsection if template provides placeholder for it).
-       * Terminology conflict → Normalize term across spec; retain original only if necessary by adding `(formerly referred to as "X")` once.
-    - If the clarification invalidates an earlier ambiguous statement, replace that statement instead of duplicating; leave no obsolete contradictory text.
-    - Save the spec file AFTER each integration to minimize risk of context loss (atomic overwrite).
-    - Preserve formatting: do not reorder unrelated sections; keep heading hierarchy intact.
-    - Keep each inserted clarification minimal and testable (avoid narrative drift).
+5. Integratie na ELK geaccepteerd antwoord (incrementele update aanpak):
+    - Onderhoud in-geheugen representatie van de spec (eenmaal geladen bij start) plus de ruwe bestandsinhoud.
+    - Voor het eerste geïntegreerde antwoord in deze sessie:
+       * Zorg dat een `## Verduidelijkingen` sectie bestaat (maak het net na de hoogste-niveau contextuele/overzicht sectie per de spec template indien ontbrekend).
+       * Daaronder, maak (indien niet aanwezig) een `### Sessie YYYY-MM-DD` subkop voor vandaag.
+    - Voeg onmiddellijk na acceptatie een bullet regel toe: `- V: <vraag> → A: <eindantwoord>`.
+    - Pas dan onmiddellijk de verduidelijking toe op de meest geschikte sectie(s):
+       * Functionele dubbelzinnigheid → Update of voeg een bullet toe in Functionele Vereisten.
+       * Gebruikersinteractie / actor onderscheid → Update Gebruikersverhalen of Actoren subsectie (indien aanwezig) met verduidelijkte rol, beperking, of scenario.
+       * Data vorm / entiteiten → Update Datamodel (voeg velden, types, relaties toe) behoud volgorde; noteer toegevoegde beperkingen beknopt.
+       * Niet-functionele beperking → Voeg toe/wijzig meetbare criteria in Niet-Functionele / Kwaliteitsattributen sectie (converteer vage bijvoeglijk naamwoord naar metriek of expliciet doel).
+       * Randgeval / negatieve flow → Voeg nieuwe bullet toe onder Randgevallen / Foutafhandeling (of maak dergelijke subsectie indien template placeholder ervoor biedt).
+       * Terminologie conflict → Normaliseer term over spec; behoud origineel alleen indien nodig door `(voorheen aangeduid als "X")` eenmaal toe te voegen.
+    - Indien de verduidelijking een eerdere dubbelzinnige uitspraak ongeldig maakt, vervang die uitspraak in plaats van dupliceren; laat geen verouderde tegenstrijdige tekst achter.
+    - Bewaar het specbestand NA elke integratie om risico van contextverlies te minimaliseren (atomische overschrijving).
+    - Behoud formattering: herorden geen ongerelateerde secties; houd koppenstructuur intact.
+    - Houd elke ingevoegde verduidelijking minimaal en testbaar (vermijd narratieve drift).
 
-6. Validation (performed after EACH write plus final pass):
-   - Clarifications session contains exactly one bullet per accepted answer (no duplicates).
-   - Total asked (accepted) questions ≤ 5.
-   - Updated sections contain no lingering vague placeholders the new answer was meant to resolve.
-   - No contradictory earlier statement remains (scan for now-invalid alternative choices removed).
-   - Markdown structure valid; only allowed new headings: `## Clarifications`, `### Session YYYY-MM-DD`.
-   - Terminology consistency: same canonical term used across all updated sections.
+6. Validatie (uitgevoerd na ELKE schrijving plus eindpass):
+   - Verduidelijkingensessie bevat precies één bullet per geaccepteerd antwoord (geen duplicaten).
+   - Totaal gestelde (geaccepteerde) vragen ≤ 5.
+   - Bijgewerkte secties bevatten geen achtergebleven vage placeholders die het nieuwe antwoord moest oplossen.
+   - Geen tegenstrijdige eerdere uitspraak blijft (scan voor nu-ongeldige alternatieve keuzes verwijderd).
+   - Markdown structuur geldig; alleen toegestane nieuwe koppen: `## Verduidelijkingen`, `### Sessie YYYY-MM-DD`.
+   - Terminologie consistentie: dezelfde canonieke term gebruikt over alle bijgewerkte secties.
 
-7. Write the updated spec back to `FEATURE_SPEC`.
+7. Schrijf de bijgewerkte spec terug naar `FEATURE_SPEC`.
 
-8. Report completion (after questioning loop ends or early termination):
-   - Number of questions asked & answered.
-   - Path to updated spec.
-   - Sections touched (list names).
-   - Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
-   - If any Outstanding or Deferred remain, recommend whether to proceed to `/plan` or run `/clarify` again later post-plan.
-   - Suggested next command.
+8. Rapporteer voltooiing (na vragenloop beëindiging of vroege beëindiging):
+   - Aantal vragen gesteld & beantwoord.
+   - Pad naar bijgewerkte spec.
+   - Aangeraakte secties (lijst namen).
+   - Dekkingssamenvatting tabel met elke taxonomie categorie met Status: Opgelost (was Gedeeltelijk/Ontbrekend en aangepakt), Uitgesteld (overschrijdt vragen quota of beter geschikt voor planning), Duidelijk (reeds voldoende), Uitstaand (nog steeds Gedeeltelijk/Ontbrekend maar lage impact).
+   - Indien Uitstaand of Uitgesteld blijven, beveel aan of door te gaan naar `/plan` of `/clarify` opnieuw later na-plan uit te voeren.
+   - Voorgesteld volgend commando.
 
-Behavior rules:
-- If no meaningful ambiguities found (or all potential questions would be low-impact), respond: "No critical ambiguities detected worth formal clarification." and suggest proceeding.
-- If spec file missing, instruct user to run `/specify` first (do not create a new spec here).
-- Never exceed 5 total asked questions (clarification retries for a single question do not count as new questions).
-- Avoid speculative tech stack questions unless the absence blocks functional clarity.
-- Respect user early termination signals ("stop", "done", "proceed").
- - If no questions asked due to full coverage, output a compact coverage summary (all categories Clear) then suggest advancing.
- - If quota reached with unresolved high-impact categories remaining, explicitly flag them under Deferred with rationale.
+Gedragsregels:
+- Indien geen betekenisvolle dubbelzinnigheden gevonden (of alle potentiële vragen zouden lage-impact zijn), antwoord: "Geen kritieke dubbelzinnigheden gedetecteerd die formele verduidelijking waard zijn." en stel doorgaan voor.
+- Indien specbestand ontbreekt, instrueer gebruiker om eerst `/specify` uit te voeren (maak hier geen nieuwe spec).
+- Overschrijd nooit 5 totale gestelde vragen (verduidelijking herhalingen voor één vraag tellen niet als nieuwe vragen).
+- Vermijd speculatieve tech stack vragen tenzij afwezigheid functionele duidelijkheid blokkeert.
+- Respecteer gebruiker vroege beëindigingssignalen ("stop", "klaar", "doorgaan").
+ - Indien geen vragen gesteld vanwege volledige dekking, geef compacte dekkingssamenvatting uit (alle categorieën Duidelijk) stel dan vooruitgang voor.
+ - Indien quota bereikt met onopgeloste hoge-impact categorieën overgebleven, markeer ze expliciet onder Uitgesteld met rationale.
 
-Context for prioritization: {ARGS}
+Context voor prioritering: {ARGS}

@@ -1,50 +1,50 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# [PROJECT_NAME] Grondwet
+<!-- Voorbeeld: Spec Grondwet, TaskFlow Grondwet, etc. -->
 
-## Core Principles
+## Kernprincipes
 
 ### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
+<!-- Voorbeeld: I. Bibliotheek-Eerst -->
 [PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+<!-- Voorbeeld: Elke functie begint als een zelfstandige bibliotheek; Bibliotheken moeten zelfstandig, onafhankelijk testbaar, gedocumenteerd zijn; Duidelijk doel vereist - geen organisatie-alleen bibliotheken -->
 
 ### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
+<!-- Voorbeeld: II. CLI Interface -->
 [PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+<!-- Voorbeeld: Elke bibliotheek stelt functionaliteit bloot via CLI; Tekst in/uit protocol: stdin/args → stdout, fouten → stderr; Ondersteuning JSON + mensen-leesbare formaten -->
 
 ### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+<!-- Voorbeeld: III. Test-Eerst (NIET-ONDERHANDELBAAR) -->
 [PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+<!-- Voorbeeld: TDD verplicht: Tests geschreven → Gebruiker goedgekeurd → Tests falen → Dan implementeren; Rood-Groen-Refactor cyclus strikt afgedwongen -->
 
 ### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
+<!-- Voorbeeld: IV. Integratietesten -->
 [PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+<!-- Voorbeeld: Focusgebieden die integratietests vereisen: Nieuwe bibliotheek contract tests, Contract wijzigingen, Inter-service communicatie, Gedeelde schema's -->
 
 ### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+<!-- Voorbeeld: V. Observeerbaarheid, VI. Versioning & Breaking Changes, VII. Eenvoud -->
 [PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+<!-- Voorbeeld: Tekst I/O zorgt voor debugbaarheid; Gestructureerde logging vereist; Of: MAJOR.MINOR.BUILD formaat; Of: Begin eenvoudig, YAGNI principes -->
 
 ## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+<!-- Voorbeeld: Aanvullende Beperkingen, Beveiligingsvereisten, Prestatiestandaarden, etc. -->
 
 [SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+<!-- Voorbeeld: Technologie stack vereisten, compliance standaarden, deployment beleid, etc. -->
 
 ## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+<!-- Voorbeeld: Ontwikkelingsworkflow, Review Proces, Kwaliteitspoorten, etc. -->
 
 [SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+<!-- Voorbeeld: Code review vereisten, test poorten, deployment goedkeuringsproces, etc. -->
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+<!-- Voorbeeld: Grondwet gaat boven alle andere praktijken; Wijzigingen vereisen documentatie, goedkeuring, migratieplan -->
 
 [GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+<!-- Voorbeeld: Alle PRs/reviews moeten compliance verifiëren; Complexiteit moet gerechtvaardigd worden; Gebruik [GUIDANCE_FILE] voor runtime ontwikkelingsbegeleiding -->
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Versie**: [CONSTITUTION_VERSION] | **Geratificeerd**: [RATIFICATION_DATE] | **Laatst Gewijzigd**: [LAST_AMENDED_DATE]
+<!-- Voorbeeld: Versie: 2.1.1 | Geratificeerd: 2025-06-13 | Laatst Gewijzigd: 2025-07-16 -->

@@ -1,23 +1,23 @@
-# [PROJECT NAME] Development Guidelines
+# [PROJECT NAME] Ontwikkelingsrichtlijnen
 
-Auto-generated from all feature plans. Last updated: [DATE]
+Automatisch gegenereerd uit alle functieplannen. Laatst bijgewerkt: [DATE]
 
-## Active Technologies
-[EXTRACTED FROM ALL PLAN.MD FILES]
+## Actieve Technologieën
+[GEËXTRAHEERD UIT ALLE PLAN.MD BESTANDEN]
 
-## Project Structure
+## Projectstructuur
 ```
-[ACTUAL STRUCTURE FROM PLANS]
+[WERKELIJKE STRUCTUUR UIT PLANNEN]
 ```
 
-## Commands
-[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]
+## Commando's
+[ALLEEN COMMANDO'S VOOR ACTIEVE TECHNOLOGIEËN]
 
-## Code Style
-[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]
+## Codestijl
+[TAALSPECIFIEK, ALLEEN VOOR GEBRUIKTE TALEN]
 
-## Recent Changes
-[LAST 3 FEATURES AND WHAT THEY ADDED]
+## Recente Wijzigingen
+[LAATSTE 3 FUNCTIES EN WAT ZE HEBBEN TOEGEVOEGD]
 
-<!-- MANUAL ADDITIONS START -->
-<!-- MANUAL ADDITIONS END -->
+<!-- HANDMATIGE TOEVOEGINGEN START -->
+<!-- HANDMATIGE TOEVOEGINGEN EIND -->
