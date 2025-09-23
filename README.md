@@ -206,8 +206,10 @@ After running `specify init`, your AI coding agent will have access to these sla
 |-----------------|-----------------------------------------------------------------------|
 | `/constitution` | Create or update project governing principles and development guidelines |
 | `/specify`      | Define what you want to build (requirements and user stories)        |
+| `/clarify`      | Clarify underspecified areas (must be run before `/plan` unless explicitly skipped; formerly `/quizme`) |
 | `/plan`         | Create technical implementation plans with your chosen tech stack     |
 | `/tasks`        | Generate actionable task lists for implementation                     |
+| `/analyze`      | Cross-artifact consistency & coverage analysis (run after /tasks, before /implement) |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
 
 ### Environment Variables
@@ -392,9 +394,19 @@ At this stage, your project folder contents should resemble the following:
     └── tasks-template.md
 ```
 
-### **STEP 3:** Functional specification clarification
+### **STEP 3:** Functional specification clarification (required before planning)
 
-With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt. For example, you could use a prompt like this within the same Claude Code session:
+With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt.
+
+You should run the structured clarification workflow **before** creating a technical plan to reduce rework downstream.
+
+Preferred order:
+1. Use `/clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
+2. Optionally follow up with ad-hoc free-form refinement if something still feels vague.
+
+If you intentionally want to skip clarification (e.g., spike or exploratory prototype), explicitly state that so the agent doesn't block on missing clarifications.
+
+Example free-form refinement prompt (after `/clarify` if still needed):
 
 ```text
 For each sample project or project that you create there should be a variable number of tasks between 5 and 15
