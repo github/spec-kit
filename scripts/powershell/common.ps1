@@ -4,19 +4,7 @@
 # Set working directory
 $script:WorkingDir = (Get-Location).Path
 
-function Get-RepoRoot {
-    try {
-        $result = git rev-parse --show-toplevel 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return $result
-        }
-    } catch {
-        # Git command failed
-    }
-    
-    # Fall back to script location for non-git repos
-    return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-}
+# Function removed - no longer needed since we use WorkingDir
 
 function Get-CurrentBranch {
     # First check if SPECIFY_FEATURE environment variable is set
@@ -35,7 +23,6 @@ function Get-CurrentBranch {
     }
     
     # For non-git repos, try to find the latest feature directory
-    $repoRoot = Get-RepoRoot
     $specsDir = Join-Path $script:WorkingDir "specs"
     
     if (Test-Path $specsDir) {
@@ -96,7 +83,6 @@ function Get-FeatureDir {
 }
 
 function Get-FeaturePathsEnv {
-    $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
     $hasGit = Test-HasGit
     $featureDir = Get-FeatureDir -Branch $currentBranch
