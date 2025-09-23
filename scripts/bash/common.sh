@@ -84,7 +84,7 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$WORKING_DIR/specs/$2"; }
+get_feature_dir() { echo "$WORKING_DIR/specs/$1"; }
 
 get_feature_paths() {
     local repo_root=$(get_repo_root)
@@ -95,7 +95,7 @@ get_feature_paths() {
         has_git_repo="true"
     fi
     
-    local feature_dir=$(get_feature_dir "$WORKING_DIR" "$current_branch")
+    local feature_dir=$(get_feature_dir "$current_branch")
     
     cat <<EOF
 WORKING_DIR='$WORKING_DIR'

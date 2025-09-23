@@ -91,7 +91,7 @@ function Test-FeatureBranch {
 }
 
 function Get-FeatureDir {
-    param([string]$RepoRoot, [string]$Branch)
+    param([string]$Branch)
     Join-Path $script:WorkingDir "specs/$Branch"
 }
 
@@ -99,7 +99,7 @@ function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
     $hasGit = Test-HasGit
-    $featureDir = Get-FeatureDir -RepoRoot $script:WorkingDir -Branch $currentBranch
+    $featureDir = Get-FeatureDir -Branch $currentBranch
     
     [PSCustomObject]@{
         WORKING_DIR   = $script:WorkingDir
