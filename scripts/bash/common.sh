@@ -4,8 +4,6 @@
 # Set working directory
 WORKING_DIR="$(pwd)"
 
-# Function removed - no longer needed since we use WORKING_DIR
-
 # Get current branch, with fallback for non-git repositories
 get_current_branch() {
     # First check if SPECIFY_FEATURE environment variable is set

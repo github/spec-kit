@@ -4,8 +4,6 @@
 # Set working directory
 $script:WorkingDir = (Get-Location).Path
 
-# Function removed - no longer needed since we use WorkingDir
-
 function Get-CurrentBranch {
     # First check if SPECIFY_FEATURE environment variable is set
     if ($env:SPECIFY_FEATURE) {
