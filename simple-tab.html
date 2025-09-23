@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Spec Kit</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #fafafa;
+        }
+        .container {
+            max-width: 800px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        .loading { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        
+        .workflow-buttons {
+            margin: 20px 0;
+        }
+        
+        .workflow-buttons button {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 15px;
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 14px;
+        }
+        
+        .workflow-buttons button:hover {
+            background: #106ebe;
+        }
+        
+        .workflow-buttons button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #0078d4;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🤖 Spec Kit</h2>
+        <p>AI-powered specification management workflows</p>
+        
+        <div id="status" class="status loading">
+            <div class="spinner"></div>
+            Initializing Spec Kit...
+        </div>
+        
+        <div id="workflows" class="workflow-buttons" style="display: none;">
+            <button onclick="runWorkflow('specify')">
+                📝 /specify - Generate detailed specification
+            </button>
+            <button onclick="runWorkflow('plan')">
+                📋 /plan - Create implementation plan
+            </button>
+            <button onclick="runWorkflow('tasks')">
+                ✅ /tasks - Break down into actionable tasks
+            </button>
+        </div>
+    </div>
+
+    <script src="https://dev.azure.com/mseng/_apis/public/gallery/publisher/microsoft/extension/azure-devops-extension-sdk/4.0.2/assetbyname/VSS.SDK.min.js"></script>
+    <script>
+        console.log('Spec Kit tab loading...');
+        
+        function updateStatus(message, type = 'loading') {
+            const status = document.getElementById('status');
+            const spinner = type === 'loading' ? '<div class="spinner"></div>' : '';
+            status.className = `status ${type}`;
+            status.innerHTML = `${spinner}${message}`;
+            console.log(`Status: ${message}`);
+        }
+        
+        function showWorkflows() {
+            document.getElementById('workflows').style.display = 'block';
+        }
+        
+        function hideWorkflows() {
+            document.getElementById('workflows').style.display = 'none';
+        }
+        
+        async function runWorkflow(workflow) {
+            console.log(`Running workflow: ${workflow}`);
+            updateStatus(`Running ${workflow} workflow...`, 'loading');
+            hideWorkflows();
+            
+            try {
+                // Simulate workflow execution
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                const results = {
+                    specify: 'Generated detailed specification document',
+                    plan: 'Created comprehensive implementation plan',
+                    tasks: 'Broke down work into actionable tasks'
+                };
+                
+                updateStatus(`✅ ${results[workflow]}`, 'success');
+                
+                setTimeout(() => {
+                    updateStatus('Ready for next workflow', 'success');
+                    showWorkflows();
+                }, 2000);
+                
+            } catch (error) {
+                console.error(`Workflow error: ${error}`);
+                updateStatus(`❌ Workflow failed: ${error.message}`, 'error');
+                
+                setTimeout(() => {
+                    updateStatus('Ready to try again', 'loading');
+                    showWorkflows();
+                }, 3000);
+            }
+        }
+        
+        // Initialize extension
+        try {
+            console.log('Initializing VSS...');
+            
+            if (typeof VSS === 'undefined') {
+                throw new Error('VSS SDK not loaded');
+            }
+            
+            VSS.init({
+                explicitNotifyLoaded: true,
+                usePlatformStyles: true
+            });
+            
+            VSS.ready(() => {
+                console.log('VSS ready');
+                
+                try {
+                    const webContext = VSS.getWebContext();
+                    console.log('Web context:', webContext);
+                    
+                    updateStatus('🎉 Spec Kit ready!', 'success');
+                    showWorkflows();
+                    
+                    VSS.notifyLoadSucceeded();
+                    
+                } catch (error) {
+                    console.error('VSS ready error:', error);
+                    updateStatus(`❌ Context error: ${error.message}`, 'error');
+                }
+            });
+            
+        } catch (error) {
+            console.error('Initialization error:', error);
+            updateStatus(`❌ Failed to initialize: ${error.message}`, 'error');
+        }
+        
+        // Global error handling
+        window.addEventListener('error', (e) => {
+            console.error('Global error:', e);
+            updateStatus(`❌ Error: ${e.message}`, 'error');
+        });
+        
+    </script>
+</body>
+</html>

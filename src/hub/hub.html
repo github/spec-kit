@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Spec Kit Hub</title>
+    <link rel="stylesheet" href="https://dev.azure.com/mseng/_apis/public/gallery/publisher/microsoft/extension/azure-devops-ui/2.167.73/assetbyname/azure-devops-ui.css" />
+    <style>
+        .spec-kit-hub {
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header-section {
+            border-bottom: 1px solid #e6e6e6;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .action-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .action-card {
+            border: 1px solid #e6e6e6;
+            border-radius: 4px;
+            padding: 20px;
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .action-card h3 {
+            margin: 0 0 10px 0;
+            color: #0078d4;
+        }
+        
+        .action-card p {
+            margin: 0 0 15px 0;
+            color: #666;
+        }
+        
+        .workflow-section {
+            margin-bottom: 30px;
+        }
+        
+        .workflow-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .history-section {
+            border-top: 1px solid #e6e6e6;
+            padding-top: 20px;
+        }
+        
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .history-table th,
+        .history-table td {
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 1px solid #e6e6e6;
+        }
+        
+        .history-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .status-badge {
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-success { background-color: #d4edda; color: #155724; }
+        .status-running { background-color: #fff3cd; color: #856404; }
+        .status-failed { background-color: #f8d7da; color: #721c24; }
+        
+        .cost-info {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="spec-kit-hub">
+        <div class="header-section">
+            <h1>Spec Kit</h1>
+            <p>AI-powered specification management workflows for your project</p>
+        </div>
+        
+        <div class="action-cards">
+            <div class="action-card">
+                <h3>🚀 Quick Actions</h3>
+                <p>Run Spec Kit workflows on selected work items</p>
+                <div class="workflow-buttons">
+                    <button id="run-specify" class="primary-button">Run /specify</button>
+                    <button id="run-plan" class="primary-button">Run /plan</button>
+                    <button id="run-tasks" class="primary-button">Run /tasks</button>
+                </div>
+            </div>
+            
+            <div class="action-card">
+                <h3>🌱 Repository Setup</h3>
+                <p>Seed your repository with Spec Kit configuration and prompts</p>
+                <button id="seed-repo" class="primary-button">Seed Repository</button>
+                <button id="configure-settings" class="secondary-button">Settings</button>
+            </div>
+            
+            <div class="action-card">
+                <h3>📊 Analytics</h3>
+                <p>View performance metrics and cost analysis</p>
+                <button id="view-analytics" class="primary-button">View Dashboard</button>
+                <button id="export-data" class="secondary-button">Export Data</button>
+            </div>
+            
+            <div class="action-card">
+                <h3>🔗 LLM Configuration</h3>
+                <p>Manage LLM service connections and model settings</p>
+                <button id="manage-llm" class="primary-button">Manage LLM</button>
+                <button id="test-connection" class="secondary-button">Test Connection</button>
+            </div>
+        </div>
+        
+        <div class="workflow-section">
+            <h2>Current Project Status</h2>
+            <div id="project-status" class="loading">Loading project information...</div>
+        </div>
+        
+        <div class="history-section">
+            <h2>Recent Activity</h2>
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Workflow</th>
+                        <th>Work Item</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>Cost</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="history-tbody">
+                    <tr>
+                        <td colspan="7" class="loading">Loading activity history...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://dev.azure.com/mseng/_apis/public/gallery/publisher/microsoft/extension/azure-devops-extension-sdk/4.0.2/assetbyname/VSS.SDK.min.js"></script>
+    <script src="hub.js"></script>
+</body>
+</html>

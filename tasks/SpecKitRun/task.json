@@ -1,0 +1,145 @@
+{
+  "id": "8b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e",
+  "name": "SpecKitRun",
+  "friendlyName": "Spec Kit Workflow Runner",
+  "description": "Executes Spec Kit workflows (/specify, /plan, /tasks) on build agents",
+  "author": "AI Pundit",
+  "helpMarkDown": "[Learn more about Spec Kit](https://github.com/AI-Pundit/spec-kit)",
+  "category": "Utility",
+  "visibility": [
+    "Build",
+    "Release"
+  ],
+  "runsOn": [
+    "Agent",
+    "DeploymentGroup"
+  ],
+  "demands": [],
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "minimumAgentVersion": "2.144.0",
+  "instanceNameFormat": "Run Spec Kit $(workflow) for work item $(workItemId)",
+  "inputs": [
+    {
+      "name": "workflow",
+      "type": "picklist",
+      "label": "Workflow",
+      "defaultValue": "specify",
+      "required": true,
+      "helpMarkDown": "The Spec Kit workflow to execute",
+      "options": {
+        "specify": "Specification Generation",
+        "plan": "Implementation Planning", 
+        "tasks": "Task Breakdown"
+      }
+    },
+    {
+      "name": "workItemId",
+      "type": "string",
+      "label": "Work Item ID",
+      "defaultValue": "$(System.PullRequest.PullRequestNumber)",
+      "required": true,
+      "helpMarkDown": "ID of the work item to process. Use $(System.PullRequest.PullRequestNumber) for PR-triggered builds"
+    },
+    {
+      "name": "llmConnection",
+      "type": "connectedService:SpecKitLLM",
+      "label": "LLM Service Connection",
+      "defaultValue": "",
+      "required": true,
+      "helpMarkDown": "Service connection for LLM API access"
+    },
+    {
+      "name": "temperature",
+      "type": "string",
+      "label": "Temperature",
+      "defaultValue": "0.7",
+      "required": false,
+      "helpMarkDown": "LLM temperature setting (0.0-1.0). Lower values are more conservative, higher values more creative"
+    },
+    {
+      "name": "maxTokens",
+      "type": "string",
+      "label": "Max Tokens",
+      "defaultValue": "2000",
+      "required": false,
+      "helpMarkDown": "Maximum number of tokens to generate"
+    },
+    {
+      "name": "includeWikiPages",
+      "type": "multiLine",
+      "label": "Wiki Pages",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "List of wiki pages to include in context (one per line)"
+    },
+    {
+      "name": "outputLocation",
+      "type": "picklist",
+      "label": "Output Location",
+      "defaultValue": "repo",
+      "required": false,
+      "helpMarkDown": "Where to save generated artifacts",
+      "options": {
+        "repo": "Repository (/specs/)",
+        "wiki": "Project Wiki",
+        "both": "Both Repository and Wiki",
+        "artifacts": "Build Artifacts Only"
+      }
+    },
+    {
+      "name": "createWorkItems",
+      "type": "boolean",
+      "label": "Create Work Items",
+      "defaultValue": "true",
+      "required": false,
+      "helpMarkDown": "Create child work items for generated tasks (tasks workflow only)",
+      "visibleRule": "workflow = tasks"
+    },
+    {
+      "name": "customPrompt",
+      "type": "multiLine",
+      "label": "Custom Prompt",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Additional instructions to include in the prompt"
+    }
+  ],
+  "outputVariables": [
+    {
+      "name": "runId",
+      "description": "Unique identifier for this workflow run"
+    },
+    {
+      "name": "success",
+      "description": "Whether the workflow completed successfully (true/false)"
+    },
+    {
+      "name": "cost",
+      "description": "Estimated cost of the LLM API calls"
+    },
+    {
+      "name": "duration",
+      "description": "Duration of the workflow execution in milliseconds"
+    },
+    {
+      "name": "artifactsPath",
+      "description": "Path to generated artifacts"
+    },
+    {
+      "name": "workItemsCreated",
+      "description": "Number of work items created (tasks workflow only)"
+    }
+  ],
+  "execution": {
+    "PowerShell3": {
+      "target": "run.ps1"
+    },
+    "Node10": {
+      "target": "run.js"
+    }
+  }
+}

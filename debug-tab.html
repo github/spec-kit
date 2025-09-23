@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Spec Kit Debug</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #fafafa;
+        }
+        .container {
+            max-width: 800px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        
+        .debug-log {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        button {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #106ebe;
+        }
+        
+        .workflow-buttons {
+            margin: 20px 0;
+        }
+        
+        .workflow-buttons button {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 12px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🔧 Spec Kit Debug Interface</h2>
+        <p>This debug version helps identify loading issues with the Spec Kit extension.</p>
+        
+        <div id="status-container">
+            <div class="status info" id="initial-status">
+                🔄 Initializing Spec Kit...
+            </div>
+        </div>
+        
+        <div class="workflow-buttons" style="display: none;" id="workflow-section">
+            <h3>🤖 Available Workflows</h3>
+            <button onclick="runWorkflow('specify')">
+                📝 /specify - Generate Specification
+            </button>
+            <button onclick="runWorkflow('plan')">
+                📋 /plan - Create Implementation Plan  
+            </button>
+            <button onclick="runWorkflow('tasks')">
+                ✅ /tasks - Break Down Into Tasks
+            </button>
+        </div>
+        
+        <div>
+            <h3>🔍 Debug Information</h3>
+            <button onclick="runDiagnostics()">Run Diagnostics</button>
+            <button onclick="clearLog()">Clear Log</button>
+            <pre id="debug-log" class="debug-log"></pre>
+        </div>
+    </div>
+
+    <script>
+        let debugLog = '';
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            debugLog += logEntry;
+            
+            const logElement = document.getElementById('debug-log');
+            if (logElement) {
+                logElement.textContent = debugLog;
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+            
+            console.log(logEntry);
+        }
+        
+        function updateStatus(message, type = 'info') {
+            const container = document.getElementById('status-container');
+            if (container) {
+                container.innerHTML = `<div class="status ${type}">${message}</div>`;
+            }
+            addLog(message, type);
+        }
+        
+        function clearLog() {
+            debugLog = '';
+            document.getElementById('debug-log').textContent = '';
+        }
+        
+        function showWorkflows() {
+            const section = document.getElementById('workflow-section');
+            if (section) {
+                section.style.display = 'block';
+            }
+        }
+        
+        async function runDiagnostics() {
+            addLog('=== Running Diagnostics ===');
+            
+            // Check if VSS is available
+            if (typeof VSS !== 'undefined') {
+                addLog('✅ VSS SDK is available');
+                addLog(`VSS version: ${VSS.getConfiguration().version || 'unknown'}`);
+            } else {
+                addLog('❌ VSS SDK is not available', 'error');
+            }
+            
+            // Check extension context
+            try {
+                if (typeof VSS !== 'undefined' && VSS.getExtensionContext) {
+                    const extensionContext = VSS.getExtensionContext();
+                    addLog(`✅ Extension context: ${extensionContext.publisherId}.${extensionContext.extensionId}`);
+                }
+            } catch (e) {
+                addLog(`❌ Failed to get extension context: ${e.message}`, 'error');
+            }
+            
+            // Check web context
+            try {
+                if (typeof VSS !== 'undefined' && VSS.getWebContext) {
+                    const webContext = VSS.getWebContext();
+                    addLog(`✅ Web context - Project: ${webContext.project?.name || 'unknown'}`);
+                    addLog(`   Organization: ${webContext.account?.name || 'unknown'}`);
+                    addLog(`   User: ${webContext.user?.name || 'unknown'}`);
+                }
+            } catch (e) {
+                addLog(`❌ Failed to get web context: ${e.message}`, 'error');
+            }
+            
+            // Check current URL
+            addLog(`Current URL: ${window.location.href}`);
+            addLog(`Current host: ${window.location.host}`);
+            
+            // Check for work item ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const workItemId = urlParams.get('workItemId') || urlParams.get('id');
+            if (workItemId) {
+                addLog(`✅ Work Item ID detected: ${workItemId}`);
+            } else {
+                addLog('⚠️ No work item ID found in URL parameters', 'warning');
+            }
+            
+            addLog('=== Diagnostics Complete ===');
+        }
+        
+        async function runWorkflow(workflow) {
+            addLog(`🚀 Starting workflow: ${workflow}`);
+            updateStatus(`🔄 Running ${workflow} workflow...`, 'info');
+            
+            try {
+                // Simulate workflow execution
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                const mockResult = {
+                    specify: '📝 Generated specification for the work item',
+                    plan: '📋 Created implementation plan with 3 phases',
+                    tasks: '✅ Broke down work into 5 actionable tasks'
+                };
+                
+                const result = mockResult[workflow] || 'Workflow completed';
+                updateStatus(`✅ ${result}`, 'success');
+                addLog(`✅ Workflow ${workflow} completed successfully`);
+                
+            } catch (error) {
+                updateStatus(`❌ Workflow failed: ${error.message}`, 'error');
+                addLog(`❌ Workflow ${workflow} failed: ${error.message}`, 'error');
+            }
+        }
+        
+        // Initialize debug interface
+        addLog('🔧 Debug interface loaded');
+        addLog('Environment: ' + (typeof VSS !== 'undefined' ? 'Azure DevOps Extension' : 'Standalone'));
+        
+        // Auto-run diagnostics
+        setTimeout(() => {
+            runDiagnostics();
+        }, 1000);
+        
+        // Try to initialize if VSS is available
+        if (typeof VSS !== 'undefined') {
+            addLog('🔄 Attempting to initialize VSS SDK...');
+            
+            VSS.init({
+                explicitNotifyLoaded: true,
+                usePlatformStyles: true
+            });
+            
+            VSS.ready(() => {
+                addLog('✅ VSS SDK ready');
+                updateStatus('✅ Spec Kit initialized successfully', 'success');
+                showWorkflows();
+                VSS.notifyLoadSucceeded();
+            });
+            
+        } else {
+            updateStatus('⚠️ Running in standalone mode - VSS SDK not available', 'warning');
+            showWorkflows();
+            
+            // Try to load VSS SDK
+            addLog('🔄 Attempting to load VSS SDK...');
+            const script = document.createElement('script');
+            script.src = 'https://dev.azure.com/mseng/_apis/public/gallery/publisher/microsoft/extension/azure-devops-extension-sdk/4.0.2/assetbyname/VSS.SDK.min.js';
+            script.onload = () => {
+                addLog('✅ VSS SDK loaded dynamically');
+                location.reload();
+            };
+            script.onerror = () => {
+                addLog('❌ Failed to load VSS SDK dynamically', 'error');
+            };
+            document.head.appendChild(script);
+        }
+        
+        // Global error handling
+        window.addEventListener('error', (e) => {
+            addLog(`❌ JavaScript Error: ${e.message} at ${e.filename}:${e.lineno}`, 'error');
+        });
+        
+        window.addEventListener('unhandledrejection', (e) => {
+            addLog(`❌ Unhandled Promise Rejection: ${e.reason}`, 'error');
+        });
+        
+    </script>
+</body>
+</html>

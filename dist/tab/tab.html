@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Spec Assist</title>
+    <script src="https://dev.azure.com/mseng/_apis/public/gallery/publisher/microsoft/extension/azure-devops-extension-sdk/2.0.11/assetbyname/VSS.SDK.js"></script>
+    <style>
+        .spec-assist-tab {
+            padding: 20px;
+            max-width: 800px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0078d4;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: #ffeaa7;
+            border: 1px solid #fdcb6e;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px;
+            color: #d63031;
+        }
+        
+        .work-item-info {
+            background: #f8f9fa;
+            border: 1px solid #e6e6e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .work-item-info h3 {
+            margin: 0 0 10px 0;
+            color: #0078d4;
+        }
+        
+        .work-item-details {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 10px;
+            font-size: 14px;
+        }
+        
+        .work-item-details .label {
+            font-weight: 600;
+            color: #666;
+        }
+        
+        .workflow-section {
+            margin-bottom: 30px;
+        }
+        
+        .workflow-section h4 {
+            margin: 0 0 15px 0;
+            color: #323130;
+            border-bottom: 1px solid #e6e6e6;
+            padding-bottom: 5px;
+        }
+        
+        .workflow-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .workflow-button {
+            padding: 8px 16px;
+            border: 1px solid #0078d4;
+            background: #ffffff;
+            color: #0078d4;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        
+        .workflow-button:hover {
+            background: #0078d4;
+            color: #ffffff;
+        }
+        
+        .workflow-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .workflow-button.primary {
+            background: #0078d4;
+            color: #ffffff;
+        }
+        
+        .workflow-button.primary:hover {
+            background: #106ebe;
+        }
+        
+        .workflow-description {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+        
+        .execution-status {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        
+        .execution-status.success {
+            background: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        
+        .execution-status.error {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        
+        .execution-status.running {
+            background: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .artifacts-section {
+            margin-top: 20px;
+        }
+        
+        .artifact-item {
+            border: 1px solid #e6e6e6;
+            border-radius: 4px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        
+        .artifact-header {
+            background: #f8f9fa;
+            padding: 10px 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .artifact-content {
+            padding: 15px;
+            background: #ffffff;
+            border-top: 1px solid #e6e6e6;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .artifact-content pre {
+            background: #f8f9fa;
+            border: 1px solid #e6e6e6;
+            border-radius: 4px;
+            padding: 10px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .settings-section {
+            border-top: 1px solid #e6e6e6;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+        
+        .setting-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .setting-row label {
+            flex: 0 0 150px;
+            font-weight: 500;
+        }
+        
+        .setting-row select {
+            flex: 1;
+            padding: 5px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        
+        .cost-info {
+            font-size: 12px;
+            color: #666;
+            margin-left: 10px;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #0078d4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="spec-assist-tab">
+        <div class="work-item-info">
+            <h3 id="work-item-title">Loading work item...</h3>
+            <div class="work-item-details" id="work-item-details">
+                <span class="label">ID:</span><span id="work-item-id">-</span>
+                <span class="label">Type:</span><span id="work-item-type">-</span>
+                <span class="label">State:</span><span id="work-item-state">-</span>
+                <span class="label">Assigned To:</span><span id="work-item-assignee">-</span>
+            </div>
+        </div>
+
+        <div class="workflow-section">
+            <h4>🔍 Generate Specification</h4>
+            <div class="workflow-description">
+                Analyze the work item requirements and generate a comprehensive specification document using AI.
+            </div>
+            <div class="workflow-buttons">
+                <button id="btn-specify" class="workflow-button primary">Generate Spec</button>
+                <button id="btn-specify-custom" class="workflow-button">Custom Spec</button>
+            </div>
+        </div>
+
+        <div class="workflow-section">
+            <h4>📋 Create Implementation Plan</h4>
+            <div class="workflow-description">
+                Break down the specification into a detailed implementation plan with phases and milestones.
+            </div>
+            <div class="workflow-buttons">
+                <button id="btn-plan" class="workflow-button primary">Create Plan</button>
+                <button id="btn-plan-custom" class="workflow-button">Custom Plan</button>
+            </div>
+        </div>
+
+        <div class="workflow-section">
+            <h4>✅ Generate Tasks</h4>
+            <div class="workflow-description">
+                Convert the implementation plan into actionable tasks and create work items automatically.
+            </div>
+            <div class="workflow-buttons">
+                <button id="btn-tasks" class="workflow-button primary">Generate Tasks</button>
+                <button id="btn-tasks-custom" class="workflow-button">Custom Tasks</button>
+            </div>
+        </div>
+
+        <div class="workflow-section">
+            <h4>📚 Publish to Wiki</h4>
+            <div class="workflow-description">
+                Save generated specifications and plans to the project wiki for team collaboration.
+            </div>
+            <div class="workflow-buttons">
+                <button id="btn-publish-wiki" class="workflow-button">Publish to Wiki</button>
+                <button id="btn-publish-repo" class="workflow-button">Save to Repo</button>
+            </div>
+        </div>
+
+        <div id="execution-status" class="execution-status hidden">
+            <div id="status-content"></div>
+        </div>
+
+        <div class="artifacts-section" id="artifacts-section">
+            <h4>Generated Artifacts</h4>
+            <div id="artifacts-container">
+                <p>No artifacts generated yet. Run a workflow to see results here.</p>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h4>⚙️ Settings</h4>
+            <div class="setting-row">
+                <label for="llm-connection">LLM Connection:</label>
+                <select id="llm-connection">
+                    <option value="">Loading connections...</option>
+                </select>
+            </div>
+            <div class="setting-row">
+                <label for="temperature">Temperature:</label>
+                <select id="temperature">
+                    <option value="0.3">0.3 (Conservative)</option>
+                    <option value="0.5">0.5 (Balanced)</option>
+                    <option value="0.7" selected>0.7 (Creative)</option>
+                    <option value="0.9">0.9 (Very Creative)</option>
+                </select>
+            </div>
+            <div class="setting-row">
+                <label for="output-location">Output Location:</label>
+                <select id="output-location">
+                    <option value="repo">Repository (/specs/)</option>
+                    <option value="wiki">Project Wiki</option>
+                    <option value="both" selected>Both</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://dev.azure.com/mseng/_apis/public/gallery/publisher/microsoft/extension/azure-devops-extension-sdk/4.0.2/assetbyname/VSS.SDK.min.js"></script>
+    <script src="tab.js"></script>
+</body>
+</html>

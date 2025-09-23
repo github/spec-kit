@@ -1,0 +1,292 @@
+{
+  "manifestVersion": 1,
+  "id": "spec-kit",
+  "version": "1.0.0",
+  "name": "Spec Kit",
+  "description": "AI-powered specification management workflows integrated into Azure DevOps",
+  "publisher": "pundit-adospeckit",
+  "categories": ["Azure Boards", "Azure Repos", "Azure Pipelines"],
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "content": {
+    "details": {
+      "path": "README.md"
+    }
+  },
+  "links": {
+    "home": {
+      "uri": "https://github.com/AI-Pundit/spec-kit"
+    },
+    "support": {
+      "uri": "https://github.com/AI-Pundit/spec-kit/issues"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/AI-Pundit/spec-kit"
+  },
+  "scopes": [
+    "vso.work",
+    "vso.code",
+    "vso.build",
+    "vso.project",
+    "vso.wiki"
+  ],
+  "demands": ["api-version/7.0"],
+  "contributions": [
+    {
+      "id": "spec-kit-hub",
+      "type": "ms.vss-web.hub",
+      "description": "Spec Kit hub for running AI workflows",
+      "targets": ["ms.vss-work-web.work-hub-group"],
+      "properties": {
+        "name": "Spec Kit",
+        "order": 99,
+        "uri": "dist/hub/hub.html"
+      }
+    },
+    {
+      "id": "spec-assist-tab",
+      "type": "ms.vss-web.tab",
+      "description": "Spec Assist tab for work items",
+      "targets": ["ms.vss-work-web.work-item-form"],
+      "properties": {
+        "name": "Spec Kit",
+        "uri": "tab/tab.html",
+        "order": 100,
+        "workItemTypeFilter": ["User Story", "Feature", "Task", "Bug"]
+      }
+    },
+    {
+      "id": "spec-simple-tab",
+      "type": "ms.vss-web.tab",
+      "description": "Simple Spec Kit tab",
+      "targets": ["ms.vss-work-web.work-item-form"],
+      "properties": {
+        "name": "Spec Simple",
+        "uri": "simple-tab.html",
+        "order": 99,
+        "workItemTypeFilter": ["User Story", "Feature", "Task", "Bug"]
+      }
+    },
+    {
+      "id": "spec-debug-tab",
+      "type": "ms.vss-web.tab",
+      "description": "Spec Kit Debug tab for troubleshooting",
+      "targets": ["ms.vss-work-web.work-item-form"],
+      "properties": {
+        "name": "Spec Debug",
+        "uri": "debug-tab.html",
+        "order": 101,
+        "workItemTypeFilter": ["User Story", "Feature", "Task", "Bug"]
+      }
+    },
+    {
+      "id": "spec-throughput-widget",
+      "type": "ms.vss-dashboards-web.widget",
+      "description": "Spec Kit throughput metrics widget",
+      "targets": ["ms.vss-dashboards-web.widget-catalog"],
+      "properties": {
+        "name": "Spec Throughput",
+        "description": "Track specification generation throughput and velocity",
+        "catalogIconUrl": "assets/widget-icon.png",
+        "previewImageUrl": "assets/widget-preview.png",
+        "uri": "dist/widgets/throughput/throughput.html",
+        "isNameConfigurable": true,
+        "supportedSizes": [
+          { "rowSpan": 2, "columnSpan": 2 },
+          { "rowSpan": 2, "columnSpan": 3 },
+          { "rowSpan": 3, "columnSpan": 3 }
+        ],
+        "supportedScopes": ["project_team"]
+      }
+    },
+    {
+      "id": "spec-leadtime-widget",
+      "type": "ms.vss-dashboards-web.widget",
+      "description": "Lead time tracking widget",
+      "targets": ["ms.vss-dashboards-web.widget-catalog"],
+      "properties": {
+        "name": "Spec Lead Time",
+        "description": "Track lead time from /specify to merge",
+        "catalogIconUrl": "assets/widget-icon.png",
+        "previewImageUrl": "assets/widget-preview.png",
+        "uri": "dist/widgets/leadtime/leadtime.html",
+        "isNameConfigurable": true,
+        "supportedSizes": [
+          { "rowSpan": 2, "columnSpan": 2 },
+          { "rowSpan": 2, "columnSpan": 3 }
+        ],
+        "supportedScopes": ["project_team"]
+      }
+    },
+    {
+      "id": "spec-effort-widget",
+      "type": "ms.vss-dashboards-web.widget",
+      "description": "AI vs Human effort comparison widget",
+      "targets": ["ms.vss-dashboards-web.widget-catalog"],
+      "properties": {
+        "name": "AI vs Human Effort",
+        "description": "Compare AI vs Human effort in specification work",
+        "catalogIconUrl": "assets/widget-icon.png",
+        "previewImageUrl": "assets/widget-preview.png",
+        "uri": "dist/widgets/effort/effort.html",
+        "isNameConfigurable": true,
+        "supportedSizes": [
+          { "rowSpan": 2, "columnSpan": 3 },
+          { "rowSpan": 3, "columnSpan": 3 }
+        ],
+        "supportedScopes": ["project_team"]
+      }
+    },
+    {
+      "id": "spec-guardrails-widget",
+      "type": "ms.vss-dashboards-web.widget",
+      "description": "Guardrail coverage tracking widget",
+      "targets": ["ms.vss-dashboards-web.widget-catalog"],
+      "properties": {
+        "name": "Guardrail Coverage",
+        "description": "Track compliance with specification guardrails",
+        "catalogIconUrl": "assets/widget-icon.png",
+        "previewImageUrl": "assets/widget-preview.png",
+        "uri": "dist/widgets/guardrails/guardrails.html",
+        "isNameConfigurable": true,
+        "supportedSizes": [
+          { "rowSpan": 2, "columnSpan": 2 },
+          { "rowSpan": 3, "columnSpan": 2 }
+        ],
+        "supportedScopes": ["project_team"]
+      }
+    },
+    {
+      "id": "spec-kit-llm-service-endpoint",
+      "type": "ms.vss-endpoint.service-endpoint-type",
+      "description": "Spec Kit LLM service connection",
+      "targets": ["ms.vss-endpoint.endpoint-types"],
+      "properties": {
+        "name": "Spec Kit LLM",
+        "displayName": "Spec Kit LLM",
+        "url": {
+          "displayName": "Base URL",
+          "helpText": "The base URL for the LLM API endpoint"
+        },
+        "dataSources": [
+          {
+            "name": "TestConnection",
+            "endpointUrl": "{{endpoint.url}}/v1/models",
+            "resultSelector": "jsonpath:$.data[*]"
+          }
+        ],
+        "authenticationSchemes": [
+          {
+            "type": "ms.vss-endpoint.endpoint-auth-scheme-token",
+            "headers": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{endpoint.apitoken}}"
+              }
+            ],
+            "inputDescriptors": [
+              {
+                "id": "apitoken",
+                "name": "API Token",
+                "description": "API token for the LLM service",
+                "inputMode": "passwordbox",
+                "isConfidential": true,
+                "validation": {
+                  "isRequired": true,
+                  "dataType": "string"
+                }
+              }
+            ]
+          }
+        ],
+        "inputDescriptors": [
+          {
+            "id": "model",
+            "name": "Model",
+            "description": "The LLM model to use",
+            "inputMode": "textbox",
+            "validation": {
+              "isRequired": true,
+              "dataType": "string"
+            }
+          },
+          {
+            "id": "region",
+            "name": "Region",
+            "description": "The region for the LLM service",
+            "inputMode": "textbox",
+            "validation": {
+              "isRequired": false,
+              "dataType": "string"
+            }
+          },
+          {
+            "id": "temperatureCap",
+            "name": "Temperature Cap",
+            "description": "Maximum temperature value (0.0-1.0)",
+            "inputMode": "textbox",
+            "validation": {
+              "isRequired": false,
+              "dataType": "number"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "spec-kit-seed-task",
+      "type": "ms.vss-distributed-task.task",
+      "description": "Seed repository with Spec Kit assets",
+      "targets": ["ms.vss-distributed-task.tasks"],
+      "properties": {
+        "name": "tasks/SpecKitSeed"
+      }
+    },
+    {
+      "id": "spec-kit-run-task",
+      "type": "ms.vss-distributed-task.task",
+      "description": "Run Spec Kit workflows",
+      "targets": ["ms.vss-distributed-task.tasks"],
+      "properties": {
+        "name": "tasks/SpecKitRun"
+      }
+    },
+    {
+      "id": "spec-kit-menu-action",
+      "type": "ms.vss-web.action",
+      "description": "Spec Kit context menu actions",
+      "targets": ["ms.vss-work-web.work-item-context-menu"],
+      "properties": {
+        "text": "Generate Spec",
+        "title": "Generate specification using Spec Kit",
+        "icon": "assets/menu-icon.png",
+        "groupId": "actions",
+        "uri": "dist/actions/generate-spec.html"
+      }
+    }
+  ],
+  "contributionTypes": [],
+  "files": [
+    {
+      "path": "dist",
+      "addressable": true
+    },
+    {
+      "path": "assets",
+      "addressable": true
+    },
+    {
+      "path": "tasks/SpecKitSeed",
+      "addressable": true
+    },
+    {
+      "path": "tasks/SpecKitRun",
+      "addressable": true
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "id": "7a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
+  "name": "SpecKitSeed",
+  "friendlyName": "Spec Kit Repository Seeder",
+  "description": "Seeds repository with Spec Kit configuration files and prompt templates",
+  "author": "AI Pundit",
+  "helpMarkDown": "[Learn more about Spec Kit](https://github.com/AI-Pundit/spec-kit)",
+  "category": "Utility",
+  "visibility": [
+    "Build",
+    "Release"
+  ],
+  "runsOn": [
+    "Agent",
+    "DeploymentGroup"
+  ],
+  "demands": [],
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "minimumAgentVersion": "2.144.0",
+  "instanceNameFormat": "Seed Spec Kit files to $(targetBranch)",
+  "inputs": [
+    {
+      "name": "targetBranch",
+      "type": "string",
+      "label": "Target Branch",
+      "defaultValue": "main",
+      "required": true,
+      "helpMarkDown": "The branch to seed with Spec Kit files"
+    },
+    {
+      "name": "createPR",
+      "type": "boolean",
+      "label": "Create Pull Request",
+      "defaultValue": "true",
+      "required": false,
+      "helpMarkDown": "Create a pull request after seeding files"
+    },
+    {
+      "name": "prTitle",
+      "type": "string",
+      "label": "Pull Request Title",
+      "defaultValue": "Add Spec Kit Configuration",
+      "required": false,
+      "helpMarkDown": "Title for the pull request (only used if createPR is true)",
+      "visibleRule": "createPR = true"
+    },
+    {
+      "name": "prDescription",
+      "type": "multiLine",
+      "label": "Pull Request Description",
+      "defaultValue": "This PR adds Spec Kit configuration files and prompt templates to enable AI-powered specification workflows.\n\n## Files Added\n- `.github/prompts/` - AI prompt templates\n- `.specify/` - Configuration and guardrails\n\n## Next Steps\n1. Review and customize the configuration\n2. Set up LLM service connections\n3. Start using Spec Kit workflows",
+      "required": false,
+      "helpMarkDown": "Description for the pull request",
+      "visibleRule": "createPR = true"
+    },
+    {
+      "name": "overwriteExisting",
+      "type": "boolean",
+      "label": "Overwrite Existing Files",
+      "defaultValue": "false",
+      "required": false,
+      "helpMarkDown": "Overwrite existing Spec Kit files if they already exist"
+    },
+    {
+      "name": "customTemplatesPath",
+      "type": "string",
+      "label": "Custom Templates Path",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Path to custom template files (optional)"
+    }
+  ],
+  "outputVariables": [
+    {
+      "name": "seedBranch",
+      "description": "Name of the branch created for seeding"
+    },
+    {
+      "name": "pullRequestId",
+      "description": "ID of the created pull request (if createPR is true)"
+    },
+    {
+      "name": "pullRequestUrl",
+      "description": "URL of the created pull request (if createPR is true)"
+    },
+    {
+      "name": "filesAdded",
+      "description": "Number of files added to the repository"
+    }
+  ],
+  "execution": {
+    "PowerShell3": {
+      "target": "seed.ps1"
+    },
+    "Node10": {
+      "target": "seed.js"
+    }
+  }
+}

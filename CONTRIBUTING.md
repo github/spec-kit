@@ -1,80 +1,257 @@
-## Contributing to Spec Kit
+# Contributing to Spec Kit
 
-Hi there! We're thrilled that you'd like to contribute to Spec Kit. Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](LICENSE).
+We welcome contributions to the Spec Kit Azure DevOps extension! This document provides guidelines for contributing to the project.
 
-Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+## 🚀 Getting Started
 
-## Prerequisites for running and testing code
+### Prerequisites
+- Node.js 18+ and npm 8+
+- Visual Studio Code (recommended)
+- Azure DevOps organization for testing
+- Git knowledge and GitHub account
 
-These are one time installations required to be able to test your changes locally as part of the pull request (PR) submission process.
+### Development Setup
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/spec-kit.git`
+3. Install dependencies: `npm install`
+4. Create a feature branch: `git checkout -b feature/your-feature-name`
 
-1. Install [Python 3.11+](https://www.python.org/downloads/)
-1. Install [uv](https://docs.astral.sh/uv/) for package management
-1. Install [Git](https://git-scm.com/downloads)
-1. Have an [AI coding agent available](README.md#-supported-ai-agents)
+## 📋 Development Guidelines
 
-## Submitting a pull request
+### Code Style
+- Use TypeScript for all new code
+- Follow existing naming conventions
+- Use meaningful variable and function names
+- Add comprehensive JSDoc comments for public APIs
+- Maintain consistent indentation (2 spaces)
 
->[!NOTE]
->If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
+### Testing Requirements
+- Write unit tests for all new functionality
+- Maintain minimum 80% code coverage
+- Add integration tests for Azure DevOps API interactions
+- Test both success and error scenarios
+- Use Jest testing framework with provided setup
 
-1. Fork and clone the repository
-1. Configure and install the dependencies: `uv sync`
-1. Make sure the CLI works on your machine: `uv run specify --help`
-1. Create a new branch: `git checkout -b my-branch-name`
-1. Make your change, add tests, and make sure everything still works
-1. Test the CLI functionality with a sample project if relevant
-1. Push to your fork and submit a pull request
-1. Wait for your pull request to be reviewed and merged.
+### Commit Messages
+Follow conventional commit format:
+```
+type(scope): description
 
-Here are a few things you can do that will increase the likelihood of your pull request being accepted:
+[optional body]
 
-- Follow the project's coding conventions.
-- Write tests for new functionality.
-- Update documentation (`README.md`, `spec-driven.md`) if your changes affect user-facing features.
-- Keep your change as focused as possible. If there are multiple changes you would like to make that are not dependent upon each other, consider submitting them as separate pull requests.
-- Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
-- Test your changes with the Spec-Driven Development workflow to ensure compatibility.
+[optional footer]
+```
 
-## Development workflow
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
-When working on spec-kit:
+Examples:
+- `feat(hub): add workflow execution history`
+- `fix(tab): handle missing work item fields`
+- `docs(readme): update installation instructions`
 
-1. Test changes with the `specify` CLI commands (`/specify`, `/plan`, `/tasks`) in your coding agent of choice
-2. Verify templates are working correctly in `templates/` directory
-3. Test script functionality in the `scripts/` directory
-4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+## 🔧 Architecture Guidelines
 
-## AI contributions in Spec Kit
+### Service Layer Design
+- Keep services focused on single responsibilities
+- Use dependency injection for testability
+- Implement proper error handling and logging
+- Follow async/await patterns for API calls
 
-We welcome and encourage the use of AI tools to help improve Spec Kit! Many valuable contributions have been enhanced with AI assistance for code generation, issue detection, and feature definition.
+### UI Components
+- Use semantic HTML and accessible patterns
+- Follow Azure DevOps UI guidelines and styling
+- Implement proper loading states and error handling
+- Ensure responsive design for different screen sizes
 
-### What we're looking for
+### API Integration
+- Use Azure DevOps REST API clients where available
+- Implement proper retry logic for network failures
+- Add comprehensive error handling and user feedback
+- Follow rate limiting and quota guidelines
 
-When submitting AI-assisted contributions, please ensure they include:
+## 🧪 Testing Strategy
 
-- **Human understanding and testing** - You've personally tested the changes and understand what they do
-- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals  
-- **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
-- **Your own analysis** - Share your thoughts on the end-to-end developer experience
+### Unit Tests
+```bash
+npm test                    # Run all tests
+npm run test:watch         # Watch mode
+npm run test:coverage      # Coverage report
+```
 
-### What we'll close
+### Integration Tests
+- Test Azure DevOps API integrations
+- Verify extension loading and initialization
+- Test workflow execution end-to-end
+- Validate service connection configurations
 
-We reserve the right to close contributions that appear to be:
+### Manual Testing
+- Test in Azure DevOps environment
+- Verify all extension surfaces (hub, tab, widgets)
+- Test with different user permissions
+- Validate LLM integration functionality
 
-- Untested changes submitted without verification
-- Generic suggestions that don't address specific Spec Kit needs
-- Bulk submissions that show no human review or understanding
+## 📝 Documentation
 
-### Guidelines for success
+### Code Documentation
+- Add JSDoc comments for all public methods
+- Document complex algorithms and business logic
+- Include usage examples in comments
+- Keep documentation up-to-date with code changes
 
-The key is demonstrating that you understand and have validated your proposed changes. If a maintainer can easily tell that a contribution was generated entirely by AI without human input or testing, it likely needs more work before submission.
+### User Documentation
+- Update README.md for new features
+- Add configuration examples
+- Include troubleshooting guides
+- Provide migration guides for breaking changes
 
-Contributors who consistently submit low-effort AI-generated changes may be restricted from further contributions at the maintainers' discretion.
+## 🚦 Pull Request Process
 
-## Resources
+### Before Submitting
+1. Ensure all tests pass: `npm test`
+2. Run linting: `npm run lint`
+3. Build successfully: `npm run build`
+4. Update documentation if needed
+5. Add/update tests for new functionality
 
-- [Spec-Driven Development Methodology](./spec-driven.md)
-- [How to Contribute to Open Source](https://opensource.guide/how-to-contribute/)
-- [Using Pull Requests](https://help.github.com/articles/about-pull-requests/)
-- [GitHub Help](https://help.github.com)
+### PR Requirements
+- Clear description of changes made
+- Reference related issues (fixes #123)
+- Include screenshots for UI changes
+- Ensure CI/CD pipeline passes
+- Request review from maintainers
+
+### Review Process
+1. Automated checks must pass
+2. Code review by maintainers
+3. Manual testing verification
+4. Documentation review
+5. Final approval and merge
+
+## 🐛 Bug Reports
+
+### Bug Report Template
+```markdown
+**Describe the bug**
+A clear description of what the bug is.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Go to '...'
+2. Click on '....'
+3. See error
+
+**Expected behavior**
+What you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots.
+
+**Environment:**
+- Azure DevOps version: [e.g. Azure DevOps Services]
+- Extension version: [e.g. 1.0.0]
+- Browser: [e.g. Chrome 91]
+
+**Additional context**
+Any other context about the problem.
+```
+
+## ✨ Feature Requests
+
+### Feature Request Template
+```markdown
+**Is your feature request related to a problem?**
+A clear description of what the problem is.
+
+**Describe the solution you'd like**
+A clear description of what you want to happen.
+
+**Describe alternatives you've considered**
+Other solutions you've considered.
+
+**Additional context**
+Screenshots, mockups, or other context.
+```
+
+## 🔒 Security Guidelines
+
+### Security Best Practices
+- Never commit API keys or secrets
+- Use Azure DevOps service connections for external APIs
+- Validate all user inputs
+- Implement proper authentication checks
+- Follow OWASP security guidelines
+
+### Reporting Security Issues
+- Email security issues to: security@example.com
+- Do not create public issues for security vulnerabilities
+- Provide detailed reproduction steps
+- Allow reasonable time for fixes before disclosure
+
+## 📋 Code Review Checklist
+
+### Functionality
+- [ ] Feature works as intended
+- [ ] Edge cases are handled
+- [ ] Error scenarios are covered
+- [ ] Performance is acceptable
+
+### Code Quality
+- [ ] Code follows project conventions
+- [ ] Functions are well-named and focused
+- [ ] Comments explain complex logic
+- [ ] No code duplication
+
+### Testing
+- [ ] Unit tests cover new functionality
+- [ ] Tests are meaningful and comprehensive
+- [ ] Manual testing completed
+- [ ] No regression in existing functionality
+
+### Documentation
+- [ ] README updated if needed
+- [ ] Code comments are clear
+- [ ] API documentation updated
+- [ ] Breaking changes documented
+
+## 🎯 Contribution Areas
+
+### High Priority
+- Performance optimizations
+- Additional LLM provider integrations
+- Enhanced error handling and user feedback
+- Accessibility improvements
+- Mobile/responsive design enhancements
+
+### Medium Priority
+- Additional dashboard widgets
+- Extended workflow customization
+- Enhanced analytics and reporting
+- Integration with other Azure services
+- Advanced guardrails and compliance features
+
+### Enhancement Ideas
+- Multi-language support
+- Custom prompt template designer
+- Advanced cost optimization
+- Real-time collaboration features
+- Enhanced audit and compliance reporting
+
+## 🤝 Community
+
+### Communication Channels
+- **GitHub Discussions**: General questions and ideas
+- **GitHub Issues**: Bug reports and feature requests
+- **Pull Requests**: Code contributions and reviews
+- **Email**: For sensitive or security-related matters
+
+### Recognition
+- Contributors will be acknowledged in release notes
+- Significant contributions recognized in README
+- Open source contribution badges available
+- Annual contributor appreciation events
+
+## 📄 License
+
+By contributing to Spec Kit, you agree that your contributions will be licensed under the MIT License.
+
+Thank you for contributing to Spec Kit! 🚀
