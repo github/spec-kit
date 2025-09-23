@@ -39,154 +39,286 @@ scripts:
 ## Summary
 [Extract from feature spec: primary requirement + technical approach from research]
 
-## Technical Context
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+## Odoo Technical Context
+**Odoo Version**: [e.g., Odoo 17.0, Odoo 18.0, Odoo 19.0 or NEEDS CLARIFICATION]
+**Addon Strategy**: [Single Addon / Multi-Addon based on constitutional assessment or NEEDS CLARIFICATION]
+**Strategy Rationale**: [Why this strategy was chosen or NEEDS CLARIFICATION]
+
+### If Single Addon Strategy:
+**Addon Name**: [comprehensive addon name and business domain or NEEDS CLARIFICATION]
+**Core Dependencies**: [required Odoo modules or NEEDS CLARIFICATION]
+**Optional Dependencies**: [optional Odoo modules that enhance functionality or NEEDS CLARIFICATION]
+**Feature Scope**: [complete feature group within single addon or NEEDS CLARIFICATION]
+
+### If Multi-Addon Strategy:
+**Core Addon**: [base addon name and primary business domain or NEEDS CLARIFICATION]
+**Extension Addons**: [list of optional enhancement addons or NEEDS CLARIFICATION]
+**Integration Addons**: [technology-specific addons (payments, shipping, etc.) or NEEDS CLARIFICATION]
+**Localization Addons**: [region-specific addons or NEEDS CLARIFICATION]
+**Inter-Addon Dependencies**: [dependencies between custom addons or NEEDS CLARIFICATION]
+**Customer Flexibility**: [which addons are optional vs required or NEEDS CLARIFICATION]
+
+### Common Context:
+**Testing Strategy**: [unit, integration, cross-addon tests (if applicable) or NEEDS CLARIFICATION]
+**Deployment Target**: [Odoo.sh, on-premise, containerized or NEEDS CLARIFICATION]
+**Performance Goals**: [concurrent users, data volume, response times or NEEDS CLARIFICATION]
+**Migration Path**: [addon-specific upgrade strategies or NEEDS CLARIFICATION]
 
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 [Gates determined based on constitution file]
 
-## Project Structure
+## Odoo Project Structure
 
 ### Documentation (this feature)
 ```
 specs/[###-feature]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
-├── data-model.md        # Phase 1 output (/plan command)
+├── odoo-architecture.md # Phase 1 output (/plan command)
 ├── quickstart.md        # Phase 1 output (/plan command)
-├── contracts/           # Phase 1 output (/plan command)
+├── models/              # Phase 1 output (/plan command)
+├── views/               # Phase 1 output (/plan command)
+├── security/            # Phase 1 output (/plan command)
+├── demo/                # Phase 1 output (/plan command)
 └── tasks.md             # Phase 2 output (/tasks command - NOT created by /plan)
 ```
 
-### Source Code (repository root)
+### Odoo Addon Structure
+**Structure based on chosen strategy**
+
+#### If Single Addon Strategy:
 ```
-# Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+# Single Addon Project Structure
+addons/
+└── [addon_name]/               # Comprehensive addon with complete feature group
+    ├── __init__.py
+    ├── __manifest__.py
+    ├── models/
+    │   ├── __init__.py
+    │   └── [all_models].py
+    ├── views/
+    │   ├── [all_views].xml
+    │   └── menu.xml
+    ├── security/
+    │   ├── ir.model.access.csv
+    │   └── security_groups.xml
+    ├── data/
+    │   └── [configuration].xml
+    ├── demo/
+    │   └── [demo_data].xml
+    ├── static/description/
+    ├── tests/
+    │   ├── __init__.py
+    │   ├── test_[feature_group].py
+    │   └── test_tours.js
+    └── i18n/
+        ├── [addon_name].pot
+        └── [lang_code].po
+```
 
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
+#### If Multi-Addon Strategy:
+```
+# Multi-Addon Project Structure
+addons/
+├── [core_addon_name]/           # Core business logic addon
+│   ├── __init__.py
+│   ├── __manifest__.py
 │   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure]
+│   │   ├── __init__.py
+│   │   └── [core_models].py
+│   ├── views/
+│   │   ├── [core_views].xml
+│   │   └── menu.xml
+│   ├── security/
+│   ├── data/
+│   ├── demo/
+│   ├── static/description/
+│   ├── tests/
+│   └── i18n/
+│
+├── [extension_addon_name]/      # Optional enhancement addon
+│   ├── __manifest__.py          # depends on core_addon_name
+│   ├── models/
+│   │   └── [extended_models].py
+│   ├── views/
+│   │   └── [enhanced_views].xml
+│   ├── tests/
+│   │   └── test_integration.py  # Tests with core addon
+│   └── [standard structure]
+│
+├── [integration_addon_name]/    # Technology-specific addon
+│   ├── __manifest__.py          # depends on core_addon_name
+│   ├── models/
+│   │   └── [integration_models].py
+│   ├── controllers/
+│   │   └── [api_controllers].py
+│   ├── tests/
+│   │   └── test_external_api.py
+│   └── [standard structure]
+│
+└── [localization_addon_name]/   # Country/region-specific
+    ├── __manifest__.py          # depends on core_addon_name
+    ├── data/
+    │   └── [country_data].xml
+    ├── i18n/
+    │   ├── [locale].po
+    │   └── [locale].pot
+    └── [standard structure]
 ```
 
-**Structure Decision**: [DEFAULT to Option 1 unless Technical Context indicates web/mobile app]
+**Structure Decision**: [Single/Multi]-addon architecture following constitutional assessment
 
-## Phase 0: Outline & Research
-1. **Extract unknowns from Technical Context** above:
-   - For each NEEDS CLARIFICATION → research task
-   - For each dependency → best practices task
-   - For each integration → patterns task
+## Phase 0: Odoo Module Research
+1. **Extract unknowns from Odoo Technical Context** above:
+   - For each NEEDS CLARIFICATION → Odoo-specific research task
+   - For each core module dependency → best practices and API documentation
+   - For each custom requirement → Odoo framework patterns and conventions
 
-2. **Generate and dispatch research agents**:
+2. **Generate and dispatch Odoo research agents**:
    ```
    For each unknown in Technical Context:
-     Task: "Research {unknown} for {feature context}"
-   For each technology choice:
-     Task: "Find best practices for {tech} in {domain}"
+     Task: "Research {unknown} for Odoo {version} development"
+   For each core module dependency:
+     Task: "Find Odoo {module} best practices and available models/fields"
+   For each custom model/view:
+     Task: "Research Odoo framework patterns for {component_type}"
    ```
 
-3. **Consolidate findings** in `research.md` using format:
-   - Decision: [what was chosen]
-   - Rationale: [why chosen]
-   - Alternatives considered: [what else evaluated]
+3. **Consolidate Odoo findings** in `research.md` using format:
+   - **Odoo Version Decision**: [version chosen and compatibility requirements]
+   - **Module Dependencies**: [core modules confirmed and their APIs]
+   - **Data Model Approach**: [inheritance vs new models, field types]
+   - **View Strategy**: [standard views vs custom, OWL component needs]
+   - **Security Model**: [access groups, record rules, field security]
+   - **Testing Approach**: [unit tests, integration tests, tour tests]
+   - **Deployment Strategy**: [packaging, dependencies, upgrade path]
+   - **Performance Considerations**: [indexing, lazy loading, batch operations]
 
-**Output**: research.md with all NEEDS CLARIFICATION resolved
+**Output**: research.md with all Odoo NEEDS CLARIFICATION resolved
 
-## Phase 1: Design & Contracts
+## Phase 1: Odoo Architecture Design
 *Prerequisites: research.md complete*
 
-1. **Extract entities from feature spec** → `data-model.md`:
-   - Entity name, fields, relationships
-   - Validation rules from requirements
-   - State transitions if applicable
+1. **Confirm addon strategy from spec** → `odoo-architecture.md`:
+   - Validate single vs multi-addon decision from constitutional assessment
+   - Document rationale for chosen strategy
+   - Identify coherent feature groups and addon boundaries
 
-2. **Generate API contracts** from functional requirements:
-   - For each user action → endpoint
-   - Use standard REST/GraphQL patterns
-   - Output OpenAPI/GraphQL schema to `/contracts/`
+2. **Design addon architecture** → `/models/`, `/views/`, `/security/`, `/demo/`:
+   **If Single Addon Strategy**:
+   - Complete addon with all models, views, and functionality
+   - Internal feature organization and configuration options
+   - Comprehensive security model and demo data
 
-3. **Generate contract tests** from contracts:
-   - One test file per endpoint
-   - Assert request/response schemas
-   - Tests must fail (no implementation yet)
+   **If Multi-Addon Strategy**:
+   - **Core Addon**: Base models, primary business logic, essential views
+   - **Extension Addons**: Enhanced features, additional views, optional functionality
+   - **Integration Addons**: External API connections, payment gateways, third-party services
+   - **Localization Addons**: Country-specific data, translations, regulatory compliance
 
-4. **Extract test scenarios** from user stories:
-   - Each story → integration test scenario
-   - Quickstart test = story validation steps
+3. **Define integration strategy**:
+   **For Single Addon**: Internal module organization and configuration
+   **For Multi-Addon**: Cross-addon integration points:
+   - Shared abstract models and mixins
+   - Event hooks and signals for addon communication
+   - API contracts between addons
+   - Data flow and synchronization patterns
 
-5. **Update agent file incrementally** (O(1) operation):
+4. **Plan testing strategy**:
+   **For Single Addon**:
+   - **Unit Tests**: All models, methods, and business logic
+   - **Integration Tests**: Complete workflows and feature interactions
+   - **Configuration Tests**: Different settings and options
+
+   **For Multi-Addon**:
+   - **Isolation Tests**: Each addon tested independently
+   - **Integration Tests**: Cross-addon functionality and data flow
+   - **Configuration Tests**: Various addon combination scenarios
+   - **Migration Tests**: Addon upgrade and dependency changes
+
+5. **Design deployment approach**:
+   **For Single Addon**: Configuration-based feature enablement
+   **For Multi-Addon**: Multiple installation scenarios and customer choice
+
+6. **Update agent file incrementally** (O(1) operation):
    - Run `{SCRIPT}`
      **IMPORTANT**: Execute it exactly as specified above. Do not add or remove any arguments.
-   - If exists: Add only NEW tech from current plan
+   - If exists: Add only NEW Odoo tech from current plan
    - Preserve manual additions between markers
    - Update recent changes (keep last 3)
    - Keep under 150 lines for token efficiency
    - Output to repository root
 
-**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file
+**Output**: odoo-architecture.md, addon-specific /models/*, /views/*, /security/*, /demo/*, test plans, deployment approach, quickstart.md, agent-specific file
 
-## Phase 2: Task Planning Approach
+## Phase 2: Odoo Development Task Planning Approach
 *This section describes what the /tasks command will do - DO NOT execute during /plan*
 
-**Task Generation Strategy**:
+**Adaptive Task Generation Strategy**:
 - Load `.specify/templates/tasks-template.md` as base
-- Generate tasks from Phase 1 design docs (contracts, data model, quickstart)
-- Each contract → contract test task [P]
-- Each entity → model creation task [P] 
-- Each user story → integration test task
-- Implementation tasks to make tests pass
+- Generate tasks based on chosen addon strategy from Phase 1
+
+**For Single Addon Strategy**:
+- **Single Comprehensive Addon**: Manifest → Models → Views → Security → Demo Data → Tests
+- **Feature Group Organization**: Organize tasks by functional areas within the addon
+- **Configuration Tasks**: Settings and feature toggles within the addon
+- **Complete Testing**: Unit and integration tests for all functionality
+
+**For Multi-Addon Strategy**:
+- **Per Addon**: Manifest → Models → Views → Security → Demo Data → Tests [P]
+- **Cross-Addon**: Integration tests, deployment configurations
+- **Dependency Order**: Core addon → Extension addons → Integration addons → Localization addons
+- **Optional Addons**: Marked clearly for customer choice
 
 **Ordering Strategy**:
-- TDD order: Tests before implementation 
-- Dependency order: Models before services before UI
-- Mark [P] for parallel execution (independent files)
+- **TDD Approach**: Tests before implementation (within addon or across addons)
+- **Dependency Order**: Based on Odoo modules and inter-addon dependencies
+- **Parallel Execution**: Independent components marked [P]
+- **Deployment Scenarios**: Tasks for different customer configurations
 
-**Estimated Output**: 25-30 numbered, ordered tasks in tasks.md
+**Estimated Output**:
+- Single Addon: 10-15 numbered, comprehensive tasks
+- Multi-Addon: 35-50 numbered, distributed across addons
 
 **IMPORTANT**: This phase is executed by the /tasks command, NOT by /plan
 
-## Phase 3+: Future Implementation
+## Phase 3+: Odoo Implementation & Deployment
 *These phases are beyond the scope of the /plan command*
 
-**Phase 3**: Task execution (/tasks command creates tasks.md)  
-**Phase 4**: Implementation (execute tasks.md following constitutional principles)  
-**Phase 5**: Validation (run tests, execute quickstart.md, performance validation)
+**Phase 3**: Odoo Task execution (/tasks command creates tasks.md)
+- Execute Odoo-specific development tasks
+- Follow Odoo coding standards and conventions
+- Implement TDD with Odoo testing framework
+
+**Phase 4**: Odoo Module Implementation (execute tasks.md following constitutional principles)
+- Create __manifest__.py with proper dependencies
+- Implement models with Odoo field types and constraints
+- Design XML views following Odoo UI patterns
+- Configure security groups and record rules
+- Create demo data and migration scripts
+- Implement OWL components if needed
+
+**Phase 5**: Odoo Testing & Validation Strategy
+- **Unit Testing**: Test model methods, constraints, and computed fields using Odoo's TestCase
+- **Integration Testing**: Test complete business workflows and module interactions
+- **Tour Testing**: Test UI interactions using Odoo's tour framework
+- **Performance Testing**: Test with realistic data volumes and concurrent users
+- **Migration Testing**: Verify upgrade path and data migration scripts
+- **Security Testing**: Validate access controls and record rules
+
+**Phase 6**: Odoo Deployment & Upgrade Path
+- **Packaging**: Prepare addon for distribution (manifest, dependencies, description)
+- **Environment Testing**: Validate on development, staging, and production-like environments
+- **Deployment Strategy**:
+  - Odoo.sh: Configure deployment pipeline
+  - On-premise: Document installation and configuration steps
+  - Containerized: Provide Docker configuration
+- **Upgrade Path**: Document migration steps between versions
+- **Rollback Plan**: Prepare rollback procedures for production
+- **Performance Monitoring**: Set up monitoring for key metrics
+- **Documentation**: Create user guides and technical documentation
 
 ## Complexity Tracking
 *Fill ONLY if Constitution Check has violations that must be justified*
@@ -201,17 +333,21 @@ ios/ or android/
 *This checklist is updated during execution flow*
 
 **Phase Status**:
-- [ ] Phase 0: Research complete (/plan command)
-- [ ] Phase 1: Design complete (/plan command)
-- [ ] Phase 2: Task planning complete (/plan command - describe approach only)
-- [ ] Phase 3: Tasks generated (/tasks command)
-- [ ] Phase 4: Implementation complete
-- [ ] Phase 5: Validation passed
+- [ ] Phase 0: Odoo Module Research complete (/plan command)
+- [ ] Phase 1: Odoo Architecture Design complete (/plan command)
+- [ ] Phase 2: Odoo Task Planning complete (/plan command - describe approach only)
+- [ ] Phase 3: Odoo Tasks generated (/tasks command)
+- [ ] Phase 4: Odoo Module Implementation complete
+- [ ] Phase 5: Odoo Testing & Validation passed
+- [ ] Phase 6: Odoo Deployment & Documentation complete
 
 **Gate Status**:
 - [ ] Initial Constitution Check: PASS
 - [ ] Post-Design Constitution Check: PASS
-- [ ] All NEEDS CLARIFICATION resolved
+- [ ] All Odoo NEEDS CLARIFICATION resolved
+- [ ] Odoo module dependencies validated
+- [ ] Odoo security model approved
+- [ ] Performance requirements defined
 - [ ] Complexity deviations documented
 
 ---

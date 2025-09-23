@@ -44,11 +44,12 @@ When creating this spec from a user prompt:
 3. **Think like a tester**: Every vague requirement should fail the "testable and unambiguous" checklist item
 4. **Common underspecified areas**:
    - User types and permissions
-   - Data retention/deletion policies  
+   - Data retention/deletion policies
    - Performance targets and scale
    - Error handling behaviors
    - Integration requirements
    - Security/compliance needs
+   - **Odoo-specific**: Module dependencies, access groups, record rules, view requirements, field types and relationships
 
 ---
 
@@ -82,6 +83,114 @@ When creating this spec from a user prompt:
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
+## Odoo Addon Architecture *(mandatory for Odoo projects)*
+
+### Addon Strategy Assessment
+**Constitutional analysis of user requirements**
+- **Strategy Chosen**: [Single Addon / Multi-Addon]
+- **Rationale**: [Why this strategy was chosen based on constitutional indicators]
+- **Assessment Factors**: [Customer flexibility needs, localization, technology choices, business domains affected]
+
+### Addon Decomposition Strategy
+**Feature breakdown into coherent groups** *(complete this section based on chosen strategy)*
+
+#### If Single Addon Strategy:
+- **[Addon Name]**: [Comprehensive description of coherent feature group, e.g., "advanced_inventory_analytics - Complete inventory analytics with reporting, dashboards, and alerts"]
+
+#### If Multi-Addon Strategy:
+- **[Core Addon Name]** (Core): [Primary coherent feature group, e.g., "project_analytics_base - Core analytics models, basic reporting, and essential dashboards"]
+- **[Extension Addon Name]** (Optional): [Enhanced feature group, e.g., "project_analytics_advanced - AI insights, predictive analytics, and advanced visualizations"]
+- **[Integration Addon Name]** (Integration): [Technology-specific group, e.g., "project_analytics_slack - Slack integration, notifications, and collaborative reporting"]
+- **[Localization Addon Name]** (Localization): [Region-specific group, e.g., "project_analytics_fr - French localization, compliance reporting, and local integrations"]
+
+### Addon Dependencies & Relationships
+**Dependencies based on chosen strategy**
+
+#### If Single Addon Strategy:
+```
+[Addon Name]
+├── Core Dependencies: [required Odoo modules, e.g., base, sale, stock]
+├── Optional Dependencies: [optional Odoo modules that enhance functionality]
+└── External Dependencies: [third-party modules or APIs if any]
+```
+
+#### If Multi-Addon Strategy:
+```
+[Core Addon]
+├── Core Dependencies: [base, project, sale]
+├── Inter-addon Dependencies: [none - this is the base]
+└── Optional Dependencies: [hr, timesheet]
+
+[Extension Addon]
+├── Core Dependencies: [base, project]
+├── Inter-addon Dependencies: [core_addon_name]
+└── Optional Dependencies: [website, portal]
+
+[Integration Addon]
+├── Core Dependencies: [base]
+├── Inter-addon Dependencies: [core_addon_name]
+└── Optional Dependencies: [third_party_connector]
+```
+
+### Per-Addon Architecture Details
+**Complete this section based on chosen strategy**
+
+#### If Single Addon Strategy:
+##### [Addon Name] - Comprehensive Feature Group
+- **Business Purpose**: [Complete business problem this addon solves]
+- **Models**: [All models for this coherent feature group]
+  - `[model.name]`: [Fields and relationships]
+  - `[model.name]`: [Computed fields and methods]
+- **Views**: [All forms, lists, kanban, search views needed]
+- **Security**: [Complete access groups and record rules]
+- **Configuration**: [Settings and parameters]
+- **Demo Data**: [Sample records for testing]
+- **Localization**: [Translation and regional needs]
+
+#### If Multi-Addon Strategy:
+##### [Core Addon Name] - Base Feature Group
+- **Business Purpose**: [Core business problem this addon solves]
+- **Models**: [Base models for the feature group]
+- **Views**: [Essential views and interfaces]
+- **Security**: [Core access groups and record rules]
+- **API/Interfaces**: [What this addon exposes to other addons]
+
+##### [Extension Addon Name] - Enhanced Feature Group
+- **Business Purpose**: [Enhanced functionality built on core addon]
+- **Models**: [Additional models or extensions to core models]
+- **Views**: [Additional or enhanced views]
+- **Security**: [Additional security groups]
+- **Dependencies**: [How it integrates with core addon]
+
+##### [Integration Addon Name] - Technology Integration
+- **Business Purpose**: [External system integration purpose]
+- **Technology**: [Specific technology, API, or service]
+- **Models**: [Integration-specific models and logging]
+- **Configuration**: [Settings and credentials management]
+- **Fallback**: [Behavior when integration is unavailable]
+
+### Customer Deployment Flexibility
+**Based on chosen strategy**
+
+#### If Single Addon Strategy:
+- **Installation**: [Single addon provides complete functionality]
+- **Configuration Options**: [Settings to enable/disable features within the addon]
+- **Localization**: [Built-in translation and regional adaptation capabilities]
+
+#### If Multi-Addon Strategy:
+- **Minimum Installation**: [Which addons are required for basic functionality]
+- **Optional Features**: [Which addons customers can choose to install]
+- **Localization Options**: [Region-specific addons available]
+- **Integration Choices**: [Technology-specific addons (Stripe vs PayPal, etc.)]
+
+### Cross-Addon Integration Points
+**Only applicable for Multi-Addon Strategy**
+- **Shared Models**: [Models that other addons extend or reference]
+- **Event Hooks**: [Odoo signals/events for inter-addon communication]
+- **API Contracts**: [Standardized methods for addon interaction]
+- **Data Flow**: [How data moves between addons]
+- **Fallback Behavior**: [How system works when optional addons are not installed]
+
 ---
 
 ## Review & Acceptance Checklist
@@ -95,10 +204,22 @@ When creating this spec from a user prompt:
 
 ### Requirement Completeness
 - [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous  
+- [ ] Requirements are testable and unambiguous
 - [ ] Success criteria are measurable
 - [ ] Scope is clearly bounded
 - [ ] Dependencies and assumptions identified
+
+### Addon Architecture Completeness
+- [ ] Addon strategy assessment completed using constitutional framework
+- [ ] Strategy choice (single vs multi-addon) justified based on user requirements
+- [ ] Feature decomposed into coherent groups (not micro-addons)
+- [ ] Each addon serves a coherent business purpose with appropriate complexity
+- [ ] Dependencies clearly mapped (Odoo core, inter-addon if applicable, optional)
+- [ ] Customer deployment flexibility defined appropriately for chosen strategy
+- [ ] Cross-addon integration points documented (if multi-addon strategy)
+- [ ] Base functionality works without optional components
+- [ ] Each addon is independently testable and installable
+- [ ] Shared functionality properly organized (within addon or across addons)
 
 ---
 
@@ -111,6 +232,9 @@ When creating this spec from a user prompt:
 - [ ] User scenarios defined
 - [ ] Requirements generated
 - [ ] Entities identified
+- [ ] Odoo architecture defined
+- [ ] Module dependencies identified
+- [ ] Security model specified
 - [ ] Review checklist passed
 
 ---

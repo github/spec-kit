@@ -1,50 +1,93 @@
 # [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!-- Example: Odoo ERP Development Constitution, Custom Odoo Addons Constitution, etc. -->
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+> **Odoo Development Focus**: This constitution is specifically designed for Odoo ERP development (v18+). It emphasizes addon-based architecture, ORM patterns, and Odoo community standards while maintaining flexibility for project-specific requirements.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### I. Adaptive Addon Architecture Strategy
+**Choose single vs multi-addon based on feature complexity and user requirements**
+- **Assessment Criteria**: Analyze user input for feature scope, customer flexibility needs, localization requirements, and technology integrations
+- **Single Addon Strategy**: Use when feature is cohesive, no customer choice needed, single business process
+- **Multi-Addon Strategy**: Use when feature involves multiple business domains, customer flexibility required, localization needed, or technology choices (payment gateways, shipping, etc.)
+- **Coherent Feature Groups**: Group related features/processes into logical addons (not micro-addons)
+- **Maximum complexity per addon**: ~10 models, ~10 views, ~10 owl components,manageable for small team
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### II. Addon Dependency Management
+**Explicit, minimal, and well-documented addon dependencies**
+- Core dependencies: Only essential Odoo modules (base, sale, purchase, etc.)
+- Inter-addon dependencies: Clearly defined and documented interfaces
+- Optional dependencies: Use for optional integrations (payment gateways, localization)
+- Dependency cycles: Strictly forbidden - refactor shared logic into base addon
+- Version compatibility: Each addon must declare minimum/maximum Odoo version support
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### III. Test-First Multi-Addon Development (NON-NEGOTIABLE)
+**TDD across addon boundaries with integration focus**
+- Unit tests: Each addon tested in isolation with mocked dependencies
+- Integration tests: Test addon interactions and data flow between addons
+- Addon isolation: Tests must pass with only required dependencies installed
+- Cross-addon scenarios: Test complete business flows spanning multiple addons
+- Migration tests: Validate addon upgrades and data migrations independently
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### IV. Customer Flexibility & Modularity
+**Design for optional installation and customer choice**
+- Base functionality: Core features work without optional addons
+- Feature toggles: Optional addons enhance but don't break base functionality
+- Localization addons: Separate addons for country-specific features
+- Technology integrations: Payment, shipping, and external services as optional addons
+- Customer deployment: Customers install only needed addons for their business
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### V. Addon Composition Patterns
+**Standard patterns for addon interaction and shared functionality**
+- Base addon pattern: Shared models and utilities in dedicated base addon
+- Extension pattern: Addons extend base addon functionality via inheritance
+- Bridge pattern: Connector addons for integration between business domains
+- Configuration addon: Settings and parameters managed in dedicated configuration addon
+- API consistency: Standard interfaces between addons for data exchange
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+## Addon Strategy Assessment Framework
+
+### Decision Matrix for Single vs Multi-Addon
+**Analyze user input against these criteria to determine optimal addon architecture**
+
+#### Single Addon Indicators
+- Feature describes a cohesive business process (e.g., "advanced inventory reporting")
+- No mention of customer choice or optional components
+- No localization requirements mentioned
+- Single technology/integration mentioned
+- Limited scope: affects 1-2 business domains
+- User describes unified workflow or process
+
+#### Multi-Addon Indicators
+- Feature spans multiple business domains (e.g., "complete e-commerce solution")
+- User mentions optional features, customer choice, or "some customers might want..."
+- Localization requirements: different countries, languages, regulations
+- Multiple technology choices: payment gateways, shipping providers, external integrations
+- User describes different customer segments or deployment scenarios
+- Feature includes both core functionality and optional enhancements
+
+### Assessment Questions to Ask User (if unclear)
+1. **Customer Flexibility**: "Will customers need to choose which parts of this feature to install?"
+2. **Localization**: "Will this feature need country or region-specific adaptations?"
+3. **Technology Choices**: "Will customers choose between different payment/shipping/integration providers?"
+4. **Deployment Scenarios**: "Will different customers use different parts of this feature?"
+5. **Business Domains**: "Does this feature affect multiple areas of the business (sales, inventory, accounting, etc.)?"
+
+## Odoo Development Standards
 
 ## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+<!-- Example: Odoo Development Workflow, Review Process, Quality Gates, etc. -->
 
 [SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+<!-- Example: Odoo addon review requirements, pylint-odoo testing gates, Odoo staging/production deployment approval process, migration script validation, etc. -->
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+<!-- Example: Constitution supersedes all other Odoo practices; Amendments require documentation, approval, migration plan -->
+
+> **Odoo-Specific Considerations**: All governance rules should account for Odoo's unique development ecosystem, including OCA community standards, addon dependency management, and Odoo's release cycle compatibility requirements.
 
 [GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+<!-- Example: All PRs/reviews must verify Odoo compliance and OCA standards; Deviations from standard Odoo patterns must be justified; Use [GUIDANCE_FILE] for runtime Odoo development guidance; Security changes require Odoo-specific review -->
 
 **Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+<!-- Example: Version: 1.0.0 | Ratified: 2025-09-22 | Last Amended: 2025-09-22 -->

@@ -22,17 +22,18 @@ Given the implementation details provided as an argument, do this:
 
 3. Read the constitution at `/memory/constitution.md` to understand constitutional requirements.
 
-4. Execute the implementation plan template:
+4. Execute the Odoo implementation plan template:
    - Load `/templates/plan-template.md` (already copied to IMPL_PLAN path)
    - Set Input path to FEATURE_SPEC
-   - Run the Execution Flow (main) function steps 1-9
+   - Run the Execution Flow (main) function steps 1-9 with Odoo-specific focus
    - The template is self-contained and executable
    - Follow error handling and gate checks as specified
-   - Let the template guide artifact generation in $SPECS_DIR:
-     * Phase 0 generates research.md
-     * Phase 1 generates data-model.md, contracts/, quickstart.md
-     * Phase 2 generates tasks.md
-   - Incorporate user-provided details from arguments into Technical Context: {ARGS}
+   - Let the template guide Odoo-specific artifact generation in $SPECS_DIR:
+     * Phase 0 generates research.md (Odoo module research)
+     * Phase 1 generates odoo-architecture.md, models/, views/, security/, demo/, quickstart.md
+     * Phase 2 generates tasks.md (Odoo development tasks)
+   - Replace generic tech-stack planning with Odoo module architecture planning
+   - Incorporate user-provided details from arguments into Odoo Technical Context: {ARGS}
    - Update Progress Tracking as you complete each phase
 
 5. Verify execution completed:
