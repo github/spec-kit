@@ -7,6 +7,23 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.18] - 2025-01-27
+
+### Added
+
+- **Multi-agent support**: Specify CLI now supports setting up projects with multiple AI agents simultaneously
+- Interactive multi-agent selection: Use arrow keys to navigate, Space to select multiple agents, Enter to confirm
+- Command-line multi-agent specification: Use comma-separated values like `--ai claude,gemini,cursor`
+- Template merging: Multiple agent templates are downloaded and merged without conflicts
+- Enhanced security notices for multiple agent directories
+- Updated documentation with multi-agent usage examples
+
+### Changed
+
+- Agent selection interface now supports multiple selections by default
+- Help text updated to reflect multi-agent capabilities
+- Error handling improved for multiple agent tool checks
+
 ## [0.0.17] - 2025-09-22
 
 ### Added

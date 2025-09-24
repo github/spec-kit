@@ -6,7 +6,70 @@
 
 **Specify CLI** is the command-line interface that bootstraps projects with the Spec Kit framework. It sets up the necessary directory structures, templates, and AI agent integrations to support the Spec-Driven Development workflow.
 
-The toolkit supports multiple AI coding assistants, allowing teams to use their preferred tools while maintaining consistent project structure and development practices.
+The toolkit supports multiple AI coding assistants, allowing teams to use their preferred tools while maintaining consistent project structure and development practices. You can set up a project with multiple AI agents simultaneously, enabling teams to work with different tools as needed.
+
+---
+
+## Multi-Agent Support
+
+Specify CLI now supports setting up projects with multiple AI agents simultaneously. This enables teams to:
+
+- **Work with different tools**: Some team members may prefer Claude while others use Cursor or Gemini
+- **Compare approaches**: Use different agents for different aspects of the project
+- **Fallback options**: Have multiple agents available if one is unavailable
+- **Specialized workflows**: Use different agents for different types of tasks
+
+### Usage Examples
+
+**Command Line:**
+```bash
+# Set up with multiple agents via command line
+specify init my-project --ai claude,gemini,cursor
+
+# Interactive selection allows choosing multiple agents
+specify init my-project
+# Use arrow keys to navigate, Space to select multiple agents, Enter to confirm
+```
+
+**Interactive Selection:**
+When running `specify init` without the `--ai` flag, you'll be prompted to select one or more agents:
+- Use ↑/↓ arrow keys to navigate
+- Press Space to select/deselect agents (multiple selection mode)
+- Press Enter to confirm your selections
+- Press Esc to cancel
+
+### Directory Structure
+
+When multiple agents are selected, Specify CLI will:
+1. Download templates for each selected agent
+2. Merge the agent-specific directories into your project
+3. Ensure no conflicts between agent configurations
+4. Set up commands for all selected agents
+
+Each agent maintains its own directory structure:
+- `.claude/commands/` - Claude Code commands
+- `.cursor/commands/` - Cursor commands  
+- `.gemini/commands/` - Gemini CLI commands
+- And so on...
+
+### Security Considerations
+
+When using multiple agents, be aware that each agent may store credentials and configuration in its own directory. Consider adding the relevant agent directories to `.gitignore`:
+
+```gitignore
+# Agent-specific directories (choose based on your selected agents)
+.claude/
+.cursor/
+.gemini/
+.qwen/
+.opencode/
+.codex/
+.windsurf/
+.kilocode/
+.augment/
+.roo/
+.github/  # For Copilot
+```
 
 ---
 

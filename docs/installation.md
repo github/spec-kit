@@ -26,10 +26,11 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here
 
 ### Specify AI Agent
 
-You can proactively specify your AI agent during initialization:
+You can proactively specify your AI agent(s) during initialization:
 
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude,gemini,cursor
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai gemini
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
 ```

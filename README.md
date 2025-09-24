@@ -299,11 +299,11 @@ specify init --here --force
 
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
 
-You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
+You will be prompted to select one or more AI agents you are using. You can also proactively specify them directly in the terminal:
 
 ```bash
 specify init <project_name> --ai claude
-specify init <project_name> --ai gemini
+specify init <project_name> --ai claude,gemini,cursor
 specify init <project_name> --ai copilot
 specify init <project_name> --ai cursor
 specify init <project_name> --ai qwen
@@ -312,6 +312,7 @@ specify init <project_name> --ai codex
 specify init <project_name> --ai windsurf
 # Or in current directory:
 specify init --here --ai claude
+specify init --here --ai claude,gemini
 specify init --here --ai codex
 # Force merge into a non-empty current directory
 specify init --here --force --ai claude
