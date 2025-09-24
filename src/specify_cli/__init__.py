@@ -1121,7 +1121,8 @@ def init(
         default_script = "ps" if os.name == "nt" else "sh"
         # Provide interactive selection similar to AI if stdin is a TTY
         if sys.stdin.isatty():
-            selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
+            selected_script_list = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script, multi_select=False)
+            selected_script = selected_script_list[0] if selected_script_list else default_script
         else:
             selected_script = default_script
     
