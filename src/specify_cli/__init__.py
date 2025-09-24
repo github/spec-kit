@@ -1058,17 +1058,26 @@ def init(
         step_num += 1
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+
     steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
-    steps_lines.append("   2.3 [cyan]/clarify[/] - Clarify and de-risk specification (run before [cyan]/plan[/cyan])")
-    steps_lines.append("   2.4 [cyan]/plan[/] - Create implementation plans")
-    steps_lines.append("   2.5 [cyan]/tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.6 [cyan]/analyze[/] - Validate alignment & surface inconsistencies (read-only)")
-    steps_lines.append("   2.7 [cyan]/implement[/] - Execute implementation")
+    steps_lines.append("   2.2 [cyan]/specify[/] - Create baseline specification")
+    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plan")
+    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
     console.print(steps_panel)
+
+    enhancement_lines = [
+        "Optional commands that you can use for your specs (improve quality & confidence)[/bright_black]",
+        "",
+        f"○ [cyan]/clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/plan[/] if used)",
+        f"○ [cyan]/analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/tasks[/], before [cyan]/implement[/])"
+    ]
+    enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
+    console.print()
+    console.print(enhancements_panel)
 
     if selected_ai == "codex":
         warning_text = """[bold yellow]Important Note:[/bold yellow]
