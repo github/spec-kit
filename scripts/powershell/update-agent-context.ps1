@@ -124,7 +124,7 @@ function Extract-PlanField {
     if (-not (Test-Path $PlanFile)) { return '' }
     # Lines like **Language/Version**: Python 3.12
     $regex = "^\*\*$([Regex]::Escape($FieldPattern))\*\*: (.+)$"
-    Get-Content -LiteralPath $PlanFile | ForEach-Object {
+    Get-Content -LiteralPath $PlanFile -Encoding utf8 | ForEach-Object {
         if ($_ -match $regex) { 
             $val = $Matches[1].Trim()
             if ($val -notin @('NEEDS CLARIFICATION','N/A')) { return $val }
@@ -215,7 +215,7 @@ function New-AgentFile {
     $escaped_framework = $NEW_FRAMEWORK
     $escaped_branch = $CURRENT_BRANCH
 
-    $content = Get-Content -LiteralPath $temp -Raw
+    $content = Get-Content -LiteralPath $temp -Raw -Encoding utf8
     $content = $content -replace '\[PROJECT NAME\]',$ProjectName
     $content = $content -replace '\[DATE\]',$Date.ToString('yyyy-MM-dd')
     
@@ -253,7 +253,7 @@ function New-AgentFile {
 
     $parent = Split-Path -Parent $TargetFile
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
-    Set-Content -LiteralPath $TargetFile -Value $content -NoNewline
+    Set-Content -LiteralPath $TargetFile -Value $content -NoNewline -Encoding utf8
     Remove-Item $temp -Force
     return $true
 }
@@ -285,7 +285,7 @@ function Update-ExistingAgentFile {
     if ($techStack) { $newChangeEntry = "- ${CURRENT_BRANCH}: Added ${techStack}" }
     elseif ($NEW_DB -and $NEW_DB -notin @('N/A','NEEDS CLARIFICATION')) { $newChangeEntry = "- ${CURRENT_BRANCH}: Added ${NEW_DB}" }
 
-    $lines = Get-Content -LiteralPath $TargetFile
+    $lines = Get-Content -LiteralPath $TargetFile -Encoding utf8
     $output = New-Object System.Collections.Generic.List[string]
     $inTech = $false; $inChanges = $false; $techAdded = $false; $changeAdded = $false; $existingChanges = 0
 
@@ -327,7 +327,7 @@ function Update-ExistingAgentFile {
         $newTechEntries | ForEach-Object { $output.Add($_) }
     }
 
-    Set-Content -LiteralPath $TargetFile -Value ($output -join [Environment]::NewLine)
+    Set-Content -LiteralPath $TargetFile -Value ($output -join [Environment]::NewLine) -Encoding utf8
     return $true
 }
 
