@@ -448,8 +448,7 @@ At this stage, your project folder contents should resemble the following:
 
 ```text
 ├── memory
-│	 ├── constitution.md
-│	 └── constitution_update_checklist.md
+│	 └── constitution.md
 ├── scripts
 │	 ├── check-prerequisites.sh
 │	 ├── common.sh
@@ -509,8 +508,7 @@ The output of this step will include a number of implementation detail documents
 .
 ├── CLAUDE.md
 ├── memory
-│	 ├── constitution.md
-│	 └── constitution_update_checklist.md
+│	 └── constitution.md
 ├── scripts
 │	 ├── check-prerequisites.sh
 │	 ├── common.sh
