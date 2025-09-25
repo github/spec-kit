@@ -3,6 +3,7 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [string]$FeatureName,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
 )
@@ -13,6 +14,7 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
     exit 1
 }
 $featureDesc = ($FeatureDescription -join ' ').Trim()
+$explicitFeatureName = if ($null -ne $FeatureName) { $FeatureName.Trim() } else { $null }
 
 # Resolve repository root. Prefer git information when available, but fall back
 # to searching for repository markers so the workflow still functions in repositories that
@@ -37,6 +39,31 @@ function Find-RepositoryRoot {
         $current = $parent
     }
 }
+
+# Normalise AI-provided feature or description text into a kebab-case slug limited by an optional word cap.
+# Assumes input contains valid alphanumeric characters. WordLimit of 0 removes the cap.
+function Get-FeatureSlug {
+    param(
+        [string]$Raw,
+        [int]$WordLimit = 3
+    )
+
+    $slug = $Raw.ToLower()
+    $slug = $slug -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+
+    $parts = ($slug -split '-') | Where-Object { $_ }
+
+    if ($WordLimit -le 0) {
+        return [string]::Join('-', $parts)
+    }
+
+    if ($parts.Count -gt $WordLimit) {
+        $parts = $parts[0..($WordLimit - 1)]
+    }
+
+    return [string]::Join('-', $parts)
+}
+
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 if (-not $fallbackRoot) {
     Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
@@ -72,9 +99,15 @@ if (Test-Path $specsDir) {
 $next = $highest + 1
 $featureNum = ('{0:000}' -f $next)
 
-$branchName = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
-$words = ($branchName -split '-') | Where-Object { $_ } | Select-Object -First 3
-$branchName = "$featureNum-$([string]::Join('-', $words))"
+# Generate slug for branch naming from AI-provided text: prioritize explicit feature name over description
+if (-not [string]::IsNullOrEmpty($explicitFeatureName)) {
+    $selectedSlug = Get-FeatureSlug -Raw $explicitFeatureName -WordLimit 0
+}
+else {
+    $selectedSlug = Get-FeatureSlug -Raw $featureDesc -WordLimit 3
+}
+
+$branchName = "$featureNum-$selectedSlug"
 
 if ($hasGit) {
     try {
