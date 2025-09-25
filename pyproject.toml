@@ -12,6 +12,11 @@ dependencies = [
     "truststore>=0.10.4",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+]
+
 [project.scripts]
 specify = "specify_cli:main"
 
@@ -21,3 +26,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
