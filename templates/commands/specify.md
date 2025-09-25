@@ -22,3 +22,7 @@ Given that feature description, do this:
 4. Report completion with branch name, spec file path, and readiness for the next phase.
 
 Note: The script creates and checks out the new branch and initializes the spec file before writing.
+
+Use repository-root anchored paths in generated docs (e.g., `/frontend/src/components/`). Avoid host-specific prefixes
+like `/Users/...` or `/home/...`; treat the repository root as `/` for display. Continue using full absolute paths when
+running shell/file operations.

@@ -159,3 +159,7 @@ Behavior rules:
  - If quota reached with unresolved high-impact categories remaining, explicitly flag them under Deferred with rationale.
 
 Context for prioritization: {ARGS}
+
+Use repository-root anchored paths in generated docs (e.g., `/frontend/src/components/`). Avoid host-specific prefixes
+like `/Users/...` or `/home/...`; treat the repository root as `/` for display. Continue using full absolute paths when
+running shell/file operations.

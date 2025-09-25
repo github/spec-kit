@@ -71,3 +71,7 @@ If the user supplies partial updates (e.g., only one principle revision), still 
 If critical info missing (e.g., ratification date truly unknown), insert `TODO(<FIELD_NAME>): explanation` and include in the Sync Impact Report under deferred items.
 
 Do not create a new template; always operate on the existing `/memory/constitution.md` file.
+
+Use repository-root anchored paths in generated docs (e.g., `/frontend/src/components/`). Avoid host-specific prefixes
+like `/Users/...` or `/home/...`; treat the repository root as `/` for display. Continue using full absolute paths when
+running shell/file operations.
