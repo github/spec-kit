@@ -62,7 +62,7 @@
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {
-        "repo": "https://github.com/github/spec-kit",
+        "repo": "https://github.com/theodo-group/theodo-spec-kit",
         "branch": "main"
       }
     }
