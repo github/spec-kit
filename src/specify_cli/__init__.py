@@ -14,11 +14,13 @@ Specify CLI - Setup tool for Specify projects
 
 Usage:
     uvx specify-cli.py init <project-name>
+    uvx specify-cli.py init .
     uvx specify-cli.py init --here
 
 Or install globally:
     uv tool install --from specify-cli.py specify-cli
     specify init <project-name>
+    specify init .
     specify init --here
 """
 
@@ -747,7 +749,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 
 @app.command()
 def init(
-    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
+    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, or auggie"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
@@ -781,7 +783,9 @@ def init(
         specify init my-project --ai windsurf
         specify init my-project --ai auggie
         specify init --ignore-agent-tools my-project
-        specify init --here --ai claude
+        specify init . --ai claude         # Initialize in current directory
+        specify init .                     # Initialize in current directory (interactive AI selection)
+        specify init --here --ai claude    # Alternative syntax for current directory
         specify init --here --ai codex
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
@@ -789,13 +793,18 @@ def init(
     # Show banner first
     show_banner()
     
+    # Handle '.' as shorthand for current directory (equivalent to --here)
+    if project_name == ".":
+        here = True
+        project_name = None  # Clear it so validation logic works correctly
+    
     # Validate arguments
     if here and project_name:
         console.print("[red]Error:[/red] Cannot specify both project name and --here flag")
         raise typer.Exit(1)
     
     if not here and not project_name:
-        console.print("[red]Error:[/red] Must specify either a project name or use --here flag")
+        console.print("[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag")
         raise typer.Exit(1)
     
     # Determine project directory
