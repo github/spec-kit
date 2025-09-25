@@ -796,7 +796,7 @@ def init(
     # Handle '.' as shorthand for current directory (equivalent to --here)
     if project_name == ".":
         here = True
-        project_name = None  # This transformation allows the existing validation logic to work unchanged, since it was designed to handle the case where here=True and project_name=None.
+        project_name = None  # Clear project_name to use existing validation logic
     
     # Validate arguments
     if here and project_name:
