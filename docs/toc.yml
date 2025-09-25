@@ -15,3 +15,7 @@
   items:
     - name: Local Development
       href: local-development.md
+    - name: Agent Asset Packaging
+      href: agent-assets.md
+    - name: Custom Agent Assets
+      href: custom-agent-assets.md

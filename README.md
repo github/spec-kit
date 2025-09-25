@@ -160,6 +160,8 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
+| `--template-repo`      | Option   | Override the template release source (`owner/repo`). Defaults to `github/spec-kit` or `SPEC_KIT_TEMPLATE_REPO`. |
+| `--template-path`      | Option   | Use a local template ZIP or directory instead of downloading. Mirrors `SPEC_KIT_TEMPLATE_PATH`. |
 
 ### Examples
 
@@ -191,6 +193,9 @@ specify init my-project --ai gemini --no-git
 # Enable debug output for troubleshooting
 specify init my-project --ai claude --debug
 
+# Bootstrap from a local template archive
+specify init my-project --template-path ./builds/spec-kit-template-copilot-sh.zip
+
 # Use GitHub token for API requests (helpful for corporate environments)
 specify init my-project --ai claude --github-token ghp_your_token_here
 
@@ -216,7 +221,9 @@ After running `specify init`, your AI coding agent will have access to these sla
 
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/plan` or follow-up commands. |
+| `SPECIFY_FEATURE`        | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/plan` or follow-up commands. |
+| `SPEC_KIT_TEMPLATE_REPO` | Alternative template repository in `owner/repo` form. Takes the same value as `--template-repo`. |
+| `SPEC_KIT_TEMPLATE_PATH` | Absolute or relative path to a local template ZIP or directory. Takes the same value as `--template-path`. |
 
 ## 📚 Core philosophy
 
@@ -337,7 +344,7 @@ The first step should be establishing your project's governing principles using 
 /constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
 ```
 
-This step creates or updates the `/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
+This step creates or updates the `/.specs/.specify/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
 
 ### **STEP 2:** Create project specifications
 
@@ -369,7 +376,7 @@ delete any comments that you made, but you can't delete comments anybody else ma
 
 After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
 
-Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
+Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `.specs/.specify/specs/001-create-taskify` directory.
 
 The produced specification should contain a set of user stories and functional requirements, as defined in the template.
 
@@ -505,7 +512,7 @@ This helps refine the implementation plan and helps you avoid potential blind sp
 You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.com/en/github-cli/github-cli) installed) to go ahead and create a pull request from your current branch to `main` with a detailed description, to make sure that the effort is properly tracked.
 
 >[!NOTE]
->Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
+>Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/.specs/.specify/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
 
 ### STEP 6: Implementation
 

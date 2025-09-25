@@ -42,6 +42,7 @@ from rich.text import Text
 from rich.live import Live
 from rich.align import Align
 from rich.table import Table
+from .paths import get_specs_root, get_specify_root, specify_scripts_dir, specify_templates_dir
 from rich.tree import Tree
 from typer.core import TyperGroup
 
@@ -431,9 +432,19 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
+def download_template_from_github(
+    ai_assistant: str,
+    download_dir: Path,
+    *,
+    script_type: str = "sh",
+    verbose: bool = True,
+    show_progress: bool = True,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None,
+    repo_owner: str = "github",
+    repo_name: str = "spec-kit",
+) -> Tuple[Path, dict]:
     if client is None:
         client = httpx.Client(verify=ssl_context)
     
@@ -543,135 +554,157 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
-    """Download the latest release and extract it to create a new project.
-    Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
-    """
+def download_and_extract_template(
+    project_path: Path,
+    ai_assistant: str,
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    verbose: bool = True,
+    tracker: StepTracker | None = None,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None,
+    template_repo: Tuple[str, str] | None = None,
+    template_path: Path | None = None,
+) -> Path:
+    """Provision project scaffolding from a release archive or local template."""
     current_dir = Path.cwd()
-    
-    # Step: fetch + download combined
-    if tracker:
-        tracker.start("fetch", "contacting GitHub API")
-    try:
-        zip_path, meta = download_template_from_github(
-            ai_assistant,
-            current_dir,
-            script_type=script_type,
-            verbose=verbose and tracker is None,
-            show_progress=(tracker is None),
-            client=client,
-            debug=debug,
-            github_token=github_token
-        )
-        if tracker:
-            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
-            tracker.add("download", "Download template")
-            tracker.complete("download", meta['filename'])
-    except Exception as e:
-        if tracker:
-            tracker.error("fetch", str(e))
+    repo_owner, repo_name = template_repo or ("github", "spec-kit")
+
+    local_template_dir: Path | None = None
+    zip_path: Path | None = None
+    temp_dir_ctx: tempfile.TemporaryDirectory | None = None
+    meta: dict = {}
+    cleanup_zip = False
+    using_local_template = template_path is not None
+
+    if template_path is not None:
+        template_source = Path(template_path).expanduser().resolve()
+        if not template_source.exists():
+            message = f"Template path not found: {template_source}"
+            if tracker:
+                tracker.error("fetch", message)
+            else:
+                console.print(f"[red]{message}[/red]")
+            raise typer.Exit(1)
+
+        if template_source.is_dir():
+            local_template_dir = template_source
+            if tracker:
+                tracker.skip("fetch", "Local template directory")
+                tracker.skip("download", template_source.name)
+            elif verbose:
+                console.print(f"[cyan]Using local template directory:[/cyan] {template_source}")
         else:
-            if verbose:
-                console.print(f"[red]Error downloading template:[/red] {e}")
-        raise
-    
+            zip_path = template_source
+            meta = {
+                "filename": zip_path.name,
+                "size": zip_path.stat().st_size,
+                "release": "local",
+            }
+            if tracker:
+                tracker.skip("fetch", "Local template archive")
+                tracker.complete("download", zip_path.name)
+            elif verbose:
+                console.print(f"[cyan]Using local template archive:[/cyan] {zip_path}")
+    else:
+        if tracker:
+            tracker.start("fetch", "contacting GitHub API")
+        try:
+            zip_path, meta = download_template_from_github(
+                ai_assistant,
+                current_dir,
+                script_type=script_type,
+                verbose=verbose and tracker is None,
+                show_progress=(tracker is None),
+                client=client,
+                debug=debug,
+                github_token=github_token,
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+            )
+            cleanup_zip = True
+            if tracker:
+                tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
+                tracker.complete("download", meta['filename'])
+        except Exception as e:
+            if tracker:
+                tracker.error("fetch", str(e))
+            else:
+                if verbose:
+                    console.print(f"[red]Error downloading template:[/red] {e}")
+            raise
+
     if tracker:
         tracker.add("extract", "Extract template")
         tracker.start("extract")
     elif verbose:
         console.print("Extracting template...")
-    
+
+    def _merge_into_project(payload_root: Path) -> None:
+        resolved_project_path = project_path.resolve()
+        for item in payload_root.iterdir():
+            dest_path = resolved_project_path / item.name
+            try:
+                if dest_path == item.resolve():
+                    continue
+            except FileNotFoundError:
+                pass
+
+            if item.is_dir():
+                shutil.copytree(item, dest_path, dirs_exist_ok=True)
+            else:
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, dest_path)
+
     try:
-        # Create project directory only if not using current directory
         if not is_current_dir:
-            project_path.mkdir(parents=True)
-        
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            # List all files in the ZIP for debugging
-            zip_contents = zip_ref.namelist()
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        if tracker and local_template_dir is None:
+            tracker.add("zip-list", "Archive contents")
+
+        if local_template_dir is not None:
+            extracted_items = list(local_template_dir.iterdir())
             if tracker:
                 tracker.start("zip-list")
-                tracker.complete("zip-list", f"{len(zip_contents)} entries")
-            elif verbose:
-                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
-            
-            # For current directory, extract to a temp location first
-            if is_current_dir:
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir)
-                    zip_ref.extractall(temp_path)
-                    
-                    # Check what was extracted
-                    extracted_items = list(temp_path.iterdir())
-                    if tracker:
-                        tracker.start("extracted-summary")
-                        tracker.complete("extracted-summary", f"temp {len(extracted_items)} items")
-                    elif verbose:
-                        console.print(f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]")
-                    
-                    # Handle GitHub-style ZIP with a single root directory
-                    source_dir = temp_path
-                    if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                        source_dir = extracted_items[0]
-                        if tracker:
-                            tracker.add("flatten", "Flatten nested directory")
-                            tracker.complete("flatten")
-                        elif verbose:
-                            console.print(f"[cyan]Found nested directory structure[/cyan]")
-                    
-                    # Copy contents to current directory
-                    for item in source_dir.iterdir():
-                        dest_path = project_path / item.name
-                        if item.is_dir():
-                            if dest_path.exists():
-                                if verbose and not tracker:
-                                    console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
-                                # Recursively copy directory contents
-                                for sub_item in item.rglob('*'):
-                                    if sub_item.is_file():
-                                        rel_path = sub_item.relative_to(item)
-                                        dest_file = dest_path / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(sub_item, dest_file)
-                            else:
-                                shutil.copytree(item, dest_path)
-                        else:
-                            if dest_path.exists() and verbose and not tracker:
-                                console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
-                            shutil.copy2(item, dest_path)
-                    if verbose and not tracker:
-                        console.print(f"[cyan]Template files merged into current directory[/cyan]")
-            else:
-                # Extract directly to project directory (original behavior)
-                zip_ref.extractall(project_path)
-                
-                # Check what was extracted
-                extracted_items = list(project_path.iterdir())
+                tracker.complete("zip-list", f"{len(extracted_items)} items")
+            payload_root = local_template_dir
+        else:
+            temp_dir_ctx = tempfile.TemporaryDirectory()
+            temp_dir = Path(temp_dir_ctx.name)
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_contents = zip_ref.namelist()
                 if tracker:
-                    tracker.start("extracted-summary")
-                    tracker.complete("extracted-summary", f"{len(extracted_items)} top-level items")
+                    tracker.start("zip-list")
+                    tracker.complete("zip-list", f"{len(zip_contents)} entries")
                 elif verbose:
-                    console.print(f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]")
-                    for item in extracted_items:
-                        console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
-                
-                # Handle GitHub-style ZIP with a single root directory
-                if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                    # Move contents up one level
-                    nested_dir = extracted_items[0]
-                    temp_move_dir = project_path.parent / f"{project_path.name}_temp"
-                    # Move the nested directory contents to temp location
-                    shutil.move(str(nested_dir), str(temp_move_dir))
-                    # Remove the now-empty project directory
-                    project_path.rmdir()
-                    # Rename temp directory to project directory
-                    shutil.move(str(temp_move_dir), str(project_path))
-                    if tracker:
-                        tracker.add("flatten", "Flatten nested directory")
-                        tracker.complete("flatten")
-                    elif verbose:
-                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
-                    
+                    console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
+                zip_ref.extractall(temp_dir)
+            extracted_items = list(temp_dir.iterdir())
+            payload_root = temp_dir
+
+        flatten_applied = False
+        if len(extracted_items) == 1 and extracted_items[0].is_dir():
+            payload_root = extracted_items[0]
+            flatten_applied = True
+
+        if flatten_applied:
+            if tracker:
+                tracker.add("flatten", "Flatten nested directory")
+                tracker.complete("flatten")
+            elif verbose:
+                console.print("[cyan]Flattened nested directory structure[/cyan]")
+
+        _merge_into_project(payload_root)
+
+        if tracker:
+            tracker.start("extracted-summary")
+            tracker.complete("extracted-summary", f"{len(list(payload_root.iterdir()))} payload items")
+        elif verbose:
+            console.print(f"[cyan]Template files copied to {project_path}[/cyan]")
+
     except Exception as e:
         if tracker:
             tracker.error("extract", str(e))
@@ -680,7 +713,6 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                 console.print(f"[red]Error extracting template:[/red] {e}")
                 if debug:
                     console.print(Panel(str(e), title="Extraction Error", border_style="red"))
-        # Clean up project directory if created and not current directory
         if not is_current_dir and project_path.exists():
             shutil.rmtree(project_path)
         raise typer.Exit(1)
@@ -688,24 +720,27 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
         if tracker:
             tracker.complete("extract")
     finally:
-        if tracker:
-            tracker.add("cleanup", "Remove temporary archive")
-        # Clean up downloaded ZIP file
-        if zip_path.exists():
+        if temp_dir_ctx is not None:
+            temp_dir_ctx.cleanup()
+
+        if cleanup_zip and zip_path and zip_path.exists():
             zip_path.unlink()
             if tracker:
-                tracker.complete("cleanup")
+                tracker.complete("cleanup", "Removed downloaded archive")
             elif verbose:
                 console.print(f"Cleaned up: {zip_path.name}")
-    
+        elif using_local_template:
+            if tracker:
+                tracker.skip("cleanup", "Local template retained")
+
     return project_path
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
+    """Ensure POSIX .sh scripts under .specs/.specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
-    scripts_root = project_path / ".specify" / "scripts"
+    scripts_root = specify_scripts_dir(project_path)
     if not scripts_root.is_dir():
         return
     failures: list[str] = []
@@ -745,6 +780,92 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+
+def relocate_non_agent_directories(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Move legacy non-agent directories into the consolidated .specs/.specify/ root."""
+    specs_root = get_specs_root(project_path)
+    specify_root = get_specify_root(project_path)
+
+    # Migrate from legacy .specify directory if present
+    legacy_root = project_path / ".specify"
+    migrated = 0
+    if legacy_root.is_dir():
+        for item in legacy_root.iterdir():
+            dest = specify_root / item.name
+            if dest.exists():
+                if item.is_dir():
+                    dest.mkdir(parents=True, exist_ok=True)
+                    for child in item.iterdir():
+                        target = dest / child.name
+                        if target.exists():
+                            continue
+                        shutil.move(str(child), str(target))
+                else:
+                    continue
+            else:
+                shutil.move(str(item), str(dest))
+            migrated += 1
+        try:
+            legacy_root.rmdir()
+        except OSError:
+            pass
+
+    non_agent_dirs = [
+        "plan",
+        "spec",
+        "notes",
+        "scratch",
+        "memory",
+        "docs",
+        "logs",
+        "specs",
+    ]
+
+    moved = 0
+    for name in non_agent_dirs:
+        source = project_path / name
+        if not source.exists():
+            continue
+        destination = specify_root / name
+        if destination.exists():
+            continue
+        shutil.move(str(source), str(destination))
+        moved += 1
+
+    nested_moved = 0
+    for item in specs_root.iterdir():
+        if item.name == ".specify":
+            continue
+        dest = specify_root / item.name
+        try:
+            if dest.exists():
+                if item.is_dir() and dest.is_dir():
+                    for child in item.iterdir():
+                        target = dest / child.name
+                        if target.exists():
+                            continue
+                        shutil.move(str(child), str(target))
+                    item.rmdir()
+                else:
+                    continue
+            else:
+                shutil.move(str(item), str(dest))
+                nested_moved += 1
+        except Exception:
+            continue
+
+    if tracker:
+        detail_parts = []
+        if migrated:
+            detail_parts.append(f"legacy {migrated}")
+        if moved:
+            detail_parts.append(f"moved {moved}")
+        if nested_moved:
+            detail_parts.append(f"nested {nested_moved}")
+        if detail_parts:
+            tracker.complete("relocate", ", ".join(detail_parts))
+        else:
+            tracker.skip("relocate", "no changes needed")
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
@@ -757,6 +878,16 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    template_repo: Optional[str] = typer.Option(
+        None,
+        "--template-repo",
+        help="Override template repository in owner/repo form (defaults to github/spec-kit or SPEC_KIT_TEMPLATE_REPO)",
+    ),
+    template_path: Optional[Path] = typer.Option(
+        None,
+        "--template-path",
+        help="Use a local template ZIP or directory instead of downloading (or set SPEC_KIT_TEMPLATE_PATH)",
+    ),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -930,6 +1061,30 @@ def init(
     
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+
+    # Determine template source overrides
+    env_template_repo = os.getenv("SPEC_KIT_TEMPLATE_REPO")
+    env_template_path = os.getenv("SPEC_KIT_TEMPLATE_PATH")
+
+    repo_spec = template_repo or env_template_repo or "github/spec-kit"
+    try:
+        repo_owner, repo_name = repo_spec.split("/", 1)
+    except ValueError:
+        console.print(f"[red]Error:[/red] Invalid template repo '{repo_spec}'. Expected 'owner/repo'.")
+        raise typer.Exit(1)
+
+    template_path_value: Optional[Path]
+    if template_path is not None:
+        template_path_value = template_path.expanduser().resolve()
+    elif env_template_path:
+        template_path_value = Path(env_template_path).expanduser().resolve()
+    else:
+        template_path_value = None
+
+    if template_path_value:
+        console.print(f"[cyan]Template source override:[/cyan] {template_path_value}")
+    elif repo_owner != "github" or repo_name != "spec-kit":
+        console.print(f"[cyan]Template repo override:[/cyan] {repo_owner}/{repo_name}")
     
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
@@ -949,6 +1104,7 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
+        ("relocate", "Consolidate non-agent assets"),
         ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
@@ -965,7 +1121,23 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(
+                project_path,
+                selected_ai,
+                selected_script,
+                here,
+                verbose=False,
+                tracker=tracker,
+                client=local_client,
+                debug=debug,
+                github_token=github_token,
+                template_repo=(repo_owner, repo_name),
+                template_path=template_path_value,
+            )
+
+            # Consolidate non-agent assets under .specs/.specify
+            tracker.start("relocate")
+            relocate_non_agent_directories(project_path, tracker=tracker)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)

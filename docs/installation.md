@@ -49,6 +49,15 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
 ```
 
+### Use a Custom Template Source
+
+Need to bootstrap from a fork or an internal template build? Override the default upstream with either option:
+
+- `--template-repo owner/repo` (or `SPEC_KIT_TEMPLATE_REPO`) points the CLI at a different GitHub repository when downloading release assets.
+- `--template-path /path/to/template.zip` (or `SPEC_KIT_TEMPLATE_PATH`) skips the download entirely and uses a local ZIP archive or directory.
+
+Both overrides still run relocation and migration logic so the resulting project matches the `.specs/.specify` layout.
+
 ### Ignore Agent Tools Check
 
 If you prefer to get the templates without checking for the right tools:
@@ -64,7 +73,7 @@ After initialization, you should see the following commands available in your AI
 - `/plan` - Generate implementation plans  
 - `/tasks` - Break down into actionable tasks
 
-The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
+The `.specs/.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ## Troubleshooting
 

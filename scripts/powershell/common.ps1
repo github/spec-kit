@@ -33,7 +33,10 @@ function Get-CurrentBranch {
     
     # For non-git repos, try to find the latest feature directory
     $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
+    $specsDir = Join-Path $repoRoot '.specs/.specify/specs'
+    if (-not (Test-Path $specsDir) -and (Test-Path (Join-Path $repoRoot 'specs'))) {
+        $specsDir = Join-Path $repoRoot 'specs'
+    }
     
     if (Test-Path $specsDir) {
         $latestFeature = ""
@@ -89,13 +92,30 @@ function Test-FeatureBranch {
 
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    $primaryPath = Join-Path $RepoRoot ".specs/.specify/specs/$Branch"
+    $legacyNestedPath = Join-Path $RepoRoot ".specs/specs/$Branch"
+    $legacyPath = Join-Path $RepoRoot "specs/$Branch"
+    if ((Test-Path $primaryPath) -or ((-not (Test-Path $legacyNestedPath)) -and (-not (Test-Path $legacyPath)))) {
+        return $primaryPath
+    }
+    if (Test-Path $legacyNestedPath) {
+        return $legacyNestedPath
+    }
+    return $legacyPath
 }
 
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
     $hasGit = Test-HasGit
+    $specsRoot = Join-Path $repoRoot '.specs'
+    if (-not (Test-Path $specsRoot)) {
+        New-Item -ItemType Directory -Path $specsRoot | Out-Null
+    }
+    $specifyRoot = Join-Path $specsRoot '.specify'
+    if (-not (Test-Path $specifyRoot)) {
+        New-Item -ItemType Directory -Path $specifyRoot | Out-Null
+    }
     $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
     
     [PSCustomObject]@{

@@ -22,7 +22,7 @@ fi
 find_repo_root() {
     local dir="$1"
     while [ "$dir" != "/" ]; do
-        if [ -d "$dir/.git" ] || [ -d "$dir/.specify" ]; then
+    if [ -d "$dir/.git" ] || [ -d "$dir/.specs" ] || [ -d "$dir/.specify" ]; then
             echo "$dir"
             return 0
         fi
@@ -50,7 +50,9 @@ fi
 
 cd "$REPO_ROOT"
 
-SPECS_DIR="$REPO_ROOT/specs"
+SPECS_ROOT="$REPO_ROOT/.specs"
+SPECIFY_ROOT="$SPECS_ROOT/.specify"
+SPECS_DIR="$SPECIFY_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
 HIGHEST=0
@@ -80,7 +82,7 @@ fi
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 mkdir -p "$FEATURE_DIR"
 
-TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
+TEMPLATE="$SPECIFY_ROOT/templates/spec-template.md"
 SPEC_FILE="$FEATURE_DIR/spec.md"
 if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
 

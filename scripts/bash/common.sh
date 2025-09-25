@@ -28,7 +28,10 @@ get_current_branch() {
     
     # For non-git repos, try to find the latest feature directory
     local repo_root=$(get_repo_root)
-    local specs_dir="$repo_root/specs"
+    local specs_dir="$repo_root/.specs/.specify/specs"
+    if [[ ! -d "$specs_dir" ]] && [[ -d "$repo_root/specs" ]]; then
+        specs_dir="$repo_root/specs"
+    fi
     
     if [[ -d "$specs_dir" ]]; then
         local latest_feature=""
@@ -81,7 +84,19 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
+get_feature_dir() {
+    local repo_root="$1"
+    local branch="$2"
+    local primary_path="$repo_root/.specs/.specify/specs/$branch"
+    local legacy_specs_path="$repo_root/.specs/specs/$branch"
+    if [[ -d "$primary_path" ]] || { [[ ! -d "$legacy_specs_path" ]] && [[ ! -d "$repo_root/specs/$branch" ]]; }; then
+        echo "$primary_path"
+    elif [[ -d "$legacy_specs_path" ]]; then
+        echo "$legacy_specs_path"
+    else
+        echo "$repo_root/specs/$branch"
+    fi
+}
 
 get_feature_paths() {
     local repo_root=$(get_repo_root)
@@ -92,6 +107,8 @@ get_feature_paths() {
         has_git_repo="true"
     fi
     
+    local specs_root="$repo_root/.specs"
+    mkdir -p "$specs_root/.specify"
     local feature_dir=$(get_feature_dir "$repo_root" "$current_branch")
     
     cat <<EOF

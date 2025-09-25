@@ -7,6 +7,25 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.19] - 2025-09-24
+
+### Added
+
+- `--template-repo` CLI option (and `SPEC_KIT_TEMPLATE_REPO`) to pull release assets from a fork or alternate repository.
+- `--template-path` CLI option (and `SPEC_KIT_TEMPLATE_PATH`) to scaffold directly from a local template ZIP or directory without hitting GitHub.
+
+### Changed
+
+- Template download/extraction pipeline now honors local overrides while preserving `.specs/.specify` relocation and tracker output.
+
+## [0.0.18] - 2025-09-24
+
+### Changed
+
+- Consolidated all non-agent project assets under a new `/.specs/.specify` hierarchy while keeping agent folders at the repository root for IDE autodiscovery.
+- Updated the Specify CLI, packaging scripts, shell/PowerShell helpers, and command templates to reference the relocated directories.
+- Added migration logic and legacy fallbacks so existing projects using `.specify/` or top-level `specs/` continue to function.
+
 ## [0.0.17] - 2025-09-22
 
 ### Added

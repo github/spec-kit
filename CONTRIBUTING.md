@@ -43,7 +43,7 @@ When working on spec-kit:
 1. Test changes with the `specify` CLI commands (`/specify`, `/plan`, `/tasks`) in your coding agent of choice
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
-4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+4. Ensure memory files (`/.specs/.specify/memory/constitution.md`) are updated if major process changes are made
 
 ## AI contributions in Spec Kit
 

@@ -32,9 +32,12 @@ rm -rf "$GENRELEASES_DIR"/* || true
 
 rewrite_paths() {
   sed -E \
-    -e 's@(/?)memory/@.specify/memory/@g' \
-    -e 's@(/?)scripts/@.specify/scripts/@g' \
-    -e 's@(/?)templates/@.specify/templates/@g'
+  -e 's@\\.specs/memory/@.specs/.specify/memory/@g' \
+  -e 's@\\.specs/scripts/@.specs/.specify/scripts/@g' \
+  -e 's@\\.specs/templates/@.specs/.specify/templates/@g' \
+  -e 's@(^|[^[:alnum:]_/])memory/@\1.specs/.specify/memory/@g' \
+  -e 's@(^|[^[:alnum:]_/])scripts/@\1.specs/.specify/scripts/@g' \
+  -e 's@(^|[^[:alnum:]_/])templates/@\1.specs/.specify/templates/@g'
 }
 
 generate_commands() {
@@ -90,38 +93,48 @@ build_variant() {
   mkdir -p "$base_dir"
   
   # Copy base structure but filter scripts by variant
-  SPEC_DIR="$base_dir/.specify"
-  mkdir -p "$SPEC_DIR"
+  SPEC_DIR="$base_dir/.specs"
+  SPECIFY_DIR="$SPEC_DIR/.specify"
+  mkdir -p "$SPECIFY_DIR"
   
-  [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
+  [[ -d memory ]] && { cp -r memory "$SPECIFY_DIR/"; echo "Copied memory -> .specs/.specify"; }
+  [[ -d plan ]] && { cp -r plan "$SPECIFY_DIR/"; echo "Copied plan -> .specs/.specify"; }
+  [[ -d spec ]] && { cp -r spec "$SPECIFY_DIR/"; echo "Copied spec -> .specs/.specify"; }
+  [[ -d notes ]] && { cp -r notes "$SPECIFY_DIR/"; echo "Copied notes -> .specs/.specify"; }
+  [[ -d scratch ]] && { cp -r scratch "$SPECIFY_DIR/"; echo "Copied scratch -> .specs/.specify"; }
+  [[ -d docs ]] && { cp -r docs "$SPECIFY_DIR/"; echo "Copied docs -> .specs/.specify"; }
+  [[ -d logs ]] && { cp -r logs "$SPECIFY_DIR/"; echo "Copied logs -> .specs/.specify"; }
+  [[ -d specs ]] && { cp -r specs "$SPECIFY_DIR/"; echo "Copied specs -> .specs/.specify"; }
   
   # Only copy the relevant script variant directory
   if [[ -d scripts ]]; then
-    mkdir -p "$SPEC_DIR/scripts"
+    mkdir -p "$SPECIFY_DIR/scripts"
     case $script in
       sh)
-        [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .specify/scripts"; }
+        [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPECIFY_DIR/scripts/"; echo "Copied scripts/bash -> .specs/.specify/scripts"; }
         # Copy any script files that aren't in variant-specific directories
-        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+        find scripts -maxdepth 1 -type f -exec cp {} "$SPECIFY_DIR/scripts/" \; 2>/dev/null || true
         ;;
       ps)
-        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .specify/scripts"; }
+        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPECIFY_DIR/scripts/"; echo "Copied scripts/powershell -> .specs/.specify/scripts"; }
         # Copy any script files that aren't in variant-specific directories
-        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+        find scripts -maxdepth 1 -type f -exec cp {} "$SPECIFY_DIR/scripts/" \; 2>/dev/null || true
         ;;
     esac
   fi
   
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
-  # Inject variant into plan-template.md within .specify/templates if present
-  local plan_tpl="$base_dir/.specify/templates/plan-template.md"
+  [[ -d templates ]] && { mkdir -p "$SPECIFY_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPECIFY_DIR"/ \; ; echo "Copied templates -> .specs/.specify/templates"; }
+  # Inject variant into plan-template.md within .specs/.specify/templates if present
+  local plan_tpl="$base_dir/.specs/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
     plan_norm=$(tr -d '\r' < "$plan_tpl")
     # Extract script command from YAML frontmatter
     script_command=$(printf '%s\n' "$plan_norm" | awk -v sv="$script" '/^[[:space:]]*'"$script"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script"':[[:space:]]*/, ""); print; exit}')
     if [[ -n $script_command ]]; then
-      # Always prefix with .specify/ for plan usage
-      script_command=".specify/$script_command"
+      if [[ $script_command != .specs/* ]]; then
+        # Always prefix with .specs/.specify/ for plan usage when missing
+        script_command=".specs/.specify/$script_command"
+      fi
       # Replace {SCRIPT} placeholder with the script command and __AGENT__ with agent name
       substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g")
       # Strip YAML frontmatter from plan template output (keep body only)
@@ -189,16 +202,16 @@ norm_list() {
 
 validate_subset() {
   local type=$1; shift; local -n allowed=$1; shift; local items=("$@")
-  local ok=1
+  local errors=0
   for it in "${items[@]}"; do
     local found=0
     for a in "${allowed[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
     if [[ $found -eq 0 ]]; then
       echo "Error: unknown $type '$it' (allowed: ${allowed[*]})" >&2
-      ok=0
+      errors=1
     fi
   done
-  return $ok
+  return $errors
 }
 
 if [[ -n ${AGENTS:-} ]]; then
