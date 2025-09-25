@@ -1079,7 +1079,7 @@ def init(
     console.print(steps_panel)
 
     enhancement_lines = [
-        "Optional commands that you can use for your specs (improve quality & confidence)[/bright_black]",
+        "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
         "",
         f"○ [cyan]/clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/plan[/] if used)",
         f"○ [cyan]/analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/tasks[/], before [cyan]/implement[/])"
