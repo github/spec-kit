@@ -21,6 +21,8 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 Or initialize in the current directory:
 
 ```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init .
+# or use the --here flag
 uvx --from git+https://github.com/github/spec-kit.git specify init --here
 ```
 

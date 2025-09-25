@@ -150,13 +150,13 @@ The `specify` command supports the following options:
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
 | `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, or `roo` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
-| `--force`              | Flag     | Force merge/overwrite when using `--here` in a non-empty directory (skip confirmation) |
+| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation) |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
@@ -180,9 +180,13 @@ specify init my-project --ai windsurf
 specify init my-project --ai copilot --script ps
 
 # Initialize in current directory
+specify init . --ai copilot
+# or use the --here flag
 specify init --here --ai copilot
 
 # Force merge into current (non-empty) directory without confirmation
+specify init . --force --ai copilot
+# or 
 specify init --here --force --ai copilot
 
 # Skip git initialization
@@ -292,8 +296,12 @@ specify init <project_name>
 Or initialize in the current directory:
 
 ```bash
+specify init .
+# or use the --here flag
 specify init --here
 # Skip confirmation when the directory already has files
+specify init . --force
+# or
 specify init --here --force
 ```
 
@@ -311,9 +319,14 @@ specify init <project_name> --ai opencode
 specify init <project_name> --ai codex
 specify init <project_name> --ai windsurf
 # Or in current directory:
+specify init . --ai claude
+specify init . --ai codex
+# or use --here flag
 specify init --here --ai claude
 specify init --here --ai codex
 # Force merge into a non-empty current directory
+specify init . --force --ai claude
+# or
 specify init --here --force --ai claude
 ```
 
