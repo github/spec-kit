@@ -194,9 +194,9 @@ def get_key():
     key = readchar.readkey()
     
     # Arrow keys
-    if key == readchar.key.UP:
+    if key == readchar.key.UP or key == readchar.key.CTRL_P:
         return 'up'
-    if key == readchar.key.DOWN:
+    if key == readchar.key.DOWN or key == readchar.key.CTRL_N:
         return 'down'
     
     # Enter/Return
