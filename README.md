@@ -133,6 +133,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
+| [Amazon Q Developer CLI](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-installing.html) | ⚠️ | Amazon Q Developer CLI does not support custom arguments for prompts. |
 | [Codex CLI](https://github.com/openai/codex)              | ⚠️ | Codex [does not support](https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
 
 ## 🔧 Specify CLI Reference
