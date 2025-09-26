@@ -1,19 +1,8 @@
 #!/usr/bin/env pwsh
 # Common PowerShell functions analogous to common.sh
 
-function Get-RepoRoot {
-    try {
-        $result = git rev-parse --show-toplevel 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return $result
-        }
-    } catch {
-        # Git command failed
-    }
-    
-    # Fall back to script location for non-git repos
-    return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-}
+# Set working directory
+$script:WorkingDir = (Get-Location).Path
 
 function Get-CurrentBranch {
     # First check if SPECIFY_FEATURE environment variable is set
@@ -32,8 +21,7 @@ function Get-CurrentBranch {
     }
     
     # For non-git repos, try to find the latest feature directory
-    $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
+    $specsDir = Join-Path $script:WorkingDir "specs"
     
     if (Test-Path $specsDir) {
         $latestFeature = ""
@@ -88,18 +76,17 @@ function Test-FeatureBranch {
 }
 
 function Get-FeatureDir {
-    param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    param([string]$Branch)
+    Join-Path $script:WorkingDir "specs/$Branch"
 }
 
 function Get-FeaturePathsEnv {
-    $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
     $hasGit = Test-HasGit
-    $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+    $featureDir = Get-FeatureDir -Branch $currentBranch
     
     [PSCustomObject]@{
-        REPO_ROOT     = $repoRoot
+        WORKING_DIR   = $script:WorkingDir
         CURRENT_BRANCH = $currentBranch
         HAS_GIT       = $hasGit
         FEATURE_DIR   = $featureDir
