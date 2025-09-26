@@ -172,6 +172,10 @@ build_variant() {
     roo)
       mkdir -p "$base_dir/.roo/commands"
       generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script" ;;
+    iflow)
+      mkdir -p "$base_dir/.iflow/commands"
+      generate_commands IFLOW md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script"
+      [[ -f agent_templates/iflow/IFLOW.md ]] && cp agent_templates/iflow/IFLOW.md "$base_dir/IFLOW.md" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
