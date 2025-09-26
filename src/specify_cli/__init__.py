@@ -433,7 +433,47 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
+def load_local_template(template_path: str | Path) -> Tuple[Path, dict]:
+    """Load template from local file system.
+    
+    Args:
+        template_path: Path to the template ZIP file
+    
+    Returns:
+        Tuple[Path, dict]: Path to template file and metadata dict
+    """
+    template_path = Path(template_path)
+    
+    if not template_path.exists():
+        raise RuntimeError(f"Template file not found: {template_path}")
+    
+    if not template_path.is_file() or not template_path.name.endswith('.zip'):
+        raise RuntimeError(f"Template path must be a ZIP file: {template_path}")
+        
+    # Use the specified file
+    local_file = template_path
+    
+    # Basic metadata for offline mode
+    metadata = {
+        "filename": local_file.name,
+        "size": local_file.stat().st_size,
+        "release": "offline",
+        "asset_url": str(local_file)
+    }
+    
+    return local_file, metadata
+
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None, offline_template: str | None = None) -> Tuple[Path, dict]:
+    """Get template from GitHub or local file system based on SPECIFY_OFFLINE flag.
+    
+    Returns:
+        Tuple[Path, dict]: Path to template file and metadata dict
+    """
+    # Check for offline template
+    if offline_template:
+        if verbose:
+            console.print(f"[cyan]Using local template file: {offline_template}[/cyan]")
+        return load_local_template(offline_template)
     repo_owner = "github"
     repo_name = "spec-kit"
     if client is None:
@@ -545,7 +585,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, offline_template: str | None = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -563,7 +603,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             show_progress=(tracker is None),
             client=client,
             debug=debug,
-            github_token=github_token
+            github_token=github_token,
+            offline_template=offline_template,
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -691,18 +732,16 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             tracker.complete("extract")
     finally:
         if tracker:
-            tracker.add("cleanup", "Remove temporary archive")
-        # Clean up downloaded ZIP file
-        if zip_path.exists():
-            zip_path.unlink()
-            if tracker:
-                tracker.complete("cleanup")
-            elif verbose:
-                console.print(f"Cleaned up: {zip_path.name}")
-    
+            tracker.add("cleanup", "Check temporary archive")
+            # Clean up downloaded ZIP file unless it's the specified offline template
+            if zip_path.exists():
+                if not offline_template or str(zip_path) != str(Path(offline_template).resolve()):
+                    zip_path.unlink()
+                if tracker:
+                    tracker.complete("cleanup", "removed temporary archive")
+                elif verbose:
+                    console.print(f"Cleaned up: {zip_path.name}")
     return project_path
-
-
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -757,6 +796,7 @@ def init(
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
+    offline_template: Optional[str] = typer.Option(None, "--offline-template", help="Path to the local template ZIP file instead of downloading from GitHub"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
 ):
@@ -969,12 +1009,18 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            # Create a httpx client with verify based on skip_tls
-            verify = not skip_tls
-            local_ssl_context = ssl_context if verify else False
-            local_client = httpx.Client(verify=local_ssl_context)
+            # Check for offline template
+            if offline_template:
+                tracker.start("fetch", f"using local template: {offline_template}")
+            
+            # Create a httpx client with verify based on skip_tls (only if not using offline template)
+            local_client = None
+            if not offline_template:
+                verify = not skip_tls
+                local_ssl_context = ssl_context if verify else False
+                local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, offline_template=offline_template)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
