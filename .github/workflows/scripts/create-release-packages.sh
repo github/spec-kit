@@ -34,7 +34,17 @@ rewrite_paths() {
   sed -E \
     -e 's@(/?)memory/@.specify/memory/@g' \
     -e 's@(/?)scripts/@.specify/scripts/@g' \
-    -e 's@(/?)templates/@.specify/templates/@g'
+    -e 's@(/?)templates/@.specify/templates/@g' \
+    -e 's@(/?)hooks/@.specify/hooks/@g'
+}
+
+get_hook_extension() {
+  local script_variant=$1
+  if [[ "$script_variant" == "ps" ]]; then
+    echo ".ps1"
+  else
+    echo ""
+  fi
 }
 
 generate_commands() {
@@ -57,8 +67,9 @@ generate_commands() {
       script_command="(Missing script command for $script_variant)"
     fi
     
-    # Replace {SCRIPT} placeholder with the script command
-    body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
+    # Replace {SCRIPT} placeholder with the script command and {HOOK_EXT} with extension
+    local ext=$(get_hook_extension "$script_variant")
+    body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g" | sed "s|{HOOK_EXT}|${ext}|g")
     
     # Remove the scripts: section from frontmatter while preserving YAML structure
     body=$(printf '%s\n' "$body" | awk '
@@ -113,6 +124,25 @@ build_variant() {
   fi
   
   [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+
+  # Copy hooks selectively based on script variant
+  if [[ -d hooks ]]; then
+    mkdir -p "$SPEC_DIR/hooks"
+    # Always copy README.md
+    [[ -f hooks/README.md ]] && cp hooks/README.md "$SPEC_DIR/hooks/"
+
+    case $script in
+      sh)
+        # Copy bash hook samples (without .ps1)
+        find hooks -maxdepth 1 -type f -name "*.sample" ! -name "*.ps1.sample" -exec cp {} "$SPEC_DIR/hooks/" \;
+        ;;
+      ps)
+        # Copy PowerShell hook samples (.ps1.sample)
+        find hooks -maxdepth 1 -type f -name "*.ps1.sample" -exec cp {} "$SPEC_DIR/hooks/" \;
+        ;;
+    esac
+    echo "Copied hooks -> .specify/hooks"
+  fi
   # Inject variant into plan-template.md within .specify/templates if present
   local plan_tpl="$base_dir/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
@@ -122,8 +152,9 @@ build_variant() {
     if [[ -n $script_command ]]; then
       # Always prefix with .specify/ for plan usage
       script_command=".specify/$script_command"
-      # Replace {SCRIPT} placeholder with the script command and __AGENT__ with agent name
-      substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g")
+      # Replace {SCRIPT} placeholder with the script command, {HOOK_EXT} with extension, and __AGENT__ with agent name
+      local ext=$(get_hook_extension "$script")
+      substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g" | sed "s|{HOOK_EXT}|${ext}|g")
       # Strip YAML frontmatter from plan template output (keep body only)
       stripped=$(printf '%s\n' "$substituted" | awk 'BEGIN{fm=0;dash=0} /^---$/ {dash++; if(dash==1){fm=1; next} else if(dash==2){fm=0; next}} {if(!fm) print}')
       printf '%s\n' "$stripped" > "$plan_tpl"

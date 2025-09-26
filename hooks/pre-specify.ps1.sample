@@ -1,0 +1,18 @@
+#!/usr/bin/env pwsh
+# Pre-specify hook: Runs before feature creation
+# Arguments: $args[0] = feature description
+# Customize this script to add pre-processing logic
+
+param(
+    [Parameter(Position=0)]
+    [string]$FeatureDescription
+)
+
+# Example: Validate feature description
+# if ($FeatureDescription.Length -lt 10) {
+#     Write-Error "Error: Feature description too short"
+#     exit 1
+# }
+
+# Default: Do nothing
+exit 0

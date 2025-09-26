@@ -1,0 +1,13 @@
+#!/bin/bash
+# Pre-specify hook: Runs before feature creation
+# Arguments: $1 = feature description
+# Customize this script to add pre-processing logic
+
+# Example: Validate feature description
+# if [[ ${#1} -lt 10 ]]; then
+#     echo "Error: Feature description too short" >&2
+#     exit 1
+# fi
+
+# Default: Do nothing
+exit 0
