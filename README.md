@@ -39,11 +39,37 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify
 
-Initialize your project depending on the coding agent you're using:
+Choose your preferred installation method:
+
+#### Option 1: Persistent Installation (Recommended)
+
+Install once and use everywhere:
+
+```bash
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+```
+
+Then use the tool directly:
+
+```bash
+specify init <PROJECT_NAME>
+specify check
+```
+
+#### Option 2: One-time Usage
+
+Run directly without installing:
 
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
+
+**Benefits of persistent installation:**
+
+- Tool stays installed and available in PATH
+- No need to create shell aliases
+- Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
+- Cleaner shell configuration
 
 ### 2. Establish project principles
 
@@ -125,12 +151,13 @@ The `specify` command supports the following options:
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
 | `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, or `iflow` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
+| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation) |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
@@ -154,7 +181,14 @@ specify init my-project --ai windsurf
 specify init my-project --ai copilot --script ps
 
 # Initialize in current directory
+specify init . --ai copilot
+# or use the --here flag
 specify init --here --ai copilot
+
+# Force merge into current (non-empty) directory without confirmation
+specify init . --force --ai copilot
+# or 
+specify init --here --force --ai copilot
 
 # Skip git initialization
 specify init my-project --ai gemini --no-git
@@ -177,8 +211,10 @@ After running `specify init`, your AI coding agent will have access to these sla
 |-----------------|-----------------------------------------------------------------------|
 | `/constitution` | Create or update project governing principles and development guidelines |
 | `/specify`      | Define what you want to build (requirements and user stories)        |
+| `/clarify`      | Clarify underspecified areas (must be run before `/plan` unless explicitly skipped; formerly `/quizme`) |
 | `/plan`         | Create technical implementation plans with your chosen tech stack     |
 | `/tasks`        | Generate actionable task lists for implementation                     |
+| `/analyze`      | Cross-artifact consistency & coverage analysis (run after /tasks, before /implement) |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
 
 ### Environment Variables
@@ -261,7 +297,13 @@ specify init <project_name>
 Or initialize in the current directory:
 
 ```bash
+specify init .
+# or use the --here flag
 specify init --here
+# Skip confirmation when the directory already has files
+specify init . --force
+# or
+specify init --here --force
 ```
 
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
@@ -278,8 +320,15 @@ specify init <project_name> --ai opencode
 specify init <project_name> --ai codex
 specify init <project_name> --ai windsurf
 # Or in current directory:
+specify init . --ai claude
+specify init . --ai codex
+# or use --here flag
 specify init --here --ai claude
 specify init --here --ai codex
+# Force merge into a non-empty current directory
+specify init . --force --ai claude
+# or
+specify init --here --force --ai claude
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, or Codex CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
@@ -302,7 +351,7 @@ The first step should be establishing your project's governing principles using 
 /constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
 ```
 
-This step creates or updates the `/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
+This step creates or updates the `.specify/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
 
 ### **STEP 2:** Create project specifications
 
@@ -341,27 +390,37 @@ The produced specification should contain a set of user stories and functional r
 At this stage, your project folder contents should resemble the following:
 
 ```text
-├── memory
-│	 ├── constitution.md
-│	 └── constitution_update_checklist.md
-├── scripts
-│	 ├── check-prerequisites.sh
-│	 ├── common.sh
-│	 ├── create-new-feature.sh
-│	 ├── setup-plan.sh
-│	 └── update-claude-md.sh
-├── specs
-│	 └── 001-create-taskify
-│	     └── spec.md
-└── templates
-    ├── plan-template.md
-    ├── spec-template.md
-    └── tasks-template.md
+└── .specify
+    ├── memory
+    │	 └── constitution.md
+    ├── scripts
+    │	 ├── check-prerequisites.sh
+    │	 ├── common.sh
+    │	 ├── create-new-feature.sh
+    │	 ├── setup-plan.sh
+    │	 └── update-claude-md.sh
+    ├── specs
+    │	 └── 001-create-taskify
+    │	     └── spec.md
+    └── templates
+        ├── plan-template.md
+        ├── spec-template.md
+        └── tasks-template.md
 ```
 
-### **STEP 3:** Functional specification clarification
+### **STEP 3:** Functional specification clarification (required before planning)
 
-With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt. For example, you could use a prompt like this within the same Claude Code session:
+With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt.
+
+You should run the structured clarification workflow **before** creating a technical plan to reduce rework downstream.
+
+Preferred order:
+1. Use `/clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
+2. Optionally follow up with ad-hoc free-form refinement if something still feels vague.
+
+If you intentionally want to skip clarification (e.g., spike or exploratory prototype), explicitly state that so the agent doesn't block on missing clarifications.
+
+Example free-form refinement prompt (after `/clarify` if still needed):
 
 ```text
 For each sample project or project that you create there should be a variable number of tasks between 5 and 15
@@ -393,8 +452,7 @@ The output of this step will include a number of implementation detail documents
 .
 ├── CLAUDE.md
 ├── memory
-│	 ├── constitution.md
-│	 └── constitution_update_checklist.md
+│	 └── constitution.md
 ├── scripts
 │	 ├── check-prerequisites.sh
 │	 ├── common.sh
