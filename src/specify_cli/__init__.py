@@ -881,7 +881,7 @@ def init(
     template_repo: Optional[str] = typer.Option(
         None,
         "--template-repo",
-        help="Override template repository in owner/repo form (defaults to github/spec-kit or SPEC_KIT_TEMPLATE_REPO)",
+    help="Override template repository in owner/repo form (defaults to Jrakru/spec-kit or SPEC_KIT_TEMPLATE_REPO)",
     ),
     template_path: Optional[Path] = typer.Option(
         None,
@@ -1066,7 +1066,8 @@ def init(
     env_template_repo = os.getenv("SPEC_KIT_TEMPLATE_REPO")
     env_template_path = os.getenv("SPEC_KIT_TEMPLATE_PATH")
 
-    repo_spec = template_repo or env_template_repo or "github/spec-kit"
+    # Default to this fork's main repo unless overridden via CLI or env
+    repo_spec = template_repo or env_template_repo or "Jrakru/spec-kit"
     try:
         repo_owner, repo_name = repo_spec.split("/", 1)
     except ValueError:
