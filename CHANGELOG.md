@@ -7,6 +7,20 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.21] - 2025-09-27
+
+### Changed
+
+- Curated prior local work into focused PRs for reviewability and safety.
+	- CLI entrypoint: help/UX alignment and messaging consistency (no functional changes intended).
+	- Scripts: Bash and PowerShell helpers updated for parity and declarative layout alignment.
+	- Templates/Docs: synced wording and examples with the new layout and packaging flow.
+	- Workflows: curated release packaging script to align agent list, rewrite paths for .specs/.specify, and improve extraction robustness.
+
+### Internal
+
+- Version bumped to 0.0.21 to track the curated updates. Follow-on PRs will continue workflow packaging alignment.
+
 ## [0.0.20] - 2025-09-27
 
 ### Added
