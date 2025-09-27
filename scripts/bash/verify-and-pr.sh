@@ -4,19 +4,33 @@ set -euo pipefail
 # verify-and-pr.sh
 # Verify a local branch has unique commits vs main; if none, delete it.
 # If it has unique commits, push it and open a PR (using gh if available).
-# Usage: verify-and-pr.sh <branch-name>
+# Usage:
+#   verify-and-pr.sh <branch-name>
+#   verify-and-pr.sh             # uses current branch
 
 BRANCH=${1:-}
 if [[ -z "${BRANCH}" ]]; then
-  echo "Usage: $(basename "$0") <branch-name>" >&2
-  exit 2
+  # Derive current branch when not provided
+  CURR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [[ -z "$CURR" || "$CURR" == "HEAD" ]]; then
+    echo "[error] Cannot determine current branch (detached HEAD?). Specify a branch: $(basename "$0") <branch-name>" >&2
+    exit 2
+  fi
+  BRANCH="$CURR"
+fi
+
+# Safety: never operate on primary branches
+if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+  echo "[error] Refusing to operate on primary branch '$BRANCH'. Provide a feature branch name." >&2
+  exit 3
 fi
 
 echo "[info] Syncing refs..."
 git fetch --prune
 
 if ! git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
-  echo "[warn] Local branch '${BRANCH}' not found. Aborting." >&2
+  echo "[warn] Local branch '${BRANCH}' not found in this clone. Aborting." >&2
+  echo "       If this branch exists in another working copy, run this script there while checked out on '${BRANCH}'." >&2
   exit 1
 fi
 
