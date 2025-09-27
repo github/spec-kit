@@ -12,11 +12,7 @@ function Get-RepoRoot {
     }
     
     # Fall back to script location for non-git repos
-    $cand = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-    if ([IO.Path]::GetFileName($cand) -eq '.specs') {
-        return ([IO.Directory]::GetParent($cand).FullName)
-    }
-    return $cand
+    return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
 
 function Get-CurrentBranch {
@@ -35,25 +31,31 @@ function Get-CurrentBranch {
         # Git command failed
     }
     
-    # For non-git repos, try to find the latest feature directory (search nested)
+    # For non-git repos, try to find the latest feature directory
     $repoRoot = Get-RepoRoot
-    $layout = & (Join-Path $PSScriptRoot 'read-layout.ps1')
-    $roots = @((Join-Path $repoRoot '.specs/.specify/specs'), (Join-Path $repoRoot 'specs'))
-    foreach ($r in $layout.SPEC_ROOTS) { $roots += (Join-Path $repoRoot $r) }
-    $latestFeature = ''
-    $highest = 0
-    foreach ($base in $roots) {
-        if (-not (Test-Path $base)) { continue }
-        try {
-            Get-ChildItem -Path $base -Recurse -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                if ($_.Name -match '^(\d{3})-') {
-                    $num = [int]$matches[1]
-                    if ($num -gt $highest) { $highest = $num; $latestFeature = $_.Name }
+    $specsDir = Join-Path $repoRoot '.specs/.specify/specs'
+    if (-not (Test-Path $specsDir) -and (Test-Path (Join-Path $repoRoot 'specs'))) {
+        $specsDir = Join-Path $repoRoot 'specs'
+    }
+    
+    if (Test-Path $specsDir) {
+        $latestFeature = ""
+        $highest = 0
+        
+        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+            if ($_.Name -match '^(\d{3})-') {
+                $num = [int]$matches[1]
+                if ($num -gt $highest) {
+                    $highest = $num
+                    $latestFeature = $_.Name
                 }
             }
-        } catch {}
+        }
+        
+        if ($latestFeature) {
+            return $latestFeature
+        }
     }
-    if ($latestFeature) { return $latestFeature }
     
     # Final fallback
     return "main"
@@ -90,33 +92,16 @@ function Test-FeatureBranch {
 
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    $layout = & (Join-Path $PSScriptRoot 'read-layout.ps1')
-    $roots = @()
-    if ($layout.SPEC_ROOTS) { $roots = $layout.SPEC_ROOTS } else { $roots = @('.specs/.specify/specs','specs') }
-    # choose first existing root or first configured
-    $chosenRoot = $null
-    foreach ($r in $roots) {
-        $cand = Join-Path $RepoRoot $r
-        if (Test-Path $cand) { $chosenRoot = $cand; break }
+    $primaryPath = Join-Path $RepoRoot ".specs/.specify/specs/$Branch"
+    $legacyNestedPath = Join-Path $RepoRoot ".specs/specs/$Branch"
+    $legacyPath = Join-Path $RepoRoot "specs/$Branch"
+    if ((Test-Path $primaryPath) -or ((-not (Test-Path $legacyNestedPath)) -and (-not (Test-Path $legacyPath)))) {
+        return $primaryPath
     }
-    if (-not $chosenRoot) { $chosenRoot = Join-Path $RepoRoot $roots[0] }
-
-    # honor existing folder if present
-    try {
-        $match = Get-ChildItem -Path $chosenRoot -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $Branch } | Select-Object -First 1
-        if ($match) { return $match.FullName }
-    } catch {}
-
-    $epic = $env:SPECIFY_EPIC; if (-not $epic) { $epic = 'uncategorized' }
-    $product = $env:SPECIFY_PRODUCT; if (-not $product) { $product = 'default' }
-    $slug = { param($s) ($s.ToLower() -replace '[^a-z0-9]', '-') -replace '-{2,}', '-' -replace '^-','' -replace '-$','' }
-    $epic = & $slug $epic; $product = & $slug $product
-
-    switch ($layout.FOLDER_STRATEGY) {
-        'product' { return (Join-Path $chosenRoot ("products/$product/epics/$epic/$Branch")) }
-        'epic'    { return (Join-Path $chosenRoot ("epics/$epic/$Branch")) }
-        default   { return (Join-Path $chosenRoot $Branch) }
+    if (Test-Path $legacyNestedPath) {
+        return $legacyNestedPath
     }
+    return $legacyPath
 }
 
 function Get-FeaturePathsEnv {
@@ -131,7 +116,6 @@ function Get-FeaturePathsEnv {
     if (-not (Test-Path $specifyRoot)) {
         New-Item -ItemType Directory -Path $specifyRoot | Out-Null
     }
-    $layout = & (Join-Path $PSScriptRoot 'read-layout.ps1')
     $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
     
     [PSCustomObject]@{
@@ -139,13 +123,13 @@ function Get-FeaturePathsEnv {
         CURRENT_BRANCH = $currentBranch
         HAS_GIT       = $hasGit
         FEATURE_DIR   = $featureDir
-        FEATURE_SPEC  = Join-Path $featureDir ($layout.FILES.FPRD)
-        IMPL_PLAN     = Join-Path $featureDir ($layout.FILES.DESIGN)
-        TASKS         = Join-Path $featureDir ($layout.FILES.TASKS)
-        RESEARCH      = Join-Path $featureDir ($layout.FILES.RESEARCH)
+        FEATURE_SPEC  = Join-Path $featureDir 'spec.md'
+        IMPL_PLAN     = Join-Path $featureDir 'plan.md'
+        TASKS         = Join-Path $featureDir 'tasks.md'
+        RESEARCH      = Join-Path $featureDir 'research.md'
         DATA_MODEL    = Join-Path $featureDir 'data-model.md'
-        QUICKSTART    = Join-Path $featureDir ($layout.FILES.QUICKSTART)
-        CONTRACTS_DIR = Join-Path $featureDir ($layout.FILES.CONTRACTS_DIR)
+        QUICKSTART    = Join-Path $featureDir 'quickstart.md'
+        CONTRACTS_DIR = Join-Path $featureDir 'contracts'
     }
 }
 

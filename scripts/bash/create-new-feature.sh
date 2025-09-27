@@ -22,13 +22,8 @@ fi
 find_repo_root() {
     local dir="$1"
     while [ "$dir" != "/" ]; do
-        if [ -d "$dir/.git" ] || [ -d "$dir/.specs" ] || [ -d "$dir/.specify" ]; then
-            # If we stopped inside the .specs folder, return its parent
-            if [ "$(basename "$dir")" = ".specs" ]; then
-                dirname "$dir"
-            else
-                echo "$dir"
-            fi
+    if [ -d "$dir/.git" ] || [ -d "$dir/.specs" ] || [ -d "$dir/.specify" ]; then
+            echo "$dir"
             return 0
         fi
         dir="$(dirname "$dir")"
@@ -40,7 +35,6 @@ find_repo_root() {
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialised with --no-git.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
 
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -58,19 +52,12 @@ cd "$REPO_ROOT"
 
 SPECS_ROOT="$REPO_ROOT/.specs"
 SPECIFY_ROOT="$SPECS_ROOT/.specify"
-# Load layout to determine feature location and filenames
-if [ -x "$SCRIPT_DIR/read-layout.sh" ]; then
-    eval $("$SCRIPT_DIR/read-layout.sh")
-fi
-# Determine parent folder for numbering using a dummy branch placeholder
-DUMMY_BRANCH="000-placeholder"
-DUMMY_PATH="$(get_feature_dir "$REPO_ROOT" "$DUMMY_BRANCH")"
-FEATURE_PARENT_DIR="$(dirname "$DUMMY_PATH")"
-mkdir -p "$FEATURE_PARENT_DIR"
+SPECS_DIR="$SPECIFY_ROOT/specs"
+mkdir -p "$SPECS_DIR"
 
 HIGHEST=0
-if [ -d "$FEATURE_PARENT_DIR" ]; then
-    for dir in "$FEATURE_PARENT_DIR"/*; do
+if [ -d "$SPECS_DIR" ]; then
+    for dir in "$SPECS_DIR"/*; do
         [ -d "$dir" ] || continue
         dirname=$(basename "$dir")
         number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
@@ -92,27 +79,12 @@ else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
 
-# Now compute final feature directory
-FEATURE_DIR="$(get_feature_dir "$REPO_ROOT" "$BRANCH_NAME")"
+FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 mkdir -p "$FEATURE_DIR"
 
-SPEC_FILE="$FEATURE_DIR/${LAYOUT_FILES_FPRD:-fprd.md}"
-# Resolve content template via resolver (assets override if present)
-RESOLVED_TEMPLATE="$SPECIFY_ROOT/templates/spec-template.md"
-if [ -x "$SCRIPT_DIR/resolve-template.sh" ]; then
-    if RES_JSON="$($SCRIPT_DIR/resolve-template.sh --json spec 2>/dev/null)"; then
-        RESOLVED_TEMPLATE="$(printf '%s' "$RES_JSON" | sed -n 's/.*"TEMPLATE_PATH":"\([^"]*\)".*/\1/p')"
-    fi
-fi
-if [ -f "$RESOLVED_TEMPLATE" ]; then cp "$RESOLVED_TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
-
-# Optional legacy stub for spec.md if enabled
-if [ "${LAYOUT_COMPAT_WRITE_STUB_SPEC:-$LAYOUT_COMPAT_WRITE_STUB_SPEC}" = "true" ]; then
-    STUB_NAME="${LAYOUT_COMPAT_STUB_NAME:-spec.md}"
-    if [ "$STUB_NAME" != "$(basename "$SPEC_FILE")" ]; then
-        printf "# Legacy spec stub\n\nThis repository uses a declarative layout. The canonical feature PRD lives at: \n\n- %s\n" "$(basename "$SPEC_FILE")" > "$FEATURE_DIR/$STUB_NAME"
-    fi
-fi
+TEMPLATE="$SPECIFY_ROOT/templates/spec-template.md"
+SPEC_FILE="$FEATURE_DIR/spec.md"
+if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
 
 # Set the SPECIFY_FEATURE environment variable for the current session
 export SPECIFY_FEATURE="$BRANCH_NAME"

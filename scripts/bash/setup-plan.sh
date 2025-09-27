@@ -37,18 +37,12 @@ check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 mkdir -p "$FEATURE_DIR"
 
 # Copy plan template if it exists
-# Resolve template path via resolver (assets override if present)
-RESOLVED_TEMPLATE="$REPO_ROOT/.specs/.specify/templates/plan-template.md"
-if [[ -x "$SCRIPT_DIR/resolve-template.sh" ]]; then
-    if RES_JSON="$($SCRIPT_DIR/resolve-template.sh --json plan 2>/dev/null)"; then
-        RESOLVED_TEMPLATE="$(printf '%s' "$RES_JSON" | sed -n 's/.*"TEMPLATE_PATH":"\([^"]*\)".*/\1/p')"
-    fi
-fi
-if [[ -f "$RESOLVED_TEMPLATE" ]]; then
-    cp "$RESOLVED_TEMPLATE" "$IMPL_PLAN"
+TEMPLATE="$REPO_ROOT/.specs/.specify/templates/plan-template.md"
+if [[ -f "$TEMPLATE" ]]; then
+    cp "$TEMPLATE" "$IMPL_PLAN"
     echo "Copied plan template to $IMPL_PLAN"
 else
-    echo "Warning: Plan template not found at $RESOLVED_TEMPLATE"
+    echo "Warning: Plan template not found at $TEMPLATE"
     # Create a basic plan file if template doesn't exist
     touch "$IMPL_PLAN"
 fi

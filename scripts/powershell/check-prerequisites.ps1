@@ -93,8 +93,7 @@ if (-not (Test-Path $paths.FEATURE_DIR -PathType Container)) {
 }
 
 if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
-    $planName = [IO.Path]::GetFileName($paths.IMPL_PLAN)
-    Write-Output "ERROR: $planName not found in $($paths.FEATURE_DIR)"
+    Write-Output "ERROR: plan.md not found in $($paths.FEATURE_DIR)"
     Write-Output "Run /plan first to create the implementation plan."
     exit 1
 }
