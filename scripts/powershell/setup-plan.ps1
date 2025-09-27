@@ -32,12 +32,19 @@ if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GI
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
 # Copy plan template if it exists, otherwise note it or create empty file
-$template = Join-Path $paths.REPO_ROOT '.specs/.specify/templates/plan-template.md'
-if (Test-Path $template) { 
-    Copy-Item $template $paths.IMPL_PLAN -Force
+$resolver = Join-Path $PSScriptRoot 'resolve-template.ps1'
+$resolvedTemplate = Join-Path $paths.REPO_ROOT '.specs/.specify/templates/plan-template.md'
+try {
+    if (Test-Path $resolver) {
+        $json = & $resolver -Json plan 2>$null | ConvertFrom-Json
+        if ($json -and $json.TEMPLATE_PATH) { $resolvedTemplate = $json.TEMPLATE_PATH }
+    }
+} catch { }
+if (Test-Path $resolvedTemplate) { 
+    Copy-Item $resolvedTemplate $paths.IMPL_PLAN -Force
     Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
 } else {
-    Write-Warning "Plan template not found at $template"
+    Write-Warning "Plan template not found at $resolvedTemplate"
     # Create a basic plan file if template doesn't exist
     New-Item -ItemType File -Path $paths.IMPL_PLAN -Force | Out-Null
 }

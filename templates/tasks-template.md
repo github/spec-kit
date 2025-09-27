@@ -1,11 +1,11 @@
 # Tasks: [FEATURE NAME]
 
 **Input**: Design documents from `/.specs/.specify/specs/[###-feature-name]/`
-**Prerequisites**: plan.md (required), research.md, data-model.md, contracts/
+**Prerequisites**: design.md (required), research.md, data-model.md, contracts/
 
 ## Execution Flow (main)
 ```
-1. Load plan.md from feature directory
+1. Load design.md from feature directory
    → If not found: ERROR "No implementation plan found"
    → Extract: tech stack, libraries, structure
 2. Load optional design documents:

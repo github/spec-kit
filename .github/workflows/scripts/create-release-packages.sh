@@ -124,6 +124,10 @@ build_variant() {
   fi
   
   [[ -d templates ]] && { mkdir -p "$SPECIFY_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPECIFY_DIR"/ \; ; echo "Copied templates -> .specs/.specify/templates"; }
+  # Promote layout.yaml to .specs/.specify/ if present
+  if [[ -f templates/layout.yaml ]]; then
+    cp templates/layout.yaml "$SPECIFY_DIR/layout.yaml" && echo "Copied templates/layout.yaml -> .specs/.specify/layout.yaml"
+  fi
   # Inject variant into plan-template.md within .specs/.specify/templates if present
   local plan_tpl="$base_dir/.specs/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
@@ -142,6 +146,13 @@ build_variant() {
       printf '%s\n' "$stripped" > "$plan_tpl"
     else
       echo "Warning: no plan-template script command found for $script in YAML frontmatter" >&2
+    fi
+    # If an assets override for plan exists, apply the same substitution and strip frontmatter if present
+    local assets_plan_tpl="$base_dir/.specs/.specify/templates/assets/plan-template.md"
+    if [[ -f "$assets_plan_tpl" && -n $script_command ]]; then
+      substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$assets_plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g")
+      stripped=$(printf '%s\n' "$substituted" | awk 'BEGIN{fm=0;dash=0} /^---$/ {dash++; if(dash==1){fm=1; next} else if(dash==2){fm=0; next}} {if(!fm) print}')
+      printf '%s\n' "$stripped" > "$assets_plan_tpl"
     fi
   fi
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:

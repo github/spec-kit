@@ -24,7 +24,8 @@ Given the implementation details provided as an argument, do this:
 3. Read the constitution at `/.specs/.specify/memory/constitution.md` to understand constitutional requirements.
 
 4. Execute the implementation plan template:
-   - Load `/.specs/.specify/templates/plan-template.md` (already copied to IMPL_PLAN path)
+   - The setup script has copied the resolved plan layout into IMPL_PLAN using the template resolver (assets override if present)
+   - Load IMPL_PLAN
    - Set Input path to FEATURE_SPEC
    - Run the Execution Flow (main) function steps 1-9
    - The template is self-contained and executable

@@ -8,7 +8,14 @@ get_repo_root() {
     else
         # Fall back to script location for non-git repos
         local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        (cd "$script_dir/../../.." && pwd)
+        local cand
+        cand=$(cd "$script_dir/../../.." && pwd)
+        # If we resolved inside the .specs folder, return its parent
+        if [[ "$(basename "$cand")" == ".specs" ]]; then
+            dirname "$cand"
+        else
+            echo "$cand"
+        fi
     fi
 }
 
@@ -26,36 +33,27 @@ get_current_branch() {
         return
     fi
     
-    # For non-git repos, try to find the latest feature directory
+    # For non-git repos, try to find the latest feature directory (search nested)
     local repo_root=$(get_repo_root)
-    local specs_dir="$repo_root/.specs/.specify/specs"
-    if [[ ! -d "$specs_dir" ]] && [[ -d "$repo_root/specs" ]]; then
-        specs_dir="$repo_root/specs"
+    local roots=("$repo_root/.specs/.specify/specs" "$repo_root/specs")
+    # include configured roots if available
+    if [[ -x "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/read-layout.sh" ]]; then
+        eval "$($(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/read-layout.sh)"
+        IFS=',' read -r -a cfg_roots <<< "${LAYOUT_SPEC_ROOTS:-}"
+        for r in "${cfg_roots[@]}"; do roots+=("$repo_root/$r"); done
     fi
-    
-    if [[ -d "$specs_dir" ]]; then
-        local latest_feature=""
-        local highest=0
-        
-        for dir in "$specs_dir"/*; do
-            if [[ -d "$dir" ]]; then
-                local dirname=$(basename "$dir")
-                if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
-                    local number=${BASH_REMATCH[1]}
-                    number=$((10#$number))
-                    if [[ "$number" -gt "$highest" ]]; then
-                        highest=$number
-                        latest_feature=$dirname
-                    fi
-                fi
+    local latest_feature=""; local highest=0
+    for base in "${roots[@]}"; do
+        [[ -d "$base" ]] || continue
+        while IFS= read -r -d '' d; do
+            local name="$(basename "$d")"
+            if [[ "$name" =~ ^([0-9]{3})- ]]; then
+                local n=$((10#${BASH_REMATCH[1]}))
+                if (( n > highest )); then highest=$n; latest_feature="$name"; fi
             fi
-        done
-        
-        if [[ -n "$latest_feature" ]]; then
-            echo "$latest_feature"
-            return
-        fi
-    fi
+        done < <(find "$base" -type d -maxdepth 4 -mindepth 1 -print0 2>/dev/null)
+    done
+    if [[ -n "$latest_feature" ]]; then echo "$latest_feature"; return; fi
     
     echo "main"  # Final fallback
 }
@@ -87,15 +85,46 @@ check_feature_branch() {
 get_feature_dir() {
     local repo_root="$1"
     local branch="$2"
-    local primary_path="$repo_root/.specs/.specify/specs/$branch"
-    local legacy_specs_path="$repo_root/.specs/specs/$branch"
-    if [[ -d "$primary_path" ]] || { [[ ! -d "$legacy_specs_path" ]] && [[ ! -d "$repo_root/specs/$branch" ]]; }; then
-        echo "$primary_path"
-    elif [[ -d "$legacy_specs_path" ]]; then
-        echo "$legacy_specs_path"
-    else
-        echo "$repo_root/specs/$branch"
+
+    # Load layout config (env assignments)
+    if [[ -x "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/read-layout.sh" ]]; then
+        eval "$($(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/read-layout.sh)"
     fi
+
+    # Helper: first existing spec root or default to first configured
+    IFS=',' read -r -a ROOTS_ARR <<< "${LAYOUT_SPEC_ROOTS:-.specs/.specify/specs,specs}"
+    local chosen_root=""
+    for r in "${ROOTS_ARR[@]}"; do
+        local candidate="$repo_root/${r}"
+        if [[ -d "$candidate" ]]; then
+            chosen_root="$candidate"; break
+        fi
+    done
+    if [[ -z "$chosen_root" ]]; then
+        chosen_root="$repo_root/${ROOTS_ARR[0]}"
+    fi
+
+    # If an existing folder already matches the branch anywhere (search), honor it
+    local found=$(find "$chosen_root" -type d -name "$branch" -print -quit 2>/dev/null || true)
+    if [[ -n "$found" ]]; then
+        echo "$found"; return
+    fi
+
+    # Build new path based on folder strategy. Allow override via SPECIFY_PRODUCT/SPECIFY_EPIC env.
+    local epic="${SPECIFY_EPIC:-uncategorized}"
+    local product="${SPECIFY_PRODUCT:-default}"
+    # slugify
+    epic=$(echo "$epic" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/-\+/-/g; s/^-//; s/-$//')
+    product=$(echo "$product" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/-\+/-/g; s/^-//; s/-$//')
+
+    case "${LAYOUT_FOLDER_STRATEGY:-epic}" in
+        product)
+            echo "$chosen_root/products/$product/epics/$epic/$branch" ;;
+        epic)
+            echo "$chosen_root/epics/$epic/$branch" ;;
+        flat|*)
+            echo "$chosen_root/$branch" ;;
+    esac
 }
 
 get_feature_paths() {
@@ -109,6 +138,10 @@ get_feature_paths() {
     
     local specs_root="$repo_root/.specs"
     mkdir -p "$specs_root/.specify"
+    # Load layout
+    if [[ -x "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/read-layout.sh" ]]; then
+        eval "$($(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/read-layout.sh)"
+    fi
     local feature_dir=$(get_feature_dir "$repo_root" "$current_branch")
     
     cat <<EOF
@@ -116,13 +149,13 @@ REPO_ROOT='$repo_root'
 CURRENT_BRANCH='$current_branch'
 HAS_GIT='$has_git_repo'
 FEATURE_DIR='$feature_dir'
-FEATURE_SPEC='$feature_dir/spec.md'
-IMPL_PLAN='$feature_dir/plan.md'
-TASKS='$feature_dir/tasks.md'
-RESEARCH='$feature_dir/research.md'
+FEATURE_SPEC='$feature_dir/'"${LAYOUT_FILES_FPRD:-fprd.md}"
+IMPL_PLAN='$feature_dir/'"${LAYOUT_FILES_DESIGN:-design.md}"
+TASKS='$feature_dir/'"${LAYOUT_FILES_TASKS:-tasks.md}"
+RESEARCH='$feature_dir/'"${LAYOUT_FILES_RESEARCH:-research.md}"
 DATA_MODEL='$feature_dir/data-model.md'
-QUICKSTART='$feature_dir/quickstart.md'
-CONTRACTS_DIR='$feature_dir/contracts'
+QUICKSTART='$feature_dir/'"${LAYOUT_FILES_QUICKSTART:-quickstart.md}"
+CONTRACTS_DIR='$feature_dir/'"${LAYOUT_FILES_CONTRACTS_DIR:-contracts}"
 EOF
 }
 

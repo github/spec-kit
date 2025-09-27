@@ -13,7 +13,7 @@ $ARGUMENTS
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
 2. Load and analyze available design documents:
-   - Always read plan.md for tech stack and libraries
+   - Always read design.md for tech stack and libraries
    - IF EXISTS: Read data-model.md for entities
    - IF EXISTS: Read contracts/ for API endpoints
    - IF EXISTS: Read research.md for technical decisions
@@ -25,7 +25,7 @@ $ARGUMENTS
    - Generate tasks based on what's available
 
 3. Generate tasks following the template:
-   - Use `/templates/tasks-template.md` as the base
+   - Resolve the tasks layout path by running `scripts/bash/resolve-template.sh --json tasks` (or PowerShell variant) and use the resolved `TEMPLATE_PATH` as the base
    - Replace example tasks with actual tasks based on:
      * **Setup tasks**: Project init, dependencies, linting
      * **Test tasks [P]**: One per contract, one per integration scenario

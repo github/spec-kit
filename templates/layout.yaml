@@ -1,0 +1,39 @@
+version: 1
+
+spec_roots:
+  - "specs"
+  - ".specs/.specify/specs"
+
+folder_strategy: "epic"
+
+files:
+  fprd: "fprd.md"
+  pprd: "pprd.md"
+  requirements: "requirements.md"
+  design: "design.md"
+  tasks: "tasks.md"
+  research: "research.md"
+  quickstart: "quickstart.md"
+  traceability_index: "traceability_index.md"
+  contracts_dir: "contracts"
+  progress_log: "progress_log.md"
+  parking_lot: "parking_lot.md"
+  index: "index.yaml"
+
+compat:
+  write_redirect_stub_spec_md: true
+  stub_name: "spec.md"
+
+id_policy:
+  requirement_prefix: "R"
+  task_prefix: "T"
+  short_ids: true
+
+defaults:
+  lock_files_enabled: true
+  watch_debounce_ms: 300
+  tui_framework_hint: "Textual"
+
+catalog:
+  path: "specs/catalog.yaml"
+

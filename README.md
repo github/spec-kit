@@ -160,7 +160,7 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
-| `--template-repo`      | Option   | Override the template release source (`owner/repo`). Defaults to `github/spec-kit` or `SPEC_KIT_TEMPLATE_REPO`. |
+| `--template-repo`      | Option   | Override the template release source (`owner/repo`). Defaults to `Jrakru/spec-kit` or `SPEC_KIT_TEMPLATE_REPO`. |
 | `--template-path`      | Option   | Use a local template ZIP or directory instead of downloading. Mirrors `SPEC_KIT_TEMPLATE_PATH`. |
 
 ### Examples
@@ -216,10 +216,13 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/constitution` | Create or update project governing principles and development guidelines |
 | `/specify`      | Define what you want to build (requirements and user stories)        |
 | `/clarify`      | Clarify underspecified areas (must be run before `/plan` unless explicitly skipped; formerly `/quizme`) |
-| `/plan`         | Create technical implementation plans with your chosen tech stack     |
+| `/plan`         | Create technical implementation plans (writes `design.md`)            |
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/analyze`      | Cross-artifact consistency & coverage analysis (run after /tasks, before /implement) |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
+| `/pprd`         | Create a Portfolio/Product PRD at the canonical specs root (writes `pprd.md`) |
+| `/pprd-clarify` | Clarify underspecified areas in a PPRD and update it in-place         |
+| `/fprds`        | Decompose a PPRD into Feature PRDs (creates feature folders + `fprd.md`) |
 
 ### Environment Variables
 
@@ -228,6 +231,23 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `SPECIFY_FEATURE`        | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>Must be set in the context of the agent you're working with prior to using `/plan` or follow-up commands. |
 | `SPEC_KIT_TEMPLATE_REPO` | Alternative template repository in `owner/repo` form. Takes the same value as `--template-repo`. |
 | `SPEC_KIT_TEMPLATE_PATH` | Absolute or relative path to a local template ZIP or directory. Takes the same value as `--template-path`. |
+| `SPECIFY_PRODUCT`        | Hint for feature folder routing when using product-level hierarchy (used by `/fprds` and feature creation scripts). |
+| `SPECIFY_EPIC`           | Hint for epic folder routing when using epic-level hierarchy (used by `/fprds` and feature creation scripts). |
+
+### Declarative Layout & Template Overrides
+
+- Projects include a layout file at `.specs/.specify/layout.yaml` that defines:
+  - `spec_roots` (e.g., `specs`), `folder_strategy` (`flat`, `epic`, or `product`)
+  - Canonical file names: `pprd.md`, `fprd.md`, `design.md`, `tasks.md`, `traceability_index.md`, etc.
+- Helper scripts consult the layout at runtime:
+  - `.specs/.specify/scripts/bash/read-layout.sh` and `spec-root.sh` (PowerShell equivalents included)
+  - Feature creation and plan setup honor file names and folder strategy
+- Template resolution supports assets overrides:
+  - Drop custom layouts in `.specs/.specify/templates/assets/*-template.md`
+  - Resolver prefers assets first, then defaults in `.specs/.specify/templates/`
+- Notable file naming updates:
+  - Plan output is `design.md` (formerly `plan.md`)
+  - Feature PRD file is `fprd.md` (optionally a legacy `spec.md` stub can be written for compatibility)
 
 ## 📚 Core philosophy
 

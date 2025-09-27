@@ -26,6 +26,10 @@ function Find-RepositoryRoot {
     while ($true) {
         foreach ($marker in $Markers) {
             if (Test-Path (Join-Path $current $marker)) {
+                # If we stopped inside the .specs folder, return its parent
+                if ([IO.Path]::GetFileName($current) -eq '.specs') {
+                    return ([IO.Directory]::GetParent($current).FullName)
+                }
                 return $current
             }
         }
@@ -56,17 +60,21 @@ try {
 }
 
 Set-Location $repoRoot
+. "$PSScriptRoot/common.ps1"
 
 $specsRoot = Join-Path $repoRoot '.specs'
 New-Item -ItemType Directory -Path $specsRoot -Force | Out-Null
 $specifyRoot = Join-Path $specsRoot '.specify'
 New-Item -ItemType Directory -Path $specifyRoot -Force | Out-Null
-$specsDir = Join-Path $specifyRoot 'specs'
-New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
+# Load layout and determine parent directory using a dummy branch
+$layout = & (Join-Path $PSScriptRoot 'read-layout.ps1')
+$dummy = '000-placeholder'
+$featureDirDummy = Get-FeatureDir -RepoRoot $repoRoot -Branch $dummy
+$parentDir = Split-Path $featureDirDummy -Parent
 
 $highest = 0
-if (Test-Path $specsDir) {
-    Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+if (Test-Path $parentDir) {
+    Get-ChildItem -Path $parentDir -Directory | ForEach-Object {
         if ($_.Name -match '^(\d{3})') {
             $num = [int]$matches[1]
             if ($num -gt $highest) { $highest = $num }
@@ -90,15 +98,32 @@ if ($hasGit) {
     Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
 }
 
-$featureDir = Join-Path $specsDir $branchName
+# Recompute featureDir now that we have branch
+$featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $branchName
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
-$template = Join-Path $specifyRoot 'templates/spec-template.md'
-$specFile = Join-Path $featureDir 'spec.md'
-if (Test-Path $template) { 
-    Copy-Item $template $specFile -Force 
+$specFile = Join-Path $featureDir $layout.FILES.FPRD
+# Resolve template path via resolver (assets override if present)
+$resolvedTemplate = Join-Path $specifyRoot 'templates/spec-template.md'
+$resolver = Join-Path $PSScriptRoot 'resolve-template.ps1'
+try {
+    if (Test-Path $resolver) {
+        $json = & $resolver -Json spec 2>$null | ConvertFrom-Json
+        if ($json -and $json.TEMPLATE_PATH) { $resolvedTemplate = $json.TEMPLATE_PATH }
+    }
+} catch { }
+if (Test-Path $resolvedTemplate) { 
+    Copy-Item $resolvedTemplate $specFile -Force 
 } else { 
     New-Item -ItemType File -Path $specFile | Out-Null 
+}
+
+# Optional legacy stub for spec.md if enabled
+if ($layout.COMPAT.WRITE_STUB_SPEC) {
+    $stub = $layout.COMPAT.STUB_NAME
+    if ($stub -and ($stub -ne [IO.Path]::GetFileName($specFile))) {
+        "# Legacy spec stub`n`nThis repository uses a declarative layout. The canonical feature PRD lives at:`n`n- $([IO.Path]::GetFileName($specFile))`n" | Out-File -LiteralPath (Join-Path $featureDir $stub) -Encoding utf8 -Force
+    }
 }
 
 # Set the SPECIFY_FEATURE environment variable for the current session
