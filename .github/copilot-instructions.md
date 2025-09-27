@@ -51,3 +51,9 @@ These notes orient AI coding agents to be productive quickly in this codebase. K
 Key refs: `README.md`, `AGENTS.md`, `docs/local-development.md`, `src/specify_cli/__init__.py`, `src/specify_cli/paths.py`.
 
 If anything here seems out of date with the code, note it and I’ll update this file.
+
+## Workflow policies
+
+- PR-only merges: Do not push directly to `main`. Always open a pull request so changes are reviewed and tracked.
+- Quick check-and-PR helper: `scripts/bash/verify-and-pr.sh <branch>` will delete a redundant branch (no unique commits) or push and open a PR if it has unique commits.
+- Versioning: When changing `src/specify_cli/__init__.py`, bump `version` in `pyproject.toml` and add a `CHANGELOG.md` entry. Tagging is done after merges to `main`.
