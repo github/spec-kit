@@ -133,6 +133,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
+| [Cline](https://cline.bot/)                               | ✅ |                                                   |
 | [Codex CLI](https://github.com/openai/codex)              | ⚠️ | Codex [does not support](https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
 
 ## 🔧 Specify CLI Reference
@@ -151,7 +152,7 @@ The `specify` command supports the following options:
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, or `roo` |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo` or `cline` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
