@@ -2,11 +2,11 @@
 
 ## Prerequisites
 
-- Linux/macOS (or Windows; PowerShell scripts now supported without WSL)
-- AI coding agent: Claude Code (https://www.anthropic.com/claude-code), GitHub Copilot (https://code.visualstudio.com/), or Gemini CLI (https://github.com/google-gemini/gemini-cli)
-- uv (https://docs.astral.sh/uv/) for package management
-- Python 3.11+ (https://www.python.org/downloads/)
-- Git (https://git-scm.com/downloads)
+- **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- [uv](https://docs.astral.sh/uv/) for package management
+- [Python 3.11+](https://www.python.org/downloads/)
+- [Git](https://git-scm.com/downloads)
 
 ## Installation
 
@@ -21,8 +21,6 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 Or initialize in the current directory:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init .
-# or use the --here flag
 uvx --from git+https://github.com/github/spec-kit.git specify init --here
 ```
 

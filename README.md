@@ -24,7 +24,7 @@
 - [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn more](#-learn-more)
-- [🗂️ Detailed process](#-detailed-process)
+- [📋 Detailed process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [👥 Maintainers](#-maintainers)
 - [💬 Support](#-support)
@@ -64,7 +64,7 @@ Run directly without installing:
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
-Benefits of persistent installation:
+**Benefits of persistent installation:**
 
 - Tool stays installed and available in PATH
 - No need to create shell aliases
@@ -73,7 +73,7 @@ Benefits of persistent installation:
 
 ### 2. Establish project principles
 
-Use the `/constitution` command to create your project's governing principles and development guidelines that will guide all subsequent development.
+Use the **`/constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
 
 ```bash
 /constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
@@ -81,7 +81,7 @@ Use the `/constitution` command to create your project's governing principles an
 
 ### 3. Create the spec
 
-Use the `/specify` command to describe what you want to build. Focus on the what and why, not the tech stack.
+Use the **`/specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
 /specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
@@ -89,7 +89,7 @@ Use the `/specify` command to describe what you want to build. Focus on the what
 
 ### 4. Create a technical implementation plan
 
-Use the `/plan` command to provide your tech stack and architecture choices.
+Use the **`/plan`** command to provide your tech stack and architecture choices.
 
 ```bash
 /plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
@@ -97,7 +97,7 @@ Use the `/plan` command to provide your tech stack and architecture choices.
 
 ### 5. Break down into tasks
 
-Use `/tasks` to create an actionable task list from your implementation plan.
+Use **`/tasks`** to create an actionable task list from your implementation plan.
 
 ```bash
 /tasks
@@ -105,17 +105,17 @@ Use `/tasks` to create an actionable task list from your implementation plan.
 
 ### 6. Execute implementation
 
-Use `/implement` to execute all tasks and build your feature according to the plan.
+Use **`/implement`** to execute all tasks and build your feature according to the plan.
 
 ```bash
 /implement
 ```
 
-For detailed step-by-step instructions, see our comprehensive guide (./spec-driven.md).
+For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
 ## 📽️ Video Overview
 
-Want to see Spec Kit in action? Watch our video overview (https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
+Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
 
 [![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
@@ -123,17 +123,17 @@ Want to see Spec Kit in action? Watch our video overview (https://www.youtube.co
 
 | Agent                                                     | Support | Notes                                             |
 |-----------------------------------------------------------|---------|---------------------------------------------------|
-| Claude Code (https://www.anthropic.com/claude-code)      | ✅ |                                                   |
-| GitHub Copilot (https://code.visualstudio.com/)          | ✅ |                                                   |
-| Gemini CLI (https://github.com/google-gemini/gemini-cli) | ✅ |                                                   |
-| Cursor (https://cursor.sh/)                              | ✅ |                                                   |
-| Qwen Code (https://github.com/QwenLM/qwen-code)          | ✅ |                                                   |
-| opencode (https://opencode.ai/)                          | ✅ |                                                   |
-| Windsurf (https://windsurf.com/)                         | ✅ |                                                   |
-| Kilo Code (https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
-| Auggie CLI (https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
-| Roo Code (https://roocode.com/)                          | ✅ |                                                   |
-| Codex CLI (https://github.com/openai/codex)              | ⚠️ | Codex does not support (https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
+| [Claude Code](https://www.anthropic.com/claude-code)      | ✅ |                                                   |
+| [GitHub Copilot](https://code.visualstudio.com/)          | ✅ |                                                   |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | ✅ |                                                   |
+| [Cursor](https://cursor.sh/)                              | ✅ |                                                   |
+| [Qwen Code](https://github.com/QwenLM/qwen-code)          | ✅ |                                                   |
+| [opencode](https://opencode.ai/)                          | ✅ |                                                   |
+| [Windsurf](https://windsurf.com/)                         | ✅ |                                                   |
+| [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
+| [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
+| [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
+| [Codex CLI](https://github.com/openai/codex)              | ⚠️ | Codex [does not support](https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
 
 ## 🔧 Specify CLI Reference
 
@@ -150,17 +150,17 @@ The `specify` command supports the following options:
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`)            |
 | `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, or `roo` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
-| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation) |
+| `--force`              | Flag     | Force merge/overwrite when using `--here` in a non-empty directory (skip confirmation) |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
-| `--template-repo`      | Option   | Override the template release source (`owner/repo`). Defaults to `Jrakru/spec-kit` or `SPEC_KIT_TEMPLATE_REPO`. |
+| `--template-repo`      | Option   | Override the template release source (`owner/repo`). Defaults to `github/spec-kit` or `SPEC_KIT_TEMPLATE_REPO`. |
 | `--template-path`      | Option   | Use a local template ZIP or directory instead of downloading. Mirrors `SPEC_KIT_TEMPLATE_PATH`. |
 
 ### Examples
@@ -182,13 +182,9 @@ specify init my-project --ai windsurf
 specify init my-project --ai copilot --script ps
 
 # Initialize in current directory
-specify init . --ai copilot
-# or use the --here flag
 specify init --here --ai copilot
 
 # Force merge into current (non-empty) directory without confirmation
-specify init . --force --ai copilot
-# or 
 specify init --here --force --ai copilot
 
 # Skip git initialization
@@ -216,55 +212,35 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/constitution` | Create or update project governing principles and development guidelines |
 | `/specify`      | Define what you want to build (requirements and user stories)        |
 | `/clarify`      | Clarify underspecified areas (must be run before `/plan` unless explicitly skipped; formerly `/quizme`) |
-| `/plan`         | Create technical implementation plans (writes `design.md`)            |
+| `/plan`         | Create technical implementation plans with your chosen tech stack     |
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/analyze`      | Cross-artifact consistency & coverage analysis (run after /tasks, before /implement) |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
-| `/pprd`         | Create a Portfolio/Product PRD at the canonical specs root (writes `pprd.md`) |
-| `/pprd-clarify` | Clarify underspecified areas in a PPRD and update it in-place         |
-| `/fprds`        | Decompose a PPRD into Feature PRDs (creates feature folders + `fprd.md`) |
 
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
-| `SPECIFY_FEATURE`        | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>Must be set in the context of the agent you're working with prior to using `/plan` or follow-up commands. |
+| `SPECIFY_FEATURE`        | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/plan` or follow-up commands. |
 | `SPEC_KIT_TEMPLATE_REPO` | Alternative template repository in `owner/repo` form. Takes the same value as `--template-repo`. |
 | `SPEC_KIT_TEMPLATE_PATH` | Absolute or relative path to a local template ZIP or directory. Takes the same value as `--template-path`. |
-| `SPECIFY_PRODUCT`        | Hint for feature folder routing when using product-level hierarchy (used by `/fprds` and feature creation scripts). |
-| `SPECIFY_EPIC`           | Hint for epic folder routing when using epic-level hierarchy (used by `/fprds` and feature creation scripts). |
-
-### Declarative Layout & Template Overrides
-
-- Projects include a layout file at `.specs/.specify/layout.yaml` that defines:
-  - `spec_roots` (e.g., `specs`), `folder_strategy` (`flat`, `epic`, or `product`)
-  - Canonical file names: `pprd.md`, `fprd.md`, `design.md`, `tasks.md`, `traceability_index.md`, etc.
-- Helper scripts consult the layout at runtime:
-  - `.specs/.specify/scripts/bash/read-layout.sh` and `spec-root.sh` (PowerShell equivalents included)
-  - Feature creation and plan setup honor file names and folder strategy
-- Template resolution supports assets overrides:
-  - Drop custom layouts in `.specs/.specify/templates/assets/*-template.md`
-  - Resolver prefers assets first, then defaults in `.specs/.specify/templates/`
-- Notable file naming updates:
-  - Plan output is `design.md` (formerly `plan.md`)
-  - Feature PRD file is `fprd.md` (optionally a legacy `spec.md` stub can be written for compatibility)
 
 ## 📚 Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
 
-- Intent-driven development where specifications define the "what" before the "how"
-- Rich specification creation using guardrails and organizational principles
-- Multi-step refinement rather than one-shot code generation from prompts
-- Heavy reliance on advanced AI model capabilities for specification interpretation
+- **Intent-driven development** where specifications define the "_what_" before the "_how_"
+- **Rich specification creation** using guardrails and organizational principles
+- **Multi-step refinement** rather than one-shot code generation from prompts
+- **Heavy reliance** on advanced AI model capabilities for specification interpretation
 
 ## 🌟 Development phases
 
 | Phase | Focus | Key Activities |
 |-------|-------|----------------|
-| 0-to-1 Development ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| Creative Exploration | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| Iterative Enhancement ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
+| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
+| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
 
 ## 🎯 Experimental goals
 
@@ -294,22 +270,22 @@ Our research and experimentation focus on:
 
 ## 🔧 Prerequisites
 
-- Linux/macOS (or WSL2 on Windows)
-- AI coding agent: Claude Code (https://www.anthropic.com/claude-code), GitHub Copilot (https://code.visualstudio.com/), Gemini CLI (https://github.com/google-gemini/gemini-cli), Cursor (https://cursor.sh/), Qwen CLI (https://github.com/QwenLM/qwen-code), opencode (https://opencode.ai/), Codex CLI (https://github.com/openai/codex), or Windsurf (https://windsurf.com/)
-- uv (https://docs.astral.sh/uv/) for package management
-- Python 3.11+ (https://www.python.org/downloads/)
-- Git (https://git-scm.com/downloads)
+- **Linux/macOS** (or WSL2 on Windows)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Cursor](https://cursor.sh/), [Qwen CLI](https://github.com/QwenLM/qwen-code), [opencode](https://opencode.ai/), [Codex CLI](https://github.com/openai/codex), or [Windsurf](https://windsurf.com/)
+- [uv](https://docs.astral.sh/uv/) for package management
+- [Python 3.11+](https://www.python.org/downloads/)
+- [Git](https://git-scm.com/downloads)
 
 If you encounter issues with an agent, please open an issue so we can refine the integration.
 
 ## 📖 Learn more
 
-- Complete Spec-Driven Development Methodology (./spec-driven.md) - Deep dive into the full process
-- Detailed Walkthrough (#-detailed-process) - Step-by-step implementation guide
+- **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+- **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
 
-## 🗂️ Detailed process
+## 📋 Detailed process
 
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
@@ -323,12 +299,8 @@ specify init <project_name>
 Or initialize in the current directory:
 
 ```bash
-specify init .
-# or use the --here flag
 specify init --here
 # Skip confirmation when the directory already has files
-specify init . --force
-# or
 specify init --here --force
 ```
 
@@ -346,14 +318,9 @@ specify init <project_name> --ai opencode
 specify init <project_name> --ai codex
 specify init <project_name> --ai windsurf
 # Or in current directory:
-specify init . --ai claude
-specify init . --ai codex
-# or use --here flag
 specify init --here --ai claude
 specify init --here --ai codex
 # Force merge into a non-empty current directory
-specify init . --force --ai claude
-# or
 specify init --here --force --ai claude
 ```
 
@@ -363,7 +330,7 @@ The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, op
 specify init <project_name> --ai claude --ignore-agent-tools
 ```
 
-### STEP 1: Establish project principles
+### **STEP 1:** Establish project principles
 
 Go to the project folder and run your AI agent. In our example, we're using `claude`.
 
@@ -379,12 +346,12 @@ The first step should be establishing your project's governing principles using 
 
 This step creates or updates the `/.specs/.specify/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
 
-### STEP 2: Create project specifications
+### **STEP 2:** Create project specifications
 
 With your project principles established, you can now create the functional specifications. Use the `/specify` command and then provide the concrete requirements for the project you want to develop.
 
 >[!IMPORTANT]
->Be as explicit as possible about what you are trying to build and why. Do not focus on the tech stack at this point.
+>Be as explicit as possible about _what_ you are trying to build and _why_. **Do not focus on the tech stack at this point**.
 
 An example prompt:
 
@@ -416,29 +383,28 @@ The produced specification should contain a set of user stories and functional r
 At this stage, your project folder contents should resemble the following:
 
 ```text
-└── .specify
-    ├── memory
-    │	 └── constitution.md
-    ├── scripts
-    │	 ├── check-prerequisites.sh
-    │	 ├── common.sh
-    │	 ├── create-new-feature.sh
-    │	 ├── setup-plan.sh
-    │	 └── update-claude-md.sh
-    ├── specs
-    │	 └── 001-create-taskify
-    │	     └── spec.md
-    └── templates
-        ├── plan-template.md
-        ├── spec-template.md
-        └── tasks-template.md
+├── memory
+│	 └── constitution.md
+├── scripts
+│	 ├── check-prerequisites.sh
+│	 ├── common.sh
+│	 ├── create-new-feature.sh
+│	 ├── setup-plan.sh
+│	 └── update-claude-md.sh
+├── specs
+│	 └── 001-create-taskify
+│	     └── spec.md
+└── templates
+    ├── plan-template.md
+    ├── spec-template.md
+    └── tasks-template.md
 ```
 
-### STEP 3: Functional specification clarification (required before planning)
+### **STEP 3:** Functional specification clarification (required before planning)
 
 With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt.
 
-You should run the structured clarification workflow before creating a technical plan to reduce rework downstream.
+You should run the structured clarification workflow **before** creating a technical plan to reduce rework downstream.
 
 Preferred order:
 1. Use `/clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
@@ -454,15 +420,15 @@ tasks for each one randomly distributed into different states of completion. Mak
 one task in each stage of completion.
 ```
 
-You should also ask Claude Code to validate the Review & Acceptance Checklist, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
+You should also ask Claude Code to validate the **Review & Acceptance Checklist**, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
 
 ```text
 Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
 ```
 
-It's important to use the interaction with Claude Code as an opportunity to clarify and ask questions around the specification - do not treat its first attempt as final.
+It's important to use the interaction with Claude Code as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
 
-### STEP 4: Generate a plan
+### **STEP 4:** Generate a plan
 
 You can now be specific about the tech stack and other technical requirements. You can use the `/plan` command that is built into the project template with a prompt like this:
 
@@ -529,7 +495,7 @@ That's way too untargeted research. The research needs to help you solve a speci
 >[!NOTE]
 >Claude Code might be over-eager and add components that you did not ask for. Ask it to clarify the rationale and the source of the change.
 
-### STEP 5: Have Claude Code validate the plan
+### **STEP 5:** Have Claude Code validate the plan
 
 With the plan in place, you should have Claude Code run through it to make sure that there are no missing pieces. You can use a prompt like this:
 
@@ -543,10 +509,10 @@ details where it can find the information as it walks through each step in the c
 
 This helps refine the implementation plan and helps you avoid potential blind spots that Claude Code missed in its planning cycle. Once the initial refinement pass is complete, ask Claude Code to go through the checklist once more before you can get to the implementation.
 
-You can also ask Claude Code (if you have the GitHub CLI (https://docs.github.com/en/github-cli/github-cli) installed) to go ahead and create a pull request from your current branch to `main` with a detailed description, to make sure that the effort is properly tracked.
+You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.com/en/github-cli/github-cli) installed) to go ahead and create a pull request from your current branch to `main` with a detailed description, to make sure that the effort is properly tracked.
 
 >[!NOTE]
->Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the constitution (base/.specs/.specify/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
+>Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/.specs/.specify/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
 
 ### STEP 6: Implementation
 
@@ -598,12 +564,12 @@ rm gcm-linux_amd64.2.6.1.deb
 
 ## 💬 Support
 
-For support, please open a GitHub issue (https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
+For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
 ## 🙏 Acknowledgements
 
-This project is heavily influenced by and based on the work and research of John Lam (https://github.com/jflam).
+This project is heavily influenced by and based on the work and research of [John Lam](https://github.com/jflam).
 
 ## 📄 License
 
-This project is licensed under the terms of the MIT open source license. Please refer to the LICENSE (./LICENSE) file for the full terms.
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.

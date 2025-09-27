@@ -7,10 +7,9 @@ This guide explains how Spec Kit assembles the command prompts and supporting fi
 Each agent receives a curated slice of the repository that includes:
 
 - **Command prompts** sourced from `templates/commands/*.md`, rewritten into the agent-specific format (`.md`, `.prompt.md`, or `.toml`).
-- **Shared templates** (`spec-template.md`, `plan-template.md` -> writes `design.md`, `tasks-template.md`, `pprd-template.md`, `agent-file-template.md`) and supporting documentation copied into `.specs/.specify/templates/` and `.specs/.specify/docs/`.
+- **Shared templates** (`plan-template.md`, `tasks-template.md`, `spec-template.md`, `agent-file-template.md`) and supporting documentation copied into `.specs/.specify/templates/` and `.specs/.specify/docs/`.
 - **Automation scripts** copied into `.specs/.specify/scripts/<shell>/`, matching the `--script` variant selected during packaging (Bash or PowerShell).
 - **Project memory and supporting assets** relocated under `.specs/.specify/` to keep non-agent files together.
- - **Layout configuration** copied to `.specs/.specify/layout.yaml` describing canonical roots, folder strategy, and file names.
 
 The packaging workflow guarantees that every generated archive adheres to the consolidated `.specs/.specify` directory structure introduced in v0.0.18.
 
@@ -20,19 +19,12 @@ The packaging workflow guarantees that every generated archive adheres to the co
 |-------------------------------|-----------------------------------|---------------------------------------|
 | Command prompts               | `templates/commands/*.md`         | `.<agent>/commands/` (format dependent)|
 | Agent context template        | `templates/agent-file-template.md`| `.specs/.specify/templates/`          |
-| Spec/plan/tasks/PPRD layouts  | `templates/*.md`                  | `.specs/.specify/templates/`          |
-| Template overrides (assets)   | `templates/assets/*-template.md`  | `.specs/.specify/templates/assets/`   |
-| Layout configuration          | `templates/layout.yaml`           | `.specs/.specify/layout.yaml`         |
+| Specification + plan templates| `templates/spec-template.md`, `templates/plan-template.md`, `templates/tasks-template.md` | `.specs/.specify/templates/` |
 | Automation scripts            | `scripts/bash/`, `scripts/powershell/` | `.specs/.specify/scripts/bash/` or `.specs/.specify/scripts/powershell/` |
 | Constitution (memory)         | `memory/constitution.md`          | `.specs/.specify/memory/constitution.md` |
 | Docs                          | `docs/`                           | `.specs/.specify/docs/`               |
 
 The original prompt templates still reference placeholder paths such as `scripts/bash/...` or `/memory/constitution.md`. During packaging these references are rewritten to `.specs/.specify/...` so the generated projects align with the new hierarchy without modifying the authoring files in-place.
-
-In addition, generated projects resolve layout files dynamically at runtime using helper scripts:
-
-- `.specs/.specify/scripts/bash/resolve-template.sh` (and PowerShell variant) selects template bodies, preferring `templates/assets/*-template.md` overrides when present.
-- `.specs/.specify/scripts/bash/read-layout.sh` and `spec-root.sh` (and PowerShell variants) read `.specs/.specify/layout.yaml` to determine roots, folder strategy, and canonical file names (e.g., `design.md`, `fprd.md`, `pprd.md`).
 
 ## Packaging Workflow
 
@@ -48,7 +40,7 @@ The same script is invoked locally or by CI workflows. Because it produces a pla
 
 ## Using Packaged Templates
 
-The `specify` CLI downloads these archives by default from the `Jrakru/spec-kit` releases. You can direct the CLI to alternate sources using:
+The `specify` CLI downloads these archives by default from the `github/spec-kit` releases. You can direct the CLI to alternate sources using:
 
 - `--template-repo owner/repo` or `SPEC_KIT_TEMPLATE_REPO` to pull from a forked release.
 - `--template-path /path/to/template.zip` or `SPEC_KIT_TEMPLATE_PATH` to scaffold from a local archive or directory (handy when testing output from `.genreleases/`).
@@ -68,11 +60,7 @@ uv run specify init tmp/claude-demo \
   --no-git
 ```
 
-Inspect `tmp/claude-demo/.specs/.specify/` and `tmp/claude-demo/.claude/commands/` to ensure prompts reference the new paths. Confirm that:
-
-- `layout.yaml` exists under `.specs/.specify/` and lists `spec_roots`, `folder_strategy`, and `files` keys.
-- `templates/assets/` contains overrides you expect (e.g., `PPRD-template.md`).
-- Scripts under `.specs/.specify/scripts/<shell>/` include `resolve-template.sh`, `read-layout.sh`, and `spec-root.sh`.
+Inspect `tmp/claude-demo/.specs/.specify/` and `tmp/claude-demo/.claude/commands/` to ensure prompts reference the new paths.
 
 ## Adding or Updating Agents
 
