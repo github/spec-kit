@@ -125,7 +125,7 @@ Total: ~12 hours of documentation work
 
 # This automatically:
 # - Creates branch "003-chat-system"
-# - Generates specs/003-chat-system/spec.md
+# - Generates specs/proj-123.chat-system/spec.md
 # - Populates it with structured requirements
 
 # Step 2: Generate implementation plan (5 minutes)
@@ -135,12 +135,12 @@ Total: ~12 hours of documentation work
 /tasks
 
 # This automatically creates:
-# - specs/003-chat-system/plan.md
-# - specs/003-chat-system/research.md (WebSocket library comparisons)
-# - specs/003-chat-system/data-model.md (Message and User schemas)
-# - specs/003-chat-system/contracts/ (WebSocket events, REST endpoints)
-# - specs/003-chat-system/quickstart.md (Key validation scenarios)
-# - specs/003-chat-system/tasks.md (Task list derived from the plan)
+# - specs/proj-123.chat-system/plan.md
+# - specs/proj-123.chat-system/research.md (WebSocket library comparisons)
+# - specs/proj-123.chat-system/data-model.md (Message and User schemas)
+# - specs/proj-123.chat-system/contracts/ (WebSocket events, REST endpoints)
+# - specs/proj-123.chat-system/quickstart.md (Key validation scenarios)
+# - specs/proj-123.chat-system/tasks.md (Task list derived from the plan)
 ```
 
 In 15 minutes, you have:

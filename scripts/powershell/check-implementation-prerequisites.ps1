@@ -41,31 +41,31 @@ try {
 # Validate feature branch
 if (-not (Test-FeatureBranch -Branch $CurrentBranch)) {
     if ($Json) {
-        @{error = "Not on a valid feature branch. Feature branches should be named like: username/PROJ-123.feature-name"} | ConvertTo-Json
+        @{error = "Not on a valid feature branch. Feature branches should be named like: username/proj-123.feature-name"} | ConvertTo-Json
     } else {
         Write-Host "ERROR: Not on a valid feature branch" -ForegroundColor Red
         Write-Host "Current branch: $CurrentBranch" -ForegroundColor Yellow
-        Write-Host "Expected format: username/PROJ-123.feature-name" -ForegroundColor Yellow
+        Write-Host "Expected format: username/proj-123.feature-name" -ForegroundColor Yellow
     }
     exit 1
 }
 
-# Get feature paths using updated flat structure approach (matching bash version)
+# Get feature paths using subdirectory structure (matching bash version)
 $FeatureId = Get-FeatureId -Branch $CurrentBranch
-$FilePrefix = $FeatureId -replace '\.', '-'
 $SpecsDir = Join-Path $RepoRoot "specs"
+$FeatureDir = Join-Path $SpecsDir $FeatureId
 
 $FeaturePaths = @{
     REPO_ROOT = $RepoRoot
     CURRENT_BRANCH = $CurrentBranch
-    FEATURE_DIR = $SpecsDir
-    FEATURE_SPEC = Join-Path $SpecsDir "$FilePrefix.md"
-    IMPL_PLAN = Join-Path $SpecsDir "$FilePrefix-plan.md"
-    TASKS = Join-Path $SpecsDir "$FilePrefix-tasks.md"
-    RESEARCH = Join-Path $SpecsDir "$FilePrefix-research.md"
-    DATA_MODEL = Join-Path $SpecsDir "$FilePrefix-data-model.md"
-    QUICKSTART = Join-Path $SpecsDir "$FilePrefix-quickstart.md"
-    CONTRACTS_DIR = Join-Path $SpecsDir "$FilePrefix-contracts"
+    FEATURE_DIR = $FeatureDir
+    FEATURE_SPEC = Join-Path $FeatureDir "spec.md"
+    IMPL_PLAN = Join-Path $FeatureDir "plan.md"
+    TASKS = Join-Path $FeatureDir "tasks.md"
+    RESEARCH = Join-Path $FeatureDir "research.md"
+    DATA_MODEL = Join-Path $FeatureDir "data-model.md"
+    QUICKSTART = Join-Path $FeatureDir "quickstart.md"
+    CONTRACTS_DIR = Join-Path $FeatureDir "contracts"
 }
 
 # Check for required files

@@ -130,26 +130,26 @@ destroy_existing() {
             fi
 
 
-            # Ask about preserving CONSTITUTION.md
+            # Ask about preserving constitution.md
             local preserve_constitution=false
-            if [[ -f ".specify/memory/CONSTITUTION.md" ]]; then
+            if [[ -f ".specify/memory/constitution.md" ]]; then
                 echo ""
-                read -p "Do you want to preserve your existing CONSTITUTION.md? (y/N): " -n 1 -r
+                read -p "Do you want to preserve your existing constitution.md? (y/N): " -n 1 -r
                 echo ""
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
                     preserve_constitution=true
-                    log "Will preserve existing CONSTITUTION.md"
+                    log "Will preserve existing constitution.md"
                 fi
             fi
         fi
 
         log "Destroying existing project files..."
 
-        # Backup CONSTITUTION.md if preserving
+        # Backup constitution.md if preserving
         local constitution_backup=""
-        if [[ "$preserve_constitution" == true ]] && [[ -f ".specify/memory/CONSTITUTION.md" ]]; then
+        if [[ "$preserve_constitution" == true ]] && [[ -f ".specify/memory/constitution.md" ]]; then
             constitution_backup=$(mktemp)
-            cp ".specify/memory/CONSTITUTION.md" "$constitution_backup"
+            cp ".specify/memory/constitution.md" "$constitution_backup"
         fi
 
         # Remove only .specify directory
@@ -188,6 +188,7 @@ copy_files() {
     local src="$1"
     local dest="$2"
     local desc="$3"
+    local exclude_file="$4"  # Optional: file to exclude from copy
 
     if [[ -d "$src" ]]; then
         if [[ "$DESTROY" == true ]]; then
@@ -196,16 +197,41 @@ copy_files() {
                 rm -rf "$dest"
                 log "Removed existing $desc for fresh copy"
             fi
-            cp -r "$src" "$dest"
-            log "Copied $desc (fresh copy)"
+            if [[ -n "$exclude_file" ]]; then
+                # Create destination directory and copy all files except excluded
+                mkdir -p "$dest"
+                for item in "$src"/*; do
+                    if [[ -f "$item" ]] && [[ "$(basename "$item")" == "$exclude_file" ]]; then
+                        log "Skipped $exclude_file (excluded during fresh copy)"
+                        continue
+                    fi
+                    cp -r "$item" "$dest"/ 2>/dev/null || true
+                done
+                log "Copied $desc (fresh copy, excluded $exclude_file)"
+            else
+                cp -r "$src" "$dest"
+                log "Copied $desc (fresh copy)"
+            fi
         elif [[ ! -d "$dest" ]]; then
             # Create new directory
             cp -r "$src" "$dest"
             log "Copied $desc"
         else
             # Update mode: merge contents (overwrite files that exist in source)
-            cp -r "$src"/* "$dest"/ 2>/dev/null || true
-            log "Updated $desc (merged with existing)"
+            if [[ -n "$exclude_file" ]]; then
+                # Copy all files except the excluded one
+                for item in "$src"/*; do
+                    if [[ -f "$item" ]] && [[ "$(basename "$item")" == "$exclude_file" ]]; then
+                        log "Skipped $exclude_file (preserving existing)"
+                        continue
+                    fi
+                    cp -r "$item" "$dest"/ 2>/dev/null || true
+                done
+                log "Updated $desc (merged with existing, excluded $exclude_file)"
+            else
+                cp -r "$src"/* "$dest"/ 2>/dev/null || true
+                log "Updated $desc (merged with existing)"
+            fi
         fi
     elif [[ -f "$src" ]]; then
         if [[ ! -f "$dest" ]]; then
@@ -223,17 +249,34 @@ copy_files() {
     fi
 }
 
-# Copy memory folder with all its files
-if [[ -d "$SOURCE_DIR/memory" ]]; then
-    copy_files "$SOURCE_DIR/memory" ".specify/memory" "memory folder"
+# Check for existing constitution.md and ask about preservation (for non-destroy mode)
+PRESERVE_CONSTITUTION_UPDATE=false
+if [[ "$DESTROY" != true ]] && [[ -f ".specify/memory/constitution.md" ]]; then
+    echo ""
+    read -p "Do you want to preserve your existing constitution.md? (y/N): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        PRESERVE_CONSTITUTION_UPDATE=true
+        log "Will preserve existing constitution.md"
+    fi
 fi
 
-# Handle preserved CONSTITUTION.md restoration (only relevant after --destroy)
+# Copy memory folder with all its files
+if [[ -d "$SOURCE_DIR/memory" ]]; then
+    # Check if we should preserve constitution.md in any mode
+    if [[ "$PRESERVE_CONSTITUTION_UPDATE" == true ]] || [[ "$PRESERVE_CONSTITUTION" == true ]]; then
+        copy_files "$SOURCE_DIR/memory" ".specify/memory" "memory folder" "constitution.md"
+    else
+        copy_files "$SOURCE_DIR/memory" ".specify/memory" "memory folder"
+    fi
+fi
+
+# Handle preserved constitution.md restoration (only relevant after --destroy)
 if [[ "$PRESERVE_CONSTITUTION" == "true" ]] && [[ -n "$CONSTITUTION_BACKUP" ]]; then
     # Restore from backup (overwrites the freshly copied one)
-    cp "$CONSTITUTION_BACKUP" ".specify/memory/CONSTITUTION.md"
+    cp "$CONSTITUTION_BACKUP" ".specify/memory/constitution.md"
     rm -f "$CONSTITUTION_BACKUP"
-    log "Restored preserved CONSTITUTION.md"
+    log "Restored preserved constitution.md"
 fi
 
 # Copy documentation files

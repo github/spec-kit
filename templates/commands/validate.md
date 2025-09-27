@@ -9,7 +9,7 @@ description: Run validation gates to ensure quality and readiness at any stage o
 ## Available Validation Gates
 
 ### 1. Specification Validation
-Validates that a feature specification is complete and ready for planning.
+**Ultrathink** Validates that a feature specification is complete and ready for planning.
 
 ```bash
 # Run validation on current feature spec
@@ -26,7 +26,7 @@ Validates that a feature specification is complete and ready for planning.
 - [ ] **Similar Features**: Codebase patterns identified and referenced
 
 ### 2. Plan Validation
-Validates that an implementation plan meets all quality gates.
+**Ultrathink** Validates that an implementation plan meets all quality gates.
 
 ```bash
 # Run validation on current implementation plan
@@ -43,7 +43,7 @@ Validates that an implementation plan meets all quality gates.
 - [ ] **Integration Points**: All system integration points identified
 
 ### 3. Implementation Validation
-Validates that code implementation meets Spec Kit standards.
+**Ultrathink** Validates that code implementation meets Spec Kit standards.
 
 ```bash
 # Run validation on current implementation
@@ -59,7 +59,7 @@ Validates that code implementation meets Spec Kit standards.
 - [ ] **Integration Tests**: Contract and integration tests present and passing
 
 ### 4. Repository Validation
-Validates overall repository health and compliance.
+**Ultrathink** Validates overall repository health and compliance.
 
 ```bash
 # Run validation on entire repository

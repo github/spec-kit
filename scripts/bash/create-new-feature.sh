@@ -7,34 +7,34 @@ ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --json) JSON_MODE=true ;;
-        --help|-h) echo "Usage: $0 [--json] [JIRA-key] <feature_description>"; exit 0 ;;
+        --help|-h) echo "Usage: $0 [--json] [jira-key] <feature_description>"; exit 0 ;;
         *) ARGS+=("$arg") ;;
     esac
 done
 
 # Check if first arg is JIRA key format
-if [[ "${ARGS[0]}" =~ ^[A-Z]+-[0-9]+$ ]]; then
+if [[ "${ARGS[0]}" =~ ^[a-z]+-[0-9]+$ ]]; then
     JIRA_KEY="${ARGS[0]}"
     FEATURE_DESCRIPTION="${ARGS[@]:1}"
 else
     # Interactive prompt for JIRA key if not provided
     if [ -t 0 ]; then  # Only prompt if stdin is a terminal
-        read -p "Enter JIRA issue key (e.g., PROJ-123): " JIRA_KEY
+        read -p "Enter JIRA issue key (e.g., proj-123): " JIRA_KEY
     else
-        echo "ERROR: JIRA key required. Usage: $0 [--json] JIRA-key feature_description" >&2
+        echo "ERROR: JIRA key required. Usage: $0 [--json] jira-key feature_description" >&2
         exit 1
     fi
     FEATURE_DESCRIPTION="${ARGS[*]}"
 fi
 
 if [ -z "$FEATURE_DESCRIPTION" ] || [ -z "$JIRA_KEY" ]; then
-    echo "Usage: $0 [--json] [JIRA-key] <feature_description>" >&2
+    echo "Usage: $0 [--json] [jira-key] <feature_description>" >&2
     exit 1
 fi
 
 # Validate JIRA key format
-if [[ ! "$JIRA_KEY" =~ ^[A-Z]+-[0-9]+$ ]]; then
-    echo "ERROR: Invalid JIRA key format. Expected format: PROJ-123" >&2
+if [[ ! "$JIRA_KEY" =~ ^[a-z]+-[0-9]+$ ]]; then
+    echo "ERROR: Invalid JIRA key format. Expected format: proj-123" >&2
     exit 1
 fi
 
@@ -57,20 +57,22 @@ USERNAME=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g'
 FEATURE_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
 WORDS=$(echo "$FEATURE_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
 
-# Create branch name: username/JIRA-123.feature-name
+# Create branch name: username/jira-123.feature-name
 BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${WORDS}"
 
-# Create spec filename using JIRA-key-feature-name format
-SPEC_FILENAME="${JIRA_KEY}-${WORDS}.md"
+# Create feature directory name: jira-123.feature-name
+FEATURE_ID="${JIRA_KEY}.${WORDS}"
+FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
 
 git checkout -b "$BRANCH_NAME"
 
-# Create spec file directly in specs directory (flat structure)
-TEMPLATE="$REPO_ROOT/templates/spec-template.md"
-SPEC_FILE="$SPECS_DIR/$SPEC_FILENAME"
+# Create feature directory
+mkdir -p "$FEATURE_DIR"
 
-# Keep FEATURE_ID for backward compatibility with other scripts
-FEATURE_ID="${JIRA_KEY}.${WORDS}"
+# Create spec file in feature directory
+TEMPLATE="$REPO_ROOT/templates/spec-template.md"
+SPEC_FILE="$FEATURE_DIR/spec.md"
+
 if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
 
 if $JSON_MODE; then

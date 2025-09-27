@@ -4,7 +4,7 @@ description: Analyze changes and create intelligent git commits following Spec K
 
 # Smart Git Commit
 
-**Additional Instructions**: $ARGUMENTS
+**Additional Instructions and Jira issue key (project-123)**: $ARGUMENTS
 
 ## Smart Commit Process
 
@@ -232,7 +232,7 @@ git log --pretty=format:"%h %s" -1 | grep -E "^[0-9a-f]{7} (feat|fix|docs|style|
 **Branch Naming** (following Spec Kit conventions):
 ```bash
 # Feature branches
-git checkout -b "username/PROJ-123.user-authentication"  # Matches JIRA and spec
+git checkout -b "username/proj-123.user-authentication"  # Matches JIRA and spec
 git checkout -b "username/PROJ-456.user-dashboard"       # JIRA integration
 
 # Bug fix branches
@@ -334,10 +334,10 @@ $ /smart-commit "implement user authentication"
 > Y
 
 📝 Creating commit...
-[username/PROJ-123.user-auth abc1234] feat(auth): implement user authentication service
-
+[username/proj-123.user-auth abc1234] feat(auth): implement user authentication service
+- where proj-123 is a Jira issue key. If not provided as ARGUMENTS to this command, prompt the user. Do not proceed without one.
 🚀 Next actions:
-  1. Push to remote: git push -u origin username/PROJ-123.user-auth
+  1. Push to remote: git push -u origin username/proj-123.user-auth
   2. Create pull request
   3. Continue development
   4. Run validation: /validate implementation

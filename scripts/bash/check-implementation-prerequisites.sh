@@ -24,11 +24,11 @@ eval $(get_feature_paths)
 # Check if we're on a valid feature branch
 if ! check_feature_branch "$CURRENT_BRANCH"; then
     if [[ "$JSON_MODE" == "true" ]]; then
-        echo '{"error": "Not on a valid feature branch. Feature branches should be named like: username/PROJ-123.feature-name"}'
+        echo '{"error": "Not on a valid feature branch. Feature branches should be named like: username/proj-123.feature-name"}'
     else
         echo "ERROR: Not on a valid feature branch"
         echo "Current branch: $CURRENT_BRANCH"
-        echo "Expected format: username/PROJ-123.feature-name"
+        echo "Expected format: username/proj-123.feature-name"
     fi
     exit 1
 fi

@@ -11,9 +11,9 @@ function Get-CurrentBranch {
 
 function Test-FeatureBranch {
     param([string]$Branch)
-    if ($Branch -notmatch '^[a-zA-Z0-9_-]+/[a-zA-Z]+-[0-9]+\.[a-z0-9.-]+') {
+    if ($Branch -notmatch '^[a-zA-Z0-9_-]+/[a-z]+-[0-9]+\.[a-z0-9.-]+') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: username/JIRA-123.feature-name"
+        Write-Output "Feature branches should be named like: username/jira-123.feature-name"
         return $false
     }
     return $true
@@ -21,7 +21,7 @@ function Test-FeatureBranch {
 
 function Get-FeatureId {
     param([string]$Branch)
-    # Extract JIRA-123.feature-name part from username/JIRA-123.feature-name
+    # Extract jira-123.feature-name part from username/jira-123.feature-name
     return ($Branch -split '/')[-1]
 }
 
@@ -34,7 +34,9 @@ function Get-FeatureDir {
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
-    $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+    $featureId = Get-FeatureId -Branch $currentBranch
+    $specsDir = Join-Path $repoRoot "specs"
+    $featureDir = Join-Path $specsDir $featureId
     [PSCustomObject]@{
         REPO_ROOT    = $repoRoot
         CURRENT_BRANCH = $currentBranch

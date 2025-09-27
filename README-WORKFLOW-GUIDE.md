@@ -509,7 +509,7 @@ Let's build a simple "user profile display" feature to experience the workflow:
 
 ### **5. Validate Before Building**
 ```bash
-/validate plan specs/002-user-profile/plan.md
+/validate plan specs/proj-123.user-profile/plan.md
 ```
 *Ensures everything is ready for implementation*
 

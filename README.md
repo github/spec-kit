@@ -43,6 +43,67 @@ Initialize your project depending on the coding agent you're using:
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
+### Alternative: Direct Script Usage
+
+If you have this repository cloned locally, you can use the `init.sh` script directly:
+
+```bash
+# Basic usage - creates project in new directory
+./init.sh my-project
+
+# Initialize in current directory
+./init.sh . --ai claude --script sh
+
+# Destroy existing files and start fresh
+./init.sh my-project --destroy --ai claude
+
+# Use different AI assistants
+./init.sh my-project --ai gemini
+./init.sh my-project --ai copilot
+./init.sh my-project --ai cursor
+
+# Use PowerShell scripts instead of bash
+./init.sh my-project --ai claude --script ps
+```
+
+#### `init.sh` Options
+
+| Option | Description | Values |
+|--------|-------------|---------|
+| `--ai` | AI assistant to use | `claude`, `gemini`, `copilot`, `cursor` (default: `claude`) |
+| `--script` | Script type to install | `sh` (bash), `ps` (PowerShell) (default: `sh`) |
+| `--destroy` | Delete existing `.specify/` directory and start fresh | Flag |
+| `--help` | Show help message | Flag |
+
+#### What `--destroy` Does
+
+The `--destroy` flag removes the entire `.specify/` directory to start with a clean slate. When you use this flag:
+
+1. **Confirmation prompt**: You'll be asked to confirm deletion of the `.specify/` directory
+2. **Constitution preservation**: If `constitution.md` exists, you'll be prompted whether to preserve it
+3. **Complete removal**: The entire `.specify/` directory is deleted and recreated fresh
+4. **Preservation handling**: If you chose to preserve `constitution.md`, it's restored after the fresh copy
+
+**What gets destroyed:**
+- `.specify/memory/` (except `constitution.md` if preserved)
+- `.specify/scripts/`
+- `.specify/templates/`
+- `.specify/docs/`
+- AI-specific command directories (`.claude/commands/`, `.gemini/commands/`, etc.)
+
+**What's preserved:**
+- `specs/` directory (never touched)
+- Your project files outside `.specify/`
+- `constitution.md` (if you choose to preserve it)
+- `.gitignore` entries (updated, not destroyed)
+
+The script will:
+- Create a `.specify/` directory with all necessary templates and scripts
+- Generate AI-specific command files (`.claude/commands/`, `.gemini/commands/`, etc.)
+- Preserve your existing `constitution.md` if you choose to
+- Set up proper `.gitignore` entries
+- Copy scripts based on your chosen platform (bash or PowerShell)
+
 #### Install from a Fork or Custom Branch
 
 To install from your own fork or a specific branch:
@@ -278,7 +339,7 @@ delete any comments that you made, but you can't delete comments anybody else ma
 
 After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
 
-Once this step is completed, you should have a new branch created (e.g., `username/PROJ-123.create-taskify`), as well as a new specification in the `specs/PROJ-123.create-taskify` directory.
+Once this step is completed, you should have a new branch created (e.g., `username/proj-123.create-taskify`), as well as a new specification in the `specs/proj-123.create-taskify` directory.
 
 The produced specification should contain a set of user stories and functional requirements, as defined in the template.
 
@@ -296,7 +357,7 @@ At this stage, your project folder contents should resemble the following:
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── PROJ-123.create-taskify
+│	 └── proj-123.create-taskify
 │	     └── spec.md
 └── templates
     ├── plan-template.md
@@ -348,7 +409,7 @@ The output of this step will include a number of implementation detail documents
 │	 ├── setup-plan.sh
 │	 └── update-claude-md.sh
 ├── specs
-│	 └── PROJ-123.create-taskify
+│	 └── proj-123.create-taskify
 │	     ├── contracts
 │	     │	 ├── api-spec.json
 │	     │	 └── signalr-spec.md
@@ -415,7 +476,7 @@ You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.c
 Once ready, instruct Claude Code to implement your solution (example path included):
 
 ```text
-implement specs/002-create-taskify/plan.md
+implement specs/proj-123.create-taskify/plan.md
 ```
 
 Claude Code will spring into action and will start creating the implementation.

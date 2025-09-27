@@ -6,16 +6,16 @@ get_current_branch() { git rev-parse --abbrev-ref HEAD; }
 
 check_feature_branch() {
     local branch="$1"
-    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z]+-[0-9]+\. ]]; then
+    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/[a-z]+-[0-9]+\. ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: username/JIRA-123.anything" >&2
+        echo "Feature branches should be named like: username/jira-123.feature-name" >&2
         return 1
     fi; return 0
 }
 
 get_feature_id() {
     local branch="$1"
-    echo "$branch" | sed 's|.*/||'  # Extract JIRA-123.feature-name part
+    echo "$branch" | sed 's|.*/||'  # Extract jira-123.feature-name part
 }
 
 get_feature_dir() {
@@ -28,21 +28,19 @@ get_feature_paths() {
     local current_branch=$(get_current_branch)
     local feature_id=$(get_feature_id "$current_branch")
     local specs_dir="$repo_root/specs"
-
-    # Convert PROJ-123.feature-name to PROJ-123-feature-name for flat file structure
-    local file_prefix=$(echo "$feature_id" | sed 's/\./-/')
+    local feature_dir="$specs_dir/$feature_id"
 
     cat <<EOF
 REPO_ROOT='$repo_root'
 CURRENT_BRANCH='$current_branch'
-FEATURE_DIR='$specs_dir'
-FEATURE_SPEC='$specs_dir/${file_prefix}.md'
-IMPL_PLAN='$specs_dir/${file_prefix}-plan.md'
-TASKS='$specs_dir/${file_prefix}-tasks.md'
-RESEARCH='$specs_dir/${file_prefix}-research.md'
-DATA_MODEL='$specs_dir/${file_prefix}-data-model.md'
-QUICKSTART='$specs_dir/${file_prefix}-quickstart.md'
-CONTRACTS_DIR='$specs_dir/${file_prefix}-contracts'
+FEATURE_DIR='$feature_dir'
+FEATURE_SPEC='$feature_dir/spec.md'
+IMPL_PLAN='$feature_dir/plan.md'
+TASKS='$feature_dir/tasks.md'
+RESEARCH='$feature_dir/research.md'
+DATA_MODEL='$feature_dir/data-model.md'
+QUICKSTART='$feature_dir/quickstart.md'
+CONTRACTS_DIR='$feature_dir/contracts'
 EOF
 }
 
