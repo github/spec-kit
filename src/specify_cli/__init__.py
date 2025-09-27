@@ -14,13 +14,11 @@ Specify CLI - Setup tool for Specify projects
 
 Usage:
     uvx specify-cli.py init <project-name>
-    uvx specify-cli.py init .
     uvx specify-cli.py init --here
 
 Or install globally:
     uv tool install --from specify-cli.py specify-cli
     specify init <project-name>
-    specify init .
     specify init --here
 """
 
@@ -66,8 +64,6 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 # Constants
-DEFAULT_TEMPLATE_REPO = "Jrakru/spec-kit"
-
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
@@ -197,9 +193,9 @@ def get_key():
     key = readchar.readkey()
     
     # Arrow keys
-    if key == readchar.key.UP or key == readchar.key.CTRL_P:
+    if key == readchar.key.UP:
         return 'up'
-    if key == readchar.key.DOWN or key == readchar.key.CTRL_N:
+    if key == readchar.key.DOWN:
         return 'down'
     
     # Enter/Return
@@ -872,7 +868,7 @@ def relocate_non_agent_directories(project_path: Path, tracker: StepTracker | No
             tracker.skip("relocate", "no changes needed")
 @app.command()
 def init(
-    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
+    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, or auggie"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
@@ -885,7 +881,7 @@ def init(
     template_repo: Optional[str] = typer.Option(
         None,
         "--template-repo",
-        help=f"Override template repository in owner/repo form (defaults to {DEFAULT_TEMPLATE_REPO} or SPEC_KIT_TEMPLATE_REPO)",
+        help="Override template repository in owner/repo form (defaults to github/spec-kit or SPEC_KIT_TEMPLATE_REPO)",
     ),
     template_path: Optional[Path] = typer.Option(
         None,
@@ -916,9 +912,7 @@ def init(
         specify init my-project --ai windsurf
         specify init my-project --ai auggie
         specify init --ignore-agent-tools my-project
-        specify init . --ai claude         # Initialize in current directory
-        specify init .                     # Initialize in current directory (interactive AI selection)
-        specify init --here --ai claude    # Alternative syntax for current directory
+        specify init --here --ai claude
         specify init --here --ai codex
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
@@ -926,18 +920,13 @@ def init(
     # Show banner first
     show_banner()
     
-    # Handle '.' as shorthand for current directory (equivalent to --here)
-    if project_name == ".":
-        here = True
-        project_name = None  # Clear project_name to use existing validation logic
-    
     # Validate arguments
     if here and project_name:
         console.print("[red]Error:[/red] Cannot specify both project name and --here flag")
         raise typer.Exit(1)
     
     if not here and not project_name:
-        console.print("[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag")
+        console.print("[red]Error:[/red] Must specify either a project name or use --here flag")
         raise typer.Exit(1)
     
     # Determine project directory
@@ -1077,7 +1066,7 @@ def init(
     env_template_repo = os.getenv("SPEC_KIT_TEMPLATE_REPO")
     env_template_path = os.getenv("SPEC_KIT_TEMPLATE_PATH")
 
-    repo_spec = template_repo or env_template_repo or DEFAULT_TEMPLATE_REPO
+    repo_spec = template_repo or env_template_repo or "github/spec-kit"
     try:
         repo_owner, repo_name = repo_spec.split("/", 1)
     except ValueError:
@@ -1241,26 +1230,17 @@ def init(
         step_num += 1
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
-
     steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/specify[/] - Create baseline specification")
-    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
+    steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
+    steps_lines.append("   2.3 [cyan]/clarify[/] - Clarify and de-risk specification (run before [cyan]/plan[/cyan])")
+    steps_lines.append("   2.4 [cyan]/plan[/] - Create implementation plans")
+    steps_lines.append("   2.5 [cyan]/tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.6 [cyan]/analyze[/] - Validate alignment & surface inconsistencies (read-only)")
+    steps_lines.append("   2.7 [cyan]/implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
     console.print(steps_panel)
-
-    enhancement_lines = [
-        "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
-        "",
-        f"○ [cyan]/clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/plan[/] if used)",
-        f"○ [cyan]/analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/tasks[/], before [cyan]/implement[/])"
-    ]
-    enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
-    console.print()
-    console.print(enhancements_panel)
 
     if selected_ai == "codex":
         warning_text = """[bold yellow]Important Note:[/bold yellow]
