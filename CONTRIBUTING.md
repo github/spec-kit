@@ -45,6 +45,22 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`/.specs/.specify/memory/constitution.md`) are updated if major process changes are made
 
+### Branching and PR policy
+
+We track all changes through pull requests—even for local branches that seem ready to fast-forward. Before deleting or merging a branch, verify if it has unique commits vs `main`. If it does, push the branch and open a PR so the change is reviewable.
+
+Helper script:
+
+```
+scripts/bash/verify-and-pr.sh <branch-name>
+```
+
+Behavior:
+- If the branch has no unique commits, it deletes it locally (and removes the remote if present).
+- If it has unique commits, it pushes to origin and opens a PR (uses GitHub CLI `gh` when available; otherwise prints a compare URL).
+
+This keeps history clean and aligns with our automated release workflows.
+
 ## AI contributions in Spec Kit
 
 > [!IMPORTANT]
