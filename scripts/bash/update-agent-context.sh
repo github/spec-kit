@@ -69,6 +69,7 @@ WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
 AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
+CLINE_FILE="$REPO_ROOT/.clinerules/rules/specify-rules.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -580,9 +581,12 @@ update_specific_agent() {
         roo)
             update_agent_file "$ROO_FILE" "Roo Code"
             ;;
+        cline)
+            update_agent_file "$CLINE_FILE" "Cline"
+            ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo"
+            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo|cline"
             exit 1
             ;;
     esac
@@ -641,7 +645,12 @@ update_all_existing_agents() {
         update_agent_file "$ROO_FILE" "Roo Code"
         found_agent=true
     fi
-    
+
+    if [[ -f "$CLINE_FILE" ]]; then
+        update_agent_file "$CLINE_FILE" "Cline"
+        found_agent=true
+    fi
+
     # If no agent files exist, create a default Claude file
     if [[ "$found_agent" == false ]]; then
         log_info "No existing agent files found, creating default Claude file..."
@@ -665,7 +674,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo|cline]"
 }
 
 #==============================================================================
