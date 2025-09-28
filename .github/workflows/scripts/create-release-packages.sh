@@ -124,6 +124,11 @@ build_variant() {
   fi
   
   [[ -d templates ]] && { mkdir -p "$SPECIFY_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPECIFY_DIR"/ \; ; echo "Copied templates -> .specs/.specify/templates"; }
+  # Promote layout.yaml to .specs/.specify/layout.yaml for runtime discovery by scripts
+  if [[ -f "$SPECIFY_DIR/templates/layout.yaml" ]]; then
+    cp "$SPECIFY_DIR/templates/layout.yaml" "$SPECIFY_DIR/layout.yaml"
+    echo "Promoted templates/layout.yaml -> .specs/.specify/layout.yaml"
+  fi
   # Inject variant into plan-template.md within .specs/.specify/templates if present
   local plan_tpl="$base_dir/.specs/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then

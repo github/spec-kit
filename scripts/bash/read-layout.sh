@@ -22,7 +22,7 @@ CFG_PATH="$REPO_ROOT/.specs/.specify/layout.yaml"
 
 # Defaults
 LAYOUT_VERSION="1"
-LAYOUT_SPEC_ROOTS=("specs" ".specs/.specify/specs")
+LAYOUT_SPEC_ROOTS=(".specs/.specify/specs" "specs")
 LAYOUT_FOLDER_STRATEGY="epic"
 LAYOUT_FILES_FPRD="fprd.md"
 LAYOUT_FILES_PPRD="pprd.md"
@@ -117,4 +117,3 @@ if $JSON_MODE; then
 fi
 
 emit
-

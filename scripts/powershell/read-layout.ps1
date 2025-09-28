@@ -11,7 +11,7 @@ $cfgPath = Join-Path $repoRoot '.specs/.specify/layout.yaml'
 # Defaults
 $cfg = [ordered]@{
   VERSION = 1
-  SPEC_ROOTS = @('specs', '.specs/.specify/specs')
+  SPEC_ROOTS = @('.specs/.specify/specs', 'specs')
   FOLDER_STRATEGY = 'epic'
   FILES = [ordered]@{
     FPRD='fprd.md'; PPRD='pprd.md'; REQUIREMENTS='requirements.md'; DESIGN='design.md'; TASKS='tasks.md'; RESEARCH='research.md'; QUICKSTART='quickstart.md'; TRACEABILITY_INDEX='traceability_index.md'; CONTRACTS_DIR='contracts'; PROGRESS_LOG='progress_log.md'; PARKING_LOT='parking_lot.md'; INDEX='index.yaml'
@@ -62,4 +62,3 @@ if (Test-Path $cfgPath) {
 }
 
 $cfg
-

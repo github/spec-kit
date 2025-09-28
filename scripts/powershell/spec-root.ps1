@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Get-RepoRoot
 $layout = & (Join-Path $PSScriptRoot 'read-layout.ps1')
 
-$roots = @('specs', '.specs/.specify/specs')
+$roots = @('.specs/.specify/specs', 'specs')
 if ($layout -and $layout.SPEC_ROOTS) { $roots = $layout.SPEC_ROOTS }
 
 $chosen = $null
@@ -22,4 +22,3 @@ if (-not $chosen) {
 }
 
 Write-Output $chosen
-

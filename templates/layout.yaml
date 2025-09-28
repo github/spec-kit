@@ -1,8 +1,8 @@
 version: 1
 
 spec_roots:
-  - "specs"
   - ".specs/.specify/specs"
+  - "specs"
 
 folder_strategy: "epic"
 
@@ -35,5 +35,4 @@ defaults:
   tui_framework_hint: "Textual"
 
 catalog:
-  path: "specs/catalog.yaml"
-
+  path: ".specs/.specify/specs/catalog.yaml"
