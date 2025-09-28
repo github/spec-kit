@@ -37,8 +37,11 @@ env/
 *.log
 .env
 .env.local
-*.lock
 .specs/
+
+# Keep lock files for reproducible builds
+!poetry.lock
+!uv.lock
 
 # Spec Kit-specific files
 .genreleases/

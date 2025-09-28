@@ -9,7 +9,9 @@ Please note that this project is released with a Contributor Code of Conduct (CO
 These are one time installations required to be able to test your changes locally as part of the pull request (PR) submission process.
 
 1. Install Python 3.11+ (https://www.python.org/downloads/)
-1. Install uv (https://docs.astral.sh/uv/) for package management
+1. Install either:
+   - **uv (recommended)** (https://docs.astral.sh/uv/) for package management
+   - **Poetry** (https://python-poetry.org/docs/#installation) for package management
 1. Install Git (https://git-scm.com/downloads)
 1. Have an AI coding agent available (README.md#-supported-ai-agents)
 
@@ -19,8 +21,12 @@ These are one time installations required to be able to test your changes locall
 >If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was discussed and agreed upon by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
 1. Fork and clone the repository
-1. Configure and install the dependencies: `uv sync`
-1. Make sure the CLI works on your machine: `uv run specify --help`
+1. Configure and install the dependencies with either:
+   - **uv (recommended)**: `uv sync`
+   - **Poetry**: `poetry install`
+1. Make sure the CLI works on your machine with either:
+   - **uv**: `uv run specify --help`
+   - **Poetry**: `poetry run specify --help`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant

@@ -31,7 +31,9 @@ python src/specify_cli/__init__.py init demo-project --script ps
 
 ## 3. Use Editable Install (Isolated Environment)
 
-Create an isolated environment using `uv` so dependencies resolve exactly like end users get them:
+Create an isolated environment so dependencies resolve exactly like end users get them. You can use either `uv` or `poetry`:
+
+### Option A: Using uv (recommended)
 
 ```bash
 # Create & activate virtual env (uv auto-manages .venv)
@@ -45,7 +47,21 @@ uv pip install -e .
 specify --help
 ```
 
-Re-running after code edits requires no reinstall because of editable mode.
+### Option B: Using Poetry
+
+```bash
+# Install dependencies and create virtual environment
+poetry install
+
+# Run CLI via poetry
+poetry run specify --help
+
+# Or activate poetry shell and run directly
+poetry shell
+specify --help
+```
+
+Both approaches support editable mode, so re-running after code edits requires no reinstall.
 
 ## 4. Invoke with uvx Directly From Git (Current Branch)
 
@@ -104,12 +120,20 @@ python -c "import specify_cli; print('Import OK')"
 
 ## 7. Build a Wheel Locally (Optional)
 
-Validate packaging before publishing:
+Validate packaging before publishing using either tool:
 
+**Using uv:**
 ```bash
 uv build
 ls dist/
 ```
+
+**Using Poetry:**
+```bash
+poetry build
+ls dist/
+```
+
 Install the built artifact into a fresh throwaway environment if needed.
 
 ## 8. Using a Temporary Workspace
@@ -134,14 +158,14 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 
 ## 10. Rapid Edit Loop Summary
 
-| Action | Command |
-|--------|---------|
-| Run CLI directly | `python -m src.specify_cli --help` |
-| Editable install | `uv pip install -e .` then `specify ...` |
-| Local uvx run (repo root) | `uvx --from . specify ...` |
-| Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit specify ...` |
-| Git branch uvx | `uvx --from git+URL@branch specify ...` |
-| Build wheel | `uv build` |
+| Action | uv Command | Poetry Command |
+|--------|------------|----------------|
+| Run CLI directly | `python -m src.specify_cli --help` | `python -m src.specify_cli --help` |
+| Editable install | `uv pip install -e .` then `specify ...` | `poetry install` then `poetry run specify ...` |
+| Local uvx run (repo root) | `uvx --from . specify ...` | N/A (use `poetry run specify ...`) |
+| Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit specify ...` | N/A |
+| Git branch uvx | `uvx --from git+URL@branch specify ...` | N/A |
+| Build wheel | `uv build` | `poetry build` |
 
 ## 11. Cleaning Up
 
@@ -152,13 +176,13 @@ rm -rf .venv dist build *.egg-info
 
 ## 12. Common Issues
 
-| Symptom | Fix |
-|---------|-----|
-| `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
-| Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
-| Git step skipped | You passed `--no-git` or Git not installed |
-| Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
-| TLS errors on corporate network | Try `--skip-tls` (not for production) |
+| Symptom | uv Fix | Poetry Fix |
+|---------|--------|------------|
+| `ModuleNotFoundError: typer` | Run `uv pip install -e .` | Run `poetry install` |
+| Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` | Re-run init or `chmod +x scripts/*.sh` |
+| Git step skipped | You passed `--no-git` or Git not installed | You passed `--no-git` or Git not installed |
+| Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly | Pass `--script sh` or `--script ps` explicitly |
+| TLS errors on corporate network | Try `--skip-tls` (not for production) | Try `--skip-tls` (not for production) |
 
 ## 13. Next Steps
 
