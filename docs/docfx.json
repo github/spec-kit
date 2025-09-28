@@ -8,12 +8,13 @@
         ]
       },
       {
+        "src": "../",
         "files": [
-          "../README.md",
-          "../CONTRIBUTING.md",
-          "../CODE_OF_CONDUCT.md",
-          "../SECURITY.md",
-          "../SUPPORT.md"
+          "README.md",
+          "CONTRIBUTING.md",
+          "CODE_OF_CONDUCT.md",
+          "SECURITY.md",
+          "SUPPORT.md"
         ],
         "dest": "."
       }
@@ -25,8 +26,9 @@
         ]
       },
       {
+        "src": "../",
         "files": [
-          "../media/**"
+          "media/**"
         ],
         "dest": "media"
       }
@@ -62,7 +64,7 @@
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {
-        "repo": "https://github.com/github/spec-kit",
+        "repo": "https://github.com/Jrakru/spec-kit",
         "branch": "main"
       }
     }
