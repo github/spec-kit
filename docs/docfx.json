@@ -10,7 +10,7 @@
       {
         "src": "../",
         "files": [
-          "README.md",
+          "spec-driven.md",
           "CONTRIBUTING.md",
           "CODE_OF_CONDUCT.md",
           "SECURITY.md",
@@ -64,7 +64,7 @@
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {
-        "repo": "https://github.com/Jrakru/spec-kit",
+  "repo": "{{REPOSITORY_URL}}",
         "branch": "main"
       }
     }

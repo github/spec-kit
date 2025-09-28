@@ -57,3 +57,19 @@ If anything here seems out of date with the code, note it and I’ll update this
 - PR-only merges: Do not push directly to `main`. Always open a pull request so changes are reviewed and tracked.
 - Quick check-and-PR helper: `scripts/bash/verify-and-pr.sh <branch>` will delete a redundant branch (no unique commits) or push and open a PR if it has unique commits.
 - Versioning: When changing `src/specify_cli/__init__.py`, bump `version` in `pyproject.toml` and add a `CHANGELOG.md` entry. Tagging is done after merges to `main`.
+
+### Non-interactive GitHub CLI (gh)
+
+When invoking GitHub CLI commands from automations or agents, ensure they never require interactive prompts. Use these practices so commands return without human intervention:
+
+- Always pass `--repo <owner>/<repo>` (or `-R`) to avoid selection prompts.
+- Disable prompts globally in the environment: set `GH_PROMPT=disabled`.
+- Prefer explicit confirmation flags:
+  - `gh pr merge --squash --auto --delete-branch` (adds `--auto` to avoid confirmation)
+  - `gh release create <tag> <assets...> --title "..." --notes "..." --latest` (no editor)
+  - `gh workflow run <name-or-id> --ref main` (no follow-up prompts)
+- Avoid opening editors: supply `--title/--body/--notes/--notes-file` instead of relying on `$EDITOR`.
+- Non-interactive auth: rely on `GITHUB_TOKEN` (Actions) or a preconfigured `gh auth login`—do not trigger login flows during runs.
+- Optional: set `GH_NO_UPDATE_NOTIFIER=1` to suppress update notices in CI logs.
+
+If a command is known to prompt, add the appropriate `--yes/--confirm/--auto` flag or refactor the flow to avoid the prompt.
