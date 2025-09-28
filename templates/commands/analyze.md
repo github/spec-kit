@@ -1,5 +1,5 @@
 ---
-description: Perform a non-destructive cross-artifact consistency and quality analysis across spec.md, plan.md, and tasks.md after task generation.
+description: Perform a non-destructive cross-artifact consistency and quality analysis across the primary context artifact, implementation plan, and tasks after task generation.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
@@ -11,24 +11,20 @@ User input:
 
 $ARGUMENTS
 
-Goal: Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (`spec.md`, `plan.md`, `tasks.md`) before implementation. This command MUST run only after `/tasks` has successfully produced a complete `tasks.md`.
+Goal: Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (primary context file, plan file, tasks file) before implementation. This command MUST run only after `/tasks` has successfully produced a complete `tasks.md`.
 
 STRICTLY READ-ONLY: Do **not** modify any files. Output a structured analysis report. Offer an optional remediation plan (user must explicitly approve before any follow-up editing commands would be invoked manually).
 
-Constitution Authority: The project constitution (`/memory/constitution.md`) is **non-negotiable** within this analysis scope. Constitution conflicts are automatically CRITICAL and require adjustment of the spec, plan, or tasks—not dilution, reinterpretation, or silent ignoring of the principle. If a principle itself needs to change, that must occur in a separate, explicit constitution update outside `/analyze`.
+Constitution Authority: The project constitution (`/memory/constitution.md`) is **non-negotiable** within this analysis scope. Constitution conflicts are automatically CRITICAL and require adjustment of the primary context artifact, plan, or tasks—not dilution, reinterpretation, or silent ignoring of the principle. If a principle itself needs to change, that must occur in a separate, explicit constitution update outside `/analyze`.
 
 Execution steps:
 
-1. Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
-   - SPEC = FEATURE_DIR/spec.md
-   - PLAN = FEATURE_DIR/plan.md
-   - TASKS = FEATURE_DIR/tasks.md
-   Abort with an error message if any required file is missing (instruct the user to run missing prerequisite command).
+1. Run `{SCRIPT}` once from repo root and parse JSON for `PRIMARY_FILE`, `PLAN_FILE`, `TASKS_FILE`, `WORKFLOW`, and `AVAILABLE_DOCS`. Abort with an error message if any required file is missing (instruct the user to run the missing prerequisite command).
 
 2. Load artifacts:
-   - Parse spec.md sections: Overview/Context, Functional Requirements, Non-Functional Requirements, User Stories, Edge Cases (if present).
-   - Parse plan.md: Architecture/stack choices, Data Model references, Phases, Technical constraints.
-   - Parse tasks.md: Task IDs, descriptions, phase grouping, parallel markers [P], referenced file paths.
+   - Parse `PRIMARY_FILE` (context spec, INITIAL brief, or all-in-one record) for requirements, user stories, constraints, and clarifications.
+   - Parse `PLAN_FILE` for architecture/stack choices, dependencies, sequencing, and risk notes.
+   - Parse `TASKS_FILE` for task IDs, descriptions, phase grouping, parallel markers [P], and referenced file paths.
    - Load constitution `/memory/constitution.md` for principle validation.
 
 3. Build internal semantic models:
@@ -46,7 +42,7 @@ Execution steps:
    C. Underspecification:
       - Requirements with verbs but missing object or measurable outcome.
       - User stories missing acceptance criteria alignment.
-      - Tasks referencing files or components not defined in spec/plan.
+      - Tasks referencing files or components not defined in the primary context file or plan.
    D. Constitution alignment:
       - Any requirement or plan element conflicting with a MUST principle.
       - Missing mandated sections or quality gates from constitution.
@@ -56,22 +52,22 @@ Execution steps:
       - Non-functional requirements not reflected in tasks (e.g., performance, security).
    F. Inconsistency:
       - Terminology drift (same concept named differently across files).
-      - Data entities referenced in plan but absent in spec (or vice versa).
+      - Data entities referenced in the plan but absent in the primary context file (or vice versa).
       - Task ordering contradictions (e.g., integration tasks before foundational setup tasks without dependency note).
       - Conflicting requirements (e.g., one requires to use Next.js while other says to use Vue as the framework).
 
 5. Severity assignment heuristic:
-   - CRITICAL: Violates constitution MUST, missing core spec artifact, or requirement with zero coverage that blocks baseline functionality.
+   - CRITICAL: Violates constitution MUST, missing primary context artifact, or requirement with zero coverage that blocks baseline functionality.
    - HIGH: Duplicate or conflicting requirement, ambiguous security/performance attribute, untestable acceptance criterion.
    - MEDIUM: Terminology drift, missing non-functional task coverage, underspecified edge case.
    - LOW: Style/wording improvements, minor redundancy not affecting execution order.
 
 6. Produce a Markdown report (no file writes) with sections:
 
-   ### Specification Analysis Report
+   ### Context Analysis Report
    | ID | Category | Severity | Location(s) | Summary | Recommendation |
    |----|----------|----------|-------------|---------|----------------|
-   | A1 | Duplication | HIGH | spec.md:L120-134 | Two similar requirements ... | Merge phrasing; keep clearer version |
+   | A1 | Duplication | HIGH | PRIMARY_FILE:L120-134 | Two similar requirements ... | Merge phrasing; keep clearer version |
    (Add one row per finding; generate stable IDs prefixed by category initial.)
 
    Additional subsections:

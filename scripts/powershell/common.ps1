@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Common PowerShell functions analogous to common.sh
+# Common helpers for the Context Engineering Kit scripts
 
 function Get-RepoRoot {
     try {
@@ -8,54 +8,60 @@ function Get-RepoRoot {
             return $result
         }
     } catch {
-        # Git command failed
+        # ignore
     }
-    
-    # Fall back to script location for non-git repos
     return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
 
-function Get-CurrentBranch {
-    # First check if SPECIFY_FEATURE environment variable is set
-    if ($env:SPECIFY_FEATURE) {
-        return $env:SPECIFY_FEATURE
+function Get-Workflow {
+    param([string]$RepoRoot)
+    $configPath = Join-Path $RepoRoot '.context-eng/workflow.json'
+    if (Test-Path $configPath) {
+        try {
+            $json = Get-Content $configPath -Raw | ConvertFrom-Json
+            if ($json.workflow) { return $json.workflow }
+        } catch {
+            # fall through to default
+        }
     }
-    
-    # Then check git if available
+    return 'free-style'
+}
+
+function Get-CurrentFeature {
+    if ($env:CONTEXT_FEATURE) {
+        return $env:CONTEXT_FEATURE
+    }
     try {
-        $result = git rev-parse --abbrev-ref HEAD 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return $result
+        $branch = git rev-parse --abbrev-ref HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $branch -and $branch -ne 'HEAD') {
+            return $branch
         }
     } catch {
-        # Git command failed
+        # ignore
     }
-    
-    # For non-git repos, try to find the latest feature directory
+
     $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
-    
-    if (Test-Path $specsDir) {
-        $latestFeature = ""
-        $highest = 0
-        
-        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+    $searchDirs = @(
+        (Join-Path $repoRoot 'specs'),
+        (Join-Path $repoRoot 'context-eng/prp'),
+        (Join-Path $repoRoot 'context-eng/all-in-one')
+    )
+    $candidate = $null
+    $highest = -1
+    foreach ($dir in $searchDirs) {
+        if (-not (Test-Path $dir)) { continue }
+        Get-ChildItem -Path $dir -Directory | ForEach-Object {
             if ($_.Name -match '^(\d{3})-') {
-                $num = [int]$matches[1]
+                $num = [int]$Matches[1]
                 if ($num -gt $highest) {
                     $highest = $num
-                    $latestFeature = $_.Name
+                    $candidate = $_.Name
                 }
             }
         }
-        
-        if ($latestFeature) {
-            return $latestFeature
-        }
     }
-    
-    # Final fallback
-    return "main"
+    if ($candidate) { return $candidate }
+    return '000-unspecified'
 }
 
 function Test-HasGit {
@@ -72,45 +78,84 @@ function Test-FeatureBranch {
         [string]$Branch,
         [bool]$HasGit = $true
     )
-    
-    # For non-git repos, we can't enforce branch naming but still provide output
     if (-not $HasGit) {
-        Write-Warning "[specify] Warning: Git repository not detected; skipped branch validation"
+        Write-Warning "[cek] Warning: Git repository not detected; skipped branch validation"
         return $true
     }
-    
     if ($Branch -notmatch '^[0-9]{3}-') {
-        Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name"
+        Write-Output "ERROR: Not on a context feature branch. Current branch: $Branch"
+        Write-Output "Use branches like 001-feature-name."
         return $false
     }
     return $true
 }
 
-function Get-FeatureDir {
-    param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
-}
-
-function Get-FeaturePathsEnv {
+function Get-FeaturePaths {
     $repoRoot = Get-RepoRoot
-    $currentBranch = Get-CurrentBranch
+    $workflow = Get-Workflow -RepoRoot $repoRoot
+    $featureName = Get-CurrentFeature
     $hasGit = Test-HasGit
-    $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
-    
-    [PSCustomObject]@{
-        REPO_ROOT     = $repoRoot
-        CURRENT_BRANCH = $currentBranch
-        HAS_GIT       = $hasGit
-        FEATURE_DIR   = $featureDir
-        FEATURE_SPEC  = Join-Path $featureDir 'spec.md'
-        IMPL_PLAN     = Join-Path $featureDir 'plan.md'
-        TASKS         = Join-Path $featureDir 'tasks.md'
-        RESEARCH      = Join-Path $featureDir 'research.md'
-        DATA_MODEL    = Join-Path $featureDir 'data-model.md'
-        QUICKSTART    = Join-Path $featureDir 'quickstart.md'
-        CONTRACTS_DIR = Join-Path $featureDir 'contracts'
+    $contextDir = Join-Path $repoRoot '.context-eng'
+    $checklistTemplate = Join-Path $contextDir 'checklists/full-implementation-checklist.md'
+
+    $result = [ordered]@{
+        REPO_ROOT = $repoRoot
+        WORKFLOW = $workflow
+        FEATURE_NAME = $featureName
+        HAS_GIT = $hasGit
+        FEATURE_DIR = $null
+        PRIMARY_FILE = $null
+        PLAN_FILE = $null
+        RESEARCH_FILE = $null
+        TASKS_FILE = $null
+        PRP_FILE = $null
+        INITIAL_FILE = $null
+        CHECKLIST_TEMPLATE = $checklistTemplate
+        CURRENT_BRANCH = $featureName
+        FEATURE_SPEC = $primary_file
+        IMPL_PLAN = $plan_file
+        TASKS = $tasks_file
+        RESEARCH = $research_file
     }
+
+    switch ($workflow) {
+        'free-style' {
+            $featureDir = Join-Path $repoRoot "specs/$featureName"
+            $result['FEATURE_DIR'] = $featureDir
+            $result['PRIMARY_FILE'] = Join-Path $featureDir 'context-spec.md'
+            $result['PLAN_FILE'] = Join-Path $featureDir 'plan.md'
+            $result['RESEARCH_FILE'] = Join-Path $featureDir 'research.md'
+            $result['TASKS_FILE'] = Join-Path $featureDir 'tasks.md'
+        }
+        'prp' {
+            $featureDir = Join-Path $repoRoot "context-eng/prp/$featureName"
+            $result['FEATURE_DIR'] = $featureDir
+            $result['PRIMARY_FILE'] = Join-Path $repoRoot 'PRPs/INITIAL.md'
+            $result['INITIAL_FILE'] = $result['PRIMARY_FILE']
+            $result['PRP_FILE'] = Join-Path $repoRoot "PRPs/$featureName.md"
+            $result['PLAN_FILE'] = Join-Path $featureDir 'plan.md'
+            $result['RESEARCH_FILE'] = Join-Path $featureDir 'research.md'
+            $result['TASKS_FILE'] = Join-Path $featureDir 'tasks.md'
+        }
+        'all-in-one' {
+            $featureDir = Join-Path $repoRoot "context-eng/all-in-one/$featureName"
+            $result['FEATURE_DIR'] = $featureDir
+            $result['PRIMARY_FILE'] = Join-Path $featureDir 'record.md'
+            $result['PLAN_FILE'] = Join-Path $featureDir 'plan.md'
+            $result['RESEARCH_FILE'] = Join-Path $featureDir 'research.md'
+            $result['TASKS_FILE'] = Join-Path $featureDir 'tasks.md'
+        }
+        default {
+            $featureDir = Join-Path $repoRoot "specs/$featureName"
+            $result['FEATURE_DIR'] = $featureDir
+            $result['PRIMARY_FILE'] = Join-Path $featureDir 'context-spec.md'
+            $result['PLAN_FILE'] = Join-Path $featureDir 'plan.md'
+            $result['RESEARCH_FILE'] = Join-Path $featureDir 'research.md'
+            $result['TASKS_FILE'] = Join-Path $featureDir 'tasks.md'
+        }
+    }
+
+    return [PSCustomObject]$result
 }
 
 function Test-FileExists {

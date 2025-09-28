@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # create-release-packages.sh (workflow-local)
-# Build Spec Kit template release archives for each supported AI assistant and script type.
+# Build Context Engineering Kit template release archives for each supported AI assistant and script type.
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
@@ -32,9 +32,9 @@ rm -rf "$GENRELEASES_DIR"/* || true
 
 rewrite_paths() {
   sed -E \
-    -e 's@(/?)memory/@.specify/memory/@g' \
-    -e 's@(/?)scripts/@.specify/scripts/@g' \
-    -e 's@(/?)templates/@.specify/templates/@g'
+    -e 's@(/?)memory/@.context-eng/memory/@g' \
+    -e 's@(/?)scripts/@.context-eng/scripts/@g' \
+    -e 's@(/?)templates/@.context-eng/templates/@g'
 }
 
 generate_commands() {
@@ -85,43 +85,60 @@ generate_commands() {
 
 build_variant() {
   local agent=$1 script=$2
-  local base_dir="$GENRELEASES_DIR/sdd-${agent}-package-${script}"
+  local base_dir="$GENRELEASES_DIR/cek-${agent}-package-${script}"
   echo "Building $agent ($script) package..."
   mkdir -p "$base_dir"
   
   # Copy base structure but filter scripts by variant
-  SPEC_DIR="$base_dir/.specify"
-  mkdir -p "$SPEC_DIR"
+  CONTEXT_DIR="$base_dir/.context-eng"
+  mkdir -p "$CONTEXT_DIR"
   
-  [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
+  [[ -d memory ]] && { cp -r memory "$CONTEXT_DIR/"; echo "Copied memory -> .context-eng"; }
   
   # Only copy the relevant script variant directory
   if [[ -d scripts ]]; then
-    mkdir -p "$SPEC_DIR/scripts"
+    mkdir -p "$CONTEXT_DIR/scripts"
     case $script in
       sh)
-        [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .specify/scripts"; }
+        [[ -d scripts/bash ]] && { cp -r scripts/bash "$CONTEXT_DIR/scripts/"; echo "Copied scripts/bash -> .context-eng/scripts"; }
         # Copy any script files that aren't in variant-specific directories
-        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+        find scripts -maxdepth 1 -type f -exec cp {} "$CONTEXT_DIR/scripts/" \; 2>/dev/null || true
         ;;
       ps)
-        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .specify/scripts"; }
+        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$CONTEXT_DIR/scripts/"; echo "Copied scripts/powershell -> .context-eng/scripts"; }
         # Copy any script files that aren't in variant-specific directories
-        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+        find scripts -maxdepth 1 -type f -exec cp {} "$CONTEXT_DIR/scripts/" \; 2>/dev/null || true
         ;;
     esac
   fi
-  
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
-  # Inject variant into plan-template.md within .specify/templates if present
-  local plan_tpl="$base_dir/.specify/templates/plan-template.md"
+
+  if [[ -d templates ]]; then
+    mkdir -p "$CONTEXT_DIR/templates"
+    shopt -s dotglob
+    for item in templates/*; do
+      name=$(basename "$item")
+      if [[ "$name" == "commands" || "$name" == "context-eng" ]]; then
+        continue
+      fi
+      cp -r "$item" "$CONTEXT_DIR/templates/"
+    done
+    echo "Copied legacy templates -> .context-eng/templates"
+    shopt -u dotglob
+    if [[ -d templates/context-eng ]]; then
+      cp -r templates/context-eng/* "$CONTEXT_DIR/"
+      echo "Copied context-eng templates -> .context-eng"
+    fi
+  fi
+
+  # Inject variant into plan-template.md within .context-eng/templates if present
+  local plan_tpl="$base_dir/.context-eng/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
     plan_norm=$(tr -d '\r' < "$plan_tpl")
     # Extract script command from YAML frontmatter
     script_command=$(printf '%s\n' "$plan_norm" | awk -v sv="$script" '/^[[:space:]]*'"$script"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script"':[[:space:]]*/, ""); print; exit}')
     if [[ -n $script_command ]]; then
-      # Always prefix with .specify/ for plan usage
-      script_command=".specify/$script_command"
+      # Always prefix with .context-eng/ for plan usage
+      script_command=".context-eng/$script_command"
       # Replace {SCRIPT} placeholder with the script command and __AGENT__ with agent name
       substituted=$(sed "s|{SCRIPT}|${script_command}|g" "$plan_tpl" | tr -d '\r' | sed "s|__AGENT__|${agent}|g")
       # Strip YAML frontmatter from plan template output (keep body only)
@@ -173,8 +190,8 @@ build_variant() {
       mkdir -p "$base_dir/.roo/commands"
       generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script" ;;
   esac
-  ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
-  echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
+  ( cd "$base_dir" && zip -r "../ce-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
+  echo "Created $GENRELEASES_DIR/ce-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
@@ -225,4 +242,4 @@ for agent in "${AGENT_LIST[@]}"; do
 done
 
 echo "Archives in $GENRELEASES_DIR:"
-ls -1 "$GENRELEASES_DIR"/spec-kit-template-*-"${NEW_VERSION}".zip
+ls -1 "$GENRELEASES_DIR"/ce-kit-template-*-${NEW_VERSION}.zip

@@ -13,85 +13,147 @@ for arg in "$@"; do
 done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
-if [ -z "$FEATURE_DESCRIPTION" ]; then
+if [[ -z "$FEATURE_DESCRIPTION" ]]; then
     echo "Usage: $0 [--json] <feature_description>" >&2
     exit 1
 fi
 
-# Function to find the repository root by searching for existing project markers
-find_repo_root() {
-    local dir="$1"
-    while [ "$dir" != "/" ]; do
-        if [ -d "$dir/.git" ] || [ -d "$dir/.specify" ]; then
-            echo "$dir"
-            return 0
-        fi
-        dir="$(dirname "$dir")"
-    done
-    return 1
-}
-
-# Resolve repository root. Prefer git information when available, but fall back
-# to searching for repository markers so the workflow still functions in repositories that
-# were initialised with --no-git.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-if git rev-parse --show-toplevel >/dev/null 2>&1; then
-    REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_ROOT=$(get_repo_root)
+WORKFLOW=$(read_workflow "$REPO_ROOT")
+cd "$REPO_ROOT"
+
+if has_git; then
     HAS_GIT=true
 else
-    REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
-    if [ -z "$REPO_ROOT" ]; then
-        echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
-        exit 1
-    fi
     HAS_GIT=false
 fi
 
-cd "$REPO_ROOT"
-
-SPECS_DIR="$REPO_ROOT/specs"
-mkdir -p "$SPECS_DIR"
-
+# Determine next feature number using git branches when available
 HIGHEST=0
-if [ -d "$SPECS_DIR" ]; then
-    for dir in "$SPECS_DIR"/*; do
-        [ -d "$dir" ] || continue
-        dirname=$(basename "$dir")
-        number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
-        number=$((10#$number))
-        if [ "$number" -gt "$HIGHEST" ]; then HIGHEST=$number; fi
+if [[ "$HAS_GIT" = true ]]; then
+    while IFS= read -r branch; do
+        if [[ "$branch" =~ ^([0-9]{3})- ]]; then
+            number=${BASH_REMATCH[1]}
+            number=$((10#$number))
+            (( number > HIGHEST )) && HIGHEST=$number
+        fi
+    done < <(git for-each-ref --format='%(refname:short)' refs/heads)
+fi
+
+# Fallback: inspect workflow directories if git not available
+if (( HIGHEST == 0 )); then
+    for dir in "$REPO_ROOT/specs"/* "$REPO_ROOT/context-eng/prp"/* "$REPO_ROOT/context-eng/all-in-one"/*; do
+        [[ -d "$dir" ]] || continue
+        base=$(basename "$dir")
+        if [[ "$base" =~ ^([0-9]{3})- ]]; then
+            number=${BASH_REMATCH[1]}
+            number=$((10#$number))
+            (( number > HIGHEST )) && HIGHEST=$number
+        fi
     done
 fi
 
 NEXT=$((HIGHEST + 1))
 FEATURE_NUM=$(printf "%03d" "$NEXT")
 
-BRANCH_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
-WORDS=$(echo "$BRANCH_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
-BRANCH_NAME="${FEATURE_NUM}-${WORDS}"
+SLUG=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+WORDS=$(echo "$SLUG" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
+BRANCH_NAME="${FEATURE_NUM}-${WORDS:-feature}"
 
-if [ "$HAS_GIT" = true ]; then
+if [[ "$HAS_GIT" = true ]]; then
     git checkout -b "$BRANCH_NAME"
 else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    >&2 echo "[cek] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
 
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
-mkdir -p "$FEATURE_DIR"
+CONTEXT_DIR="$REPO_ROOT/.context-eng"
+CHECKLIST_TEMPLATE="$CONTEXT_DIR/checklists/full-implementation-checklist.md"
 
-TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
-SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+PRIMARY_TEMPLATE=""
+PRIMARY_FILE=""
+FEATURE_DIR=""
+PLAN_FILE=""
+RESEARCH_FILE=""
+TASKS_FILE=""
+PRP_FILE=""
+INITIAL_FILE=""
 
-# Set the SPECIFY_FEATURE environment variable for the current session
+case "$WORKFLOW" in
+    free-style)
+        FEATURE_DIR="$REPO_ROOT/specs/$BRANCH_NAME"
+        mkdir -p "$FEATURE_DIR"
+        PRIMARY_TEMPLATE="$CONTEXT_DIR/workflows/free-style/templates/context-spec-template.md"
+        PRIMARY_FILE="$FEATURE_DIR/context-spec.md"
+        PLAN_FILE="$FEATURE_DIR/plan.md"
+        RESEARCH_FILE="$FEATURE_DIR/research.md"
+        TASKS_FILE="$FEATURE_DIR/tasks.md"
+        ;;
+    prp)
+        FEATURE_DIR="$REPO_ROOT/context-eng/prp/$BRANCH_NAME"
+        mkdir -p "$FEATURE_DIR"
+        PRIMARY_TEMPLATE="$CONTEXT_DIR/workflows/prp/templates/initial-template.md"
+        PRIMARY_FILE="$REPO_ROOT/PRPs/INITIAL.md"
+        PRP_FILE="$REPO_ROOT/PRPs/${BRANCH_NAME}.md"
+        PLAN_FILE="$FEATURE_DIR/plan.md"
+        RESEARCH_FILE="$FEATURE_DIR/research.md"
+        TASKS_FILE="$FEATURE_DIR/tasks.md"
+        INITIAL_FILE="$PRIMARY_FILE"
+        PRP_TEMPLATE="$CONTEXT_DIR/workflows/prp/templates/prp-template.md"
+        mkdir -p "$(dirname "$PRIMARY_FILE")"
+        mkdir -p "$(dirname "$PRP_FILE")"
+        if [[ ! -f "$PRP_FILE" && -f "$PRP_TEMPLATE" ]]; then
+            cp "$PRP_TEMPLATE" "$PRP_FILE"
+        fi
+        ;;
+    all-in-one)
+        FEATURE_DIR="$REPO_ROOT/context-eng/all-in-one/$BRANCH_NAME"
+        mkdir -p "$FEATURE_DIR"
+        PRIMARY_TEMPLATE="$CONTEXT_DIR/workflows/all-in-one/templates/all-in-one-template.md"
+        PRIMARY_FILE="$FEATURE_DIR/record.md"
+        PLAN_FILE="$FEATURE_DIR/plan.md"
+        RESEARCH_FILE="$FEATURE_DIR/research.md"
+        TASKS_FILE="$FEATURE_DIR/tasks.md"
+        ;;
+    *)
+        FEATURE_DIR="$REPO_ROOT/specs/$BRANCH_NAME"
+        mkdir -p "$FEATURE_DIR"
+        PRIMARY_TEMPLATE="$CONTEXT_DIR/workflows/free-style/templates/context-spec-template.md"
+        PRIMARY_FILE="$FEATURE_DIR/context-spec.md"
+        PLAN_FILE="$FEATURE_DIR/plan.md"
+        RESEARCH_FILE="$FEATURE_DIR/research.md"
+        TASKS_FILE="$FEATURE_DIR/tasks.md"
+        ;;
+esac
+
+mkdir -p "$(dirname "$PRIMARY_FILE")"
+mkdir -p "$(dirname "$PLAN_FILE")"
+mkdir -p "$(dirname "$RESEARCH_FILE")"
+mkdir -p "$(dirname "$TASKS_FILE")"
+if [[ -f "$PRIMARY_TEMPLATE" && ! -f "$PRIMARY_FILE" ]]; then
+    cp "$PRIMARY_TEMPLATE" "$PRIMARY_FILE"
+else
+    touch "$PRIMARY_FILE"
+fi
+
+export CONTEXT_FEATURE="$BRANCH_NAME"
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    printf '{"BRANCH_NAME":"%s","FEATURE_NUM":"%s","WORKFLOW":"%s","PRIMARY_FILE":"%s","TEMPLATE_FILE":"%s","FEATURE_DIR":"%s","PLAN_FILE":"%s","RESEARCH_FILE":"%s","TASKS_FILE":"%s","PRP_FILE":"%s","INITIAL_FILE":"%s","CHECKLIST_TEMPLATE":"%s"}\n' \
+        "$BRANCH_NAME" "$FEATURE_NUM" "$WORKFLOW" "$PRIMARY_FILE" "$PRIMARY_TEMPLATE" "$FEATURE_DIR" "$PLAN_FILE" "$RESEARCH_FILE" "$TASKS_FILE" "$PRP_FILE" "${INITIAL_FILE:-}" "$CHECKLIST_TEMPLATE"
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
-    echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
-    echo "SPECIFY_FEATURE environment variable set to: $BRANCH_NAME"
+    echo "WORKFLOW: $WORKFLOW"
+    echo "PRIMARY_FILE: $PRIMARY_FILE"
+    echo "TEMPLATE_FILE: $PRIMARY_TEMPLATE"
+    echo "FEATURE_DIR: $FEATURE_DIR"
+    echo "PLAN_FILE: $PLAN_FILE"
+    echo "RESEARCH_FILE: $RESEARCH_FILE"
+    echo "TASKS_FILE: $TASKS_FILE"
+    [[ -n "$PRP_FILE" ]] && echo "PRP_FILE: $PRP_FILE"
+    echo "CONTEXT_FEATURE environment variable set to: $BRANCH_NAME"
 fi

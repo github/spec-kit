@@ -1,18 +1,6 @@
 #!/usr/bin/env pwsh
 
-# Consolidated prerequisite checking script (PowerShell)
-#
-# This script provides unified prerequisite checking for Spec-Driven Development workflow.
-# It replaces the functionality previously spread across multiple scripts.
-#
-# Usage: ./check-prerequisites.ps1 [OPTIONS]
-#
-# OPTIONS:
-#   -Json               Output in JSON format
-#   -RequireTasks       Require tasks.md to exist (for implementation phase)
-#   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
-#   -PathsOnly          Only output path variables (no validation)
-#   -Help, -h           Show help message
+# Context Engineering Kit prerequisite checker (PowerShell)
 
 [CmdletBinding()]
 param(
@@ -25,124 +13,113 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Show help if requested
 if ($Help) {
     Write-Output @"
 Usage: check-prerequisites.ps1 [OPTIONS]
 
-Consolidated prerequisite checking for Spec-Driven Development workflow.
+Ensure required artifacts exist for the active context engineering workflow.
 
 OPTIONS:
-  -Json               Output in JSON format
-  -RequireTasks       Require tasks.md to exist (for implementation phase)
+  -Json               Return JSON output
+  -RequireTasks       Fail when tasks.md is missing
   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
-  -PathsOnly          Only output path variables (no prerequisite validation)
+  -PathsOnly          Emit paths only, skip validation
   -Help, -h           Show this help message
-
-EXAMPLES:
-  # Check task prerequisites (plan.md required)
-  .\check-prerequisites.ps1 -Json
-  
-  # Check implementation prerequisites (plan.md + tasks.md required)
-  .\check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
-  
-  # Get feature paths only (no validation)
-  .\check-prerequisites.ps1 -PathsOnly
-
 "@
     exit 0
 }
 
-# Source common functions
 . "$PSScriptRoot/common.ps1"
 
-# Get feature paths and validate branch
-$paths = Get-FeaturePathsEnv
-
-if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT)) { 
-    exit 1 
+$paths = Get-FeaturePaths
+if (-not (Test-FeatureBranch -Branch $paths.FEATURE_NAME -HasGit:$paths.HAS_GIT)) {
+    exit 1
 }
 
-# If paths-only mode, output paths and exit (support combined -Json -PathsOnly)
 if ($PathsOnly) {
     if ($Json) {
         [PSCustomObject]@{
-            REPO_ROOT    = $paths.REPO_ROOT
-            BRANCH       = $paths.CURRENT_BRANCH
-            FEATURE_DIR  = $paths.FEATURE_DIR
-            FEATURE_SPEC = $paths.FEATURE_SPEC
-            IMPL_PLAN    = $paths.IMPL_PLAN
-            TASKS        = $paths.TASKS
+            REPO_ROOT   = $paths.REPO_ROOT
+            FEATURE     = $paths.FEATURE_NAME
+            WORKFLOW    = $paths.WORKFLOW
+            FEATURE_DIR = $paths.FEATURE_DIR
+            PRIMARY_FILE = $paths.PRIMARY_FILE
+            PLAN_FILE    = $paths.PLAN_FILE
+            RESEARCH_FILE = $paths.RESEARCH_FILE
+            TASKS_FILE    = $paths.TASKS_FILE
+            PRP_FILE      = $paths.PRP_FILE
         } | ConvertTo-Json -Compress
     } else {
         Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
-        Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
+        Write-Output "FEATURE: $($paths.FEATURE_NAME)"
+        Write-Output "WORKFLOW: $($paths.WORKFLOW)"
         Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
-        Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
-        Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
-        Write-Output "TASKS: $($paths.TASKS)"
+        Write-Output "PRIMARY_FILE: $($paths.PRIMARY_FILE)"
+        Write-Output "PLAN_FILE: $($paths.PLAN_FILE)"
+        Write-Output "RESEARCH_FILE: $($paths.RESEARCH_FILE)"
+        Write-Output "TASKS_FILE: $($paths.TASKS_FILE)"
+        if ($paths.PRP_FILE) { Write-Output "PRP_FILE: $($paths.PRP_FILE)" }
     }
     exit 0
 }
 
-# Validate required directories and files
-if (-not (Test-Path $paths.FEATURE_DIR -PathType Container)) {
+if (-not ($paths.FEATURE_DIR -and (Test-Path $paths.FEATURE_DIR -PathType Container))) {
     Write-Output "ERROR: Feature directory not found: $($paths.FEATURE_DIR)"
-    Write-Output "Run /specify first to create the feature structure."
+    Write-Output "Run /specify to bootstrap the workflow artifacts."
     exit 1
 }
 
-if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
-    Write-Output "ERROR: plan.md not found in $($paths.FEATURE_DIR)"
-    Write-Output "Run /plan first to create the implementation plan."
+if (-not (Test-Path $paths.PRIMARY_FILE -PathType Leaf)) {
+    Write-Output "ERROR: Primary context file missing at $($paths.PRIMARY_FILE)"
+    Write-Output "Run /specify to regenerate the initial artifact."
     exit 1
 }
 
-# Check for tasks.md if required
-if ($RequireTasks -and -not (Test-Path $paths.TASKS -PathType Leaf)) {
-    Write-Output "ERROR: tasks.md not found in $($paths.FEATURE_DIR)"
-    Write-Output "Run /tasks first to create the task list."
+if (-not (Test-Path $paths.PLAN_FILE -PathType Leaf)) {
+    switch ($paths.WORKFLOW) {
+        'free-style' {
+            Write-Output "ERROR: Plan file missing at $($paths.PLAN_FILE)"
+            Write-Output "Run /create-plan before continuing."
+        }
+        'prp' {
+            Write-Output "ERROR: Plan file missing at $($paths.PLAN_FILE)"
+            Write-Output "Run /execute-prp to derive the execution plan."
+        }
+        'all-in-one' {
+            Write-Output "ERROR: Plan file missing at $($paths.PLAN_FILE)"
+            Write-Output "Run /context-engineer to update the plan section."
+        }
+    }
     exit 1
 }
 
-# Build list of available documents
+if ($RequireTasks -and -not (Test-Path $paths.TASKS_FILE -PathType Leaf)) {
+    Write-Output "ERROR: tasks.md missing for $($paths.FEATURE_NAME)"
+    Write-Output "Capture tasks from your plan or PRP before implementation."
+    exit 1
+}
+
 $docs = @()
+if (Test-Path $paths.PRIMARY_FILE) { $docs += (Split-Path $paths.PRIMARY_FILE -Leaf) }
+if (Test-Path $paths.PLAN_FILE) { $docs += (Split-Path $paths.PLAN_FILE -Leaf) }
+if (Test-Path $paths.RESEARCH_FILE) { $docs += (Split-Path $paths.RESEARCH_FILE -Leaf) }
+if ($paths.PRP_FILE -and (Test-Path $paths.PRP_FILE)) { $docs += (Split-Path $paths.PRP_FILE -Leaf) }
+if ($IncludeTasks -and (Test-Path $paths.TASKS_FILE)) { $docs += 'tasks.md' }
 
-# Always check these optional docs
-if (Test-Path $paths.RESEARCH) { $docs += 'research.md' }
-if (Test-Path $paths.DATA_MODEL) { $docs += 'data-model.md' }
-
-# Check contracts directory (only if it exists and has files)
-if ((Test-Path $paths.CONTRACTS_DIR) -and (Get-ChildItem -Path $paths.CONTRACTS_DIR -ErrorAction SilentlyContinue | Select-Object -First 1)) { 
-    $docs += 'contracts/' 
-}
-
-if (Test-Path $paths.QUICKSTART) { $docs += 'quickstart.md' }
-
-# Include tasks.md if requested and it exists
-if ($IncludeTasks -and (Test-Path $paths.TASKS)) { 
-    $docs += 'tasks.md' 
-}
-
-# Output results
 if ($Json) {
-    # JSON output
-    [PSCustomObject]@{ 
+    [PSCustomObject]@{
         FEATURE_DIR = $paths.FEATURE_DIR
-        AVAILABLE_DOCS = $docs 
+        WORKFLOW = $paths.WORKFLOW
+        AVAILABLE_DOCS = $docs
     } | ConvertTo-Json -Compress
 } else {
-    # Text output
     Write-Output "FEATURE_DIR:$($paths.FEATURE_DIR)"
+    Write-Output "WORKFLOW:$($paths.WORKFLOW)"
     Write-Output "AVAILABLE_DOCS:"
-    
-    # Show status of each potential document
-    Test-FileExists -Path $paths.RESEARCH -Description 'research.md' | Out-Null
-    Test-FileExists -Path $paths.DATA_MODEL -Description 'data-model.md' | Out-Null
-    Test-DirHasFiles -Path $paths.CONTRACTS_DIR -Description 'contracts/' | Out-Null
-    Test-FileExists -Path $paths.QUICKSTART -Description 'quickstart.md' | Out-Null
-    
-    if ($IncludeTasks) {
-        Test-FileExists -Path $paths.TASKS -Description 'tasks.md' | Out-Null
+    foreach ($doc in $docs) {
+        Write-Output "  ✓ $doc"
+    }
+    if ($IncludeTasks -and -not (Test-Path $paths.TASKS_FILE)) {
+        Write-Output "  ✗ tasks.md"
     }
 }

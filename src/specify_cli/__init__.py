@@ -10,7 +10,7 @@
 # ]
 # ///
 """
-Specify CLI - Setup tool for Specify projects
+Context Engineering Kit CLI - Setup tool for context engineering projects
 
 Usage:
     uvx specify-cli.py init <project-name>
@@ -32,6 +32,7 @@ import tempfile
 import shutil
 import shlex
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -81,6 +82,12 @@ AI_CHOICES = {
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
+WORKFLOW_CHOICES = {
+    "free-style": "Free-Style Context Engineering",
+    "prp": "Product Requirement Prompts",
+    "all-in-one": "All-in-One Context Engineering",
+}
+
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
@@ -94,7 +101,7 @@ BANNER = """
 ╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
 """
 
-TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
+TAGLINE = "Context Engineering Kit - Multi-Workflow Development Toolkit"
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -307,7 +314,7 @@ class BannerGroup(TyperGroup):
 
 app = typer.Typer(
     name="specify",
-    help="Setup tool for Specify spec-driven development projects",
+    help="Setup tool for Context Engineering Kit projects",
     add_completion=False,
     invoke_without_command=True,
     cls=BannerGroup,
@@ -420,7 +427,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
             console.print("[cyan]Initializing git repository...[/cyan]")
         subprocess.run(["git", "init"], check=True, capture_output=True)
         subprocess.run(["git", "add", "."], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Initial commit from Context Engineering Kit template"], check=True, capture_output=True)
         if not quiet:
             console.print("[green]✓[/green] Git repository initialized")
         return True
@@ -434,8 +441,8 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
 
 
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
+    repo_owner = "Calel33"
+    repo_name = "CE-spec-kit"
     if client is None:
         client = httpx.Client(verify=ssl_context)
     
@@ -467,7 +474,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     
     # Find the template asset for the specified AI assistant
     assets = release_data.get("assets", [])
-    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
+    pattern = f"ce-kit-template-{ai_assistant}-{script_type}"
     matching_assets = [
         asset for asset in assets
         if pattern in asset["name"] and asset["name"].endswith(".zip")
@@ -704,37 +711,39 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
+    """Ensure POSIX .sh scripts under .context-eng/scripts (and legacy .specify/scripts) are executable."""
     if os.name == "nt":
         return  # Windows: skip silently
-    scripts_root = project_path / ".specify" / "scripts"
-    if not scripts_root.is_dir():
-        return
+    # Support both legacy Spec Kit and new Context Engineering Kit layouts
+    candidate_roots = [project_path / ".context-eng" / "scripts", project_path / ".specify" / "scripts"]
     failures: list[str] = []
     updated = 0
-    for script in scripts_root.rglob("*.sh"):
-        try:
-            if script.is_symlink() or not script.is_file():
-                continue
+    for root in candidate_roots:
+        if not root.is_dir():
+            continue
+        for script in root.rglob("*.sh"):
             try:
-                with script.open("rb") as f:
-                    if f.read(2) != b"#!":
-                        continue
-            except Exception:
-                continue
-            st = script.stat(); mode = st.st_mode
-            if mode & 0o111:
-                continue
-            new_mode = mode
-            if mode & 0o400: new_mode |= 0o100
-            if mode & 0o040: new_mode |= 0o010
-            if mode & 0o004: new_mode |= 0o001
-            if not (new_mode & 0o100):
-                new_mode |= 0o100
-            os.chmod(script, new_mode)
-            updated += 1
-        except Exception as e:
-            failures.append(f"{script.relative_to(scripts_root)}: {e}")
+                if script.is_symlink() or not script.is_file():
+                    continue
+                try:
+                    with script.open("rb") as f:
+                        if f.read(2) != b"#!":
+                            continue
+                except Exception:
+                    continue
+                st = script.stat(); mode = st.st_mode
+                if mode & 0o111:
+                    continue
+                new_mode = mode
+                if mode & 0o400: new_mode |= 0o100
+                if mode & 0o040: new_mode |= 0o010
+                if mode & 0o004: new_mode |= 0o001
+                if not (new_mode & 0o100):
+                    new_mode |= 0o100
+                os.chmod(script, new_mode)
+                updated += 1
+            except Exception as e:
+                failures.append(f"{script.relative_to(root)}: {e}")
     if tracker:
         detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
         tracker.add("chmod", "Set script permissions recursively")
@@ -747,10 +756,50 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+
+def configure_context_environment(project_path: Path, workflow: str, ai: str, script_type: str, tracker: StepTracker | None = None) -> None:
+    """Ensure .context-eng metadata exists and records workflow selection."""
+    context_root = project_path / ".context-eng"
+    workflows_dir = context_root / "workflows"
+    context_root.mkdir(parents=True, exist_ok=True)
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    config_path = context_root / "workflow.json"
+    config_payload = {
+        "workflow": workflow,
+        "ai_assistant": ai,
+        "script_type": script_type,
+        "configured_at": datetime.utcnow().isoformat() + "Z",
+    }
+    try:
+        if tracker:
+            tracker.start("context-config", "write workflow.json")
+        config_path.write_text(json.dumps(config_payload, indent=2) + "\n", encoding="utf-8")
+        # Ensure common workflow-specific root directories exist
+        workspace_root = project_path / "context-eng"
+        workspace_root.mkdir(exist_ok=True)
+        if workflow == "free-style":
+            (project_path / "specs").mkdir(exist_ok=True)
+            (workspace_root / "free-style").mkdir(exist_ok=True)
+        elif workflow == "prp":
+            (project_path / "PRPs").mkdir(exist_ok=True)
+            (workspace_root / "prp").mkdir(parents=True, exist_ok=True)
+        elif workflow == "all-in-one":
+            (workspace_root / "all-in-one").mkdir(parents=True, exist_ok=True)
+        if tracker:
+            tracker.complete("context-config", "saved")
+    except Exception as exc:
+        if tracker:
+            tracker.error("context-config", str(exc))
+        else:
+            console.print(f"[red]Failed to write workflow configuration:[/red] {exc}")
+        raise
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, or auggie"),
+    workflow: str = typer.Option(None, "--workflow", help="Context engineering workflow: free-style, prp, or all-in-one"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -761,34 +810,25 @@ def init(
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
 ):
     """
-    Initialize a new Specify project from the latest template.
-    
+    Initialize a new Context Engineering Kit project from the latest release template.
+
     This command will:
-    1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf, Kilo Code, or Auggie CLI)
-    3. Download the appropriate template from GitHub
-    4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
-    6. Optionally set up AI assistant commands
-    
+    1. Check that required tools are installed (git optional)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf, Kilo Code, Auggie CLI, or Roo Code)
+    3. Let you pick the context engineering workflow (free-style, prp, all-in-one)
+    4. Download the appropriate template from GitHub
+    5. Extract the template to a new project directory or current directory
+    6. Configure the workflow metadata under .context-eng/
+    7. Initialize a fresh git repository (if not --no-git and no existing repo)
+
     Examples:
         specify init my-project
-        specify init my-project --ai claude
-        specify init my-project --ai gemini
-        specify init my-project --ai copilot --no-git
-        specify init my-project --ai cursor
-        specify init my-project --ai qwen
-        specify init my-project --ai opencode
-        specify init my-project --ai codex
-        specify init my-project --ai windsurf
-        specify init my-project --ai auggie
-        specify init --ignore-agent-tools my-project
-        specify init . --ai claude         # Initialize in current directory
-        specify init .                     # Initialize in current directory (interactive AI selection)
-        specify init --here --ai claude    # Alternative syntax for current directory
-        specify init --here --ai codex
-        specify init --here
-        specify init --here --force  # Skip confirmation when current directory not empty
+        specify init my-project --ai claude --workflow free-style
+        specify init my-project --ai gemini --workflow prp
+        specify init --here --ai copilot --workflow all-in-one
+        specify init my-project --ai cursor --script ps
+        specify init my-project --ai qwen --ignore-agent-tools
+        specify init . --workflow free-style
     """
     # Show banner first
     show_banner()
@@ -844,7 +884,7 @@ def init(
     current_dir = Path.cwd()
     
     setup_lines = [
-        "[cyan]Specify Project Setup[/cyan]",
+        "[cyan]Context Engineering Kit Setup[/cyan]",
         "",
         f"{'Project':<15} [green]{project_path.name}[/green]",
         f"{'Working Path':<15} [dim]{current_dir}[/dim]",
@@ -863,6 +903,19 @@ def init(
         should_init_git = check_tool("git", "https://git-scm.com/downloads")
         if not should_init_git:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
+
+    # Workflow selection
+    if workflow:
+        if workflow not in WORKFLOW_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid workflow '{workflow}'. Choose from: {', '.join(WORKFLOW_CHOICES.keys())}")
+            raise typer.Exit(1)
+        selected_workflow = workflow
+    else:
+        selected_workflow = select_with_arrows(
+            WORKFLOW_CHOICES,
+            "Choose your context engineering workflow:",
+            "free-style",
+        )
 
     # AI assistant selection
     if ai_assistant:
@@ -937,17 +990,20 @@ def init(
         else:
             selected_script = default_script
     
+    console.print(f"[cyan]Selected workflow:[/cyan] {selected_workflow}")
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
     
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
-    tracker = StepTracker("Initialize Specify Project")
+    tracker = StepTracker("Initialize Context Engineering Kit Project")
     # Flag to allow suppressing legacy headings
     sys._specify_tracker_active = True
     # Pre steps recorded as completed before live rendering
     tracker.add("precheck", "Check required tools")
     tracker.complete("precheck", "ok")
+    tracker.add("workflow-select", "Select workflow")
+    tracker.complete("workflow-select", selected_workflow)
     tracker.add("ai-select", "Select AI assistant")
     tracker.complete("ai-select", f"{selected_ai}")
     tracker.add("script-select", "Select script type")
@@ -958,6 +1014,7 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
+        ("context-config", "Record workflow metadata"),
         ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
@@ -978,6 +1035,8 @@ def init(
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            configure_context_environment(project_path, selected_workflow, selected_ai, selected_script, tracker=tracker)
 
             # Git step
             if not no_git:
@@ -1067,22 +1126,31 @@ def init(
         step_num += 1
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
-
-    steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/specify[/] - Create baseline specification")
-    steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
+    if selected_workflow == "free-style":
+        steps_lines.append("   2.1 [cyan]/specify[/] - Create the context specification")
+        steps_lines.append("   2.2 [cyan]/research[/] - Collect signals and insights")
+        steps_lines.append("   2.3 [cyan]/create-plan[/] - Build the cross-layer plan")
+        steps_lines.append("   2.4 [cyan]/implement[/] - Execute the plan")
+    elif selected_workflow == "prp":
+        steps_lines.append("   2.1 [cyan]/specify[/] - Capture the INITIAL brief")
+        steps_lines.append("   2.2 [cyan]/generate-prp[/] - Produce the Product Requirement Prompt")
+        steps_lines.append("   2.3 [cyan]/execute-prp[/] - Derive implementation tasks")
+        steps_lines.append("   2.4 [cyan]/implement[/] - Deliver against the PRP")
+    else:
+        steps_lines.append("   2.1 [cyan]/specify[/] - Seed the all-in-one record")
+        steps_lines.append("   2.2 [cyan]/context-engineer[/] - Run discovery, planning, and execution")
+        steps_lines.append("   2.3 [cyan]/implement[/] - Apply final adjustments if required")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
     console.print(steps_panel)
 
     enhancement_lines = [
-        "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
+        "Optional commands that improve context coverage [bright_black](run when extra rigor is needed)[/bright_black]",
         "",
-        f"○ [cyan]/clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/plan[/] if used)",
-        f"○ [cyan]/analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/tasks[/], before [cyan]/implement[/])"
+        f"○ [cyan]/clarify[/] [bright_black](optional)[/bright_black] - Resolve high-impact ambiguities before deep research or planning",
+        f"○ [cyan]/analyze[/] [bright_black](optional)[/bright_black] - Audit workflow artifacts for coverage gaps before [cyan]/implement[/]",
+        f"○ [cyan]/tasks[/] [bright_black](optional)[/bright_black] - Generate an explicit task list when tighter execution tracking is required"
     ]
     enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
     console.print()
@@ -1135,7 +1203,7 @@ def check():
 
     console.print(tracker.render())
 
-    console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
+    console.print("\n[bold green]Context Engineering Kit CLI is ready to use![/bold green]")
 
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")

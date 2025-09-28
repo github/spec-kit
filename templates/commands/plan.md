@@ -1,11 +1,15 @@
----
-description: Execute the implementation planning workflow using the plan template to generate design artifacts.
+description: Deprecated wrapper that forwards to /create-plan for backward compatibility.
 scripts:
-  sh: scripts/bash/setup-plan.sh --json
-  ps: scripts/powershell/setup-plan.ps1 -Json
+  sh: scripts/bash/context-plan-setup.sh --json
+  ps: scripts/powershell/context-plan-setup.ps1 -Json
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+This command exists for backward compatibility with older agents.
+
+Action:
+1. Inform the user that `/plan` has been replaced by `/create-plan`.
+2. Offer to run `/create-plan` automatically with the same arguments.
+3. If the user insists on continuing here, execute the exact same workflow as `/create-plan`.
 
 User input:
 

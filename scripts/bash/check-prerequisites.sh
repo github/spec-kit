@@ -1,27 +1,9 @@
 #!/usr/bin/env bash
 
-# Consolidated prerequisite checking script
-#
-# This script provides unified prerequisite checking for Spec-Driven Development workflow.
-# It replaces the functionality previously spread across multiple scripts.
-#
-# Usage: ./check-prerequisites.sh [OPTIONS]
-#
-# OPTIONS:
-#   --json              Output in JSON format
-#   --require-tasks     Require tasks.md to exist (for implementation phase)
-#   --include-tasks     Include tasks.md in AVAILABLE_DOCS list
-#   --paths-only        Only output path variables (no validation)
-#   --help, -h          Show help message
-#
-# OUTPUTS:
-#   JSON mode: {"FEATURE_DIR":"...", "AVAILABLE_DOCS":["..."]}
-#   Text mode: FEATURE_DIR:... \n AVAILABLE_DOCS: \n ✓/✗ file.md
-#   Paths only: REPO_ROOT: ... \n BRANCH: ... \n FEATURE_DIR: ... etc.
+# Context Engineering Kit prerequisite checker
 
 set -e
 
-# Parse command line arguments
 JSON_MODE=false
 REQUIRE_TASKS=false
 INCLUDE_TASKS=false
@@ -29,41 +11,22 @@ PATHS_ONLY=false
 
 for arg in "$@"; do
     case "$arg" in
-        --json)
-            JSON_MODE=true
-            ;;
-        --require-tasks)
-            REQUIRE_TASKS=true
-            ;;
-        --include-tasks)
-            INCLUDE_TASKS=true
-            ;;
-        --paths-only)
-            PATHS_ONLY=true
-            ;;
+        --json) JSON_MODE=true ;;
+        --require-tasks) REQUIRE_TASKS=true ;;
+        --include-tasks) INCLUDE_TASKS=true ;;
+        --paths-only) PATHS_ONLY=true ;;
         --help|-h)
-            cat << 'EOF'
+            cat <<'EOF'
 Usage: check-prerequisites.sh [OPTIONS]
 
-Consolidated prerequisite checking for Spec-Driven Development workflow.
+Ensure required artifacts exist for the active context engineering workflow.
 
 OPTIONS:
-  --json              Output in JSON format
-  --require-tasks     Require tasks.md to exist (for implementation phase)
-  --include-tasks     Include tasks.md in AVAILABLE_DOCS list
-  --paths-only        Only output path variables (no prerequisite validation)
+  --json              Return JSON output
+  --require-tasks     Fail when tasks.md is missing
+  --include-tasks     Include tasks.md in AVAILABLE_DOCS (if present)
+  --paths-only        Emit paths only, skip validation
   --help, -h          Show this help message
-
-EXAMPLES:
-  # Check task prerequisites (plan.md required)
-  ./check-prerequisites.sh --json
-  
-  # Check implementation prerequisites (plan.md + tasks.md required)
-  ./check-prerequisites.sh --json --require-tasks --include-tasks
-  
-  # Get feature paths only (no validation)
-  ./check-prerequisites.sh --paths-only
-  
 EOF
             exit 0
             ;;
@@ -74,93 +37,96 @@ EOF
     esac
 done
 
-# Source common functions
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
+SCRIPT_DIR="$(cd "$SCRIPT_DIR"; pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-# Get feature paths and validate branch
 eval $(get_feature_paths)
-check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
+check_feature_branch "$FEATURE_NAME" "$HAS_GIT" || exit 1
 
-# If paths-only mode, output paths and exit (support JSON + paths-only combined)
 if $PATHS_ONLY; then
     if $JSON_MODE; then
-        # Minimal JSON paths payload (no validation performed)
-        printf '{"REPO_ROOT":"%s","BRANCH":"%s","FEATURE_DIR":"%s","FEATURE_SPEC":"%s","IMPL_PLAN":"%s","TASKS":"%s"}\n' \
-            "$REPO_ROOT" "$CURRENT_BRANCH" "$FEATURE_DIR" "$FEATURE_SPEC" "$IMPL_PLAN" "$TASKS"
+        printf '{"REPO_ROOT":"%s","FEATURE":"%s","WORKFLOW":"%s","FEATURE_DIR":"%s","PRIMARY_FILE":"%s","PLAN_FILE":"%s","RESEARCH_FILE":"%s","TASKS_FILE":"%s","PRP_FILE":"%s"}\n' \
+            "$REPO_ROOT" "$FEATURE_NAME" "$WORKFLOW" "$FEATURE_DIR" "$PRIMARY_FILE" "$PLAN_FILE" "$RESEARCH_FILE" "$TASKS_FILE" "$PRP_FILE"
     else
-        echo "REPO_ROOT: $REPO_ROOT"
-        echo "BRANCH: $CURRENT_BRANCH"
-        echo "FEATURE_DIR: $FEATURE_DIR"
-        echo "FEATURE_SPEC: $FEATURE_SPEC"
-        echo "IMPL_PLAN: $IMPL_PLAN"
-        echo "TASKS: $TASKS"
+        cat <<EOF
+REPO_ROOT: $REPO_ROOT
+FEATURE: $FEATURE_NAME
+WORKFLOW: $WORKFLOW
+FEATURE_DIR: $FEATURE_DIR
+PRIMARY_FILE: $PRIMARY_FILE
+PLAN_FILE: $PLAN_FILE
+RESEARCH_FILE: $RESEARCH_FILE
+TASKS_FILE: $TASKS_FILE
+EOF
+        [[ -n "$PRP_FILE" ]] && echo "PRP_FILE: $PRP_FILE"
     fi
     exit 0
 fi
 
-# Validate required directories and files
-if [[ ! -d "$FEATURE_DIR" ]]; then
+if [[ -n "$FEATURE_DIR" && ! -d "$FEATURE_DIR" ]]; then
     echo "ERROR: Feature directory not found: $FEATURE_DIR" >&2
-    echo "Run /specify first to create the feature structure." >&2
+    echo "Run /specify to bootstrap the workflow artifacts." >&2
     exit 1
 fi
 
-if [[ ! -f "$IMPL_PLAN" ]]; then
-    echo "ERROR: plan.md not found in $FEATURE_DIR" >&2
-    echo "Run /plan first to create the implementation plan." >&2
+if [[ ! -f "$PRIMARY_FILE" ]]; then
+    echo "ERROR: Primary context file missing at $PRIMARY_FILE" >&2
+    echo "Run /specify to regenerate the initial artifact." >&2
     exit 1
 fi
 
-# Check for tasks.md if required
-if $REQUIRE_TASKS && [[ ! -f "$TASKS" ]]; then
-    echo "ERROR: tasks.md not found in $FEATURE_DIR" >&2
-    echo "Run /tasks first to create the task list." >&2
+if [[ ! -f "$PLAN_FILE" ]]; then
+    case "$WORKFLOW" in
+        free-style)
+            echo "ERROR: Plan file missing at $PLAN_FILE" >&2
+            echo "Run /create-plan before continuing." >&2
+            ;;
+        prp)
+            echo "ERROR: Plan file missing at $PLAN_FILE" >&2
+            echo "Run /execute-prp to derive the execution plan." >&2
+            ;;
+        all-in-one)
+            echo "ERROR: Plan file missing at $PLAN_FILE" >&2
+            echo "Run /context-engineer to update the plan section." >&2
+            ;;
+    esac
     exit 1
 fi
 
-# Build list of available documents
+if $REQUIRE_TASKS && [[ ! -f "$TASKS_FILE" ]]; then
+    echo "ERROR: tasks.md missing for $FEATURE_NAME" >&2
+    echo "Capture tasks from your plan or PRP before implementation." >&2
+    exit 1
+fi
+
 docs=()
-
-# Always check these optional docs
-[[ -f "$RESEARCH" ]] && docs+=("research.md")
-[[ -f "$DATA_MODEL" ]] && docs+=("data-model.md")
-
-# Check contracts directory (only if it exists and has files)
-if [[ -d "$CONTRACTS_DIR" ]] && [[ -n "$(ls -A "$CONTRACTS_DIR" 2>/dev/null)" ]]; then
-    docs+=("contracts/")
+[[ -f "$PRIMARY_FILE" ]] && docs+=("$(basename "$PRIMARY_FILE")")
+[[ -f "$PLAN_FILE" ]] && docs+=("$(basename "$PLAN_FILE")")
+[[ -f "$RESEARCH_FILE" ]] && docs+=("$(basename "$RESEARCH_FILE")")
+if [[ -n "$PRP_FILE" && -f "$PRP_FILE" ]]; then
+    docs+=("$(basename "$PRP_FILE")")
 fi
-
-[[ -f "$QUICKSTART" ]] && docs+=("quickstart.md")
-
-# Include tasks.md if requested and it exists
-if $INCLUDE_TASKS && [[ -f "$TASKS" ]]; then
+if $INCLUDE_TASKS && [[ -f "$TASKS_FILE" ]]; then
     docs+=("tasks.md")
 fi
 
-# Output results
 if $JSON_MODE; then
-    # Build JSON array of documents
     if [[ ${#docs[@]} -eq 0 ]]; then
         json_docs="[]"
     else
         json_docs=$(printf '"%s",' "${docs[@]}")
         json_docs="[${json_docs%,}]"
     fi
-    
-    printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s}\n' "$FEATURE_DIR" "$json_docs"
+    printf '{"FEATURE_DIR":"%s","WORKFLOW":"%s","AVAILABLE_DOCS":%s}\n' "$FEATURE_DIR" "$WORKFLOW" "$json_docs"
 else
-    # Text output
     echo "FEATURE_DIR:$FEATURE_DIR"
+    echo "WORKFLOW:$WORKFLOW"
     echo "AVAILABLE_DOCS:"
-    
-    # Show status of each potential document
-    check_file "$RESEARCH" "research.md"
-    check_file "$DATA_MODEL" "data-model.md"
-    check_dir "$CONTRACTS_DIR" "contracts/"
-    check_file "$QUICKSTART" "quickstart.md"
-    
-    if $INCLUDE_TASKS; then
-        check_file "$TASKS" "tasks.md"
+    for doc in "${docs[@]}"; do
+        echo "  ✓ $doc"
+    done
+    if $INCLUDE_TASKS && [[ ! -f "$TASKS_FILE" ]]; then
+        echo "  ✗ tasks.md"
     fi
 fi

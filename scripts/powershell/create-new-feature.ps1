@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Create a new feature
+# Create a new Context Engineering Kit feature
 [CmdletBinding()]
 param(
     [switch]$Json,
@@ -14,66 +14,46 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 }
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
-# Resolve repository root. Prefer git information when available, but fall back
-# to searching for repository markers so the workflow still functions in repositories that
-# were initialised with --no-git.
-function Find-RepositoryRoot {
-    param(
-        [string]$StartDir,
-        [string[]]$Markers = @('.git', '.specify')
-    )
-    $current = Resolve-Path $StartDir
-    while ($true) {
-        foreach ($marker in $Markers) {
-            if (Test-Path (Join-Path $current $marker)) {
-                return $current
-            }
-        }
-        $parent = Split-Path $current -Parent
-        if ($parent -eq $current) {
-            # Reached filesystem root without finding markers
-            return $null
-        }
-        $current = $parent
-    }
-}
-$fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
-if (-not $fallbackRoot) {
-    Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
-    exit 1
-}
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-try {
-    $repoRoot = git rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        $hasGit = $true
-    } else {
-        throw "Git not available"
-    }
-} catch {
-    $repoRoot = $fallbackRoot
-    $hasGit = $false
-}
-
+$repoRoot = Get-RepoRoot
+$workflow = Get-Workflow -RepoRoot $repoRoot
+$hasGit = Test-HasGit
 Set-Location $repoRoot
 
-$specsDir = Join-Path $repoRoot 'specs'
-New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
-
 $highest = 0
-if (Test-Path $specsDir) {
-    Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-        if ($_.Name -match '^(\d{3})') {
+if ($hasGit) {
+    git for-each-ref --format='%(refname:short)' refs/heads | ForEach-Object {
+        if ($_ -match '^(\d{3})-') {
             $num = [int]$matches[1]
             if ($num -gt $highest) { $highest = $num }
         }
     }
 }
+
+if ($highest -eq 0) {
+    $candidateDirs = @(
+        Join-Path $repoRoot 'specs',
+        Join-Path $repoRoot 'context-eng/prp',
+        Join-Path $repoRoot 'context-eng/all-in-one'
+    )
+    foreach ($dir in $candidateDirs) {
+        if (-not (Test-Path $dir)) { continue }
+        Get-ChildItem -Path $dir -Directory | ForEach-Object {
+            if ($_.Name -match '^(\d{3})-') {
+                $num = [int]$matches[1]
+                if ($num -gt $highest) { $highest = $num }
+            }
+        }
+    }
+}
+
 $next = $highest + 1
 $featureNum = ('{0:000}' -f $next)
 
-$branchName = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
-$words = ($branchName -split '-') | Where-Object { $_ } | Select-Object -First 3
+$slug = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+$words = ($slug -split '-') | Where-Object { $_ } | Select-Object -First 3
+if (-not $words) { $words = @('feature') }
 $branchName = "$featureNum-$([string]::Join('-', $words))"
 
 if ($hasGit) {
@@ -83,35 +63,101 @@ if ($hasGit) {
         Write-Warning "Failed to create git branch: $branchName"
     }
 } else {
-    Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    Write-Warning "[cek] Warning: Git repository not detected; skipped branch creation for $branchName"
 }
 
-$featureDir = Join-Path $specsDir $branchName
+$contextDir = Join-Path $repoRoot '.context-eng'
+$checklistTemplate = Join-Path $contextDir 'checklists/full-implementation-checklist.md'
+
+$featureDir = $null
+$primaryTemplate = $null
+$primaryFile = $null
+$planFile = $null
+$researchFile = $null
+$tasksFile = $null
+$prpFile = $null
+$initialFile = $null
+
+switch ($workflow) {
+    'free-style' {
+        $featureDir = Join-Path $repoRoot "specs/$branchName"
+        $primaryTemplate = Join-Path $contextDir 'workflows/free-style/templates/context-spec-template.md'
+        $primaryFile = Join-Path $featureDir 'context-spec.md'
+        $planFile = Join-Path $featureDir 'plan.md'
+        $researchFile = Join-Path $featureDir 'research.md'
+        $tasksFile = Join-Path $featureDir 'tasks.md'
+    }
+    'prp' {
+        $featureDir = Join-Path $repoRoot "context-eng/prp/$branchName"
+        $primaryTemplate = Join-Path $contextDir 'workflows/prp/templates/initial-template.md'
+        $primaryFile = Join-Path $repoRoot 'PRPs/INITIAL.md'
+        $prpFile = Join-Path $repoRoot "PRPs/$branchName.md"
+        $planFile = Join-Path $featureDir 'plan.md'
+        $researchFile = Join-Path $featureDir 'research.md'
+        $tasksFile = Join-Path $featureDir 'tasks.md'
+        $initialFile = $primaryFile
+    }
+    'all-in-one' {
+        $featureDir = Join-Path $repoRoot "context-eng/all-in-one/$branchName"
+        $primaryTemplate = Join-Path $contextDir 'workflows/all-in-one/templates/all-in-one-template.md'
+        $primaryFile = Join-Path $featureDir 'record.md'
+        $planFile = Join-Path $featureDir 'plan.md'
+        $researchFile = Join-Path $featureDir 'research.md'
+        $tasksFile = Join-Path $featureDir 'tasks.md'
+    }
+    default {
+        $featureDir = Join-Path $repoRoot "specs/$branchName"
+        $primaryTemplate = Join-Path $contextDir 'workflows/free-style/templates/context-spec-template.md'
+        $primaryFile = Join-Path $featureDir 'context-spec.md'
+        $planFile = Join-Path $featureDir 'plan.md'
+        $researchFile = Join-Path $featureDir 'research.md'
+        $tasksFile = Join-Path $featureDir 'tasks.md'
+    }
+}
+
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+[System.IO.Directory]::CreateDirectory((Split-Path $primaryFile)) | Out-Null
+[System.IO.Directory]::CreateDirectory((Split-Path $planFile)) | Out-Null
+[System.IO.Directory]::CreateDirectory((Split-Path $researchFile)) | Out-Null
+[System.IO.Directory]::CreateDirectory((Split-Path $tasksFile)) | Out-Null
 
-$template = Join-Path $repoRoot '.specify/templates/spec-template.md'
-$specFile = Join-Path $featureDir 'spec.md'
-if (Test-Path $template) { 
-    Copy-Item $template $specFile -Force 
-} else { 
-    New-Item -ItemType File -Path $specFile | Out-Null 
+if ($workflow -eq 'prp') {
+    [System.IO.Directory]::CreateDirectory((Split-Path $prpFile)) | Out-Null
+    $prpTemplate = Join-Path $contextDir 'workflows/prp/templates/prp-template.md'
+    if ((-not (Test-Path $prpFile)) -and (Test-Path $prpTemplate)) {
+        Copy-Item $prpTemplate $prpFile
+    }
 }
 
-# Set the SPECIFY_FEATURE environment variable for the current session
+if ((Test-Path $primaryTemplate) -and (-not (Test-Path $primaryFile))) {
+    Copy-Item $primaryTemplate $primaryFile
+} elseif (-not (Test-Path $primaryFile)) {
+    New-Item -ItemType File -Path $primaryFile | Out-Null
+}
+
+$env:CONTEXT_FEATURE = $branchName
 $env:SPECIFY_FEATURE = $branchName
 
+$output = [ordered]@{
+    BRANCH_NAME = $branchName
+    FEATURE_NUM = $featureNum
+    WORKFLOW = $workflow
+    PRIMARY_FILE = $primaryFile
+    TEMPLATE_FILE = $primaryTemplate
+    FEATURE_DIR = $featureDir
+    PLAN_FILE = $planFile
+    RESEARCH_FILE = $researchFile
+    TASKS_FILE = $tasksFile
+    PRP_FILE = $prpFile
+    INITIAL_FILE = $initialFile
+    CHECKLIST_TEMPLATE = $checklistTemplate
+}
+
 if ($Json) {
-    $obj = [PSCustomObject]@{ 
-        BRANCH_NAME = $branchName
-        SPEC_FILE = $specFile
-        FEATURE_NUM = $featureNum
-        HAS_GIT = $hasGit
-    }
-    $obj | ConvertTo-Json -Compress
+    [PSCustomObject]$output | ConvertTo-Json -Compress
 } else {
-    Write-Output "BRANCH_NAME: $branchName"
-    Write-Output "SPEC_FILE: $specFile"
-    Write-Output "FEATURE_NUM: $featureNum"
-    Write-Output "HAS_GIT: $hasGit"
-    Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
+    $output.GetEnumerator() | ForEach-Object {
+        if ($_.Value) { Write-Output "$($_.Key): $($_.Value)" }
+    }
+    Write-Output "CONTEXT_FEATURE environment variable set to: $branchName"
 }

@@ -7,11 +7,21 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [LATEST_VERSION] - RELEASE_DATE
+## [0.0.18] - 2025-09-28
 
 ### Added
 
-- Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users
+- Context Engineering workflows (free-style, PRP, all-in-one) with dedicated command templates and templates under `.context-eng/`.
+- `--workflow` option to `specify init`, plus workflow metadata persisted to `.context-eng/workflow.json`.
+- Workflow-aware helper scripts (`context-feature-info`, `context-plan-setup`) for both Bash and PowerShell.
+- New release assets named `ce-kit-template-<agent>-<script>-<version>.zip`.
+- Support for using `.` as a shorthand for the current directory in `specify init .`, equivalent to `--here`.
+
+### Changed
+
+- CLI onboarding now brands the tool as the Context Engineering Kit and guides next steps per workflow.
+- Automation scripts, packaging pipeline, and agent context updaters migrated from `.specify/` to `.context-eng/`.
+- Build description updated to reflect Context Engineering Kit focus.
 
 ## [0.0.17] - 2025-09-22
 

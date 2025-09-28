@@ -11,13 +11,12 @@ User input:
 
 $ARGUMENTS
 
-1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
+1. Run `{SCRIPT}` from repo root and parse JSON for `FEATURE_DIR`, `PRIMARY_FILE`, `PLAN_FILE`, `TASKS_FILE`, `PRP_FILE`, and `AVAILABLE_DOCS`.
 2. Load and analyze available design documents:
-   - Always read plan.md for tech stack and libraries
-   - IF EXISTS: Read data-model.md for entities
-   - IF EXISTS: Read contracts/ for API endpoints
-   - IF EXISTS: Read research.md for technical decisions
-   - IF EXISTS: Read quickstart.md for test scenarios
+   - Always read `PLAN_FILE` for tech stack, sequencing, and dependencies.
+   - Always review `PRIMARY_FILE` for requirements, user journeys, and constraints.
+   - IF EXISTS: Read `PRP_FILE` (PRP workflow) for requirement matrix alignment.
+   - IF EXISTS: Read `RESEARCH_FILE` for technical decisions and constraints.
 
    Note: Not all projects have all documents. For example:
    - CLI tools might not have contracts/
@@ -25,7 +24,7 @@ $ARGUMENTS
    - Generate tasks based on what's available
 
 3. Generate tasks following the template:
-   - Use `/templates/tasks-template.md` as the base
+   - Use `.context-eng/templates/tasks-template.md` as the base
    - Replace example tasks with actual tasks based on:
      * **Setup tasks**: Project init, dependencies, linting
      * **Test tasks [P]**: One per contract, one per integration scenario
