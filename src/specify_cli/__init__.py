@@ -81,7 +81,7 @@ AI_CHOICES = {
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 # Keep a module version (mirrors pyproject.toml). Update alongside pyproject version bump.
-__version__ = "0.0.23"
+__version__ = "0.0.24"
 
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
@@ -1247,14 +1247,118 @@ def init(
         steps_lines.append(f"{step_num}. Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]")
         step_num += 1
 
+    # Dynamically discover available slash commands from the selected agent's folder
+    def _agent_command_dir(ai: str) -> tuple[Path, str, list[str]]:
+        """Return (directory, format, patterns) for command files of a given agent.
+        format is one of: md, prompt.md, toml (used for parsing descriptions).
+        patterns is a list of glob patterns to enumerate commands.
+        """
+        base = project_path
+        if ai == "claude":
+            return (base / ".claude/commands", "md", ["*.md"])
+        if ai == "cursor":
+            return (base / ".cursor/commands", "md", ["*.md"])
+        if ai == "opencode":
+            return (base / ".opencode/command", "md", ["*.md"])
+        if ai == "windsurf":
+            return (base / ".windsurf/workflows", "md", ["*.md"])
+        if ai == "gemini":
+            return (base / ".gemini/commands", "toml", ["*.toml"])
+        if ai == "qwen":
+            return (base / ".qwen/commands", "toml", ["*.toml"])
+        if ai == "copilot":
+            return (base / ".github/prompts", "prompt.md", ["*.prompt.md"])
+        if ai == "codex":
+            return (base / ".codex/prompts", "md", ["*.md"])
+        if ai == "kilocode":
+            return (base / ".kilocode/workflows", "md", ["*.md"])
+        if ai == "auggie":
+            return (base / ".augment/commands", "md", ["*.md"])
+        if ai == "roo":
+            return (base / ".roo/commands", "md", ["*.md"])
+        # Fallback to Claude-like layout
+        return (base / ".claude/commands", "md", ["*.md"])
+
+    def _parse_description(path: Path, fmt: str) -> str | None:
+        """Extract a short description from a command file by format."""
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as f:
+                # Read a small header chunk
+                head = f.read(1000)
+        except (FileNotFoundError, PermissionError, UnicodeDecodeError):
+            return None
+        # Normalize newlines
+        head = head.replace("\r\n", "\n").replace("\r", "\n")
+        if fmt in ("md", "prompt.md"):
+            # Look for YAML frontmatter: --- ... description: ... ---
+            if head.lstrip().startswith("---"):
+                # Take lines until the second '---'
+                fm = []
+                lines = head.split("\n")
+                dash_count = 0
+                for ln in lines:
+                    if ln.strip() == "---":
+                        dash_count += 1
+                        if dash_count == 2:
+                            break
+                        continue
+                    if dash_count == 1:
+                        fm.append(ln)
+                for ln in fm:
+                    if ln.strip().lower().startswith("description:"):
+                        return ln.split(":", 1)[1].strip().strip('"').strip("'")
+        elif fmt == "toml":
+            for ln in head.split("\n")[:20]:
+                s = ln.strip()
+                if s.startswith("description") and "=" in s:
+                    try:
+                        return s.split("=", 1)[1].strip().strip('"').strip("'")
+                    except Exception:
+                        return None
+        return None
+
+    def _discover_commands(ai: str) -> list[tuple[str, str | None]]:
+        cmd_dir, fmt, patterns = _agent_command_dir(ai)
+        candidates: list[Path] = []
+        for pat in patterns:
+            candidates.extend(sorted(cmd_dir.glob(pat)))
+        items: list[tuple[str, str | None]] = []
+        for p in candidates:
+            if not p.is_file():
+                continue
+            name = p.stem
+            # For copilot .prompt.md -> strip .prompt suffix
+            if fmt == "prompt.md" and name.endswith(".prompt"):
+                name = name[:-7]
+            desc = _parse_description(p, fmt)
+            items.append((name, desc))
+        return items
+
+    discovered = _discover_commands(selected_ai)
+    # Sort with a preferred core order first, then alphabetical
+    core_order = [
+        "constitution",
+        "specify",
+        "clarify",
+        "plan",
+        "tasks",
+        "analyze",
+        "implement",
+    ]
+    core = [c for c in discovered if c[0] in core_order]
+    extra = [c for c in discovered if c[0] not in core_order]
+    core.sort(key=lambda x: core_order.index(x[0]))
+    extra.sort(key=lambda x: x[0])
+    ordered = core + extra
+
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
-    steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/specify[/] - Create specifications")
-    steps_lines.append("   2.3 [cyan]/clarify[/] - Clarify and de-risk specification (run before [cyan]/plan[/cyan])")
-    steps_lines.append("   2.4 [cyan]/plan[/] - Create implementation plans")
-    steps_lines.append("   2.5 [cyan]/tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.6 [cyan]/analyze[/] - Validate alignment & surface inconsistencies (read-only)")
-    steps_lines.append("   2.7 [cyan]/implement[/] - Execute implementation")
+    sub_idx = 1
+    for name, desc in ordered:
+        if desc:
+            steps_lines.append(f"   {step_num}.{sub_idx} [cyan]/{name}[/] - {desc}")
+        else:
+            steps_lines.append(f"   {step_num}.{sub_idx} [cyan]/{name}[/]")
+        sub_idx += 1
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()

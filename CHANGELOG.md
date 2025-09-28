@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 	- You can still override via `--template-repo` or `SPEC_KIT_TEMPLATE_REPO`.
 	- Help text updated to reflect the new default.
 
+## [0.0.24] - 2025-09-28
+
+### Added
+
+- Dynamic command discovery in post-init "Next Steps": the CLI now scans the selected agent's commands folder and lists all available slash commands (e.g., `/pprd`, `/pprd-clarify`, `/fprds`) with descriptions when present, instead of a hardcoded subset.
+
+### Changed
+
+- Bumped CLI version to 0.0.24.
+
 ## [0.0.21] - 2025-09-27
 
 ### Changed
