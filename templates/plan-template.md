@@ -8,7 +8,7 @@ scripts:
 # Implementation Plan: [FEATURE]
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/.specs/.specify/specs/[###-feature-name]/spec.md`
+**Input**: Feature specification from `/.specs/specs/[###-feature-name]/spec.md`
 
 ## Execution Flow (/plan command scope)
 ```
@@ -59,7 +59,7 @@ scripts:
 
 ### Documentation (this feature)
 ```
-.specs/.specify/specs/[###-feature]/
+.specs/specs/[###-feature]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
 ├── data-model.md        # Phase 1 output (/plan command)

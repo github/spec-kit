@@ -15,7 +15,7 @@ if [[ -x "$SCRIPT_DIR/read-layout.sh" ]]; then
   eval "$($SCRIPT_DIR/read-layout.sh)"
 fi
 
-IFS=',' read -r -a ROOTS <<< "${LAYOUT_SPEC_ROOTS:-.specs/.specify/specs,specs}"
+IFS=',' read -r -a ROOTS <<< "${LAYOUT_SPEC_ROOTS:-.specs/specs,specs}"
 
 chosen=""
 for r in "${ROOTS[@]}"; do

@@ -22,7 +22,7 @@ CFG_PATH="$REPO_ROOT/.specs/.specify/layout.yaml"
 
 # Defaults
 LAYOUT_VERSION="1"
-LAYOUT_SPEC_ROOTS=(".specs/.specify/specs" "specs")
+LAYOUT_SPEC_ROOTS=(".specs/specs" "specs")
 LAYOUT_FOLDER_STRATEGY="epic"
 LAYOUT_FILES_FPRD="fprd.md"
 LAYOUT_FILES_PPRD="pprd.md"
@@ -38,7 +38,7 @@ LAYOUT_FILES_PARKING_LOT="parking_lot.md"
 LAYOUT_FILES_INDEX="index.yaml"
 LAYOUT_COMPAT_WRITE_STUB_SPEC="true"
 LAYOUT_COMPAT_STUB_NAME="spec.md"
-LAYOUT_CATALOG_PATH="specs/catalog.yaml"
+LAYOUT_CATALOG_PATH=".specs/specs/catalog.yaml"
 
 if [[ -f "$CFG_PATH" ]]; then
   state="root"
