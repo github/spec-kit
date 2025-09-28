@@ -9,7 +9,7 @@ The user input to you can be provided directly by the agent or as a command argu
 
 User input:
 
-$ARGUMENTS
+{ARGS}
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
 2. Load and analyze available design documents:

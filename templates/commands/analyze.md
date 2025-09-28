@@ -9,7 +9,7 @@ The user input to you can be provided directly by the agent or as a command argu
 
 User input:
 
-$ARGUMENTS
+{ARGS}
 
 Goal: Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (`spec.md`, `plan.md`, `tasks.md`) before implementation. This command MUST run only after `/tasks` has successfully produced a complete `tasks.md`.
 

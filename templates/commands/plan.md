@@ -9,7 +9,7 @@ The user input to you can be provided directly by the agent or as a command argu
 
 User input:
 
-$ARGUMENTS
+{ARGS}
 
 Given the implementation details provided as an argument, do this:
 

@@ -9,7 +9,7 @@ The user input to you can be provided directly by the agent or as a command argu
 
 User input:
 
-$ARGUMENTS
+{ARGS}
 
 Goal: From a portfolio/product PRD (PPRD), identify concrete features and create corresponding Feature PRDs (FPRDs) with correct folders/filenames based on the layout configuration. Confirm the feature list with the user before creating files.
 

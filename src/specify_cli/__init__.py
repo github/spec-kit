@@ -80,6 +80,9 @@ AI_CHOICES = {
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
+# Keep a module version (mirrors pyproject.toml). Update alongside pyproject version bump.
+__version__ = "0.0.23"
+
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
@@ -311,6 +314,20 @@ app = typer.Typer(
     invoke_without_command=True,
     cls=BannerGroup,
 )
+
+
+@app.command("version")
+def version_command():
+    """Print the Specify CLI version."""
+    # Prefer importlib.metadata to ensure we reflect installed distribution when available.
+    try:
+        import importlib.metadata as md  # type: ignore
+        dist_version = md.version("specify-cli")
+        console.print(dist_version)
+    except Exception:
+        # Fallback to module constant
+        console.print(__version__)
+    raise typer.Exit(0)
 
 
 def show_banner():

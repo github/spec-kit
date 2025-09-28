@@ -9,7 +9,7 @@ The user input to you can be provided directly by the agent or as a command argu
 
 User input:
 
-$ARGUMENTS
+{ARGS}
 
 Goal: Clarify a portfolio/product PRD (PPRD). Ask up to 5 targeted questions that materially de-risk subsequent feature decomposition, then write the accepted answers into the PPRD under a Clarifications section and apply updates to relevant sections.
 

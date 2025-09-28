@@ -9,7 +9,7 @@ The user input to you can be provided directly by the agent or as a command argu
 
 User input:
 
-$ARGUMENTS
+{ARGS}
 
 Goal: Create a new PPRD file by resolving the layout template (assets override if present) and saving it at the canonical specs root defined by the layout. Prefer a single file named per `files.pprd` (e.g., `specs/pprd.md`) unless the repository uses a multi-PPRD convention.
 

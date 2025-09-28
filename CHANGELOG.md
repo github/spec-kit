@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.22] - 2025-09-27
 
+## [0.0.23] - 2025-09-28
+
+### Added
+
+- Smoke test automation script `scripts/bash/smoke-copilot.sh` to provision a temporary Copilot project and assert required prompt and internal template files exist.
+- CI workflow `ci-smoke.yml` to build release template archives for all agents/script variants and verify each archive contains its expected command files and core internal templates.
+
+### Changed
+
+- Bumped CLI version to 0.0.23 to align with release template assets (previous run fetched v0.0.23 archives while CLI still reported 0.0.22).
+
+### Notes
+
+- Future enhancements: extend smoke script to cover additional agents and JSON output assertions; optionally add a matrix strategy job to exercise `specify init --template-path <archive>` against freshly built artifacts.
+
 ### Changed
 
 - Default template repository now points to `Jrakru/spec-kit` instead of upstream `github/spec-kit`.

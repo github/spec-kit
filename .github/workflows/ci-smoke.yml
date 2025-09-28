@@ -1,0 +1,73 @@
+name: Smoke & Template Validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/**'
+      - 'templates/**'
+      - 'src/specify_cli/**'
+      - '.github/workflows/ci-smoke.yml'
+      - '.github/workflows/scripts/create-release-packages.sh'
+
+jobs:
+  smoke-agents:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        agent: [copilot, claude, gemini]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install specify CLI (editable)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Build local template for ${{ matrix.agent }} (sh)
+        run: |
+          chmod +x .github/workflows/scripts/create-release-packages.sh
+          V="v$(grep '^version =' pyproject.toml | sed -E 's/version = "([0-9.]+)"/\1/')"
+          AGENTS="${{ matrix.agent }}" SCRIPTS=sh .github/workflows/scripts/create-release-packages.sh "$V"
+          ZIP=".genreleases/spec-kit-template-${{ matrix.agent }}-sh-${V}.zip"
+          if [[ ! -f "$ZIP" ]]; then echo "Archive not found: $ZIP" >&2; exit 1; fi
+          ABS_ZIP="$(realpath "$ZIP")"
+          echo "Using local template: $ABS_ZIP"
+          echo "SPEC_KIT_TEMPLATE_PATH=$ABS_ZIP" >> "$GITHUB_ENV"
+      - name: Run smoke test (${{ matrix.agent }})
+        run: |
+          chmod +x scripts/bash/smoke-*.sh
+          case "${{ matrix.agent }}" in
+            copilot) scripts/bash/smoke-copilot.sh ;;
+            claude)  scripts/bash/smoke-claude.sh  ;;
+            gemini)  scripts/bash/smoke-gemini.sh  ;;
+          esac
+
+  validate-archives:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Extract version
+        id: ver
+        run: |
+          PY_VER=$(grep '^version =' pyproject.toml | head -n1 | sed -E "s/version = \"([0-9.]+)\"/\1/")
+          echo "cli_version=$PY_VER" >> "$GITHUB_OUTPUT"
+          echo "Detected CLI version: $PY_VER"
+      - name: Build template archives (all agents, both scripts)
+        run: |
+          chmod +x .github/workflows/scripts/create-release-packages.sh
+          V="v$(grep '^version =' pyproject.toml | sed -E 's/version = "([0-9.]+)"/\1/')"
+          .github/workflows/scripts/create-release-packages.sh "$V"
+      - name: Validate archive contents
+        run: |
+          chmod +x scripts/bash/validate-archives.sh
+          VERSION="v$(grep '^version =' pyproject.toml | sed -E 's/version = \"([0-9.]+)\"/\1/')"
+          scripts/bash/validate-archives.sh "$VERSION"
