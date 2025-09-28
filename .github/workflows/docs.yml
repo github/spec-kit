@@ -46,18 +46,29 @@ jobs:
           cd docs
           docfx docfx.json
 
+      # Always publish the built site as a standard artifact for easy download/viewing
+      - name: Upload build artifact (DocFX site)
+        uses: actions/upload-artifact@v4
+        with:
+          name: docfx-site
+          path: docs/_site
+
+      # Configure GitHub Pages only when not running on a fork (GitHub forbids enabling Pages for forks)
       - name: Setup Pages
+        if: ${{ github.event.repository.fork == false }}
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
       - name: Upload artifact
+        if: ${{ github.event.repository.fork == false }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: 'docs/_site'
 
   # Deploy job
   deploy:
+    if: ${{ github.event.repository.fork == false }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
