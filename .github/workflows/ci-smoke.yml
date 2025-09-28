@@ -23,6 +23,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Extract version
+        id: ver
+        run: |
+          PY_VER=$(grep '^version =' pyproject.toml | head -n1 | sed -E "s/version = \"([0-9.]+)\"/\1/")
+          echo "cli_version=$PY_VER" >> "$GITHUB_OUTPUT"
+          echo "Detected CLI version: $PY_VER"
       - name: Install Python
         uses: actions/setup-python@v5
         with:
@@ -34,7 +40,7 @@ jobs:
       - name: Build local template for ${{ matrix.agent }} (sh)
         run: |
           chmod +x .github/workflows/scripts/create-release-packages.sh
-          V="v$(grep '^version =' pyproject.toml | sed -E 's/version = "([0-9.]+)"/\1/')"
+          V="v${{ steps.ver.outputs.cli_version }}"
           AGENTS="${{ matrix.agent }}" SCRIPTS=sh .github/workflows/scripts/create-release-packages.sh "$V"
           ZIP=".genreleases/spec-kit-template-${{ matrix.agent }}-sh-${V}.zip"
           if [[ ! -f "$ZIP" ]]; then echo "Archive not found: $ZIP" >&2; exit 1; fi
@@ -64,10 +70,10 @@ jobs:
       - name: Build template archives (all agents, both scripts)
         run: |
           chmod +x .github/workflows/scripts/create-release-packages.sh
-          V="v$(grep '^version =' pyproject.toml | sed -E 's/version = "([0-9.]+)"/\1/')"
+          V="v${{ steps.ver.outputs.cli_version }}"
           .github/workflows/scripts/create-release-packages.sh "$V"
       - name: Validate archive contents
         run: |
           chmod +x scripts/bash/validate-archives.sh
-          VERSION="v$(grep '^version =' pyproject.toml | sed -E 's/version = \"([0-9.]+)\"/\1/')"
+          VERSION="v${{ steps.ver.outputs.cli_version }}"
           scripts/bash/validate-archives.sh "$VERSION"
