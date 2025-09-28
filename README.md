@@ -8,6 +8,10 @@
     <strong>An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.</strong>
 </p>
 
+<p align="center">
+    <a href="./README-zh.md">中文文档</a>
+</p>
+
 [![Release](https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg)](https://github.com/github/spec-kit/actions/workflows/release.yml)
 
 ---
