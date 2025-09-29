@@ -1,0 +1,60 @@
+# Universal PHR Command for All IDEs
+# Copy this file to your IDE's commands directory:
+# - Gemini CLI: .gemini/commands/phr.toml
+# - Cursor IDE: .cursor/commands/phr.toml  
+# - VS Code: .vscode/commands/phr.toml
+
+name = "phr"
+description = "Execute user request AND record the exchange as a Prompt History Record"
+usage = "/phr <your actual request here>"
+
+prompt = """
+---
+description: Execute the user's request AND create a PHR to capture the entire exchange.
+---
+
+The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+
+User input:
+
+$ARGUMENTS
+
+**CRITICAL**: This command does TWO things:
+1. **EXECUTE** the user's actual request (do the work)
+2. **RECORD** the entire exchange as a PHR (capture for learning)
+
+**Execution Flow**:
+
+1. **EXECUTE THE USER'S REQUEST**:
+   - Do whatever the user asked for (code, analysis, planning, etc.)
+   - Provide the full response/solution
+   - Complete the actual work requested
+
+2. **EXTRACT EXCHANGE INFORMATION**:
+   - Stage: architect (planning), red (debugging), green (implementation), misc (other)
+   - Title: Brief descriptive title of what was accomplished
+   - Prompt: The user's original request
+   - Response: Summary of what you provided
+   - Files: Any files mentioned, created, or modified
+   - Tests: Any tests mentioned or run
+
+3. **CREATE PHR RECORD**:
+   - Run `./scripts/create-phr.sh` with the extracted information
+   - Use absolute paths from repository root
+   - Handle any errors and report them
+
+4. **VALIDATE AND REPORT**:
+   - Verify the PHR was created successfully
+   - Show the PHR file path
+   - Confirm both the work AND the record were completed
+
+**Example**:
+User says: "/phr Create a user authentication system"
+- You: Execute the request (create the auth system)
+- You: Record the exchange as PHR with stage=architect, title="User Authentication System", etc.
+
+**Required**: You MUST do BOTH - execute the work AND create the PHR record.
+"""
+
+# Universal command - works with any IDE
+# The prompt above contains all the logic needed

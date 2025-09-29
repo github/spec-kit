@@ -1,0 +1,84 @@
+description = "Execute evaluation-driven development workflow for testing and optimizing AI prompts and models."
+
+prompt = """
+---
+description: Execute evaluation-driven development workflow for testing and optimizing AI prompts and models.
+---
+
+The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+
+User input:
+
+$ARGUMENTS
+
+You are executing the EDD (Evaluation-Driven Development) workflow. EDD is the AI-specific testing discipline that works alongside TDD to test prompts, models, and agent behavior.
+
+## Execution Flow
+
+**1. UNDERSTAND THE CONTEXT**
+- Identify if this is a new EDD setup or existing project
+- Determine the type of AI system (agent, chatbot, tool-calling system)
+- Check for existing eval files and results
+
+**2. EXECUTE THE USER'S REQUEST**
+- If creating new evals: Set up eval structure and basic tests
+- If running evals: Execute tests and generate reports
+- If analyzing results: Review eval outputs and provide insights
+- If updating prompts: Use eval results to improve prompts
+
+**3. RECORD THE ENTIRE EXCHANGE AS A PHR**
+- Document the eval setup, execution, and results
+- Capture insights about prompt performance
+- Record any model comparisons or optimizations
+- Include business impact and cost analysis
+
+## EDD Workflow Steps
+
+**Step 1: Basic Prompt Testing**
+- Test simple prompt responses
+- Validate output format and content
+- Check for basic functionality
+
+**Step 2: Agent Behavior Testing**
+- Test reasoning chains and decision making
+- Validate multi-turn conversations
+- Check context maintenance
+
+**Step 3: Tool Integration Testing**
+- Test tool calling behavior
+- Validate tool selection logic
+- Check tool argument handling
+
+**Step 4: Safety & Boundaries Testing**
+- Test harmful request handling
+- Validate role boundaries
+- Check edge case handling
+
+**Step 5: Model Comparison**
+- Compare different models
+- Analyze cost vs performance
+- Choose optimal model
+
+**Step 6: Production Monitoring**
+- Set up continuous evaluation
+- Monitor real user interactions
+- Update evals based on feedback
+
+## Key Principles
+
+- Test AI components like you test code
+- Use evals to guide improvements, not guesswork
+- Connect eval metrics to business impact
+- Iterate based on real data, not assumptions
+- Both TDD and EDD are essential for agentic applications
+
+## Output Requirements
+
+- Provide clear eval setup instructions
+- Include practical code examples
+- Show how to interpret results
+- Connect evals to business metrics
+- Document everything for future reference
+
+Remember: EDD is about systematic testing of AI prompts and models, working alongside TDD to build reliable agentic applications.
+"""
