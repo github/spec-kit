@@ -35,7 +35,7 @@ Why?
 
 So right now → just focus on the chatbot working behavior
 ```prompt
-	Develop a scoped chatbot service called "ChatWait".  
+	/specify Develop a scoped chatbot service called "ChatWait".  
 	It should expose two modes of interaction:
 
 	1. **/chat/wait endpoint**  
@@ -504,5 +504,7 @@ Test and Iterate - so it stopped after each core implementation for review. I ra
 
 ## References
 
-- Spec Kit repo: https://github.com/github/spec-kit
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
+- Original Spec Kit repo: https://github.com/github/spec-kit
 - Microsoft Dev Blog: https://developer.microsoft.com/blog/spec-driven-development-spec-kit

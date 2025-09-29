@@ -1,4 +1,4 @@
-# **Step 2: Create the Project Rulebook - The [Constitution](https://github.com/github/spec-kit/blob/main/spec-driven.md#the-constitutional-foundation-enforcing-architectural-discipline)!**
+# **Step 2: Create the Project Rulebook - The [Constitution](https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-constitutional-foundation-enforcing-architectural-discipline)!**
 
 **Goal:** document the non-negotiable principles that every spec, plan, and task must honor.
 
@@ -34,6 +34,8 @@ Your rulebook shouldn't be a thousand pages long. It should only have the most i
 You write these rules down so your computer helper can read them and never forget them. It helps the AI build exactly what you want, in the style you want, and keeps your project strong and safe.
 
 ## Your Hands-On Plan
+
+Setup a new project `sp init hello_spp` and follow along:
 
 1.  **Ask your helper to write the first draft.**
     *   In your agent chat, running `/constitution` is like asking your helper, "Can you start a new rulebook for us?"
@@ -77,6 +79,8 @@ You write these rules down so your computer helper can read them and never forge
 
 ## References
 
-- GitHub Spec Kit repo: https://github.com/github/spec-kit
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
+- Original GitHub Spec Kit repo: https://github.com/github/spec-kit
 - Microsoft Dev Blog (Spec Kit intro): https://developer.microsoft.com/blog/spec-driven-development-spec-kit
 - The ONLY guide you'll need for GitHub Spec Kit: https://www.youtube.com/watch?v=a9eR1xsfvHg

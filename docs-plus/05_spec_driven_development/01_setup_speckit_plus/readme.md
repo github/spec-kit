@@ -1,12 +1,12 @@
 # Step 1: Setup Environment
 
-**Goal:** bring your workstation to a known-good baseline so Spec Kit and the SDD loop run without friction.
+**Goal:** bring your workstation to a known-good baseline so Spec Kit Plus and the SDD loop run without friction.
 
 ## Inputs
 
 - Git installed and configured with your preferred editor
 - Python 3.10+ _or_ the latest [Astral `uv`](https://docs.astral.sh/uv/getting-started/installation/) runtime (used by `uvx`)
-
+- Setup Any Coding Agent of your Choice (Qwen Code, Gemini CLI, Claude Code, Cursor, GitHub Copilot, Roo, GitHub Copulit Coding CLI etc.)
 ## Actions
 
 ## Quick start with SpecifyPlus CLI
@@ -25,9 +25,9 @@
   ```
 2. **Run the readiness checks**
   ```bash
-  specifyplus --version
+  specifyplus --help
   # or
-  sp --version
+  sp --help
   specifyplus check
   # or
   sp check

@@ -209,48 +209,6 @@ https://azure.microsoft.com/en-us/pricing/purchase-options/azure-account?icid=az
 
 ---
 
-## Implementation Guide
-
-### Getting Started with Tier 1
-
-```bash
-# Install SpecKit+
-git clone https://github.com/your-org/speckit-plus
-cd speckit-plus
-
-# Configure free tier agents
-cp config/tier1.example.yml config/tier1.yml
-# Add your free API keys
-
-# Start local Dapr runtime
-dapr init
-
-# Run your first specification
-speckit+ generate --spec examples/hello-world.yml --tier free
-```
-
-### Upgrading to Tier 2
-
-```bash
-# Update configuration
-cp config/tier2.example.yml config/tier2.yml
-# Add your paid API keys
-
-# Deploy to Kubernetes
-kubectl apply -f k8s/production/
-
-# Install Dapr in cluster
-dapr init -k
-
-# Deploy Ray cluster
-ray up config/ray-cluster.yml
-
-# Run production workload
-speckit+ generate --spec specs/production.yml --tier production
-```
-
----
-
 ## Cost-Benefit Analysis
 
 ### Tier 1 ROI

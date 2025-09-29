@@ -61,6 +61,8 @@ Two key commands that enhance the Spec Kit workflow are /clarify and /analyze. T
 
 ## References
 
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
 - Spec Kit Clarify/Analyze Demo (optional deep dive): https://www.youtube.com/watch?v=YD66SBpJY2M
-- Spec Kit Nine Articles: https://github.com/github/spec-kit/blob/main/spec-driven.md#the-nine-articles-of-development
-- Spec Kit repo: https://github.com/github/spec-kit
+- Spec Kit Nine Articles: https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-nine-articles-of-development
+- Original Spec Kit repo: https://github.com/github/spec-kit

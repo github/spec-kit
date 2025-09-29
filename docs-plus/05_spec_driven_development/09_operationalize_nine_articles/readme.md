@@ -1,6 +1,6 @@
 # Step 9: Operationalize the Nine Articles 🧭
 
-**Goal:** embed the [Nine Articles of Development](https://github.com/github/spec-kit/blob/main/spec-driven.md#the-nine-articles-of-development) into your day-to-day loops so SDD stays simple, observable, and test-first as work scales.
+**Goal:** embed the [Nine Articles of Development](https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-nine-articles-of-development) into your day-to-day loops so SDD stays simple, observable, and test-first as work scales.
 
 ## The Nine Articles of Development: A Quick Refresher
 
@@ -76,6 +76,8 @@ By following these steps, the Nine Articles become more than just a list of rule
 
 ## References
 
-- Spec Kit Nine Articles: https://github.com/github/spec-kit/blob/main/spec-driven.md#the-nine-articles-of-development
-- Spec Kit repo: https://github.com/github/spec-kit
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
+- Spec Kit Nine Articles: https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-nine-articles-of-development
+- Original Spec Kit repo: https://github.com/github/spec-kit
 - Spec Kit video overview: https://www.youtube.com/watch?v=a9eR1xsfvHg

@@ -1,4 +1,4 @@
-# **Step 4: Define the Technical [Plan](https://github.com/github/spec-kit/blob/main/spec-driven.md#the-plan-command) (The "How")**
+# **Step 4: Define the Technical [Plan](https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-plan-command) (The "How")**
 
 **Goal:** Translate the "what" and "why" from the approved spec into a concrete technical strategy. This phase generates the high-level engineering blueprint, including architecture, data structures, and setup instructions, all while respecting the Constitution.
 
@@ -71,4 +71,6 @@ Once a feature specification exists, this command creates a comprehensive implem
 
 ## References
 
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
 - GitHub blog overview: https://github.blog/ai-and-ml/generative-ai/spec-driven-development-with-ai-get-started-with-a-new-open-source-toolkit/

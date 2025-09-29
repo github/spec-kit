@@ -65,3 +65,9 @@
 -   **"Fire and Forget":** Giving the `/implement` command and not actively monitoring and reviewing the agent's progress. This can lead to the agent going down the wrong path.
 -   **Ignoring Failing Tests:** If the agent's implementation fails a test and it can't fix it, it's your job to intervene, diagnose the problem, and provide guidance.
 -   **Skipping the Final Manual Review:** Relying solely on automated tests might miss visual bugs, awkward user flows, or other user experience issues. Always look at the final product.
+
+## References
+
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
+- Original Spec Kit repo: https://github.com/github/spec-kit

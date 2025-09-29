@@ -1,4 +1,4 @@
-# **Step 5: Generate the Actionable [Task](https://github.com/github/spec-kit/blob/main/spec-driven.md#the-tasks-command) List**
+# **Step 5: Generate the Actionable [Task](https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-tasks-command) List**
 
 **Goal:** Deconstruct the technical plan into a sequence of small, verifiable, and testable tasks. This `tasks.md` file is the final blueprint that the AI agent will follow to build the feature, turning the strategic "how" into a tactical "how-to."
 
@@ -63,3 +63,9 @@ After a plan is created, this command analyzes the plan and related design docum
 -   **Accepting the agent-generated list without review.** AI agents can sometimes create vague ("polish the UI") or overlapping tasks.
 -   **Forgetting to include tasks for crucial non-feature work,** such as running tests, creating documentation (`README.md`), and setting up CI/CD.
 -   **Creating tasks that are too large**, which makes them difficult to review and validate, defeating the purpose of the incremental loop.
+
+## References
+
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
+- Original Spec Kit repo: https://github.com/github/spec-kit

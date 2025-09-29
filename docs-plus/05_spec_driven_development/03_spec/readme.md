@@ -1,4 +1,4 @@
-# **Step 3: [Specify](https://github.com/github/spec-kit/blob/main/spec-driven.md#the-specify-command) the Feature (The "What" and "Why")**
+# **Step 3: [Specify](https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-specify-command) the Feature (The "What" and "Why")**
 
 **Goal:** Translate a high-level user need into a detailed, unambiguous, and reviewable specification. This artifact becomes the shared source of truth for the feature before any technical planning begins.
 
@@ -21,6 +21,8 @@ This command transforms a simple feature description (the user-prompt) into a co
 - Directory Structure: Creates the proper specs/[branch-name]/ structure for all related documents
 
 ### **Actions**
+
+Setup a new project `sp init hello_spp`, constitution and follow along:
 
 1.  **Craft and Run the Specify Prompt:** In your agent chat, run the `/specify` command. Provide a clear, user-focused description of the feature. **Crucially, include a reference to your `constitution.md` file** to ensure the AI's output adheres to your project's rules.
     *   **Your Prompt Example (Perfect):**
@@ -75,4 +77,6 @@ This command transforms a simple feature description (the user-prompt) into a co
 
 ## References
 
-- Spec Kit repo: https://github.com/github/spec-kit
+- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
+- Original Spec Kit repo: https://github.com/github/spec-kit

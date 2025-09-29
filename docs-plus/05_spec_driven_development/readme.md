@@ -14,11 +14,7 @@ In 2025, this matters because:
 
 [Watch: Spec-Driven Development in the Real World](https://www.youtube.com/watch?v=3le-v1Pme44)
 
-Here’s a crisp summary of the video “Watch: Spec-Driven Development in the Real World”:
-
-### What the talk argues
-
-The speaker says the industry is converging on **spec-driven development (SDD)**—writing a durable, reviewable **spec** (intent, behavior, constraints, and success criteria) first, then using AI/tools to implement against it. This moves teams away from “vibe coding” and toward predictable delivery, especially on multi-person, multi-repo work. ([YouTube][1])
+Industry is converging on **spec-driven development (SDD)**—writing a durable, reviewable **spec** (intent, behavior, constraints, and success criteria) first, then using AI/tools to implement against it. This moves teams away from “vibe coding” and toward predictable delivery, especially on multi-person, multi-repo work.
 
 ### The 3 things you need for SDD to actually work
 
@@ -30,7 +26,7 @@ The speaker says the industry is converging on **spec-driven development (SDD)**
 
 * **Intent brief → AI-drafted spec → human review loop.** Start from a high-level product brief; let AI expand to a detailed spec; iterate with the team until acceptance criteria are unambiguous.
 * **Plan → tasks → implementation.** Break the spec into verifiable tasks; let AI/agents implement; keep the spec and tests side-by-side with the code.
-* **Continuous verification.** PRs must cite the spec sections they fulfill and include tests/examples that prove the behavior. ([YouTube][1])
+* **Continuous verification.** PRs must cite the spec sections they fulfill and include tests/examples that prove the behavior.
 
 ### Why it beats “vibe coding”
 
@@ -40,8 +36,27 @@ The speaker says the industry is converging on **spec-driven development (SDD)**
 
 ### Tools & patterns mentioned/adjacent in the ecosystem
 
-* **Spec-Kit** (GitHub’s open-source toolkit) — templates and helpers for running an SDD loop with your AI tool of choice. ([The GitHub Blog][4])
-* Broader coverage in recent articles summarizing SDD’s rise and best practices. ([The New Stack][2])
+* **Spec-Kit Plus** (Panaversity open-source toolkit)
+* **Spec-Kit** (GitHub’s open-source toolkit) — templates and helpers for running an SDD loop with your AI tool of choice.
+* Broader coverage in recent articles summarizing SDD’s rise and best practices.
+
+## Walk the [Spec-Kit Plus](https://github.com/panaversity/spec-kit-plus) SDD Cycle
+
+Ready to practice? Follow the step folders in this directory:
+
+1. [Step 1 – Setup Environment](01_setup_speckit_plus/readme.md)
+2. [Step 2 – Define Constitution](02_constitution/readme.md)
+3. [Step 3 – Specify & Clarify](03_spec/readme.md)
+4. [Step 4 – Define Plan](04_plan/readme.md)
+5. [Step 5 – Generate Task List](05_tasks/readme.md)
+6. [Step 6 – Implement](06_implementation/readme.md)
+7. [Step 7 – Capstone Chatbot](08_chatbot_project/readme.md)
+8. [Step 8 – Clarify & Analyze Deep Dive](07_spec_analyze_clarify/readme.md)
+9. [Step 9 – Operationalize the Nine Articles](09_operationalize_nine_articles/readme.md)
+
+Each guide includes inputs, actions, quality gates, and common pitfalls so you can build muscle memory for spec-driven development.
+
+> **Note**: Use `specifyplus` or `sp` commands.
 
 ### Take-home checklist
 
@@ -52,29 +67,12 @@ The speaker says the industry is converging on **spec-driven development (SDD)**
 
 ---
 
-## Walk the [Spec-Kit](https://developer.microsoft.com/blog/spec-driven-development-spec-kit) SDD Cycle
+## Official Spec Kit Plus resources
 
-Ready to practice? Follow the step folders in this directory:
-
-1. [Step 1 – Setup Environment](01_setup_spec_kit/readme.md)
-2. [Step 2 – Define Constitution](02_constitution/readme.md)
-3. [Step 3 – Specify & Clarify](03_spec/readme.md)
-4. [Step 4 – Define Plan](04_plan/readme.md)
-5. [Step 5 – Generate Task List](05_tasks/readme.md)
-6. [Step 6 – Implement](06_implementation/readme.md)
-7. [Step 7 – Capstone Chatbot](07_chatbot_project/readme.md)
-8. [Step 8 – Operationalize the Nine Articles](08_agile_spec_combination/readme.md)
-9. [Step 9 – Clarify & Analyze Deep Dive](09_spec_analyze_clarify/readme.md)
-10. [Step 10 – Practice Projects (SDD in the Wild)](10_eval_governance/readme.md)
-
-Each guide includes inputs, actions, quality gates, and common pitfalls so you can build muscle memory for spec-driven development.
-
-
-## Official Spec Kit resources
-
-- [Spec Kit GitHub repository](https://github.com/github/spec-kit) — templates, scripts, and CLI
+- [Spec Kit Plus GitHub repository](https://github.com/panaversity/spec-kit-plus) — enhanced templates, scripts, and CLI
+- [PyPI package](https://pypi.org/project/specifyplus/) — install with `pip install specifyplus`
+- [Original Spec Kit repository](https://github.com/github/spec-kit) — base implementation
 - [Spec Kit video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg) — walkthrough of the end-to-end workflow
-- [Spec Kit release notes](https://github.com/github/spec-kit/releases) — template updates and new features
 
 
 [1]: https://www.youtube.com/watch?v=3le-v1Pme44&utm_source=chatgpt.com "Spec-Driven Development in the Real World"
