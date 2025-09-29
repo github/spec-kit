@@ -6,7 +6,7 @@ This document summarizes four comprehensive papers on AI-assisted software devel
 
 ---
 
-## [Paper 1: AI Turning Point - The Summer of 2025](https://github.com/panaversity/learn-agentic-ai/tree/main/06_prompt_driven_development/00_ai_turning_point_2025)
+## [Paper 1: AI Turning Point - The Summer of 2025](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/00_ai_turning_point_2025/readme.md)
 
 ### Core Thesis
 Summer 2025 marks a structural break in software development where AI assistance transitions from optional tool to foundational practice, driven by frontier LLMs (GPT-5, Claude 4.1x, Gemini 2.5+), AI-first IDEs (Cursor), and production-grade development agents.
@@ -69,7 +69,7 @@ Teams using SDD + TDD show:
 
 ---
 
-## [Paper 2: Spec-Driven Development - Engineering in the AI Era](https://github.com/panaversity/learn-agentic-ai/tree/main/06_prompt_driven_development/01a_sdd_concepts)
+## [Paper 2: Spec-Driven Development - Engineering in the AI Era](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01a_sdd_concepts/readme.md)
 
 ### Definition
 
@@ -125,7 +125,7 @@ AI-era economics:
 
 ---
 
-## [Paper 3: SDD+ – Spec-Driven Development for Distributed Multi-Agent Systems](https://github.com/panaversity/learn-agentic-ai/tree/main/06_prompt_driven_development/01b_sdd_plus_concepts)
+## [Paper 3: SDD+ – Spec-Driven Development for Distributed Multi-Agent Systems](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01b_sdd_plus_concepts/readme.md)
 
 ### Evolution from SDD to SDD+
 
@@ -195,7 +195,7 @@ SDD+ provides:
 
 ---
 
-## [Paper 4: Vibe Coding in Prod Responsibly: A Tutorial](https://github.com/panaversity/learn-agentic-ai/tree/main/06_prompt_driven_development/01c_vibe_coding_in_production)
+## [Paper 4: Vibe Coding in Prod Responsibly: A Tutorial](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01c_vibe_coding_in_production/readme.md)
 
 ### Responsible Use Cases
 
