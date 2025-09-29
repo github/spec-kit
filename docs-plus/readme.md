@@ -263,7 +263,7 @@ For distributed multi-agent systems, we extend Spec-Kit with **SDD+** capabiliti
 
 ### Multi-Agent Architecture Implementation
 
-#### Two Tier Strategy for Coding Agent Section to be used with SpecKit+
+#### [Two Tier Strategy for Coding Agent Section to be used with SpecKit+](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01d_two_tier_strategy/readme.md)
 
 **Tier 1 for Students: Development & Learning (Free)**
 - **Planning Agent**: Gemini 2.5 Pro (1,000 requests/day free)

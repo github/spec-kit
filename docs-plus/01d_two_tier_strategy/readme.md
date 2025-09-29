@@ -1,4 +1,4 @@
-# Multi-Agent Architecture: Two-Tier Strategy for SpecKit+
+# Agent Configuration and Infrastructure: Two-Tier Strategy for SpecKit+
 
 ## Overview
 
