@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users
 
+## [0.0.18] - 2025-09-23
+
+### Added
+
+- Factory CLI (`droid`) agent support, including CLI help, packaging scripts, context updaters, and documentation updates.
+- CLI fallback to locally built templates when a release archive for a new agent is not yet published.
+
 ## [0.0.17] - 2025-09-22
 
 ### Added
