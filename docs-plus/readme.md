@@ -263,15 +263,15 @@ For distributed multi-agent systems, we extend Spec-Kit with **SDD+** capabiliti
 
 ### Multi-Agent Architecture Implementation
 
-#### Agent Tier Strategy
+#### Two Tier Strategy for Coding Agent Section to be used with SpecKit+
 
-**Tier 1: Development & Learning (Free)**
+**Tier 1 for Students: Development & Learning (Free)**
 - **Planning Agent**: Gemini 2.5 Pro (1,000 requests/day free)
 - **Coding Agent**: Qwen 3 Coder (2,000 requests/day free)
 - **Orchestration**: Local Dapr runtime
 - **Use Cases**: Learning, prototypes, open-source
 
-**Tier 2: Production Systems (Paid)**
+**Tier 2 for Professionals: Production Systems (Paid)**
 - **Planning Agent**: OpenAI GPT-5 or Claude 4.1
 - **Coding Agent**: Claude 4.1 Coder or specialized models
 - **Orchestration**: Kubernetes + Dapr + Ray
