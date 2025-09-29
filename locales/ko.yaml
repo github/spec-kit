@@ -1,0 +1,82 @@
+# Korean localization for Spec Kit templates
+templates:
+  spec:
+    title: "기능 명세서"
+    sections:
+      user_scenarios: "사용자 시나리오 및 테스트"
+      requirements: "요구사항"
+      primary_user_story: "주요 사용자 스토리"
+      acceptance_scenarios: "승인 시나리오"
+      edge_cases: "예외 상황"
+      functional_requirements: "기능 요구사항"
+      key_entities: "핵심 엔티티"
+      review_checklist: "검토 및 승인 체크리스트"
+      execution_status: "실행 상태"
+    guidelines:
+      focus_what: "사용자가 무엇을 필요로 하고 왜 필요한지에 집중"
+      avoid_how: "구현 방법은 피하기 (기술 스택, API, 코드 구조 제외)"
+      business_stakeholders: "개발자가 아닌 비즈니스 이해관계자를 위해 작성"
+    content:
+      describe_main_journey: "주요 사용자 여정을 평이한 언어로 설명"
+      given_when_then: "주어진 조건 [초기 상태], 언제 [액션], 그러면 [예상 결과]"
+      what_happens_when: "[경계 조건]일 때 무엇이 발생하는가?"
+      how_system_handles: "시스템은 [오류 시나리오]를 어떻게 처리하는가?"
+      needs_clarification: "명확화 필요"
+
+  plan:
+    title: "구현 계획"
+    sections:
+      summary: "요약"
+      technical_context: "기술적 맥락"
+      constitution_check: "헌법 검토"
+      project_structure: "프로젝트 구조"
+      phase_outline: "0단계: 개요 및 연구"
+      phase_design: "1단계: 설계 및 계약"
+      phase_tasks: "2단계: 작업 계획 접근법"
+      phase_future: "3단계+: 향후 구현"
+      complexity_tracking: "복잡성 추적"
+      progress_tracking: "진행 상황 추적"
+    content:
+      extract_from_spec: "기능 명세서에서 추출: 주요 요구사항 + 연구를 통한 기술적 접근법"
+      load_feature_spec: "입력 경로에서 기능 명세서 로드"
+      ready_for_tasks: "/tasks 명령을 위한 준비 완료"
+
+  tasks:
+    title: "구현 작업"
+    sections:
+      task_breakdown: "작업 분해"
+      execution_order: "실행 순서"
+      dependencies: "의존성"
+
+messages:
+  errors:
+    no_description: "기능 설명이 제공되지 않았습니다"
+    no_spec: "{path}에 기능 명세서가 없습니다"
+    resolve_unknowns: "미해결 사항을 해결하세요"
+  success:
+    spec_ready: "계획을 위한 명세서 준비 완료"
+    ready_for_tasks: "/tasks 명령을 위한 준비 완료"
+  warnings:
+    spec_uncertainties: "명세서에 불확실한 부분이 있습니다"
+    remove_tech_details: "기술적 세부사항을 제거하세요"
+
+# AI instructions for generating content in this language
+ai_instructions:
+  # General instruction for all commands
+  general: "**중요**: 모든 생성되는 콘텐츠를 한국어로 작성하세요. 섹션, 설명, 요구사항, 텍스트 콘텐츠는 한국어로, 기술적 용어와 코드 예제는 적절한 경우 영어로 유지하세요."
+
+  # Command-specific instructions
+  commands:
+    specify: "명세서의 모든 내용을 한국어로 작성하세요. 섹션 설명, 요구사항, 사용자 스토리, 설명을 포함하여 모든 텍스트를 한국어로 작성합니다."
+    plan: "구현 계획의 모든 내용을 한국어로 작성하세요. 기술적 설명, 단계별 계획, 검토 내용을 한국어로 작성합니다."
+    tasks: "모든 작업 항목과 설명을 한국어로 작성하세요. 작업 제목, 설명, 의존성 정보를 한국어로 작성합니다."
+
+  # Content guidelines in target language
+  guidelines:
+    - "문서의 구조와 형식은 유지하되 내용은 한국어로 작성"
+    - "기술적 용어는 필요시 영어 병기 (예: 데이터베이스 (Database))"
+    - "코드 예제와 명령어는 영어로 유지"
+    - "마크다운 구문과 템플릿 구조는 변경하지 않음"
+
+  # Prefix for guidelines section
+  guidelines_header: "언어별 가이드라인:"
