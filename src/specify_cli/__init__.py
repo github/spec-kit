@@ -475,7 +475,15 @@ def scaffold_project_from_local_files(
 
         # 2. Copy scripts into .specify/scripts
         dest_scripts_dir = dest_specify_dir / "scripts"
-        source_script_type_dir = source_scripts_path / script_type
+
+        # Map short script type names to their full directory names
+        script_type_map = {
+            "ps": "powershell",
+            "sh": "bash",
+        }
+        script_type_full_name = script_type_map.get(script_type, script_type)
+
+        source_script_type_dir = source_scripts_path / script_type_full_name
         if not source_script_type_dir.is_dir():
              raise FileNotFoundError(f"Script type '{script_type}' directory not found in {source_scripts_path}.")
         shutil.copytree(source_script_type_dir, dest_scripts_dir, dirs_exist_ok=True)
