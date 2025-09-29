@@ -2,6 +2,8 @@
 Localization support for Spec Kit templates and messages.
 """
 
+from __future__ import annotations
+
 import os
 import yaml
 from pathlib import Path
@@ -52,7 +54,13 @@ class LocaleManager:
                 self._cache[locale] = data
                 return data
         except Exception as e:
-            print(f"Warning: Failed to load locale {locale}: {e}")
+            # Use console from rich if available, otherwise fallback to print
+            try:
+                from rich.console import Console
+                console = Console()
+                console.print(f"[yellow]Warning: Failed to load locale {locale}: {e}[/yellow]")
+            except ImportError:
+                print(f"Warning: Failed to load locale {locale}: {e}")
             return {}
 
     def get_text(self, key_path: str, **kwargs) -> str:

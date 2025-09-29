@@ -49,15 +49,8 @@ from rich.tree import Tree
 from typer.core import TyperGroup
 
 # Import locale support
-try:
-    from .locale import set_locale
-    from .template_processor import apply_language_to_commands
-except ImportError:
-    # Fallback if locale module is not available
-    def set_locale(locale: str) -> bool:
-        return True
-    def apply_language_to_commands(project_path, locale: str) -> None:
-        pass
+from .locale import set_locale
+from .template_processor import apply_language_to_commands
 
 # For cross-platform keyboard input
 import readchar
@@ -1024,8 +1017,10 @@ def init(
                 try:
                     apply_language_to_commands(project_path, selected_language)
                     tracker.complete("localize", f"applied {selected_language}")
+                except (ImportError, FileNotFoundError, PermissionError) as e:
+                    tracker.error("localize", f"localization failed: {e}")
                 except Exception as e:
-                    tracker.error("localize", str(e))
+                    tracker.error("localize", f"unexpected error during localization: {e}")
 
             # Git step
             if not no_git:

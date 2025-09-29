@@ -84,9 +84,14 @@ def _process_single_template(template_file: Path, command_name: str, locale: str
         with open(template_file, 'w', encoding='utf-8') as f:
             f.write(processed_content)
 
-    except Exception as e:
-        # Silently skip files that can't be processed
-        pass
+    except (IOError, UnicodeDecodeError, ValueError) as e:
+        # Skip files that can't be read or processed, but log the issue
+        try:
+            from rich.console import Console
+            console = Console()
+            console.print(f"[yellow]Warning: Could not process template {template_file}: {e}[/yellow]")
+        except ImportError:
+            pass  # Silently skip if rich is not available
 
 
 def _add_language_placeholder(content: str, command_name: str, locale: str) -> str:
