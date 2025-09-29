@@ -456,8 +456,8 @@ The future of software is not just AI-assisted development—it's distributed mu
 
 ### Implementation
 - **GitHub Spec-Kit**: https://github.com/github/spec-kit
-- **SDD+ Extensions**: [Repository to be announced]
-- **Documentation**: [Coming soon]
+- **SDD+ Extensions**: https://github.com/panaversity/spec-kit-plus/tree/main
+- **Documentation**: https://github.com/panaversity/spec-kit-plus/tree/main/docs-plus
 - **Community Forum**: [Coming soon]
 - **Agent Pattern Library**: [Coming soon]
 
