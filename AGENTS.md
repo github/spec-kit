@@ -38,6 +38,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | Alibaba's Qwen Code CLI |
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
 | **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows |
+| **Factory CLI** | `.factory/commands/` | Markdown | `droid` | Factory CLI |
 
 ### Step-by-Step Integration Guide
 
@@ -50,7 +51,7 @@ Add the new agent to the `AI_CHOICES` dictionary in `src/specify_cli/__init__.py
 ```python
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
-    "claude": "Claude Code", 
+    "claude": "Claude Code",
     "gemini": "Gemini CLI",
     "cursor": "Cursor",
     "qwen": "Qwen Code",
@@ -138,7 +139,7 @@ Add to case statement:
 case "$AGENT_TYPE" in
   # ... existing cases ...
   windsurf) update_agent_file "$WINDSURF_FILE" "Windsurf" ;;
-  "") 
+  "")
     # ... existing checks ...
     [ -f "$WINDSURF_FILE" ] && update_agent_file "$WINDSURF_FILE" "Windsurf";
     # Update default creation condition
@@ -193,10 +194,11 @@ elif selected_ai == "windsurf":
 ### CLI-Based Agents
 Require a command-line tool to be installed:
 - **Claude Code**: `claude` CLI
-- **Gemini CLI**: `gemini` CLI  
+- **Gemini CLI**: `gemini` CLI
 - **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
+- **Factory CLI**: `droid` CLI
 
 ### IDE-Based Agents
 Work within integrated development environments:
@@ -206,7 +208,7 @@ Work within integrated development environments:
 ## Command File Formats
 
 ### Markdown Format
-Used by: Claude, Cursor, opencode, Windsurf
+Used by: Claude, Cursor, opencode, Windsurf, Factory CLI
 
 ```markdown
 ---
