@@ -1,0 +1,86 @@
+name: Publish to PyPI (specifyplus)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g., 0.0.1)"
+        required: true
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python and uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Prepare temporary packaging changes
+        shell: bash
+        env:
+          VERSION_INPUT: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          # Set package name to specifyplus
+          sed -i 's/^name = ".*"/name = "specifyplus"/' pyproject.toml
+
+          # Remove existing [project.scripts] section and add new one
+          awk '
+            BEGIN{in_scripts=0}
+            /^\[project\.scripts\]/{in_scripts=1; next}
+            /^\[/{if(in_scripts){in_scripts=0}; print; next}
+            {
+              if(in_scripts==1){
+                next
+              } else {
+                print
+              }
+            }
+          ' pyproject.toml > pyproject.tmp && mv pyproject.tmp pyproject.toml
+
+          # Add new [project.scripts] section
+          printf '%s\n' "" "[project.scripts]" \
+            'specifyplus = "specify_cli:main"' \
+            'sp = "specify_cli:main"' >> pyproject.toml
+
+          # Determine version (prefer manual input, else derive from tag)
+          if [[ -n "${VERSION_INPUT:-}" ]]; then
+            VER="${VERSION_INPUT}"
+          else
+            # From tag ref like refs/tags/v0.0.1 -> 0.0.1
+            VER="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ -z "$VER" ]]; then
+            echo "Version not provided and not a tag-triggered run" >&2
+            exit 1
+          fi
+          sed -i "s/^version = \".*\"/version = \"${VER}\"/" pyproject.toml
+
+      - name: Build
+        run: uv build
+
+      # - name: Publish to PyPI (trusted publishing)
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     # No extra inputs for trusted publishing
+      #     verbose: true
+
+      # If not using trusted publishing, uncomment below and set PYPI_API_TOKEN secret
+      - name: Publish with API token
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          uvx twine upload dist/*
+
+
