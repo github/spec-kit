@@ -33,6 +33,9 @@ jobs:
           set -euo pipefail
           # Set package name to specifyplus
           sed -i 's/^name = ".*"/name = "specifyplus"/' pyproject.toml
+          
+          # Update description for specifyplus
+          sed -i '/^description = /c\description = "SpecifyPlus CLI - Enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. Treats specifications, architecture history, prompt history, tests, and automated evaluations as first-class artifacts."' pyproject.toml
 
           # Remove existing [project.scripts] section and add new one
           awk '

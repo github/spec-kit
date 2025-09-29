@@ -1,3 +1,5 @@
+> **SpecifyPlus**: Enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. Use `specifyplus` or `sp` commands instead of `specify`.
+
 <div align="center">
     <img src="./media/logo_small.webp"/>
     <h1>🌱 Spec Kit</h1>
@@ -46,14 +48,20 @@ Choose your preferred installation method:
 Install once and use everywhere:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+uv tool install specifyplus --from git+https://github.com/panaversity/spec-kit-plus.git
+# or
+pip install specifyplus
 ```
 
 Then use the tool directly:
 
 ```bash
-specify init <PROJECT_NAME>
-specify check
+specifyplus init <PROJECT_NAME>
+# or
+sp init <PROJECT_NAME>
+specifyplus check
+# or
+sp check
 ```
 
 #### Option 2: One-time Usage
@@ -61,7 +69,9 @@ specify check
 Run directly without installing:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/panaversity/spec-kit-plus.git specifyplus init <PROJECT_NAME>
+# or
+uvx --from git+https://github.com/panaversity/spec-kit-plus.git sp init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -136,6 +146,8 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Codex CLI](https://github.com/openai/codex)              | ⚠️ | Codex [does not support](https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
 
 ## 🔧 Specify CLI Reference
+
+> **Note**: Use `specifyplus` or `sp` commands instead of `specify` in this fork.
 
 The `specify` command supports the following options:
 

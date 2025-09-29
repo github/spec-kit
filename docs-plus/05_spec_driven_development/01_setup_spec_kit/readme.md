@@ -9,24 +9,34 @@
 
 ## Actions
 
-## Quick start with Specify CLI
+## Quick start with SpecifyPlus CLI
 
-1. **Install Specify (persistent option recommended)**
+1. **Install SpecifyPlus (persistent option recommended)**
   ```bash
-  uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+  uv tool install specifyplus --from git+https://github.com/panaversity/spec-kit-plus.git
+  # or
+  pip install specifyplus
   ```
   Alternative (one-off):
   ```bash
-  uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+  uvx --from git+https://github.com/panaversity/spec-kit-plus.git specifyplus init <PROJECT_NAME>
+  # or
+  uvx --from git+https://github.com/panaversity/spec-kit-plus.git sp init <PROJECT_NAME>
   ```
 2. **Run the readiness checks**
   ```bash
-  specify --version
-  specify check
+  specifyplus --version
+  # or
+  sp --version
+  specifyplus check
+  # or
+  sp check
   ```
 3. **Bootstrap your project**
   ```bash
-  specify init <PROJECT_NAME>
+  specifyplus init <PROJECT_NAME>
+  # or
+  sp init <PROJECT_NAME>
   ```
 4. **Follow the slash-command sequence** inside your coding agent (Copilot, Claude Code, Cursor, Gemini CLI, etc.).
 
@@ -47,11 +57,11 @@ Inspect the generated `.github/` and `.specify/` folders, then delete the sandbo
 ## Deliverables
 
 - A fresh repository ready for Spec Kit
-- Verified `uvx` runner capable of invoking `specify`
+- Verified `uvx` runner capable of invoking `specifyplus`
 
 ## Quality Gates ✅
 
-- `uvx --from … specify --help` exits with status 0
+- `uvx --from … specifyplus --help` exits with status 0
 - `git status` shows a clean working tree in your new project folder
 
 ## Common Pitfalls
@@ -60,6 +70,8 @@ Inspect the generated `.github/` and `.specify/` folders, then delete the sandbo
 
 ## References
 
-- GitHub Spec Kit repo: https://github.com/github/spec-kit
+- SpecifyPlus repo: https://github.com/panaversity/spec-kit-plus
+- PyPI package: https://pypi.org/project/specifyplus/
+- Original GitHub Spec Kit repo: https://github.com/github/spec-kit
 - GitHub blog (Spec Kit overview): https://github.blog/ai-and-ml/generative-ai/spec-driven-development-with-ai-get-started-with-a-new-open-source-toolkit/
 - Microsoft Dev Blog (Spec Kit intro): https://developer.microsoft.com/blog/spec-driven-development-spec-kit
