@@ -1,6 +1,5 @@
 """Tests for specify check command."""
 
-import pytest
 
 from specify_cli import app
 
