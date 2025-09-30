@@ -3,6 +3,7 @@ description: Execute the implementation planning workflow using the plan templat
 scripts:
   sh: scripts/bash/setup-plan.sh --json
   ps: scripts/powershell/setup-plan.ps1 -Json
+  fish: scripts/fish/setup-plan.fish --json
 ---
 
 The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).

@@ -3,6 +3,7 @@ description: Identify underspecified areas in the current feature spec by asking
 scripts:
    sh: scripts/bash/check-prerequisites.sh --json --paths-only
    ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
+   fish: scripts/fish/check-prerequisites.fish --json --paths-only
 ---
 
 The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).

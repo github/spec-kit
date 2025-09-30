@@ -3,6 +3,7 @@ description: Perform a non-destructive cross-artifact consistency and quality an
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+  fish: scripts/fish/check-prerequisites.fish --json --require-tasks --include-tasks
 ---
 
 The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).

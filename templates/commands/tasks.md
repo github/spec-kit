@@ -3,6 +3,7 @@ description: Generate an actionable, dependency-ordered tasks.md for the feature
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
+  fish: scripts/fish/check-prerequisites.fish --json
 ---
 
 The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
