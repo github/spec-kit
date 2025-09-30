@@ -84,6 +84,8 @@ Run directly without installing:
 ```bash
 uvx specifyplus --help
 uvx specifyplus init <PROJECT_NAME>
+# or
+uvx sp init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -158,6 +160,11 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Codex CLI](https://github.com/openai/codex)              | ⚠️ | Codex [does not support](https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
 
 ## 🔧 Specify CLI Reference
+
+### Learning subagents (optional)
+
+- Spec Architect – `docs-plus/02_start_prompting/02_qwen_code/04_subagents/prompts/0002-spec-architect.prompt.md`
+- PHR/ADR Curator & Evaluator – `docs-plus/02_start_prompting/02_qwen_code/04_subagents/prompts/0004-phr-adr-curator.prompt.md`
 
 > **Note**: Use `specifyplus` or `sp` commands instead of `specify` in this fork.
 
