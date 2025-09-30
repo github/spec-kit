@@ -146,6 +146,27 @@ case "$AGENT_TYPE" in
 esac
 ```
 
+##### Fish script (`scripts/fish/update-agent-context.fish`):
+
+Add file variable:
+```fish
+set -g WINDSURF_FILE "$REPO_ROOT/.windsurf/rules/specify-rules.md"
+```
+
+Add to switch statement:
+```fish
+switch "$agent_type"
+    # ... existing cases ...
+    case windsurf
+        update_agent_file "$WINDSURF_FILE" "Windsurf"
+    case ''
+        # ... existing checks ...
+        if test -f "$WINDSURF_FILE"
+            update_agent_file "$WINDSURF_FILE" "Windsurf"
+        end
+end
+```
+
 ##### PowerShell script (`scripts/powershell/update-agent-context.ps1`):
 
 Add file variable:
@@ -253,7 +274,7 @@ Different agents use different argument placeholders:
 
 ## Common Pitfalls
 
-1. **Forgetting update scripts**: Both bash and PowerShell scripts must be updated
+1. **Forgetting update scripts**: Bash, PowerShell, and Fish scripts must all be updated
 2. **Missing CLI checks**: Only add for agents that actually have CLI tools
 3. **Wrong argument format**: Use correct placeholder format for each agent type
 4. **Directory naming**: Follow agent-specific conventions exactly
