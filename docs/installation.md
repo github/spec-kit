@@ -3,6 +3,7 @@
 ## Prerequisites
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
+- **Shell**: Bash/Zsh (default on Linux/macOS), PowerShell (Windows), or [Fish Shell](https://fishshell.com/) (optional)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
@@ -49,6 +50,7 @@ Force a specific script type:
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script sh
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script fish
 ```
 
 ### Ignore Agent Tools Check
@@ -66,7 +68,7 @@ After initialization, you should see the following commands available in your AI
 - `/plan` - Generate implementation plans  
 - `/tasks` - Break down into actionable tasks
 
-The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
+The `.specify/scripts` directory will contain `.sh`, `.ps1`, or `.fish` scripts depending on your selection.
 
 ## Troubleshooting
 
