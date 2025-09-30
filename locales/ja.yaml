@@ -1,0 +1,42 @@
+# Japanese localization for Spec Kit templates
+templates:
+  spec:
+    title: "機能仕様書"
+    sections:
+      user_scenarios: "ユーザーシナリオとテスト"
+      requirements: "要件"
+      primary_user_story: "主要ユーザーストーリー"
+      acceptance_scenarios: "受け入れシナリオ"
+      edge_cases: "エッジケース"
+      functional_requirements: "機能要件"
+      key_entities: "主要エンティティ"
+      review_checklist: "レビューと受け入れチェックリスト"
+      execution_status: "実行ステータス"
+
+messages:
+  errors:
+    no_description: "機能説明が提供されていません"
+    no_spec: "{path}に機能仕様書がありません"
+  success:
+    spec_ready: "計画のための仕様書が準備完了"
+
+# AI instructions for generating content in this language
+ai_instructions:
+  # General instruction for all commands
+  general: "**重要**: すべての生成コンテンツを日本語で記述してください。セクション、説明、要件、テキストコンテンツは日本語で、技術用語とコード例は適切な場合は英語のままにしてください。"
+
+  # Command-specific instructions
+  commands:
+    specify: "仕様書のすべてのコンテンツを日本語で記述してください。セクションの説明、要件、ユーザーストーリー、説明を含むすべてのテキストを日本語で記述します。"
+    plan: "実装計画のすべてのコンテンツを日本語で記述してください。技術的説明、段階的計画、レビュー内容を日本語で記述します。"
+    tasks: "すべてのタスク項目と説明を日本語で記述してください。タスクタイトル、説明、依存関係情報を日本語で記述します。"
+
+  # Content guidelines in target language
+  guidelines:
+    - "文書の構造と形式は維持しつつ、内容は日本語で記述"
+    - "技術用語は必要に応じて英語併記（例：データベース (Database)）"
+    - "コード例とコマンドは英語のまま"
+    - "マークダウン構文とテンプレート構造は変更しない"
+
+  # Prefix for guidelines section
+  guidelines_header: "言語別ガイドライン:"

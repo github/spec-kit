@@ -7,6 +7,7 @@
 #     "platformdirs",
 #     "readchar",
 #     "httpx",
+#     "pyyaml",
 # ]
 # ///
 """
@@ -47,6 +48,10 @@ from rich.table import Table
 from rich.tree import Tree
 from typer.core import TyperGroup
 
+# Import locale support
+from .locale import set_locale
+from .template_processor import apply_language_to_commands
+
 # For cross-platform keyboard input
 import readchar
 import ssl
@@ -80,6 +85,12 @@ AI_CHOICES = {
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
+
+# Language choices for localization (defaults to English)
+LANGUAGE_CHOICES = {
+    "en": "English",
+    "ko": "한국어 (Korean)"
+}
 
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
@@ -752,6 +763,7 @@ def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, or auggie"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+    language: str = typer.Option("en", "--lang", help="Language for generated templates and messages: en (English), ko (Korean)"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -937,9 +949,26 @@ def init(
         else:
             selected_script = default_script
     
+    # Language selection
+    if language:
+        if language not in LANGUAGE_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid language '{language}'. Choose from: {', '.join(LANGUAGE_CHOICES.keys())}")
+            raise typer.Exit(1)
+        selected_language = language
+    else:
+        # Provide interactive selection if stdin is a TTY
+        if sys.stdin.isatty():
+            selected_language = select_with_arrows(LANGUAGE_CHOICES, "Choose template language:", "en")
+        else:
+            selected_language = "en"  # Default to English
+
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
-    
+    console.print(f"[cyan]Selected language:[/cyan] {selected_language}")
+
+    # Set the locale for template generation
+    set_locale(selected_language)
+
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
     tracker = StepTracker("Initialize Specify Project")
@@ -952,6 +981,8 @@ def init(
     tracker.complete("ai-select", f"{selected_ai}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
+    tracker.add("lang-select", "Select template language")
+    tracker.complete("lang-select", selected_language)
     for key, label in [
         ("fetch", "Fetch latest release"),
         ("download", "Download template"),
@@ -978,6 +1009,18 @@ def init(
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            # Apply language localization to command templates
+            if selected_language != "en":
+                tracker.add("localize", "Apply language settings")
+                tracker.start("localize")
+                try:
+                    apply_language_to_commands(project_path, selected_language)
+                    tracker.complete("localize", f"applied {selected_language}")
+                except (ImportError, FileNotFoundError, PermissionError) as e:
+                    tracker.error("localize", f"localization failed: {e}")
+                except Exception as e:
+                    tracker.error("localize", f"unexpected error during localization: {e}")
 
             # Git step
             if not no_git:
