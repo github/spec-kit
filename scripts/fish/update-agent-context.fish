@@ -94,8 +94,8 @@ end
 
 # Cleanup function for temporary files
 function cleanup --on-process-exit
-    rm -f /tmp/agent_update_*_(echo %self)
-    rm -f /tmp/manual_additions_(echo %self)
+    rm -f /tmp/agent_update_*_$fish_pid
+    rm -f /tmp/manual_additions_$fish_pid
 end
 
 #==============================================================================
