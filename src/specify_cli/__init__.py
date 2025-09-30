@@ -460,23 +460,24 @@ def download_template_from_github(
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
-    # TEMPORARY: LOCAL TESTING - REVERT BEFORE COMMIT
-    # Check for local template files for testing fish support
+    # Local template support for contributors
+    # Allows testing template changes without creating GitHub releases
+    # Enable with: SPECIFY_LOCAL_TEMPLATES=1 or SPECIFY_DEV_MODE=1
     local_test_mode = os.getenv("SPECIFY_LOCAL_TEMPLATES") or os.getenv("SPECIFY_DEV_MODE")
     if local_test_mode:
-        # Look for local .genreleases directory
-        repo_root = Path(__file__).parent.parent.parent  # Go up to repo root
+        # Look for local .genreleases directory in repository root
+        repo_root = Path(__file__).parent.parent.parent
         genreleases_dir = repo_root / ".genreleases"
         if genreleases_dir.exists():
-            # Find matching local package
+            # Find matching local package for the specified agent and script type
             pattern = f"spec-kit-template-{ai_assistant}-{script_type}-*.zip"
             matching_files = list(genreleases_dir.glob(pattern))
             if matching_files:
-                # Use the first match (sorted by name to get latest version)
+                # Use the latest version (sorted by filename)
                 local_zip = sorted(matching_files)[-1]
                 if verbose:
-                    console.print(f"[yellow]LOCAL TEST MODE: Using {local_zip.name}[/yellow]")
-                # Copy to download_dir to match expected behavior
+                    console.print(f"[yellow]LOCAL DEV MODE: Using {local_zip.name}[/yellow]")
+                # Copy to download directory to match normal workflow behavior
                 dest_zip = download_dir / local_zip.name
                 shutil.copy2(local_zip, dest_zip)
                 metadata = {
@@ -488,9 +489,11 @@ def download_template_from_github(
                 return dest_zip, metadata
             elif verbose:
                 console.print(
-                    f"[yellow]LOCAL TEST MODE: No matching file for pattern {pattern}[/yellow]"
+                    f"[yellow]LOCAL DEV MODE: No matching package found for pattern {pattern}[/yellow]"
                 )
-    # END TEMPORARY
+                console.print(
+                    f"[yellow]Build packages with: bash .github/workflows/scripts/create-release-packages.sh[/yellow]"
+                )
 
     if verbose:
         console.print("[cyan]Fetching latest release information...[/cyan]")

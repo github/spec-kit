@@ -125,6 +125,56 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
+## Local template testing
+
+When modifying templates, command files, or scripts, you can test changes locally without creating GitHub releases:
+
+### Quick Start
+
+```bash
+# 1. Build local template packages
+bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# 2. Test with local packages (instead of GitHub download)
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-project --ai cursor --script fish --no-git
+
+# 3. Verify your changes
+cd ../test-project
+cat .cursor/commands/plan.md  # Check command files
+cat .specify/scripts/fish/common.fish  # Check scripts
+```
+
+### How it works
+
+Setting `SPECIFY_LOCAL_TEMPLATES=1` (or `SPECIFY_DEV_MODE=1`) makes the CLI:
+- Skip GitHub release download
+- Use packages from `.genreleases/` directory
+- Match pattern: `spec-kit-template-{agent}-{script}-*.zip`
+- Display: `LOCAL DEV MODE: Using {filename}`
+
+### Use cases
+
+**Testing new agent support**:
+```bash
+AGENTS=windsurf bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-windsurf --ai windsurf
+```
+
+**Testing fish shell scripts**:
+```bash
+SCRIPTS=fish bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-fish --ai claude --script fish
+```
+
+**Iterating on templates**:
+```bash
+# Edit templates/commands/plan.md
+AGENTS=claude SCRIPTS=sh bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-iter --ai claude --script sh
+```
+
+See [docs/local-development.md](docs/local-development.md) for comprehensive local development workflows.
+
 ## AI contributions in Spec Kit
 
 > [!IMPORTANT]

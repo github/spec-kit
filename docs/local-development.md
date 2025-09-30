@@ -85,7 +85,117 @@ specify-dev() { uvx --from /mnt/c/GitHub/spec-kit specify "$@"; }
 specify-dev --help
 ```
 
-## 5. Testing Script Permission Logic
+## 5. Local Template Testing
+
+When modifying templates, command files, or adding new features (like fish shell support), you can test without creating GitHub releases by using local template packages.
+
+### Environment Variable: SPECIFY_LOCAL_TEMPLATES
+
+Set `SPECIFY_LOCAL_TEMPLATES=1` to make the CLI use locally built packages instead of downloading from GitHub:
+
+```bash
+# Build local packages
+bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# Test with local packages
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-project --ai cursor --script fish --no-git
+```
+
+### How It Works
+
+When `SPECIFY_LOCAL_TEMPLATES=1` or `SPECIFY_DEV_MODE=1` is set:
+
+1. **Skips GitHub API calls** - No network requests
+2. **Searches `.genreleases/` directory** - Looks for locally built packages
+3. **Pattern matching** - Finds `spec-kit-template-{agent}-{script}-{version}.zip`
+4. **Uses latest** - If multiple versions, selects newest by filename
+5. **Shows notification** - Displays: `LOCAL DEV MODE: Using {filename}`
+
+**Implementation**: See `src/specify_cli/__init__.py` lines 463-496 in `download_template_from_github()`
+
+### Building Local Packages
+
+Use the release package script with environment variables to control what gets built:
+
+```bash
+# Build all packages (all agents x all scripts)
+bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# Build only fish scripts (all agents)
+SCRIPTS=fish bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# Build only cursor packages (all scripts)
+AGENTS=cursor bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# Build specific combination
+AGENTS=claude SCRIPTS=fish bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+```
+
+Packages are created in `.genreleases/` directory.
+
+### Common Testing Workflows
+
+**Test new agent support**:
+```bash
+# 1. Build packages for new agent
+AGENTS=windsurf bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# 2. Test locally
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-windsurf --ai windsurf --no-git
+
+# 3. Verify agent files created
+ls ../test-windsurf/.windsurf/workflows/
+```
+
+**Test new script type (e.g., fish)**:
+```bash
+# 1. Build fish packages for all agents
+SCRIPTS=fish bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# 2. Test multiple agents
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-cursor-fish --ai cursor --script fish --no-git
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-claude-fish --ai claude --script fish --no-git
+
+# 3. Verify fish scripts work
+fish ../test-cursor-fish/.specify/scripts/fish/check-prerequisites.fish --help
+```
+
+**Iterate on template changes**:
+```bash
+# 1. Edit templates/commands/plan.md
+vim templates/commands/plan.md
+
+# 2. Rebuild specific package
+AGENTS=claude SCRIPTS=sh bash .github/workflows/scripts/create-release-packages.sh v0.0.0-dev
+
+# 3. Test change immediately
+SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ../test-template --ai claude --script sh --no-git
+
+# 4. Verify change
+cat ../test-template/.claude/commands/plan.md
+```
+
+### Benefits
+
+- ✅ **Fast iteration** - No GitHub release needed
+- ✅ **Offline development** - No network dependency
+- ✅ **Safe testing** - Doesn't pollute releases
+- ✅ **Realistic** - Uses production package format
+- ✅ **Flexible** - Test any agent/script combination
+
+### Cleanup
+
+Remove test artifacts when done:
+
+```bash
+# Remove test projects
+rm -rf ../test-*
+
+# Remove local packages (optional)
+rm -rf .genreleases/
+```
+
+## 6. Testing Script Permission Logic
 
 After running an `init`, check that shell scripts are executable on POSIX systems:
 
@@ -95,14 +205,14 @@ ls -l scripts | grep .sh
 ```
 On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
-## 6. Run Lint / Basic Checks (Add Your Own)
+## 7. Run Lint / Basic Checks (Add Your Own)
 
 Currently no enforced lint config is bundled, but you can quickly sanity check importability:
 ```bash
 python -c "import specify_cli; print('Import OK')"
 ```
 
-## 7. Build a Wheel Locally (Optional)
+## 8. Build a Wheel Locally (Optional)
 
 Validate packaging before publishing:
 
@@ -112,7 +222,7 @@ ls dist/
 ```
 Install the built artifact into a fresh throwaway environment if needed.
 
-## 8. Using a Temporary Workspace
+## 9. Using a Temporary Workspace
 
 When testing `init --here` in a dirty directory, create a temp workspace:
 
@@ -122,7 +232,7 @@ python -m src.specify_cli init --here --ai claude --ignore-agent-tools --script 
 ```
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
-## 9. Debug Network / TLS Skips
+## 10. Debug Network / TLS Skips
 
 If you need to bypass TLS validation while experimenting:
 
@@ -132,7 +242,7 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 ```
 (Use only for local experimentation.)
 
-## 10. Rapid Edit Loop Summary
+## 11. Rapid Edit Loop Summary
 
 | Action | Command |
 |--------|---------|
@@ -141,16 +251,18 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 | Local uvx run (repo root) | `uvx --from . specify ...` |
 | Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit specify ...` |
 | Git branch uvx | `uvx --from git+URL@branch specify ...` |
+| Build local packages | `bash .github/workflows/scripts/create-release-packages.sh` |
+| Test with local packages | `SPECIFY_LOCAL_TEMPLATES=1 uv run specify init ...` |
 | Build wheel | `uv build` |
 
-## 11. Cleaning Up
+## 12. Cleaning Up
 
 Remove build artifacts / virtual env quickly:
 ```bash
-rm -rf .venv dist build *.egg-info
+rm -rf .venv dist build *.egg-info .genreleases/
 ```
 
-## 12. Common Issues
+## 13. Common Issues
 
 | Symptom | Fix |
 |---------|-----|
@@ -159,8 +271,10 @@ rm -rf .venv dist build *.egg-info
 | Git step skipped | You passed `--no-git` or Git not installed |
 | Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
 | TLS errors on corporate network | Try `--skip-tls` (not for production) |
+| "No matching package found" in local mode | Build packages first with `create-release-packages.sh` |
+| Local mode not working | Check `.genreleases/` directory exists and has matching `*.zip` files |
 
-## 13. Next Steps
+## 14. Next Steps
 
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied
