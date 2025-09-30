@@ -37,9 +37,6 @@
 # Usage: ./update-agent-context.fish [agent_type]
 # Agent types: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo
 
-# Enable strict error handling
-set -e argv
-
 #==============================================================================
 # Configuration and Global Variables
 #==============================================================================

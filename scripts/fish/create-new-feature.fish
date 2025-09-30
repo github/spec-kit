@@ -1,8 +1,5 @@
 #!/usr/bin/env fish
 
-# Exit on error
-set -e argv
-
 set -l JSON_MODE false
 set -l FEATURE_DESCRIPTION
 

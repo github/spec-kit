@@ -1,8 +1,5 @@
 #!/usr/bin/env fish
 
-# Exit on error
-set -e argv
-
 # Parse command line arguments
 set -l JSON_MODE false
 
