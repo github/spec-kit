@@ -123,7 +123,7 @@ function check_file
 end
 
 function check_dir
-    if test -d "$argv[1]"; and test -n "(ls -A $argv[1] 2>/dev/null)"
+    if test -d "$argv[1]"; and test -n "(ls -A "$argv[1]" 2>/dev/null)"
         echo "  ✓ $argv[2]"
     else
         echo "  ✗ $argv[2]"

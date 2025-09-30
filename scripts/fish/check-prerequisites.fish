@@ -116,7 +116,7 @@ test -f "$RESEARCH"; and set -a docs "research.md"
 test -f "$DATA_MODEL"; and set -a docs "data-model.md"
 
 # Check contracts directory (only if it exists and has files)
-if test -d "$CONTRACTS_DIR"; and test -n "(ls -A $CONTRACTS_DIR 2>/dev/null)"
+if test -d "$CONTRACTS_DIR"; and test -n "(ls -A "$CONTRACTS_DIR" 2>/dev/null)"
     set -a docs "contracts/"
 end
 
