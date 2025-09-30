@@ -11,23 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Comprehensive pytest-based test suite with 43 tests covering CLI functionality
+- Comprehensive pytest-based test suite with 73 tests covering CLI functionality
 - GitHub Actions CI/CD workflow for automated testing across Python 3.11, 3.12, 3.13
 - Multi-platform testing on Ubuntu, macOS, and Windows
-- Code coverage reporting with 42% initial coverage
+- Code coverage reporting with 49% coverage
 - Ruff integration for linting and code formatting
 - Test status badge in README showing CI status
 - Comprehensive testing documentation in CONTRIBUTING.md
-- Shared pytest fixtures for CLI testing
-- Unit tests for init command covering all AI assistants and script types
-- Unit tests for check command and tool detection
-- Utility function tests for constants and templates
+- Shared pytest fixtures for CLI testing with mocked dependencies
+- Unit tests for init command covering all AI assistants and script types (23 tests)
+- Unit tests for check command and tool detection (7 tests)
+- Utility function tests for constants and templates (13 tests)
+- Helper function tests for GitHub token handling and command execution (13 tests)
+- Git operation tests for repository detection and initialization (8 tests)
+- Script permission tests for executable handling (8 tests)
+- Banner display tests (1 test)
 
 ### Changed
 
 - Updated CONTRIBUTING.md with detailed testing guidelines and examples
 - Added development dependencies (pytest, pytest-cov, pytest-mock, ruff)
-- Coverage threshold set at 40% with plan to increase gradually
+- Coverage threshold set at 45% (appropriate for CLI tool with extensive I/O)
+- Applied ruff formatting and linting fixes to source code
 
 ## [0.0.18] - 2025-09-30
 
