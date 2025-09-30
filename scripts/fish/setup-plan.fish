@@ -21,6 +21,19 @@ end
 set -l SCRIPT_DIR (dirname (status filename))
 source "$SCRIPT_DIR/common.fish"
 
+# Declare variables before eval to ensure proper scope
+set REPO_ROOT ""
+set CURRENT_BRANCH ""
+set HAS_GIT ""
+set FEATURE_DIR ""
+set FEATURE_SPEC ""
+set IMPL_PLAN ""
+set TASKS ""
+set RESEARCH ""
+set DATA_MODEL ""
+set QUICKSTART ""
+set CONTRACTS_DIR ""
+
 # Get all paths and variables from common functions
 eval (get_feature_paths)
 

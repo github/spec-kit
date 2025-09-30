@@ -101,17 +101,8 @@ function get_feature_paths
     set -l feature_dir (get_feature_dir "$repo_root" "$current_branch")
     
     # Output the paths in a format that can be eval'd in fish
-    echo "set REPO_ROOT '$repo_root'"
-    echo "set CURRENT_BRANCH '$current_branch'"
-    echo "set HAS_GIT '$has_git_repo'"
-    echo "set FEATURE_DIR '$feature_dir'"
-    echo "set FEATURE_SPEC '$feature_dir/spec.md'"
-    echo "set IMPL_PLAN '$feature_dir/plan.md'"
-    echo "set TASKS '$feature_dir/tasks.md'"
-    echo "set RESEARCH '$feature_dir/research.md'"
-    echo "set DATA_MODEL '$feature_dir/data-model.md'"
-    echo "set QUICKSTART '$feature_dir/quickstart.md'"
-    echo "set CONTRACTS_DIR '$feature_dir/contracts'"
+    # Use semicolons to ensure commands execute in sequence
+    echo "set REPO_ROOT '$repo_root'; set CURRENT_BRANCH '$current_branch'; set HAS_GIT '$has_git_repo'; set FEATURE_DIR '$feature_dir'; set FEATURE_SPEC '$feature_dir/spec.md'; set IMPL_PLAN '$feature_dir/plan.md'; set TASKS '$feature_dir/tasks.md'; set RESEARCH '$feature_dir/research.md'; set DATA_MODEL '$feature_dir/data-model.md'; set QUICKSTART '$feature_dir/quickstart.md'; set CONTRACTS_DIR '$feature_dir/contracts'"
 end
 
 function check_file

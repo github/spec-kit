@@ -42,17 +42,18 @@ end
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialised with --no-git.
 set -l SCRIPT_DIR (dirname (status filename))
+set -l REPO_ROOT
+set -l HAS_GIT false
 
 if git rev-parse --show-toplevel >/dev/null 2>&1
-    set -l REPO_ROOT (git rev-parse --show-toplevel)
-    set -l HAS_GIT true
+    set REPO_ROOT (git rev-parse --show-toplevel)
+    set HAS_GIT true
 else
-    set -l REPO_ROOT (find_repo_root "$SCRIPT_DIR")
+    set REPO_ROOT (find_repo_root "$SCRIPT_DIR")
     if test -z "$REPO_ROOT"
         echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
         exit 1
     end
-    set -l HAS_GIT false
 end
 
 cd "$REPO_ROOT"
@@ -83,7 +84,7 @@ set -l NEXT (math $HIGHEST + 1)
 set -l FEATURE_NUM (printf "%03d" $NEXT)
 
 # Convert feature description to branch name
-set -l BRANCH_NAME (echo "$FEATURE_DESCRIPTION" | string lower | string replace -ar '[^a-z0-9]' '-' | string replace -ar '-+' '-' | string trim -c '-')
+set -l BRANCH_NAME (echo "$FEATURE_DESCRIPTION" | string lower | string replace -ar '[^a-z0-9]' '-' | string replace -ar -- '-+' '-' | string trim -c '-')
 # Get first 3 words
 set -l WORDS (echo "$BRANCH_NAME" | string split '-' | head -3 | string join '-')
 set BRANCH_NAME "$FEATURE_NUM-$WORDS"
