@@ -443,6 +443,36 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
+    # TEMPORARY: LOCAL TESTING - REVERT BEFORE COMMIT
+    # Check for local template files for testing fish support
+    local_test_mode = os.getenv("SPECIFY_LOCAL_TEMPLATES") or os.getenv("SPECIFY_DEV_MODE")
+    if local_test_mode:
+        # Look for local .genreleases directory
+        repo_root = Path(__file__).parent.parent.parent  # Go up to repo root
+        genreleases_dir = repo_root / ".genreleases"
+        if genreleases_dir.exists():
+            # Find matching local package
+            pattern = f"spec-kit-template-{ai_assistant}-{script_type}-*.zip"
+            matching_files = list(genreleases_dir.glob(pattern))
+            if matching_files:
+                # Use the first match (sorted by name to get latest version)
+                local_zip = sorted(matching_files)[-1]
+                if verbose:
+                    console.print(f"[yellow]LOCAL TEST MODE: Using {local_zip.name}[/yellow]")
+                # Copy to download_dir to match expected behavior
+                dest_zip = download_dir / local_zip.name
+                shutil.copy2(local_zip, dest_zip)
+                metadata = {
+                    "filename": local_zip.name,
+                    "size": local_zip.stat().st_size,
+                    "release": "LOCAL-DEV",
+                    "asset_url": str(local_zip)
+                }
+                return dest_zip, metadata
+            elif verbose:
+                console.print(f"[yellow]LOCAL TEST MODE: No matching file for pattern {pattern}[/yellow]")
+    # END TEMPORARY
+
     if verbose:
         console.print("[cyan]Fetching latest release information...[/cyan]")
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
