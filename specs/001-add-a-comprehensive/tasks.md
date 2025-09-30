@@ -1,0 +1,28 @@
+# Tasks: Add a Quality & Recovery Suite to Spec Kit
+
+## Phase 1: Create Command Templates
+- [X] T001 [P] Create /debug command template in `templates/commands/debug.md`
+- [X] T002 [P] Create /align command template in `templates/commands/align.md`
+- [X] T003 [P] Create /rollback-feature command template in `templates/commands/rollback-feature.md`
+- [X] T004 [P] Create /diagnose command template in `templates/commands/diagnose.md`
+- [X] T005 [P] Create /sync-tasks command template in `templates/commands/sync-tasks.md`
+
+## Phase 2: Implement Backing Scripts (Bash)
+- [X] T006 [P] Implement /debug bash script in `scripts/bash/collect-debug-context.sh`
+- [X] T007 [P] Implement /align bash script in `scripts/bash/apply-align.sh`
+- [X] T008 [P] Implement /rollback-feature bash script in `scripts/bash/rollback-feature.sh`
+- [X] T009 [P] Implement /diagnose bash script in `scripts/bash/run-diagnose.sh`
+- [X] T010 [P] Implement /sync-tasks bash script in `scripts/bash/sync-tasks.sh`
+
+## Phase 3: Implement Backing Scripts (PowerShell)
+- [X] T011 [P] Implement /debug PowerShell script in `scripts/powershell/collect-debug-context.ps1`
+- [X] T012 [P] Implement /align PowerShell script in `scripts/powershell/apply-align.ps1`
+- [X] T013 [P] Implement /rollback-feature PowerShell script in `scripts/powershell/rollback-feature.ps1`
+- [X] T014 [P] Implement /diagnose PowerShell script in `scripts/powershell/run-diagnose.ps1`
+- [X] T015 [P] Implement /sync-tasks PowerShell script in `scripts/powershell/sync-tasks.ps1`
+
+## Phase 4: Integration & Documentation
+- [X] T016 Update release packaging script `.github/workflows/scripts/create-release-packages.sh` to include the five new command templates.
+- [X] T017 Update command reference table in `README.md` to add the new commands.
+- [X] T018 Update workflow documentation in `spec-driven.md` to describe the Quality & Recovery Suite.
+- [X] T019 Update `CHANGELOG.md` with the new feature and update version in `pyproject.toml`.
