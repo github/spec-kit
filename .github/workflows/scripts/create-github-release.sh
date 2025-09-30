@@ -18,25 +18,36 @@ VERSION_NO_V=${VERSION#v}
 gh release create "$VERSION" \
   .genreleases/spec-kit-template-copilot-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-copilot-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-copilot-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-claude-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-claude-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-claude-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-gemini-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-gemini-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-gemini-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-cursor-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-cursor-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-cursor-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-opencode-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-opencode-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-opencode-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-qwen-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-qwen-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-qwen-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-windsurf-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-codex-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-codex-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-codex-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-kilocode-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-kilocode-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-kilocode-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-auggie-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-auggie-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-auggie-fish-"$VERSION".zip \
   .genreleases/spec-kit-template-roo-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-roo-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-roo-fish-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \
   --notes-file release_notes.md

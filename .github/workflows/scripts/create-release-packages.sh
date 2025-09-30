@@ -7,11 +7,11 @@ set -euo pipefail
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
 #     AGENTS  : space or comma separated subset of: claude gemini copilot cursor qwen opencode windsurf codex (default: all)
-#     SCRIPTS : space or comma separated subset of: sh ps (default: both)
+#     SCRIPTS : space or comma separated subset of: sh ps fish (default: all)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
 #     AGENTS="copilot,gemini" $0 v0.2.0
-#     SCRIPTS=ps $0 v0.2.0
+#     SCRIPTS=fish $0 v0.2.0
 
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 <version-with-v-prefix>" >&2
@@ -109,6 +109,11 @@ build_variant() {
         # Copy any script files that aren't in variant-specific directories
         find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
         ;;
+      fish)
+        [[ -d scripts/fish ]] && { cp -r scripts/fish "$SPEC_DIR/scripts/"; echo "Copied scripts/fish -> .specify/scripts"; }
+        # Copy any script files that aren't in variant-specific directories
+        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+        ;;
     esac
   fi
   
@@ -179,7 +184,7 @@ build_variant() {
 
 # Determine agent list
 ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo)
-ALL_SCRIPTS=(sh ps)
+ALL_SCRIPTS=(sh ps fish)
 
 
 norm_list() {
