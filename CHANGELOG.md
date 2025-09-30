@@ -7,6 +7,28 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Comprehensive pytest-based test suite with 43 tests covering CLI functionality
+- GitHub Actions CI/CD workflow for automated testing across Python 3.11, 3.12, 3.13
+- Multi-platform testing on Ubuntu, macOS, and Windows
+- Code coverage reporting with 42% initial coverage
+- Ruff integration for linting and code formatting
+- Test status badge in README showing CI status
+- Comprehensive testing documentation in CONTRIBUTING.md
+- Shared pytest fixtures for CLI testing
+- Unit tests for init command covering all AI assistants and script types
+- Unit tests for check command and tool detection
+- Utility function tests for constants and templates
+
+### Changed
+
+- Updated CONTRIBUTING.md with detailed testing guidelines and examples
+- Added development dependencies (pytest, pytest-cov, pytest-mock, ruff)
+- Coverage threshold set at 40% with plan to increase gradually
+
 ## [0.0.18] - 2025-09-30
 
 ### Added
