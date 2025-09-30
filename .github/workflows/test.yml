@@ -33,13 +33,13 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run linting
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/ tests/python/
 
       - name: Run formatting check
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/python/
 
       - name: Run tests with coverage
-        run: uv run pytest
+        run: uv run pytest tests/python/
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'

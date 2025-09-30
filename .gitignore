@@ -49,3 +49,8 @@ sdd-*/
 .coverage
 coverage.xml
 htmlcov/
+
+# Fish shell test artifacts
+test/.tmp/
+*.test.log
+.fishtape-*
