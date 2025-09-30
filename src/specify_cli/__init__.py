@@ -463,6 +463,8 @@ def download_template_from_github(
     # Local template support for contributors
     # Allows testing template changes without creating GitHub releases
     # Enable with: SPECIFY_LOCAL_TEMPLATES=1 or SPECIFY_DEV_MODE=1
+    # See CONTRIBUTING.md "Local template testing" section for details
+    # See docs/local-development.md section 5 for comprehensive guide
     local_test_mode = os.getenv("SPECIFY_LOCAL_TEMPLATES") or os.getenv("SPECIFY_DEV_MODE")
     if local_test_mode:
         # Look for local .genreleases directory in repository root
