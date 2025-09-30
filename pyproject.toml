@@ -41,7 +41,7 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
-    "--cov-fail-under=40",
+    "--cov-fail-under=45",
 ]
 
 [tool.ruff]
