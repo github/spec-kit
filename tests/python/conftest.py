@@ -34,4 +34,5 @@ def mock_git(mocker):
 @pytest.fixture
 def sample_templates():
     """Provide access to template files for testing."""
-    return Path(__file__).parent.parent / "templates"
+    # Go up from tests/python/conftest.py -> tests/python -> tests -> project root
+    return Path(__file__).parent.parent.parent / "templates"
