@@ -82,7 +82,7 @@ https://www.alibabacloud.com/en/product/kubernetes/pricing?_p_lc=1
   - Risk assessment capabilities
 - **Best For**: Complex enterprise systems, regulated industries
 
-**Option B: Claude 4.1**
+**Option B: Claude 4.5**
 - **Cost**: ~$20-100/developer/month
 - **Strengths**:
   - Excellent context retention
@@ -93,7 +93,7 @@ https://www.alibabacloud.com/en/product/kubernetes/pricing?_p_lc=1
 
 #### Coding Agent Options
 
-**Primary: Claude 4.1 Coder**
+**Primary: Claude 4.5 Coder**
 - **Cost**: ~$20-100/developer/month
 - **Capabilities**:
   - High-quality code generation

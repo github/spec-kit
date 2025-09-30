@@ -272,8 +272,8 @@ For distributed multi-agent systems, we extend Spec-Kit with **SDD+** capabiliti
 - **Use Cases**: Learning, prototypes, open-source
 
 **Tier 2 for Professionals: Production Systems (Paid)**
-- **Planning Agent**: OpenAI GPT-5 or Claude 4.1
-- **Coding Agent**: Claude 4.1 Coder or specialized models
+- **Planning Agent**: OpenAI GPT-5 or Claude 4.5
+- **Coding Agent**: Claude 4.5 Coder or specialized models
 - **Orchestration**: Kubernetes + Dapr + Ray
 - **Use Cases**: Enterprise, mission-critical, high-scale
 
