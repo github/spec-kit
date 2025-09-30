@@ -1,4 +1,6 @@
-> **SpecifyPlus**: Enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. Use `specifyplus` or `sp` commands instead of `specify`.
+> **SpecifyPlus**: Enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. It is a practical fork of github/spec-kit for spec-driven development of agentic AI systems. It provides patterns, templates, and reference projects for building scalable, distributed multi-agent apps with the OpenAI Agents SDK, MCP, A2A, and a cloud-native runtime stack—Docker, Kubernetes, Dapr (Actors & Workflows), and Ray. Use it to define specs, spin up services, orchestrate agents, and ship production-ready stacks faster with guardrails and CI-friendly scaffolds. 
+
+Use `specifyplus` or `sp` commands instead of `specify`.
 
 <div align="center">
     <img src="./media/logo_small.webp"/>
@@ -49,8 +51,21 @@ Install once and use everywhere:
 
 ```bash
 uv tool install specifyplus --from git+https://github.com/panaversity/spec-kit-plus.git
+
 # or
+
 pip install specifyplus
+```
+You may uninstall specify:
+
+```bash
+
+uv tool --help
+
+uv tool list
+
+uv tool uninstall specify-cli
+
 ```
 
 Then use the tool directly:
