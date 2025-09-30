@@ -215,6 +215,11 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/analyze`      | Cross-artifact consistency & coverage analysis (run after /tasks, before /implement) |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
+| `/debug`        | Perform a comprehensive, read-only audit of the project against its constitution, specifications, and plans |
+| `/align`        | Fix a specific issue identified by the /debug command                |
+| `/rollback-feature` | Safely undo the most recent feature or task using Git history    |
+| `/diagnose`     | Run a pre-flight check on spec.md or plan.md for blocking issues     |
+| `/sync-tasks`   | Intelligently resume an interrupted /implement run                    |
 
 ### Environment Variables
 

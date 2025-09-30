@@ -7,6 +7,15 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2025-09-30
+
+### Added
+
+- Added the Quality & Recovery Suite, including five new commands: /debug, /align, /rollback-feature, /diagnose, and /sync-tasks
+- Five new command templates in `templates/commands/`: debug.md, align.md, rollback-feature.md, diagnose.md, sync-tasks.md
+- Ten new backing scripts (Bash and PowerShell) to support the new commands
+- Updated documentation to describe the Quality & Recovery Suite workflow
+
 ## [LATEST_VERSION] - RELEASE_DATE
 
 ### Added

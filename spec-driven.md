@@ -396,6 +396,16 @@ The constitution isn't just a rulebook—it's a philosophy that shapes how LLMs 
 
 By embedding these principles into the specification and planning process, SDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound. The constitution transforms AI from a code generator into an architectural partner that respects and reinforces system design principles.
 
+### The Quality & Recovery Suite: Your Safety Net
+
+The new commands are designed to make this workflow resilient.
+
+* Before Planning/Tasking (/diagnose): Run this for a quick check to see if you've left any [NEEDS CLARIFICATION] markers that will cause the next step to fail.
+* After Implementation (/debug): Run a full audit of your codebase against the spec and constitution. This is your automated QA.
+* To Fix Issues (/align <ID>): Use this to surgically fix an issue found by /debug.
+* If /specify Goes Wrong (/rollback-feature): This is your undo button. It uses Git to safely revert the last feature setup.
+* If /implement is Interrupted (/sync-tasks): This command intelligently figures out where the process stopped and gives you safe options to resume.
+
 ## The Transformation
 
 This isn't about replacing developers or automating creativity. It's about amplifying human capability by automating mechanical translation. It's about creating a tight feedback loop where specifications, research, and code evolve together, each iteration bringing deeper understanding and better alignment between intent and implementation.
