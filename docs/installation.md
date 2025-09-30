@@ -36,9 +36,9 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
 ```
 
-### Specify Script Type (Shell vs PowerShell)
+### Specify Script Type (Shell vs PowerShell vs Fish)
 
-All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
+All automation scripts now have Bash (`.sh`), PowerShell (`.ps1`), and Fish shell (`.fish`) variants.
 
 Auto behavior:
 - Windows default: `ps`
