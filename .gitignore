@@ -43,3 +43,9 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
