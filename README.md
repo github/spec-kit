@@ -59,13 +59,11 @@ uv tool install specifyplus
 You may uninstall specify:
 
 ```bash
+pip uninstall specifyplus
 
-uv tool --help
+# OR
 
-uv tool list
-
-uv tool uninstall specify-cli
-
+uv tool uninstall specifyplus
 ```
 
 Then use the tool directly:
@@ -86,8 +84,6 @@ Run directly without installing:
 ```bash
 uvx specifyplus --help
 uvx specifyplus init <PROJECT_NAME>
-# or
-uvx sp init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -193,46 +189,46 @@ The `specify` command supports the following options:
 
 ```bash
 # Basic project initialization
-specify init my-project
+specifyplus init my-project
 
 # Initialize with specific AI assistant
-specify init my-project --ai claude
+specifyplus init my-project --ai claude
 
 # Initialize with Cursor support
-specify init my-project --ai cursor
+specifyplus init my-project --ai cursor
 
 # Initialize with Windsurf support
-specify init my-project --ai windsurf
+specifyplus init my-project --ai windsurf
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
-specify init my-project --ai copilot --script ps
+specifyplus init my-project --ai copilot --script ps
 
 # Initialize in current directory
-specify init . --ai copilot
+specifyplus init . --ai copilot
 # or use the --here flag
-specify init --here --ai copilot
+specifyplus init --here --ai copilot
 
 # Force merge into current (non-empty) directory without confirmation
-specify init . --force --ai copilot
+specifyplus init . --force --ai copilot
 # or 
-specify init --here --force --ai copilot
+specifyplus init --here --force --ai copilot
 
 # Skip git initialization
-specify init my-project --ai gemini --no-git
+specifyplus init my-project --ai gemini --no-git
 
 # Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
+specifyplus init my-project --ai claude --debug
 
 # Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
+specifyplus init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
-specify check
+specifyplus check
 ```
 
 ### Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+After running `specifyplus init`, your AI coding agent will have access to these slash commands for structured development:
 
 | Command         | Description                                                           |
 |-----------------|-----------------------------------------------------------------------|
