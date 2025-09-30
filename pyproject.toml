@@ -60,6 +60,7 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
+    "B904",  # raise-without-from-inside-except (intentional for CLI error handling)
 ]
 
 [tool.ruff.format]
