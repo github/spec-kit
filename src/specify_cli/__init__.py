@@ -79,7 +79,11 @@ AI_CHOICES = {
     "roo": "Roo Code",
 }
 # Add script type choices
-SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
+SCRIPT_TYPE_CHOICES = {
+    "sh": "POSIX Shell (bash/zsh)",
+    "ps": "PowerShell",
+    "fish": "Fish Shell"
+}
 
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
