@@ -9,6 +9,7 @@
 </p>
 
 [![Release](https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg)](https://github.com/github/spec-kit/actions/workflows/release.yml)
+[![Tests](https://github.com/github/spec-kit/actions/workflows/test.yml/badge.svg)](https://github.com/github/spec-kit/actions/workflows/test.yml)
 
 ---
 
