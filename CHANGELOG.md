@@ -7,6 +7,26 @@ All notable changes to the Specify CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.18] - 2025-09-30
+
+### Added
+
+- Support for Fish Shell as a script type option via `--script fish` flag
+- Fish shell variants for all automation scripts: `check-prerequisites.fish`, `create-new-feature.fish`, `setup-plan.fish`, `update-agent-context.fish`, and `common.fish`
+- Interactive script type selection includes Fish Shell option
+- Fish shell templates available for all supported AI agents in release packages
+
+### Changed
+
+- Script type selection now offers three options: POSIX Shell (bash/zsh), PowerShell, and Fish Shell
+- Default script type detection remains OS-based (Windows: PowerShell, other: POSIX Shell)
+
+### Fixed
+
+- Corrected fish script syntax errors preventing execution
+- Fish scripts now properly handle arguments without invalid `set -e argv` usage
+- Cleanup function in `update-agent-context.fish` uses correct `$fish_pid` variable
+
 ## [LATEST_VERSION] - RELEASE_DATE
 
 ### Added
