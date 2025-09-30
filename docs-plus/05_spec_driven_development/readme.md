@@ -58,6 +58,24 @@ Each guide includes inputs, actions, quality gates, and common pitfalls so you c
 
 > **Note**: Use `specifyplus` or `sp` commands.
 
+### Quick start
+
+```bash
+# Install from PyPI (recommended)
+pip install specifyplus
+# or with uv
+uv tool install specifyplus
+
+# Use the CLI
+specifyplus init my-app
+# or alias
+sp init my-app
+
+# One-time usage
+uvx specifyplus --help
+uvx specifyplus init my-app
+```
+
 ### Take-home checklist
 
 * Start every feature with a **one-page intent brief** and **acceptance criteria**.

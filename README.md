@@ -50,11 +50,11 @@ Choose your preferred installation method:
 Install once and use everywhere:
 
 ```bash
-uv tool install specifyplus --from git+https://github.com/panaversity/spec-kit-plus.git
-
-# or
-
+# From PyPI (recommended)
 pip install specifyplus
+
+# Or with uv tools
+uv tool install specifyplus
 ```
 You may uninstall specify:
 
@@ -84,9 +84,10 @@ sp check
 Run directly without installing:
 
 ```bash
-uvx --from git+https://github.com/panaversity/spec-kit-plus.git specifyplus init <PROJECT_NAME>
+uvx specifyplus --help
+uvx specifyplus init <PROJECT_NAME>
 # or
-uvx --from git+https://github.com/panaversity/spec-kit-plus.git sp init <PROJECT_NAME>
+uvx sp init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -314,22 +315,29 @@ If you encounter issues with an agent, please open an issue so we can refine the
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
 
-You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
+You can use SpecifyPlus to bootstrap your project, which will bring in the required artifacts in your environment. Run:
 
 ```bash
-specify init <project_name>
+specifyplus init <project_name>
+# or
+sp init <project_name>
 ```
 
 Or initialize in the current directory:
 
 ```bash
-specify init .
+specifyplus init .
 # or use the --here flag
-specify init --here
+specifyplus init --here
 # Skip confirmation when the directory already has files
-specify init . --force
+specifyplus init . --force
 # or
-specify init --here --force
+specifyplus init --here --force
+# or using alias
+sp init .
+sp init --here
+sp init . --force
+sp init --here --force
 ```
 
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
@@ -337,30 +345,37 @@ specify init --here --force
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai claude
-specify init <project_name> --ai gemini
-specify init <project_name> --ai copilot
-specify init <project_name> --ai cursor
-specify init <project_name> --ai qwen
-specify init <project_name> --ai opencode
-specify init <project_name> --ai codex
-specify init <project_name> --ai windsurf
+specifyplus init <project_name> --ai claude
+specifyplus init <project_name> --ai gemini
+specifyplus init <project_name> --ai copilot
+specifyplus init <project_name> --ai cursor
+specifyplus init <project_name> --ai qwen
+specifyplus init <project_name> --ai opencode
+specifyplus init <project_name> --ai codex
+specifyplus init <project_name> --ai windsurf
 # Or in current directory:
-specify init . --ai claude
-specify init . --ai codex
+specifyplus init . --ai claude
+specifyplus init . --ai codex
 # or use --here flag
-specify init --here --ai claude
-specify init --here --ai codex
+specifyplus init --here --ai claude
+specifyplus init --here --ai codex
 # Force merge into a non-empty current directory
-specify init . --force --ai claude
+specifyplus init . --force --ai claude
 # or
-specify init --here --force --ai claude
+specifyplus init --here --force --ai claude
+# or using alias
+sp init <project_name> --ai claude
+sp init . --ai claude
+sp init --here --ai claude
+sp init . --force --ai claude
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, or Codex CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai claude --ignore-agent-tools
+specifyplus init <project_name> --ai claude --ignore-agent-tools
+# or
+sp init <project_name> --ai claude --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles

@@ -6,22 +6,24 @@
 
 - Git installed and configured with your preferred editor
 - Python 3.10+ _or_ the latest [Astral `uv`](https://docs.astral.sh/uv/getting-started/installation/) runtime (used by `uvx`)
-- Setup Any Coding Agent of your Choice (Qwen Code, Gemini CLI, Claude Code, Cursor, GitHub Copilot, Roo, GitHub Copulit Coding CLI etc.)
+- Setup any coding agent of your choice (Qwen Code, Gemini CLI, Claude Code, Cursor, GitHub Copilot, Roo, etc.)
 ## Actions
 
 ## Quick start with SpecifyPlus CLI
 
 1. **Install SpecifyPlus (persistent option recommended)**
   ```bash
-  uv tool install specifyplus --from git+https://github.com/panaversity/spec-kit-plus.git
-  # or
+  # From PyPI (recommended)
   pip install specifyplus
+  # or with uv tools
+  uv tool install specifyplus
   ```
   Alternative (one-off):
   ```bash
-  uvx --from git+https://github.com/panaversity/spec-kit-plus.git specifyplus init <PROJECT_NAME>
+  uvx specifyplus --help
+  uvx specifyplus init <PROJECT_NAME>
   # or
-  uvx --from git+https://github.com/panaversity/spec-kit-plus.git sp init <PROJECT_NAME>
+  uvx sp init <PROJECT_NAME>
   ```
 2. **Run the readiness checks**
   ```bash
@@ -61,7 +63,7 @@ Inspect the generated `.github/` and `.specify/` folders, then delete the sandbo
 
 ## Quality Gates ✅
 
-- `uvx --from … specifyplus --help` exits with status 0
+- `uvx specifyplus --help` exits with status 0
 - `git status` shows a clean working tree in your new project folder
 
 ## Common Pitfalls
