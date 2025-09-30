@@ -114,7 +114,7 @@ class TestInitGitRepo:
         mock_run.return_value = subprocess.CompletedProcess(
             args=["git", "init"], returncode=0, stdout=b""
         )
-        mock_chdir = mocker.patch("os.chdir")
+        mocker.patch("os.chdir")
         mock_console = mocker.patch("specify_cli.console")
 
         # Act

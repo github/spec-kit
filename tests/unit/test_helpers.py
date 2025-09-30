@@ -132,9 +132,7 @@ class TestRunCommand:
         """Test command failure with check_return=False."""
         # Arrange
         mock_run = mocker.patch("subprocess.run")
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=["false"], returncode=1, stdout=""
-        )
+        mock_run.return_value = subprocess.CompletedProcess(args=["false"], returncode=1, stdout="")
 
         # Act
         result = run_command(["false"], check_return=False)

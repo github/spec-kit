@@ -1,6 +1,5 @@
 """Tests for utility functions in specify_cli."""
 
-
 from specify_cli import AI_CHOICES, SCRIPT_TYPE_CHOICES
 
 

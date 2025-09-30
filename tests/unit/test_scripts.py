@@ -1,8 +1,6 @@
 """Tests for script operations."""
 
-import os
 import stat
-from pathlib import Path
 
 from specify_cli import ensure_executable_scripts
 
@@ -124,9 +122,7 @@ class TestEnsureExecutableScripts:
         assert mode & stat.S_IRUSR
         assert mode & stat.S_IXUSR
 
-    def test_ensure_executable_adds_execute_for_all_permission_levels(
-        self, tmp_path
-    ):
+    def test_ensure_executable_adds_execute_for_all_permission_levels(self, tmp_path):
         """Test execute permissions added based on read permissions."""
         # Arrange
         scripts_dir = tmp_path / ".specify" / "scripts" / "bash"

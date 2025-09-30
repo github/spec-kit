@@ -80,9 +80,7 @@ class TestInitCommand:
         assert "Invalid AI assistant" in result.stdout or "invalid" in result.stdout.lower()
 
     @pytest.mark.parametrize("script_type", ["sh", "ps", "fish"])
-    def test_init_accepts_valid_script_types(
-        self, runner, script_type, tmp_path, mocker
-    ):
+    def test_init_accepts_valid_script_types(self, runner, script_type, tmp_path, mocker):
         """Test init with all script types."""
         # Arrange
         mocker.patch("specify_cli.download_and_extract_template")
