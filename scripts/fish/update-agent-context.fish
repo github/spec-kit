@@ -92,12 +92,6 @@ function log_warning
     echo "WARNING: $argv" >&2
 end
 
-# Cleanup function for temporary files
-function cleanup --on-process-exit
-    rm -f /tmp/agent_update_*_$fish_pid
-    rm -f /tmp/manual_additions_$fish_pid
-end
-
 #==============================================================================
 # Validation Functions
 #==============================================================================
