@@ -19,13 +19,93 @@ These are one time installations required to be able to test your changes locall
 >If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
 1. Fork and clone the repository
-1. Configure and install the dependencies: `uv sync`
+1. Configure and install the dependencies: `uv sync --extra dev`
 1. Make sure the CLI works on your machine: `uv run specify --help`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant
 1. Push to your fork and submit a pull request
 1. Wait for your pull request to be reviewed and merged.
+
+## Running Tests
+
+We use pytest for testing. To run the test suite:
+
+### Install development dependencies
+```bash
+uv sync --extra dev
+```
+
+### Run all tests
+```bash
+uv run pytest
+```
+
+### Run tests with verbose output
+```bash
+uv run pytest -v
+```
+
+### Run specific test file
+```bash
+uv run pytest tests/unit/test_cli_init.py
+```
+
+### Run tests matching pattern
+```bash
+uv run pytest -k "test_init"
+```
+
+### View coverage report
+```bash
+uv run pytest
+# Open htmlcov/index.html in your browser
+```
+
+## Code Quality
+
+### Run linting
+```bash
+uv run ruff check src/ tests/
+```
+
+### Auto-fix linting issues
+```bash
+uv run ruff check --fix src/ tests/
+```
+
+### Format code
+```bash
+uv run ruff format src/ tests/
+```
+
+## Writing Tests
+
+When adding new functionality:
+
+1. Write tests first (TDD approach recommended)
+2. Follow the Arrange-Act-Assert pattern
+3. Use descriptive test names: `test_<what>_<when>_<expected>`
+4. Keep tests isolated and independent
+5. Mock external dependencies (network calls, file system)
+6. Test edge cases and error conditions
+7. Aim for meaningful test coverage
+
+Example test structure:
+```python
+def test_init_accepts_valid_ai_choice(runner):
+    """Test that init accepts valid AI assistant."""
+    # Arrange
+    ai_choice = "claude"
+    
+    # Act
+    result = runner.invoke(app, ["init", "test-project", "--ai", ai_choice])
+    
+    # Assert
+    assert result.exit_code == 0
+```
+
+See `tests/` directory for more examples.
 
 Here are a few things you can do that will increase the likelihood of your pull request being accepted:
 
