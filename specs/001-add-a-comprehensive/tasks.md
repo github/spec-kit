@@ -1,11 +1,11 @@
 # Tasks: Add a Quality & Recovery Suite to Spec Kit
 
 ## Phase 1: Create Command Templates
-- [ ] T001 [P] Create /debug command template in `templates/commands/debug.md`
-- [ ] T002 [P] Create /align command template in `templates/commands/align.md`
-- [ ] T003 [P] Create /rollback-feature command template in `templates/commands/rollback-feature.md`
-- [ ] T004 [P] Create /diagnose command template in `templates/commands/diagnose.md`
-- [ ] T005 [P] Create /sync-tasks command template in `templates/commands/sync-tasks.md`
+- [X] T001 [P] Create /debug command template in `templates/commands/debug.md`
+- [X] T002 [P] Create /align command template in `templates/commands/align.md`
+- [X] T003 [P] Create /rollback-feature command template in `templates/commands/rollback-feature.md`
+- [X] T004 [P] Create /diagnose command template in `templates/commands/diagnose.md`
+- [X] T005 [P] Create /sync-tasks command template in `templates/commands/sync-tasks.md`
 
 ## Phase 2: Implement Backing Scripts (Bash)
 - [ ] T006 [P] Implement /debug bash script in `scripts/bash/collect-debug-context.sh`
