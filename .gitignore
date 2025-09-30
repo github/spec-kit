@@ -53,4 +53,4 @@ htmlcov/
 # Fish shell test artifacts
 test/.tmp/
 *.test.log
-.fishtape-*
+.fishtape-*specs/
