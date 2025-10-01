@@ -245,6 +245,76 @@ def _add_language_placeholder(content: str, command_name: str, locale: str) -> s
     return content
 
 
+def create_claude_language_guide(project_path: Path, locale: str) -> None:
+    """
+    Create or update .claude/CLAUDE.md with language-specific instructions.
+    This ensures Claude Code uses the correct language in all conversations.
+
+    Args:
+        project_path: Path to the project directory
+        locale: Target locale
+    """
+    if locale == "en":
+        return  # No need for English (default)
+
+    claude_dir = project_path / ".claude"
+    claude_md = claude_dir / "CLAUDE.md"
+
+    # Get language instructions
+    lm = get_locale_manager()
+    lm.set_locale(locale)
+
+    general_instruction = lm.get_text("ai_instructions.general")
+    guidelines_header = lm.get_text("ai_instructions.guidelines_header")
+
+    # Get guidelines as list (get_text converts to string, so we need to access directly)
+    locale_data = lm._load_locale(locale)
+    guidelines = locale_data.get("ai_instructions", {}).get("guidelines", [])
+
+    # Build the CLAUDE.md content
+    content_parts = []
+
+    # Add header
+    language_name = {
+        "ko": "한국어 (Korean)",
+        "ja": "日本語 (Japanese)",
+        "zh": "中文 (Chinese)",
+        "es": "Español (Spanish)",
+        "fr": "Français (French)",
+        "de": "Deutsch (German)",
+    }.get(locale, locale.upper())
+
+    content_parts.append(f"# Project Language: {language_name}\n")
+
+    # Add general instruction
+    if general_instruction:
+        content_parts.append(general_instruction)
+
+    # Add guidelines
+    if guidelines and isinstance(guidelines, list) and guidelines_header:
+        content_parts.append(f"\n{guidelines_header}")
+        for guideline in guidelines:
+            content_parts.append(f"- {guideline}")
+
+    # Combine all parts
+    content = "\n".join(content_parts)
+
+    # Create .claude directory if it doesn't exist
+    claude_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write the CLAUDE.md file
+    try:
+        with open(claude_md, 'w', encoding='utf-8') as f:
+            f.write(content)
+    except (IOError, PermissionError) as e:
+        try:
+            from rich.console import Console
+            console = Console()
+            console.print(f"[yellow]Warning: Could not create {claude_md}: {e}[/yellow]")
+        except ImportError:
+            pass
+
+
 def apply_language_to_commands(project_path: Path, locale: str) -> None:
     """
     Apply language settings to all command templates in the project.
@@ -254,4 +324,8 @@ def apply_language_to_commands(project_path: Path, locale: str) -> None:
         project_path: Path to the project directory
         locale: Target locale
     """
+    # Process command templates
     process_command_templates(project_path, locale)
+
+    # Create Claude language guide for Claude Code
+    create_claude_language_guide(project_path, locale)

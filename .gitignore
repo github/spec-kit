@@ -43,3 +43,6 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Claude Code generated files (created by specify init)
+.claude/CLAUDE.md
