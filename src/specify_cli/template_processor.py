@@ -30,6 +30,7 @@ def process_command_templates(project_path: Path, locale: str = None) -> None:
         project_path / ".claude" / "commands",
         project_path / ".gemini" / "commands",
         project_path / ".cursor" / "commands",
+        project_path / ".github" / "prompts",  # GitHub Copilot
     ]
 
     commands_dir = None
@@ -42,14 +43,29 @@ def process_command_templates(project_path: Path, locale: str = None) -> None:
         return
 
     # Define which commands to process and their corresponding command names
+    # Support: .md (Claude/Cursor), .prompt.md (GitHub Copilot), .toml (Gemini)
     command_mappings = {
         "specify.md": "specify",
+        "specify.prompt.md": "specify",
+        "specify.toml": "specify",
         "plan.md": "plan",
+        "plan.prompt.md": "plan",
+        "plan.toml": "plan",
         "tasks.md": "tasks",
+        "tasks.prompt.md": "tasks",
+        "tasks.toml": "tasks",
         "constitution.md": "constitution",
+        "constitution.prompt.md": "constitution",
+        "constitution.toml": "constitution",
         "clarify.md": "clarify",
+        "clarify.prompt.md": "clarify",
+        "clarify.toml": "clarify",
         "analyze.md": "analyze",
-        "implement.md": "implement"
+        "analyze.prompt.md": "analyze",
+        "analyze.toml": "analyze",
+        "implement.md": "implement",
+        "implement.prompt.md": "implement",
+        "implement.toml": "implement"
     }
 
     for filename, command_name in command_mappings.items():
@@ -72,8 +88,11 @@ def _process_single_template(template_file: Path, command_name: str, locale: str
         with open(template_file, 'r', encoding='utf-8') as f:
             content = f.read()
 
+        # Handle TOML files differently (Gemini CLI uses TOML format)
+        if template_file.suffix == '.toml':
+            processed_content = _process_toml_template(content, command_name, locale)
         # Check if already processed (avoid double processing)
-        if "{{LANGUAGE_INSTRUCTION}}" in content:
+        elif "{{LANGUAGE_INSTRUCTION}}" in content:
             # Template already has placeholders, just inject
             processed_content = inject_language_instructions(content, command_name, locale)
         else:
@@ -92,6 +111,82 @@ def _process_single_template(template_file: Path, command_name: str, locale: str
             console.print(f"[yellow]Warning: Could not process template {template_file}: {e}[/yellow]")
         except ImportError:
             pass  # Silently skip if rich is not available
+
+
+def _process_toml_template(content: str, command_name: str, locale: str) -> str:
+    """
+    Process TOML template files (used by Gemini CLI).
+    TOML format: prompt = triple-quoted string
+
+    Args:
+        content: TOML file content
+        command_name: Name of the command
+        locale: Target locale
+
+    Returns:
+        Processed TOML content with language instructions
+    """
+    import re
+    from .locale import get_locale_manager
+
+    # Get language instructions
+    lm = get_locale_manager()
+    lm.set_locale(locale)
+
+    general_instruction = lm.get_text("ai_instructions.general")
+    command_instruction = lm.get_text(f"ai_instructions.commands.{command_name}")
+    footer_reminder = lm.get_text("ai_instructions.footer_reminder")
+
+    # Build header instruction
+    header_parts = []
+    if general_instruction:
+        header_parts.append(general_instruction)
+    if command_instruction:
+        header_parts.append(command_instruction)
+
+    header_instruction = "\n\n".join(header_parts) if header_parts else ""
+
+    # Find prompt = """...""" pattern
+    prompt_pattern = r'(prompt\s*=\s*""")(.*?)(""")'
+
+    def replace_prompt(match):
+        prefix = match.group(1)
+        prompt_content = match.group(2)
+        suffix = match.group(3)
+
+        # Add header after opening """
+        new_content = prompt_content
+        if header_instruction:
+            # Insert after frontmatter if exists, otherwise at beginning
+            lines = prompt_content.split('\n')
+            frontmatter_end = -1
+            frontmatter_count = 0
+
+            for i, line in enumerate(lines):
+                if line.strip() == '---':
+                    frontmatter_count += 1
+                    if frontmatter_count == 2:
+                        frontmatter_end = i
+                        break
+
+            if frontmatter_end >= 0:
+                # Insert after frontmatter
+                before = '\n'.join(lines[:frontmatter_end + 1])
+                after = '\n'.join(lines[frontmatter_end + 1:])
+                new_content = f"{before}\n\n{header_instruction}\n{after}"
+            else:
+                # Insert at beginning
+                new_content = f"\n{header_instruction}\n{prompt_content}"
+
+        # Add footer before closing """
+        if footer_reminder:
+            new_content = new_content.rstrip() + "\n" + footer_reminder + "\n"
+
+        return prefix + new_content + suffix
+
+    # Apply replacement
+    result = re.sub(prompt_pattern, replace_prompt, content, flags=re.DOTALL)
+    return result
 
 
 def _add_language_placeholder(content: str, command_name: str, locale: str) -> str:
@@ -133,9 +228,19 @@ def _add_language_placeholder(content: str, command_name: str, locale: str) -> s
         before_frontmatter = lines[:frontmatter_end + 1]
         after_frontmatter = lines[frontmatter_end + 1:]
 
-        # Add instruction after frontmatter
+        # Add instruction after frontmatter and footer at the end
         result_lines = before_frontmatter + ['', instruction_content, ''] + after_frontmatter
-        return '\n'.join(result_lines)
+        result = '\n'.join(result_lines)
+
+        # Add footer reminder at the end
+        from .locale import get_locale_manager
+        lm = get_locale_manager()
+        lm.set_locale(locale)
+        footer_reminder = lm.get_text("ai_instructions.footer_reminder")
+        if footer_reminder and footer_reminder.strip():
+            result = result + "\n" + footer_reminder
+
+        return result
 
     return content
 

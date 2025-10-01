@@ -763,7 +763,7 @@ def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, codex, windsurf, kilocode, or auggie"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
-    language: str = typer.Option("en", "--lang", help="Language for generated templates and messages: en (English), ko (Korean)"),
+    language: str = typer.Option(None, "--lang", help="Language for generated templates and messages: en (English), ko (Korean)"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -962,12 +962,15 @@ def init(
         else:
             selected_language = "en"  # Default to English
 
-    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
-    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
-    console.print(f"[cyan]Selected language:[/cyan] {selected_language}")
-
     # Set the locale for template generation
     set_locale(selected_language)
+
+    # Import locale functions for messages
+    from .locale import get_text
+
+    console.print(f"[cyan]{get_text('messages.cli.selected_ai')}:[/cyan] {selected_ai}")
+    console.print(f"[cyan]{get_text('messages.cli.selected_script')}:[/cyan] {selected_script}")
+    console.print(f"[cyan]{get_text('messages.cli.selected_language')}:[/cyan] {selected_language}")
 
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps

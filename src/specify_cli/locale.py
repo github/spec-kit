@@ -160,6 +160,7 @@ def inject_language_instructions(template_content: str, command: str = "specify"
     command_instruction = lm.get_text(f"ai_instructions.commands.{command}")
     guidelines = lm.get_text("ai_instructions.guidelines")
     guidelines_header = lm.get_text("ai_instructions.guidelines_header")
+    footer_reminder = lm.get_text("ai_instructions.footer_reminder")
 
     # Build instruction text
     instruction_parts = []
@@ -183,6 +184,10 @@ def inject_language_instructions(template_content: str, command: str = "specify"
     # Replace placeholders
     result = template_content.replace("{{LANGUAGE_INSTRUCTION}}", language_instruction)
     result = result.replace("{{LANGUAGE_CONTENT_INSTRUCTION}}", content_instruction)
+
+    # Add footer reminder at the end of the template if it exists
+    if footer_reminder and footer_reminder.strip():
+        result = result + "\n" + footer_reminder
 
     return result
 

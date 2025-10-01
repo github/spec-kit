@@ -49,6 +49,10 @@ templates:
       dependencies: "Dependencies"
 
 messages:
+  cli:
+    selected_ai: "Selected AI assistant"
+    selected_script: "Selected script type"
+    selected_language: "Selected language"
   errors:
     no_description: "No feature description provided"
     no_spec: "No feature spec at {path}"

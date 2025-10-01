@@ -49,6 +49,10 @@ templates:
       dependencies: "의존성"
 
 messages:
+  cli:
+    selected_ai: "선택된 AI 어시스턴트"
+    selected_script: "선택된 스크립트 타입"
+    selected_language: "선택된 언어"
   errors:
     no_description: "기능 설명이 제공되지 않았습니다"
     no_spec: "{path}에 기능 명세서가 없습니다"
@@ -63,20 +67,42 @@ messages:
 # AI instructions for generating content in this language
 ai_instructions:
   # General instruction for all commands
-  general: "**중요**: 모든 생성되는 콘텐츠를 한국어로 작성하세요. 섹션, 설명, 요구사항, 텍스트 콘텐츠는 한국어로, 기술적 용어와 코드 예제는 적절한 경우 영어로 유지하세요."
+  general: |
+    🚨 CRITICAL INSTRUCTION - MUST FOLLOW 🚨
+    You MUST generate ALL content in Korean (한국어).
+    All sections, descriptions, requirements, and text content MUST be in Korean.
+    Only keep technical terms, code examples, and search keywords in English when appropriate.
+
+    **필수**: 모든 생성되는 콘텐츠를 한국어로 작성하세요.
+    - 모든 섹션, 설명, 요구사항, 텍스트는 한국어로 작성
+    - 기술 용어, 코드 예제, 웹 검색 키워드만 필요시 영어 유지
+    - 한국어로 작성하지 않으면 응답이 거부됩니다
 
   # Command-specific instructions
   commands:
     specify: "명세서의 모든 내용을 한국어로 작성하세요. 섹션 설명, 요구사항, 사용자 스토리, 설명을 포함하여 모든 텍스트를 한국어로 작성합니다."
     plan: "구현 계획의 모든 내용을 한국어로 작성하세요. 기술적 설명, 단계별 계획, 검토 내용을 한국어로 작성합니다."
     tasks: "모든 작업 항목과 설명을 한국어로 작성하세요. 작업 제목, 설명, 의존성 정보를 한국어로 작성합니다."
+    constitution: "헌법 문서의 모든 내용을 한국어로 작성하세요. 원칙 이름, 설명, 근거, 거버넌스 절차를 한국어로 작성합니다."
+    clarify: "명확화 질문과 답변을 한국어로 작성하세요. 질문, 제안된 답변, 설명을 한국어로 작성합니다."
+    analyze: "분석 보고서의 모든 내용을 한국어로 작성하세요. 분석 결과, 발견사항, 권장사항을 한국어로 작성합니다."
+    implement: "구현 지침의 모든 내용을 한국어로 작성하세요. 단계별 지침, 검증 방법, 주의사항을 한국어로 작성합니다."
 
   # Content guidelines in target language
   guidelines:
     - "문서의 구조와 형식은 유지하되 내용은 한국어로 작성"
     - "기술적 용어는 필요시 영어 병기 (예: 데이터베이스 (Database))"
     - "코드 예제와 명령어는 영어로 유지"
+    - "웹 검색 키워드는 검색 효율성을 위해 영어 사용 권장"
     - "마크다운 구문과 템플릿 구조는 변경하지 않음"
 
   # Prefix for guidelines section
   guidelines_header: "언어별 가이드라인:"
+
+  # Footer reminder to reinforce language requirement
+  footer_reminder: |
+
+    ---
+    🚨 REMINDER: ALL OUTPUT MUST BE IN KOREAN (한국어) 🚨
+    다시 한번 강조: 모든 출력은 반드시 한국어로 작성되어야 합니다.
+    Responses not in Korean will be rejected.
