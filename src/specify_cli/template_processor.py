@@ -30,6 +30,7 @@ def process_command_templates(project_path: Path, locale: str = None) -> None:
         project_path / ".claude" / "commands",
         project_path / ".gemini" / "commands",
         project_path / ".cursor" / "commands",
+        project_path / ".github" / "prompts",  # GitHub Copilot
     ]
 
     commands_dir = None
@@ -42,14 +43,22 @@ def process_command_templates(project_path: Path, locale: str = None) -> None:
         return
 
     # Define which commands to process and their corresponding command names
+    # Support both .md and .prompt.md extensions (for GitHub Copilot)
     command_mappings = {
         "specify.md": "specify",
+        "specify.prompt.md": "specify",
         "plan.md": "plan",
+        "plan.prompt.md": "plan",
         "tasks.md": "tasks",
+        "tasks.prompt.md": "tasks",
         "constitution.md": "constitution",
+        "constitution.prompt.md": "constitution",
         "clarify.md": "clarify",
+        "clarify.prompt.md": "clarify",
         "analyze.md": "analyze",
-        "implement.md": "implement"
+        "analyze.prompt.md": "analyze",
+        "implement.md": "implement",
+        "implement.prompt.md": "implement"
     }
 
     for filename, command_name in command_mappings.items():
