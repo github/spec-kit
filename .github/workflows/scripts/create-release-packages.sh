@@ -40,6 +40,16 @@ rewrite_paths() {
 generate_commands() {
   local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5
   mkdir -p "$output_dir"
+  
+  # Load command-rules.md for prepending (universal pre-execution rules)
+  local command_rules_content=""
+  if [[ -f "memory/command-rules.md" ]]; then
+    command_rules_content=$(tr -d '\r' < "memory/command-rules.md")
+    echo "Loaded command-rules.md for universal pre-execution injection"
+  else
+    echo "Warning: memory/command-rules.md not found - commands will not have implicit behavior support" >&2
+  fi
+  
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
     local name description script_command body
@@ -71,6 +81,18 @@ generate_commands() {
     
     # Apply other substitutions
     body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
+    
+    # Prepend command-rules.md content (if it exists) AFTER frontmatter extraction
+    # We'll inject it after the frontmatter closing ---
+    if [[ -n $command_rules_content ]]; then
+      # Extract frontmatter (everything up to and including second ---)
+      frontmatter=$(printf '%s\n' "$body" | awk 'BEGIN{dash=0} /^---$/ {dash++; print; if(dash==2) exit} {if(dash>0) print}')
+      # Extract body (everything after second ---)
+      content_after_fm=$(printf '%s\n' "$body" | awk 'BEGIN{dash=0} /^---$/ {dash++; if(dash==2) {skip=1; next}} {if(dash==2 && !skip) print; if(dash==2) skip=0}')
+      
+      # Construct: frontmatter + command-rules + content
+      body=$(printf '%s\n\n%s\n\n%s' "$frontmatter" "$command_rules_content" "$content_after_fm")
+    fi
     
     case $ext in
       toml)

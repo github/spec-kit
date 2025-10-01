@@ -4,15 +4,19 @@ set -euo pipefail
 # create-phr.sh - Create Prompt History Record (PHR) - Spec Kit Native
 # 
 # Deterministic PHR location strategy:
-# 1. Before feature exists (no specs/ or early-phase work):
+# 1. Pre-feature stages (constitution, spec):
 #    → docs/prompts/
-#    → stages: constitution, spec, general
+#    → stages: constitution, spec
 #    → naming: 0001-title.constitution.prompt.md
 #
-# 2. After feature exists (working inside a feature):
+# 2. Feature stages (all other work):
 #    → specs/<feature>/prompts/
-#    → stages: architect, red, green, refactor, explainer, misc
+#    → stages: architect, red, green, refactor, explainer, misc, general
 #    → naming: 0001-title.architect.prompt.md
+#
+# 3. Special case - 'general' stage:
+#    → If specs/ exists: goes to specs/<feature>/prompts/
+#    → If no specs/: falls back to docs/prompts/ with warning
 #
 # This script ONLY:
 #   1. Creates the correct directory structure
@@ -46,16 +50,21 @@ Usage: $0 --title <title> --stage <stage> [options]
 
 Required:
   --title <text>       Title for the PHR (used for filename)
-  --stage <stage>      Pre-feature: constitution|spec|general
-                       Feature work: architect|red|green|refactor|explainer|misc
+  --stage <stage>      Pre-feature: constitution|spec
+                       Feature work: architect|red|green|refactor|explainer|misc|general
 
 Optional:
   --feature <slug>     Feature slug (e.g., 001-auth). Auto-detected from branch if omitted.
   --json               Output JSON with id, path, and context
 
 Stage Extensions:
-  Pre-feature stages: .constitution.prompt.md, .spec.prompt.md, .general.prompt.md
-  Feature stages: .architect.prompt.md, .red.prompt.md, .green.prompt.md, etc.
+  Pre-feature stages: .constitution.prompt.md, .spec.prompt.md
+  Feature stages: .architect.prompt.md, .red.prompt.md, .green.prompt.md, .general.prompt.md, etc.
+  
+Location Rules:
+  - constitution, spec → always docs/prompts/
+  - architect, red, green, refactor, explainer, misc → requires specs/<feature>/prompts/
+  - general → specs/<feature>/prompts/ if exists, else docs/prompts/ with warning
 
 Output:
   Creates PHR file with template placeholders ({{ID}}, {{TITLE}}, etc.)
@@ -100,16 +109,44 @@ else
   exit 1
 fi
 
-# Deterministic location logic
-if [[ ! -d "$SPECS_DIR" ]]; then
-  # Pre-feature: no specs/ directory exists
+# Deterministic location logic based on STAGE
+PRE_FEATURE_STAGES=("constitution" "spec")
+FEATURE_STAGES=("architect" "red" "green" "refactor" "explainer" "misc" "general")
+
+# Check if this is a pre-feature stage (constitution or spec only)
+IS_PRE_FEATURE=false
+for pf_stage in "${PRE_FEATURE_STAGES[@]}"; do
+  if [[ "$STAGE" == "$pf_stage" ]]; then
+    IS_PRE_FEATURE=true
+    break
+  fi
+done
+
+if [[ "$IS_PRE_FEATURE" == "true" ]]; then
+  # Pre-feature stage: always use docs/prompts/ (constitution, spec only)
   PROMPTS_DIR="$REPO_ROOT/docs/prompts"
-  VALID_STAGES=("constitution" "spec" "general")
+  VALID_STAGES=("${PRE_FEATURE_STAGES[@]}")
   CONTEXT="pre-feature"
 else
-  # Feature work: specs/ exists
+  # Feature stage: architect, red, green, refactor, explainer, misc, general
+  # These require specs/ directory and feature context
   
-  # Auto-detect feature if not specified
+  if [[ ! -d "$SPECS_DIR" ]]; then
+    # Special case: 'general' can fall back to docs/prompts/ if no specs exist
+    if [[ "$STAGE" == "general" ]]; then
+      echo "Warning: No specs/ directory found. Using docs/prompts/ for general stage." >&2
+      echo "Consider using 'constitution' or 'spec' stages, or create a feature first with /specify" >&2
+      PROMPTS_DIR="$REPO_ROOT/docs/prompts"
+      VALID_STAGES=("general")
+      CONTEXT="pre-feature-fallback"
+    else
+      echo "Error: Feature stage '$STAGE' requires specs/ directory and feature context" >&2
+      echo "Use pre-feature stages (constitution, spec) or create a feature first with /specify" >&2
+      exit 1
+    fi
+  else
+    # specs/ exists - proceed with feature context
+    # Auto-detect feature if not specified
   if [[ -z "$FEATURE" ]]; then
     # Try to get from SPECIFY_FEATURE environment variable
     if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
@@ -160,9 +197,10 @@ else
     exit 1
   fi
   
-  PROMPTS_DIR="$SPECS_DIR/$FEATURE/prompts"
-  VALID_STAGES=("architect" "red" "green" "refactor" "explainer" "misc")
-  CONTEXT="feature"
+    PROMPTS_DIR="$SPECS_DIR/$FEATURE/prompts"
+    VALID_STAGES=("architect" "red" "green" "refactor" "explainer" "misc" "general")
+    CONTEXT="feature"
+  fi
 fi
 
 # Validate stage

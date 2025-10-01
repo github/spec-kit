@@ -1,123 +1,159 @@
 ---
-description: Manually trigger ADR review for architectural decisions. Note - ADR review is normally suggested automatically after /plan via constitution rules.
+description: Review planning artifacts for architecturally significant decisions and create ADRs.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+# COMMAND: Analyze planning artifacts and document architecturally significant decisions as ADRs
 
-User input:
+## CONTEXT
+
+You are an AI development assistant operating within a Spec-Driven Development workflow. The user has completed feature planning and needs to:
+
+- Identify architecturally significant technical decisions from plan.md
+- Document these decisions as Architecture Decision Records (ADRs)
+- Ensure team alignment on technical approach before implementation
+- Create a permanent, reviewable record of why decisions were made
+
+Architecture Decision Records capture decisions that:
+
+- Impact how engineers write or structure software
+- Have notable tradeoffs or alternatives
+- Will likely be questioned or revisited later
+
+**User's additional input:**
 
 $ARGUMENTS
 
-# ADR Command: Manual Architecture Decision Review
+## YOUR ROLE
 
-## About ADRs (Automatic vs Manual)
+Act as a senior software architect with expertise in:
 
-**IMPORTANT:** ADR review is normally **suggested automatically** via constitution rules after completing `/plan`. This `/adr` command is for **manual control** in special cases.
+- Technical decision analysis and evaluation
+- System design patterns and tradeoffs
+- Enterprise architecture documentation
+- Risk assessment and consequence analysis
 
-### Automatic Mode (Default - via Constitution)
+## OUTPUT STRUCTURE
 
-- ✅ Suggested automatically after `/plan` completes
-- ✅ Conversational prompt: "Shall I review for architectural decisions?"
-- ✅ User can accept, decline, or defer
-- ✅ Non-intrusive workflow
+Execute this workflow in 6 sequential steps, reporting progress after each:
 
-### Manual Mode (This Command)
+## Step 1: Load Planning Context
 
-Use `/adr` manually when you need to:
+Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS.
 
-- 📋 You declined the automatic suggestion after `/plan`
-- 🔄 Reviewing decisions after implementation
-- 📚 Retrospectively documenting architectural choices
-- 🎯 Creating ADRs outside the planning phase
-- ✏️ Re-running ADR analysis after plan updates
+Derive absolute paths:
 
----
+- PLAN = FEATURE_DIR/plan.md (REQUIRED - abort if missing with "Run /plan first")
+- RESEARCH = FEATURE_DIR/research.md (if exists)
+- DATA_MODEL = FEATURE_DIR/data-model.md (if exists)
+- CONTRACTS_DIR = FEATURE_DIR/contracts/ (if exists)
 
-## ADR Review Gate - Post-Planning Checkpoint
+## Step 2: Extract Architectural Decisions
 
-**Goal:** Analyze the current feature plan and research to (a) reference relevant existing ADRs in `docs/adr/`, and (b) create new ADRs only when architecturally significant decisions were made during planning.
+Load plan.md and available artifacts. Extract architecturally significant decisions:
 
-Execution Flow
+- Framework choices (e.g., "FastAPI over Flask")
+- Patterns (e.g., "Repository pattern for data access")
+- Storage (e.g., "PostgreSQL for primary database")
+- Security approaches (e.g., "JWT tokens for auth")
+- Performance strategies (e.g., "Redis caching layer")
 
-1. Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
+For each decision, note: what was decided, why, where in docs.
 
-   - PLAN = FEATURE_DIR/plan.md
-   - RESEARCH = FEATURE_DIR/research.md (if exists)
-   - DATA_MODEL = FEATURE_DIR/data-model.md (if exists)
-   - CONTRACTS_DIR = FEATURE_DIR/contracts/ (if exists)
-     Abort with an error explaining to run `/plan` first if `plan.md` does not exist.
+## Step 3: Check Existing ADRs
 
-2. Load planning artifacts and extract architecturally significant decisions (frameworks, patterns, integration approaches, storage, security, performance strategies). Build a concise decisions list with location references (file, section).
+Scan `docs/adr/` directory. For each extracted decision:
 
-3. Scan `docs/adr/` for existing ADRs. For each decision, determine:
+- If covered by existing ADR → note reference
+- If conflicts with existing ADR → flag conflict
+- If not covered → mark as ADR candidate
 
-   - Covered by existing ADR → record reference and compliance
-   - Conflicts with ADR → record conflict and recommend remediation
-   - Not covered → mark as ADR candidate
+## Step 4: Apply Significance Test
 
-4. Apply significance test before creating any ADR:
+For each ADR candidate, test:
 
-   - Impacts how engineers write or structure software?
-   - Has notable tradeoffs/alternatives?
-   - Likely to be revisited or questioned later?
-     Only create ADRs that pass this bar.
+- Does it impact how engineers write/structure software?
+- Are there notable tradeoffs or alternatives?
+- Will it be questioned or revisited later?
 
-5. For each ADR candidate that passes significance:
+Only proceed with ADRs that pass ALL three tests.
 
-   **Step A: Create ADR file**
+## Step 5: Create ADRs
 
-   ```bash
-   scripts/bash/create-adr.sh --title "<Decision Title>" --json
-   ```
+For each qualifying decision:
 
-   **Step B: Fill template placeholders**
+1. Generate concise decision title (e.g., "Use FastAPI Framework")
+2. Run `create-adr.sh "<title>"` from repo root
+3. Parse JSON response for `adr_path` and `adr_id`
+4. Read created file (contains template with {{PLACEHOLDERS}})
+5. Fill ALL placeholders:
+   - `{{TITLE}}` = decision title
+   - `{{STATUS}}` = "Proposed" or "Accepted"
+   - `{{DATE}}` = today (YYYY-MM-DD)
+   - `{{CONTEXT}}` = situation, constraints leading to decision
+   - `{{DECISION}}` = what was decided, why chosen
+   - `{{CONSEQUENCES}}` = outcomes, tradeoffs, risks, impacts
+   - `{{ALTERNATIVES}}` = other options, why rejected
+   - `{{REFERENCES}}` = plan.md, research.md, data-model.md
+6. Save file
 
-   Read the created file and replace ALL {{PLACEHOLDERS}} with actual values:
+## Step 6: Report Completion
 
-   - `{{ID}}`: Use ID from script output (e.g., "0001")
-   - `{{TITLE}}`: Decision title
-   - `{{DATE_ISO}}`: Today's date (YYYY-MM-DD)
-   - `{{FEATURE_NAME}}`: Feature name (e.g., "001-authentication")
-   - `{{CONTEXT}}`: Why this decision was needed (2-3 sentences)
-   - `{{DECISION}}`: What was decided (1-2 sentences)
-   - `{{POSITIVE_CONSEQUENCES}}`: Benefits of this decision (bullet list)
-   - `{{NEGATIVE_CONSEQUENCES}}`: Drawbacks or tradeoffs (bullet list)
-   - `{{ALTERNATIVES}}`: Other options considered and why rejected (bullet list)
-   - `{{SPEC_LINK}}`: Relative path to spec.md if relevant, or "N/A"
-   - `{{PLAN_LINK}}`: Relative path to plan.md if relevant, or "N/A"
-   - `{{RELATED_ADRS}}`: Links to related ADRs or "none"
+Output:
 
-   **Step C: Update status**
+```
+✅ ADR Review Complete - Created N ADRs, referenced M existing
+```
 
-   Change the status line from "Proposed | Accepted | Superseded | Rejected" to just "Proposed"
+List created ADRs with ID and title.
 
-   **Step D: Capture metadata**
+If conflicts detected:
 
-   Save the `id` and `path` from script output for the summary table.
+```
+⚠️ Conflicts with existing ADRs [IDs]. Review and update outdated decisions or revise plan.
+```
 
-6. Produce an ADR Review Report (DO NOT edit plan.md):
+If create-adr.sh fails: Report script error and skip that ADR.
 
-   - Print a table: Decision → Existing ADR | New ADR | Conflict
-   - List newly created ADR files with absolute paths
-   - Recommend refreshing `docs/adr/index.md` (if present) or generating one
+## FORMATTING REQUIREMENTS
 
-7. Next step guidance:
-   - If no blocking conflicts: proceed to `/tasks`
-   - If conflicts exist: resolve or supersede ADRs before implementation
+Present results in this exact structure:
 
-Quality Checklist before finalizing:
+```
+✅ ADR Review Complete
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-- Decision is architecturally significant
-- Context and rationale are clear
-- Alternatives and consequences recorded
-- Traceable to spec/plan requirements
-- Team can review and accept (immutable once Accepted)
+📋 Created ADRs: {count}
+   - ADR-{id}: {title}
+   - ADR-{id}: {title}
 
-Error Handling:
+📚 Referenced Existing: {count}
+   - ADR-{id}: {title}
 
-- If `plan.md` missing → "Run /plan to generate planning artifacts before /adr"
-- If no significant decisions → "No new ADRs needed; referencing existing ADRs where applicable"
-- If conflicts with existing ADRs → output WARN and recommend resolution before implementation
+⚠️  Conflicts Detected: {count}
+   - ADR-{id}: {conflict description}
+
+Next Steps:
+→ Resolve conflicts before proceeding to /tasks
+→ Review created ADRs with team
+→ Update plan.md if needed
+```
+
+## ERROR HANDLING
+
+If plan.md missing:
+
+- Display: "❌ Error: plan.md not found. Run /plan first to generate planning artifacts."
+- Exit gracefully without creating any ADRs
+
+If create-adr.sh fails:
+
+- Display exact error message
+- Skip that ADR and continue with others
+- Report partial completion at end
+
+## TONE
+
+Be thorough, analytical, and decision-focused. Emphasize the "why" behind each decision and its long-term implications.

@@ -1,6 +1,6 @@
-# Module 04c – Prompt History Records (PHR)
+# Module 10 – Prompt History Records (PHR): Automatic Knowledge Capture
 
-> **Built into Spec Kit: Turn every AI exchange into a first-class artifact that compounds your learning and accelerates your team.**
+> **Built into Spec Kit: Every AI exchange is automatically captured as a structured artifact—no extra commands needed.**
 
 ## The Problem: Lost Knowledge
 
@@ -11,9 +11,9 @@ Every day, developers have hundreds of AI conversations that produce valuable co
 - **Miss patterns** in what prompts actually work
 - **Lose traceability** for compliance and code reviews
 
-## The Solution: Prompt History Records
+## The Solution: Automatic Prompt History Records
 
-**PHRs capture every meaningful AI exchange as a structured artifact** that lives alongside your code, creating a searchable, reviewable history of your AI-assisted development.
+**PHRs are created automatically after every significant AI interaction** in Spec Kit. No extra commands, no manual effort—just work normally and get complete documentation of your AI-assisted development journey.
 
 ### Core Learning Science Principles
 
@@ -26,11 +26,9 @@ Every day, developers have hundreds of AI conversations that produce valuable co
 
 ---
 
-## Spec Kit Native: Built-In PHR System
+## How It Works: Completely Automatic
 
-PHRs are **built into Spec Kit** when you initialize a project with `specify init`. No manual setup required!
-
-### Automatic Setup with Specify CLI
+### Setup (One Time)
 
 When you run `specify init`:
 
@@ -40,10 +38,33 @@ specify init --ai gemini  # Or claude, cursor, copilot, etc.
 
 You automatically get:
 
-- ✅ **PHR command** (e.g., `/phr` slash command)
-- ✅ **PHR template** (`.specify/templates/phr-template.prompt.md`)
-- ✅ **PHR creation script** (`.specify/scripts/bash/create-phr.sh` or PowerShell)
+- ✅ **Implicit PHR creation** built into every command
+- ✅ **PHR templates** and scripts
 - ✅ **Deterministic location logic** (pre-feature vs feature-specific)
+- ✅ **Manual `/phr` command** for custom cases (optional)
+
+### Daily Usage: Just Work Normally
+
+PHRs are created **automatically** after:
+
+```bash
+/constitution Define quality standards     → PHR created in docs/prompts/
+/specify Create authentication feature     → PHR created in docs/prompts/
+/plan Design JWT system                    → PHR created in specs/001-auth/prompts/
+/tasks Break down implementation           → PHR created in specs/001-auth/prompts/
+/implement Write JWT token generation      → PHR created in specs/001-auth/prompts/
+```
+
+Also after general work:
+
+- Technical questions producing code → PHR created
+- Debugging or fixing errors → PHR created
+- Code explanations → PHR created
+- Refactoring → PHR created
+
+**You see:** Brief confirmation like `📝 PHR-0003 recorded`
+
+**That's it!** Keep working, and your knowledge compounds automatically.
 
 ---
 
@@ -54,14 +75,13 @@ PHRs use a **simple, deterministic rule** for where they're stored:
 ### Before Feature Exists (Pre-Feature Work)
 
 **Location:** `docs/prompts/`  
-**Stages:** `constitution`, `spec`, `general`  
+**Stages:** `constitution`, `spec`  
 **Naming:** `0001-title.constitution.prompt.md`
 
 **Use cases:**
 
 - Creating constitution.md
 - Writing initial specs
-- General project setup
 
 **Example:**
 
@@ -69,14 +89,15 @@ PHRs use a **simple, deterministic rule** for where they're stored:
 docs/
 └── prompts/
     ├── 0001-define-quality-standards.constitution.prompt.md
-    ├── 0002-create-auth-spec.spec.prompt.md
-    └── 0003-setup-ci-cd.general.prompt.md
+    └── 0002-create-auth-spec.spec.prompt.md
 ```
+
+**Note:** The `general` stage can also fall back to `docs/prompts/` if no `specs/` directory exists, but will show a warning suggesting to use `constitution` or `spec` stages instead, or create a feature first.
 
 ### After Feature Exists (Feature Work)
 
 **Location:** `specs/<feature>/prompts/`  
-**Stages:** `architect`, `red`, `green`, `refactor`, `explainer`, `misc`  
+**Stages:** `architect`, `red`, `green`, `refactor`, `explainer`, `misc`, `general`  
 **Naming:** `0001-title.architect.prompt.md`
 
 **Use cases:**
@@ -85,6 +106,7 @@ docs/
 - Implementation work
 - Debugging and fixes
 - Code refactoring
+- General feature work
 
 **Example:**
 
@@ -96,7 +118,8 @@ specs/
 │   └── prompts/
 │       ├── 0001-design-jwt-system.architect.prompt.md
 │       ├── 0002-implement-jwt.green.prompt.md
-│       └── 0003-fix-token-bug.red.prompt.md
+│       ├── 0003-fix-token-bug.red.prompt.md
+│       └── 0004-setup-docs.general.prompt.md
 └── 002-database/
     └── prompts/
         ├── 0001-design-schema.architect.prompt.md
@@ -108,7 +131,10 @@ specs/
 - **Local sequence numbering**: Each directory starts at 0001
 - **Stage-based extensions**: Files show their type (`.architect.prompt.md`, `.red.prompt.md`)
 - **Auto-detection**: Script finds the right feature from branch name or latest numbered feature
-- **No ambiguity**: Clear rules, no complex fallback logic
+- **Clear location rules**:
+  - `constitution`, `spec` → always `docs/prompts/`
+  - Feature stages → `specs/<feature>/prompts/`
+  - `general` → feature context if available, else `docs/prompts/` with warning
 
 ---
 
@@ -116,11 +142,10 @@ specs/
 
 ### Pre-Feature Stages
 
-| Stage          | Extension                 | When to Use                                    | Example                   |
-| -------------- | ------------------------- | ---------------------------------------------- | ------------------------- |
-| `constitution` | `.constitution.prompt.md` | Defining quality standards, project principles | Creating constitution.md  |
-| `spec`         | `.spec.prompt.md`         | Creating business requirements, feature specs  | Writing spec.md           |
-| `general`      | `.general.prompt.md`      | Setup, docs, unclassified early work           | Configuring tools, README |
+| Stage          | Extension                 | When to Use                                    | Example                  |
+| -------------- | ------------------------- | ---------------------------------------------- | ------------------------ |
+| `constitution` | `.constitution.prompt.md` | Defining quality standards, project principles | Creating constitution.md |
+| `spec`         | `.spec.prompt.md`         | Creating business requirements, feature specs  | Writing spec.md          |
 
 ### Feature-Specific Stages (TDD Cycle)
 
@@ -132,58 +157,74 @@ specs/
 | `refactor`  | `.refactor.prompt.md`  | **Refactor**   | Code cleanup, optimization                  | Extracting auth middleware  |
 | `explainer` | `.explainer.prompt.md` | **Understand** | Code explanations, documentation            | Understanding JWT flow      |
 | `misc`      | `.misc.prompt.md`      | **Other**      | Uncategorized feature work                  | General feature questions   |
+| `general`   | `.general.prompt.md`   | **Any**        | General work within feature context         | Setup, docs, general tasks  |
+
+**Note:** `general` stage behavior:
+
+- If `specs/` exists: goes to `specs/<feature>/prompts/`
+- If no `specs/`: falls back to `docs/prompts/` with warning
 
 ---
 
-## Using PHRs in Your Workflow
+## What Happens Behind the Scenes
 
-### The `/phr` Command
+### Automatic PHR Creation Flow
 
-Use `/phr` for **any AI interaction** you want to capture:
+When you run any significant command:
 
-```bash
-# Pre-feature work (constitution, specs)
-/phr Define our API versioning standards
+1. **You execute work** - `/constitution`, `/specify`, `/plan`, debugging, etc.
+2. **AI completes the task** - Creates files, writes code, fixes bugs
+3. **Stage auto-detected** - System determines: architect, green, red, refactor, etc.
+4. **PHR auto-created** - File generated with proper naming and location
+5. **Brief confirmation** - You see: `📝 PHR-0003 recorded`
 
-# Feature planning
-/phr Design the authentication system architecture
+**All metadata captured automatically:**
 
-# Implementation
-/phr Implement JWT token generation with 15-minute expiration
-
-# Debugging
-/phr Fix the database connection timeout error
-
-# Refactoring
-/phr Extract authentication middleware into separate module
-```
-
-### What Happens When You Use `/phr`
-
-1. **Execute Your Request** - The AI does the actual work you asked for
-2. **Classify the Stage** - Determines if it's architect/red/green/etc.
-3. **Extract Metadata** - Captures files, tests, labels from the exchange
-4. **Create PHR File** - Automatically generates the PHR with proper naming
-5. **Confirm Creation** - Shows you where the PHR was saved
+- Full user prompt (complete multiline text)
+- Response summary
+- Files modified
+- Tests run
+- Stage and feature context
+- Timestamps and user info
 
 ### Integrated SDD Workflow
 
 ```
-Constitution → /specify → /plan → /adr → /tasks → /implement → /phr
-                                                                  ↑
-                                                    Record every exchange
+/constitution → PHR created (docs/prompts/)
+     ↓
+/specify → PHR created (docs/prompts/)
+     ↓
+/plan → PHR created (specs/<feature>/prompts/) + ADR suggestion
+     ↓
+/tasks → PHR created (specs/<feature>/prompts/)
+     ↓
+/implement → PHR created (specs/<feature>/prompts/)
+     ↓
+Debug/fix → PHR created (specs/<feature>/prompts/)
+     ↓
+Refactor → PHR created (specs/<feature>/prompts/)
 ```
 
-**PHRs run throughout:**
+**PHRs compound throughout the entire workflow—automatically.**
 
-- Use `/phr` during constitution creation
-- Use `/phr` during spec writing
-- Use `/phr` during feature implementation
-- Use `/phr` for any debugging or refactoring
+### Manual Override (Optional)
+
+You can still use `/phr` explicitly for:
+
+- Custom metadata and labels
+- Specific stage override
+- Detailed context and links
+- Work that wasn't automatically captured
+
+```bash
+/phr Define API versioning standards  # Explicit creation with full control
+```
+
+But 95% of the time, you won't need to—PHRs just happen!
 
 ---
 
-## Daily Workflow with PHRs
+## Daily Workflow with Automatic PHRs
 
 ### Morning: Context Loading (2 minutes)
 
@@ -195,19 +236,28 @@ ls specs/*/prompts/*.prompt.md | tail -5 | xargs cat
 ls docs/prompts/*.prompt.md | tail -5 | xargs cat
 ```
 
-### During Work: Capture Everything (automatic)
-
-The `/phr` command handles everything:
+### During Work: Just Work (PHRs Happen Automatically)
 
 ```bash
-/phr Add password hashing to user registration
+# You work normally:
+/plan Design JWT authentication system
+# → AI creates plan.md
+# → PHR automatically created: specs/001-auth/prompts/0001-design-jwt-system.architect.prompt.md
+# → You see: 📝 PHR-0001 recorded
+
+/implement Create token generation function
+# → AI implements the code
+# → PHR automatically created: specs/001-auth/prompts/0002-implement-token-gen.green.prompt.md
+# → You see: 📝 PHR-0002 recorded
+
+# Debug something:
+Fix token expiration bug
+# → AI fixes the bug
+# → PHR automatically created: specs/001-auth/prompts/0003-fix-expiration-bug.red.prompt.md
+# → You see: 📝 PHR-0003 recorded
 ```
 
-The agent will:
-
-1. Implement password hashing
-2. Automatically create the PHR
-3. Show you: `✅ PHR recorded → specs/001-auth/prompts/0004-add-password-hashing.green.prompt.md`
+**No `/phr` commands needed!** Every significant interaction is captured automatically.
 
 ### Evening: Reflect & Learn (3 minutes)
 
@@ -217,6 +267,9 @@ grep -r "Reflection:" specs/*/prompts/ | tail -3
 
 # Find patterns in successful prompts
 grep -r "✅ Impact:" specs/*/prompts/ | grep -v "recorded for traceability"
+
+# Count today's PHRs
+find specs -name "*.prompt.md" -mtime -1 | wc -l
 ```
 
 ---
@@ -442,10 +495,10 @@ After 1 month:
 
 ### Common Issues
 
-**"Invalid stage 'architect' for pre-feature context"**
+**"Feature stage 'architect' requires specs/ directory and feature context"**
 
-- **Cause**: Using feature stage before specs/ directory exists
-- **Solution**: Use pre-feature stages (`constitution`, `spec`, `general`) or create a feature first
+- **Cause**: Using feature stage (`architect`, `red`, `green`, etc.) before specs/ directory exists
+- **Solution**: Use pre-feature stages (`constitution`, `spec`) or create a feature first with `/specify`
 
 **"No feature specified and no numbered features found"**
 
@@ -457,33 +510,38 @@ After 1 month:
 - **Cause**: Specified feature doesn't exist in `specs/`
 - **Solution**: Check available features with `ls specs/` or create the feature with `/specify`
 
-**PHRs not being created automatically**
+**"Warning: No specs/ directory found. Using docs/prompts/ for general stage."**
 
-- **Cause**: `/phr` command not properly configured
-- **Solution**: Run `specify init` again to regenerate agent commands
+- **Cause**: Using `general` stage when no specs/ directory exists
+- **Not an error**: PHR will be created in `docs/prompts/` as fallback
+- **Suggestion**: Consider using `constitution` or `spec` stages for pre-feature work, or create a feature first
 
 ### Manual PHR Creation
 
 If needed, you can create PHRs manually:
 
 ```bash
-# Pre-feature PHR
-.specify/scripts/bash/create-phr.sh \
+# Pre-feature PHR (constitution or spec)
+scripts/bash/create-phr.sh \
   --title "Define API standards" \
   --stage constitution \
-  --prompt "Create API versioning standards" \
   --json
 
-# Feature-specific PHR
-.specify/scripts/bash/create-phr.sh \
+# Feature-specific PHR (requires specs/ and feature context)
+scripts/bash/create-phr.sh \
   --title "Implement login" \
   --stage green \
-  --prompt "Add JWT login endpoint" \
   --feature "001-auth" \
-  --files "src/auth.py,tests/test_auth.py" \
-  --labels "auth,security" \
+  --json
+
+# General stage (falls back to docs/prompts/ if no specs/)
+scripts/bash/create-phr.sh \
+  --title "Setup CI pipeline" \
+  --stage general \
   --json
 ```
+
+**Note:** The script only creates the file with placeholders. The AI agent must fill all `{{PLACEHOLDERS}}` after creation.
 
 ---
 
@@ -501,16 +559,26 @@ If needed, you can create PHRs manually:
 
 ---
 
-## Summary
+## Summary: PHRs are Automatic
 
-PHRs are **built into Spec Kit** and provide:
+PHRs are **built into Spec Kit** with automatic creation:
 
-✅ **Deterministic location strategy**: `docs/prompts/` (pre-feature) vs `specs/<feature>/prompts/` (feature work)  
-✅ **Stage-based organization**: Clear extensions show the type of work  
-✅ **Local sequence numbering**: Each directory maintains its own series  
-✅ **Automatic integration**: Works with `/phr` slash command  
+✅ **Completely automatic**: Created after every significant command—no extra work  
+✅ **Deterministic location**:
+
+- Pre-feature (`constitution`, `spec`) → `docs/prompts/`
+- Feature work → `specs/<feature>/prompts/`
+- Clear file naming with stage extensions
+
+✅ **Full metadata capture**: Prompts, responses, files, tests, timestamps  
+✅ **Stage-based organization**: architect, red, green, refactor, explainer, etc.  
 ✅ **Learning-focused**: Based on spaced repetition and retrieval practice  
 ✅ **Team-friendly**: Version-controlled, searchable, shareable  
-✅ **Compliance-ready**: Complete audit trail with metadata
+✅ **Compliance-ready**: Complete audit trail with no manual effort
 
-**Start using PHRs today** by running `specify init` and using `/phr` for every AI interaction. Your future self (and your team) will thank you! 🚀
+**Start using PHRs today** by running `specify init` and working normally. Every AI interaction is automatically captured, documented, and searchable. Your future self (and your team) will thank you! 🚀
+
+### Key Takeaway
+
+> **You don't need to think about PHRs—they just happen.**  
+> Work normally with Spec Kit commands, and get automatic documentation of your entire AI-assisted development journey.
