@@ -99,6 +99,8 @@ build_variant() {
     mkdir -p "$SPEC_DIR/memory"
     cp memory/constitutionplus.md "$SPEC_DIR/memory/constitution.md"
     echo "Injected constitutionplus.md as .specify/memory/constitution.md"
+    # Do not ship constitutionplus.md in the archive
+    rm -f "$SPEC_DIR/memory/constitutionplus.md" 2>/dev/null || true
   fi
   
   # Only copy the relevant script variant directory
