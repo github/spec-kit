@@ -956,11 +956,22 @@ def init(
             raise typer.Exit(1)
         selected_language = language
     else:
+        # Auto-detect system locale
+        import locale as sys_locale
+        try:
+            system_lang = sys_locale.getdefaultlocale()[0]
+            if system_lang and system_lang.startswith('ko'):
+                default_language = "ko"
+            else:
+                default_language = "en"
+        except:
+            default_language = "en"
+
         # Provide interactive selection if stdin is a TTY
         if sys.stdin.isatty():
-            selected_language = select_with_arrows(LANGUAGE_CHOICES, "Choose template language:", "en")
+            selected_language = select_with_arrows(LANGUAGE_CHOICES, "Choose template language:", default_language)
         else:
-            selected_language = "en"  # Default to English
+            selected_language = default_language
 
     # Set the locale for template generation
     set_locale(selected_language)
@@ -1014,16 +1025,15 @@ def init(
             ensure_executable_scripts(project_path, tracker=tracker)
 
             # Apply language localization to command templates
-            if selected_language != "en":
-                tracker.add("localize", "Apply language settings")
-                tracker.start("localize")
-                try:
-                    apply_language_to_commands(project_path, selected_language)
-                    tracker.complete("localize", f"applied {selected_language}")
-                except (ImportError, FileNotFoundError, PermissionError) as e:
-                    tracker.error("localize", f"localization failed: {e}")
-                except Exception as e:
-                    tracker.error("localize", f"unexpected error during localization: {e}")
+            tracker.add("localize", "Apply language settings")
+            tracker.start("localize")
+            try:
+                apply_language_to_commands(project_path, selected_language)
+                tracker.complete("localize", f"applied {selected_language}")
+            except (ImportError, FileNotFoundError, PermissionError) as e:
+                tracker.error("localize", f"localization failed: {e}")
+            except Exception as e:
+                tracker.error("localize", f"unexpected error during localization: {e}")
 
             # Git step
             if not no_git:
