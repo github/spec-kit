@@ -60,12 +60,13 @@ uv tool install specifyplus
 pip install -U specifyplus
 uv tool upgrade specifyplus
 ```
-You may uninstall specify:
+
+You may uninstall specifyplus:
 
 ```bash
 pip uninstall specifyplus
 
-# OR
+# or
 
 uv tool uninstall specifyplus
 ```
