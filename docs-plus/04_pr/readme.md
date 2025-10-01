@@ -176,6 +176,82 @@ Almost the whole PR workflow can be done with GitHub Desktop, with a few bits (f
 
 Here’s the Desktop-centric flow for both cases:
 
+### Making a Pull Request (by Forking)
+
+This applies if you’re an external contributor without write access.
+
+1. **Fork the repository**
+
+   * In the browser on GitHub, click **Fork** (top right).
+
+2. **Clone your fork**
+
+   * In GitHub Desktop, click **File → Clone Repository**.
+   * Switch to the **URL tab** and paste your fork’s URL, then click **Clone**.
+
+3. **Create a new branch**
+
+   * In GitHub Desktop, click the **Current Branch dropdown → New Branch…**.
+   * Name your branch (e.g., `fix/typo-in-readme`) and click **Create Branch**.
+
+4. **Make edits locally**
+
+   * Open the project in your editor via **Repository → Open in [Editor]**.
+   * Save changes.
+
+5. **Commit changes**
+
+   * In GitHub Desktop, review file changes in the **Changes panel**.
+   * Add a commit summary/description, then click **Commit to <branch>**.
+
+6. **Push branch to your fork**
+
+   * Click **Push origin** at the top.
+
+7. **Open Pull Request**
+
+   * GitHub Desktop shows a banner: **“Create Pull Request”**.
+   * Click it — this opens the PR page in your browser.
+   * Make sure the **base repository** is the original repo (not your fork) and the **head repository** is your fork.
+
+
+### The Collaborator Workflow (Branching)  
+
+This applies if you’re a team member with **direct write access** to the repository.
+
+1. **Clone the repository**
+
+   * In **GitHub Desktop**, click **File → Clone Repository** (or use the welcome screen if it’s your first repo).
+   * Select the repository from the list or paste its URL, then click **Clone**.
+
+2. **Create a new branch**
+
+   * Go to the **Current Branch dropdown** (top center of the app).
+   * Click **New Branch…**.
+   * Enter a branch name (e.g., `feature/add-login-validation`) and click **Create Branch**.
+
+3. **Make changes in your editor**
+
+   * In Desktop, click **Repository → Open in [Editor]** (e.g., VS Code, depending on your default editor).
+   * Make your code changes.
+
+4. **Commit changes**
+
+   * Back in GitHub Desktop, you’ll see changed files listed.
+   * Stage changes by checking/unchecking files in the **Changes panel**.
+   * Enter a **summary** (commit message) and optional **description** at the bottom left.
+   * Click the **Commit to <branch>** button.
+
+5. **Push branch to GitHub**
+
+   * At the top, click the **Push origin** button (arrows pointing up).
+
+6. **Open Pull Request**
+
+   * After pushing, Desktop shows a banner: **“Publish branch”** → then **“Create Pull Request”**.
+   * Click **Create Pull Request** — this opens GitHub in your browser on the PR page.
+
+---
 
 ## The Role of Pull Requests in AI-Assisted Programming
 
