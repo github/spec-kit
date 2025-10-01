@@ -122,7 +122,7 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 ### 📹 Demo Video
 
 See the VS Code extension in action:
-[![Video Title](./media/vscode-capture.jpg)]("./media/sdd-vs-demo.mp4")
+[![Video Title](./media/vscode-capture.jpg)](./media/sdd-vs-demo.mp4)
 
 
 #### 1. Install from GitHub Releases
