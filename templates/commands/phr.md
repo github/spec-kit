@@ -1,5 +1,5 @@
 ---
-description: Execute user request AND record the exchange as a Prompt History Record (PHR).
+description: Manually create a Prompt History Record (PHR) with custom metadata. Note - PHRs are normally created automatically via constitution rules.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
@@ -11,12 +11,34 @@ User input:
 
 $ARGUMENTS
 
-# PHR Command: Execute + Record
+# PHR Command: Manual Exchange Recording
 
-**CRITICAL**: This command does TWO things sequentially:
+## About PHRs (Automatic vs Manual)
+
+**IMPORTANT:** PHRs are normally created **automatically** via constitution rules after every Spec Kit command. This `/phr` command is for **manual control** in special cases.
+
+### Automatic Mode (Default - via Constitution)
+
+- ✅ Happens automatically after all Spec Kit commands
+- ✅ Stage auto-detected from command context
+- ✅ Metadata extracted automatically
+- ✅ No user action required
+- ✅ Silent, non-intrusive
+
+### Manual Mode (This Command)
+
+Use `/phr` manually when you need to:
+
+- 📝 Capture a conversation that wasn't a standard command
+- 🎯 Override auto-detected stage or title
+- 🔧 Add custom metadata that auto-detection missed
+- 📚 Retrospectively document an important exchange
+- ✏️ Create PHR with specific labels or links
+
+**This command does TWO things sequentially:**
 
 1. **EXECUTE** the user's actual request (do the work)
-2. **RECORD** the entire exchange as a PHR (capture for learning)
+2. **RECORD** the entire exchange as a PHR with custom metadata
 
 ## Execution Flow
 
@@ -58,39 +80,66 @@ Gather the following information from the completed work:
 - **Tests**: List of tests mentioned or run (comma-separated test names)
 - **Labels**: Relevant topic tags (comma-separated, e.g., "auth,security,api")
 
-### 4. Get Repository Context
+### 4. Create PHR File
 
-Run `{SCRIPT}` once from repo root to get repository metadata. This will help auto-detect the correct location for the PHR.
-
-### 5. Create PHR Record
-
-Call `scripts/bash/create-phr.sh` with extracted metadata:
+Call `scripts/bash/create-phr.sh` to create the PHR file with template:
 
 ```bash
 scripts/bash/create-phr.sh \
-  --title "<concise title>" \
+  --title "<concise 3-7 word title>" \
   --stage <stage> \
-  --prompt "<original user request>" \
-  --response "<your response summary>" \
-  --files "<file1.py,file2.py>" \
-  --tests "<test_module.py::test_name>" \
-  --labels "<topic1,topic2>" \
   --json
 ```
 
 **Notes:**
 
-- Feature is auto-detected from current branch or latest numbered feature
-- Script will use correct location: `docs/prompts/` (pre-feature) or `specs/<feature>/prompts/` (feature work)
-- Sequence numbering is local to each directory (each starts at 0001)
-- Stage validation ensures correct extension: `.constitution.prompt.md`, `.architect.prompt.md`, etc.
+- Script creates file from template with {{PLACEHOLDERS}}
+- Feature auto-detected from current branch or latest numbered feature
+- Location: `docs/prompts/` (pre-feature) or `specs/<feature>/prompts/` (feature work)
+- Filename: `<id>-<title-slug>.<stage>.prompt.md`
+- Returns JSON with `id`, `path`, `context`, `stage`, `feature`, `template`
+
+### 5. Fill Template Placeholders
+
+Read the created file and replace ALL {{PLACEHOLDERS}} with actual values:
+
+**Metadata section (YAML frontmatter):**
+
+- `{{ID}}`: Use ID from script output (e.g., "0001")
+- `{{TITLE}}`: Brief title of what was accomplished
+- `{{STAGE}}`: Stage from step 2
+- `{{DATE_ISO}}`: Today's date (YYYY-MM-DD)
+- `{{SURFACE}}`: "agent" (for AI agent)
+- `{{MODEL}}`: Model name (e.g., "gpt-4", "claude-3-opus") or "unspecified"
+- `{{FEATURE}}`: Feature name from script output, or context (pre-feature/feature)
+- `{{BRANCH}}`: Current git branch
+- `{{USER}}`: User's name or "unknown"
+- `{{COMMAND}}`: Command used (e.g., "/constitution", "/plan") or "manual"
+- `{{LABELS}}`: Comma-separated labels (e.g., "auth", "security", "api")
+- `{{LINKS_SPEC}}`: Link to spec file if relevant, or "null"
+- `{{LINKS_TICKET}}`: Link to ticket if relevant, or "null"
+- `{{LINKS_ADR}}`: Link to ADR if relevant, or "null"
+- `{{LINKS_PR}}`: Link to PR if relevant, or "null"
+- `{{FILES_YAML}}`: List files as YAML array (one per line with " - " prefix)
+- `{{TESTS_YAML}}`: List tests as YAML array (one per line with " - " prefix)
+
+**Content sections:**
+
+- `{{PROMPT_TEXT}}`: The user's original request (verbatim)
+- `{{RESPONSE_TEXT}}`: Your response summary (1-3 sentences)
+- `{{OUTCOME_IMPACT}}`: What was accomplished
+- `{{TESTS_SUMMARY}}`: Tests that were run or created
+- `{{FILES_SUMMARY}}`: Files that were created or modified
+- `{{NEXT_PROMPTS}}`: Suggested next steps or "none"
+- `{{REFLECTION_NOTE}}`: One insight or learning point
+
+**IMPORTANT:** Replace ALL placeholders - do not leave any {{PLACEHOLDER}} unfilled.
 
 ### 6. Confirm and Report
 
-- Parse the JSON output to get `id`, `path`, `context`, and `stage`
 - Show confirmation: "✅ Exchange recorded as PHR-{id} in {context} context"
 - Display the file path (relative to repo root for brevity)
-- **Do not** read the file back - just confirm creation
+- Briefly summarize what was captured (1 sentence)
 
 ## Example Scenarios
 
@@ -99,15 +148,19 @@ scripts/bash/create-phr.sh \
 ```
 User: "Help me create a constitution.md for quality standards"
 [You execute the work, create constitution.md]
-[Then call:]
+
+[Step 1: Create PHR file]
 scripts/bash/create-phr.sh \
   --title "Define quality standards" \
   --stage constitution \
-  --prompt "Help me create a constitution.md for quality standards" \
-  --response "Created constitution.md with 5 quality principles" \
-  --files "constitution.md" \
-  --labels "constitution,quality" \
   --json
+
+[Step 2: Fill placeholders in the created file]
+- {{PROMPT_TEXT}}: "Help me create a constitution.md for quality standards"
+- {{RESPONSE_TEXT}}: "Created constitution.md with 5 quality principles covering code quality, testing, and documentation"
+- {{FILES_YAML}}:
+  - memory/constitution.md
+- {{LABELS}}: "constitution", "quality", "principles"
 ```
 
 **Result:** `docs/prompts/0001-define-quality-standards.constitution.prompt.md`
@@ -117,16 +170,24 @@ scripts/bash/create-phr.sh \
 ```
 User: "Add JWT authentication to the login endpoint"
 [You execute the work, modify files, run tests]
-[Then call:]
+
+[Step 1: Create PHR file]
 scripts/bash/create-phr.sh \
   --title "Add JWT authentication" \
   --stage green \
-  --prompt "Add JWT authentication to the login endpoint" \
-  --response "Implemented JWT auth with token generation and validation" \
-  --files "src/auth/jwt.py,src/api/login.py,tests/test_auth.py" \
-  --tests "tests/test_auth.py::test_jwt_generation" \
-  --labels "auth,security,jwt" \
   --json
+
+[Step 2: Fill placeholders in the created file]
+- {{PROMPT_TEXT}}: "Add JWT authentication to the login endpoint"
+- {{RESPONSE_TEXT}}: "Implemented JWT auth with token generation, validation, and refresh logic"
+- {{FILES_YAML}}:
+  - src/auth/jwt.py
+  - src/api/login.py
+  - tests/test_auth.py
+- {{TESTS_YAML}}:
+  - tests/test_auth.py::test_jwt_generation
+  - tests/test_auth.py::test_token_validation
+- {{LABELS}}: "auth", "security", "jwt", "api"
 ```
 
 **Result:** `specs/001-authentication/prompts/0001-add-jwt-authentication.green.prompt.md`
@@ -136,15 +197,20 @@ scripts/bash/create-phr.sh \
 ```
 User: "Fix the database connection timeout error"
 [You debug, identify issue, apply fix]
-[Then call:]
+
+[Step 1: Create PHR file]
 scripts/bash/create-phr.sh \
   --title "Fix DB timeout error" \
   --stage red \
-  --prompt "Fix the database connection timeout error" \
-  --response "Increased connection pool size and added retry logic" \
-  --files "src/database/connection.py,config/database.yaml" \
-  --labels "database,bugfix" \
   --json
+
+[Step 2: Fill placeholders in the created file]
+- {{PROMPT_TEXT}}: "Fix the database connection timeout error"
+- {{RESPONSE_TEXT}}: "Increased connection pool size from 5 to 20 and added exponential backoff retry logic"
+- {{FILES_YAML}}:
+  - src/database/connection.py
+  - config/database.yaml
+- {{LABELS}}: "database", "bugfix", "performance"
 ```
 
 **Result:** `specs/002-database/prompts/0001-fix-db-timeout-error.red.prompt.md`

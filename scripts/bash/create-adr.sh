@@ -2,63 +2,43 @@
 set -euo pipefail
 
 # create-adr.sh - Create a new Architecture Decision Record deterministically
+#
+# This script ONLY:
+#   1. Creates the correct directory structure (docs/adr/)
+#   2. Copies the template with {{PLACEHOLDERS}} intact
+#   3. Returns metadata (id, path) for AI to fill in
+#
+# The calling AI agent is responsible for filling {{PLACEHOLDERS}}
+#
 # Usage:
 #   scripts/bash/create-adr.sh \
 #     --title "Use WebSockets for Real-time Chat" \
-#     [--feature 003-chat-system] \
-#     [--spec specs/003-chat-system/spec.md] \
-#     [--plan specs/003-chat-system/plan.md] \
-#     [--context "Need bidirectional low-latency messaging"] \
-#     [--decision "Adopt WebSockets"] \
-#     [--positive "+ Low latency; + Bidirectional"] \
-#     [--negative "- Connection mgmt complexity"] \
-#     [--alternatives "SSE; Polling; GraphQL Subscriptions"] \
 #     [--json]
-#
-# Behavior:
-#   - Ensures docs/adr exists
-#   - Computes next ADR ID (0001, 0002, ...)
-#   - Slugifies title for filename
-#   - Copies templates/adr-template.md if present, otherwise writes a minimal template
-#   - Replaces placeholders and prints absolute path (and JSON if --json)
 
 JSON=false
 TITLE=""
-FEATURE=""
-SPEC_LINK=""
-PLAN_LINK=""
-CTX=""
-DECISION=""
-POS=""
-NEG=""
-ALTS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --json) JSON=true; shift ;;
     --title) TITLE=${2:-}; shift 2 ;;
-    --feature) FEATURE=${2:-}; shift 2 ;;
-    --spec) SPEC_LINK=${2:-}; shift 2 ;;
-    --plan) PLAN_LINK=${2:-}; shift 2 ;;
-    --context) CTX=${2:-}; shift 2 ;;
-    --decision) DECISION=${2:-}; shift 2 ;;
-    --positive) POS=${2:-}; shift 2 ;;
-    --negative) NEG=${2:-}; shift 2 ;;
-    --alternatives) ALTS=${2:-}; shift 2 ;;
     --help|-h)
       cat <<EOF
 Usage: $0 --title <title> [options]
-Options:
-  --feature <slug>         Feature slug or branch (e.g., 003-chat-system)
-  --spec <path>            Path to feature spec file
-  --plan <path>            Path to feature plan file
-  --context <text>         ADR context
-  --decision <text>        ADR decision summary
-  --positive <text>        Positive consequences (semicolon separated)
-  --negative <text>        Negative consequences (semicolon separated)
-  --alternatives <text>    Alternatives considered (semicolon separated)
-  --json                   Output JSON with id and path
-  --help                   Show help
+
+Required:
+  --title <text>       Title for the ADR (used for filename)
+
+Optional:
+  --json               Output JSON with id and path
+
+Output:
+  Creates ADR file with template placeholders ({{ID}}, {{TITLE}}, etc.)
+  AI agent must fill these placeholders after creation
+
+Examples:
+  $0 --title "Use WebSockets for Real-time Chat" --json
+  $0 --title "Adopt PostgreSQL for Primary Database"
 EOF
       exit 0
       ;;
@@ -73,8 +53,18 @@ fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 ADR_DIR="$REPO_ROOT/docs/adr"
-TPL="$REPO_ROOT/templates/adr-template.md"
 mkdir -p "$ADR_DIR"
+
+# Check for template (try both locations)
+TPL=""
+if [[ -f "$REPO_ROOT/.specify/templates/adr-template.md" ]]; then
+  TPL="$REPO_ROOT/.specify/templates/adr-template.md"
+elif [[ -f "$REPO_ROOT/templates/adr-template.md" ]]; then
+  TPL="$REPO_ROOT/templates/adr-template.md"
+else
+  echo "Error: ADR template not found at .specify/templates/ or templates/" >&2
+  exit 1
+fi
 
 # next id
 next_id() {
@@ -97,48 +87,15 @@ slugify() {
 
 ID=$(next_id)
 SLUG=$(slugify "$TITLE")
-DATE_ISO=$(date -u +%Y-%m-%d)
 OUTFILE="$ADR_DIR/${ID}-${SLUG}.md"
 
-if [[ -f "$TPL" ]]; then
-  cp "$TPL" "$OUTFILE"
-  sed -i '' \
-    -e "s/{{ID}}/$ID/g" \
-    -e "s/{{TITLE}}/$(printf '%s' "$TITLE" | sed 's,/,\\/,g')/g" \
-    -e "s/{{DATE_ISO}}/$DATE_ISO/g" \
-    -e "s/{{FEATURE_NAME}}/$(printf '%s' "$FEATURE" | sed 's,/,\\/,g')/g" \
-    -e "s/{{CONTEXT}}/$(printf '%s' "$CTX" | sed 's,/,\\/,g')/g" \
-    -e "s/{{DECISION}}/$(printf '%s' "$DECISION" | sed 's,/,\\/,g')/g" \
-    -e "s/{{POSITIVE_CONSEQUENCES}}/$(printf '%s' "$POS" | sed 's,/,\\/,g')/g" \
-    -e "s/{{NEGATIVE_CONSEQUENCES}}/$(printf '%s' "$NEG" | sed 's,/,\\/,g')/g" \
-    -e "s/{{ALTERNATIVES}}/$(printf '%s' "$ALTS" | sed 's,/,\\/,g')/g" \
-    -e "s,{{SPEC_LINK}},$SPEC_LINK,g" \
-    -e "s,{{PLAN_LINK}},$PLAN_LINK,g" \
-    -e "s/{{RELATED_ADRS}}/none/g" \
-    "$OUTFILE"
-else
-  cat > "$OUTFILE" <<EOF
-# ADR-$ID: $TITLE
-
-- **Status:** Proposed
-- **Date:** $DATE_ISO
-- **Feature:** ${FEATURE:-}
-- **Context:** ${CTX:-}
-- **Decision:** ${DECISION:-}
-- **Consequences:**
-  - **Positive:** ${POS:-}
-  - **Negative:** ${NEG:-}
-- **Alternatives Considered:** ${ALTS:-}
-- **References:**
-  - Feature Spec: ${SPEC_LINK:-}
-  - Implementation Plan: ${PLAN_LINK:-}
-  - Related ADRs: none
-EOF
-fi
+# Simply copy the template (AI will fill placeholders)
+cp "$TPL" "$OUTFILE"
 
 ABS=$(cd "$(dirname "$OUTFILE")" && pwd)/$(basename "$OUTFILE")
 if $JSON; then
-  printf '{"id":"%s","path":"%s"}\n' "$ID" "$ABS"
+  printf '{"id":"%s","path":"%s","template":"%s"}\n' "$ID" "$ABS" "$(basename "$TPL")"
 else
-  echo "$ABS"
+  echo "✅ ADR template copied → $ABS"
+  echo "Note: AI agent should now fill in {{PLACEHOLDERS}}"
 fi

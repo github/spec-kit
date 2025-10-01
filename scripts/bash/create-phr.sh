@@ -14,28 +14,24 @@ set -euo pipefail
 #    → stages: architect, red, green, refactor, explainer, misc
 #    → naming: 0001-title.architect.prompt.md
 #
+# This script ONLY:
+#   1. Creates the correct directory structure
+#   2. Copies the template with {{PLACEHOLDERS}} intact
+#   3. Returns metadata (id, path, context) for AI to fill in
+#
+# The calling AI agent is responsible for filling {{PLACEHOLDERS}}
+#
 # Usage:
 #   scripts/bash/create-phr.sh \
 #     --title "Setup authentication" \
 #     --stage architect \
-#     --prompt "Design JWT authentication system" \
 #     [--feature 001-auth] \
-#     [--response "Created auth module..."] \
-#     [--files "src/auth.py,tests/test_auth.py"] \
-#     [--tests "test_auth.py::test_login"] \
-#     [--labels "auth,security"] \
 #     [--json]
 
 JSON_MODE=false
 TITLE=""
 STAGE=""
-PROMPT=""
-RESPONSE=""
-FILES=""
-TESTS=""
-LABELS=""
 FEATURE=""
-COMMAND="adhoc"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -43,42 +39,34 @@ while [[ $# -gt 0 ]]; do
     --json) JSON_MODE=true; shift ;;
     --title) TITLE=${2:-}; shift 2 ;;
     --stage) STAGE=${2:-}; shift 2 ;;
-    --prompt) PROMPT=${2:-}; shift 2 ;;
-    --response) RESPONSE=${2:-}; shift 2 ;;
-    --files) FILES=${2:-}; shift 2 ;;
-    --tests) TESTS=${2:-}; shift 2 ;;
-    --labels) LABELS=${2:-}; shift 2 ;;
     --feature) FEATURE=${2:-}; shift 2 ;;
-    --command) COMMAND=${2:-}; shift 2 ;;
     --help|-h)
       cat <<EOF
-Usage: $0 --title <title> --stage <stage> --prompt <prompt> [options]
+Usage: $0 --title <title> --stage <stage> [options]
 
 Required:
-  --title <text>       Title for the PHR
+  --title <text>       Title for the PHR (used for filename)
   --stage <stage>      Pre-feature: constitution|spec|general
                        Feature work: architect|red|green|refactor|explainer|misc
-  --prompt <text>      The prompt text
 
 Optional:
   --feature <slug>     Feature slug (e.g., 001-auth). Auto-detected from branch if omitted.
-  --response <text>    Response summary
-  --files <list>       Comma-separated file list
-  --tests <list>       Comma-separated test list
-  --labels <list>      Comma-separated labels
-  --command <name>     Command that produced this PHR (default: adhoc)
-  --json               Output JSON with id and path
+  --json               Output JSON with id, path, and context
 
 Stage Extensions:
   Pre-feature stages: .constitution.prompt.md, .spec.prompt.md, .general.prompt.md
   Feature stages: .architect.prompt.md, .red.prompt.md, .green.prompt.md, etc.
 
+Output:
+  Creates PHR file with template placeholders ({{ID}}, {{TITLE}}, etc.)
+  AI agent must fill these placeholders after creation
+
 Examples:
   # Early-phase constitution work (no feature exists)
-  $0 --title "Define quality standards" --stage constitution --prompt "Create constitution.md"
+  $0 --title "Define quality standards" --stage constitution --json
 
   # Feature-specific implementation work
-  $0 --title "Implement login" --stage green --prompt "Add login endpoint" --feature 001-auth
+  $0 --title "Implement login" --stage green --feature 001-auth --json
 EOF
       exit 0
       ;;
@@ -97,15 +85,20 @@ if [[ -z "$STAGE" ]]; then
   exit 1
 fi
 
-if [[ -z "$PROMPT" ]]; then
-  echo "Error: --prompt is required" >&2
-  exit 1
-fi
-
 # Get repository root
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 SPECS_DIR="$REPO_ROOT/specs"
-TEMPLATE_PATH="$REPO_ROOT/.specify/templates/phr-template.prompt.md"
+
+# Check for template (try both locations)
+TEMPLATE_PATH=""
+if [[ -f "$REPO_ROOT/.specify/templates/phr-template.prompt.md" ]]; then
+  TEMPLATE_PATH="$REPO_ROOT/.specify/templates/phr-template.prompt.md"
+elif [[ -f "$REPO_ROOT/templates/phr-template.prompt.md" ]]; then
+  TEMPLATE_PATH="$REPO_ROOT/templates/phr-template.prompt.md"
+else
+  echo "Error: PHR template not found at .specify/templates/ or templates/" >&2
+  exit 1
+fi
 
 # Deterministic location logic
 if [[ ! -d "$SPECS_DIR" ]]; then
@@ -134,13 +127,13 @@ else
     
     # If still no feature, find the highest numbered feature
     if [[ -z "$FEATURE" ]]; then
-      local max_num=0
-      local latest_feature=""
+      max_num=0
+      latest_feature=""
       for dir in "$SPECS_DIR"/*; do
         if [[ -d "$dir" ]]; then
-          local dirname=$(basename "$dir")
+          dirname=$(basename "$dir")
           if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
-            local num=$((10#${BASH_REMATCH[1]}))
+            num=$((10#${BASH_REMATCH[1]}))
             if (( num > max_num )); then
               max_num=$num
               latest_feature="$dirname"
@@ -190,51 +183,9 @@ fi
 # Ensure prompts directory exists
 mkdir -p "$PROMPTS_DIR"
 
-# Helper functions
+# Helper: slugify
 slugify() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
-}
-
-format_yaml_list() {
-  if [[ -z "$1" ]]; then
-    echo "  - none"
-    return
-  fi
-  IFS=',' read -ra ITEMS <<< "$1"
-  local printed=0
-  for item in "${ITEMS[@]}"; do
-    item=$(echo "$item" | xargs)
-    if [[ -n "$item" ]]; then
-      echo "  - $item"
-      printed=1
-    fi
-  done
-  if [[ $printed -eq 0 ]]; then
-    echo "  - none"
-  fi
-}
-
-format_inline_list() {
-  if [[ -z "$1" ]]; then
-    echo "\"phr\""
-    return
-  fi
-  IFS=',' read -ra ITEMS <<< "$1"
-  local result=""
-  for item in "${ITEMS[@]}"; do
-    item=$(echo "$item" | xargs)
-    if [[ -n "$item" ]]; then
-      if [[ -n "$result" ]]; then
-        result="$result, "
-      fi
-      item=$(echo "$item" | sed 's/"/\\"/g')
-      result="$result\"$item\""
-    fi
-  done
-  if [[ -z "$result" ]]; then
-    result="\"phr\""
-  fi
-  echo "$result"
 }
 
 # Get next ID (local to this directory)
@@ -261,99 +212,15 @@ STAGE_SLUG=$(slugify "$STAGE")
 # Create filename with stage extension
 OUTFILE="$PROMPTS_DIR/${PHR_ID}-${TITLE_SLUG}.${STAGE_SLUG}.prompt.md"
 
-# Get metadata
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
-USER_NAME=$(git config user.name 2>/dev/null || echo "unknown")
-DATE_ISO=$(date -u +%Y-%m-%d)
-
-# Format lists
-FILES_YAML=$(format_yaml_list "$FILES")
-TESTS_YAML=$(format_yaml_list "$TESTS")
-LABELS_INLINE=$(format_inline_list "$LABELS")
-
-# Create PHR content
-if [[ -f "$TEMPLATE_PATH" ]]; then
-  # Use template
-  cp "$TEMPLATE_PATH" "$OUTFILE"
-  
-  # Replace placeholders
-  sed -i.tmp \
-    -e "s/{{ID}}/$PHR_ID/g" \
-    -e "s/{{TITLE}}/$TITLE/g" \
-    -e "s/{{STAGE}}/$STAGE/g" \
-    -e "s/{{DATE_ISO}}/$DATE_ISO/g" \
-    -e "s/{{SURFACE}}/agent/g" \
-    -e "s/{{MODEL}}/unspecified/g" \
-    -e "s|{{FEATURE}}|${FEATURE:-"$CONTEXT"}|g" \
-    -e "s/{{BRANCH}}/$BRANCH/g" \
-    -e "s/{{USER}}/$USER_NAME/g" \
-    -e "s/{{COMMAND}}/$COMMAND/g" \
-    -e "s/{{LABELS}}/$LABELS_INLINE/g" \
-    -e "s/{{LINKS_SPEC}}/null/g" \
-    -e "s/{{LINKS_TICKET}}/null/g" \
-    -e "s/{{LINKS_ADR}}/null/g" \
-    -e "s/{{LINKS_PR}}/null/g" \
-    -e "s|{{FILES_YAML}}|$FILES_YAML|g" \
-    -e "s|{{TESTS_YAML}}|$TESTS_YAML|g" \
-    -e "s|{{PROMPT_TEXT}}|$PROMPT|g" \
-    -e "s|{{RESPONSE_TEXT}}|${RESPONSE:-"(response recorded elsewhere)"}|g" \
-    -e "s/{{OUTCOME_IMPACT}}/Prompt recorded for traceability/g" \
-    -e "s/{{TESTS_SUMMARY}}/${TESTS:-"(not run)"}/g" \
-    -e "s/{{FILES_SUMMARY}}/${FILES:-"(not captured)"}/g" \
-    -e "s/{{NEXT_PROMPTS}}/none logged/g" \
-    -e "s/{{REFLECTION_NOTE}}/One insight to revisit tomorrow/g" \
-    "$OUTFILE"
-  
-  rm -f "$OUTFILE.tmp"
-else
-  # Create basic PHR without template
-  cat > "$OUTFILE" << EOF
----
-id: $PHR_ID
-title: $TITLE
-stage: $STAGE
-date: $DATE_ISO
-surface: agent
-model: unspecified
-feature: ${FEATURE:-"$CONTEXT"}
-branch: $BRANCH
-user: $USER_NAME
-command: $COMMAND
-labels: [$LABELS_INLINE]
-links:
-  spec: null
-  ticket: null
-  adr: null
-  pr: null
-files:
-$FILES_YAML
-tests:
-$TESTS_YAML
----
-
-## Prompt
-
-$PROMPT
-
-## Response snapshot
-
-${RESPONSE:-"(response recorded elsewhere)"}
-
-## Outcome
-
-- ✅ Impact: Prompt recorded for traceability
-- 🧪 Tests: ${TESTS:-"(not run)"}
-- 📁 Files: ${FILES:-"(not captured)"}
-- 🔁 Next prompts: none logged
-- 🧠 Reflection: One insight to revisit tomorrow
-EOF
-fi
+# Simply copy the template (AI will fill placeholders)
+cp "$TEMPLATE_PATH" "$OUTFILE"
 
 # Output results
 ABS_PATH=$(cd "$(dirname "$OUTFILE")" && pwd)/$(basename "$OUTFILE")
 if $JSON_MODE; then
-  printf '{"id":"%s","path":"%s","context":"%s","stage":"%s"}\n' \
-    "$PHR_ID" "$ABS_PATH" "$CONTEXT" "$STAGE"
+  printf '{"id":"%s","path":"%s","context":"%s","stage":"%s","feature":"%s","template":"%s"}\n' \
+    "$PHR_ID" "$ABS_PATH" "$CONTEXT" "$STAGE" "${FEATURE:-none}" "$(basename "$TEMPLATE_PATH")"
 else
-  echo "✅ PHR recorded → $ABS_PATH"
+  echo "✅ PHR template copied → $ABS_PATH"
+  echo "Note: AI agent should now fill in {{PLACEHOLDERS}}"
 fi
