@@ -105,7 +105,7 @@ You're almost there\! The final step is to create the actual pull request on Git
 Congratulations\! 🎉 You've successfully submitted your first pull request. The project maintainer will now be notified. They can review your changes, ask questions, request modifications, and hopefully, merge your contribution into their project.
 
 
-## ## Step-by-Step Guide to Making a Pull Request (by Branching)
+## Step-by-Step Guide to Making a Pull Request (by Branching)
 
 If you have write access to a repository, creating a branch is the standard and recommended way to make a pull request. Forking is primarily for external contributors who do not have permission to create branches directly on the main project.
 
