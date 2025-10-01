@@ -121,12 +121,9 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 
 ### 📹 Demo Video
 
-See the VS Code extension in action:
+https://github.com/cassiebreviu/spec-kit/raw/sdd-vscode-ext/media/sdd-vs-demo.mp4
 
-<video width="100%" controls>
-  <source src="./media/sdd-vs-demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+
 
 #### 1. Install from GitHub Releases
 
