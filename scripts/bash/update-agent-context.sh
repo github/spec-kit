@@ -58,20 +58,20 @@ eval $(get_feature_paths)
 NEW_PLAN="$IMPL_PLAN"  # Alias for compatibility with existing code
 AGENT_TYPE="${1:-}"
 
-# Agent-specific file paths  
-CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
-GEMINI_FILE="$REPO_ROOT/GEMINI.md"
-COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
-CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
-QWEN_FILE="$REPO_ROOT/QWEN.md"
-AGENTS_FILE="$REPO_ROOT/AGENTS.md"
-WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
-KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
-AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
-ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
+# Agent-specific file paths
+CLAUDE_FILE="$WORKING_DIR/CLAUDE.md"
+GEMINI_FILE="$WORKING_DIR/GEMINI.md"
+COPILOT_FILE="$WORKING_DIR/.github/copilot-instructions.md"
+CURSOR_FILE="$WORKING_DIR/.cursor/rules/specify-rules.mdc"
+QWEN_FILE="$WORKING_DIR/QWEN.md"
+AGENTS_FILE="$WORKING_DIR/AGENTS.md"
+WINDSURF_FILE="$WORKING_DIR/.windsurf/rules/specify-rules.md"
+KILOCODE_FILE="$WORKING_DIR/.kilocode/rules/specify-rules.md"
+AUGGIE_FILE="$WORKING_DIR/.augment/rules/specify-rules.md"
+ROO_FILE="$WORKING_DIR/.roo/rules/specify-rules.md"
 
 # Template file
-TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
+TEMPLATE_FILE="$WORKING_DIR/.specify/templates/agent-file-template.md"
 
 # Global variables for parsed plan data
 NEW_LANG=""
@@ -481,7 +481,7 @@ update_agent_file() {
     log_info "Updating $agent_name context file: $target_file"
     
     local project_name
-    project_name=$(basename "$REPO_ROOT")
+    project_name=$(basename "$WORKING_DIR")
     local current_date
     current_date=$(date +%Y-%m-%d)
     

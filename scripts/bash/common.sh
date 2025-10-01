@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
-# Get repository root, with fallback for non-git repositories
-get_repo_root() {
-    if git rev-parse --show-toplevel >/dev/null 2>&1; then
-        git rev-parse --show-toplevel
-    else
-        # Fall back to script location for non-git repos
-        local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        (cd "$script_dir/../../.." && pwd)
-    fi
-}
+# Set working directory
+WORKING_DIR="$(pwd)"
 
 # Get current branch, with fallback for non-git repositories
 get_current_branch() {
@@ -27,8 +19,7 @@ get_current_branch() {
     fi
     
     # For non-git repos, try to find the latest feature directory
-    local repo_root=$(get_repo_root)
-    local specs_dir="$repo_root/specs"
+    local specs_dir="$WORKING_DIR/specs"
     
     if [[ -d "$specs_dir" ]]; then
         local latest_feature=""
@@ -81,10 +72,9 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
+get_feature_dir() { echo "$WORKING_DIR/specs/$1"; }
 
 get_feature_paths() {
-    local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
     local has_git_repo="false"
     
@@ -92,10 +82,10 @@ get_feature_paths() {
         has_git_repo="true"
     fi
     
-    local feature_dir=$(get_feature_dir "$repo_root" "$current_branch")
+    local feature_dir=$(get_feature_dir "$current_branch")
     
     cat <<EOF
-REPO_ROOT='$repo_root'
+WORKING_DIR='$WORKING_DIR'
 CURRENT_BRANCH='$current_branch'
 HAS_GIT='$has_git_repo'
 FEATURE_DIR='$feature_dir'
