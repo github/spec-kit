@@ -48,6 +48,7 @@ Ready to practice? Follow the step folders in this directory:
 2. [Step 2 – Define Constitution](02_constitution/readme.md)
 3. [Step 3 – Specify & Clarify](03_spec/readme.md)
 4. [Step 4 – Define Plan](04_plan/readme.md)
+4b. [Step 4b – ADR Review Gate](04b_adr/readme.md)
 5. [Step 5 – Generate Task List](05_tasks/readme.md)
 6. [Step 6 – Implement](06_implementation/readme.md)
 7. [Step 7 – Capstone Chatbot](08_chatbot_project/readme.md)
