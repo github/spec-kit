@@ -55,6 +55,10 @@ pip install specifyplus
 
 # Or with uv tools
 uv tool install specifyplus
+ 
+# Upgrade to latest later
+pip install -U specifyplus
+uv tool upgrade specifyplus
 ```
 You may uninstall specify:
 
