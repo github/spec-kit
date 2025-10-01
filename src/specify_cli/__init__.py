@@ -962,12 +962,15 @@ def init(
         else:
             selected_language = "en"  # Default to English
 
-    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
-    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
-    console.print(f"[cyan]Selected language:[/cyan] {selected_language}")
-
     # Set the locale for template generation
     set_locale(selected_language)
+
+    # Import locale functions for messages
+    from .locale import get_text
+
+    console.print(f"[cyan]{get_text('messages.cli.selected_ai')}:[/cyan] {selected_ai}")
+    console.print(f"[cyan]{get_text('messages.cli.selected_script')}:[/cyan] {selected_script}")
+    console.print(f"[cyan]{get_text('messages.cli.selected_language')}:[/cyan] {selected_language}")
 
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
