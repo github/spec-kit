@@ -14,8 +14,6 @@ dependencies = [
 
 [project.scripts]
 specify = "specify_cli:main"
-specifyplus = "specify_cli:main"
-sp = "specify_cli:main"
 
 [build-system]
 requires = ["hatchling"]
