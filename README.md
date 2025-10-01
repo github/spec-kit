@@ -119,6 +119,15 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 
 > 🧪 **New & Experimental**: The [Specify VS Code Extension](https://github.com/cassiebreviu/sdd-vscode-ext) provides a visual interface for Spec-Driven Development workflows directly in VS Code.
 
+### 📹 Demo Video
+
+See the VS Code extension in action:
+
+<video width="100%" controls>
+  <source src="./media/sdd-vs-demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 #### 1. Install from GitHub Releases
 
 1. **Download the latest release:**
