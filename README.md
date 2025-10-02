@@ -1,10 +1,20 @@
-> **SpecifyPlus**: It enables Spec-driven Vibe-coding by combining the rapid, conversational generation power of "vibe coding" with the structure and architectural coherence provided by the "spec-driven" methodology. This is a enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. It is a practical fork of github/spec-kit for spec-driven development of agentic AI systems. It provides patterns, templates, and reference projects for building scalable, distributed multi-agent apps with the OpenAI Agents SDK, MCP, A2A, and a cloud-native runtime stack—Docker, Kubernetes, Dapr (Actors & Workflows), and Ray. Use it to define specs, spin up services, orchestrate agents, and ship production-ready stacks faster with guardrails and CI-friendly scaffolds. 
+> **SpecifyPlus**: It enables Spec-driven Vibe-coding by combining the rapid, conversational generation power of "vibe coding" with the structure and architectural coherence provided by the "spec-driven" methodology. This is a enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. It is a practical fork of github/spec-kit for spec-driven development of agentic AI systems. It provides patterns, templates, and reference projects for building scalable, distributed multi-agent apps with the OpenAI Agents SDK, MCP, A2A, and a cloud-native runtime stack—Docker, Kubernetes, Dapr (Actors & Workflows), and Ray. Use it to define specs, spin up services, orchestrate agents, and ship production-ready stacks faster with guardrails and CI-friendly scaffolds.
+
+> **Automating the 'How', Mastering the 'Why' **
+
+AI in programming automates the "how" (the syntax), amplifying the importance of the human developer's ability to define the "what" and "why." The enduring role of a software engineer is not as a writer of code, but as a master of:
+* **Problem Decomposition:** Breaking down ambiguity into solvable components.
+* **Architectural Vision:** Designing the blueprint for a system's success.
+* **Deep Investigation:** Uncovering the fundamental truths within a complex system.
+* **Insightful Questioning:** Probing assumptions and clarifying objectives.
+* **Strategic Judgment:** Weighing options and establishing principles for quality and consistency.
+
 
 Use `specifyplus` or `sp` commands instead of `specify`.
 
 <div align="center">
     <img src="./media/logo_small.webp"/>
-    <h1>🌱 Spec Kit</h1>
+    <h1>🌱 Spec Ki+t</h1>
     <h3><em>Build high-quality software faster.</em></h3>
 </div>
 

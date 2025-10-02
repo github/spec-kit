@@ -1,10 +1,20 @@
-# Executive Summary: Spec-driven Vibe-coding Papers & Implementation Strategy
+# Executive Summary: Spec-Driven Vibe-Coding Papers & Implementation Strategy
 
 ## Overview
 
 This document summarizes four comprehensive papers on Spec-driven Vibe-coding and presents our practical implementation strategy using GitHub's Spec-Kit as the foundation, enhanced with our **SDD+ extensions** for building scalable, distributed multi-agent systems.
 
 Spec-driven Vibe-coding combines the rapid, conversational generation power of "vibe coding" with the structure and architectural coherence provided by the "spec-driven" methodology. It's seen as a way to use AI to speed up the implementation (the "vibe-coding" part) while maintaining quality, consistency, and alignment with a high-level plan (the "spec-driven" part).
+
+### **If AI Writes the Code, What's Left for a Developer to Do?)**
+
+The more you leverage AI for coding, the clearer it becomes that a developer's true value isn't in writing syntax. The essential skills of software engineering are:
+* Deconstructing complex problems.
+* Architecting robust systems.
+* Performing deep-seated root cause analysis.
+* Asking the right questions to define the true need.
+* Establishing standards and evaluating trade-offs.
+
 
 ---
 
