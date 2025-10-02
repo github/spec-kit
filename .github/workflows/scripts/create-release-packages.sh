@@ -82,16 +82,9 @@ generate_commands() {
     # Apply other substitutions
     body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
     
-    # Prepend command-rules.md content (if it exists) AFTER frontmatter extraction
-    # We'll inject it after the frontmatter closing ---
+    # Append command-rules.md content at the end (simpler, no frontmatter extraction needed)
     if [[ -n $command_rules_content ]]; then
-      # Extract frontmatter (everything up to and including second ---)
-      frontmatter=$(printf '%s\n' "$body" | awk 'BEGIN{dash=0} /^---$/ {dash++; print; if(dash==2) exit} {if(dash>0) print}')
-      # Extract body (everything after second ---)
-      content_after_fm=$(printf '%s\n' "$body" | awk 'BEGIN{dash=0} /^---$/ {dash++; if(dash==2) {skip=1; next}} {if(dash==2 && !skip) print; if(dash==2) skip=0}')
-      
-      # Construct: frontmatter + command-rules + content
-      body=$(printf '%s\n\n%s\n\n%s' "$frontmatter" "$command_rules_content" "$content_after_fm")
+      body=$(printf '%s\n\n---\n\n%s' "$body" "$command_rules_content")
     fi
     
     case $ext in
@@ -123,6 +116,12 @@ build_variant() {
     echo "Injected constitutionplus.md as .specify/memory/constitution.md"
     # Do not ship constitutionplus.md in the archive
     rm -f "$SPEC_DIR/memory/constitutionplus.md" 2>/dev/null || true
+  fi
+  
+  # Copy AGENTS.md from protocol-templates to project root (not in .specify/memory)
+  if [[ -f protocol-templates/AGENTS.md ]]; then
+    cp protocol-templates/AGENTS.md "$base_dir/AGENTS.md"
+    echo "Copied AGENTS.md to project root (from protocol-templates)"
   fi
   
   # Only copy the relevant script variant directory

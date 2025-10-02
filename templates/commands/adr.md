@@ -52,15 +52,27 @@ Derive absolute paths:
 
 ## Step 2: Extract Architectural Decisions
 
-Load plan.md and available artifacts. Extract architecturally significant decisions:
+Load plan.md and available artifacts. Extract architecturally significant decisions as **decision clusters** (not atomic choices):
 
-- Framework choices (e.g., "FastAPI over Flask")
-- Patterns (e.g., "Repository pattern for data access")
-- Storage (e.g., "PostgreSQL for primary database")
-- Security approaches (e.g., "JWT tokens for auth")
-- Performance strategies (e.g., "Redis caching layer")
+**✅ GOOD (Clustered):**
 
-For each decision, note: what was decided, why, where in docs.
+- "Frontend Stack" (Next.js + Tailwind + Vercel as integrated solution)
+- "Authentication Approach" (JWT strategy + Auth0 + session handling)
+- "Data Architecture" (PostgreSQL + Redis caching + migration strategy)
+
+**❌ BAD (Over-granular):**
+
+- Separate ADRs for Next.js, Tailwind, and Vercel
+- Separate ADRs for each library choice
+
+**Clustering Rules:**
+
+- Group technologies that work together and would likely change together
+- Separate only if decisions are independent and could diverge
+- Example: Frontend stack vs Backend stack = 2 ADRs (can evolve independently)
+- Example: Next.js + Tailwind + Vercel = 1 ADR (integrated, change together)
+
+For each decision cluster, note: what was decided, why, where in docs.
 
 ## Step 3: Check Existing ADRs
 
@@ -82,20 +94,20 @@ Only proceed with ADRs that pass ALL three tests.
 
 ## Step 5: Create ADRs
 
-For each qualifying decision:
+For each qualifying decision cluster:
 
-1. Generate concise decision title (e.g., "Use FastAPI Framework")
+1. Generate concise title reflecting the cluster (e.g., "Frontend Technology Stack" not "Use Next.js")
 2. Run `create-adr.sh "<title>"` from repo root
 3. Parse JSON response for `adr_path` and `adr_id`
 4. Read created file (contains template with {{PLACEHOLDERS}})
 5. Fill ALL placeholders:
-   - `{{TITLE}}` = decision title
+   - `{{TITLE}}` = decision cluster title
    - `{{STATUS}}` = "Proposed" or "Accepted"
    - `{{DATE}}` = today (YYYY-MM-DD)
-   - `{{CONTEXT}}` = situation, constraints leading to decision
-   - `{{DECISION}}` = what was decided, why chosen
-   - `{{CONSEQUENCES}}` = outcomes, tradeoffs, risks, impacts
-   - `{{ALTERNATIVES}}` = other options, why rejected
+   - `{{CONTEXT}}` = situation, constraints leading to decision cluster
+   - `{{DECISION}}` = list ALL components of cluster (e.g., "Framework: Next.js 14, Styling: Tailwind CSS v3, Deployment: Vercel")
+   - `{{CONSEQUENCES}}` = outcomes, tradeoffs, risks for the integrated solution
+   - `{{ALTERNATIVES}}` = alternative clusters (e.g., "Remix + styled-components + Cloudflare")
    - `{{REFERENCES}}` = plan.md, research.md, data-model.md
 6. Save file
 
