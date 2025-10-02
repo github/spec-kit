@@ -20,7 +20,7 @@ Given that feature description, do this:
    - Use kebab-case format (lowercase, hyphen-separated)
    - Focus on the primary change or feature being implemented
    - Examples: "user-authentication", "merge-workflows", "api-rate-limiting", "fix-memory-leak"
-2. Run the script `{SCRIPT} -BranchName "<your-generated-name>"` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
+2. Run the script `{SCRIPT} -Json "<arguments>" -BranchName "<your-generated-name>"` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
   **IMPORTANT** You must only ever run this script once. The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for.
   **NOTE** The script will prepend an auto-incremented feature number (e.g., `003-`) to your branch name.
 3. Load `templates/spec-template.md` to understand required sections.
