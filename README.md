@@ -19,7 +19,7 @@ While this means development will become more conversational, it reinforces the 
 
 ## The New Coding Revolution: Why AI-Native Programmers Will Win
 
-At 28, Alexandr Wang has built Scale AI and now leads a major AI lab at Meta. His prediction? Every line of code he's ever written will eventually be replaced by AI-generated software.
+At 28, Alexandr Wang has built Scale AI and now leads a major AI lab at Meta. His prediction? [Every line of code he's ever written will eventually be replaced by AI-generated software](https://fortune.com/2025/09/19/alexandr-wang-ai-vibe-coding-next-bill-gates/).
 
 ### A Generational Shift
 
