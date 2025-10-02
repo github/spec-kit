@@ -80,9 +80,23 @@ $ARGUMENTS
    - **Apply appropriate label(s)** based on the type of change
    - **Link the PR** to the associated issue
 
+   **GitHub Integration**: If GitHub tools or integrations are available (such as GitHub MCP Server or other GitHub integrations), use them to update the PR status and labels automatically. If not available, provide these fallback commands:
+   ```bash
+   # Mark PR as ready for review
+   gh pr ready <PR-number>
+   
+   # Update labels
+   gh pr edit <PR-number> --add-label "<Type>"
+   ```
+
 9. Update issue labels:
    - Remove 'plan' label from the linked issue
    - Add 'implement' label to the linked issue
+
+   **GitHub Integration**: If GitHub tools are available, update labels automatically. If not available, use:
+   ```bash
+   gh issue edit <issue-number> --remove-label "Plan" --add-label "Implementation"
+   ```
 
 10. Update the constitution:
     - Read the [Constitution](../../.specify/memory/constitution.md) file.

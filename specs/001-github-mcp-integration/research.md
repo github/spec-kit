@@ -1,7 +1,7 @@
 # Research: GitHub MCP Integration for Spec-Driven Development
 
-**Feature**: 001-github-mcp-integration  
-**Date**: 2025-10-02  
+**Feature**: 001-github-mcp-integration
+**Date**: 2025-10-02
 **Status**: Complete
 
 ## Research Overview

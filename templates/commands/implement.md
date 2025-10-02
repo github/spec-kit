@@ -56,4 +56,59 @@ $ARGUMENTS
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
 
+8. Create or update Pull Request:
+   - **Target branch**: The PR must be against the default branch
+   - **PR status**: The PR must NOT be draft, it should be ready for review
+   - **Determine PR type and icon** based on the changes:
+
+     | Type of change | Icon | Label |
+     |-|-|-|
+     | Docs | 📖 | Docs |
+     | Fix | 🪲 | Fix, Patch |
+     | Security fix | ⚠️ | Fix |
+     | Patch | 🩹 | Patch |
+     | Feature | 🚀 | Minor |
+     | Breaking change | 🌟 | Major |
+
+   - **PR title format**: `<Icon> [Type of change]: <Short description>`
+   - **PR description structure**:
+     * Start with a summary paragraph describing the key outcome and changes for user
+     * DO NOT add a title before the leading paragraph
+     * At the end of the PR paragraph, add a "- Fixes #<issue-number>" line to link the PR to the issue
+     * Follow with additional details answering Why, How, and What
+     * Avoid superfluous headers or sections
+     * We do not need details, we need to add what changes for the user of the code
+   - **Apply appropriate label(s)** based on the type of change
+   - **Link the PR** to the associated issue
+   - **Mark PR as ready for review** (remove draft status if it exists)
+   
+   **GitHub Integration**: If GitHub tools or integrations are available (such as through MCP), use them to update the PR status and labels automatically. If not available, provide these fallback commands:
+   ```bash
+   # Mark PR as ready for review
+   gh pr ready <PR-number>
+   
+   # Update labels
+   gh pr edit <PR-number> --add-label "<Type>"
+   ```
+
+9. Update issue labels:
+   - Remove `Plan` label from the linked issue
+   - Add `Implementation` label to the linked issue
+   
+   **GitHub Integration**: If GitHub tools are available, update labels automatically. If not available, use:
+   ```bash
+   gh issue edit <issue-number> --remove-label "Plan" --add-label "Implementation"
+   ```
+
+10. Update the constitution:
+    - Read the constitution file at `memory/constitution.md`
+    - Update the constitution with details on what has been implemented in this PR
+    - Document the functionality that was added or changed
+    - Remove sections that are no longer relevant
+    - Ensure the constitution reflects the current state of the codebase
+    - If merge conflicts occur, prompt the user to resolve them manually
+    - Recommend configuring a merge queue for repositories with high concurrency
+
+11. Report completion with PR URL, implementation summary, and constitution update status.
+
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/tasks` first to regenerate the task list.

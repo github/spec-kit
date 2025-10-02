@@ -1,7 +1,7 @@
-# Implementation Plan: GitHub MCP Integration for Spec-Driven Development
+# Implementation Plan: [FEATURE]
 
-**Branch**: `001-github-mcp-integration` | **Date**: 2025-10-02 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `specs/001-github-mcp-integration/spec.md`
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
 ## Execution Flow (/plan command scope)
 
@@ -31,207 +31,180 @@
 
 ## Summary
 
-This feature integrates GitHub MCP (Model Context Protocol) throughout the Spec-Driven Development workflow, enabling specifications to become tracked GitHub issues with semantic labels, planning to create draft PRs with plan content, tasks to update PR descriptions with checkboxes, and implementation to mark PRs ready for review while updating the project constitution. The integration provides complete traceability from idea to delivery while keeping documentation synchronized through automated GitHub operations.
-
-Primary requirements:
-- Update all command templates (specify, plan, tasks, implement) with GitHub MCP operations
-- Implement AI-powered branch name generation in specify command
-- Create/update GitHub issues and PRs with proper formatting, labels, and linking
-- Synchronize both GitHub Copilot-specific prompts and generic agent templates
-- Update spec template structure to prioritize user scenarios over requirements
-- Provide error handling for GitHub API failures
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-**Language/Version**: Python 3.11+ (for Specify CLI), Markdown (for templates)
-**Primary Dependencies**: GitHub MCP tools (built into AI agents), Git, GitHub API
-**Storage**: Git repository, GitHub issues/PRs for tracking
-**Testing**: Manual validation of workflow phases, GitHub API integration tests
-**Target Platform**: Cross-platform (Windows/macOS/Linux) - supports bash and PowerShell
-**Project Type**: CLI tool with template system (single project structure)
-**Performance Goals**: Fast template generation (<1s), reliable GitHub API operations
-**Constraints**: Must work across 11+ AI agents, maintain backward compatibility with existing projects
-**Scale/Scope**: Update 7 command templates, sync 2 template locations, document integration patterns
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
+**Target Platform**: [e.g., Linux server, iOS 15+, Wasm or NEEDS CLARIFICATION]
+**Project Type**: [single/web/mobile - determines source structure]
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-### I. Specification as Source of Truth (NON-NEGOTIABLE)
+### I. Workflow-First Design (NON-NEGOTIABLE)
 
-- [x] Feature preserves specifications as primary artifacts
-- [x] Templates remain tech-agnostic (no implementation details in spec templates)
-- [x] User-centric language maintained in specifications
-- [x] Living documentation approach supported (specs evolve with implementation)
-- [x] Constitution principles guide all template updates
+- [ ] Feature is implemented as reusable GitHub Actions workflow(s)
+- [ ] Workflows have clearly defined inputs and outputs
+- [ ] Workflows follow single responsibility principle
+- [ ] Matrix strategies used for parallel execution where appropriate
+- [ ] Workflows are independently testable via CI validation workflow
+- [ ] Logic delegated to reusable GitHub Actions (PSModule organization)
+- [ ] Inline PowerShell code avoided; action-based scripts used instead
+- [ ] Actions referenced by specific versions/tags
 
-### II. Multi-Agent Compatibility (NON-NEGOTIABLE)
+### II. Test-Driven Development (NON-NEGOTIABLE)
 
-- [x] Changes work across all 11+ supported AI agents
-- [x] Format adaptation maintained (Markdown vs TOML where appropriate)
-- [x] Directory conventions preserved (`.github/prompts/`, `.claude/commands/`, etc.)
-- [x] Placeholder patterns supported (`$ARGUMENTS`, `{{args}}`, etc.)
-- [x] No vendor lock-in introduced
-- [x] Both `.github/prompts/*.prompt.md` and `templates/commands/*.md` synchronized
+- [ ] Tests will be written before implementation
+- [ ] Initial tests will fail (Red phase documented)
+- [ ] Implementation plan includes making tests pass (Green phase)
+- [ ] Refactoring phase planned while maintaining tests
+- [ ] PSScriptAnalyzer validation included
+- [ ] Manual testing documented if needed
+- [ ] CI validation workflow tests included
 
-### III. Template-Driven Consistency (REQUIRED)
+### III. Platform Independence with Modern PowerShell
 
-- [x] Standard template structure maintained
-- [x] Execution flows clearly defined in updated templates
-- [x] Validation gates included (GitHub API error handling)
-- [x] Explicit sections for GitHub operations added
-- [x] Context preservation maintained across workflow phases
-- [x] Template structure updated to prioritize user scenarios (spec template)
+- [ ] PowerShell 7.4+ constructs used exclusively
+- [ ] Matrix testing across Linux, macOS, Windows included
+- [ ] Platform-specific behaviors documented
+- [ ] Skip mechanisms justified if platform-specific tests needed
+- [ ] No backward compatibility with PowerShell 5.1 required
 
-### IV. Test-Driven Development Integration (NON-NEGOTIABLE)
+### IV. Quality Gates and Observability
 
-- [x] TDD workflow preserved in tasks template
-- [x] Tests-first approach maintained
-- [x] No impact on existing TDD gates
-- [x] GitHub MCP operations don't bypass TDD requirements
+- [ ] Test results captured in structured JSON format
+- [ ] Code coverage measurement included
+- [ ] Linting results captured and enforced
+- [ ] Quality gate thresholds defined
+- [ ] Clear error messages planned
+- [ ] Debug mode support included
 
-### V. Cross-Platform Support (REQUIRED)
+### V. Continuous Delivery with Semantic Versioning
 
-- [x] Works on Windows, macOS, and Linux
-- [x] Both bash and PowerShell scripts maintained
-- [x] No platform-specific dependencies introduced
-- [x] Git operations remain cross-platform compatible
-
-### VI. Workflow Phase Tracking (NEW REQUIREMENT)
-
-- [x] GitHub issue labels track workflow phases (`Specification`, `Plan`, `Implementation`)
-- [x] PR descriptions progressively updated through phases
-- [x] Issue-PR linking maintained with "Fixes #" keyword
-- [x] Draft PR status properly managed
-- [x] Constitution updates automated during implementation phase
+- [ ] Version bump strategy documented (labels, SemVer)
+- [ ] Release automation compatible with existing workflow
+- [ ] Documentation updates included
+- [ ] GitHub Pages publishing considered if docs changes
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```plaintext
-specs/001-github-mcp-integration/
-├── spec.md              # Feature specification (completed)
+specs/[###-feature]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
 ├── data-model.md        # Phase 1 output (/plan command)
 ├── quickstart.md        # Phase 1 output (/plan command)
-└── contracts/           # Phase 1 output (/plan command)
-    └── github-mcp-integration.md
+├── contracts/           # Phase 1 output (/plan command)
+└── tasks.md             # Phase 2 output (/tasks command - NOT created by /plan)
 ```
 
 ### Source Code (repository root)
 
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
+
 ```plaintext
-# Spec Kit CLI and Templates Structure
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
 src/
-└── specify_cli/
-    └── __init__.py                # Main CLI entry point
+├── models/
+├── services/
+├── cli/
+└── lib/
 
-templates/
-├── spec-template.md               # Generic spec template (to be updated)
-├── plan-template.md               # Generic plan template
-├── tasks-template.md              # Generic tasks template
-└── commands/                      # Generic command templates (to be updated)
-    ├── constitution.md
-    ├── specify.md                 # Needs GitHub MCP integration
-    ├── plan.md                    # Needs GitHub MCP integration
-    ├── tasks.md                   # Needs GitHub MCP integration
-    ├── implement.md               # Needs GitHub MCP integration
-    ├── analyze.md
-    └── clarify.md
+tests/
+├── contract/
+├── integration/
+└── unit/
 
-.github/
-└── prompts/                       # GitHub Copilot-specific prompts (reference implementation)
-    ├── specify.prompt.md          # Already has GitHub MCP integration
-    ├── plan.prompt.md             # Already has GitHub MCP integration
-    ├── tasks.prompt.md            # Already has GitHub MCP integration
-    └── implement.prompt.md        # Already has GitHub MCP integration
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
 
-.specify/
-├── memory/
-│   └── constitution.md            # Project constitution
-├── templates/                     # Project-specific templates
-│   ├── spec-template.md          # Already updated with user scenarios first
-│   ├── plan-template.md
-│   ├── tasks-template.md
-│   └── commands/
-│       └── [various .md files]
-└── scripts/
-    ├── bash/
-    │   ├── create-new-feature.sh
-    │   ├── setup-plan.sh
-    │   └── update-agent-context.sh
-    └── powershell/
-        ├── create-new-feature.ps1
-        ├── setup-plan.ps1
-        └── update-agent-context.ps1
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
 
-docs/
-└── [documentation files]         # May need updates for GitHub MCP integration
-```
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
 
 ios/ or android/
 └── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: Single project structure (CLI tool with template system). This feature modifies existing template files in `templates/commands/` and `.github/prompts/` directories, synchronizing GitHub MCP operations across both locations. No new source code structure needed - only template content updates.
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
-## Phase 0: Outline & Research ✓ COMPLETE
+## Phase 0: Outline & Research
 
-**Research completed** in `research.md` covering:
+1. **Extract unknowns from Technical Context** above:
+   - For each NEEDS CLARIFICATION → research task
+   - For each dependency → best practices task
+   - For each integration → patterns task
+2. **Generate and dispatch research agents**:
+   ```plaintext
+   For each unknown in Technical Context:
+     Task: "Research {unknown} for {feature context}"
+   For each technology choice:
+     Task: "Find best practices for {tech} in {domain}"
+   ```
+3. **Consolidate findings** in `research.md` using format:
+   - Decision: [what was chosen]
+   - Rationale: [why chosen]
+   - Alternatives considered: [what else evaluated]
 
-1. **GitHub MCP Capabilities**: Use GitHub MCP tools through AI agents for issue/PR management
-2. **Template Synchronization**: Maintain two locations (`.github/prompts/` and `templates/`) with identical GitHub MCP logic
-3. **Label Schema**: Semantic labels with backticks for phase (`Specification`, `Plan`, `Implementation`) and type tracking
-4. **PR Formatting**: Structured format with icons, progressive content updates, and issue linking
-5. **Branch Name Generation**: AI-powered kebab-case generation from feature descriptions
-6. **Constitution Updates**: Automated updates during `/implement` phase
-7. **Error Handling**: Graceful degradation with clear recovery instructions
-8. **Cross-Platform**: Maintains existing bash/PowerShell support
+**Output**: research.md with all NEEDS CLARIFICATION resolved
 
-**Key Decisions**:
-- Use GitHub MCP through AI agents (no additional auth needed)
-- Synchronize `.github/prompts/` and `templates/commands/` locations
-- Apply semantic labels for workflow tracking
-- Implement AI-powered branch naming
-- Auto-update constitution during implementation
+## Phase 1: Design & Contracts
 
-**Output**: ✓ research.md completed with all technical decisions documented
+*Prerequisites: research.md complete*
 
-## Phase 1: Design & Contracts ✓ COMPLETE
+1. **Extract entities from feature spec** → `data-model.md`:
+   - Entity name, fields, relationships
+   - Validation rules from requirements
+   - State transitions if applicable
+2. **Generate API contracts** from functional requirements:
+   - For each user action → endpoint
+   - Use standard REST/GraphQL patterns
+   - Output OpenAPI/GraphQL schema to `/contracts/`
+3. **Generate contract tests** from contracts:
+   - One test file per endpoint
+   - Assert request/response schemas
+   - Tests must fail (no implementation yet)
+4. **Extract test scenarios** from user stories:
+   - Each story → integration test scenario
+   - Quickstart test = story validation steps
+5. **Update agent file incrementally** (O(1) operation):
+   - Run `.specify/scripts/powershell/update-agent-context.ps1 -AgentType copilot`
+     **IMPORTANT**: Execute it exactly as specified above. Do not add or remove any arguments.
+   - If exists: Add only NEW tech from current plan
+   - Preserve manual additions between markers
+   - Update recent changes (keep last 3)
+   - Keep under 150 lines for token efficiency
+   - Output to repository root
 
-**Entities defined** in `data-model.md`:
-
-1. **GitHub Issue** - Feature specification tracking with labels
-2. **Pull Request** - Draft and ready states with progressive content
-3. **Label** - Phase and type labels for workflow tracking
-4. **Command Template** - Template files with GitHub MCP operations
-5. **Feature Branch** - AI-generated branch names with feature numbers
-6. **Constitution Document** - Project principles and feature history
-
-**Contracts created** in `contracts/github-mcp-integration.md`:
-
-- `/specify` command: Issue creation, label application, branch naming
-- `/plan` command: Draft PR creation, issue linking, label updates
-- `/tasks` command: PR description updates with checkboxes
-- `/implement` command: Progressive updates, ready status, constitution updates
-- Template synchronization contract
-- Error handling contract
-
-**Validation scenarios** in `quickstart.md`:
-
-- Scenario 1: Specify phase issue creation
-- Scenario 2: Plan phase draft PR creation
-- Scenario 3: Tasks phase PR description update
-- Scenario 4: Implement phase progressive updates
-- Scenario 5: Error handling validation
-- Scenario 6: End-to-end workflow
-- Scenario 7: Multi-agent compatibility
-
-**Agent context updated**: ✓ GitHub Copilot context file updated with new technologies
-
-**Output**: ✓ data-model.md, contracts/github-mcp-integration.md, quickstart.md, agent context file
+**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file
 
 ## Phase 2: Task Planning Approach
 
@@ -239,85 +212,20 @@ ios/ or android/
 
 **Task Generation Strategy**:
 
-The `/tasks` command will generate implementation tasks based on the functional requirements from spec.md and design artifacts from Phase 1. Tasks will be organized into logical phases following TDD principles.
-
-**Expected Task Categories**:
-
-1. **Template Synchronization Tasks** [P]
-   - Compare `.github/prompts/specify.prompt.md` with `templates/commands/specify.md`
-   - Identify GitHub MCP operations to add
-   - Repeat for plan, tasks, implement commands
-   - Each template update can be done in parallel
-
-2. **Template Update Tasks** (sequential per file)
-   - Update `templates/commands/specify.md` with:
-     * Branch name generation logic
-     * Issue creation operations
-     * Label application logic
-     * Error handling
-   - Update `templates/commands/plan.md` with:
-     * Git commit/push operations
-     * Draft PR creation
-     * Issue linking
-     * Label updates
-   - Update `templates/commands/tasks.md` with:
-     * PR description fetch
-     * Content append operations
-     * Checkbox formatting
-   - Update `templates/commands/implement.md` with:
-     * Progressive checkbox updates
-     * Ready status change
-     * Constitution update logic
-     * Label updates
-
-3. **Spec Template Update Tasks**
-   - Update `templates/spec-template.md` to match `.specify/templates/spec-template.md`
-   - Ensure "User Scenarios & Testing" section comes first
-   - Preserve all other template structure
-
-4. **Documentation Tasks** [P]
-   - Update CONTRIBUTING.md with template synchronization requirements
-   - Update AGENTS.md if needed for GitHub MCP integration notes
-   - Update README.md with workflow phase tracking explanation
-   - Create or update docs/github-mcp-integration.md with integration guide
-
-5. **Validation Tasks**
-   - Manual validation using quickstart.md scenarios
-   - Test each command template across multiple agents
-   - Verify error handling paths
-   - Confirm cross-platform compatibility
+- Load `.specify/templates/tasks-template.md` as base
+- Generate tasks from Phase 1 design docs (contracts, data model, quickstart)
+- Each contract → contract test task [P]
+- Each entity → model creation task [P]
+- Each user story → integration test task
+- Implementation tasks to make tests pass
 
 **Ordering Strategy**:
 
-1. **Phase 0**: Documentation and planning (establish baseline)
-2. **Phase 1**: Template analysis and comparison [P]
-3. **Phase 2**: Template updates (specify → plan → tasks → implement in sequence)
-4. **Phase 3**: Spec template update
-5. **Phase 4**: Documentation updates [P]
-6. **Phase 5**: Validation and testing
+- TDD order: Tests before implementation
+- Dependency order: Models before services before UI
+- Mark [P] for parallel execution (independent files)
 
-**Parallel Execution Markers**:
-- Template analysis can be done in parallel [P]
-- Documentation updates can be done in parallel [P]
-- Template implementation must be sequential (tests for each before next)
-
-**TDD Approach**:
-- No code tests needed (template changes only)
-- Validation scenarios in quickstart.md serve as acceptance tests
-- Manual testing required for GitHub MCP operations
-- Each template update validated before proceeding to next
-
-**Estimated Output**: 20-25 numbered tasks covering:
-- 4-6 template synchronization analysis tasks
-- 8-10 template update tasks (2-3 per command file)
-- 2-3 spec template update tasks
-- 4-5 documentation tasks
-- 3-4 validation tasks
-
-**Dependencies**:
-- Template updates depend on analysis tasks
-- Documentation depends on template updates
-- Validation depends on all updates complete
+**Estimated Output**: 25-30 numbered, ordered tasks in tasks.md
 
 **IMPORTANT**: This phase is executed by the /tasks command, NOT by /plan
 
@@ -325,59 +233,20 @@ The `/tasks` command will generate implementation tasks based on the functional 
 
 *These phases are beyond the scope of the /plan command*
 
-**Phase 3**: Task execution (/tasks command creates tasks.md with detailed breakdown)
-**Phase 4**: Implementation (execute tasks.md, updating templates and documentation)
-**Phase 5**: Validation (execute quickstart.md scenarios, verify across agents)
+**Phase 3**: Task execution (/tasks command creates tasks.md)
+**Phase 4**: Implementation (execute tasks.md following constitutional principles)
+**Phase 5**: Validation (run tests, execute quickstart.md, performance validation)
 
 ## Complexity Tracking
 
-*No constitutional violations - all checks passed*
+*Fill ONLY if Constitution Check has violations that must be justified*
 
-This feature maintains all constitutional principles:
-- Specification as source of truth ✓
-- Multi-agent compatibility ✓
-- Template-driven consistency ✓
-- TDD integration ✓
-- Cross-platform support ✓
-- New: Workflow phase tracking ✓
-
-No complexity deviations to document.
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
 
 ## Progress Tracking
-
-*This checklist is updated during execution flow*
-
-**Phase Status**:
-
-- [x] Phase 0: Research complete (/plan command)
-- [x] Phase 1: Design complete (/plan command)
-- [x] Phase 2: Task planning complete (/plan command - describe approach only)
-- [ ] Phase 3: Tasks generated (/tasks command)
-- [ ] Phase 4: Implementation complete
-- [ ] Phase 5: Validation passed
-
-**Gate Status**:
-
-- [x] Initial Constitution Check: PASS
-- [x] Post-Design Constitution Check: PASS
-- [x] All NEEDS CLARIFICATION resolved
-- [x] Complexity deviations documented (none required)
-
-**Artifacts Generated**:
-- [x] research.md - Technical decisions and research findings
-- [x] data-model.md - Entity definitions and relationships
-- [x] contracts/github-mcp-integration.md - Operation contracts and requirements
-- [x] quickstart.md - Validation scenarios and testing guide
-- [x] .github/copilot-instructions.md - Updated agent context
-
-**Next Steps**:
-1. Commit and push all planning artifacts
-2. Create draft Pull Request linking to issue #709
-3. Update issue labels: Remove `Specification`, add `Plan`
-4. Run `/tasks` command to generate implementation tasks
-
----
-*Based on Constitution - See `.specify/memory/constitution.md`*
 
 *This checklist is updated during execution flow*
 

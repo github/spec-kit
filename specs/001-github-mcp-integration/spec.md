@@ -16,40 +16,51 @@ As a developer using the Spec-Driven Development framework, I want GitHub integr
 
 ### Edge Cases
 
-- What happens when GitHub API is unavailable during issue/PR creation?
-- How does the system handle conflicts when updating existing PRs?
-- What if a developer manually changes issue labels - should the workflow detect and warn?
-- How does constitution update handle merge conflicts if multiple features update it simultaneously?
-- What happens if `/implement` is run before `/tasks` completes?
-- How are partial task completions tracked if `/implement` is interrupted mid-execution?
+- When GitHub API is unavailable during issue/PR creation, the system skips GitHub operations and continues with local workflow only. User can manually create issues/PRs later using provided `gh` CLI commands.
+- System handles PR update conflicts by failing gracefully with error message and `gh` CLI fallback commands for manual resolution.
+- Developers may manually change issue labels; the workflow will not detect or warn, but subsequent automated label updates will follow the defined phase transition rules.
+- Constitution update conflicts from concurrent features require manual merge resolution. Repository should be configured with merge queue for safer concurrent feature development.
+- If `/implement` is run before `/tasks` completes, the system proceeds assuming task planning is optional for exploratory work, but PR description may lack task checkboxes.
+- Partial task completions during interrupted `/implement` execution are tracked via PR description checkmarks; re-running `/implement` resumes from the last completed checkpoint.
+
+## Clarifications
+
+### Session 2025-10-02
+
+- Q: How should the system interact with GitHub? → A: GitHub MCP Server (Model Context Protocol server providing GitHub tools to AI agents)
+- Q: When updating issue labels during workflow phases, how should the system handle existing labels? → A: Replace phase labels only (remove `Specification`, add `Plan`; keep type labels like `Minor`)
+- Q: FR-012 mentions "rollback mechanisms when GitHub API operations fail." What should be rolled back? → A: Nothing - just log error and stop (user manually fixes). If errors happen with the MCP part, provide gh cli commands to run to achieve the same.
+- Q: What should happen when GitHub API is unavailable during issue/PR creation? → A: Skip GitHub operations and continue with local workflow only
+- Q: How should the system handle concurrent constitution updates when multiple features are being implemented simultaneously? → A: Manual merge required (detect conflict, prompt user to resolve) or configure the repo with merge queue
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST update `templates/commands/specify.md` to include AI-generated branch name creation and GitHub issue creation with formatted title (icon + type + description), spec content starting from "Primary User Story" section as body (removing the first two headers), appropriate labels in code format with backticks, and feature branch mentioned in description.
-- **FR-002**: System MUST update `templates/commands/plan.md` to include Git commit/push operations, draft PR creation with plan.md document content in the description, issue linking with "Fixes #<issue-number>", PR description formatting, label application, and issue label updates (remove `Specification`, add `Plan`).
-- **FR-003**: System MUST update `templates/commands/tasks.md` to include PR description update functionality that appends the tasks.md content with checkboxes for each task phase to the existing PR description.
-- **FR-004**: System MUST update `templates/commands/implement.md` to include progressive PR description updates with checkmarks as task sections complete, PR status update (draft → ready for review), issue label update (add `Implementation`), and constitution update with newly implemented functionality.
+- **FR-001**: System MUST update `templates/commands/specify.md` to include AI-generated branch name creation and GitHub issue creation with formatted title (icon + type + description), spec content starting from "Primary User Story" section as body (removing the first two headers), appropriate labels in code format with backticks, and feature branch mentioned in description. Uses GitHub MCP Server for issue creation.
+- **FR-002**: System MUST update `templates/commands/plan.md` to include Git commit/push operations, draft PR creation with plan.md document content in the description, issue linking with "Fixes #<issue-number>", PR description formatting, label application, and issue label updates (remove `Specification`, add `Plan` while preserving type labels like `Minor`). Uses GitHub MCP Server for PR and label operations.
+- **FR-003**: System MUST update `templates/commands/tasks.md` to include PR description update functionality that appends the tasks.md content with checkboxes for each task phase to the existing PR description. Uses GitHub MCP Server for PR updates.
+- **FR-004**: System MUST update `templates/commands/implement.md` to include progressive PR description updates with checkmarks as task sections complete, PR status update (draft → ready for review), issue label update (replace `Plan` with `Implementation` while keeping type labels), and constitution update with newly implemented functionality. Uses GitHub MCP Server for PR and label operations.
 - **FR-005**: System MUST ensure `/specify` command generates branch names using AI analysis of the feature description, extracting 2-4 core words in kebab-case format before the feature number prefix is applied.
 - **FR-006**: System MUST provide consistent PR title formatting across all phases using pattern: `<Icon> [Type]: <Description>` where icons are 📖 (Docs), 🪲 (Fix), ⚠️ (Security fix), 🩹 (Patch), 🚀 (Feature/Minor), 🌟 (Breaking change/Major).
 - **FR-007**: System MUST ensure PR descriptions follow format: leading summary paragraph without title, plan.md content section, tasks.md content section with checkboxes, ending with "- Fixes #<issue-number>" line, followed by additional context (Why, How, What) without superfluous headers.
-- **FR-008**: System MUST apply semantic labels to issues and PRs using code formatting with backticks: type-based labels (`Docs`, `Fix`, `Patch`, `Minor`, `Major`) and phase-based labels (`Specification`, `Plan`, `Implementation`).
-- **FR-009**: System MUST update the project constitution document during `/implement` phase to include details about the newly implemented functionality, maintaining the constitution as the single source of truth for project capabilities.
+- **FR-008**: System MUST apply semantic labels to issues and PRs using code formatting with backticks: type-based labels (`Docs`, `Fix`, `Patch`, `Minor`, `Major`) and phase-based labels (`Specification`, `Plan`, `Implementation`). Phase label transitions replace the previous phase label while preserving type labels.
+- **FR-009**: System MUST update the project constitution document during `/implement` phase to include details about the newly implemented functionality, maintaining the constitution as the single source of truth for project capabilities. Constitution updates must detect merge conflicts and prompt for manual resolution; recommend configuring repository with merge queue for safer concurrent development.
 - **FR-010**: System MUST synchronize both `.github/prompts/*.prompt.md` (GitHub Copilot-specific) and `templates/commands/*.md` (generic agent templates) to have consistent GitHub MCP integration behavior.
 - **FR-011**: System MUST update `templates/spec-template.md` to match `.specify/templates/spec-template.md` structure with User Scenarios & Testing section first, followed by Requirements section.
-- **FR-012**: System MUST provide error handling and rollback mechanisms when GitHub API operations fail during any phase of the workflow.
-- **FR-013**: System MUST document the GitHub MCP workflow and integration patterns in appropriate documentation files for future maintainers and contributors.
+- **FR-012**: System MUST provide error handling when GitHub MCP operations fail. On failure, log the error, stop execution, and provide equivalent `gh` CLI commands for manual completion. If GitHub is unavailable, skip GitHub operations and continue with local workflow only.
+- **FR-013**: System MUST document the GitHub MCP workflow and integration patterns in appropriate documentation files for future maintainers and contributors. Documentation must explain that GitHub MCP Server (Model Context Protocol) is used for all GitHub API interactions.
 
 ### Key Entities
 
-- **GitHub Issue**: Represents a feature specification in GitHub's issue tracking system. Contains spec title, description (spec.md content starting from Primary User Story), labels indicating phase and type formatted with backticks, and mentions the feature branch in description text.
-- **Pull Request (Draft)**: Created during `/plan` phase. Links to issue, contains plan.md document in description, all design artifacts committed (plan.md, research.md, data-model.md, contracts/), marked as draft to indicate work in progress.
-- **Pull Request (with Tasks)**: Updated during `/tasks` phase. Description now includes both plan.md and tasks.md content with checkboxes for each task phase, still in draft status.
-- **Pull Request (Ready)**: Updated during `/implement` phase. Description shows progressive checkmarks as task sections complete, no longer draft, contains all implementation changes, links to issue with "Fixes" keyword, ready for code review and merge.
+- **GitHub Issue**: Represents a feature specification in GitHub's issue tracking system. Contains spec title, description (spec.md content starting from Primary User Story), labels indicating phase and type formatted with backticks, and mentions the feature branch in description text. Created via GitHub MCP Server.
+- **Pull Request (Draft)**: Created during `/plan` phase via GitHub MCP Server. Links to issue, contains plan.md document in description, all design artifacts committed (plan.md, research.md, data-model.md, contracts/), marked as draft to indicate work in progress.
+- **Pull Request (with Tasks)**: Updated during `/tasks` phase via GitHub MCP Server. Description now includes both plan.md and tasks.md content with checkboxes for each task phase, still in draft status.
+- **Pull Request (Ready)**: Updated during `/implement` phase via GitHub MCP Server. Description shows progressive checkmarks as task sections complete, no longer draft, contains all implementation changes, links to issue with "Fixes" keyword, ready for code review and merge.
 - **Feature Branch**: Git branch named with format `###-kebab-case-name` where ### is auto-incremented feature number and name is AI-generated from feature description.
-- **Issue/PR Labels**: GitHub labels formatted with backticks tracking workflow phase (`Specification`, `Plan`, `Implementation`) and change type (`Docs`, `Fix`, `Patch`, `Minor`, `Major`) for semantic versioning and filtering.
-- **Constitution Document**: The `.specify/memory/constitution.md` file containing the authoritative record of all project principles, capabilities, and implemented features, updated during `/implement` phase with new functionality.
+- **Issue/PR Labels**: GitHub labels formatted with backticks tracking workflow phase (`Specification`, `Plan`, `Implementation`) and change type (`Docs`, `Fix`, `Patch`, `Minor`, `Major`) for semantic versioning and filtering. Phase transitions replace only the phase label while preserving type labels.
+- **Constitution Document**: The `.specify/memory/constitution.md` file containing the authoritative record of all project principles, capabilities, and implemented features, updated during `/implement` phase with new functionality. Concurrent updates from multiple features require manual merge conflict resolution; merge queue recommended for safety.
+- **GitHub MCP Server**: Model Context Protocol server that provides GitHub API access to AI agents, enabling issue creation, PR management, and label operations without direct API authentication in agent prompts.
 
 ---
 

@@ -1,7 +1,7 @@
 # Data Model: GitHub MCP Integration
 
-**Feature**: 001-github-mcp-integration  
-**Date**: 2025-10-02  
+**Feature**: 001-github-mcp-integration
+**Date**: 2025-10-02
 **Phase**: 1 - Design & Contracts
 
 ## Overview

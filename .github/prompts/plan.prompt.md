@@ -70,9 +70,23 @@ Given the implementation details provided as an argument, do this:
    - Apply appropriate label(s) based on the type of change
    - Link the PR to the associated issue
 
+   **GitHub Integration**: If GitHub tools or integrations are available (such as GitHub MCP Server or other GitHub integrations), use them to create/update the PR and manage labels automatically. If not available, provide these fallback commands:
+   ```bash
+   # Create draft PR
+   gh pr create --draft --title "<Icon> [Type]: <Description>" --body "<PR description>" --label "<Type>"
+   
+   # Link to issue (if not using "Fixes #<issue>" in body)
+   gh pr edit <PR-number> --add-label "<Type>"
+   ```
+
 8. Update issue labels:
    - Remove 'specification' label from the linked issue
    - Add 'plan' label to the linked issue
+
+   **GitHub Integration**: If GitHub tools are available, update labels automatically. If not available, use:
+   ```bash
+   gh issue edit <issue-number> --remove-label "Specification" --add-label "Plan"
+   ```
 
 9. Report results with branch name, PR URL, file paths, and generated artifacts.
 

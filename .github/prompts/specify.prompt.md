@@ -33,6 +33,11 @@ Given that feature description, do this:
    - Labels:
      - `Specification` (always - indicates current phase)
      - Type-based label: `Docs`, `Fix`, `Patch`, `Minor`, or `Major` based on the type of change
+   
+   **GitHub Integration**: If GitHub tools or integrations are available (such as GitHub MCP Server or other GitHub integrations), use them to create the issue automatically. If not available, provide this fallback command:
+   ```bash
+   gh issue create --title "<Icon> [Type]: <Feature name>" --body-file <SPEC_FILE> --label "Specification,<Type>" --body "<existing body>\n\n---\n**Feature Branch**: `<BRANCH_NAME>`"
+   ```
 6. Report completion with branch name, spec file path, issue number, and readiness for the next phase.
 
 Note: The script creates and checks out the new branch and initializes the spec file before writing.

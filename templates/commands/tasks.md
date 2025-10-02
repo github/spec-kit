@@ -60,6 +60,28 @@ $ARGUMENTS
    - Dependency notes
    - Parallel execution guidance
 
+8. Update the Pull Request description:
+   - Append the tasks.md content to the existing PR description
+   - Format tasks with checkboxes for each task phase:
+     * Setup: `- [ ] T001: Task description`
+     * Tests: `- [ ] T002: Task description [P]`
+     * Core: `- [ ] T003: Task description`
+     * Integration: `- [ ] T004: Task description`
+     * Polish: `- [ ] T005: Task description [P]`
+   - Keep the existing PR content (summary, plan.md content, issue link)
+   - Add a section header before tasks: `## Implementation Tasks`
+   
+   **GitHub Integration**: If GitHub tools or integrations are available (such as through MCP), use them to update the PR description automatically. If not available, provide this fallback command:
+   ```bash
+   # Get current PR description and append tasks
+   gh pr view <PR-number> --json body --jq .body > temp_body.md
+   cat tasks.md >> temp_body.md
+   gh pr edit <PR-number> --body-file temp_body.md
+   rm temp_body.md
+   ```
+
+9. Report completion with task count, file path, and PR update status.
+
 Context for task generation: {ARGS}
 
 The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.

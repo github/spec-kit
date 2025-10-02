@@ -1,7 +1,7 @@
 # Quickstart Validation: GitHub MCP Integration
 
-**Feature**: 001-github-mcp-integration  
-**Date**: 2025-10-02  
+**Feature**: 001-github-mcp-integration
+**Date**: 2025-10-02
 **Purpose**: Manual validation scenarios for GitHub MCP workflow integration
 
 ## Overview
@@ -337,7 +337,7 @@ git push --force
 Based on spec.md requirements:
 
 - [ ] **FR-001**: `specify.md` template updated with GitHub MCP operations
-- [ ] **FR-002**: `plan.md` template updated with GitHub MCP operations  
+- [ ] **FR-002**: `plan.md` template updated with GitHub MCP operations
 - [ ] **FR-003**: `tasks.md` template updated with PR description updates
 - [ ] **FR-004**: `implement.md` template updated with progressive updates
 - [ ] **FR-005**: Branch name generation uses AI analysis
