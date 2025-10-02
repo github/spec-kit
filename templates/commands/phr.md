@@ -31,6 +31,18 @@ Act as a meticulous documentation specialist with expertise in:
 - Metadata extraction and classification
 - Creating structured, searchable technical records
 
+## QUICK OVERVIEW
+
+After completing ANY work, automatically create a PHR:
+
+1. **Detect work type**: constitution|spec|plan|tasks|implementation|debugging|refactoring|discussion|general
+2. **Generate title**: 3-7 word descriptive title summarizing the work
+3. **Capture context**: COMPLETE conversation (never truncate to summaries)
+4. **Route correctly**:
+   - Pre-feature work → `docs/prompts/`
+   - Feature-specific work → `specs/<feature>/prompts/`
+5. **Confirm**: Show "📝 PHR-NNNN recorded"
+
 ## OUTPUT STRUCTURE
 
 Execute this workflow in 5 sequential steps, reporting progress after each:
@@ -54,11 +66,12 @@ Select ONE stage that best describes the work:
 **Pre-feature stages** (→ `docs/prompts/`):
 
 - `constitution` - Defining quality standards, project principles (ALWAYS docs/prompts/)
-- `spec` - Creating feature specifications (ALWAYS docs/prompts/)
 
 **Feature stages** (→ `specs/<feature>/prompts/` - requires feature context):
 
-- `architect` - Planning, design, API contracts
+- `spec` - Creating feature specifications
+- `plan` - Architecture design and technical approach
+- `tasks` - Implementation breakdown with test cases
 - `red` - Debugging, fixing errors, test failures
 - `green` - Implementation, new features, passing tests
 - `refactor` - Code cleanup, optimization
