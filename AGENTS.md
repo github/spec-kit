@@ -1,4 +1,4 @@
-# AGENTS.md
+# Agent Integration Guide
 
 ## About Spec Kit and Specify
 
@@ -50,7 +50,7 @@ Add the new agent to the `AI_CHOICES` dictionary in `src/specify_cli/__init__.py
 ```python
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
-    "claude": "Claude Code", 
+    "claude": "Claude Code",
     "gemini": "Gemini CLI",
     "cursor": "Cursor",
     "qwen": "Qwen Code",
@@ -138,7 +138,7 @@ Add to case statement:
 case "$AGENT_TYPE" in
   # ... existing cases ...
   windsurf) update_agent_file "$WINDSURF_FILE" "Windsurf" ;;
-  "") 
+  "")
     # ... existing checks ...
     [ -f "$WINDSURF_FILE" ] && update_agent_file "$WINDSURF_FILE" "Windsurf";
     # Update default creation condition
@@ -191,17 +191,25 @@ elif selected_ai == "windsurf":
 ## Agent Categories
 
 ### CLI-Based Agents
+
 Require a command-line tool to be installed:
-- **Claude Code**: `claude` CLI
-- **Gemini CLI**: `gemini` CLI  
-- **Cursor**: `cursor-agent` CLI
-- **Qwen Code**: `qwen` CLI
-- **opencode**: `opencode` CLI
+
+| Agent | CLI Tool |
+|-------|----------|
+| Claude Code | `claude` |
+| Gemini CLI | `gemini` |
+| Cursor | `cursor-agent` |
+| Qwen Code | `qwen` |
+| opencode | `opencode` |
 
 ### IDE-Based Agents
+
 Work within integrated development environments:
-- **GitHub Copilot**: Built into VS Code/compatible editors
-- **Windsurf**: Built into Windsurf IDE
+
+| Agent | Description |
+|-------|-------------|
+| GitHub Copilot | Built into VS Code/compatible editors |
+| Windsurf | Built into Windsurf IDE |
 
 ## Command File Formats
 
@@ -238,10 +246,13 @@ Command content with {SCRIPT} and {{args}} placeholders.
 ## Argument Patterns
 
 Different agents use different argument placeholders:
-- **Markdown/prompt-based**: `$ARGUMENTS`
-- **TOML-based**: `{{args}}`
-- **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
-- **Agent placeholders**: `__AGENT__` (replaced with agent name)
+
+| Type | Placeholder | Description |
+|------|-------------|-------------|
+| Markdown/prompt-based | `$ARGUMENTS` | Used in markdown-based commands |
+| TOML-based | `{{args}}` | Used in TOML configurations |
+| Script placeholders | `{SCRIPT}` | Replaced with actual script path |
+| Agent placeholders | `__AGENT__` | Replaced with agent name |
 
 ## Testing New Agent Integration
 

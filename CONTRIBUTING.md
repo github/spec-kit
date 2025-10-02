@@ -1,8 +1,8 @@
 ## Contributing to Spec Kit
 
-Hi there! We're thrilled that you'd like to contribute to Spec Kit. Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](LICENSE).
+Hi there! We're thrilled that you'd like to contribute to Spec Kit. Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](./LICENSE).
 
-Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+Please note that this project is released with a [Contributor Code of Conduct](./CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
 
 ## Prerequisites for running and testing code
 
@@ -11,7 +11,7 @@ These are one time installations required to be able to test your changes locall
 1. Install [Python 3.11+](https://www.python.org/downloads/)
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
-1. Have an [AI coding agent available](README.md#-supported-ai-agents)
+1. Have an [AI coding agent available](./README.md#-supported-ai-agents)
 
 ## Submitting a pull request
 
@@ -82,7 +82,7 @@ When submitting AI-assisted contributions, please ensure they include:
 
 - **Clear disclosure of AI use** - You are transparent about AI use and degree to which you're using it for the contribution
 - **Human understanding and testing** - You've personally tested the changes and understand what they do
-- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals  
+- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals
 - **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
 - **Your own analysis** - Share your thoughts on the end-to-end developer experience
 
