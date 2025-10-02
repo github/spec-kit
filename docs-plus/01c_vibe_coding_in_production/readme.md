@@ -35,9 +35,9 @@ A significant caveat to vibe coding is **tech debt**. Currently, there isn't a g
 
 ---
 
-### 4. How to Succeed at Vibe Coding: Be Claude's PM 💼
+### 4. How to Succeed at Vibe Coding: Be LLM's PM 💼
 
-"Ask not what Claude can do for you but what you can do for Claude". When vibe coding, you act as a product manager for the AI.
+"Ask not what LLM can do for you but what you can do for LLM". When vibe coding, you act as a product manager for the AI.
 
 * **Provide Comprehensive Guidance**: Think about what guidance and context a new employee would need to succeed. Don't just give quick commands like "make this feature"; provide a tour of the codebase, requirements, specifications, and constraints.
 * **Invest in Pre-Planning**: Spend 15-20 minutes collecting guidance into a single prompt. This involves:
@@ -66,7 +66,7 @@ The speaker shares an experience of merging a large, AI-written change to a prod
 
 To successfully vibe code in production:
 
-1.  **Be Claude's PM**: Provide clear guidance and context.
+1.  **Be LLM's PM**: Provide clear guidance and context.
 2.  **Focus on Leaf Nodes**: Apply vibe coding to isolated parts of the codebase where tech debt is contained.
 3.  **Prioritize Verifiability**: Design systems with clear inputs and outputs, and use tests that can confirm correctness without requiring code review.
 4.  **Remember the Exponential**: While optional today, embracing vibe coding will become crucial to leverage future AI models that produce vast amounts of work. Those who resist will become bottlenecks.
