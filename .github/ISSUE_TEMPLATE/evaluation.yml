@@ -1,0 +1,137 @@
+name: Evaluation Task
+description: Define an evaluation/testing task to validate automation behavior
+title: "[Eval]: "
+labels: ["evaluation", "testing", "v0"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Evaluation tasks help us measure and improve automation quality. Use this template to define specific tests and metrics.
+
+  - type: dropdown
+    id: eval_type
+    attributes:
+      label: Evaluation Type
+      description: What aspect of Spec Kit are we evaluating?
+      options:
+        - PHR Coverage (creation rate across interaction types)
+        - PHR Completeness (context preservation, no truncation)
+        - ADR Automation (significance test, clustering)
+        - Agent Compliance (following AGENTS.md protocol)
+        - Command Success Rate (/ commands working correctly)
+        - Template Quality (generated output quality)
+        - Cross-Agent Compatibility
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: What behavior are we testing? What do we expect to happen?
+      placeholder: "PHRs should be created for ~95% of work sessions, not just / commands. Currently PHRs only fire for formal commands."
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_state
+    attributes:
+      label: Current State
+      description: What's the baseline? What do we observe now?
+      placeholder: |
+        ✅ PHRs work for / commands (command-rules.md injection)
+        ❌ PHRs don't work for general conversations
+        ❌ No data on actual creation rate
+    validations:
+      required: true
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Success Metrics
+      description: How will we measure success? What are the target values?
+      placeholder: |
+        - PHR creation rate: ≥95% (target), currently unknown
+        - Context completeness: 100% (no truncation)
+        - Correct location: 100% (docs/prompts/)
+        - Correct stage detection: ≥90%
+    validations:
+      required: true
+
+  - type: textarea
+    id: test_scenarios
+    attributes:
+      label: Test Scenarios
+      description: List specific test cases to run
+      placeholder: |
+        1. Formal command: `/plan Design auth system` → expect PHR
+        2. General conversation: "Should we use GraphQL?" → expect PHR
+        3. Generate prompt: "Create a login page" → expect PHR
+        4. Quick question: "What's the API endpoint?" → expect PHR
+        5. Nested command: Running /phr → expect NO PHR (only exception)
+    validations:
+      required: true
+
+  - type: textarea
+    id: test_harness
+    attributes:
+      label: Test Harness Design
+      description: How will we run these tests? What tooling/infrastructure is needed?
+      placeholder: |
+        ```yaml
+        # tests/evals/phr-coverage/test-general-conversations.yml
+        scenarios:
+          - name: "General architecture discussion"
+            input: "Should we use GraphQL or REST API?"
+            expect_phr: true
+            expect_location: "docs/prompts/general/"
+        ```
+
+  - type: dropdown
+    id: agents
+    attributes:
+      label: Agents to Test
+      description: Which AI agents should this evaluation cover?
+      multiple: true
+      options:
+        - GitHub Copilot
+        - Claude Code
+        - Cursor
+        - Gemini CLI
+        - Cline
+        - All supported agents
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Notes
+      description: Technical details, dependencies, or constraints
+      placeholder: |
+        - Need to parse agent chat logs to detect PHR creation
+        - Compare AGENTS.md guidance vs actual behavior
+        - May need different harness per agent (API vs IDE)
+
+  - type: dropdown
+    id: blocking
+    attributes:
+      label: Blocking Priority
+      description: Does this evaluation block v0 release?
+      options:
+        - "Yes - critical for v0"
+        - "No - can ship without"
+        - "Depends on results"
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: Related Issues/Docs
+      description: Link to related issues, PRs, or documentation
+      placeholder: |
+        - Related to #123 (PHR automation)
+        - See protocol-templates/AGENTS.md for current rules
+        - See memory/command-rules.md for injection logic
