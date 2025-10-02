@@ -140,7 +140,7 @@ Spec Kit integrates with GitHub to provide automated workflow tracking:
 
 - **Issue Creation**: `/specify` creates GitHub issues with spec content and semantic labels (`Specification` + type)
 - **Pull Request Management**: `/plan` creates draft PRs linked to issues; `/implement` marks them ready for review
-- **Label Conventions**: Semantic labels track workflow phase (`Specification`, `Plan`, `Implementation`) and change type (`Docs`, `Fix`, `Patch`, `Minor`, `Major`)
+- **Label Conventions**: Semantic labels track workflow phase (`Specification`, `Plan`, `implement`) and change type (`Docs`, `Fix`, `Patch`, `Minor`, `Major`)
 - **Progressive Updates**: PR descriptions are updated with plan content, task checkboxes, and completion status
 - **MCP Integration**: Uses GitHub MCP (Model Context Protocol) when available through AI agents
 - **CLI Fallback**: Provides `gh` CLI commands when GitHub MCP is unavailable
