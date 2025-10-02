@@ -17,6 +17,26 @@ While this means development will become more conversational, it reinforces the 
 
 ---
 
+## The New Coding Revolution: Why AI-Native Programmers Will Win
+
+At 28, Alexandr Wang has built Scale AI and now leads a major AI lab at Meta. His prediction? Every line of code he's ever written will eventually be replaced by AI-generated software.
+
+### A Generational Shift
+
+Wang sees today's moment as equivalent to the PC revolution. Just as Gates and Zuckerberg gained an edge by tinkering with early computers, today's teenagers can dominate by spending thousands of hours "Spec-driven Vibe-coding" with AI.
+
+The advantage won't come from traditional programming skills. It will come from growing up with AI as a collaborative partner—building an intuition that older programmers, trained in pure human-to-machine coding, will struggle to match.
+
+### The Real Competition
+
+This isn't about AI replacing programmers. It's about a new kind of programmer emerging: one who intuitively understands how to harness AI to bring ideas to life.
+
+The developers who build the next generation of transformative software might not be grinding through CS degrees. They'll be young people who learned to think and create in partnership with AI.
+
+**The message is clear:** The future belongs to those who start experimenting now. The revolution isn't coming—it's already here.
+
+---
+
 Use `specifyplus` or `sp` commands instead of `specify`.
 
 <div align="center">
