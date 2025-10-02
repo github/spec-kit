@@ -109,6 +109,12 @@ build_variant() {
   mkdir -p "$SPEC_DIR"
   
   [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
+  
+  # Copy AGENTS.md from protocol-templates to project root (not in .specify/memory)
+  if [[ -f protocol-templates/AGENTS.md ]]; then
+    cp protocol-templates/AGENTS.md "$base_dir/AGENTS.md"
+    echo "Copied AGENTS.md to project root (from protocol-templates)"
+  fi
   # If constitutionplus.md exists, overwrite constitution.md in release package
   if [[ -f memory/constitutionplus.md ]]; then
     mkdir -p "$SPEC_DIR/memory"
@@ -116,12 +122,6 @@ build_variant() {
     echo "Injected constitutionplus.md as .specify/memory/constitution.md"
     # Do not ship constitutionplus.md in the archive
     rm -f "$SPEC_DIR/memory/constitutionplus.md" 2>/dev/null || true
-  fi
-  
-  # Copy AGENTS.md from protocol-templates to project root (not in .specify/memory)
-  if [[ -f protocol-templates/AGENTS.md ]]; then
-    cp protocol-templates/AGENTS.md "$base_dir/AGENTS.md"
-    echo "Copied AGENTS.md to project root (from protocol-templates)"
   fi
   
   # Only copy the relevant script variant directory
