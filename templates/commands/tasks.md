@@ -71,7 +71,7 @@ $ARGUMENTS
    - Keep the existing PR content (summary, plan.md content, issue link)
    - Add a section header before tasks: `## Implementation Tasks`
 
-   **GitHub Integration**: If GitHub tools or integrations are available (such as through MCP), use them to update the PR description automatically. If not available, provide this fallback command:
+   **GitHub Integration**: If GitHub tools or integrations are available (such as GitHub MCP Server), use them to update the PR description automatically. If not available, provide this fallback command:
    ```bash
    # Get current PR description and append tasks
    gh pr view <PR-number> --json body --jq .body > temp_body.md
