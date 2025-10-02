@@ -1,4 +1,4 @@
-> **SpecifyPlus**: Enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. It is a practical fork of github/spec-kit for spec-driven development of agentic AI systems. It provides patterns, templates, and reference projects for building scalable, distributed multi-agent apps with the OpenAI Agents SDK, MCP, A2A, and a cloud-native runtime stack—Docker, Kubernetes, Dapr (Actors & Workflows), and Ray. Use it to define specs, spin up services, orchestrate agents, and ship production-ready stacks faster with guardrails and CI-friendly scaffolds. 
+> **SpecifyPlus**: It enables Spec-driven Vibe-coding by combining the rapid, conversational generation power of "vibe coding" with the structure and architectural coherence provided by the "spec-driven" methodology. This is a enhanced Spec-Driven Development toolkit with patterns & templates for building scalable multi-agent AI systems. It is a practical fork of github/spec-kit for spec-driven development of agentic AI systems. It provides patterns, templates, and reference projects for building scalable, distributed multi-agent apps with the OpenAI Agents SDK, MCP, A2A, and a cloud-native runtime stack—Docker, Kubernetes, Dapr (Actors & Workflows), and Ray. Use it to define specs, spin up services, orchestrate agents, and ship production-ready stacks faster with guardrails and CI-friendly scaffolds. 
 
 Use `specifyplus` or `sp` commands instead of `specify`.
 
@@ -50,22 +50,25 @@ Choose your preferred installation method:
 Install once and use everywhere:
 
 ```bash
-uv tool install specifyplus --from git+https://github.com/panaversity/spec-kit-plus.git
+# From PyPI (recommended)
+pip install specifyplus
+
+# Or with uv tools
+uv tool install specifyplus
+ 
+# Upgrade to latest later
+pip install -U specifyplus
+uv tool upgrade specifyplus
+```
+
+You may uninstall specifyplus:
+
+```bash
+pip uninstall specifyplus
 
 # or
 
-pip install specifyplus
-```
-You may uninstall specify:
-
-```bash
-
-uv tool --help
-
-uv tool list
-
-uv tool uninstall specify-cli
-
+uv tool uninstall specifyplus
 ```
 
 Then use the tool directly:
@@ -84,9 +87,10 @@ sp check
 Run directly without installing:
 
 ```bash
-uvx --from git+https://github.com/panaversity/spec-kit-plus.git specifyplus init <PROJECT_NAME>
+uvx specifyplus --help
+uvx specifyplus init <PROJECT_NAME>
 # or
-uvx --from git+https://github.com/panaversity/spec-kit-plus.git sp init <PROJECT_NAME>
+uvx sp init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -162,6 +166,11 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 ## 🔧 Specify CLI Reference
 
+### Learning subagents (optional)
+
+- Spec Architect – `docs-plus/02_start_prompting/02_qwen_code/04_subagents/prompts/0002-spec-architect.prompt.md`
+- PHR/ADR Curator & Evaluator – `docs-plus/02_start_prompting/02_qwen_code/04_subagents/prompts/0004-phr-adr-curator.prompt.md`
+
 > **Note**: Use `specifyplus` or `sp` commands instead of `specify` in this fork.
 
 The `specify` command supports the following options:
@@ -192,46 +201,46 @@ The `specify` command supports the following options:
 
 ```bash
 # Basic project initialization
-specify init my-project
+specifyplus init my-project
 
 # Initialize with specific AI assistant
-specify init my-project --ai claude
+specifyplus init my-project --ai claude
 
 # Initialize with Cursor support
-specify init my-project --ai cursor
+specifyplus init my-project --ai cursor
 
 # Initialize with Windsurf support
-specify init my-project --ai windsurf
+specifyplus init my-project --ai windsurf
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
-specify init my-project --ai copilot --script ps
+specifyplus init my-project --ai copilot --script ps
 
 # Initialize in current directory
-specify init . --ai copilot
+specifyplus init . --ai copilot
 # or use the --here flag
-specify init --here --ai copilot
+specifyplus init --here --ai copilot
 
 # Force merge into current (non-empty) directory without confirmation
-specify init . --force --ai copilot
+specifyplus init . --force --ai copilot
 # or 
-specify init --here --force --ai copilot
+specifyplus init --here --force --ai copilot
 
 # Skip git initialization
-specify init my-project --ai gemini --no-git
+specifyplus init my-project --ai gemini --no-git
 
 # Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
+specifyplus init my-project --ai claude --debug
 
 # Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
+specifyplus init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
-specify check
+specifyplus check
 ```
 
 ### Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+After running `specifyplus init`, your AI coding agent will have access to these slash commands for structured development:
 
 | Command         | Description                                                           |
 |-----------------|-----------------------------------------------------------------------|
@@ -314,22 +323,29 @@ If you encounter issues with an agent, please open an issue so we can refine the
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
 
-You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
+You can use SpecifyPlus to bootstrap your project, which will bring in the required artifacts in your environment. Run:
 
 ```bash
-specify init <project_name>
+specifyplus init <project_name>
+# or
+sp init <project_name>
 ```
 
 Or initialize in the current directory:
 
 ```bash
-specify init .
+specifyplus init .
 # or use the --here flag
-specify init --here
+specifyplus init --here
 # Skip confirmation when the directory already has files
-specify init . --force
+specifyplus init . --force
 # or
-specify init --here --force
+specifyplus init --here --force
+# or using alias
+sp init .
+sp init --here
+sp init . --force
+sp init --here --force
 ```
 
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
@@ -337,30 +353,37 @@ specify init --here --force
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai claude
-specify init <project_name> --ai gemini
-specify init <project_name> --ai copilot
-specify init <project_name> --ai cursor
-specify init <project_name> --ai qwen
-specify init <project_name> --ai opencode
-specify init <project_name> --ai codex
-specify init <project_name> --ai windsurf
+specifyplus init <project_name> --ai claude
+specifyplus init <project_name> --ai gemini
+specifyplus init <project_name> --ai copilot
+specifyplus init <project_name> --ai cursor
+specifyplus init <project_name> --ai qwen
+specifyplus init <project_name> --ai opencode
+specifyplus init <project_name> --ai codex
+specifyplus init <project_name> --ai windsurf
 # Or in current directory:
-specify init . --ai claude
-specify init . --ai codex
+specifyplus init . --ai claude
+specifyplus init . --ai codex
 # or use --here flag
-specify init --here --ai claude
-specify init --here --ai codex
+specifyplus init --here --ai claude
+specifyplus init --here --ai codex
 # Force merge into a non-empty current directory
-specify init . --force --ai claude
+specifyplus init . --force --ai claude
 # or
-specify init --here --force --ai claude
+specifyplus init --here --force --ai claude
+# or using alias
+sp init <project_name> --ai claude
+sp init . --ai claude
+sp init --here --ai claude
+sp init . --force --ai claude
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, or Codex CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai claude --ignore-agent-tools
+specifyplus init <project_name> --ai claude --ignore-agent-tools
+# or
+sp init <project_name> --ai claude --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles

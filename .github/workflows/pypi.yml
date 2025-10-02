@@ -53,8 +53,12 @@ jobs:
 
           # Add new [project.scripts] section
           printf '%s\n' "" "[project.scripts]" \
-            'specifyplus = "specify_cli:main"' \
-            'sp = "specify_cli:main"' >> pyproject.toml
+            'specifyplus = "specifyplus_cli:main"' \
+            'sp = "specifyplus_cli:main"' >> pyproject.toml
+
+          # Ensure wheel build targets the new package path
+          # Replace packages = ["src/specify_cli"] -> packages = ["src/specifyplus_cli"]
+          sed -i 's#^packages = \["src/specify_cli"\]#packages = ["src/specifyplus_cli"]#' pyproject.toml
 
           # Determine version (prefer manual input, else derive from tag)
           if [[ -n "${VERSION_INPUT:-}" ]]; then
