@@ -1,0 +1,3 @@
+After completing the main command, automatically create a PHR: (1) Detect stage: constitution|spec|architect|green|red|refactor|explainer|general, (2) Generate 3-7 word title, (3) Load `.**/commands/phr.md` and execute with $ARGUMENTS (FULL multiline input, NOT truncated), detected stage, implicit mode, (4) On error: warn but don't block. CRITICAL: Preserve complete user input in PHR. Skip only for /phr itself.
+
+**Architecture Decisions**: When significant architectural decisions are made (typically during /plan), suggest documenting with: "📋 Architecture decisions identified. Document reasoning and tradeoffs? Run `/adr [decision-title]`" Wait for user consent.

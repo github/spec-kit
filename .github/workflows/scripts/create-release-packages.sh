@@ -40,6 +40,16 @@ rewrite_paths() {
 generate_commands() {
   local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5
   mkdir -p "$output_dir"
+  
+  # Load command-rules.md for prepending (universal pre-execution rules)
+  local command_rules_content=""
+  if [[ -f "memory/command-rules.md" ]]; then
+    command_rules_content=$(tr -d '\r' < "memory/command-rules.md")
+    echo "Loaded command-rules.md for universal pre-execution injection"
+  else
+    echo "Warning: memory/command-rules.md not found - commands will not have implicit behavior support" >&2
+  fi
+  
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
     local name description script_command body
@@ -72,6 +82,11 @@ generate_commands() {
     # Apply other substitutions
     body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
     
+    # Append command-rules.md content at the end (simpler, no frontmatter extraction needed)
+    if [[ -n $command_rules_content ]]; then
+      body=$(printf '%s\n\n---\n\n%s' "$body" "$command_rules_content")
+    fi
+    
     case $ext in
       toml)
         { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/$name.$ext" ;;
@@ -94,6 +109,12 @@ build_variant() {
   mkdir -p "$SPEC_DIR"
   
   [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
+  
+  # Copy AGENTS.md from protocol-templates to project root (not in .specify/memory)
+  if [[ -f protocol-templates/AGENTS.md ]]; then
+    cp protocol-templates/AGENTS.md "$base_dir/AGENTS.md"
+    echo "Copied AGENTS.md to project root (from protocol-templates)"
+  fi
   # If constitutionplus.md exists, overwrite constitution.md in release package
   if [[ -f memory/constitutionplus.md ]]; then
     mkdir -p "$SPEC_DIR/memory"

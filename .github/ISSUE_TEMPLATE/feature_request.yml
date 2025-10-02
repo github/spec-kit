@@ -1,0 +1,102 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for Spec Kit
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please provide as much detail as possible.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: What area does this feature relate to?
+      options:
+        - Specify CLI (new commands, options)
+        - PHR/ADR Automation
+        - Agent Commands (new / commands)
+        - Agent Support (new AI agent integration)
+        - Templates (new or improved templates)
+        - Documentation
+        - Build/Release Process
+        - Developer Experience
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to your workflow?
+      options:
+        - Critical (blocking workflow)
+        - High (major improvement)
+        - Medium (nice to have)
+        - Low (future consideration)
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What's the current pain point?
+      placeholder: "Currently, when using multiple agents, I have to manually copy context to .cursor/rules/, .github/copilot-instructions.md, etc..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe your ideal solution. How would this feature work?
+      placeholder: "Add a build step that automatically generates agent-specific context files from AGENTS.md..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other approaches have you considered? What are their trade-offs?
+      placeholder: "1. Manual copying (current state) - too error-prone\n2. Symlinks - doesn't work across all platforms\n3. Generated files (proposed) - requires build step"
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples/References
+      description: Links to similar features in other tools, mockups, or example implementations
+      placeholder: "Similar to how ESLint generates .eslintrc from extends:..."
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How will we know this feature is complete and working correctly?
+      placeholder: |
+        - [ ] AGENTS.md generates .cursor/rules/specify.md
+        - [ ] AGENTS.md generates .github/copilot-instructions.md
+        - [ ] Generated files stay in sync with AGENTS.md
+        - [ ] Works for all supported agents
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Breaking Change?
+      description: Would this feature require breaking changes to existing projects?
+      options:
+        - "No"
+        - "Yes - but worth it"
+        - "Yes - needs migration guide"
+        - "Unsure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other information that might be helpful (diagrams, related issues, implementation notes)

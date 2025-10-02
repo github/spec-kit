@@ -1,0 +1,110 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Spec Kit
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us resolve it quickly.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Spec Kit is affected?
+      options:
+        - Specify CLI (`specify init`, `specify check`)
+        - PHR Automation (Post-Hoc Reflection creation)
+        - ADR Automation (Architecture Decision Records)
+        - Agent Commands (/.commands like /plan, /spec, etc.)
+        - Build/Release Scripts
+        - Templates (spec, plan, tasks, etc.)
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: AI Agent
+      description: Which AI agent are you using?
+      options:
+        - GitHub Copilot
+        - Claude Code
+        - Cursor
+        - Gemini CLI
+        - Qwen Code
+        - opencode
+        - Windsurf
+        - Cline
+        - Other/Multiple
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "When I run /phr, it creates the file in the wrong location..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: "PHR should be created in docs/prompts/[stage]/..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: "PHR was created in /memory/ instead..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+      placeholder: |
+        1. Initialize project with `specify init --ai copilot`
+        2. Run `/plan Design auth system`
+        3. Check file location
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your development environment
+      placeholder: |
+        - OS: macOS 14.5
+        - Specify CLI version: 0.1.0
+        - Python version: 3.11.5
+        - Agent version: Copilot Chat v0.12.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs/Output
+      description: Include any error messages, terminal output, or agent responses
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other context about the problem (screenshots, related issues, workarounds you've tried)

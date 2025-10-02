@@ -1,0 +1,105 @@
+name: Documentation Improvement
+description: Suggest improvements to docs, guides, or templates
+title: "[Docs]: "
+labels: ["documentation", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve Spec Kit documentation! This includes README files, guides, templates, and inline comments.
+
+  - type: dropdown
+    id: doc_type
+    attributes:
+      label: Documentation Type
+      description: What kind of documentation needs improvement?
+      options:
+        - README.md (main project docs)
+        - Installation Guide (docs/installation.md)
+        - Quickstart Guide (docs/quickstart.md)
+        - Spec-Driven Development Guide (spec-driven.md)
+        - AGENTS.md Protocol
+        - Templates (spec, plan, tasks, ADR, PHR)
+        - Command Documentation (/.commands)
+        - API/CLI Reference
+        - Contributing Guide
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue Type
+      description: What's wrong with the current documentation?
+      options:
+        - Missing documentation
+        - Outdated/incorrect information
+        - Unclear explanation
+        - Missing examples
+        - Poor organization
+        - Typos/grammar
+        - Broken links
+        - Needs diagrams/visuals
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Which file(s) or section(s) need improvement?
+      placeholder: |
+        - File: docs-plus/05_spec_driven_development/05_adr/readme.md
+        - Section: "ADR Granularity: Clusters vs Atomic Decisions"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Current Problem
+      description: What's missing, unclear, or incorrect?
+      placeholder: "The ADR clustering section doesn't explain WHEN to cluster vs when to separate. Needs decision tree or flowchart."
+    validations:
+      required: true
+
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Suggested Improvement
+      description: How should we improve this? What should be added/changed?
+      placeholder: |
+        Add a decision flowchart:
+        1. Are these technologies part of the same stack? → Yes → Cluster
+        2. Would they likely change together? → Yes → Cluster
+        3. Are they independent choices? → Yes → Separate ADRs
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples to Add
+      description: Specific examples, code snippets, or use cases that would help
+      placeholder: |
+        Example 1: "Frontend Stack" (Next.js + Tailwind + Vercel) → ONE ADR
+        Example 2: "Frontend Stack" + "Backend Stack" → TWO ADRs (independent choices)
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Target Audience
+      description: Who would benefit most from this improvement?
+      options:
+        - New users (getting started)
+        - Existing users (advanced usage)
+        - Contributors (development)
+        - All audiences
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Links to related docs, similar projects with good examples, or other helpful context
