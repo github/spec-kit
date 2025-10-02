@@ -70,7 +70,7 @@ $ARGUMENTS
      * Polish: `- [ ] T005: Task description [P]`
    - Keep the existing PR content (summary, plan.md content, issue link)
    - Add a section header before tasks: `## Implementation Tasks`
-   
+
    **GitHub Integration**: If GitHub tools or integrations are available (such as through MCP), use them to update the PR description automatically. If not available, provide this fallback command:
    ```bash
    # Get current PR description and append tasks

@@ -1,16 +1,20 @@
 <!--
 Sync Impact Report:
-Version Change: Initial Constitution v1.0.0 (replacing incorrect Process-PSModule content)
-Modified Principles: Complete rewrite for Spec Kit project
-Added Sections: All sections newly written for Spec Kit
-Removed Sections: All Process-PSModule content removed
+Version Change: v1.0.0 → v1.1.0 (MINOR: New capabilities added)
+Modified Principles: None (existing principles unchanged)
+Added Sections:
+  - Product Characteristics: Added "GitHub Workflow Integration" bullet
+  - Core Workflow: Added GitHub integration notes with label tracking
+  - GitHub Workflow Tracking: New section documenting automated issue/PR management
 Templates Requiring Updates:
-  ✅ .specify/templates/plan-template.md - references constitution check
-  ✅ .specify/templates/spec-template.md - aligned with specification-first principle
-  ✅ .specify/templates/tasks-template.md - aligned with workflow principles
-  ✅ .github/prompts/constitution.prompt.md - this command file
+  ✅ templates/commands/specify.md - already includes GitHub MCP operations
+  ✅ templates/commands/plan.md - already includes GitHub MCP operations
+  ✅ templates/commands/tasks.md - already includes GitHub MCP operations
+  ✅ templates/commands/implement.md - already includes GitHub MCP operations
+  ✅ .github/prompts/*.prompt.md - already synchronized with generic templates
 Follow-up TODOs:
   - Set RATIFICATION_DATE once constitution is approved by maintainers
+  - Update version to v1.1.0 in this document after merge
 -->
 
 # Spec Kit Constitution
@@ -27,18 +31,21 @@ Follow-up TODOs:
 - **Template-Based Consistency**: Standardized templates for specifications, plans, tasks, and commands ensure quality
 - **Agent-Agnostic Commands**: Command templates work across different AI agents with appropriate format adaptations
 - **Cross-Platform Design**: Works on Windows, macOS, and Linux with both bash and PowerShell script support
+- **GitHub Workflow Integration**: Automated issue and PR tracking with semantic labels and progressive updates through GitHub MCP (Model Context Protocol)
 
 ### Core Workflow
 
-Spec Kit implements a structured development flow executed through AI agent commands:
+Spec Kit implements a structured development flow executed through AI agent commands with integrated GitHub tracking:
 
 1. **Constitution** (`/constitution`) - Establish project principles and governance
-2. **Specification** (`/specify`) - Define WHAT to build and WHY (business requirements)
-3. **Planning** (`/plan`) - Determine HOW to implement (technical architecture)
-4. **Task Breakdown** (`/tasks`) - Create executable implementation checklist
-5. **Implementation** (`/implement`) - Execute tasks following TDD principles
+2. **Specification** (`/specify`) - Define WHAT to build and WHY (business requirements) → Creates GitHub issue with `Specification` label
+3. **Planning** (`/plan`) - Determine HOW to implement (technical architecture) → Creates draft PR, updates issue label to `Plan`
+4. **Task Breakdown** (`/tasks`) - Create executable implementation checklist → Updates PR description with task checkboxes
+5. **Implementation** (`/implement`) - Execute tasks following TDD principles → Marks PR ready for review, adds `Implementation` label
 6. **Analysis** (`/analyze`) - Validate alignment across all artifacts
 7. **Clarification** (`/clarify`) - Surface and resolve ambiguities
+
+**GitHub Integration**: The workflow uses GitHub MCP (Model Context Protocol) when available through AI agents to automatically create issues, manage PRs, and update labels. If GitHub MCP is unavailable, commands provide fallback instructions using the GitHub CLI (`gh`).
 
 ### Target Users
 
@@ -126,6 +133,17 @@ Each supported AI agent has its own directory convention:
 | Kilocode | `.kilocode/commands/` |
 | Auggie CLI | `.auggie/commands/` |
 | Roo Code | `.roo/commands/` |
+
+**GitHub Workflow Tracking**:
+
+Spec Kit integrates with GitHub to provide automated workflow tracking:
+
+- **Issue Creation**: `/specify` creates GitHub issues with spec content and semantic labels (`Specification` + type)
+- **Pull Request Management**: `/plan` creates draft PRs linked to issues; `/implement` marks them ready for review
+- **Label Conventions**: Semantic labels track workflow phase (`Specification`, `Plan`, `Implementation`) and change type (`Docs`, `Fix`, `Patch`, `Minor`, `Major`)
+- **Progressive Updates**: PR descriptions are updated with plan content, task checkboxes, and completion status
+- **MCP Integration**: Uses GitHub MCP (Model Context Protocol) when available through AI agents
+- **CLI Fallback**: Provides `gh` CLI commands when GitHub MCP is unavailable
 
 ## Core Principles
 

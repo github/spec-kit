@@ -29,7 +29,7 @@ $ARGUMENTS
 
 4. Execute implementation following the task plan:
    - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
+   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
@@ -81,12 +81,12 @@ $ARGUMENTS
    - **Apply appropriate label(s)** based on the type of change
    - **Link the PR** to the associated issue
    - **Mark PR as ready for review** (remove draft status if it exists)
-   
+
    **GitHub Integration**: If GitHub tools or integrations are available (such as through MCP), use them to update the PR status and labels automatically. If not available, provide these fallback commands:
    ```bash
    # Mark PR as ready for review
    gh pr ready <PR-number>
-   
+
    # Update labels
    gh pr edit <PR-number> --add-label "<Type>"
    ```
@@ -94,7 +94,7 @@ $ARGUMENTS
 9. Update issue labels:
    - Remove `Plan` label from the linked issue
    - Add `Implementation` label to the linked issue
-   
+
    **GitHub Integration**: If GitHub tools are available, update labels automatically. If not available, use:
    ```bash
    gh issue edit <issue-number> --remove-label "Plan" --add-label "Implementation"

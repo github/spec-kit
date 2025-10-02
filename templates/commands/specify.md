@@ -31,11 +31,11 @@ Given that feature description, do this:
      - Type: Docs, Fix, Patch, Feature, or Breaking change
      - Feature name: Short description from the spec
    - **Body**: The complete content of the SPEC_FILE (spec.md). Remove the first H1 (#) header and the first H2 (##) header if they exist. We want the issue description to start with the "Primary user story" section.
-   - **Labels**: 
+   - **Labels**:
      - `Specification` (always - indicates current phase)
      - Type-based label: `Docs`, `Fix`, `Patch`, `Minor`, or `Major` based on the type of change
    - **Branch reference**: Mention the feature branch in the issue description
-   
+
    **GitHub Integration**: If GitHub tools or integrations are available (such as through MCP), use them to create the issue automatically. If not available, provide this fallback command:
    ```bash
    gh issue create --title "<Icon> [Type]: <Feature name>" --body-file <SPEC_FILE> --label "Specification,<Type>" --body "<existing body>\n\n---\n**Feature Branch**: `<BRANCH_NAME>`"

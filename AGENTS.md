@@ -262,6 +262,93 @@ Different agents use different argument placeholders:
 4. **Command validation**: Ensure generated commands work with the agent
 5. **Context update**: Test agent context update scripts
 
+## GitHub Integration Support
+
+Spec Kit integrates with GitHub to track development workflow through issues and pull requests. Understanding how agents interact with GitHub is important for successful integration.
+
+### Agents with Native GitHub MCP Support
+
+The following agents have native support for GitHub MCP (Model Context Protocol):
+
+| Agent | GitHub MCP Support | Notes |
+|-------|-------------------|-------|
+| **GitHub Copilot** | ✅ Native | Full MCP integration in VS Code |
+| **Claude Code** | ✅ Likely | Anthropic supports MCP servers |
+| **Cursor** | ⚠️ Partial | May require additional setup |
+| **Gemini CLI** | ⚠️ Unknown | Requires testing |
+| **Qwen Code** | ⚠️ Unknown | Requires testing |
+| **opencode** | ⚠️ Unknown | Requires testing |
+| **Windsurf** | ⚠️ Unknown | Requires testing |
+
+**Legend:**
+- ✅ Native: Works out-of-the-box with GitHub MCP tools
+- ⚠️ Partial/Unknown: May work but requires testing or additional configuration
+- ❌ None: Requires GitHub CLI (`gh`) fallback
+
+### CLI Fallback for Non-MCP Agents
+
+For agents without native GitHub MCP support, Spec Kit commands provide manual fallback instructions using the GitHub CLI:
+
+**Example fallback commands:**
+```bash
+# Create issue
+gh issue create --title "🚀 [Minor]: Feature name" --body "..." --label "Specification,Minor"
+
+# Create draft PR
+gh pr create --title "🚀 [Minor]: Feature name" --body "..." --draft --head branch-name
+
+# Update PR status
+gh pr ready <PR-number>
+
+# Update labels
+gh issue edit <issue-number> --remove-label "Plan" --add-label "Implementation"
+```
+
+### Testing GitHub Integration
+
+When testing a new agent with GitHub integration:
+
+1. **Test with MCP first**: Try using GitHub MCP operations in commands
+2. **Verify error handling**: Ensure graceful fallback if MCP unavailable
+3. **Test CLI fallback**: Run provided `gh` commands manually
+4. **Document results**: Update agent table above with findings
+5. **Report issues**: Open GitHub issues for integration problems
+
+### GitHub Workflow Labels
+
+Spec Kit uses semantic labels to track workflow state:
+
+**Phase Labels** (mutually exclusive):
+- `Specification` - Issue created, spec written
+- `Plan` - Design complete, draft PR created
+- `Implementation` - Implementation in progress/complete
+
+**Type Labels** (semantic versioning hints):
+- `Docs` - Documentation changes
+- `Fix` - Bug fixes
+- `Patch` - Small fixes
+- `Minor` - New features (backward compatible)
+- `Major` - Breaking changes
+
+These labels are automatically managed by `/specify`, `/plan`, and `/implement` commands.
+
+### Troubleshooting GitHub Integration
+
+**Problem**: GitHub operations fail with "tools not available"
+
+**Solutions:**
+1. Check if agent supports GitHub MCP
+2. Verify GitHub CLI (`gh`) is installed and authenticated
+3. Use manual fallback commands provided in error messages
+4. Report issue with agent details for investigation
+
+**Problem**: Rate limiting errors
+
+**Solutions:**
+1. Wait for rate limit reset
+2. Use GitHub token with higher limits
+3. Continue with local workflow (specs/plans/tasks work offline)
+
 ## Common Pitfalls
 
 1. **Forgetting update scripts**: Both bash and PowerShell scripts must be updated

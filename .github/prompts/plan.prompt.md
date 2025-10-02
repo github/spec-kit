@@ -74,7 +74,7 @@ Given the implementation details provided as an argument, do this:
    ```bash
    # Create draft PR
    gh pr create --draft --title "<Icon> [Type]: <Description>" --body "<PR description>" --label "<Type>"
-   
+
    # Link to issue (if not using "Fixes #<issue>" in body)
    gh pr edit <PR-number> --add-label "<Type>"
    ```

@@ -75,7 +75,7 @@ Given the implementation details provided as an argument, do this:
    ```bash
    # Create draft PR
    gh pr create --draft --title "<Icon> [Type]: <Description>" --body "<PR description>" --label "<Type>"
-   
+
    # Link to issue (if not using "Fixes #<issue>" in body)
    gh pr edit <PR-number> --add-label "<Type>"
    ```
@@ -83,7 +83,7 @@ Given the implementation details provided as an argument, do this:
 8. Update issue labels:
    - Remove `Specification` label from the linked issue
    - Add `Plan` label to the linked issue
-   
+
    **GitHub Integration**: If GitHub tools are available, update labels automatically. If not available, use:
    ```bash
    gh issue edit <issue-number> --remove-label "Specification" --add-label "Plan"

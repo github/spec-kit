@@ -216,6 +216,37 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/analyze`      | Cross-artifact consistency & coverage analysis (run after /tasks, before /implement) |
 | `/implement`    | Execute all tasks to build the feature according to the plan         |
 
+### GitHub Integration
+
+Spec Kit integrates with GitHub to track your development workflow through issues and pull requests:
+
+**Workflow Tracking:**
+- **`/specify`** creates a GitHub issue with your specification and applies workflow labels
+- **`/plan`** creates a draft Pull Request linked to the issue
+- **`/tasks`** updates the PR description with a task checklist
+- **`/implement`** marks the PR as ready for review and updates labels
+
+**How It Works:**
+
+Spec Kit uses **GitHub MCP (Model Context Protocol)** when available through your AI agent. If GitHub MCP tools are not available, commands provide fallback instructions using the GitHub CLI (`gh`).
+
+**Label Management:**
+
+The workflow uses semantic labels to track progress:
+- **Phase labels**: `Specification`, `Plan`, `Implementation` (mutually exclusive)
+- **Type labels**: `Docs`, `Fix`, `Patch`, `Minor`, `Major` (for semantic versioning)
+
+Labels are automatically managed as you progress through the workflow phases.
+
+**Error Handling:**
+
+If GitHub API operations fail (network issues, rate limits, etc.), commands will:
+1. Log the error with context
+2. Continue with local workflow (specs, plans, tasks still created)
+3. Provide manual `gh` CLI commands to complete the GitHub operations
+
+This ensures your development workflow continues even when GitHub is unavailable.
+
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
@@ -546,6 +577,33 @@ Once the implementation is complete, test the application and resolve any runtim
 ---
 
 ## 🔍 Troubleshooting
+
+### GitHub API Issues
+
+If you encounter issues with GitHub integration:
+
+**Problem**: "GitHub MCP tools not available" or API errors
+
+**Solutions**:
+1. **Check GitHub CLI authentication**: Run `gh auth status` to verify you're logged in
+2. **Authenticate if needed**: Run `gh auth login` and follow the prompts
+3. **Use manual fallback**: Commands provide `gh` CLI commands you can run manually
+4. **Continue without GitHub**: Local workflow (specs, plans, tasks) works offline
+
+**Problem**: Rate limiting errors
+
+**Solution**: Wait for rate limit reset or use a GitHub token with higher limits
+
+**Problem**: PR/Issue creation fails
+
+**Solution**: Use the provided fallback commands:
+```bash
+# Create issue manually
+gh issue create --title "Title" --body "Description" --label "Specification,Minor"
+
+# Create PR manually  
+gh pr create --title "Title" --body "Description" --draft --head branch-name
+```
 
 ### Git Credential Manager on Linux
 

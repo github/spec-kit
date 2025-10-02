@@ -84,7 +84,7 @@ $ARGUMENTS
    ```bash
    # Mark PR as ready for review
    gh pr ready <PR-number>
-   
+
    # Update labels
    gh pr edit <PR-number> --add-label "<Type>"
    ```
