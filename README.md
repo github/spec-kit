@@ -133,8 +133,8 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
+| [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
-| [Codex CLI](https://github.com/openai/codex)              | ⚠️ | Codex [does not support](https://github.com/openai/codex/issues/2890) custom arguments for slash commands.  |
 
 ## 🔧 Specify CLI Reference
 

@@ -1095,17 +1095,6 @@ def init(
     console.print()
     console.print(enhancements_panel)
 
-    if selected_ai == "codex":
-        warning_text = """[bold yellow]Important Note:[/bold yellow]
-
-Custom prompts do not yet support arguments in Codex. You may need to manually specify additional project instructions directly in prompt files located in [cyan].codex/prompts/[/cyan].
-
-For more information, see: [cyan]https://github.com/openai/codex/issues/2890[/cyan]"""
-        
-        warning_panel = Panel(warning_text, title="Slash Commands in Codex", border_style="yellow", padding=(1,2))
-        console.print()
-        console.print(warning_panel)
-
 @app.command()
 def check():
     """Check that all required tools are installed."""
