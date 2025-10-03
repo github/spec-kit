@@ -1,10 +1,10 @@
 # Introduction to Spec-Driven Vibe-Coding
 
-This course teaches a disciplined, portable workflow for building software with AI coding agents. You will learn to convert requirements into concise, testable specifications; to direct agents through controlled, reviewable changes; and to deliver code with clear provenance and quality gates. The toolchain—Spec-Kit-Plus, Gemini CLI, **Qwen Code**, **Claude Code**, **Zed with ACP**, **MCP**, and **Cursor (as an alternative editor)**—is selected for cross-vendor portability, editor-native review, and alignment with current industry practice.
+This course teaches a disciplined, portable workflow for building software with AI coding agents. You will learn to convert requirements into concise, testable specifications; to direct agents through controlled, reviewable changes; and to deliver code with clear provenance and quality gates. The toolchain—Spec-Kit-Plus, Gemini CLI, Qwen Code, Claude Code, Zed with ACP, M, and Cursor (as an alternative editor)—is selected for cross-vendor portability, editor-native review, and alignment with current industry practice.
 
 ## Why this stack
 
-* **Spec-Kit** formalizes intent into plans and tasks directly in the repository, reducing ambiguity and rework.
+* **Spec-Kit-Plus** formalizes intent into plans and tasks directly in the repository, reducing ambiguity and rework.
 * **Gemini CLI** provides a modern, open reference for terminal coding agents and is widely mirrored across the ecosystem.
 * **Qwen Code** (adapted from the Gemini CLI pattern) broadens exposure to a non-Google model family while preserving the same workflow, improving transferability and capacity planning (quota/latency fallback).
 * **Claude Code** offers a first-party agent with strong reasoning/edit ergonomics, enabling structured comparisons of agent behavior without changing process.
