@@ -44,6 +44,7 @@ When working on spec-kit:
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+5. When testing template changes locally, use `uv run specify init --local` to copy templates from your local repository instead of downloading from GitHub
 
 ## AI contributions in Spec Kit
 
