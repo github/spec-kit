@@ -33,7 +33,15 @@
 
 ## 🤔 What is Spec-Driven Development?
 
-Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+Spec-Driven Development is a **classic engineering discipline** where a **rigorous specification** serves as the authoritative blueprint for a system. For decades, it was the foundation upon which the world's most reliable and mission-critical software was built. This is a return to that tradition.
+
+For a time, this approach was overshadowed by Agile methodologies, which—while valuable for rapid iteration—often led to the neglect of comprehensive documentation. The specification became a secondary artifact, quickly falling out of sync with the "real" work of coding.
+
+Today, AI allows us to reunite the discipline of the past with the speed of the present.
+
+With spec-kit, the specification is restored as the **single source of truth**. You craft the system's design in structured natural language, and an AI engine generates the code directly from it. The specification is no longer a static document; it is the living source from which the implementation is derived.
+
+This ensures that the final product is a perfect reflection of the plan, reviving a glorious tradition of engineering excellence for the modern era, supercharged by GenAI.
 
 ## ⚡ Get started
 
