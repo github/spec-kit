@@ -1,0 +1,21 @@
+#!/usr/bin/env pwsh
+# Post-checkout hook: Runs after feature branch and directory creation
+# Arguments: $args[0] = feature description
+# Environment: $env:BRANCH_NAME, $env:SPEC_FILE, $env:FEATURE_NUM available
+
+param(
+    [Parameter(Position=0)]
+    [string]$FeatureDescription
+)
+
+# Example: Create GitHub issue
+# if (Get-Command gh -ErrorAction SilentlyContinue) {
+#     gh issue create --title "Spec: $FeatureDescription" --body "Branch: $env:BRANCH_NAME, Spec: $env:SPEC_FILE"
+# }
+
+# Example: Send notification
+# $message = "Feature $env:FEATURE_NUM created: $env:BRANCH_NAME"
+# Send-MailMessage -To "team@company.com" -Subject "New Spec" -Body $message -SmtpServer "smtp.company.com"
+
+# Default: Do nothing
+exit 0
