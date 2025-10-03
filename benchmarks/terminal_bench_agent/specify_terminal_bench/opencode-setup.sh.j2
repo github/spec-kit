@@ -1,0 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+
+apt-get update
+apt-get install -y curl git python3 python3-venv
+
+# Install Node ecosystem for OpenCode CLI
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash
+
+source "$HOME/.nvm/nvm.sh"
+
+nvm install 22
+npm -v
+
+npm i -g opencode-ai@{{ version }}
+
+# Install uv for Specify CLI bootstrap
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+# Bootstrap Specify prompts inside the task repository
+cd /app
+uvx --from git+https://github.com/github/spec-kit.git specify init --no-git --ai opencode --script sh --ignore-agent-tools task-specification
