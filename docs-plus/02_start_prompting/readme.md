@@ -1,4 +1,64 @@
-# Starting Spec Driven Development (SDD)
+# Introduction to Spec-Driven Vibe-Coding
+
+This course teaches a disciplined, portable workflow for building software with AI coding agents. You will learn to convert requirements into concise, testable specifications; to direct agents through controlled, reviewable changes; and to deliver code with clear provenance and quality gates. The toolchain—Spec-Kit-Plus, Gemini CLI, **Qwen Code**, **Claude Code**, **Zed with ACP**, **MCP**, and **Cursor (as an alternative editor)**—is selected for cross-vendor portability, editor-native review, and alignment with current industry practice.
+
+## Why this stack
+
+* **Spec-Kit** formalizes intent into plans and tasks directly in the repository, reducing ambiguity and rework.
+* **Gemini CLI** provides a modern, open reference for terminal coding agents and is widely mirrored across the ecosystem.
+* **Qwen Code** (adapted from the Gemini CLI pattern) broadens exposure to a non-Google model family while preserving the same workflow, improving transferability and capacity planning (quota/latency fallback).
+* **Claude Code** offers a first-party agent with strong reasoning/edit ergonomics, enabling structured comparisons of agent behavior without changing process.
+* **Zed + ACP (Agent Client Protocol)** runs terminal agents **inside** the editor with first-class diff/review and multi-file editing, preserving human-in-the-loop control and giving a protocol-based path to host **any ACP-capable agent**.
+* **MCP (Model Context Protocol)** standardizes tool access (filesystem, search, etc.) so the same toolchain can be reused across agents and models with least-privilege allowlists.
+* **Cursor (alternative to Zed)** provides an integrated AI editor with strong in-editor assistance, rapid onboarding, and wide adoption. It is appropriate when teams prioritize a unified product experience, minimal setup, and built-in workflows over protocol experimentation. We include Cursor to:
+
+  * accommodate organizations already standardized on Cursor,
+  * demonstrate that the **spec → plan → tasks → review** discipline transfers to non-ACP editors, and
+  * offer a pragmatic option when course constraints favor simplicity over agent/editor decoupling.
+
+## Course sequence and rationale
+
+1. **Foundations: Command Line (Bash) and Version Control (Git)**
+   Establish operational basics to run agents and manage repositories: project navigation, environment variables, and safe, incremental commits. This ensures control and traceability before automation is introduced.
+
+2. **Specification Writing with Spec-Kit-Plus**
+   Express goals, constraints, and acceptance criteria concisely; generate plans and tasks. A shared, testable specification anchors all subsequent agent work and evaluation.
+
+3. **Agent Fundamentals: Gemini CLI, Qwen Code, and Claude Code**
+   Configure each agent and practice prompt patterns for incremental, verifiable changes. Coverage of all three emphasizes **process stability across vendors** rather than brand preference:
+
+   * **Gemini CLI** as the reference baseline.
+   * **Qwen Code** to validate cross-vendor parity using the same workflow.
+   * **Claude Code** to compare reasoning/edit proposals and discuss model-driven trade-offs.
+
+4. **Tooling Portability with MCP Servers**
+   Add limited-scope tools (e.g., read-only filesystem, fetch/search) via MCP with explicit allowlists. Demonstrate how identical tools serve different agents without changing course materials, reinforcing least-privilege design and portability.
+
+5. **Editor Integration (two paths)**
+   **5A. Zed + ACP External Agents (primary path):**
+   Attach the running agent to Zed for repository-aware assistance with **review-before-apply** diffs and multi-file edits. This path teaches protocol-driven portability (any ACP-capable agent can be hosted) and emphasizes auditability and repeatability.
+   **5B. Cursor (alternative path):**
+   Use Cursor’s integrated AI workflows to perform the same review discipline (diffs, small patches, clear commit messages) **without ACP setup**. This path reduces configuration overhead and is suitable for environments standardized on Cursor or where classroom time must minimize tooling complexity.
+
+6. **Implementation Loop: Spec → Plan → Tasks → Patches**
+   Execute a complete iteration from tasks to code changes using an agent, with editor diffs for inspection (Zed or Cursor). Emphasis on small, testable steps and clear commit messages to maintain code health and history quality.
+
+7. **Quality Gates: Testing and Static Checks**
+   Run unit tests and linters; iterate with the agent to resolve failures. Tie verification directly to the specification’s acceptance criteria.
+
+8. **Collaboration and Delivery: Branching, Pull Requests, Reviews**
+   Prepare changes for integration using branches and PRs. Document context by linking the spec, plan, and tasks; request review; and address feedback. Aligns agent-assisted work with standard team practices.
+
+9. **Extensions and Portability (Optional)**
+   Swap model/provider or switch the primary agent (Gemini ↔ Qwen ↔ Claude) and choose editor path (Zed/ACP ↔ Cursor) while retaining the same Spec-Kit, MCP, and review workflow. This validates protocol-driven design, minimizes vendor lock-in, and prepares learners for heterogeneous production environments.
+
+---
+
+**Outcome:** Graduates will execute a complete, auditable development cycle—specification to pull request—using one of several agents within a controlled, standards-oriented toolchain. The sequence progresses from operational control to structured intent, then to multi-agent acceleration and editor-native governance. Including **Cursor** as an alternative ensures the workflow is practical for teams that prefer an integrated editor experience while maintaining the course’s core emphasis on portability and disciplined review.
+
+---
+
+## Starting Spec Driven Development (SDD)
 This guide helps you choose and try AI coding tools based on your budget while maintaining the same Spec-Driven Development (SDD) methodology across all tiers.
 
 Choose the option that fits your budget; the disciplined loop remains the same: Spec → Plan → Prompt → Test/Evaluate → Refactor → Record → Review.
