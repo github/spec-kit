@@ -704,6 +704,79 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def copy_local_templates(project_path: Path, ai_assistant: str, script_type: str, tracker: StepTracker | None = None) -> None:
+    """Copy templates from local repository for testing (bypasses GitHub download)."""
+    # Find the spec-kit repo root (where this script is located)
+    cli_file = Path(__file__).resolve()
+    repo_root = cli_file.parent.parent.parent  # src/specify_cli/__init__.py -> repo root
+
+    if tracker:
+        tracker.start("local-copy", "copying from local repository")
+
+    # Create .specify directory structure
+    spec_dir = project_path / ".specify"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy memory directory
+    memory_src = repo_root / "memory"
+    if memory_src.exists():
+        shutil.copytree(memory_src, spec_dir / "memory", dirs_exist_ok=True)
+
+    # Copy scripts directory (filter by script type)
+    scripts_src = repo_root / "scripts"
+    if scripts_src.exists():
+        scripts_dest = spec_dir / "scripts"
+        scripts_dest.mkdir(exist_ok=True)
+
+        if script_type == "sh":
+            bash_src = scripts_src / "bash"
+            if bash_src.exists():
+                shutil.copytree(bash_src, scripts_dest / "bash", dirs_exist_ok=True)
+        elif script_type == "ps":
+            ps_src = scripts_src / "powershell"
+            if ps_src.exists():
+                shutil.copytree(ps_src, scripts_dest / "powershell", dirs_exist_ok=True)
+
+    # Copy templates directory (excluding commands subdirectory)
+    templates_src = repo_root / "templates"
+    if templates_src.exists():
+        templates_dest = spec_dir / "templates"
+        templates_dest.mkdir(exist_ok=True)
+        for item in templates_src.iterdir():
+            if item.name != "commands" and item.is_file():
+                shutil.copy2(item, templates_dest / item.name)
+
+    # Copy agent-specific command files
+    commands_src = repo_root / "templates" / "commands"
+    if commands_src.exists():
+        # Determine agent folder structure
+        agent_folder_map = {
+            "claude": ".claude/commands",
+            "gemini": ".gemini/commands",
+            "copilot": ".github/prompts",
+            "cursor": ".cursor/commands",
+            "qwen": ".qwen/commands",
+            "opencode": ".opencode/command",
+            "windsurf": ".windsurf/workflows",
+            "codex": ".codex/prompts",
+            "kilocode": ".kilocode/workflows",
+            "auggie": ".augment/commands",
+            "roo": ".roo/commands",
+            "q": ".amazonq/prompts"
+        }
+
+        agent_path = agent_folder_map.get(ai_assistant)
+        if agent_path:
+            agent_dir = project_path / agent_path
+            agent_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy command files
+            for cmd_file in commands_src.glob("*.md"):
+                shutil.copy2(cmd_file, agent_dir / cmd_file.name)
+
+    if tracker:
+        tracker.complete("local-copy", f"from {repo_root.name}")
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -760,6 +833,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    local: bool = typer.Option(False, "--local", help="Use local templates from repository instead of downloading from GitHub (for testing)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -975,12 +1049,28 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            # Create a httpx client with verify based on skip_tls
-            verify = not skip_tls
-            local_ssl_context = ssl_context if verify else False
-            local_client = httpx.Client(verify=local_ssl_context)
+            if local:
+                # Use local templates instead of downloading from GitHub
+                # Create project directory if needed
+                if not here:
+                    project_path.mkdir(parents=True, exist_ok=True)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+                # Skip fetch/download/extract steps in tracker
+                tracker.skip("fetch", "using local templates")
+                tracker.skip("download", "using local templates")
+                tracker.skip("extract", "using local templates")
+                tracker.skip("zip-list", "using local templates")
+                tracker.skip("extracted-summary", "using local templates")
+
+                # Copy from local repository
+                copy_local_templates(project_path, selected_ai, selected_script, tracker=tracker)
+            else:
+                # Create a httpx client with verify based on skip_tls
+                verify = not skip_tls
+                local_ssl_context = ssl_context if verify else False
+                local_client = httpx.Client(verify=local_ssl_context)
+
+                download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
