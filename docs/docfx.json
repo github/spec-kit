@@ -9,6 +9,12 @@
       },
       {
         "files": [
+          "cli-reference.md"
+        ],
+        "dest": "cli-reference.md"
+      },
+      {
+        "files": [
           "../README.md",
           "../CONTRIBUTING.md",
           "../CODE_OF_CONDUCT.md",

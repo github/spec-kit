@@ -52,7 +52,17 @@ Re-running after code edits requires no reinstall because of editable mode.
 `uvx` can run from a local path (or a Git ref) to simulate user flows:
 
 ```bash
+uvx --from . specify init demo-uvx --ai claude --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai gemini --ignore-agent-tools --script sh
 uvx --from . specify init demo-uvx --ai copilot --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai cursor --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai qwen --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai opencode --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai codex --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai windsurf --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai kilocode --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai auggie --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --ai roo --ignore-agent-tools --script sh
 ```
 
 You can also point uvx at a specific branch without merging:
@@ -75,12 +85,33 @@ uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --ai copilot --igno
 Set an environment variable for convenience:
 ```bash
 export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai claude --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai gemini --ignore-agent-tools --script ps
 uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai copilot --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai cursor --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai qwen --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai opencode --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai codex --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai windsurf --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai kilocode --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai auggie --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai roo --ignore-agent-tools --script ps
 ```
 
-(Optional) Define a shell function:
+(Optional) Define shell functions:
 ```bash
 specify-dev() { uvx --from /mnt/c/GitHub/spec-kit specify "$@"; }
+specify-dev-claude() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai claude; }
+specify-dev-gemini() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai gemini; }
+specify-dev-copilot() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai copilot; }
+specify-dev-cursor() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai cursor; }
+specify-dev-qwen() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai qwen; }
+specify-dev-opencode() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai opencode; }
+specify-dev-codex() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai codex; }
+specify-dev-windsurf() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai windsurf; }
+specify-dev-kilocode() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai kilocode; }
+specify-dev-auggie() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai auggie; }
+specify-dev-roo() { uvx --from /mnt/c/GitHub/spec-kit specify "$@" --ai roo; }
 # Then
 specify-dev --help
 ```
