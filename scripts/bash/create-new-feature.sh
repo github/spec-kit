@@ -3,18 +3,47 @@
 set -e
 
 JSON_MODE=false
+FEATURE_NAME=""
 ARGS=()
-for arg in "$@"; do
-    case "$arg" in
-        --json) JSON_MODE=true ;;
-        --help|-h) echo "Usage: $0 [--json] <feature_description>"; exit 0 ;;
-        *) ARGS+=("$arg") ;;
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --json)
+            JSON_MODE=true
+            shift
+            ;;
+        --feature-name=*)
+            FEATURE_NAME="${1#*=}"
+            shift
+            ;;
+        --feature-name)
+            if [[ -n "$2" && "$2" != --* ]]; then
+                FEATURE_NAME="$2"
+                shift 2
+            else
+                echo "Error: --feature-name requires a value" >&2
+                exit 1
+            fi
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--json] [--feature-name=<name>] <feature_description>"
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
     esac
 done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--feature-name=<name>] <feature_description>" >&2
     exit 1
 fi
 
@@ -29,6 +58,34 @@ find_repo_root() {
         dir="$(dirname "$dir")"
     done
     return 1
+}
+
+# Normalise AI-provided feature or description text into a kebab-case slug limited by an optional word cap.
+# Assumes input contains valid alphanumeric characters. WordLimit of 0 removes the cap.
+get_feature_slug() {
+    local raw="$1"
+    local word_limit="${2:-3}"
+    
+    # Convert to lowercase and replace non-alphanumeric with dashes
+    local slug=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+    
+    # Split into words and apply word limit
+    if [ "$word_limit" -le 0 ]; then
+        echo "$slug"
+    else
+        local words=()
+        IFS='-' read -ra ADDR <<< "$slug"
+        local count=0
+        for word in "${ADDR[@]}"; do
+            [ -n "$word" ] || continue
+            words+=("$word")
+            count=$((count + 1))
+            if [ "$count" -ge "$word_limit" ]; then
+                break
+            fi
+        done
+        IFS='-'; echo "${words[*]}"
+    fi
 }
 
 # Resolve repository root. Prefer git information when available, but fall back
@@ -67,9 +124,14 @@ fi
 NEXT=$((HIGHEST + 1))
 FEATURE_NUM=$(printf "%03d" "$NEXT")
 
-BRANCH_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
-WORDS=$(echo "$BRANCH_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
-BRANCH_NAME="${FEATURE_NUM}-${WORDS}"
+# Generate slug for branch naming from AI-provided text: prioritize explicit feature name over description
+if [ -n "$FEATURE_NAME" ]; then
+    SELECTED_SLUG=$(get_feature_slug "$FEATURE_NAME" 0)
+else
+    SELECTED_SLUG=$(get_feature_slug "$FEATURE_DESCRIPTION" 3)
+fi
+
+BRANCH_NAME="${FEATURE_NUM}-${SELECTED_SLUG}"
 
 if [ "$HAS_GIT" = true ]; then
     git checkout -b "$BRANCH_NAME"
@@ -88,10 +150,11 @@ if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","HAS_GIT":%s}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM" "$([ "$HAS_GIT" = true ] && echo 'true' || echo 'false')"
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
+    echo "HAS_GIT: $HAS_GIT"
     echo "SPECIFY_FEATURE environment variable set to: $BRANCH_NAME"
 fi
