@@ -192,6 +192,51 @@ elif selected_ai == "windsurf":
 
 **Note**: Skip CLI checks for IDE-based agents (Copilot, Windsurf).
 
+#### 7. Update Devcontainer files (Optional)
+
+For agents that have VS Code extensions or require CLI installation, update the devcontainer configuration files:
+
+##### VS Code Extension-based Agents
+
+For agents available as VS Code extensions, add them to `.devcontainer/devcontainer.json`:
+
+```json
+{
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        // [New Agent Name]
+        "[Agent Extension ID]"
+      ]
+    }
+  }
+}
+```
+
+##### CLI-based Agents
+
+For agents that require CLI tools, add installation commands to `.devcontainer/post-create.sh`:
+
+```bash
+#!/bin/bash
+
+# Existing installations...
+
+echo "🤖 Installing [New Agent Name] CLI..."
+# bun add --global [agent-cli-package]@latest # Example for node-based CLI
+# or other installation command...
+
+```
+
+**Quick Tips:**
+
+- **Extension-based agents**: Add to the `extensions` array in `devcontainer.json`
+- **CLI-based agents**: Add installation scripts to `post-create.sh`
+- **Hybrid agents**: May require both extension and CLI installation
+- **Test thoroughly**: Ensure installations work in the devcontainer environment
+
 ## Agent Categories
 
 ### CLI-Based Agents
