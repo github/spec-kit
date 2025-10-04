@@ -111,3 +111,74 @@ EOF
 
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
+
+# Check if current branch matches a spec directory, and offer to fix mismatches
+check_and_fix_spec_directory_mismatch() {
+    local repo_root=$(get_repo_root)
+    local current_branch=$(get_current_branch)
+    local expected_dir="$repo_root/specs/$current_branch"
+
+    # Skip check for non-git repos or main branch
+    if [[ "$current_branch" == "main" ]] || ! has_git; then
+        return 0
+    fi
+
+    # Skip check if branch doesn't follow feature branch naming convention
+    if [[ ! "$current_branch" =~ ^[0-9]{3}- ]]; then
+        return 0
+    fi
+
+    # If expected directory exists, all good
+    if [[ -d "$expected_dir" ]]; then
+        return 0
+    fi
+
+    # Directory doesn't exist - look for orphaned spec directories
+    local specs_dir="$repo_root/specs"
+    local orphaned_dirs=()
+
+    if [[ -d "$specs_dir" ]]; then
+        for dir in "$specs_dir"/*; do
+            if [[ -d "$dir" ]]; then
+                local dirname=$(basename "$dir")
+                # Check if this spec dir has no matching branch
+                if ! git rev-parse --verify "$dirname" >/dev/null 2>&1; then
+                    orphaned_dirs+=("$dirname")
+                fi
+            fi
+        done
+    fi
+
+    # If we found exactly one orphaned directory, suggest renaming it
+    if [[ ${#orphaned_dirs[@]} -eq 1 ]]; then
+        local orphaned="${orphaned_dirs[0]}"
+        echo "" >&2
+        echo "⚠️  Warning: Branch '$current_branch' has no matching spec directory" >&2
+        echo "   Found orphaned spec directory: specs/$orphaned" >&2
+        echo "   This may be from a deleted or renamed branch." >&2
+        echo "" >&2
+        echo "   To fix this issue, run:" >&2
+        echo "   git mv specs/$orphaned specs/$current_branch" >&2
+        echo "" >&2
+        return 1
+    elif [[ ${#orphaned_dirs[@]} -gt 1 ]]; then
+        echo "" >&2
+        echo "⚠️  Warning: Branch '$current_branch' has no matching spec directory" >&2
+        echo "   Found multiple orphaned spec directories:" >&2
+        for dir in "${orphaned_dirs[@]}"; do
+            echo "   - specs/$dir" >&2
+        done
+        echo "" >&2
+        echo "   To fix this, manually rename the correct directory:" >&2
+        echo "   git mv specs/<old-name> specs/$current_branch" >&2
+        echo "" >&2
+        return 1
+    else
+        # No spec directory exists at all - might be a new branch
+        echo "" >&2
+        echo "⚠️  Warning: No spec directory found for branch '$current_branch'" >&2
+        echo "   Run /specify to create a new feature specification." >&2
+        echo "" >&2
+        return 1
+    fi
+}

@@ -33,6 +33,9 @@ eval $(get_feature_paths)
 # Check if we're on a proper feature branch (only for git repos)
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
+# Check if branch and spec directory are in sync
+check_and_fix_spec_directory_mismatch || exit 1
+
 # Ensure the feature directory exists
 mkdir -p "$FEATURE_DIR"
 
