@@ -25,7 +25,10 @@ fi
 
 echo "Building release packages for $NEW_VERSION"
 
-rm -rf sdd-package-base* sdd-*-package-* spec-kit-template-*-"${NEW_VERSION}".zip || true
+# Create and use .genreleases directory for all build artifacts
+GENRELEASES_DIR=".genreleases"
+mkdir -p "$GENRELEASES_DIR"
+rm -rf "$GENRELEASES_DIR"/* || true
 
 rewrite_paths() {
   sed -E \
@@ -82,7 +85,7 @@ generate_commands() {
 
 build_variant() {
   local agent=$1 script=$2
-  local base_dir="sdd-${agent}-package-${script}"
+  local base_dir="$GENRELEASES_DIR/sdd-${agent}-package-${script}"
   echo "Building $agent ($script) package..."
   mkdir -p "$base_dir"
   
@@ -158,15 +161,27 @@ build_variant() {
       mkdir -p "$base_dir/.windsurf/workflows"
       generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
     codex)
-      mkdir -p "$base_dir/.codex/commands"
-      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/commands" "$script" ;;
+      mkdir -p "$base_dir/.codex/prompts"
+      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" ;;
+    kilocode)
+      mkdir -p "$base_dir/.kilocode/workflows"
+      generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
+    auggie)
+      mkdir -p "$base_dir/.augment/commands"
+      generate_commands auggie md "\$ARGUMENTS" "$base_dir/.augment/commands" "$script" ;;
+    roo)
+      mkdir -p "$base_dir/.roo/commands"
+      generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script" ;;
+    q)
+      mkdir -p "$base_dir/.amazonq/prompts"
+      generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
-  echo "Created spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
+  echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo q)
 ALL_SCRIPTS=(sh ps)
 
 
@@ -212,5 +227,5 @@ for agent in "${AGENT_LIST[@]}"; do
   done
 done
 
-echo "Archives:"
-ls -1 spec-kit-template-*-"${NEW_VERSION}".zip
+echo "Archives in $GENRELEASES_DIR:"
+ls -1 "$GENRELEASES_DIR"/spec-kit-template-*-"${NEW_VERSION}".zip

@@ -1,9 +1,62 @@
 # Changelog
 
+<!-- markdownlint-disable MD024 -->
+
 All notable changes to the Specify CLI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [LATEST_VERSION] - RELEASE_DATE
+
+### Added
+
+- Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users
+
+## [0.0.17] - 2025-09-22
+
+### Added
+
+- New `/clarify` command template to surface up to 5 targeted clarification questions for an existing spec and persist answers into a Clarifications section in the spec.
+- New `/analyze` command template providing a non-destructive cross-artifact discrepancy and alignment report (spec, clarifications, plan, tasks, constitution) inserted after `/tasks` and before `/implement`.
+	- Note: Constitution rules are explicitly treated as non-negotiable; any conflict is a CRITICAL finding requiring artifact remediation, not weakening of principles.
+
+## [0.0.16] - 2025-09-22
+
+### Added
+
+- `--force` flag for `init` command to bypass confirmation when using `--here` in a non-empty directory and proceed with merging/overwriting files.
+
+## [0.0.15] - 2025-09-21
+
+### Added
+
+- Support for Roo Code.
+
+## [0.0.14] - 2025-09-21
+
+### Changed
+
+- Error messages are now shown consistently.
+
+## [0.0.13] - 2025-09-21
+
+### Added
+
+- Support for Kilo Code. Thank you [@shahrukhkhan489](https://github.com/shahrukhkhan489) with [#394](https://github.com/github/spec-kit/pull/394).
+- Support for Auggie CLI. Thank you [@hungthai1401](https://github.com/hungthai1401) with [#137](https://github.com/github/spec-kit/pull/137).
+- Agent folder security notice displayed after project provisioning completion, warning users that some agents may store credentials or auth tokens in their agent folders and recommending adding relevant folders to `.gitignore` to prevent accidental credential leakage.
+
+### Changed
+
+- Warning displayed to ensure that folks are aware that they might need to add their agent folder to `.gitignore`.
+- Cleaned up the `check` command output.
+
+## [0.0.12] - 2025-09-21
+
+### Changed
+
+- Added additional context for OpenAI Codex users - they need to set an additional environment variable, as described in [#417](https://github.com/github/spec-kit/issues/417).
 
 ## [0.0.11] - 2025-09-20
 
