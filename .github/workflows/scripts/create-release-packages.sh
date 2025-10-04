@@ -112,7 +112,19 @@ build_variant() {
     esac
   fi
   
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+  [[ -d templates ]] && { 
+    mkdir -p "$SPEC_DIR/templates"
+    # Use rsync instead of cp --parents for macOS compatibility
+    rsync -a --relative templates/./ "$SPEC_DIR"/ --exclude="templates/commands/*" 2>/dev/null || {
+      # Fallback: manually copy files maintaining directory structure
+      find templates -type f -not -path "templates/commands/*" | while read -r file; do
+        target_dir="$SPEC_DIR/$(dirname "$file")"
+        mkdir -p "$target_dir"
+        cp "$file" "$target_dir/"
+      done
+    }
+    echo "Copied templates -> .specify/templates"
+  }
   # Inject variant into plan-template.md within .specify/templates if present
   local plan_tpl="$base_dir/.specify/templates/plan-template.md"
   if [[ -f "$plan_tpl" ]]; then
@@ -175,13 +187,16 @@ build_variant() {
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
+    trae)
+      mkdir -p "$base_dir/.trae/rules"
+      generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo q)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo q trae)
 ALL_SCRIPTS=(sh ps)
 
 
@@ -191,8 +206,9 @@ norm_list() {
 }
 
 validate_subset() {
-  local type=$1; shift; local -n allowed=$1; shift; local items=("$@")
+  local type=$1; shift; local allowed_name=$1; shift; local items=("$@")
   local ok=1
+  eval "local allowed=(\"\${${allowed_name}[@]}\")"
   for it in "${items[@]}"; do
     local found=0
     for a in "${allowed[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
@@ -201,18 +217,18 @@ validate_subset() {
       ok=0
     fi
   done
-  return $ok
+  [[ $ok -eq 1 ]]
 }
 
 if [[ -n ${AGENTS:-} ]]; then
-  mapfile -t AGENT_LIST < <(printf '%s' "$AGENTS" | norm_list)
+  IFS=' ' read -ra AGENT_LIST <<< "$(printf '%s' "$AGENTS" | norm_list)"
   validate_subset agent ALL_AGENTS "${AGENT_LIST[@]}" || exit 1
 else
   AGENT_LIST=("${ALL_AGENTS[@]}")
 fi
 
 if [[ -n ${SCRIPTS:-} ]]; then
-  mapfile -t SCRIPT_LIST < <(printf '%s' "$SCRIPTS" | norm_list)
+  IFS=' ' read -ra SCRIPT_LIST <<< "$(printf '%s' "$SCRIPTS" | norm_list)"
   validate_subset script ALL_SCRIPTS "${SCRIPT_LIST[@]}" || exit 1
 else
   SCRIPT_LIST=("${ALL_SCRIPTS[@]}")

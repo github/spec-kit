@@ -78,6 +78,7 @@ AI_CHOICES = {
     "auggie": "Auggie CLI",
     "roo": "Roo Code",
     "q": "Amazon Q Developer CLI",
+    "trae": "Trae AI",
 }
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -1037,7 +1038,8 @@ def init(
         "auggie": ".augment/",
         "copilot": ".github/",
         "roo": ".roo/",
-        "q": ".amazonq/"
+        "q": ".amazonq/",
+        "trae": ".trae/"
     }
     
     if selected_ai in agent_folder_map:
