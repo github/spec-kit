@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
+# Feature branch naming pattern (3 digits followed by hyphen)
+readonly FEATURE_BRANCH_PATTERN='^[0-9]{3}-'
+
 # Get repository root, with fallback for non-git repositories
 get_repo_root() {
     if git rev-parse --show-toplevel >/dev/null 2>&1; then
@@ -72,7 +75,7 @@ check_feature_branch() {
         return 0
     fi
     
-    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+    if [[ ! "$branch" =~ $FEATURE_BRANCH_PATTERN ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
         echo "Feature branches should be named like: 001-feature-name" >&2
         return 1
@@ -124,7 +127,7 @@ check_and_fix_spec_directory_mismatch() {
     fi
 
     # Skip check if branch doesn't follow feature branch naming convention
-    if [[ ! "$current_branch" =~ ^[0-9]{3}- ]]; then
+    if [[ ! "$current_branch" =~ $FEATURE_BRANCH_PATTERN ]]; then
         return 0
     fi
 
@@ -137,7 +140,7 @@ check_and_fix_spec_directory_mismatch() {
     local specs_dir="$repo_root/specs"
     local orphaned_dirs=()
 
-    if [[ -d "$specs_dir" ]]; then
+    if [[ -d "$specs_dir" ]] && has_git; then
         for dir in "$specs_dir"/*; do
             if [[ -d "$dir" ]]; then
                 local dirname=$(basename "$dir")
