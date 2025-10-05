@@ -1,0 +1,82 @@
+{
+  "name": "@asamuzakjp/css-color",
+  "description": "CSS color - Resolve and convert CSS colors.",
+  "author": "asamuzaK",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/asamuzaK/cssColor.git"
+  },
+  "homepage": "https://github.com/asamuzaK/cssColor#readme",
+  "bugs": {
+    "url": "https://github.com/asamuzaK/cssColor/issues"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "types": "dist/esm/index.d.ts",
+  "module": "dist/esm/index.js",
+  "main": "dist/cjs/index.cjs",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@csstools/css-calc": "^2.1.4",
+    "@csstools/css-color-parser": "^3.1.0",
+    "@csstools/css-parser-algorithms": "^3.0.5",
+    "@csstools/css-tokenizer": "^3.0.4",
+    "lru-cache": "^11.2.1"
+  },
+  "devDependencies": {
+    "@tanstack/vite-config": "^0.2.1",
+    "@vitest/coverage-istanbul": "^3.2.4",
+    "esbuild": "^0.25.10",
+    "eslint": "^9.36.0",
+    "eslint-plugin-regexp": "^2.10.0",
+    "globals": "^16.4.0",
+    "knip": "^5.64.0",
+    "neostandard": "^0.12.2",
+    "prettier": "^3.6.2",
+    "publint": "^0.3.13",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.6",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.14.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "oxc-resolver",
+      "unrs-resolver"
+    ]
+  },
+  "scripts": {
+    "build": "pnpm run clean && pnpm run test && pnpm run knip && pnpm run build:prod && pnpm run build:cjs && pnpm run build:browser && pnpm run publint",
+    "build:browser": "vite build -c ./vite.browser.config.ts",
+    "build:prod": "vite build",
+    "build:cjs": "tsup ./src/index.ts --format=cjs --platform=node --outDir=./dist/cjs/ --sourcemap --dts",
+    "clean": "rimraf ./coverage ./dist",
+    "knip": "knip",
+    "prettier": "prettier . --ignore-unknown --write",
+    "publint": "publint --strict",
+    "test": "pnpm run prettier && pnpm run --stream \"/^test:.*/\"",
+    "test:eslint": "eslint ./src ./test --fix",
+    "test:types": "tsc",
+    "test:unit": "vitest"
+  },
+  "version": "4.0.5"
+}
