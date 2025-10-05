@@ -1,0 +1,181 @@
+{
+  "name": "@noble/curves",
+  "version": "1.2.0",
+  "description": "Audited & minimal JS implementation of elliptic curve cryptography",
+  "files": [
+    "abstract",
+    "esm",
+    "src",
+    "*.js",
+    "*.js.map",
+    "*.d.ts",
+    "*.d.ts.map"
+  ],
+  "scripts": {
+    "bench": "cd benchmark; node secp256k1.js; node curves.js; node ecdh.js; node hash-to-curve.js; node modular.js; node bls.js; node ristretto255.js; node decaf448.js",
+    "build": "tsc && tsc -p tsconfig.esm.json",
+    "build:release": "rollup -c rollup.config.js",
+    "build:clean": "rm *.{js,d.ts,d.ts.map,js.map} esm/*.{js,d.ts,d.ts.map,js.map} 2> /dev/null",
+    "lint": "prettier --check 'src/**/*.{js,ts}' 'test/*.js'",
+    "format": "prettier --write 'src/**/*.{js,ts}' 'test/*.js'",
+    "test": "node test/index.test.js"
+  },
+  "author": "Paul Miller (https://paulmillr.com)",
+  "homepage": "https://paulmillr.com/noble/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paulmillr/noble-curves.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@noble/hashes": "1.3.2"
+  },
+  "devDependencies": {
+    "fast-check": "3.0.0",
+    "micro-bmark": "0.3.1",
+    "micro-should": "0.4.0",
+    "prettier": "2.8.4",
+    "typescript": "5.0.2"
+  },
+  "sideEffects": false,
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./index.js"
+    },
+    "./abstract/edwards": {
+      "types": "./abstract/edwards.d.ts",
+      "import": "./esm/abstract/edwards.js",
+      "default": "./abstract/edwards.js"
+    },
+    "./abstract/modular": {
+      "types": "./abstract/modular.d.ts",
+      "import": "./esm/abstract/modular.js",
+      "default": "./abstract/modular.js"
+    },
+    "./abstract/montgomery": {
+      "types": "./abstract/montgomery.d.ts",
+      "import": "./esm/abstract/montgomery.js",
+      "default": "./abstract/montgomery.js"
+    },
+    "./abstract/weierstrass": {
+      "types": "./abstract/weierstrass.d.ts",
+      "import": "./esm/abstract/weierstrass.js",
+      "default": "./abstract/weierstrass.js"
+    },
+    "./abstract/bls": {
+      "types": "./abstract/bls.d.ts",
+      "import": "./esm/abstract/bls.js",
+      "default": "./abstract/bls.js"
+    },
+    "./abstract/hash-to-curve": {
+      "types": "./abstract/hash-to-curve.d.ts",
+      "import": "./esm/abstract/hash-to-curve.js",
+      "default": "./abstract/hash-to-curve.js"
+    },
+    "./abstract/curve": {
+      "types": "./abstract/curve.d.ts",
+      "import": "./esm/abstract/curve.js",
+      "default": "./abstract/curve.js"
+    },
+    "./abstract/utils": {
+      "types": "./abstract/utils.d.ts",
+      "import": "./esm/abstract/utils.js",
+      "default": "./abstract/utils.js"
+    },
+    "./abstract/poseidon": {
+      "types": "./abstract/poseidon.d.ts",
+      "import": "./esm/abstract/poseidon.js",
+      "default": "./abstract/poseidon.js"
+    },
+    "./_shortw_utils": {
+      "types": "./_shortw_utils.d.ts",
+      "import": "./esm/_shortw_utils.js",
+      "default": "./_shortw_utils.js"
+    },
+    "./bls12-381": {
+      "types": "./bls12-381.d.ts",
+      "import": "./esm/bls12-381.js",
+      "default": "./bls12-381.js"
+    },
+    "./bn254": {
+      "types": "./bn254.d.ts",
+      "import": "./esm/bn254.js",
+      "default": "./bn254.js"
+    },
+    "./ed25519": {
+      "types": "./ed25519.d.ts",
+      "import": "./esm/ed25519.js",
+      "default": "./ed25519.js"
+    },
+    "./ed448": {
+      "types": "./ed448.d.ts",
+      "import": "./esm/ed448.js",
+      "default": "./ed448.js"
+    },
+    "./index": {
+      "types": "./index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./index.js"
+    },
+    "./jubjub": {
+      "types": "./jubjub.d.ts",
+      "import": "./esm/jubjub.js",
+      "default": "./jubjub.js"
+    },
+    "./p256": {
+      "types": "./p256.d.ts",
+      "import": "./esm/p256.js",
+      "default": "./p256.js"
+    },
+    "./p384": {
+      "types": "./p384.d.ts",
+      "import": "./esm/p384.js",
+      "default": "./p384.js"
+    },
+    "./p521": {
+      "types": "./p521.d.ts",
+      "import": "./esm/p521.js",
+      "default": "./p521.js"
+    },
+    "./pasta": {
+      "types": "./pasta.d.ts",
+      "import": "./esm/pasta.js",
+      "default": "./pasta.js"
+    },
+    "./secp256k1": {
+      "types": "./secp256k1.d.ts",
+      "import": "./esm/secp256k1.js",
+      "default": "./secp256k1.js"
+    }
+  },
+  "keywords": [
+    "elliptic",
+    "curve",
+    "cryptography",
+    "weierstrass",
+    "montgomery",
+    "edwards",
+    "p256",
+    "p384",
+    "p521",
+    "secp256r1",
+    "secp256k1",
+    "ed25519",
+    "ed448",
+    "x25519",
+    "ed25519",
+    "bls12-381",
+    "bn254",
+    "pasta",
+    "bls",
+    "noble",
+    "ecc",
+    "ecdsa",
+    "eddsa",
+    "schnorr"
+  ],
+  "funding": "https://paulmillr.com/funding/"
+}
