@@ -1,0 +1,44 @@
+{
+  "name": "goober-autoprefixer",
+  "version": "1.2.3",
+  "sideEffects": false,
+  "main": "./dist/goober-autoprefixer.cjs",
+  "module": "./dist/goober-autoprefixer.esm.js",
+  "umd:main": "./dist/goober-autoprefixer.umd.js",
+  "source": "./src/index.js",
+  "unpkg": "./dist/goober-autoprefixer.umd.js",
+  "types": "./autoprefixer.d.ts",
+  "type": "module",
+  "author": {
+    "name": "Jovi De Croock",
+    "url": "https://www.jovidecroock.com/"
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "rm -rf ./dist && microbundle --entry src/index.js --name gooberPrefixer --no-sourcemap --generateTypes false",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "microbundle": "^0.14.2",
+    "@babel/plugin-transform-react-jsx": "^7.7.0",
+    "@babel/preset-env": "^7.3.1",
+    "babel-jest": "^24.1.0",
+    "jest": "^24.1.0",
+    "style-vendorizer": "^2.0.0"
+  },
+  "keywords": [
+    "goober",
+    "prefixer",
+    "autoprefixer",
+    "css",
+    "postcss"
+  ],
+  "files": [
+    "src",
+    "dist",
+    "README.md",
+    "package.json",
+    "LICENSE",
+    "autoprefixer.d.ts"
+  ]
+}

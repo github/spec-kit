@@ -1,0 +1,1 @@
+{"version":3,"file":"getSourceFileOfNode.js","sourceRoot":"","sources":["../src/getSourceFileOfNode.ts"],"names":[],"mappings":";;;;;;;;;;;;;;;;;;;;;;;;;;AAAA,+CAAiC;AAEjC;;GAEG;AACH,SAAgB,mBAAmB,CAAC,IAAa;IAC/C,OAAO,IAAI,CAAC,IAAI,KAAK,EAAE,CAAC,UAAU,CAAC,UAAU,EAAE,CAAC;QAC9C,IAAI,GAAG,IAAI,CAAC,MAAM,CAAC;IACrB,CAAC;IACD,OAAO,IAAqB,CAAC;AAC/B,CAAC;AALD,kDAKC"}

@@ -1,0 +1,154 @@
+{
+  "name": "goober",
+  "version": "2.1.16",
+  "description": "A less than 1KB css-in-js solution",
+  "sideEffects": false,
+  "main": "dist/goober.cjs",
+  "module": "dist/goober.esm.js",
+  "umd:main": "dist/goober.umd.js",
+  "source": "src/index.js",
+  "unpkg": "dist/goober.umd.js",
+  "types": "goober.d.ts",
+  "type": "module",
+  "files": [
+    "src",
+    "macro",
+    "global/dist",
+    "global/src",
+    "global/package.json",
+    "global/global.d.ts",
+    "prefixer/dist",
+    "prefixer/src",
+    "prefixer/package.json",
+    "prefixer/autoprefixer.d.ts",
+    "prefixer/README.md",
+    "should-forward-prop/dist",
+    "should-forward-prop/src",
+    "should-forward-prop/package.json",
+    "should-forward-prop/should-forward-prop.d.ts",
+    "should-forward-prop/README.md",
+    "README.md",
+    "dist",
+    "package.json",
+    "typings.json",
+    "goober.d.ts"
+  ],
+  "exports": {
+    ".": {
+      "require": "./dist/goober.cjs",
+      "import": "./dist/goober.modern.js",
+      "umd": "./dist/goober.umd.js",
+      "types": "./goober.d.ts"
+    },
+    "./macro": "./macro/index.js",
+    "./global": {
+      "import": "./global/dist/goober-global.modern.js",
+      "require": "./global/dist/goober-global.cjs",
+      "umd": "./global/dist/goober-global.umd.js",
+      "types": "./global/global.d.ts"
+    },
+    "./prefixer": {
+      "import": "./prefixer/dist/goober-autoprefixer.modern.js",
+      "require": "./prefixer/dist/goober-autoprefixer.cjs",
+      "umd": "./prefixer/dist/goober-autoprefixer.umd.js",
+      "types": "./prefixer/autoprefixer.d.ts"
+    },
+    "./should-forward-prop": {
+      "import": "./should-forward-prop/dist/goober-should-forward-prop.modern.js",
+      "require": "./should-forward-prop/dist/goober-should-forward-prop.cjs",
+      "umd": "./should-forward-prop/dist/goober-should-forward-prop.umd.js",
+      "types": "./should-forward-prop/should-forward-prop.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "npm run test-ts && npm run test-unit -- --ci --coverage && npm run build && npm run test-perf",
+    "test-perf": "NODE_ENV=production node benchmarks/perf.cjs",
+    "test-perf-hash": "NODE_ENV=production node benchmarks/perf-hash.cjs",
+    "test-unit-core": "jest --setupFiles ./tests/setup.js --roots ./src packages",
+    "test-unit": "npm run test-unit-core && npm run test-addon-global && npm run test-addon-prefixer",
+    "test-addon-global": "cd global && npm run test",
+    "test-addon-prefixer": "cd prefixer && npm run test",
+    "test-ts": "tsc -p ts-tests",
+    "clean": "rimraf dist",
+    "size-check": "filesize",
+    "build": "npm run build:core && npm run build:prefixer && npm run build:global && npm run build:should-forward-prop",
+    "build:prefixer": "cd ./prefixer && npm run build",
+    "build:global": "cd ./global && npm run build",
+    "build:should-forward-prop": "cd ./should-forward-prop && npm run build",
+    "build:core": "npm run clean && npm run build:dist && npm run size-check",
+    "build:lib": "microbundle --entry src/index.js --name goober --no-sourcemap --generateTypes false",
+    "build:dist": "npm run build:lib -- --output dist",
+    "build:debug": "npm run build:lib -- --output debug --no-compress",
+    "dev": "npm run clean && microbundle watch --entry src/index.js --output dist --name goober",
+    "sandbox": "wmr --public sandbox/wmr",
+    "deploy": "npm run build && npm publish",
+    "format": "prettier \"**/*.{js,ts,tsx,md}\" --write"
+  },
+  "keywords": [
+    "css-in-js",
+    "goober",
+    "styled",
+    "emotion",
+    "styled-components",
+    "javascript",
+    "react",
+    "preact"
+  ],
+  "author": "Cristian <botecristian@yahoo.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cristianbote/goober"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@ampproject/filesize": "^4.0.0",
+    "@babel/core": "^7.2.2",
+    "@babel/plugin-transform-react-jsx": "^7.7.0",
+    "@babel/preset-env": "^7.3.1",
+    "@emotion/core": "^11.0.0",
+    "@emotion/styled": "^11.0.0",
+    "@emotion/react": "^11.1.4",
+    "@types/react": "^16.9.34",
+    "babel-jest": "^24.1.0",
+    "benchmark": "^2.1.4",
+    "csstype": "^3.0.10",
+    "husky": "4.2.4",
+    "jest": "^24.1.0",
+    "lint-staged": "10.2.0",
+    "microbundle": "^0.15.0",
+    "preact": "^10.0.0",
+    "prettier": "2.0.5",
+    "react": "^16.12.0",
+    "react-dom": "^16.12.0",
+    "rimraf": "3.0.2",
+    "styled-components": "^5.2.1",
+    "typescript": "^3.6.3",
+    "wmr": "^3.7.2"
+  },
+  "peerDependencies": {
+    "csstype": "^3.0.10"
+  },
+  "typings": "./goober.d.ts",
+  "filesize": {
+    "./dist/goober.modern.js": {
+      "gzip": "1300B"
+    },
+    "./dist/goober.cjs": {
+      "gzip": "1300B"
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx,md}": [
+      "prettier --write"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "collective": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/goober"
+  }
+}

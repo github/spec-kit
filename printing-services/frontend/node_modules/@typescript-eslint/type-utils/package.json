@@ -1,0 +1,81 @@
+{
+  "name": "@typescript-eslint/type-utils",
+  "version": "6.21.0",
+  "description": "Type utilities for working with TypeScript + ESLint together",
+  "files": [
+    "dist",
+    "_ts4.3",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": "^16.0.0 || >=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/typescript-eslint/typescript-eslint.git",
+    "directory": "packages/type-utils"
+  },
+  "bugs": {
+    "url": "https://github.com/typescript-eslint/typescript-eslint/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "eslint",
+    "typescript",
+    "estree"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "postbuild": "downlevel-dts dist _ts4.3/dist --to=4.3",
+    "clean": "tsc -b tsconfig.build.json --clean",
+    "postclean": "rimraf dist && rimraf _ts3.4 && rimraf _ts4.3 && rimraf coverage",
+    "format": "prettier --write \"./**/*.{ts,mts,cts,tsx,js,mjs,cjs,jsx,json,md,css}\" --ignore-path ../../.prettierignore",
+    "lint": "npx nx lint",
+    "test": "jest --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@typescript-eslint/typescript-estree": "6.21.0",
+    "@typescript-eslint/utils": "6.21.0",
+    "debug": "^4.3.4",
+    "ts-api-utils": "^1.0.1"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "6.21.0",
+    "ajv": "^6.10.0",
+    "downlevel-dts": "*",
+    "jest": "29.7.0",
+    "prettier": "^3.0.3",
+    "rimraf": "*",
+    "typescript": "*"
+  },
+  "peerDependencies": {
+    "eslint": "^7.0.0 || ^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/typescript-eslint"
+  },
+  "typesVersions": {
+    "<4.7": {
+      "*": [
+        "_ts4.3/*"
+      ]
+    }
+  }
+}
