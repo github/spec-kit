@@ -5,12 +5,34 @@
 
 **Branch**: `[username/jira-123.feature-name]` | **Date**: [DATE] | **Spec**: [link]
 **Input**: Feature specification from `/specs/[jira-123.feature-name]/spec.md`
+**Optional Inputs**:
+- docs/product-vision.md: Product strategy and context (if exists)
+- docs/system-architecture.md: Existing system architecture (if exists)
 
 ## Execution Flow (/plan command scope)
 ```
-1. Load feature spec from Input path
+Phase -1: Architecture Context Loading
+1. Check if docs/system-architecture.md exists:
+   → If exists (brownfield - extending existing system):
+     - Load current architecture version (e.g., v1.2.0)
+     - Load technology stack constraints (must use PostgreSQL, etc.)
+     - Load architecture patterns (monolith vs microservices)
+     - Load architecture evolution history
+     - Determine impact level: Work Within | Extend | Refactor
+   → If missing (greenfield - MVP/first feature):
+     - This plan will ESTABLISH system architecture
+     - Will create docs/system-architecture.md (v1.0.0)
+     - Foundational decisions made here affect all future features
+
+2. Determine Architecture Impact Level:
+   → Level 1 - Work Within: Feature uses existing architecture (no new components)
+   → Level 2 - Extend: Feature adds components (S3, Redis) but doesn't change structure
+   → Level 3 - Refactor: Feature requires arch change (monolith→microservices) [BREAKING]
+
+Phase 0-10: Feature Planning
+3. Load feature spec from Input path
    → If not found: ERROR "No feature spec at {path}"
-2. Fill Technical Context (scan for NEEDS CLARIFICATION)
+4. Fill Technical Context (scan for NEEDS CLARIFICATION)
    → Detect Project Type from context (web=frontend+backend, mobile=app+api)
    → Set Structure Decision based on project type
    → ULTRATHINK: Analyze technical context for hidden dependencies, scaling implications,
@@ -91,6 +113,70 @@
 - [ ] Development environment requirements documented
 - [ ] Testing strategy covers contract, integration, and unit levels
 - [ ] Performance benchmarks established (if applicable)
+
+## Architecture Decisions
+
+### Architecture Impact Assessment
+**Impact Level**: [Level 1: Work Within | Level 2: Extend | Level 3: Refactor]
+
+**From Architecture Context** (Phase -1):
+- Current system architecture version: [e.g., v1.2.0 or N/A if first feature]
+- Existing constraints: [List technology/deployment constraints from system-architecture.md]
+
+#### Level 1: Work Within Existing Architecture
+*Feature uses existing architecture without adding new system-level components*
+
+- Uses existing components: [List - e.g., PostgreSQL, Redis, existing APIs]
+- Integrates with existing features: [List features this integrates with]
+- No new system components required
+- System architecture version: **No change** (stays at current version)
+
+#### Level 2: Extend System Architecture
+*Feature adds new components to system but doesn't change core structure*
+
+- Extends existing with: [New components - e.g., S3 for storage, Elasticsearch for search]
+- Rationale for extension: [Why existing components insufficient for this feature's requirements]
+- Integration approach: [How new component integrates with existing system]
+- System architecture version: **Minor bump** (e.g., v1.2.0 → v1.3.0)
+- Impact: **Low to Medium** - Additive only, existing features unaffected but can optionally adopt
+
+#### Level 3: Refactor System Architecture (BREAKING CHANGE)
+*Feature requires fundamental architectural changes*
+
+**⚠️ CRITICAL: Breaking changes require architecture review and migration plan**
+
+- Breaking changes required: [What core structure/technology is changing]
+- Rationale: [Why refactor necessary - what requirement can't be met with current architecture]
+- New architecture pattern: [Describe new structure - e.g., monolith → microservices]
+- System architecture version: **Major bump** (e.g., v1.x → v2.0.0)
+- Impact: **HIGH** - Affects existing features: [List all features requiring migration]
+- Migration required: **Yes** - Create migration plan document
+
+### Feature-Specific Architecture
+
+**Components** (new for this feature):
+- [Component name]: [Purpose, responsibilities, interfaces]
+- [Service class]: [What it does, dependencies]
+
+**Integration Points** (with existing system):
+- Integrates with [existing feature/component]: [How and why]
+- Uses [existing component from other feature]: [What functionality it leverages]
+- Extends [existing API/interface]: [What new endpoints/methods added]
+
+### Technology Choices & Rationale
+
+**For each technology decision, document**:
+
+**Decision**: [Technology/library/pattern chosen]
+**Satisfies Requirement**: [Link to specific requirement from spec.md - e.g., NFR-P001]
+**Alternatives Considered**: [Other options evaluated]
+**Rationale**: [Why this choice over alternatives]
+**Alignment**: [How this aligns with or extends system architecture constraints]
+
+**Examples**:
+- **PostgreSQL for feature data**: Satisfies NFR-P001 (< 200ms response), aligns with system constraint
+- **S3 for file storage**: Satisfies FR-003 (file uploads), extends system architecture (new component)
+- **Redis for caching**: Satisfies NFR-P002 (1000 req/s throughput), extends system (new component)
 
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
@@ -285,6 +371,46 @@ ios/ or android/
 - [ ] Implementation Readiness Gate: PASS
 - [ ] All NEEDS CLARIFICATION resolved
 - [ ] Complexity deviations documented
+
+## System Architecture Update
+
+**Action Required**: [No Update | Minor Update | Major Update | Create New]
+
+### If This Is First Feature (MVP/Greenfield)
+- [ ] CREATE `docs/system-architecture.md` from template
+- [ ] Set initial version: v1.0.0
+- [ ] Document foundational decisions made in this plan
+- [ ] Fill in "Core Architecture Decisions" section
+- [ ] Add first evolution entry (v1.0.0)
+
+**Template Path**: `templates/system-architecture-template.md`
+
+### If Extending Existing System (Level 2)
+- [ ] UPDATE `docs/system-architecture.md`
+- [ ] Add new evolution entry
+- [ ] Version bump: [current] → [new] (minor increment, e.g., v1.2.0 → v1.3.0)
+- [ ] Document new components added: [List components]
+- [ ] Document rationale and impact: Low (additive only)
+
+### If Refactoring Architecture (Level 3 - BREAKING)
+- [ ] UPDATE `docs/system-architecture.md`
+- [ ] Add breaking change evolution entry
+- [ ] Version bump: [current] → [new] (major increment, e.g., v1.x → v2.0.0)
+- [ ] Document breaking changes: [What's changing]
+- [ ] List affected features: [All features requiring migration]
+- [ ] CREATE `docs/migrations/v[new]-migration.md` with migration plan
+- [ ] Document impact: HIGH - coordinated migration required
+
+### If Working Within Existing (Level 1)
+- [ ] NO UPDATE to system-architecture.md required
+- [ ] Version stays: [current version]
+- [ ] Note: Feature uses existing architecture without system-level changes
+
+**Post-Update Checklist**:
+- [ ] Architecture version incremented correctly (semantic versioning)
+- [ ] Evolution entry includes: date, feature ID, changes, rationale, impact
+- [ ] If breaking change: migration plan created
+- [ ] System architecture constraints updated if new components added
 
 ---
 *Based on Constitution v2.1.1 - See `/memory/constitution.md`*

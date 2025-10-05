@@ -30,6 +30,128 @@ Code generation begins as soon as specifications and their implementation plans 
 
 The feedback loop extends beyond initial development. Production metrics and incidents don't just trigger hotfixes—they update specifications for the next regeneration. Performance bottlenecks become new non-functional requirements. Security vulnerabilities become constraints that affect all future generations. This iterative dance between specification, implementation, and operational reality is where true understanding emerges and where the traditional SDLC transforms into a continuous evolution.
 
+## The Three-Tier Hierarchy
+
+Spec-Driven Development operates across three distinct abstraction tiers, each serving a specific purpose while feeding into the next level. This structure aligns with industry-standard product development practices while maintaining SDD's core principle of specifications as executable artifacts.
+
+### Tier 1: Product Vision (Strategic Layer)
+
+**Purpose**: Define the strategic direction, market opportunity, and product-wide requirements.
+
+**Scope**: Entire product (one per product)
+
+**Command**: `/product-vision`
+
+**Output**: `docs/product-vision.md`
+
+**Contains**:
+- Problem statement and market opportunity
+- Target user personas and journeys
+- Product-wide success metrics and KPIs
+- Business risk analysis
+- Product-level non-functional requirements (performance, security, compliance)
+
+**Explicitly Excludes**: All technical decisions, system architecture, API design, technology choices
+
+**When to Use**: Complex products, 0-to-1 development, multi-feature systems requiring strategic alignment
+
+**When to Skip**: Single features, quick prototypes, brownfield additions
+
+The product vision provides strategic context that informs all feature specifications. It's created once and updated when product strategy evolves, ensuring consistent direction across all features.
+
+### Tier 2: Feature Specification (Requirements Layer)
+
+**Purpose**: Define functional requirements, non-functional requirements, and technical constraints for a specific feature.
+
+**Scope**: Single feature (many per product)
+
+**Command**: `/specify`
+
+**Output**: `specs/[feature-id]/spec.md`
+
+**Contains**:
+- Functional requirements (what the feature must do)
+- Non-functional requirements (performance targets, security requirements, scale)
+- Technical constraints (what exists that must be integrated with)
+- Use cases and acceptance criteria
+
+**Key Principle**: Includes requirements and constraints, not architecture decisions
+- ✅ "Must handle 1000 requests/second" (requirement)
+- ✅ "Must integrate with existing PostgreSQL database" (constraint)
+- ❌ "Use Redis for caching" (decision - belongs in Tier 3)
+
+**Reads From**: Product vision (if exists) for personas, product NFRs, success metrics
+
+**Industry Alignment**: This tier aligns with industry-standard PRDs that include both functional and non-functional requirements
+
+The feature specification bridges strategic vision and technical implementation, translating product goals into concrete, testable requirements while noting real-world constraints.
+
+### Tier 3: Implementation Plan (Architecture Layer)
+
+**Purpose**: Make architecture decisions, select technologies, and create detailed implementation blueprints.
+
+**Scope**: Single feature + system architecture evolution
+
+**Command**: `/plan`
+
+**Output**: `specs/[feature-id]/plan.md` + updates to `docs/system-architecture.md`
+
+**Contains**:
+- Architecture decisions with rationale
+- Technology choices (selected to satisfy Tier 2 requirements)
+- Feature-specific design
+- System architecture evolution tracking
+
+**Dual Responsibility**:
+1. **Feature Architecture**: How this specific feature will be implemented
+2. **System Architecture**: How this feature impacts overall system architecture
+
+**Architecture Evolution**: The first `/plan` (MVP) establishes foundational system architecture. Subsequent plans either:
+- **Work Within** (Level 1): Use existing architecture
+- **Extend** (Level 2): Add new components (minor version bump)
+- **Refactor** (Level 3): Change core structure (major version, breaking change)
+
+**Makes Decisions**: Transforms requirements into technical solutions
+- Requirement: "1000 req/s" → Decision: "Redis caching layer"
+- Constraint: "Existing PostgreSQL" → Decision: "Add new table to shared database"
+
+The implementation plan is where technical expertise translates requirements into executable code, while maintaining architectural integrity across the growing system.
+
+### Workflow Integration
+
+The three tiers work together in sequence:
+
+**Greenfield (New Product)**:
+```
+/product-vision → Strategic direction established
+/specify proj-1 → MVP feature requirements defined
+/plan → Architecture established (v1.0.0) + MVP implementation plan
+/specify proj-2 → Second feature requirements (inherits product context)
+/plan → Architecture extended (v1.1.0) + feature implementation plan
+```
+
+**Brownfield (Existing Product)**:
+```
+[Existing product-vision.md and system-architecture.md v1.2.0]
+/specify proj-N → New feature requirements (reads existing context)
+/plan → Works within OR extends architecture + implementation plan
+```
+
+**Architecture Evolution**:
+```
+[After 9 features, system-architecture.md at v1.9.0]
+/specify proj-10 → Video calling feature (heavy resource requirements)
+/plan → Determines existing architecture insufficient
+       → Proposes microservices refactor (v2.0.0)
+       → Documents breaking change and migration plan
+```
+
+This three-tier hierarchy ensures:
+- **Separation of Concerns**: Strategy, requirements, and architecture remain distinct
+- **Incremental Complexity**: Each tier adds appropriate detail for its audience
+- **Evolution Tracking**: Architecture decisions are documented and versioned
+- **Consistency**: Product vision and system architecture provide stable context across features
+
 ## Why SDD Matters Now
 
 Three trends make SDD not just possible but necessary:

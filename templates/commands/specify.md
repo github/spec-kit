@@ -9,8 +9,34 @@ Given the feature description provided as an argument, do this:
 
 ## Enhanced Specification Process
 
+### Phase 0: Context Loading
+**Before research, check for existing product and architecture context:**
+
+**Product Context Check**:
+1. Check if `docs/product-vision.md` exists in the repository
+   → If exists: Read and extract the following
+     - Target personas (use these to inform feature user stories)
+     - Product-wide non-functional requirements (inherit into this feature)
+     - Success metrics (align this feature with product goals)
+     - Market context (skip market research if already done at product level)
+   → If missing: Proceed without product context (standalone feature or no product vision created)
+
+**System Architecture Check**:
+2. Check if `docs/system-architecture.md` exists in the repository
+   → If exists: Read and extract the following
+     - Technology stack constraints (PostgreSQL, Node.js, etc. - note what MUST be used)
+     - Integration requirements (existing APIs, auth systems - note what MUST integrate with)
+     - Architecture version (understand current system state)
+     - Architectural patterns (monolith vs microservices, deployment model)
+   → If missing: No architectural constraints (likely first feature/MVP - this /specify will inform first /plan)
+
+**Context Summary**:
+- Document what context was found and will be used
+- If product vision exists: Note that market research can be skipped
+- If system architecture exists: Note constraints that will appear in Technical Constraints section
+
 ### Phase 1: Research & Context Gathering
-**Before creating the specification, conduct systematic research to ensure comprehensive context:**
+**After loading existing context, conduct additional research:**
 
 **ULTRATHINK**: Before proceeding with research, deeply analyze the feature description to identify:
 - Hidden complexity that isn't immediately apparent
@@ -27,6 +53,8 @@ Given the feature description provided as an argument, do this:
    - Note any architectural constraints or opportunities
 
 2. **External Research** (use Task tool to spawn research agents):
+   - **If product vision does NOT exist**: Research market, competitors, user needs
+   - **If product vision exists**: Skip market research, extract context from product-vision.md
    - Research best practices for the type of feature being specified
    - Find authoritative documentation and implementation examples
    - Identify common pitfalls and gotchas for this feature type

@@ -1,42 +1,64 @@
 # Feature Specification: [FEATURE NAME]
 
-**Feature Branch**: `[username/jira-123.feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
+**Feature Branch**: `[username/jira-123.feature-name]`
+**Created**: [DATE]
+**Status**: Draft
 **Input**: User description: "$ARGUMENTS"
+
+**Product Context**: docs/product-vision.md (if exists)
+**System Architecture**: docs/system-architecture.md (if exists)
 
 ## Execution Flow (main)
 ```
-1. Parse user description from Input
+1. Check for product context:
+   → If docs/product-vision.md exists: Load personas, product-wide NFRs, success metrics
+   → If missing: Proceed with feature-only context (no product context)
+2. Check for system architecture:
+   → If docs/system-architecture.md exists: Load architectural constraints, existing tech stack
+   → If missing: No architectural constraints (likely first feature/MVP)
+3. Parse user description from Input
    → If empty: ERROR "No feature description provided"
-2. Extract key concepts from description
+4. Extract key concepts from description
    → Identify: actors, actions, data, constraints
-3. For each unclear aspect:
+5. For each unclear aspect:
    → Mark with [NEEDS CLARIFICATION: specific question]
-4. Research Phase: Fill Context Engineering section
+6. Research Phase: Fill Context Engineering section
    → Search codebase for similar features
    → Document external research findings
+   → If product vision exists: Skip market research, extract from product-vision.md
    → Identify required documentation and gotchas
    → Run Context Completeness Check
-5. Fill User Scenarios & Testing section
+7. Fill User Scenarios & Testing section
+   → If product vision exists: Use personas from product-vision.md
    → If no clear user flow: ERROR "Cannot determine user scenarios"
-6. Generate Functional Requirements
+8. Generate Functional Requirements
    → Each requirement must be testable
    → Mark ambiguous requirements
-7. Identify Key Entities (if data involved)
-8. Run Review Checklist
+9. Generate Non-Functional Requirements (NEW - Industry Tier 2)
+   → If product vision exists: Inherit product-wide NFRs
+   → Add feature-specific NFRs (performance, security, scale)
+   → Each NFR must be measurable
+10. Document Technical Constraints (NEW - Industry Tier 2)
+   → If system architecture exists: Note integration requirements
+   → Constraints are WHAT EXISTS, not HOW TO BUILD
+   → Must integrate with X, Must use existing Y
+11. Identify Key Entities (if data involved)
+12. Run Review Checklist
    → If any [NEEDS CLARIFICATION]: WARN "Spec has uncertainties"
    → If implementation details found: ERROR "Remove tech details"
+   → If architecture decisions found: ERROR "Architecture belongs in /plan"
    → If Context Completeness Check fails: WARN "Insufficient context for implementation"
-9. Return: SUCCESS (spec ready for planning)
+13. Return: SUCCESS (spec ready for planning)
 ```
 
 ---
 
 ## ⚡ Quick Guidelines
 - ✅ Focus on WHAT users need and WHY
-- ❌ Avoid HOW to implement (no tech stack, APIs, code structure)
-- 👥 Written for business stakeholders, not developers
+- ✅ Include HOW WELL (performance targets, security requirements)
+- ✅ Include WHAT EXISTS (must integrate with X, must use existing Y)
+- ❌ Avoid HOW TO BUILD (no architecture decisions, no technology choices)
+- 👥 Written for product/engineering collaboration (Industry Tier 2: Requirements + Constraints)
 ### Section Requirements
 - **Mandatory sections**: Must be completed for every feature
 - **Optional sections**: Include only when relevant to the feature
@@ -129,6 +151,73 @@ Key findings from researching this feature type:
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
+### Non-Functional Requirements *(NEW - Industry Tier 2)*
+
+*These specify HOW WELL the feature must perform, not HOW to build it.*
+
+#### Performance Requirements
+- **NFR-P001**: [Specific performance target, e.g., "API responds in < 200ms (p95)"]
+- **NFR-P002**: [Throughput requirement, e.g., "Support 100 concurrent requests"]
+- **NFR-P003**: [Load time requirement, e.g., "Page loads in < 2 seconds"]
+
+#### Security Requirements
+- **NFR-S001**: [Security constraint, e.g., "Encrypt PII data at rest and in transit"]
+- **NFR-S002**: [Auth requirement, e.g., "Require MFA for administrative actions"]
+- **NFR-S003**: [Access control, e.g., "Role-based access control for feature access"]
+
+#### Scalability Requirements
+- **NFR-SC001**: [Scale target, e.g., "Support 1000 concurrent users for this feature"]
+- **NFR-SC002**: [Data scale, e.g., "Handle up to 100k records per user"]
+
+#### Availability Requirements
+- **NFR-A001**: [Uptime requirement, e.g., "99.9% availability for this feature"]
+- **NFR-A002**: [Degradation, e.g., "Graceful degradation when dependent service unavailable"]
+
+#### Compliance Requirements *(if applicable)*
+- **NFR-C001**: [Regulatory requirement, e.g., "GDPR-compliant data handling"]
+- **NFR-C002**: [Audit requirement, e.g., "Audit log all user actions in this feature"]
+
+**Source Tracking**:
+- Inherited from product vision (docs/product-vision.md): [List NFRs that came from product vision]
+- Feature-specific (new for this feature): [List NFRs unique to this feature]
+
+*Note: If product vision exists, many NFRs will be inherited. Feature adds specifics.*
+
+### Technical Constraints *(NEW - Industry Tier 2)*
+
+*These specify WHAT EXISTS and must be used or integrated with. They are constraints, not decisions.*
+
+**Key Distinction**:
+- ✅ Constraint: "Must integrate with existing PostgreSQL database" (what exists)
+- ✅ Constraint: "Must use existing JWT authentication" (what exists)
+- ❌ Decision: "Use PostgreSQL for storage" (how to build - belongs in /plan)
+- ❌ Decision: "Implement JWT authentication" (how to build - belongs in /plan)
+
+#### Integration Constraints
+- Must integrate with: [Existing feature/system, e.g., "proj-1 messaging system"]
+- Must use existing: [Component, e.g., "WebSocket connection from proj-1"]
+- Must maintain compatibility with: [API/interface, e.g., "v1 REST API"]
+
+#### Technology Constraints *(from system architecture)*
+- Must use: [Existing tech, e.g., "PostgreSQL 15+ (system constraint)"]
+- Must deploy via: [Infrastructure, e.g., "Existing Docker/ECS infrastructure"]
+- Must authenticate with: [Auth system, e.g., "Existing JWT token system"]
+
+#### Compatibility Constraints
+- Must support: [Platforms/browsers, e.g., "Latest 2 versions of Chrome, Firefox, Safari"]
+- Must work with: [Existing data, e.g., "Existing user account schema"]
+
+#### Operational Constraints
+- Must adhere to: [Operational requirement, e.g., "Existing logging/monitoring patterns"]
+- Must respect: [Resource limits, e.g., "Database connection pool limits"]
+
+**Source Tracking**:
+- From system architecture (docs/system-architecture.md): [List constraints from existing architecture]
+- From existing features: [List integration requirements with other features]
+- From operational requirements: [List infrastructure/deployment constraints]
+
+*Note: First feature (MVP) will have minimal constraints. Later features accumulate constraints from earlier features.*
+
 ---
 
 ## Review & Acceptance Checklist
@@ -136,29 +225,42 @@ Key findings from researching this feature type:
 
 ### Content Quality
 - [ ] No implementation details (languages, frameworks, APIs)
-- [ ] Focused on user value and business needs
-- [ ] Written for non-technical stakeholders
+- [ ] No architecture decisions (those belong in /plan)
+- [ ] Focused on user value, requirements, and constraints
+- [ ] Written for product/engineering collaboration (Industry Tier 2)
 - [ ] All mandatory sections completed
 
 ### Requirement Completeness
 - [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous  
+- [ ] Functional requirements are testable and unambiguous
+- [ ] Non-functional requirements are measurable and specific
+- [ ] Technical constraints clearly stated (what exists, not how to build)
 - [ ] Success criteria are measurable
 - [ ] Scope is clearly bounded
 - [ ] Dependencies and assumptions identified
+
+### Tier 2 Alignment (NEW)
+- [ ] NFRs include performance, security, scale, availability targets
+- [ ] Constraints distinguish between "what exists" and "how to build"
+- [ ] Product context integrated if product-vision.md exists
+- [ ] Architecture constraints noted if system-architecture.md exists
 
 ---
 
 ## Execution Status
 *Updated by main() during processing*
 
+- [ ] Product context loaded (if exists)
+- [ ] System architecture context loaded (if exists)
 - [ ] User description parsed
 - [ ] Key concepts extracted
 - [ ] Ambiguities marked
 - [ ] Research phase completed (Context Engineering filled)
 - [ ] Context completeness check passed
 - [ ] User scenarios defined
-- [ ] Requirements generated
+- [ ] Functional requirements generated
+- [ ] Non-functional requirements generated
+- [ ] Technical constraints documented
 - [ ] Entities identified
 - [ ] Review checklist passed
 

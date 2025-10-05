@@ -127,15 +127,27 @@ uvx --from git+https://github.com/hnimitanakit/spec-kit.git@prps-spec specify in
 
 **Auto-Detection Feature**: When using `uvx --from` with a GitHub URL, the CLI automatically detects the repository owner and branch, eliminating the need to manually specify `--repo-owner` and `--repo-branch` flags. This ensures you download templates from the same fork/branch you're running the CLI from.
 
-### 2. Create the spec
+### 2. (Optional) Define Product Vision
 
-Use the **`/specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+For complex products or 0-to-1 development, start with strategic planning:
+
+```bash
+/product-vision Build a team collaboration platform for distributed teams
+```
+
+This creates `docs/product-vision.md` with personas, success metrics, and product-wide requirements. **Skip this** for simple features or single-feature tools.
+
+### 3. Create Feature Specification
+
+Use the **`/specify`** command to describe what you want to build. Focus on requirements and constraints.
 
 ```bash
 /specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
-### 3. Create a technical implementation plan
+If product vision exists, `/specify` inherits personas and product-wide requirements. Otherwise, it works standalone.
+
+### 4. Create Technical Implementation Plan
 
 Use the **`/plan`** command to provide your tech stack and architecture choices.
 
@@ -223,9 +235,38 @@ Spec-Driven Development is a structured process that emphasizes:
 
 | Phase | Focus | Key Activities |
 |-------|-------|----------------|
-| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
+| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>(Optional) Define product vision with `/product-vision`</li><li>Create feature specifications with `/specify`</li><li>Plan implementation with `/plan` (establishes system architecture v1.0.0)</li><li>Build MVP and production-ready applications</li></ul> |
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively (inherits from product vision & system architecture)</li><li>Extend or refactor architecture as needed</li><li>Modernize legacy systems</li><li>Track architecture evolution with semantic versioning</li></ul> |
+
+### Example Workflows
+
+**Greenfield with Product Vision** (Complex product, 0-to-1):
+```
+/product-vision → docs/product-vision.md (personas, success metrics, product NFRs)
+/specify        → specs/proj-1.mvp/spec.md (inherits from product vision)
+/plan           → specs/proj-1.mvp/plan.md (establishes docs/system-architecture.md v1.0.0)
+/tasks          → specs/proj-1.mvp/tasks.md
+implement       → MVP launched
+```
+
+**Greenfield without Product Vision** (Simple tool, single feature):
+```
+/specify        → specs/proj-1.tool/spec.md (standalone specification)
+/plan           → specs/proj-1.tool/plan.md (establishes docs/system-architecture.md v1.0.0)
+/tasks          → specs/proj-1.tool/tasks.md
+implement       → Tool launched
+```
+
+**Brownfield Feature Addition** (Extending existing product):
+```
+/specify        → specs/proj-2.feature/spec.md (inherits from docs/product-vision.md + docs/system-architecture.md)
+/plan           → specs/proj-2.feature/plan.md (extends architecture v1.0.0 → v1.1.0)
+/tasks          → specs/proj-2.feature/tasks.md
+implement       → Feature added, architecture extended
+```
+
+For detailed workflows including architecture refactoring, see our [comprehensive guide](./spec-driven.md).
 
 ## 🎯 Experimental goals
 
@@ -309,9 +350,11 @@ Go to the project folder and run your AI agent. In our example, we're using `cla
 
 ![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
 
-You will know that things are configured correctly if you see the `/specify`, `/plan`, and `/tasks` commands available.
+You will know that things are configured correctly if you see the `/product-vision`, `/specify`, `/plan`, and `/tasks` commands available.
 
-The first step should be creating a new project scaffolding. Use `/specify` command and then provide the concrete requirements for the project you want to develop.
+**(Optional) STEP 0:** For complex products or 0-to-1 development, define product vision first using `/product-vision`. This creates strategic context (personas, success metrics, product-wide requirements) that subsequent features will inherit. Skip this for simple tools or single-feature projects.
+
+The first required step is creating a feature specification. Use `/specify` command and then provide the concrete requirements for the feature you want to develop.
 
 >[!IMPORTANT]
 >Be as explicit as possible about _what_ you are trying to build and _why_. **Do not focus on the tech stack at this point**.
