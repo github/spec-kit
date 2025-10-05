@@ -24,9 +24,24 @@
 <!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
 
 ### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+<!-- Example: V. Observability -->
 [PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+<!-- Example: Text I/O ensures debuggability; Structured logging required; Error context with correlation IDs -->
+
+### [PRINCIPLE_6_NAME]
+<!-- Example: VI. Versioning & Breaking Changes -->
+[PRINCIPLE_6_DESCRIPTION]
+<!-- Example: MAJOR.MINOR.BUILD format; Breaking changes require migration plans; Semantic versioning strictly followed -->
+
+### [PRINCIPLE_7_NAME]
+<!-- Example: VII. Simplicity -->
+[PRINCIPLE_7_DESCRIPTION]
+<!-- Example: Start simple, YAGNI principles; No premature optimization; Composition over inheritance -->
+
+### [PRINCIPLE_8_NAME]
+<!-- Example: VIII. Atomic Development & Scope Management -->
+[PRINCIPLE_8_DESCRIPTION]
+<!-- Example: Target 200-500 LOC per capability/PR; Use /decompose for features >500 LOC; Benefits: faster reviews (1-2 days vs 7+ days), manageable TDD scope, parallel development; Justification required for >500 LOC with approval -->
 
 ## [SECTION_2_NAME]
 <!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->

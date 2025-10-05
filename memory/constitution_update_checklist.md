@@ -48,6 +48,14 @@ When amending the constitution (`/memory/constitution.md`), ensure all dependent
 - [ ] Add pattern prohibition examples
 - [ ] Include YAGNI reminders
 
+#### Article VIII (Atomic Development & Scope Management):
+- [ ] Add LOC budget tracking to plan-template.md (200-500 LOC targets)
+- [ ] Include /decompose workflow references in templates
+- [ ] Add justification requirements for >500 LOC
+- [ ] Update tasks-template.md with budget validation gates
+- [ ] Add decomposition benefits (faster reviews, parallel work, manageable TDD)
+- [ ] Document capability sizing guidelines (200-400 ideal, 400-500 acceptable, >500 exceptional)
+
 ## Validation Steps
 
 1. **Before committing constitution changes:**
@@ -76,9 +84,13 @@ Watch for these often-forgotten updates:
 
 ## Template Sync Status
 
-Last sync check: 2025-07-16
-- Constitution version: 2.1.1
-- Templates aligned: ❌ (missing versioning, observability details)
+Last sync check: 2025-10-05
+- Constitution template version: Updated with Article VIII placeholder
+- Templates aligned: ✅ (decompose, plan, tasks include LOC budgeting and atomic development workflow)
+- Recent updates:
+  - 2025-10-05: Added Article VIII (Atomic Development) to constitution template and checklist
+  - 2025-10-05: LOC budget tracking added to plan-template.md and tasks-template.md
+  - 2025-10-05: Decomposition workflow (/decompose) integrated into spec-kit methodology
 
 ---
 
