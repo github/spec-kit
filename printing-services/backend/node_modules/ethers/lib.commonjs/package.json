@@ -1,0 +1,12 @@
+{
+  "browser": {
+    "./crypto/crypto.js": "./crypto/crypto-browser.js",
+    "./providers/provider-ipcsocket.js": "./providers/provider-ipcsocket-browser.js",
+    "./providers/ws.js": "./providers/ws-browser.js",
+    "./utils/base64.js": "./utils/base64-browser.js",
+    "./utils/geturl.js": "./utils/geturl-browser.js",
+    "./wordlists/wordlists.js": "./wordlists/wordlists-browser.js"
+  },
+  "sideEffects": false,
+  "type": "commonjs"
+}

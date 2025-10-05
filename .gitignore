@@ -33,13 +33,35 @@ env/
 *.swo
 .DS_Store
 
-# Project specific
-*.log
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment files
 .env
 .env.local
-*.lock
+.env.*.local
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+*.log
+logs/
 
 # Spec Kit-specific files
-.genreleases/
+genreleases/
 *.zip
 sdd-*/
+
+# Allow printing-services subproject
+!printing-services/
+!printing-services/**/*

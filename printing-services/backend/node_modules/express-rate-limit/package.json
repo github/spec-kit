@@ -1,0 +1,133 @@
+{
+	"name": "express-rate-limit",
+	"version": "7.5.1",
+	"description": "Basic IP rate-limiting middleware for Express. Use to limit repeated requests to public APIs and/or endpoints such as password reset.",
+	"author": {
+		"name": "Nathan Friedly",
+		"url": "http://nfriedly.com/"
+	},
+	"license": "MIT",
+	"homepage": "https://github.com/express-rate-limit/express-rate-limit",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/express-rate-limit/express-rate-limit.git"
+	},
+	"funding": "https://github.com/sponsors/express-rate-limit",
+	"keywords": [
+		"express-rate-limit",
+		"express",
+		"rate",
+		"limit",
+		"ratelimit",
+		"rate-limit",
+		"middleware",
+		"ip",
+		"auth",
+		"authorization",
+		"security",
+		"brute",
+		"force",
+		"bruteforce",
+		"brute-force",
+		"attack"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		}
+	},
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist/",
+		"tsconfig.json"
+	],
+	"engines": {
+		"node": ">= 16"
+	},
+	"scripts": {
+		"clean": "del-cli dist/ coverage/ *.log *.tmp *.bak *.tgz",
+		"build:cjs": "esbuild --platform=node --bundle --target=es2022 --format=cjs --outfile=dist/index.cjs --footer:js=\"module.exports = rateLimit; module.exports.default = rateLimit; module.exports.rateLimit = rateLimit; module.exports.MemoryStore = MemoryStore;\" source/index.ts",
+		"build:esm": "esbuild --platform=node --bundle --target=es2022 --format=esm --outfile=dist/index.mjs source/index.ts",
+		"build:types": "dts-bundle-generator --out-file=dist/index.d.ts source/index.ts && cp dist/index.d.ts dist/index.d.cts && cp dist/index.d.ts dist/index.d.mts",
+		"compile": "run-s clean build:*",
+		"docs": "cd docs && mintlify dev",
+		"lint:code": "xo",
+		"lint:rest": "prettier --check .",
+		"lint": "run-s lint:*",
+		"format:code": "xo --fix",
+		"format:rest": "prettier --write .",
+		"format": "run-s format:*",
+		"test:lib": "jest",
+		"test:ext": "cd test/external/ && bash run-all-tests",
+		"test": "run-s lint test:lib",
+		"pre-commit": "lint-staged",
+		"prepare": "run-s compile && husky install config/husky"
+	},
+	"peerDependencies": {
+		"express": ">= 4.11"
+	},
+	"devDependencies": {
+		"@express-rate-limit/prettier": "1.1.1",
+		"@express-rate-limit/tsconfig": "1.0.2",
+		"@jest/globals": "29.7.0",
+		"@types/express": "4.17.20",
+		"@types/jest": "29.5.6",
+		"@types/node": "20.8.7",
+		"@types/supertest": "2.0.15",
+		"del-cli": "5.1.0",
+		"dts-bundle-generator": "8.0.1",
+		"esbuild": "0.25.0",
+		"express": "4.21.1",
+		"husky": "8.0.3",
+		"jest": "29.7.0",
+		"lint-staged": "15.0.2",
+		"mintlify": "4.0.63",
+		"npm-run-all": "4.1.5",
+		"ratelimit-header-parser": "0.1.0",
+		"supertest": "6.3.3",
+		"ts-jest": "29.1.1",
+		"ts-node": "10.9.1",
+		"typescript": "5.2.2",
+		"xo": "0.56.0"
+	},
+	"xo": {
+		"prettier": true,
+		"rules": {
+			"@typescript-eslint/no-empty-function": 0,
+			"@typescript-eslint/no-dynamic-delete": 0,
+			"@typescript-eslint/no-confusing-void-expression": 0,
+			"@typescript-eslint/consistent-indexed-object-style": [
+				"error",
+				"index-signature"
+			],
+			"n/no-unsupported-features/es-syntax": 0
+		},
+		"overrides": [
+			{
+				"files": "test/library/*.ts",
+				"rules": {
+					"@typescript-eslint/no-unsafe-argument": 0,
+					"@typescript-eslint/no-unsafe-assignment": 0
+				}
+			}
+		],
+		"ignore": [
+			"test/external"
+		]
+	},
+	"prettier": "@express-rate-limit/prettier",
+	"lint-staged": {
+		"{source,test}/**/*.ts": "xo --fix",
+		"**/*.{json,yaml,md}": "prettier --write "
+	}
+}
