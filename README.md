@@ -155,11 +155,36 @@ Use the **`/plan`** command to provide your tech stack and architecture choices.
 /plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 4. Break down and implement
+### 4. Decompose into capabilities (optional, for large features)
+
+For features >500 LOC, use **`/decompose`** to break into atomic capabilities (200-500 LOC each).
+
+```bash
+/decompose
+# Generates capability breakdown and creates cap-001/, cap-002/, etc.
+```
+
+### 5. Break down and implement
 
 Use **`/tasks`** to create an actionable task list, then ask your agent to implement the feature.
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 🔧 Workflow: Simple vs Complex Features
+
+### Simple Features (<500 LOC)
+```bash
+/specify → /plan → /tasks → /implement
+```
+
+### Complex Features (>500 LOC) - Atomic PRs
+```bash
+/specify → /decompose → /plan --capability cap-001 → /tasks → /implement
+                      ↓ /plan --capability cap-002 → /tasks → /implement
+                      ↓ /plan --capability cap-003 → /tasks → /implement
+```
+
+**Result:** Multiple atomic PRs (200-500 LOC each) instead of one massive PR.
 
 ## 🔧 Specify CLI Reference
 
@@ -171,6 +196,16 @@ The `specify` command supports the following options:
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`) |
+
+### Key Slash Commands
+
+| Command     | Purpose | When to Use |
+|-------------|---------|-------------|
+| `/specify`  | Create feature specification | Always - first step for any feature |
+| `/decompose` | Break feature into capabilities | For complex features (>500 LOC, >5 requirements) |
+| `/plan`     | Create implementation plan | After `/specify` (simple) or `/decompose` (complex) |
+| `/tasks`    | Generate task list | After `/plan` is complete |
+| `/implement`| Execute implementation | After `/tasks` is complete |
 
 ### `specify init` Arguments & Options
 

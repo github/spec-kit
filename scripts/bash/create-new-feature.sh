@@ -3,11 +3,24 @@
 set -e
 
 JSON_MODE=false
+CAPABILITY_ID=""
 ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --json) JSON_MODE=true ;;
-        --help|-h) echo "Usage: $0 [--json] [jira-key] <feature_description>"; exit 0 ;;
+        --capability=*) CAPABILITY_ID="${arg#*=}" ;;
+        --help|-h)
+            echo "Usage: $0 [--json] [--capability=cap-XXX] [jira-key] <feature_description>"
+            echo ""
+            echo "Options:"
+            echo "  --capability=cap-XXX  Create capability within parent feature (e.g., cap-001)"
+            echo "  --json                Output in JSON format"
+            echo ""
+            echo "Examples:"
+            echo "  $0 proj-123 \"User authentication\"           # Create parent feature"
+            echo "  $0 --capability=cap-001 \"Login flow\"        # Create capability in current feature"
+            exit 0
+            ;;
         *) ARGS+=("$arg") ;;
     esac
 done
@@ -57,29 +70,75 @@ USERNAME=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g'
 FEATURE_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
 WORDS=$(echo "$FEATURE_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
 
-# Create branch name: username/jira-123.feature-name
-BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${WORDS}"
+# Handle capability mode
+if [ -n "$CAPABILITY_ID" ]; then
+    # Capability mode: create within existing feature directory
+    # Get current feature directory from current branch
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    FEATURE_ID=$(echo "$CURRENT_BRANCH" | sed 's/^[^/]*\///')
+    PARENT_DIR="$SPECS_DIR/$FEATURE_ID"
 
-# Create feature directory name: jira-123.feature-name
-FEATURE_ID="${JIRA_KEY}.${WORDS}"
-FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
+    if [ ! -d "$PARENT_DIR" ]; then
+        echo "ERROR: Parent feature directory not found at $PARENT_DIR" >&2
+        echo "Make sure you're on the parent feature branch" >&2
+        exit 1
+    fi
 
-git checkout -b "$BRANCH_NAME"
+    # Create capability directory: cap-001-feature-name
+    CAPABILITY_NAME="${CAPABILITY_ID}-${WORDS}"
+    CAPABILITY_DIR="$PARENT_DIR/$CAPABILITY_NAME"
 
-# Create feature directory
-mkdir -p "$FEATURE_DIR"
+    # No new branch in capability mode - use current branch
+    BRANCH_NAME="$CURRENT_BRANCH"
 
-# Create spec file in feature directory
-TEMPLATE="$REPO_ROOT/templates/spec-template.md"
-SPEC_FILE="$FEATURE_DIR/spec.md"
+    # Create capability directory
+    mkdir -p "$CAPABILITY_DIR"
 
-if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+    # Create spec file in capability directory using capability template
+    TEMPLATE="$REPO_ROOT/templates/capability-spec-template.md"
+    SPEC_FILE="$CAPABILITY_DIR/spec.md"
 
-if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_ID":"%s","JIRA_KEY":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_ID" "$JIRA_KEY"
+    if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+
+    # Output for capability mode
+    if $JSON_MODE; then
+        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_ID":"%s","CAPABILITY_ID":"%s","CAPABILITY_DIR":"%s"}\n' \
+            "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_ID" "$CAPABILITY_ID" "$CAPABILITY_DIR"
+    else
+        echo "BRANCH_NAME: $BRANCH_NAME (existing)"
+        echo "SPEC_FILE: $SPEC_FILE"
+        echo "FEATURE_ID: $FEATURE_ID"
+        echo "CAPABILITY_ID: $CAPABILITY_ID"
+        echo "CAPABILITY_DIR: $CAPABILITY_DIR"
+    fi
 else
-    echo "BRANCH_NAME: $BRANCH_NAME"
-    echo "SPEC_FILE: $SPEC_FILE"
-    echo "FEATURE_ID: $FEATURE_ID"
-    echo "JIRA_KEY: $JIRA_KEY"
+    # Parent feature mode: create new feature branch and directory
+    # Create branch name: username/jira-123.feature-name
+    BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${WORDS}"
+
+    # Create feature directory name: jira-123.feature-name
+    FEATURE_ID="${JIRA_KEY}.${WORDS}"
+    FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
+
+    git checkout -b "$BRANCH_NAME"
+
+    # Create feature directory
+    mkdir -p "$FEATURE_DIR"
+
+    # Create spec file in feature directory
+    TEMPLATE="$REPO_ROOT/templates/spec-template.md"
+    SPEC_FILE="$FEATURE_DIR/spec.md"
+
+    if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+
+    # Output for parent feature mode
+    if $JSON_MODE; then
+        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_ID":"%s","JIRA_KEY":"%s"}\n' \
+            "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_ID" "$JIRA_KEY"
+    else
+        echo "BRANCH_NAME: $BRANCH_NAME"
+        echo "SPEC_FILE: $SPEC_FILE"
+        echo "FEATURE_ID: $FEATURE_ID"
+        echo "JIRA_KEY: $JIRA_KEY"
+    fi
 fi

@@ -3,6 +3,28 @@
 **Input**: Design documents from `/specs/[jira-123.feature-name]/`
 **Prerequisites**: plan.md (required), research.md, data-model.md, contracts/
 
+## LOC Budget Validation
+
+**From plan.md:** [Load estimated total from plan.md LOC Budget Tracking section]
+
+**Status Check:**
+- ✓ **Within budget** (200-500 LOC) - Proceed with task generation
+- ⚠️ **Approaching limit** (450-500 LOC) - Review task breakdown carefully
+- ❌ **Exceeds 500 LOC** - STOP: Decomposition required
+
+**If >500 LOC:**
+```
+⚠️  WARNING: This implementation exceeds 500 LOC budget
+    Estimated: XXX LOC (from plan.md)
+
+    OPTIONS:
+    1. Run `/decompose` to split into multiple capabilities
+    2. Document justification in plan.md and get approval
+    3. Review plan.md to identify scope reduction opportunities
+
+    RECOMMENDATION: Capabilities should target 200-400 LOC for optimal PR review
+```
+
 ## Execution Flow (main)
 ```
 1. Load plan.md from feature directory

@@ -68,6 +68,34 @@ Phase 0-10: Feature Planning
 ## Summary
 [Extract from feature spec: primary requirement + technical approach from research]
 
+## LOC Budget Tracking
+
+**Target:** 200-400 LOC (ideal)
+**Acceptable:** 400-500 LOC
+**Maximum:** 500 LOC (requires justification below)
+
+**Estimated Breakdown:**
+| Component | Estimated LOC | Notes |
+|-----------|---------------|-------|
+| Contract tests | | [e.g., 4 endpoints × 20 LOC each = 80] |
+| Models | | [e.g., User + Profile models = 120] |
+| Services | | [e.g., UserService CRUD = 180] |
+| Integration tests | | [e.g., Auth flow scenarios = 100] |
+| CLI (if applicable) | | [e.g., Command interface = 50] |
+| **Total** | **0** | [✓ Within budget \| ⚠️ Approaching limit \| ❌ Exceeds 500] |
+
+**Status:** [Calculate total above]
+- ✓ **Within budget** (200-500 LOC) - Proceed with implementation
+- ⚠️ **Approaching limit** (450-500 LOC) - Review for optimization opportunities
+- ❌ **Exceeds 500 LOC** - Justification required below OR run `/decompose` to split into capabilities
+
+**Justification for >500 LOC (if applicable):**
+[If total >500 LOC, document here:
+- Why this scope cannot be split further
+- What keeps these components tightly coupled
+- Why splitting would harm cohesion or introduce artificial boundaries
+- Approval status from tech lead]
+
 ## Technical Context
 **Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
 **Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  

@@ -196,6 +196,14 @@ The key is treating specifications as the source of truth, with code as the gene
 
 The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking workflow:
 
+### Core Commands Overview
+
+**Three workflows supported:**
+
+1. **Simple Features (<500 LOC):** `/specify` → `/plan` → `/tasks` → `/implement`
+2. **Complex Features (>500 LOC):** `/specify` → `/decompose` → `/plan --capability` → `/tasks` → `/implement`
+3. **Existing Feature Enhancement:** Same as above, starting from existing spec
+
 ### The `/specify` Command
 
 This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
@@ -214,6 +222,24 @@ Once a feature specification exists, this command creates a comprehensive implem
 3. **Technical Translation**: Converts business requirements into technical architecture and implementation details
 4. **Detailed Documentation**: Generates supporting documents for data models, API contracts, and test scenarios
 5. **Quickstart Validation**: Produces a quickstart guide capturing key validation scenarios
+
+### The `/decompose` Command (NEW)
+
+For features exceeding 500 LOC, this command breaks the parent specification into atomic capabilities:
+
+1. **Analysis**: Reads parent spec.md and extracts functional requirements
+2. **Grouping**: Identifies bounded contexts (entities, workflows, API clusters)
+3. **Estimation**: Calculates LOC per capability (target: 200-500 LOC)
+4. **Ordering**: Creates dependency-aware implementation sequence
+5. **Generation**: Creates capability subdirectories (cap-001/, cap-002/, etc.) with scoped specs
+6. **Output**: Writes `capabilities.md` with breakdown and dependency graph
+
+**Benefits:**
+- Atomic PRs (200-500 LOC instead of 4,000+ LOC)
+- Parallel development (independent capabilities can be built concurrently)
+- Faster reviews (1-2 days instead of 7+ days)
+- Lower risk (smaller PRs = easier rollback)
+- TDD at manageable scope (RED-GREEN-REFACTOR within 500 LOC)
 
 ### The `/tasks` Command
 
@@ -239,7 +265,7 @@ Here's how these commands transform the traditional development workflow:
 Total: ~12 hours of documentation work
 ```
 
-**SDD with Commands Approach:**
+**SDD with Commands Approach (Simple Feature):**
 
 ```bash
 # Step 1: Create the feature specification (5 minutes)
@@ -265,7 +291,46 @@ Total: ~12 hours of documentation work
 # - specs/proj-123.chat-system/tasks.md (Task list derived from the plan)
 ```
 
-In 15 minutes, you have:
+**SDD with Decomposition (Complex Feature):**
+
+```bash
+# Step 1: Create parent specification (5 minutes)
+/specify Complete user management system with auth, profiles, permissions, and audit logging
+
+# Step 2: Decompose into capabilities (10 minutes)
+/decompose
+# Analyzes spec, creates:
+# - capabilities.md (breakdown of 5 capabilities)
+# - cap-001-auth/ (authentication - 380 LOC)
+# - cap-002-profiles/ (user profiles - 420 LOC)
+# - cap-003-permissions/ (RBAC - 450 LOC)
+# - cap-004-audit/ (audit logging - 320 LOC)
+# - cap-005-admin/ (admin UI - 480 LOC)
+
+# Step 3-5: Implement each capability (can be parallel)
+# Capability 1: Authentication
+cd cap-001-auth/
+/plan --capability cap-001 "Use FastAPI + JWT tokens"
+/tasks
+/implement
+→ PR #1: 380 LOC (2 day review) ✓ MERGED
+
+# Capability 2: Profiles (can start immediately)
+cd ../cap-002-profiles/
+/plan --capability cap-002 "Use Pydantic models + PostgreSQL"
+/tasks
+/implement
+→ PR #2: 420 LOC (2 day review) ✓ MERGED
+
+# Continue for cap-003, cap-004, cap-005...
+```
+
+**Comparison:**
+- **Monolithic:** 1 PR × 2,050 LOC × 7 days review = 7 days blocked
+- **Capability-based:** 5 PRs × 410 LOC avg × 2 days review = 10 days total (but parallel!)
+- **With 2 developers:** 5-6 days total (capabilities can be developed in parallel)
+
+In 15 minutes (simple) or 30 minutes (complex), you have:
 
 - A complete feature specification with user stories and acceptance criteria
 - A detailed implementation plan with technology choices and rationale
