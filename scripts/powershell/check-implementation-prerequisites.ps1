@@ -50,23 +50,8 @@ if (-not (Test-FeatureBranch -Branch $CurrentBranch)) {
     exit 1
 }
 
-# Get feature paths using subdirectory structure (matching bash version)
-$FeatureId = Get-FeatureId -Branch $CurrentBranch
-$SpecsDir = Join-Path $RepoRoot "specs"
-$FeatureDir = Join-Path $SpecsDir $FeatureId
-
-$FeaturePaths = @{
-    REPO_ROOT = $RepoRoot
-    CURRENT_BRANCH = $CurrentBranch
-    FEATURE_DIR = $FeatureDir
-    FEATURE_SPEC = Join-Path $FeatureDir "spec.md"
-    IMPL_PLAN = Join-Path $FeatureDir "plan.md"
-    TASKS = Join-Path $FeatureDir "tasks.md"
-    RESEARCH = Join-Path $FeatureDir "research.md"
-    DATA_MODEL = Join-Path $FeatureDir "data-model.md"
-    QUICKSTART = Join-Path $FeatureDir "quickstart.md"
-    CONTRACTS_DIR = Join-Path $FeatureDir "contracts"
-}
+# Get feature paths (now capability-aware via Get-FeaturePathsEnv)
+$FeaturePaths = Get-FeaturePathsEnv
 
 # Check for required files
 $MissingFiles = @()
@@ -151,6 +136,8 @@ if ($Json) {
         impl_plan = $FeaturePaths.IMPL_PLAN
         tasks = $FeaturePaths.TASKS
         branch = $FeaturePaths.CURRENT_BRANCH
+        capability_id = $FeaturePaths.CAPABILITY_ID
+        parent_feature_dir = $FeaturePaths.PARENT_FEATURE_DIR
         constitution = $ConstitutionPath
         data_model = $FeaturePaths.DATA_MODEL
         contracts_dir = $FeaturePaths.CONTRACTS_DIR
@@ -167,6 +154,12 @@ if ($Json) {
     Write-Host "=================================" -ForegroundColor Cyan
     Write-Host "Repository: $($FeaturePaths.REPO_ROOT)"
     Write-Host "Feature Branch: $($FeaturePaths.CURRENT_BRANCH) ✓" -ForegroundColor Green
+
+    if ($FeaturePaths.CAPABILITY_ID) {
+        Write-Host "Capability Mode: $($FeaturePaths.CAPABILITY_ID) (atomic PR workflow)" -ForegroundColor Cyan
+        Write-Host "Parent Feature: $($FeaturePaths.PARENT_FEATURE_DIR)"
+    }
+
     Write-Host "Feature Directory: $($FeaturePaths.FEATURE_DIR)"
     Write-Host ""
     Write-Host "Required Files:" -ForegroundColor Yellow

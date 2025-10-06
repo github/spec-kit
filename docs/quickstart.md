@@ -36,9 +36,32 @@ Use the `/plan` command to provide your tech stack and architecture choices.
 /plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
+### 3.5. Decompose Large Features (Optional, for >500 LOC)
+
+For large features estimated at >500 LOC, use `/decompose` to break into atomic capabilities (200-500 LOC each):
+
+```bash
+/decompose  # Creates cap-001/, cap-002/, etc.
+
+# Then for each capability:
+/plan --capability cap-001 "tech stack details"
+/tasks  # Auto-detects capability branch
+/implement  # Auto-detects capability branch
+# Create atomic PR to main (200-500 LOC)
+
+# Repeat for cap-002, cap-003, etc.
+```
+
+**Benefits of atomic PRs:**
+- Fast reviews: 1-2 days per PR vs 7+ days for large PRs
+- Parallel development: Team members work on different capabilities
+- Early integration: Merge to main frequently
+
 ### 4. Break Down and Implement
 
 Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
+
+**Note:** `/tasks` and `/implement` automatically detect if you're on a capability branch and adjust paths accordingly.
 
 ## Detailed Example: Building Taskify
 
@@ -114,6 +137,7 @@ implement specs/proj-123.create-taskify/plan.md
 - **Iterate and refine** your specifications before implementation
 - **Validate** the plan before coding begins
 - **Let the AI agent handle** the implementation details
+- **For large features (>500 LOC):** Use `/decompose` to create atomic PRs for faster reviews and parallel development
 
 ## Next Steps
 

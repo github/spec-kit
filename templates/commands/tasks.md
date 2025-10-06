@@ -5,9 +5,27 @@ scripts:
   ps: scripts/powershell/check-task-prerequisites.ps1 -Json
 ---
 
+## Capability Mode Detection
+
+**The script automatically detects your current workflow:**
+
+- **Parent feature branch** (`username/jira-123.feature-name`):
+  - Reads from: `specs/jira-123.feature-name/plan.md`
+  - Generates: `specs/jira-123.feature-name/tasks.md`
+  - Use case: Simple features <500 LOC, single PR
+
+- **Capability branch** (`username/jira-123.feature-name-cap-001`):
+  - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`
+  - Generates: `specs/jira-123.feature-name/cap-001-auth/tasks.md`
+  - Use case: Atomic PRs (200-500 LOC per capability)
+
+**No flag needed** - detection is automatic based on branch name pattern.
+
+---
+
 Given the context provided as an argument, do this:
 
-1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
+1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR, PLAN_PATH, and AVAILABLE_DOCS list. All paths must be absolute.
 2. Load and analyze available design documents:
    - Always read plan.md for tech stack and libraries
    - IF EXISTS: Read data-model.md for entities

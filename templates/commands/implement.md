@@ -9,6 +9,25 @@ scripts:
 
 **Implementation Target**: $ARGUMENTS
 
+## Capability Mode Detection
+
+**The script automatically detects your current workflow:**
+
+- **Parent feature branch** (`username/jira-123.feature-name`):
+  - Reads from: `specs/jira-123.feature-name/plan.md`, `tasks.md`
+  - Implementation: Single PR workflow (<500 LOC)
+
+- **Capability branch** (`username/jira-123.feature-name-cap-001`):
+  - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`, `tasks.md`
+  - Implementation: Atomic PR workflow (200-500 LOC)
+  - PR target: `cap-001` branch → `main` (not to parent branch)
+
+**No flag needed** - detection is automatic based on branch name pattern.
+
+See "Capability PR Workflow (Atomic PRs)" section below for detailed workflow.
+
+---
+
 ## Pre-Implementation Validation
 
 1. **Run prerequisite check**: `{SCRIPT}` from repo root

@@ -18,7 +18,7 @@ if ($args -contains "--help" -or $args -contains "-h") {
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$ScriptDir/common.ps1"
 
-$paths = Get-FeaturePaths
+$paths = Get-FeaturePathsEnv
 $REPO_ROOT = $paths.REPO_ROOT
 $CURRENT_BRANCH = $paths.CURRENT_BRANCH
 $FEATURE_DIR = $paths.FEATURE_DIR
@@ -27,7 +27,7 @@ $IMPL_PLAN = $paths.IMPL_PLAN
 
 if (-not (Test-FeatureBranch $CURRENT_BRANCH)) {
     Write-Error "Not on a feature branch. Current branch: $CURRENT_BRANCH"
-    Write-Error "Feature branches should be named like: username/jira-123.feature-name"
+    Write-Error "Feature branches should be named like: username/jira-123.feature-name or username/jira-123.feature-name-cap-001"
     exit 1
 }
 

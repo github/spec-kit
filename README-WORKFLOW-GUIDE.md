@@ -26,10 +26,19 @@ Think of the Spec Kit commands as different specialists in a world-class constru
 - **Enhancement:** Includes Implementation Blueprint with validation gates to prevent failures
 - **When to use:** After specifications are complete and approved
 - **Example:** Takes auth specification → Technical architecture with data models, APIs, and quality gates
+- **Capability mode:** Use `/plan --capability cap-001` to create atomic PR branches (200-500 LOC each)
+
+### **🔀 The Feature Decomposer** (`/decompose`)
+- **What they do:** Break large features (>500 LOC) into independently-implementable capabilities for atomic PRs
+- **When to use:** When a feature specification is too large (>500 LOC estimated)
+- **Example:** "User System" specification → cap-001-auth (380 LOC), cap-002-profiles (320 LOC), cap-003-permissions (290 LOC)
+- **Output:** Creates capability subdirectories with scoped specs, enables parallel development and fast PR reviews
+- **Benefit:** Atomic PRs reviewed in 1-2 days vs 7+ days for large PRs
 
 ### **📋 The Project Manager** (`/tasks`)
 - **What they do:** Break down implementation plans into specific, actionable tasks with clear success criteria
-- **When to use:** After planning phase is complete and validated
+- **Automatic detection:** Detects capability branches and generates tasks for 200-500 LOC scope
+- **When to use:** After planning phase is complete and validated (works for both simple and decomposed features)
 - **Example:** Takes implementation plan → Numbered task list ready for execution
 
 ### **🗺️ The Site Surveyor** (`/prime-core`)
@@ -370,12 +379,21 @@ Every feature goes through multiple validation gates, just like building inspect
 - You need technical implementation details
 - You want validation gates defined
 - You're ready to create architectural design
+- For large features: Use `/plan --capability cap-XXX` after `/decompose`
+
+### **Use `/decompose` when:**
+- Your feature specification estimates >500 LOC
+- You want atomic PRs (200-500 LOC each) for faster reviews
+- You need to enable parallel team development
+- You want independent, reviewable chunks
+- Your feature has multiple distinct bounded contexts
 
 ### **Use `/tasks` when:**
 - You have a complete implementation plan
 - You need actionable, ordered work items
 - You want to track implementation progress
 - You're ready to begin coding
+- Works automatically for both simple features and capabilities (auto-detects branch type)
 
 ### **Use `/review` when:**
 - Before committing any code
@@ -405,7 +423,7 @@ Every feature goes through multiple validation gates, just like building inspect
 
 ## Common Workflows 🔄
 
-### **New Feature from Scratch**
+### **New Feature from Scratch (Simple)**
 ```bash
 /prime-core
 /specify "feature description"
@@ -414,6 +432,21 @@ Every feature goes through multiple validation gates, just like building inspect
 # Implement following tasks
 /review
 /smart-commit
+```
+
+### **New Feature from Scratch (Complex, >500 LOC)**
+```bash
+/prime-core
+/specify "large feature description"
+/decompose  # Breaks into cap-001, cap-002, etc.
+
+# For each capability:
+/plan --capability cap-001 "tech details"
+/tasks  # Auto-detects capability branch
+/implement  # Auto-detects capability branch
+# Create atomic PR to main
+
+# Repeat for cap-002, cap-003, etc.
 ```
 
 ### **Modifying Existing Code**
@@ -444,6 +477,108 @@ Every feature goes through multiple validation gates, just like building inspect
 /validate implementation
 # Ensure constitutional compliance
 ```
+
+---
+
+## Complex Features: Atomic PR Workflow 🔀
+
+### **When to Use Decomposition**
+
+Use `/decompose` when your feature specification estimates >500 LOC:
+- **Simple features (<500 LOC):** Use standard workflow (`/specify` → `/plan` → `/tasks` → `/implement`)
+- **Complex features (>500 LOC):** Use atomic PR workflow with `/decompose`
+
+### **The Atomic PR Workflow**
+
+```bash
+# Step 1: Create parent specification (on branch: username/jira-123.user-system)
+/specify "Build complete user management system with authentication, profiles, and permissions"
+
+# Step 2: Decompose into capabilities (on parent branch)
+/decompose
+# Generates:
+# - capabilities.md (decomposition plan)
+# - cap-001-auth/ (user authentication capability)
+# - cap-002-profiles/ (user profiles capability)
+# - cap-003-permissions/ (role-based permissions capability)
+
+# Step 3: Implement Cap-001 (creates NEW branch: username/jira-123.user-system-cap-001)
+/plan --capability cap-001 "Use FastAPI + JWT tokens"
+# Generates: cap-001-auth/plan.md (380 LOC estimate)
+
+/tasks
+# Auto-detects capability branch
+# Generates: cap-001-auth/tasks.md (10-15 tasks)
+
+/implement
+# Auto-detects capability branch
+# Implements on cap-001 branch (380 LOC)
+
+# Create atomic PR to main
+gh pr create --base main --title "feat(auth): Cap-001 user authentication"
+# PR #1: cap-001 branch → main (380 LOC) ✓ MERGED
+
+# Step 4: Back to parent, sync, implement Cap-002
+git checkout username/jira-123.user-system
+git pull origin main  # Sync merged changes
+
+/plan --capability cap-002 "Use FastAPI + Pydantic models"
+# Creates branch: username/jira-123.user-system-cap-002
+# Generates: cap-002-profiles/plan.md (320 LOC estimate)
+
+/tasks → /implement
+# PR #2: cap-002 branch → main (320 LOC) ✓ MERGED
+
+# Step 5: Repeat for cap-003, cap-004, etc.
+```
+
+### **Automatic Capability Detection**
+
+The `/tasks` and `/implement` commands **automatically detect** capability branches:
+
+**Parent branch** (`username/jira-123.feature-name`):
+- Reads from: `specs/jira-123.feature-name/plan.md`
+- Workflow: Single PR (<500 LOC)
+
+**Capability branch** (`username/jira-123.feature-name-cap-001`):
+- Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`
+- Workflow: Atomic PR (200-500 LOC)
+- **No flag needed** - detection based on branch name pattern
+
+### **Benefits of Atomic PRs**
+
+1. **Fast reviews:** 1-2 days for 200-500 LOC vs 7+ days for 1500+ LOC
+2. **Parallel development:** Team members work on different capabilities simultaneously
+3. **Early integration:** Merge to main quickly, catch integration issues early
+4. **Manageable TDD:** Test-first approach easier with smaller scope
+5. **Clear ownership:** Each PR has focused scope and clear acceptance criteria
+
+### **Branch Strategy**
+
+```
+main
+ ├─ username/jira-123.user-system (parent branch)
+ │   ├─ specs/jira-123.user-system/spec.md (parent spec)
+ │   ├─ specs/jira-123.user-system/capabilities.md (decomposition)
+ │   ├─ specs/jira-123.user-system/cap-001-auth/
+ │   ├─ specs/jira-123.user-system/cap-002-profiles/
+ │   └─ specs/jira-123.user-system/cap-003-permissions/
+ │
+ ├─ username/jira-123.user-system-cap-001 (capability branch)
+ │   └─ PR #1 → main (380 LOC) ✓ MERGED
+ │
+ ├─ username/jira-123.user-system-cap-002 (capability branch)
+ │   └─ PR #2 → main (320 LOC) ✓ MERGED
+ │
+ └─ username/jira-123.user-system-cap-003 (capability branch)
+     └─ PR #3 → main (290 LOC) ✓ MERGED
+```
+
+**Key points:**
+- Parent branch holds all capability specs (never merged to main)
+- Each capability gets its own branch from parent
+- PRs go directly from capability branch → main (not to parent)
+- After each merge, sync parent with main before next capability
 
 ---
 
@@ -627,8 +762,11 @@ This isn't about replacing human creativity - it's about amplifying your vision 
 |-------|---------|---------|--------|
 | **Context** | `/prime-core` | Load project understanding | Project context analysis |
 | **Specify** | `/specify` | Research-driven specification | Complete feature blueprint |
+| **Decompose** | `/decompose` | Break large features into capabilities | Atomic capability specs (200-500 LOC each) |
 | **Plan** | `/plan` | Technical implementation plan | Architecture with validation gates |
-| **Execute** | `/tasks` | Actionable task breakdown | Ordered implementation tasks |
+| **Plan** | `/plan --capability cap-XXX` | Plan single capability (atomic PR) | Capability-scoped plan (200-500 LOC) |
+| **Execute** | `/tasks` | Actionable task breakdown (auto-detects capability mode) | Ordered implementation tasks |
+| **Execute** | `/implement` | Implementation with TDD (auto-detects capability mode) | Working feature with tests |
 | **Quality** | `/review` | Code quality inspection | Comprehensive review report |
 | **Quality** | `/validate` | Phase validation gates | Gate pass/fail assessment |
 | **Support** | `/debug` | Root cause analysis | Systematic problem resolution |
