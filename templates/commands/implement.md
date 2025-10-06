@@ -1,8 +1,5 @@
 ---
 description: Execute implementation following the plan and tasks with strict TDD enforcement and validation gates
-scripts:
-  sh: scripts/bash/check-implementation-prerequisites.sh --json
-  ps: scripts/powershell/check-implementation-prerequisites.ps1 -Json
 ---
 
 # Implement - Execute Feature Implementation with TDD Enforcement
@@ -14,13 +11,13 @@ scripts:
 **The script automatically detects your current workflow:**
 
 - **Parent feature branch** (`username/jira-123.feature-name`):
-  - Reads from: `specs/jira-123.feature-name/plan.md`, `tasks.md`
-  - Implementation: Single PR workflow (<500 LOC)
+   - Reads from: `specs/jira-123.feature-name/plan.md`, `tasks.md`
+   - Implementation: Single PR workflow (<500 LOC)
 
 - **Capability branch** (`username/jira-123.feature-name-cap-001`):
-  - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`, `tasks.md`
-  - Implementation: Atomic PR workflow (200-500 LOC)
-  - PR target: `cap-001` branch → `main` (not to parent branch)
+   - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`, `tasks.md`
+   - Implementation: Atomic PR workflow (200-500 LOC)
+   - PR target: `cap-001` branch → `main` (not to parent branch)
 
 **No flag needed** - detection is automatic based on branch name pattern.
 
@@ -30,13 +27,13 @@ See "Capability PR Workflow (Atomic PRs)" section below for detailed workflow.
 
 ## Pre-Implementation Validation
 
-1. **Run prerequisite check**: `{SCRIPT}` from repo root
+1. **Run prerequisite check**: `.specify/scripts/bash/check-implementation-prerequisites.sh --json` from repo root
    - Parse FEATURE_DIR, PLAN_PATH, TASKS_PATH, BRANCH
    - Verify plan.md and tasks.md exist
    - Check for constitutional compliance markers
 
 2. **Load implementation context**:
-   - **REQUIRED**: Read `/memory/constitution.md` for constitutional requirements
+   - **REQUIRED**: Read `.specify/.specify/memory/constitution.md` for constitutional requirements
    - **REQUIRED**: Read `tasks.md` for complete task list and execution order
    - **REQUIRED**: Read `plan.md` for tech stack, architecture, and validation gates
    - **IF EXISTS**: Read `data-model.md` for entities and relationships
@@ -77,7 +74,7 @@ See "Capability PR Workflow (Atomic PRs)" section below for detailed workflow.
 
 ### CRITICAL: Tests MUST be written, committed, and FAILING before ANY implementation
 
-**Think hard**: Before writing tests, consider:
+**Think hard**: Before writing tests, carefully consider:
 - What are the most critical test scenarios that will validate the core business value?
 - How can the test structure support parallel development while maintaining dependencies?
 - Which test failures will provide the most informative feedback during development?
@@ -113,7 +110,7 @@ npm test || python -m pytest || go test ./...
 
 ### Implementation Rules
 
-**Think**: Before implementing each component, consider:
+**Think**: Before implementing each component, carefully consider:
 - What is the minimal code needed to make the failing tests pass?
 - How does this implementation align with existing codebase patterns?
 - Are there any TDD violations (implementing features without failing tests)?
@@ -159,7 +156,7 @@ npm test || python -m pytest || go test ./...
 
 ### Code Quality Improvements
 
-**Think hard**: Before refactoring, consider:
+**Think hard**: Before refactoring, carefully consider:
 - What are the patterns that emerged during implementation that could be abstracted?
 - How can the code be made more maintainable without changing behavior?
 - Which performance optimizations provide the most value with the least risk?
