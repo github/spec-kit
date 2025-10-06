@@ -1,8 +1,8 @@
 ---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
 scripts:
-  sh: scripts/bash/setup-plan.sh --json
-  ps: scripts/powershell/setup-plan.ps1 -Json
+  sh: scripts/bash/setup-plan.sh --json {ARGS}
+  ps: scripts/powershell/setup-plan.ps1 -Json {ARGS}
 ---
 
 Given the implementation details provided as an argument, do this:
