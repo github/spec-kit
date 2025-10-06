@@ -82,6 +82,46 @@ AI_CHOICES = {
 # Add script type choices
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
+# hjLabs Extensions: JavaScript CLI Bridge Support
+def get_node_cli_path():
+    """Get the path to the bundled Node.js CLI executable."""
+    package_dir = Path(__file__).parent
+    node_cli = package_dir / "js_cli" / "bundle.js"
+
+    if node_cli.exists():
+        return str(node_cli)
+
+    # Fallback: check if Node.js is available for development
+    if shutil.which("node"):
+        return None
+
+    console.print(Panel.fit(
+        "[red]Node.js CLI bridge not found![/red]\n\n"
+        "The bundled JavaScript CLI is missing. This may be a packaging issue.\n"
+        "Install Node.js as a fallback: https://nodejs.org/",
+        title="CLI Bridge Missing",
+        border_style="red"
+    ))
+    return None
+
+def run_node_cli(args):
+    """Run the bundled Node.js CLI with the given arguments."""
+    node_cli = get_node_cli_path()
+
+    if not node_cli:
+        return 1
+
+    try:
+        cmd = ["node", node_cli] + list(args)
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error running Node.js CLI: {e}[/red]")
+        return 1
+    except FileNotFoundError:
+        console.print("[red]Error: Node.js is not installed or not in PATH[/red]")
+        return 1
+
 # Claude CLI local installation path after migrate-installer
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
@@ -1139,6 +1179,58 @@ def check():
         console.print("[dim]Tip: Install git for repository management[/dim]")
     if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or kilocode_ok or opencode_ok or codex_ok or auggie_ok or q_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+
+
+# hjLabs Extensions: AI Model Switching Commands
+@app.command()
+def switch_model(
+    target: str = typer.Argument(..., help="Target AI model to switch to (e.g., claude, gemini, copilot)")
+):
+    """Switch AI models without losing progress (hjLabs Extension)."""
+    console.print(f"[cyan]Switching to AI model: {target}[/cyan]")
+    exit_code = run_node_cli(["switch-model", target])
+    raise typer.Exit(exit_code)
+
+@app.command()
+def list_models():
+    """Show available AI models and compatibility (hjLabs Extension)."""
+    console.print("[cyan]Fetching available AI models...[/cyan]")
+    exit_code = run_node_cli(["list-models"])
+    raise typer.Exit(exit_code)
+
+@app.command()
+def detect_project():
+    """Auto-detect existing spec-kit projects (hjLabs Extension)."""
+    console.print("[cyan]Scanning for spec-kit projects...[/cyan]")
+    exit_code = run_node_cli(["detect-project"])
+    raise typer.Exit(exit_code)
+
+@app.command()
+def reset_project():
+    """Clean project reset with backup (hjLabs Extension)."""
+    response = typer.confirm("[yellow]This will reset your project. Are you sure?[/yellow]")
+    if response:
+        console.print("[cyan]Resetting project with backup...[/cyan]")
+        exit_code = run_node_cli(["reset-project"])
+        raise typer.Exit(exit_code)
+    else:
+        console.print("[green]Project reset cancelled.[/green]")
+        raise typer.Exit(0)
+
+@app.command()
+def track_tasks(
+    action: str = typer.Argument(..., help="Action to perform: enable, disable, or status")
+):
+    """Manage task tracking UI (hjLabs Extension)."""
+    valid_actions = ["enable", "disable", "status"]
+    if action not in valid_actions:
+        console.print(f"[red]Invalid action: {action}[/red]")
+        console.print(f"[yellow]Valid actions: {', '.join(valid_actions)}[/yellow]")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]Managing task tracking: {action}[/cyan]")
+    exit_code = run_node_cli(["track-tasks", action])
+    raise typer.Exit(exit_code)
 
 
 def main():

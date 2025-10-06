@@ -1,11 +1,11 @@
 [project]
-name = "specify-cli"
-version = "0.0.17"
-description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
+name = "hjlabs-specify"
+version = "0.2.0"
+description = "Enhanced Specify CLI with AI Model Switching and JavaScript Bridge - hjLabs Edition"
 requires-python = ">=3.11"
 dependencies = [
-    "typer",
-    "rich",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
     "httpx[socks]",
     "platformdirs",
     "readchar",
@@ -21,3 +21,4 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
+

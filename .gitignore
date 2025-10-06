@@ -43,3 +43,15 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# hjLabs Specify Extensions
+node_modules/
+npm-debug.log*
+dist/
+!dist/cli/bundle.js
+*.tsbuildinfo
+
+# Specify project files
+.specify/state/
+.specify/backups/
+.specify/temp/
