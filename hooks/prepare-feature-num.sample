@@ -1,0 +1,16 @@
+#!/bin/bash
+# Feature-num hook: Override auto-generated feature number
+# Arguments: $1 = feature description
+# Output: Custom feature number (integer)
+
+# Example 1: Get from server
+# FEATURE_NUMBER=$(curl -s "$SPEC_SERVER/api/next-number")
+# echo "$FEATURE_NUMBER"
+
+# Example 2: Use GitHub issue number
+# ISSUE_URL=$(gh issue create --title "Spec: $1" --body "Specification development")
+# ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -o '[0-9]*$')
+# echo "$ISSUE_NUMBER"
+
+# Default: Let script auto-increment (output nothing)
+exit 0
