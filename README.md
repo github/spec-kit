@@ -212,6 +212,7 @@ After running `specify init`, your AI coding agent will have access to these sla
 | `/constitution` | Create or update project governing principles and development guidelines |
 | `/specify`      | Define what you want to build (requirements and user stories)        |
 | `/clarify`      | Clarify underspecified areas (must be run before `/plan` unless explicitly skipped; formerly `/quizme`) |
+| `/cross-feature` | Cross-feature alignment analysis using systems thinking (optional, run after `/specify`) |
 | `/plan`         | Create technical implementation plans with your chosen tech stack     |
 | `/tasks`        | Generate actionable task lists for implementation                     |
 | `/analyze`      | Cross-artifact consistency & coverage analysis (run after /tasks, before /implement) |
