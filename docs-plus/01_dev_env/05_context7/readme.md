@@ -26,7 +26,7 @@ This results in fewer hallucinations and faster, more accurate implementation. S
 
 ## How to Set It Up?
 
-### Cursor 
+### 1. Cursor 
 Follow these steps to enable the Context7 MCP server in Cursor:
 1. Open Cursor Settings → MCP/Servers.
 2. Add a new MCP server and select Context7.
@@ -36,7 +36,7 @@ Follow these steps to enable the Context7 MCP server in Cursor:
 Notes:
 - Authentication or API configuration may be prompted by the server UI.
 
-### Qwen
+### 2. Qwen
 - File: `.qwen/settings.json` (project) or `~/.qwen/settings.json` (global)
 
   ```json
@@ -50,21 +50,25 @@ Notes:
   }
   ```
 
+### 3. Qwen
+
+For every coding agent the configuration is same as for qwen. Just look online for relevant files like `.qwen/settings.json` for QWEN and configure it.
+
 ---
 
-## Using Context7 in AI Agents {#usage}
+## Using Context7 in AI Agents
 
 Using it is as simple as adding **"use context7"** to your request.
 
-For example, a popular tool called `shadcn-ui` recently changed its installation command.
+For example, a popular tool called `openai agents sdk` recently changed its installation command.
 
 *   **Without Context7,** your AI might remember the old, broken command:
-    > **You:** `install shadcn-ui`
-    > **AI:** `npx shadcn-ui@latest init` ❌ (This is wrong now and will fail)
+    > **You:** `install openai agents sdk`
+    > **AI:** `pip install openai-agents-sdk` ❌ (This is wrong now and will fail)
 
 *   **With Context7,** your AI gets the latest information:
-    > **You:** `use context7 install shadcn-ui`
-    > **AI:** `npx shadcn@latest init` ✅ (This is the new, correct command)
+    > **You:** `use context7 install openai agents sdk`
+    > **AI:** `pip install openai-agents` ✅ (This is the new, correct command)
 
 ### How It Works in the Background (The Simple Version)
 
@@ -84,3 +88,5 @@ Demo resources:
 - YouTube reference: [https://www.youtube.com/watch?v=BJX6uJHIz5U](https://www.youtube.com/watch?v=BJX6uJHIz5U)
 - YouTube reference: [https://www.youtube.com/watch?v=323l56VqJQw](https://www.youtube.com/watch?v=323l56VqJQw)
 
+- https://context7.com/
+- 
