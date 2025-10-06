@@ -63,11 +63,13 @@ ADRs created in docs/adr/ (if decisions are significant)
 
 ### Core Modules (Required for Every Feature)
 
-1. **[Module 01 – Setup Environment](01_setup_speckit_plus/readme.md)**
+0. **[Module 00 – Setup Environment](00_setup_speckit_plus/readme.md)**
 
    - Install Spec-Kit Plus: `pip install specifyplus`
    - Initialize project: `sp init my-app --ai gemini`
    - Get automatic PHR + explicit ADR capabilities
+
+1. **[Module 01 – QuickStart HandsOn Project](01_quickstart/readme.md)**
 
 2. **[Module 02 – Define Constitution](02_constitution/readme.md)**
 

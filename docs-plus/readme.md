@@ -87,7 +87,7 @@ Teams using SDD + TDD show:
 
 ---
 
-## [Paper 2: Spec-Driven Development - Engineering in the AI Era](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01a_sdd_concepts/readme.md)
+## [Paper 2: Spec-Driven Development - Engineering in the AI Era](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_research_concepts/01a_sdd_concepts/readme.md)
 
 ### Definition
 
@@ -143,7 +143,7 @@ AI-era economics:
 
 ---
 
-## [Paper 3: SDD+ – Spec-Driven Development for Distributed Multi-Agent Systems](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01b_sdd_plus_concepts/readme.md)
+## [Paper 3: SDD+ – Spec-Driven Development for Distributed Multi-Agent Systems](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_research_concepts/01b_sdd_plus_concepts/readme.md)
 
 ### Evolution from SDD to SDD+
 
@@ -213,7 +213,7 @@ SDD+ provides:
 
 ---
 
-## [Paper 4: Vibe Coding in Prod Responsibly: A Tutorial](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01c_vibe_coding_in_production/readme.md)
+## [Paper 4: Vibe Coding in Prod Responsibly: A Tutorial](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_research_concepts/01c_vibe_coding_in_production/readme.md)
 
 ### Responsible Use Cases
 
@@ -281,7 +281,7 @@ For distributed multi-agent systems, we extend Spec-Kit with **SDD+** capabiliti
 
 ### Multi-Agent Architecture Implementation
 
-#### [Two Tier Strategy for Coding Agent Section to be used with SpecKit+](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01d_two_tier_strategy/readme.md)
+#### [Two Tier Strategy for Coding Agent Section to be used with SpecKit+](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_research_concepts/01d_two_tier_strategy/readme.md)
 
 **Tier 1 for Students: Development & Learning (Free)**
 - **Planning Agent**: Gemini 2.5 Pro (1,000 requests/day free)
