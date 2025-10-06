@@ -1,18 +1,18 @@
-# Spec Kit: How to Build Production-Ready Apps with AI Agents
+# Spec Kit Plus: How to Build Production-Ready Apps with AI Agents
 
 This tutorial is based on this video:
 
 [Spec Kit: How to Build Production-Ready Apps with AI Agents](https://www.youtube.com/watch?v=8jtIXRyGMQU)
 
-## SpecKit: Building Production-Ready Apps with AI Coding Agents
+## SpecKitPlus: Building Production-Ready Apps with AI Coding Agents
 
 ## Introduction
 
-AI coding agents are powerful tools, but without proper structure, they often produce buggy, incomplete applications with poor UX. SpecKit solves this problem by introducing spec-driven development to your AI agent workflow, giving your agent the same context and structure that professional development teams use.
+AI coding agents are powerful tools, but without proper structure, they often produce buggy, incomplete applications with poor UX. SpecKitPlus solves this problem by introducing spec-driven development to your AI agent workflow, giving your agent the same context and structure that professional development teams use.
 
-## What is SpecKit?
+## What is SpecKitPlus?
 
-SpecKit is a structured workflow from GitHub that executes scripts and fine-tuned prompts to produce high-quality context for your coding agent. It brings traditional spec-driven development practices to AI-assisted coding, ensuring your agent knows exactly what to build before writing a single line of code.
+SpecKit is a structured workflow from Panaversity SpeckitPlus GitHub Fork that executes scripts and fine-tuned prompts to produce high-quality context for your coding agent. It brings traditional spec-driven development practices to AI-assisted coding, ensuring your agent knows exactly what to build before writing a single line of code.
 
 **Key Benefits:**
 - Structured planning and implementation
@@ -50,27 +50,13 @@ The main workflow for planning and implementing features:
 
 ## Getting Started
 
-### Prerequisites
-
-Install UV (Universal Virtualenv) on your system:
-
-**Mac/Linux:**
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**Windows (PowerShell):**
-```powershell
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
 ### Installing SpecKit
 
 1. Navigate to your project directory
 2. Run the installation command:
 
 ```bash
-uvx speckit .
+uvx speckitplus init <PROJECt_NAME>
 ```
 
 3. Select your AI agent (Claude, Cursor, Codeium, etc.)
