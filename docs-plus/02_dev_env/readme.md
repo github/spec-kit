@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This paper presents the strategic decision to standardize on Unix-like environments across all operating systems and cloud platforms for teaching, developing, and deploying agentic AI systems and spec-driven vibe-coding. By leveraging Windows Subsystem for Linux (WSL) on Windows, native Bash support on macOS and Linux, and native Linux environments in the cloud, organizations can achieve unprecedented consistency in their AI development pipeline while maximizing portability, reducing friction, and accelerating the path from education to development and production deployment.
+This document presents our strategic decision to standardize on Unix-like environments across all operating systems and cloud platforms for teaching, developing, and deploying agentic AI systems and spec-driven vibe-coding. By leveraging Windows Subsystem for Linux (WSL) on Windows, native Bash support on macOS and Linux, and native Linux environments in the cloud, organizations can achieve unprecedented consistency in their AI development pipeline while maximizing portability, reducing friction, and accelerating the path from education to development and production deployment.
 
 Most of our students and developers use Windows, if you’re doing any kind of serious or modern development, WSL is the best and most reliable setup on Windows.
 
