@@ -43,10 +43,18 @@ if [ -n "$CAPABILITY_ID" ]; then
   # Check if capability branch already exists
   if git show-ref --verify --quiet "refs/heads/$CAPABILITY_BRANCH"; then
     echo "Checking out existing capability branch: $CAPABILITY_BRANCH"
-    git checkout "$CAPABILITY_BRANCH"
+    git checkout "$CAPABILITY_BRANCH" 2>&1
+    if [ $? -ne 0 ]; then
+      echo "ERROR: Failed to checkout capability branch: $CAPABILITY_BRANCH" >&2
+      exit 1
+    fi
   else
     echo "Creating new capability branch: $CAPABILITY_BRANCH from $PARENT_BRANCH"
-    git checkout -b "$CAPABILITY_BRANCH" "$PARENT_BRANCH"
+    git checkout -b "$CAPABILITY_BRANCH" "$PARENT_BRANCH" 2>&1
+    if [ $? -ne 0 ]; then
+      echo "ERROR: Failed to create capability branch: $CAPABILITY_BRANCH" >&2
+      exit 1
+    fi
   fi
 
   # Set paths for capability

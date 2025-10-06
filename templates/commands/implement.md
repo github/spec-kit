@@ -33,7 +33,7 @@ See "Capability PR Workflow (Atomic PRs)" section below for detailed workflow.
    - Check for constitutional compliance markers
 
 2. **Load implementation context**:
-   - **REQUIRED**: Read `.specify/.specify/memory/constitution.md` for constitutional requirements
+   - **REQUIRED**: Read `.specify/memory/constitution.md` for constitutional requirements
    - **REQUIRED**: Read `tasks.md` for complete task list and execution order
    - **REQUIRED**: Read `plan.md` for tech stack, architecture, and validation gates
    - **IF EXISTS**: Read `data-model.md` for entities and relationships
