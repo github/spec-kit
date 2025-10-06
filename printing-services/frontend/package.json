@@ -38,6 +38,7 @@
                             "@typescript-eslint/eslint-plugin":  "^6.10.0",
                             "@typescript-eslint/parser":  "^6.10.0",
                             "@vitejs/plugin-react":  "^4.1.1",
+                            "@vitest/coverage-v8":  "^3.2.4",
                             "@vitest/ui":  "^3.2.4",
                             "autoprefixer":  "^10.4.16",
                             "eslint":  "^8.53.0",
