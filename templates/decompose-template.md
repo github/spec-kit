@@ -86,7 +86,8 @@
 **Justification (if >500 LOC):**
 [If total >500: Explain why splitting would harm cohesion, what keeps this together, why it's a single unit of work]
 
-**PR Target:** `[username]/[jira-key].cap-001-[name]`
+**Capability Branch:** `[username]/[jira-key].[feature-name]-cap-001`
+**PR Target:** `cap-001` branch → `main` (atomic PR, 200-500 LOC)
 
 **Acceptance Criteria:**
 - [ ] [Specific testable criterion for this capability]

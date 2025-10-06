@@ -179,12 +179,29 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 
 ### Complex Features (>500 LOC) - Atomic PRs
 ```bash
-/specify → /decompose → /plan --capability cap-001 → /tasks → /implement
-                      ↓ /plan --capability cap-002 → /tasks → /implement
-                      ↓ /plan --capability cap-003 → /tasks → /implement
+# On parent branch: username/jira-123.user-system
+/specify → /decompose → creates cap-001/, cap-002/, cap-003/ on parent branch
+
+# For each capability (creates NEW branch per capability):
+/plan --capability cap-001 → creates branch username/jira-123.user-system-cap-001
+/tasks → /implement → PR: cap-001 branch → main (200-500 LOC) ✓ MERGED
+
+# Back to parent, sync with main, repeat:
+git checkout username/jira-123.user-system
+git pull origin main
+/plan --capability cap-002 → creates branch username/jira-123.user-system-cap-002
+/tasks → /implement → PR: cap-002 branch → main (200-500 LOC) ✓ MERGED
+
+# Continue for cap-003, cap-004, etc.
 ```
 
 **Result:** Multiple atomic PRs (200-500 LOC each) instead of one massive PR.
+
+**Key Benefits:**
+- Each capability gets its own branch and atomic PR to main
+- Fast reviews (1-2 days per PR vs 7+ days for large PRs)
+- Parallel development (team members work on different capabilities)
+- Early integration feedback (merge to main frequently)
 
 ## 🔧 Specify CLI Reference
 

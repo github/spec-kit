@@ -72,16 +72,45 @@ Given the implementation details provided as an argument, do this:
 
 ## Usage Examples
 
-**Parent feature planning (original workflow):**
+**Parent feature planning (simple features <500 LOC):**
 ```bash
 /plan "Use FastAPI + PostgreSQL + React"
-→ Generates plan.md for entire feature
+→ Generates plan.md for entire feature on current branch
+→ Single PR workflow
 ```
 
-**Capability planning (new workflow):**
+**Capability planning (atomic PRs, 200-500 LOC each):**
 ```bash
 /plan --capability cap-001 "Use FastAPI + JWT for auth"
+→ Creates NEW branch: username/jira-123.feature-cap-001
 → Generates cap-001/plan.md scoped to 200-500 LOC
+→ Atomic PR: cap-001 branch → main
 ```
+
+## Atomic PR Workflow (Capability Mode)
+
+When using `--capability cap-XXX`, the script:
+
+1. **Creates capability branch** from parent feature branch:
+   - Parent: `username/jira-123.user-system`
+   - Capability: `username/jira-123.user-system-cap-001`
+
+2. **Sets up isolated workspace**:
+   - Spec: `specs/jira-123.user-system/cap-001-auth/spec.md`
+   - Plan: `specs/jira-123.user-system/cap-001-auth/plan.md`
+   - All work happens on capability branch
+
+3. **PR workflow**:
+   - Implement on `cap-001` branch (200-500 LOC)
+   - Create PR: `cap-001` → `main`
+   - After merge, checkout parent branch
+   - Pull latest main into parent
+   - Repeat for `cap-002`, `cap-003`, etc.
+
+4. **Benefits**:
+   - Fast reviews (1-2 days vs 7+ days for large PRs)
+   - Manageable TDD scope per capability
+   - Parallel development (team members work on different caps)
+   - Early integration feedback
 
 Use absolute paths with the repository root for all file operations to avoid path issues.

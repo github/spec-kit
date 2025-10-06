@@ -157,30 +157,53 @@ specs/[jira-123.feature-name]/
 ## Example Workflow
 
 ```bash
-# Step 1: Create parent spec
+# Step 1: Create parent spec (on branch: username/proj-123.user-system)
 /specify "Build user management system with auth, profiles, and permissions"
+→ Creates branch: username/proj-123.user-system
 → specs/proj-123.user-system/spec.md
 
-# Step 2: Decompose into capabilities
+# Step 2: Decompose into capabilities (on parent branch)
 /decompose
 → specs/proj-123.user-system/capabilities.md
 → specs/proj-123.user-system/cap-001-auth/spec.md
 → specs/proj-123.user-system/cap-002-profiles/spec.md
 → specs/proj-123.user-system/cap-003-permissions/spec.md
 
-# Step 3: Implement each capability (can be parallel)
-cd specs/proj-123.user-system/cap-001-auth/
-/plan "Use FastAPI + JWT tokens"
+# Step 3: Implement Cap-001 (creates NEW branch)
+/plan --capability cap-001 "Use FastAPI + JWT tokens"
+→ Creates branch: username/proj-123.user-system-cap-001
 → cap-001-auth/plan.md (380 LOC estimate)
 
 /tasks
 → cap-001-auth/tasks.md (10 tasks)
 
 /implement
-→ PR #1: "feat(user): authentication capability" (380 LOC) ✓
+→ Implement on cap-001 branch (380 LOC)
 
-# Repeat for cap-002, cap-003...
+# Create atomic PR to main
+gh pr create --base main --title "feat(auth): Cap-001 authentication capability"
+→ PR #1: cap-001 branch → main (380 LOC) ✓ MERGED
+
+# Step 4: Back to parent, sync, implement Cap-002
+git checkout username/proj-123.user-system
+git pull origin main
+
+/plan --capability cap-002 "Use FastAPI + Pydantic models"
+→ Creates branch: username/proj-123.user-system-cap-002
+→ cap-002-profiles/plan.md (320 LOC estimate)
+
+/tasks → /implement
+→ PR #2: cap-002 branch → main (320 LOC) ✓ MERGED
+
+# Step 5: Repeat for cap-003...
+# Each capability = separate branch + atomic PR (200-500 LOC)
 ```
+
+**Key Points:**
+- Parent branch holds all capability specs
+- Each capability gets its own branch from parent
+- PRs go from capability branch → main (not to parent)
+- After merge, sync parent with main before next capability
 
 ## Troubleshooting
 

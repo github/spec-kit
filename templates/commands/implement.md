@@ -186,6 +186,70 @@ npm test || python -m pytest || go test ./...
 - Validates against all quality gates"
 ```
 
+## Capability PR Workflow (Atomic PRs)
+
+### If on capability branch (e.g., `username/jira-123.feature-cap-001`):
+
+1. **Verify atomic scope**:
+   - Run: `git diff main --stat` to confirm 200-500 LOC
+   - If >500 LOC: document justification in PR description
+
+2. **Create PR to main**:
+   ```bash
+   gh pr create --base main --title "feat(cap-001): [capability description]" \
+     --body "$(cat <<'EOF'
+   ## Summary
+   Implements Cap-001: [capability name] from [parent feature]
+
+   - [Key component 1]
+   - [Key component 2]
+   - [Key component 3]
+
+   ## LOC Impact
+   - Estimated: XXX LOC
+   - Actual: XXX LOC (within 200-500 target)
+
+   ## Dependencies
+   - Depends on: [cap-XXX if any]
+   - Enables: [cap-YYY that depend on this]
+
+   ## Test Coverage
+   - Contract tests: ✓
+   - Integration tests: ✓
+   - All tests passing: ✓
+
+   Part of parent feature: specs/[jira-123.feature-name]/
+   EOF
+   )"
+   ```
+
+3. **After PR approval and merge**:
+   ```bash
+   # Switch back to parent branch
+   git checkout [username]/[jira-123.feature-name]
+
+   # Pull latest main to sync merged changes
+   git pull origin main
+
+   # Optional: delete local capability branch
+   git branch -d [username]/[jira-123.feature-name]-cap-001
+   ```
+
+4. **Repeat for next capability**:
+   ```bash
+   # Start next capability
+   /plan --capability cap-002 "Next capability tech details"
+   # Creates new branch: username/jira-123.feature-name-cap-002
+   # Repeat implement → PR → merge cycle
+   ```
+
+### Benefits of Capability PR Workflow:
+- **Fast reviews**: 200-500 LOC reviewed in 1-2 days vs 1500+ LOC taking 7+ days
+- **Parallel development**: Multiple team members work on different capabilities simultaneously
+- **Early integration**: Merge to main quickly, catch integration issues early
+- **Manageable TDD**: Test-first approach easier with smaller scope
+- **Clear ownership**: Each PR has focused scope and clear acceptance criteria
+
 ## Error Handling & Recovery
 
 ### On Test Failure (Phase 1)
