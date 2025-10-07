@@ -1,5 +1,9 @@
 # Complete AI CLI Tutorial: Gemini, Qwen & Claude Code
 
+- For students: Gemini CLI + Qwen Code (free)
+- For professionals: Claude Code ($20) + Cursor ($20) → $40/month
+
+
 ## Table of Contents
 1. [Introduction to AI Coding Assistants](#introduction)
 2. [Gemini CLI](#gemini-cli)
