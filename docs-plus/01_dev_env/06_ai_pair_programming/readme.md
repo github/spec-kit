@@ -34,12 +34,12 @@ In this tutorial, you will build a complete Python calculator application **with
 
 ### Platform Support
 
-This tutorial works on:
+We highly recommend you that you should only work on:
 - ✅ **Windows WSL** (Ubuntu or Debian recommended)
 - ✅ **macOS** (both Intel and Apple Silicon)
 - ✅ **Linux** (Ubuntu, Debian, Fedora, Arch, etc.)
 
-All commands are Unix-based and work identically across these platforms. Windows users will not be doing development in Windows 11 but will be using Windows WSL. 
+All commands are Unix-based and work identically across these platforms. Windows users will not be doing development in Windows 11 but should be using Windows WSL. 
 
 ### Context7 Integration
 
