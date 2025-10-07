@@ -1,0 +1,103 @@
+{
+  "name": "react-hot-toast",
+  "description": "Smoking hot React Notifications. Lightweight, customizable and beautiful by default.",
+  "version": "2.6.0",
+  "author": "Timo Lins",
+  "license": "MIT",
+  "repository": "timolins/react-hot-toast",
+  "keywords": [
+    "react",
+    "notifications",
+    "toast",
+    "snackbar"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./headless": {
+      "types": "./headless/index.d.ts",
+      "import": "./headless/index.mjs",
+      "require": "./headless/index.js"
+    }
+  },
+  "files": [
+    "headless",
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=10"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "prettier src --ignore-unknown --write"
+    }
+  },
+  "prettier": {
+    "printWidth": 80,
+    "semi": true,
+    "singleQuote": true,
+    "arrowParens": "always",
+    "trailingComma": "es5"
+  },
+  "size-limit": [
+    {
+      "path": "dist/index.js",
+      "limit": "5.5 KB"
+    },
+    {
+      "path": "dist/index.mjs",
+      "limit": "5.5 KB"
+    },
+    {
+      "path": "headless/index.js",
+      "limit": "2.5 KB"
+    },
+    {
+      "path": "headless/index.mjs",
+      "limit": "2.5 KB"
+    }
+  ],
+  "devDependencies": {
+    "@jest/types": "^29.6.3",
+    "@size-limit/preset-small-lib": "^7.0.8",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/jest": "^29.5.14",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "esbuild-minify-templates": "^0.13.1",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "prettier": "^2.8.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "size-limit": "^7.0.8",
+    "ts-jest": "^29.2.5",
+    "tslib": "^2.8.1",
+    "tsup": "^6.7.0",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "csstype": "^3.1.3",
+    "goober": "^2.1.16"
+  },
+  "peerDependencies": {
+    "react": ">=16",
+    "react-dom": ">=16"
+  },
+  "scripts": {
+    "start": "tsup --watch",
+    "build": "tsup",
+    "test": "jest --runInBand",
+    "setup": "pnpm i && cd site && pnpm i && cd .. && pnpm run link",
+    "link": "pnpm link ./site/node_modules/react && pnpm link ./site/node_modules/react-dom",
+    "size": "size-limit"
+  }
+}

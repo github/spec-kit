@@ -1,0 +1,33 @@
+{
+  "name": "@remix-run/router",
+  "version": "1.23.0",
+  "description": "Nested/Data-driven/Framework-agnostic Routing",
+  "keywords": [
+    "remix",
+    "router",
+    "location"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remix-run/react-router",
+    "directory": "packages/router"
+  },
+  "license": "MIT",
+  "author": "Remix Software <hello@remix.run>",
+  "sideEffects": false,
+  "main": "./dist/router.cjs.js",
+  "unpkg": "./dist/router.umd.min.js",
+  "module": "./dist/router.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "*.ts",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

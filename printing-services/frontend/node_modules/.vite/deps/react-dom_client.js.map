@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../react-dom/client.js"],
+  "sourcesContent": ["'use strict';\n\nvar m = require('react-dom');\nif (process.env.NODE_ENV === 'production') {\n  exports.createRoot = m.createRoot;\n  exports.hydrateRoot = m.hydrateRoot;\n} else {\n  var i = m.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;\n  exports.createRoot = function(c, o) {\n    i.usingClientEntryPoint = true;\n    try {\n      return m.createRoot(c, o);\n    } finally {\n      i.usingClientEntryPoint = false;\n    }\n  };\n  exports.hydrateRoot = function(c, h, o) {\n    i.usingClientEntryPoint = true;\n    try {\n      return m.hydrateRoot(c, h, o);\n    } finally {\n      i.usingClientEntryPoint = false;\n    }\n  };\n}\n"],
+  "mappings": ";;;;;;;;;AAAA;AAAA;AAEA,QAAI,IAAI;AACR,QAAI,OAAuC;AACzC,cAAQ,aAAa,EAAE;AACvB,cAAQ,cAAc,EAAE;AAAA,IAC1B,OAAO;AACD,UAAI,EAAE;AACV,cAAQ,aAAa,SAAS,GAAG,GAAG;AAClC,UAAE,wBAAwB;AAC1B,YAAI;AACF,iBAAO,EAAE,WAAW,GAAG,CAAC;AAAA,QAC1B,UAAE;AACA,YAAE,wBAAwB;AAAA,QAC5B;AAAA,MACF;AACA,cAAQ,cAAc,SAAS,GAAG,GAAG,GAAG;AACtC,UAAE,wBAAwB;AAC1B,YAAI;AACF,iBAAO,EAAE,YAAY,GAAG,GAAG,CAAC;AAAA,QAC9B,UAAE;AACA,YAAE,wBAAwB;AAAA,QAC5B;AAAA,MACF;AAAA,IACF;AAjBM;AAAA;AAAA;",
+  "names": []
+}

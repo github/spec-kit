@@ -1,0 +1,141 @@
+{
+  "name": "react-hook-form",
+  "description": "Performant, flexible and extensible forms library for React Hooks",
+  "version": "7.63.0",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.esm.mjs",
+  "umd:main": "dist/index.umd.js",
+  "unpkg": "dist/index.umd.js",
+  "jsdelivr": "dist/index.umd.js",
+  "jsnext:main": "dist/index.esm.mjs",
+  "source": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "react-server": "./dist/react-server.esm.mjs",
+      "import": "./dist/index.esm.mjs",
+      "require": "./dist/index.cjs.js"
+    }
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "prepare": "husky",
+    "prebuild": "pnpm clean",
+    "build": "pnpm build:modern",
+    "build:watch": "pnpm build:modern -w",
+    "postbuild": "node ./scripts/rollup/assert-esm-exports.mjs && node ./scripts/rollup/assert-cjs-exports.cjs",
+    "build:modern": "rollup --bundleConfigAsCjs -c ./scripts/rollup/rollup.config.js",
+    "build:esm": "rollup --bundleConfigAsCjs -c ./scripts/rollup/rollup.esm.config.js",
+    "prettier:fix": "prettier --config .prettierrc --write .",
+    "lint": "eslint '**/*.{js,ts,tsx}'",
+    "lint:fix": "pnpm lint --fix",
+    "type": "tsc --noEmit",
+    "jest-preview": "jest-preview",
+    "test": "jest --config ./scripts/jest/jest.config.js",
+    "test:coverage": "pnpm test -- --coverage",
+    "test:watch": "pnpm test -- --onlyChanged --watch",
+    "test:web": "TEST_ENV=web pnpm test",
+    "test:type": "tsd src/__typetest__",
+    "e2e": "cypress run",
+    "e2e:watch": "cypress open",
+    "api-extractor": "api-extractor run --local",
+    "api-extractor:build": "pnpm build:esm && pnpm api-extractor",
+    "api-extractor:ci": "node scripts/apiExtractor.js",
+    "postversion": "git push && git push origin v$npm_package_version",
+    "prepublishOnly": "pnpm install && pnpm lint:fix && pnpm type && pnpm test && pnpm build",
+    "bundlewatch": "pnpm build:modern && bundlewatch",
+    "start": "pnpm build:esm && pnpm --dir ./app install && pnpm --dir ./app run dev",
+    "csb:install": "npm i -g pnpm@8 && pnpm i"
+  },
+  "keywords": [
+    "react",
+    "hooks",
+    "form",
+    "forms",
+    "form-validation",
+    "validation",
+    "typescript",
+    "react-hooks"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/react-hook-form/react-hook-form"
+  },
+  "homepage": "https://react-hook-form.com",
+  "author": "Beier(Bill) Luo <bluebill1049@hotmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/compat": "^1.3.2",
+    "@microsoft/api-extractor": "^7.52.11",
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@swc/core": "^1.13.5",
+    "@swc/jest": "^0.2.39",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/jest": "^30.0.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "bundlewatch": "^0.4.1",
+    "cypress": "^15.1.0",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-cypress": "^5.1.1",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "husky": "^9.1.7",
+    "jest": "^30.1.3",
+    "jest-environment-jsdom": "^30.1.2",
+    "jest-fixed-jsdom": "^0.0.10",
+    "jest-preview": "^0.3.1",
+    "lint-staged": "^16.1.6",
+    "msw": "^2.11.1",
+    "prettier": "^3.6.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.50.0",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "tsd": "^0.33.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.42.0",
+    "whatwg-fetch": "^3.6.20",
+    "zod": "^3.25.76"
+  },
+  "bundlewatch": {
+    "files": [
+      {
+        "path": "./dist/index.cjs.js",
+        "maxSize": "11.0 kB"
+      }
+    ]
+  },
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17 || ^18 || ^19"
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "pnpm lint:fix",
+      "pnpm prettier:fix"
+    ],
+    "*.{md,json,yml}": [
+      "prettier --write"
+    ]
+  },
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/react-hook-form"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+export type { ActionFunction, ActionFunctionArgs, AgnosticDataIndexRouteObject, AgnosticDataNonIndexRouteObject, AgnosticDataRouteMatch, AgnosticDataRouteObject, AgnosticIndexRouteObject, AgnosticNonIndexRouteObject, AgnosticPatchRoutesOnNavigationFunction, AgnosticPatchRoutesOnNavigationFunctionArgs, AgnosticRouteMatch, AgnosticRouteObject, DataStrategyFunction, DataStrategyFunctionArgs, DataStrategyMatch, DataStrategyResult, ErrorResponse, FormEncType, FormMethod, HTMLFormMethod, JsonFunction, LazyRouteFunction, LoaderFunction, LoaderFunctionArgs, ParamParseKey, Params, PathMatch, PathParam, PathPattern, RedirectFunction, ShouldRevalidateFunction, ShouldRevalidateFunctionArgs, TrackedPromise, UIMatch, V7_FormMethod, DataWithResponseInit as UNSAFE_DataWithResponseInit, } from "./utils";
+export { AbortedDeferredError, data, defer, generatePath, getToPathname, isRouteErrorResponse, joinPaths, json, matchPath, matchRoutes, normalizePathname, redirect, redirectDocument, replace, resolvePath, resolveTo, stripBasename, } from "./utils";
+export type { BrowserHistory, BrowserHistoryOptions, HashHistory, HashHistoryOptions, History, InitialEntry, Location, MemoryHistory, MemoryHistoryOptions, Path, To, } from "./history";
+export { Action, createBrowserHistory, createHashHistory, createMemoryHistory, createPath, parsePath, } from "./history";
+export * from "./router";
+/** @internal */
+export type { RouteManifest as UNSAFE_RouteManifest } from "./utils";
+export { DeferredData as UNSAFE_DeferredData, ErrorResponseImpl as UNSAFE_ErrorResponseImpl, convertRoutesToDataRoutes as UNSAFE_convertRoutesToDataRoutes, convertRouteMatchToUiMatch as UNSAFE_convertRouteMatchToUiMatch, decodePath as UNSAFE_decodePath, getResolveToMatches as UNSAFE_getResolveToMatches, } from "./utils";
+export { invariant as UNSAFE_invariant, warning as UNSAFE_warning, } from "./history";

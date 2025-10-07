@@ -1,0 +1,17 @@
+{
+  "name": "@esbuild/win32-x64",
+  "version": "0.18.20",
+  "description": "The Windows 64-bit binary for esbuild, a JavaScript bundler.",
+  "repository": "https://github.com/evanw/esbuild",
+  "license": "MIT",
+  "preferUnplugged": true,
+  "engines": {
+    "node": ">=12"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}
