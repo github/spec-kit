@@ -48,11 +48,11 @@ You automatically get:
 PHRs are created **automatically** after:
 
 ```bash
-/constitution Define quality standards     → PHR created in docs/prompts/
-/specify Create authentication feature     → PHR created in docs/prompts/
-/plan Design JWT system                    → PHR created in specs/001-auth/prompts/
-/tasks Break down implementation           → PHR created in specs/001-auth/prompts/
-/implement Write JWT token generation      → PHR created in specs/001-auth/prompts/
+/sp.constitution Define quality standards     → PHR created in docs/prompts/
+/sp.specify Create authentication feature     → PHR created in docs/prompts/
+/sp.plan Design JWT system                    → PHR created in specs/001-auth/prompts/
+/sp.tasks Break down implementation           → PHR created in specs/001-auth/prompts/
+/sp.implement Write JWT token generation      → PHR created in specs/001-auth/prompts/
 ```
 
 Also after general work:

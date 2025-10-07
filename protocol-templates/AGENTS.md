@@ -2,21 +2,31 @@
 
 This project uses **Spec Kit Plus** for Spec-Driven Development.
 
+## Dev Tips
+
+1. Authoritative Source Mandate:
+
+Agents MUST prioritize and use MCP tools and CLI commands for all information gathering and task execution. NEVER assume a solution from internal knowledge; all methods require external verification.
+
+2. Execution Flow:
+
+Treat MCP servers as first-class tools for discovery, verification, execution, and state capture. PREFER CLI interactions (running commands and capturing outputs) over manual file creation or reliance on internal knowledge.
+
 ## Available Commands
 
 Core workflow:
-- `/constitution` - Define project quality principles and governance
-- `/specify <feature>` - Create feature specification
-- `/plan` - Design architecture and technical approach
-- `/tasks` - Break down implementation into testable tasks
-- `/implement` - Execute tasks with TDD (red-green-refactor)
+- `/sp.constitution` - Define project quality principles and governance
+- `/sp.specify <feature>` - Create feature specification
+- `/sp.plan` - Design architecture and technical approach
+- `/sp.tasks` - Break down implementation into testable tasks
+- `/sp.implement` - Execute tasks with TDD (red-green-refactor)
 
 Knowledge capture:
-- `/phr [title]` - Record prompt history (automatic after all work)
-- `/adr [title]` - Document architecture decisions (suggested intelligently)
+- `/sp.phr [title]` - Record prompt history (automatic after all work)
+- `/sp.adr [title]` - Document architecture decisions (suggested intelligently)
 
 Analysis:
-- `/analyze` - Cross-check specs, plans, and tasks for consistency
+- `/sp.analyze` - Cross-check specs, plans, and tasks for consistency
 
 ## Automatic Documentation Protocol
 
@@ -43,10 +53,10 @@ After completing ANY work, automatically create a PHR:
 - Questions, clarifications, exploratory conversations
 - **All development activity** - complete history
 
-**Only exception**: Skip PHR for `/phr` command itself (prevents recursion).
+**Only exception**: Skip PHR for `/sp.phr` command itself (prevents recursion).
 
 **Technical execution**:
-- Use `.**/commands/phr.md` template for creation
+- Use `.**/commands/sp.phr.md` template for creation
 - Preserve FULL context - never truncate
 - On error: warn but don't block workflow
 
@@ -70,7 +80,7 @@ After completing design/architecture work, analyze for ADR significance:
 **If ALL conditions met**, suggest:
 ```
 📋 Architectural decision detected: [brief-description]
-   Document reasoning and tradeoffs? Run `/adr [decision-title]`
+   Document reasoning and tradeoffs? Run `/sp.adr [decision-title]`
 ```
 
 **Wait for user consent** - never auto-create ADRs.
@@ -111,12 +121,12 @@ Separate ADRs only when decisions are independent and could diverge.
 ## Workflow Pattern
 
 ```
-1. Define principles    → /constitution
-2. Specify feature      → /specify "User authentication"
-3. Plan architecture    → /plan
-4. Review decisions     → /adr (if prompted after planning)
-5. Break into tasks     → /tasks
-6. Implement with TDD   → /implement
+1. Define principles    → /sp.constitution
+2. Specify feature      → /sp.specify "User authentication"
+3. Plan architecture    → /sp.plan
+4. Review decisions     → /sp.adr (if prompted after planning)
+5. Break into tasks     → /sp.tasks
+6. Implement with TDD   → /sp.implement
 ```
 
 After each step: PHR automatically created, ADRs suggested when appropriate.

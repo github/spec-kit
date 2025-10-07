@@ -1,4 +1,4 @@
-# Step 8: Capstone – SDD Chatbot Project
+# Step 8: Capstone – SDD ChatAgent Project
 
 **Part1: Spec 1, Branch 1, PR 1** - OpenAI Agents SDK + FastAPI + Chainlit Implementation
 
@@ -15,7 +15,7 @@
 Re-run the SDD loop for the capstone feature set:
 ### 1. **Update constitution.**
 	```prompt
-		/constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
+		/sp.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
 		Core Guidelines:
 		- Code quality with strong typing and linting
 		- Async-first design for FastAPI endpoints
@@ -35,7 +35,7 @@ Why?
 
 So right now → just focus on the chatbot working behavior
 ```prompt
-	/specify Develop a scoped chatbot service called "ChatWait".  
+	/sp.specify Develop a scoped chatbot service called "ChatWait".  
 	It should expose two modes of interaction:
 
 	1. **/chat/wait endpoint**  
@@ -65,7 +65,7 @@ So right now → just focus on the chatbot working behavior
 ### 3. **Clarify Spec**: Use this to de-risk and sharpen the specification.
 
 ```prompt
-	/clarify Review the ChatWait specification for ambiguity, missing details, or hidden risks.  
+	/sp.clarify Review the ChatWait specification for ambiguity, missing details, or hidden risks.  
 	Focus especially on:  
 	- Streaming resilience: how to handle disconnects, retries, and partial responses.  
 	- Error handling: what kind of error payloads should be returned from each endpoint?  
@@ -83,7 +83,7 @@ It's important to use the interaction as an opportunity to clarify and ask quest
 Initial Plan:
 
 ```
-/plan Create a detailed implementation plan for the ChatWait chatbot service based on the specification.  
+/sp.plan Create a detailed implementation plan for the ChatWait chatbot service based on the specification.  
 This plan should now introduce the technical stack and map each functional requirement to concrete implementation details.
 
 Tech Stack & Requirements:
@@ -113,7 +113,7 @@ Deliverable:
 ```
 
 
-Followup to refine the bad assumtions
+Followup to refine the bad assumptions
 ```prompt
 Your data model can be well aligned with Chat Completions API Schema.@data-model.md 
 
@@ -202,10 +202,10 @@ I want you to go through the implementation plan and implementation details, loo
 benefit from additional research as OpenAI Agents SDK is python first agentic framework relatively new. I want you to update the research document with additional details that we are going to be using and spawn parallel research tasks to clarify any details using research from the web. @data-model.md @research.md @plan.md 
 ```
 
-### 5. /tasks
+### 5. /sp.tasks
 
 ```prompt
-/tasks Break the ChatWait plan into precise, test-first development tasks.  
+/sp.tasks Break the ChatWait plan into precise, test-first development tasks.  
 Focus on building only what’s needed for the scoped MVP: `/chat/wait` and `/chat/streaming` endpoints, with a minimal Chainlit UI for demoing both modes.  
 Each task must be small, testable, and directly linked to a requirement in the spec.  
 
@@ -254,7 +254,7 @@ Deliverable:
 
 ### 6. **Analyze Spec**: Use this to validate alignment with the constitution and catch contradictions.
 ```prompt
-/analyze Validate the ChatWait specification against the constitution principles.  
+/sp.analyze Validate the ChatWait specification against the constitution principles.  
 	Check explicitly for:  
 	- Async-first design compliance in both endpoints.  
 	- Clear separation between UI, agent logic, and API layer.  
@@ -438,14 +438,14 @@ print("AGENT RESPONSE: " , result.final_output)
 Chainlit can connect and call these endpoints at start of session we can generate id and use it
 ```
 
-### 7. Execute tasks sequentially: lean on `/implement` for automated execution or drive the SDD loop manually (RED → GREEN → REFACTOR → EXPLAIN).
+### 7. Execute tasks sequentially: lean on `/sp.implement` for automated execution or drive the SDD loop manually (RED → GREEN → REFACTOR → EXPLAIN).
 
-We can just ask it to implement - here we will expirement by giving agent escalation options to reach out to use when implementing
+We can just ask it to implement - here we will experiment by giving agent escalation options to reach out to use when implementing
 
-Here’s the refined /implement prompt with built-in escalation options:
+Here’s the refined /sp.implement prompt with built-in escalation options:
 
 ```prompt
-/implement Begin the @001-develop-a-scoped/  implementation, following the validated tasks and constitution.  
+/sp.implement Begin the @001-develop-a-scoped/  implementation, following the validated tasks and constitution.  
 Work in small, test-first increments. Complete one task at a time, and commit before moving to the next.  
 
 ### Core Rules
@@ -501,10 +501,3 @@ Test and Iterate - so it stopped after each core implementation for review. I ra
 - Attempting too large a scope for the capstone; start with a single endpoint and iterate
 - Skipping evaluation harnesses—chatbots need behavior tests, not just unit tests
 - Neglecting to document learnings and follow-up tasks after the project wraps
-
-## References
-
-- Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
-- PyPI package: https://pypi.org/project/specifyplus/
-- Original Spec Kit repo: https://github.com/github/spec-kit
-- Microsoft Dev Blog: https://developer.microsoft.com/blog/spec-driven-development-spec-kit

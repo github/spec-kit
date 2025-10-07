@@ -38,10 +38,10 @@ You write these rules down so your computer helper can read them and never forge
 Setup a new project `sp init hello_spp` and follow along:
 
 1.  **Ask your helper to write the first draft.**
-    *   In your agent chat, running `/constitution` is like asking your helper, "Can you start a new rulebook for us?"
+    *   In your agent chat, running `/sp.constitution` is like asking your helper, "Can you start a new rulebook for us?"
 
 2.  **Tell your helper what kind of project you're making.**
-    *   When you run the prompt: `/constitution Fill the constitution with the bare minimum requirements for a static web app based on the template. We use NextJS15...`, you're telling the AI, "Okay, the game we're playing is 'Website Building'. Let's write down the basic rules for that game, using these specific LEGO pieces."
+    *   When you run the prompt: `/sp.constitution Fill the constitution with the bare minimum requirements for a static web app based on the template. We use NextJS15...`, you're telling the AI, "Okay, the game we're playing is 'Website Building'. Let's write down the basic rules for that game, using these specific LEGO pieces."
 
 3.  **Be the Boss: Check the Rules.**
     *   Your computer helper is smart, but you're the boss. Open the `constitution.md` file and read the rules it wrote. Do they make sense? Is anything missing? You can change, add, or remove any rule you want.
@@ -57,11 +57,11 @@ Setup a new project `sp init hello_spp` and follow along:
 
 ### Actions
 
-1. In your agent chat, run `/constitution` to generate or update the baseline document.
+1. In your agent chat, run `/sp.constitution` to generate or update the baseline document.
 
 2. Now we have to update the constitution.md file. You can use AI Agent Tool; Prompt:
 ```
-/constitution Fill the constitution with the bare minimum requirements for a static web app based on the template. We use NextJS15 React19, Tailwind CSS and ShadCN components. 
+/sp.constitution Fill the constitution with the bare minimum requirements for a static web app based on the template. We use NextJS15 React19, Tailwind CSS and ShadCN components. 
 ```
 
 3. Open `.specify/memory/constitution.md` and review generated rules.

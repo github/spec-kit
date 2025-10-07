@@ -2,16 +2,43 @@
 
 <!-- markdownlint-disable MD024 -->
 
-All notable changes to the Specify CLI will be documented in this file.
+All notable changes to the Specify CLI and templates are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [LATEST_VERSION] - RELEASE_DATE
+## [0.0.18] - 2025-10-07
 
 ### Added
 
-- Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users
+- **Merged upstream spec-kit v0.0.57**: Integrated all improvements from GitHub's spec-kit repository
+- **Checklist command**: New `/sp.checklist` command for generating quality validation checklists
+- **VS Code settings**: Added VS Code settings template for better IDE integration
+- Improved command templates with better guidance and error handling
+- Full Codex CLI support
+- Enhanced command documentation and examples
+
+### Changed
+
+- **Command prefix**: Updated from `/speckit.` to `/sp.` for consistency with SpecifyPlus branding
+- Improved templates for specify, plan, tasks, analyze, clarify, and implement commands
+- Updated all documentation to use `/sp.` prefix
+- Refined spec, plan, and tasks templates for better clarity
+- Enhanced prerequisite checking in scripts
+
+### Preserved
+
+- All docs-plus/ educational content (100+ files)
+- memory/ constitutional rules
+- protocol-templates/ agent protocols  
+- specifyplus and sp CLI commands
+- ADR and PHR features
+- Context7 integration
+- Issue templates and workflows
+
+### Changed
+
+- All command files now prefixed with `speckit.` (e.g., `speckit.specify.md`, `speckit.plan.md`) for better discoverability and differentiation in IDE/CLI command palettes and file explorers
 
 ## [0.0.17] - 2025-09-22
 
