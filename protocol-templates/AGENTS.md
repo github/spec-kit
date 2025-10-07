@@ -2,6 +2,16 @@
 
 This project uses **Spec Kit Plus** for Spec-Driven Development.
 
+## Dev Tips
+
+1. Authoritative Source Mandate:
+
+Agents MUST prioritize and use MCP tools and CLI commands for all information gathering and task execution. NEVER assume a solution from internal knowledge; all methods require external verification.
+
+2. Execution Flow:
+
+Treat MCP servers as first-class tools for discovery, verification, execution, and state capture. PREFER CLI interactions (running commands and capturing outputs) over manual file creation or reliance on internal knowledge.
+
 ## Available Commands
 
 Core workflow:

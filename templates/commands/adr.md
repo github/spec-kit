@@ -9,7 +9,7 @@ scripts:
 
 ## CONTEXT
 
-You are an AI development assistant operating within a Spec-Driven Development workflow. The user has completed feature planning and needs to:
+The user has completed feature planning and needs to:
 
 - Identify architecturally significant technical decisions from plan.md
 - Document these decisions as Architecture Decision Records (ADRs)
@@ -45,7 +45,7 @@ Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS.
 
 Derive absolute paths:
 
-- PLAN = FEATURE_DIR/plan.md (REQUIRED - abort if missing with "Run /plan first")
+- PLAN = FEATURE_DIR/plan.md (REQUIRED - abort if missing with "Run /sp.plan first")
 - RESEARCH = FEATURE_DIR/research.md (if exists)
 - DATA_MODEL = FEATURE_DIR/data-model.md (if exists)
 - CONTRACTS_DIR = FEATURE_DIR/contracts/ (if exists)
@@ -148,7 +148,7 @@ Present results in this exact structure:
    - ADR-{id}: {conflict description}
 
 Next Steps:
-→ Resolve conflicts before proceeding to /tasks
+→ Resolve conflicts before proceeding to /sp.tasks
 → Review created ADRs with team
 → Update plan.md if needed
 ```
@@ -157,7 +157,7 @@ Next Steps:
 
 If plan.md missing:
 
-- Display: "❌ Error: plan.md not found. Run /plan first to generate planning artifacts."
+- Display: "❌ Error: plan.md not found. Run /sp.plan first to generate planning artifacts."
 - Exit gracefully without creating any ADRs
 
 If create-adr.sh fails:
