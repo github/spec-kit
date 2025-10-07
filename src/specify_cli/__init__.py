@@ -350,7 +350,7 @@ def check_tool(tool: str, install_hint: str) -> bool:
     """Check if a tool is installed."""
     
     # Special handling for Claude CLI after `claude migrate-installer`
-    # See: https://github.com/github/spec-kit/issues/123
+    # See: https://github.com/decarufe/spec-kit/issues/123
     # The migrate-installer command REMOVES the original executable from PATH
     # and creates an alias at ~/.claude/local/claude instead
     # This path should be prioritized over other claude executables in PATH
