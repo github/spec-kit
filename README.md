@@ -139,42 +139,42 @@ uvx sp init <PROJECT_NAME>
 
 ### 2. Establish project principles
 
-Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
+Use the **`/sp.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
 
 ```bash
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
+/sp.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
 ```
 
 ### 3. Create the spec
 
-Use the **`/speckit.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Use the **`/sp.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+/sp.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
 ### 4. Create a technical implementation plan
 
-Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.
+Use the **`/sp.plan`** command to provide your tech stack and architecture choices.
 
 ```bash
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+/sp.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
 ### 5. Break down into tasks
 
-Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
+Use **`/sp.tasks`** to create an actionable task list from your implementation plan.
 
 ```bash
-/speckit.tasks
+/sp.tasks
 ```
 
 ### 6. Execute implementation
 
-Use **`/speckit.implement`** to execute all tasks and build your feature according to the plan.
+Use **`/sp.implement`** to execute all tasks and build your feature according to the plan.
 
 ```bash
-/speckit.implement
+/sp.implement
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
@@ -284,29 +284,29 @@ After running `specifyplus init`, your AI coding agent will have access to these
 
 Essential commands for the Spec-Driven Development workflow:
 
-| Command                  | Description                                                           |
-|--------------------------|-----------------------------------------------------------------------|
-| `/speckit.constitution`  | Create or update project governing principles and development guidelines |
-| `/speckit.specify`       | Define what you want to build (requirements and user stories)        |
-| `/speckit.plan`          | Create technical implementation plans with your chosen tech stack     |
-| `/speckit.tasks`         | Generate actionable task lists for implementation                     |
-| `/speckit.implement`     | Execute all tasks to build the feature according to the plan         |
+| Command              | Description                                                           |
+|----------------------|-----------------------------------------------------------------------|
+| `/sp.constitution`   | Create or update project governing principles and development guidelines |
+| `/sp.specify`        | Define what you want to build (requirements and user stories)        |
+| `/sp.plan`           | Create technical implementation plans with your chosen tech stack     |
+| `/sp.tasks`          | Generate actionable task lists for implementation                     |
+| `/sp.implement`      | Execute all tasks to build the feature according to the plan         |
 
 #### Optional Commands
 
 Additional commands for enhanced quality and validation:
 
-| Command              | Description                                                           |
-|----------------------|-----------------------------------------------------------------------|
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| Command           | Description                                                           |
+|-------------------|-----------------------------------------------------------------------|
+| `/sp.clarify`     | Clarify underspecified areas (recommended before `/sp.plan`; formerly `/quizme`) |
+| `/sp.analyze`     | Cross-artifact consistency & coverage analysis (run after `/sp.tasks`, before `/sp.implement`) |
+| `/sp.checklist`   | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/sp.plan` or follow-up commands. |
 
 ## 📚 Core philosophy
 
