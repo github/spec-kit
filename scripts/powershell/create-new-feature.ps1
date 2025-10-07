@@ -74,7 +74,8 @@ $featureNum = ('{0:000}' -f $next)
 
 $branchName = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 $words = ($branchName -split '-') | Where-Object { $_ } | Select-Object -First 3
-$branchName = "$featureNum-$([string]::Join('-', $words))"
+$specFolder = "$featureNum-$([string]::Join('-', $words))"
+$branchName = "feature/$specFolder"
 
 if ($hasGit) {
     try {
@@ -86,7 +87,7 @@ if ($hasGit) {
     Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
 }
 
-$featureDir = Join-Path $specsDir $branchName
+$featureDir = Join-Path $specsDir $specFolder
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
 $template = Join-Path $repoRoot '.specify/templates/spec-template.md'
@@ -98,7 +99,7 @@ if (Test-Path $template) {
 }
 
 # Set the SPECIFY_FEATURE environment variable for the current session
-$env:SPECIFY_FEATURE = $branchName
+$env:SPECIFY_FEATURE = $specFolder
 
 if ($Json) {
     $obj = [PSCustomObject]@{ 
@@ -110,8 +111,9 @@ if ($Json) {
     $obj | ConvertTo-Json -Compress
 } else {
     Write-Output "BRANCH_NAME: $branchName"
+    Write-Output "SPEC_FOLDER: $specFolder"
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
     Write-Output "HAS_GIT: $hasGit"
-    Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
+    Write-Output "SPECIFY_FEATURE environment variable set to: $specFolder"
 }
