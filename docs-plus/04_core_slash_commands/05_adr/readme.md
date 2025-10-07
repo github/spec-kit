@@ -319,24 +319,24 @@ We will use JWT (JSON Web Tokens) for authentication...
 ### Full SDD Flow with ADRs
 
 ```
-1. /constitution
+1. /sp.constitution
    └─→ PHR created (automatic)
 
-2. /specify
+2. /sp.specify
    └─→ PHR created (automatic)
 
-3. /plan
+3. /sp.plan
    └─→ PHR created (automatic)
    └─→ 📋 "Review for architectural decisions? Run /adr"
 
-4. /adr  ← YOU RUN THIS
+4. /sp.adr  ← YOU RUN THIS
    └─→ ADRs created in docs/adr/
    └─→ Shows report
 
-5. /tasks
+5. /sp.tasks
    └─→ PHR created (automatic)
 
-6. /implement
+6. /sp.implement
    └─→ PHR created (automatic)
 ```
 

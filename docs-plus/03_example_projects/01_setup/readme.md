@@ -18,6 +18,7 @@
   # or with uv tools
   uv tool install specifyplus
   ```
+
   Alternative (one-off):
   ```bash
   uvx specifyplus --help
@@ -25,6 +26,7 @@
   # or
   uvx sp init <PROJECT_NAME>
   ```
+
 2. **Run the readiness checks**
   ```bash
   specifyplus --help
@@ -34,12 +36,14 @@
   # or
   sp check
   ```
+
 3. **Bootstrap your project**
   ```bash
   specifyplus init <PROJECT_NAME>
   # or
   sp init <PROJECT_NAME>
   ```
+
 4. **Follow the slash-command sequence** inside your coding agent (Copilot, Claude Code, Cursor, Gemini CLI, etc.).
 
 Inspect the generated `.github/` and `.specify/` folders, then delete the sandbox once you understand the layout.
@@ -48,32 +52,19 @@ Inspect the generated `.github/` and `.specify/` folders, then delete the sandbo
 
 | Command | Purpose |
 | --- | --- |
-| `/constitution` | Create or update project principles and guardrails. |
-| `/specify` | Capture the “what” and “why” of the feature or product. |
-| `/clarify` | Resolve ambiguities before planning; must run before `/plan` unless explicitly skipped. |
-| `/plan` | Produce the technical approach, stack choices, and quickstart. |
-| `/tasks` | Break the plan into actionable units of work. |
-| `/analyze` | Check cross-artifact coverage and highlight gaps after `/tasks`. |
-| `/implement` | Execute tasks in sequence with automated guardrails. |
+| `/sp.constitution` | Create or update project principles and guardrails. |
+| `/sp.specify` | Capture the “what” and “why” of the feature or product. |
+| `/sp.clarify` | Resolve ambiguities before planning; must run before `/plan` unless explicitly skipped. |
+| `/sp.plan` | Produce the technical approach, stack choices, and quickstart. |
+| `/sp.adr` | Record Architecture Decision Records. |
+| `/sp.tasks` | Break the plan into actionable units of work. |
+| `/sp.analyze` | Check cross-artifact coverage and highlight gaps after `/tasks`. |
+| `/sp.implement` | Execute tasks in sequence with automated guardrails. |
+| `/sp.phr` | Create prompt history record for the prompt. |
 
 ## Deliverables
 
 - A fresh repository ready for Spec Kit
 - Verified `uvx` runner capable of invoking `specifyplus`
 
-## Quality Gates ✅
-
-- `uvx specifyplus --help` exits with status 0
-- `git status` shows a clean working tree in your new project folder
-
-## Common Pitfalls
-
-- Installing `uvx` via npm (deprecated); use the official `uv` installer instead
-
-## References
-
-- SpecifyPlus repo: https://github.com/panaversity/spec-kit-plus
-- PyPI package: https://pypi.org/project/specifyplus/
-- Original GitHub Spec Kit repo: https://github.com/github/spec-kit
-- GitHub blog (Spec Kit overview): https://github.blog/ai-and-ml/generative-ai/spec-driven-development-with-ai-get-started-with-a-new-open-source-toolkit/
-- Microsoft Dev Blog (Spec Kit intro): https://developer.microsoft.com/blog/spec-driven-development-spec-kit
+Ready to build muscle memory for spec-driven development? Start Shipping! 🚀

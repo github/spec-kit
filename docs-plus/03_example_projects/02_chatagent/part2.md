@@ -13,7 +13,7 @@ This implementation builds upon the backend architecture from Spec 1 (OpenAI Age
 - **ThreeJS** for 3D visualizations and interactive elements
 - **Framer Motion** for smooth animations and micro-interactions
 
-### 1. `/constitution`
+### 1. `/sp.constitution`
 
 Update principles to **favor CLI setup + UX-first flow**:
 
@@ -25,7 +25,7 @@ Update principles to **favor CLI setup + UX-first flow**:
 
 ---
 
-### 2. `/spec`
+### 2. `/sp.spec`
 
 > Define **what the user experiences**, not file structure.
 
@@ -40,7 +40,7 @@ Example spec:
 
 ---
 
-### 3. `/clarify`
+### 3. `/sp.clarify`
 
 Ask UX-critical questions:
 
@@ -51,7 +51,7 @@ Ask UX-critical questions:
 
 ---
 
-### 4. `/plan`
+### 4. `/sp.plan`
 We are going to implement using nextJS15, Tailwind CSS, ShadCN and Framer Motion. Instead of file dump, generate **step-by-step CLI + integration plan**:
 
 ```bash
@@ -81,7 +81,7 @@ Then:
 
 ---
 
-### 5. `/tasks`
+### 5. `/sp.tasks`
 
 Atomic, UX-first tasks (not tests-first):
 
@@ -106,7 +106,7 @@ Args: message: User message (required) context_id: Optional conversation context
 
 Returns: StreamingResponse: SSE stream with incremental tokens
 
-### 6. `/analyze`
+### 6. `/sp.analyze`
 
 Now I want you to go and audit the implementation plan and the implementation detail files.
 Read through it with an eye on determining whether or not there is a sequence of tasks that you need
@@ -114,7 +114,7 @@ to be doing that are obvious from reading this. Because I don't know if there's 
 when I look at the core implementation, it would be useful to reference the appropriate places in the implementation
 details where it can find the information as it walks through each step in the core implementation or in the refinement.
 
-### 6. `/implement`
+### 6. `/sp.implement`
 
 ## References
 
