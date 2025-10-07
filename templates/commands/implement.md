@@ -27,13 +27,13 @@ See "Capability PR Workflow (Atomic PRs)" section below for detailed workflow.
 
 ## Pre-Implementation Validation
 
-1. **Run prerequisite check**: `.specify/scripts/bash/check-implementation-prerequisites.sh --json` from repo root
+1. **Run prerequisite check**: `scripts/bash/check-implementation-prerequisites.sh --json` from repo root
    - Parse FEATURE_DIR, PLAN_PATH, TASKS_PATH, BRANCH
    - Verify plan.md and tasks.md exist
    - Check for constitutional compliance markers
 
 2. **Load implementation context**:
-   - **REQUIRED**: Read `.specify/memory/constitution.md` for constitutional requirements
+   - **REQUIRED**: Read `memory/constitution.md` for constitutional requirements
    - **REQUIRED**: Read `tasks.md` for complete task list and execution order
    - **REQUIRED**: Read `plan.md` for tech stack, architecture, and validation gates
    - **IF EXISTS**: Read `data-model.md` for entities and relationships
