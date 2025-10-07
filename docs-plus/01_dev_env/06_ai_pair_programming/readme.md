@@ -1,6 +1,6 @@
 # Building a Calculator with AI: Test-Driven Development Tutorial
 
-## Complete Hands-Off Development with Qwen Code
+## Complete Hands-Off Development with Gemini CLI/Qwen Code
 
 ---
 
@@ -22,7 +22,7 @@
 
 ## Overview {#overview}
 
-In this tutorial, you will build a complete Python calculator application **without writing a single line of code yourself**. Instead, you'll direct Qwen Code (your AI assistant) through prompts to:
+In this tutorial, you will build a complete Python calculator application **without writing a single line of code yourself**. Instead, you'll direct Gemini CLI/Qwen Code (your AI assistant) through prompts to:
 
 - Set up the project with UV (modern Python package manager)
 - Write tests first (TDD - Test Driven Development)
@@ -39,7 +39,7 @@ This tutorial works on:
 - ✅ **macOS** (both Intel and Apple Silicon)
 - ✅ **Linux** (Ubuntu, Debian, Fedora, Arch, etc.)
 
-All commands are Unix-based and work identically across these platforms.
+All commands are Unix-based and work identically across these platforms. Windows users will not be doing development in Windows 11 but will be using Windows WSL. 
 
 ### Context7 Integration
 
@@ -48,13 +48,13 @@ This tutorial uses **Context7 MCP server** to provide **up-to-date documentation
 - **pytest documentation** - Current testing best practices
 - **Git documentation** - Modern git workflows
 
-Context7 ensures Qwen Code always has access to the latest tool documentation.
+Context7 ensures Gemini CLI/Qwen Code always has access to the latest tool documentation.
 
 ### Key Requirements
 
 - **Python 3.12+** - Required for modern type hints with `|` union syntax
 - **Type hints everywhere** - All code will use full type annotations
-- **Cloud-based AI** - Qwen Code uses Qwen Cloud API (no local installation)
+- **Cloud-based AI** - Gemini CLI/Qwen Code uses Cloud API (no local installation)
 
 ---
 
@@ -62,7 +62,7 @@ Context7 ensures Qwen Code always has access to the latest tool documentation.
 
 ### What You Need
 
-1. **Qwen Code CLI** - Cloud-based AI assistant
+1. **Gemini CLI or Qwen Code CLI** - Cloud-based AI assistant
 2. **Context7 MCP Server** - For up-to-date tool documentation
 3. **Git** - Version control
 4. **UV** - Python package manager
@@ -71,22 +71,61 @@ Context7 ensures Qwen Code always has access to the latest tool documentation.
 7. **Qwen Auth** - From Alibaba Cloud
 
 
+## Install Gemini CLI
+```bash
+# On Mac
+brew install gemini-cli
+# OR
+npm install -g @google/gemini-cli
+
+# verify
+gemini --version
+```
+
+### Authenticate Gemini CLI
+
+Login with Google (OAuth)
+```bash
+gemini
+# when prompted, choose Login with Google and complete browser auth
+```
+Benefits (per official docs): free tier ~60 requests/min and 1,000 requests/day, 1M‑token context on Gemini 2.5 Pro; no key management.
+
 ### Install Qwen Code CLI
 
-**For all platforms (via pip):**
 ```bash
-pip3 install qwen-code
+npm install -g @qwen-code/qwen-code@latest
+
+qwen --version
+# verify
+qwen --help
 ```
 
-**Verify installation:**
+### Authenticate Qwen Code
+
+Qwen OAuth (🚀 Recommended – start in ~30 seconds)
+
 ```bash
-qwen-code --version
-qwen-code "Hello, test connection"
+# Just run this command and follow the browser authentication
+qwen
 ```
+
+What happens:
+- Instant Setup: CLI opens your browser automatically
+- One-Click Login: Authenticate with your qwen.ai account
+- Automatic Management: Credentials cached locally for future use
+- No Configuration: Zero setup required – just start coding!
+
+Free Tier Benefits:
+- ✅ 2,000 requests/day (no token counting needed)
+- ✅ 60 requests/minute rate limit
+- ✅ Automatic credential refresh
+- ✅ Zero cost for individual users
+- ℹ️ Note: Model fallback may occur to maintain service quality
 
 ### Verify System Requirements
 
-**Prompt to Qwen Code:**
+**Prompt to GeminiCLI/Qwen Code:**
 
 ```
 Check if the following tools are installed and show their versions:
@@ -97,7 +136,7 @@ Check if the following tools are installed and show their versions:
 Verify Python version is 3.12 or higher (required for modern type hints).
 Use Context7 to get the latest UV documentation to verify correct installation.
 
-If any tools are missing or Python is below 3.12, provide installation commands for my operating system.
+If any tools are missing or Python is below 3.12, provide installation commands for my operating system and execute them.
 ```
 
 **Expected Output:**
@@ -122,7 +161,7 @@ Context7 should provide access to documentation for:
 - pytest (testing framework)
 - Git (version control)
 
-Provide step-by-step instructions for my platform.
+Provide step-by-step instructions for my platform and execute them.
 ```
 
 ---
@@ -148,9 +187,9 @@ You will **ONLY** give high-level prompts:
 - Specify exact test cases
 - Look up documentation
 
-### Qwen Code's Role
+### Gemini CLI/Qwen Code's Role
 
-Qwen Code will:
+Gemini CLI/Qwen Code will:
 - Execute all commands
 - Write all code with full type hints
 - Design all test cases
@@ -199,7 +238,7 @@ Create an initial commit with message "Initial commit: Project setup".
 Show all commands.
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Runs: `git init`
 - Creates `.gitignore`
 - Runs: `git add .gitignore`
@@ -221,7 +260,7 @@ Create structure:
 Show the UV commands and file structure.
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Queries Context7 for UV docs
 - Runs: `uv init calculator`
 - Runs: `uv add --dev pytest`
@@ -237,7 +276,7 @@ Show the UV commands and file structure.
 3. Wait for my confirmation, then add remote and push
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Runs: `git branch -M main`
 - Provides GitHub instructions
 - Waits for confirmation
@@ -246,7 +285,7 @@ Show the UV commands and file structure.
 - Create GitHub repository
 - Reply: "Repository created, URL is: git@github.com:username/calculator-tdd.git"
 
-**Qwen Then:**
+**Gemini CLI/Qwen Then:**
 - Runs: `git remote add origin <url>`
 - Runs: `git push -u origin main`
 
@@ -259,7 +298,7 @@ Use Context7 to confirm correct pytest command for UV projects.
 Show project structure.
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Runs: `uv run pytest`
 - Runs: `tree` or `ls -R`
 - Shows output
@@ -289,7 +328,7 @@ calculator-tdd/
 Create a new git branch called 'feature/addition' from main.
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Runs: `git checkout -b feature/addition`
 
 **Your Prompt:**
@@ -306,7 +345,7 @@ Run pytest to confirm tests fail (RED phase).
 Show what test cases you created and why, then show pytest output.
 ```
 
-**Qwen Creates:**
+**Gemini CLI/Qwen Creates:**
 ```python
 from calculator import add
 import pytest
@@ -338,7 +377,7 @@ def test_add_large_numbers() -> None:
     assert add(1000000, 2000000) == 3000000
 ```
 
-**Qwen Explains:**
+**Gemini CLI/Qwen Explains:**
 ```
 Test strategy covers:
 1. Positive integers - basic functionality
@@ -350,7 +389,7 @@ Test strategy covers:
 All tests use -> None type hint as required.
 ```
 
-**Qwen Runs:**
+**Gemini CLI/Qwen Runs:**
 - `uv run pytest`
 - Shows import error (add doesn't exist) ✓ RED
 
@@ -380,7 +419,7 @@ def add(a: int | float, b: int | float) -> int | float:
     return a + b
 ```
 
-**Qwen Runs:**
+**Gemini CLI/Qwen Runs:**
 - `uv run pytest`
 - All tests pass ✓ GREEN
 
@@ -394,7 +433,7 @@ def add(a: int | float, b: int | float) -> int | float:
 4. Provide GitHub CLI command or instructions for PR
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Runs: `git add .`
 - Runs: `git commit -m "feat: Add addition functionality with tests"`
 - Runs: `git push -u origin feature/addition`
@@ -408,7 +447,7 @@ def add(a: int | float, b: int | float) -> int | float:
 Switch back to main branch.
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Runs: `git checkout main`
 
 ---
@@ -428,7 +467,7 @@ IMPORTANT: All test functions must have type hints (-> None).
 Explain your test strategy, then run pytest to see RED.
 ```
 
-**Qwen Does:**
+**Gemini CLI/Qwen Does:**
 - Creates branch
 - Adds tests with type hints
 - Explains strategy
@@ -445,7 +484,7 @@ IMPORTANT: Use Python 3.12+ type hints with | union syntax.
 Run pytest to confirm all pass.
 ```
 
-**Qwen Implements:**
+**Gemini CLI/Qwen Implements:**
 ```python
 def add(a: int | float, b: int | float) -> int | float:
     """Add two numbers and return the result."""
@@ -464,7 +503,7 @@ def subtract(a: int | float, b: int | float) -> int | float:
     return a - b
 ```
 
-**Qwen Runs:**
+**Gemini CLI/Qwen Runs:**
 - All tests pass ✓ GREEN
 
 ### Commit and PR
@@ -511,7 +550,7 @@ IMPORTANT: Use Python 3.12+ type hints with | union syntax.
 Run pytest for GREEN.
 ```
 
-**Qwen Implements:**
+**Gemini CLI/Qwen Implements:**
 ```python
 def multiply(a: int | float, b: int | float) -> int | float:
     """Multiply two numbers and return the result.
@@ -567,7 +606,7 @@ IMPORTANT: Use Python 3.12+ type hints. Return type should be float.
 Run pytest for GREEN.
 ```
 
-**Qwen Implements:**
+**Gemini CLI/Qwen Implements:**
 ```python
 def divide(a: int | float, b: int | float) -> float:
     """Divide a by b and return the result.
@@ -630,7 +669,7 @@ IMPORTANT: All functions must have Python 3.12+ type hints.
 Run pytest for GREEN.
 ```
 
-**Qwen Implements:**
+**Gemini CLI/Qwen Implements:**
 ```python
 import sys
 from calculator import add, subtract, multiply, divide
@@ -679,7 +718,7 @@ Test CLI manually:
 Show outputs.
 ```
 
-**Qwen Runs:**
+**Gemini CLI/Qwen Runs:**
 - `uv run python -m calculator add 5 3` → 8.0
 - `uv run python -m calculator multiply 4 7` → 28.0
 - `uv run python -m calculator divide 10 2` → 5.0
@@ -733,7 +772,7 @@ IMPORTANT: Maintain all type hints.
 Make all tests pass. Show GREEN.
 ```
 
-**Qwen Updates:**
+**Gemini CLI/Qwen Updates:**
 ```python
 def divide(a: int | float, b: int | float) -> float:
     """Divide a by b and return the result.
@@ -786,7 +825,7 @@ Run complete test suite with coverage.
 Show full pytest output.
 ```
 
-**Qwen Runs:**
+**Gemini CLI/Qwen Runs:**
 - `git checkout main && git pull`
 - `uv run pytest -v --cov=calculator --cov-report=term-missing`
 
@@ -797,7 +836,7 @@ Show full pytest output.
 Install and run mypy or pyright to verify all type hints are correct.
 ```
 
-**Qwen Runs:**
+**Gemini CLI/Qwen Runs:**
 - `uv add --dev mypy`
 - `uv run mypy src/`
 - Shows type checking results
@@ -902,7 +941,7 @@ calculator-tdd/
 
 ### Technology Stack
 
-- **Qwen Code** - Cloud AI via Qwen 
+- **Gemini CLI/Qwen Code** - Cloud AI
 - **Context7 MCP** - Documentation access
 - **UV** - Python package manager
 - **pytest** - Testing framework
@@ -962,12 +1001,6 @@ Install via: brew install python@3.12 (macOS)
 Or: sudo apt install python3.12 (Ubuntu)
 ```
 
-**Context7 Issues:**
-```
-Verify Context7 MCP server is running
-Check connection to Qwen Code
-Test: Ask Qwen to query Context7 for UV documentation
-```
 
 ---
 
