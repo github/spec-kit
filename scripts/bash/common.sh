@@ -27,8 +27,8 @@ get_feature_dir() {
 # Example: username/jira-123.feature-cap-001 → cap-001
 get_capability_id_from_branch() {
     local branch="$1"
-    if [[ "$branch" =~ -cap-[0-9]{3}$ ]]; then
-        echo "$branch" | sed -E 's/.*-(cap-[0-9]{3})$/\1/'
+    if [[ "$branch" =~ -cap-[0-9]{3}[a-z]?$ ]]; then
+        echo "$branch" | sed -E 's/.*-(cap-[0-9]{3}[a-z]?)$/\1/'
     else
         echo ""
     fi
@@ -40,7 +40,7 @@ get_parent_feature_id() {
     local branch="$1"
     local feature_id=$(get_feature_id "$branch")
     # Remove -cap-XXX suffix if present
-    echo "$feature_id" | sed -E 's/-cap-[0-9]{3}$//'
+    echo "$feature_id" | sed -E 's/-cap-[0-9]{3}[a-z]?$//'
 }
 
 get_feature_paths() {
