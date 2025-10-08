@@ -1,17 +1,34 @@
-## SpecKitPlus: Building Production-Ready Apps with AI Coding Agents
+## SpecKitPlus Quickstart — From Vibe Coding to Spec-Driven Delivery
 
-AI coding agents are powerful tools, but without proper structure, they often produce buggy, incomplete applications with poor UX. SpecKitPlus solves this problem by introducing spec-driven development to your AI agent workflow, giving your agent the same context and structure that professional development teams use.
+You just practiced AI pair programming in `01_dev_env/06_ai_pair_programming/` (vibe coding with coding principles). Now we’ll rebuild the same project using SpecKitPlus (SPP) and Spec‑Driven Development (SDD) so you can transfer those skills into a production‑style workflow.
 
-**Key Benefits:**
+**What you already learned (recap):**
+- Prompting patterns, small iterations, and repository‑aware agents
+- Guardrails: review diffs, run locally, validate behavior
+
+**What you’ll do now (SPP Quickstart):**
+- Rebuild the same app via SDD artifacts (Specify → Plan → Tasks → Implement)
+- Keep everything under version control with tests and ADRs
+- Use the same agent you prefer (Claude, Cursor, Gemini CLI, Qwen Code, etc.)
+
+**Why SPP for this stage:**
 - Structured planning and implementation
-- Better code quality and fewer bugs
-- Git-based version control workflow
-- Test-driven development
+- Fewer bugs and clearer UX through specs and tests
+- Git‑first workflow with CI in mind
 - Works with any coding agent (Claude Code, Cursor, Windsurf, Codeium, etc.)
+
+### Quickstart TL;DR
+1. Constitution → [/sp.constitution](#constitution) (jump to full prompt)
+2. Specify → [/sp.specify](#specify) (jump to full prompt)
+3. Plan → [/sp.plan](#plan) (jump to full prompt)
+4. Tasks → [/sp.tasks](#tasks) (jump to full prompt)
+5. Implement → [/sp.implement](#implement) (jump to full prompt)
+6. Tests + Merge → (see [Test & Merge](#test-and-merge))
+7. ADRs as needed → (see [ADRs](#adrs))
 
 ## Core Workflow Components
 
-Instead of coding first and writing docs later, in spec-driven development, you start with a (you guessed it) spec. This is a contract for how your code should behave and becomes the source of truth your tools and AI agents use to generate, test, and validate code. The result is less guesswork, fewer surprises, and higher-quality code. Here's the core SpecKitPlus workflow:
+In SDD you start with a spec. It’s the contract for behavior and the source of truth your agents use to generate, test, and validate code. Less guesswork, fewer surprises, higher quality. Here’s the SPP workflow you’ll follow to rebuild the same app:
 
 ### 1. Constitution (One-Time Setup)
 Sets project principles, standards, and tech stack preferences at the start of your project.
@@ -93,6 +110,8 @@ The agent will generate a comprehensive constitution file including:
 
 **Pro Tip:** This is a human-in-the-loop process. Review and modify the generated constitution to match your preferences.
 
+Jump to full prompt: [0001 Constitution](#appendix-prompts)
+
 ### Step 2: Specify
 
 Define what you want to build (business requirements only):
@@ -113,6 +132,8 @@ I would like to build a basic expense tracking app.
 SpecKit automatically:
 - Creates a new feature branch
 - Generates a spec file with user scenarios, edge cases, and acceptance criteria
+
+Jump to full prompt: [0002 Specify](#appendix-prompts)
 
 ### Step 3: Clarify (Optional)
 
@@ -155,6 +176,8 @@ SpecKit generates:
 - **research.md** - Technical research and decisions
 - Agent files updated with project context
 
+Jump to full prompt: [0003 Plan](#appendix-prompts)
+
 ### Step 5: Tasks
 
 Break the plan into actionable implementation steps:
@@ -170,6 +193,8 @@ The agent creates phases with numbered tasks (T001, T002, etc.):
 - Phase 3.4: Server actions
 - Phase 3.5: Components
 - And so on...
+
+Jump to full prompt: [0004 Tasks](#appendix-prompts)
 
 ### Step 6: Implement
 
@@ -204,6 +229,8 @@ The agent will:
 3. Re-run tests (which now pass)
 4. Mark completed tasks with an X in the tasks file
 
+Jump to full prompt: [0005 Implement](#appendix-prompts)
+
 ### Step 7: Test
 
 Follow the quick-start.md guide to manually test your application:
@@ -226,6 +253,8 @@ Create a pull request and merge to main:
 git checkout main
 git pull origin main
 ```
+
+Jump to full prompt: [0006 PR Checklist](#appendix-prompts)
 
 ## Test-Driven Development (TDD)
 
@@ -279,3 +308,63 @@ Please add a budget tracking feature to this app.
 
 SpecKit transforms AI coding agents from unpredictable tools into structured development partners. By following professional development practices and maintaining clear documentation, you'll consistently build production-ready applications that match your vision.
 
+
+---
+
+## Appendix: Prompts (Copy & Paste)
+
+### 0001 Constitution
+```
+/sp.constitution
+
+Project type: Rebuild the same app from 01_dev_env/06_ai_pair_programming using SDD.
+Priorities: Readable, modular code; tests first; ADRs for consequential decisions.
+Stack: Python 3.12+/uv; keep agent prompts/versioned artifacts in repo.
+Quality bar: CI green required, coverage ≥ 80% for touched modules.
+```
+
+### 0002 Specify
+```
+/sp.specify
+
+Feature: simple math calculator with cli interface for testing and usage.
+User journeys: list primary flows; include at least one edge case per flow.
+Acceptance criteria: explicit inputs/outputs, status codes, error messages.
+Constraints: performance budget, file size/time limits, non-goals.
+Success metrics: what we will measure to accept this feature.
+```
+
+### 0003 Plan
+```
+/sp.plan
+
+Produce: architecture sketch, interfaces, data model, error taxonomy, NFRs.
+Decisions needing ADR: enumerate candidates with options and tradeoffs.
+Testing strategy: unit + integration cases derived from acceptance criteria.
+```
+
+### 0004 Tasks
+```
+/sp.tasks
+
+Break plan into small tasks (T001..), each ≤ 30 minutes, testable, reversible.
+Add dependencies between tasks; group into phases; mark deliverables per task.
+```
+
+### 0005 Implement
+```
+/sp.implement T001..T005
+
+Rules: tests first, smallest diff, keep public API stable within a phase.
+After each task: run tests, update checklist, note deltas to spec if needed.
+```
+
+### 0006 PR Checklist
+```
+Checklist before merge:
+- [ ] Spec and plan updated to match implementation
+- [ ] All new/changed code has tests; coverage target met
+- [ ] ADR added/updated for consequential decisions
+- [ ] CI green; manual smoke verified
+- [ ] PR description links spec section(s) and ADR(s)
+```
