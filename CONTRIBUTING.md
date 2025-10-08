@@ -14,7 +14,7 @@ These are one time installations required to be able to test your changes locall
 1. Have an [AI coding agent available](README.md#-supported-ai-agents)
 
 <details>
-<summary><b>💡 Hint if you are using <code>VSCode</code> or <code>Github Codespaces</code> as your IDE</b></summary>
+<summary><b>💡 Hint if you are using <code>VSCode</code> or <code>GitHub Codespaces</code> as your IDE</b></summary>
 
 <br>
 
@@ -26,7 +26,7 @@ To do so, simply:
 - Open it with VSCode
 - Open the [Command Palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette) and select "Dev Containers: Open Folder in Container..."
 
-On [Github Codespaces](https://github.com/features/codespaces) it's even simpler, as it leverages the `.devcontainer/devcontainer.json` automatically upon opening the codespace.
+On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler, as it leverages the `.devcontainer/devcontainer.json` automatically upon opening the codespace.
 
 </details>
 
