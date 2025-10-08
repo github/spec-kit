@@ -63,34 +63,45 @@ if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GI
     exit 1 
 }
 
-# If paths-only mode, output paths and exit
+# If paths-only mode, output paths and exit (support combined -Json -PathsOnly)
 if ($PathsOnly) {
-    Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
-    Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
-    Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
-    Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
-    Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
-    Write-Output "TASKS: $($paths.TASKS)"
+    if ($Json) {
+        [PSCustomObject]@{
+            REPO_ROOT    = $paths.REPO_ROOT
+            BRANCH       = $paths.CURRENT_BRANCH
+            FEATURE_DIR  = $paths.FEATURE_DIR
+            FEATURE_SPEC = $paths.FEATURE_SPEC
+            IMPL_PLAN    = $paths.IMPL_PLAN
+            TASKS        = $paths.TASKS
+        } | ConvertTo-Json -Compress
+    } else {
+        Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
+        Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
+        Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
+        Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
+        Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
+        Write-Output "TASKS: $($paths.TASKS)"
+    }
     exit 0
 }
 
 # Validate required directories and files
 if (-not (Test-Path $paths.FEATURE_DIR -PathType Container)) {
     Write-Output "ERROR: Feature directory not found: $($paths.FEATURE_DIR)"
-    Write-Output "Run /specify first to create the feature structure."
+    Write-Output "Run /speckit.specify first to create the feature structure."
     exit 1
 }
 
 if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
     Write-Output "ERROR: plan.md not found in $($paths.FEATURE_DIR)"
-    Write-Output "Run /plan first to create the implementation plan."
+    Write-Output "Run /speckit.plan first to create the implementation plan."
     exit 1
 }
 
 # Check for tasks.md if required
 if ($RequireTasks -and -not (Test-Path $paths.TASKS -PathType Leaf)) {
     Write-Output "ERROR: tasks.md not found in $($paths.FEATURE_DIR)"
-    Write-Output "Run /tasks first to create the task list."
+    Write-Output "Run /speckit.tasks first to create the task list."
     exit 1
 }
 

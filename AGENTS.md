@@ -38,6 +38,8 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | Alibaba's Qwen Code CLI |
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
 | **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows |
+| **Amazon Q Developer CLI** | `.amazonq/prompts/` | Markdown | `q` | Amazon Q Developer CLI |
+
 
 ### Step-by-Step Integration Guide
 
@@ -55,7 +57,8 @@ AI_CHOICES = {
     "cursor": "Cursor",
     "qwen": "Qwen Code",
     "opencode": "opencode",
-    "windsurf": "Windsurf"  # Add new agent here
+    "windsurf": "Windsurf",
+    "q": "Amazon Q Developer CLI"  # Add new agent here
 }
 ```
 
@@ -69,10 +72,11 @@ agent_folder_map = {
     "qwen": ".qwen/",
     "opencode": ".opencode/",
     "codex": ".codex/",
-    "windsurf": ".windsurf/",  # Add new agent folder here
+    "windsurf": ".windsurf/",  
     "kilocode": ".kilocode/",
     "auggie": ".auggie/",
-    "copilot": ".github/"
+    "copilot": ".github/",
+    "q": ".amazonq/" # Add new agent folder here
 }
 ```
 
@@ -99,7 +103,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 
 ##### Add to ALL_AGENTS array:
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf q)
 ```
 
 ##### Add case statement for directory structure:
@@ -206,7 +210,7 @@ Work within integrated development environments:
 ## Command File Formats
 
 ### Markdown Format
-Used by: Claude, Cursor, opencode, Windsurf
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer
 
 ```markdown
 ---

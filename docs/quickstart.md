@@ -22,29 +22,29 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 ### 2. Create the Spec
 
-Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Use the `/speckit.specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
-/specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
 ### 3. Create a Technical Implementation Plan
 
-Use the `/plan` command to provide your tech stack and architecture choices.
+Use the `/speckit.plan` command to provide your tech stack and architecture choices.
 
 ```bash
-/plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
 ### 4. Break Down and Implement
 
-Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
+Use `/speckit.tasks` to create an actionable task list, then ask your agent to implement the feature.
 
 ## Detailed Example: Building Taskify
 
 Here's a complete example of building a team productivity platform:
 
-### Step 1: Define Requirements with `/specify`
+### Step 1: Define Requirements with `/speckit.specify`
 
 ```text
 Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
@@ -81,7 +81,7 @@ Also validate the specification checklist:
 Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
 ```
 
-### Step 3: Generate Technical Plan with `/plan`
+### Step 3: Generate Technical Plan with `/speckit.plan`
 
 Be specific about your tech stack and technical requirements:
 

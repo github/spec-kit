@@ -82,34 +82,40 @@ source "$SCRIPT_DIR/common.sh"
 eval $(get_feature_paths)
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
-# If paths-only mode, output paths and exit
+# If paths-only mode, output paths and exit (support JSON + paths-only combined)
 if $PATHS_ONLY; then
-    echo "REPO_ROOT: $REPO_ROOT"
-    echo "BRANCH: $CURRENT_BRANCH"
-    echo "FEATURE_DIR: $FEATURE_DIR"
-    echo "FEATURE_SPEC: $FEATURE_SPEC"
-    echo "IMPL_PLAN: $IMPL_PLAN"
-    echo "TASKS: $TASKS"
+    if $JSON_MODE; then
+        # Minimal JSON paths payload (no validation performed)
+        printf '{"REPO_ROOT":"%s","BRANCH":"%s","FEATURE_DIR":"%s","FEATURE_SPEC":"%s","IMPL_PLAN":"%s","TASKS":"%s"}\n' \
+            "$REPO_ROOT" "$CURRENT_BRANCH" "$FEATURE_DIR" "$FEATURE_SPEC" "$IMPL_PLAN" "$TASKS"
+    else
+        echo "REPO_ROOT: $REPO_ROOT"
+        echo "BRANCH: $CURRENT_BRANCH"
+        echo "FEATURE_DIR: $FEATURE_DIR"
+        echo "FEATURE_SPEC: $FEATURE_SPEC"
+        echo "IMPL_PLAN: $IMPL_PLAN"
+        echo "TASKS: $TASKS"
+    fi
     exit 0
 fi
 
 # Validate required directories and files
 if [[ ! -d "$FEATURE_DIR" ]]; then
     echo "ERROR: Feature directory not found: $FEATURE_DIR" >&2
-    echo "Run /specify first to create the feature structure." >&2
+    echo "Run /speckit.specify first to create the feature structure." >&2
     exit 1
 fi
 
 if [[ ! -f "$IMPL_PLAN" ]]; then
     echo "ERROR: plan.md not found in $FEATURE_DIR" >&2
-    echo "Run /plan first to create the implementation plan." >&2
+    echo "Run /speckit.plan first to create the implementation plan." >&2
     exit 1
 fi
 
 # Check for tasks.md if required
 if $REQUIRE_TASKS && [[ ! -f "$TASKS" ]]; then
     echo "ERROR: tasks.md not found in $FEATURE_DIR" >&2
-    echo "Run /tasks first to create the task list." >&2
+    echo "Run /speckit.tasks first to create the task list." >&2
     exit 1
 fi
 
