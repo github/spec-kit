@@ -29,6 +29,7 @@
 - [🎯 Experimental goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn more](#-learn-more)
+- [📊 Benchmarking with Terminal Bench](#-benchmarking-with-terminal-bench)
 - [📋 Detailed process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [👥 Maintainers](#-maintainers)
@@ -297,6 +298,26 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
+
+## 📊 Benchmarking with Terminal Bench
+
+Benchmark the Specify workflow without impacting end users by using the standalone
+Terminal Bench agent that lives in `benchmarks/terminal_bench_agent`. The project is
+managed with uv and keeps heavy benchmarking dependencies separate from the main CLI.
+
+```bash
+cd benchmarks/terminal_bench_agent
+uv sync
+uv run tb run \
+  --dataset terminal-bench-core==head \
+  --task-id hello-world \
+  --agent-import-path specify_terminal_bench.agent:SpecifyOpenCodeWorkflowAgent
+```
+
+Set provider credentials only if you switch to a paid model (for example export
+`ANTHROPIC_API_KEY` before using the Claude workflow agent). See
+[`benchmarks/terminal_bench_agent/README.md`](benchmarks/terminal_bench_agent/README.md)
+for detailed options and overrides.
 
 ---
 
