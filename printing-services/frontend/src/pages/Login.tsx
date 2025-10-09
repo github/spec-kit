@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Mail, Lock, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,6 +8,7 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
   const { login } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -15,6 +16,7 @@ export default function Login() {
     setLoading(true)
     try {
       await login(email, password)
+      navigate('/dashboard')
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Login failed')
     } finally {
@@ -56,7 +58,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="input-field pl-10"
-                  placeholder="••••••••"
+                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                   required
                 />
               </div>

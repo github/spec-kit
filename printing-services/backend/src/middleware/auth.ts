@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 // Using string literals instead of enums for SQLite compatibility
-type UserRole = 'CUSTOMER' | 'BROKER' | 'ADMIN'
+
 
 // Extend Express Request type to include user
 declare global {
@@ -10,7 +10,7 @@ declare global {
       user?: {
         id: string
         email: string
-        role: UserRole
+        role: string
         status: string
       }
     }
@@ -20,7 +20,7 @@ declare global {
 interface JWTPayload {
   userId: string
   email: string
-  role: UserRole
+  role: string
   status: string
   iat: number
   exp: number
@@ -70,7 +70,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
   }
 }
 
-export const requireRole = (allowedRoles: UserRole[]) => {
+export const requireRole = (allowedRoles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' })
@@ -98,3 +98,6 @@ export const requireBroker = requireRole(['BROKER'])
 export const requireAdmin = requireRole(['ADMIN'])
 export const requireCustomerOrBroker = requireRole(['CUSTOMER', 'BROKER'])
 export const requireAnyRole = requireRole(['CUSTOMER', 'BROKER', 'ADMIN'])
+
+
+

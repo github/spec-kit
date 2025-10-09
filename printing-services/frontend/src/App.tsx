@@ -17,9 +17,9 @@ const queryClient = new QueryClient()
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SocketProvider>
-          <BrowserRouter>
+      <BrowserRouter>
+        <AuthProvider>
+          <SocketProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -32,10 +32,10 @@ function App() {
                 <Route path="profile" element={<Profile />} />
               </Route>
             </Routes>
-          </BrowserRouter>
-          <Toaster position="top-right" />
-        </SocketProvider>
-      </AuthProvider>
+            <Toaster position="top-right" />
+          </SocketProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   )
 }

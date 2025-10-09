@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 
@@ -24,7 +23,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const navigate = useNavigate()
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -54,13 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
     setUser(data.user)
     toast.success('Welcome back!')
-    navigate('/dashboard')
+    // Navigation handled by Login component
   }
 
   const register = async (formData: any) => {
     const { data } = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/register`, formData)
     toast.success('Registration successful! Please check your email.')
-    navigate('/login')
+    // Navigation handled by Register component
   }
 
   const logout = () => {
@@ -68,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     delete axios.defaults.headers.common['Authorization']
     setUser(null)
     toast.success('Logged out successfully')
-    navigate('/login')
+    // Navigation handled by component
   }
 
   return (

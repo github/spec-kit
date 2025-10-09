@@ -208,7 +208,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
       data: {
         emailVerified: true,
         emailVerifiedAt: new Date(),
-        status: UserStatus.VERIFIED // Auto-verify customers, brokers need manual approval
+        status: 'VERIFIED' // Auto-verify customers, brokers need manual approval
       }
     })
 
@@ -326,3 +326,4 @@ export const getProfile = async (req: Request, res: Response) => {
     })
   }
 }
+

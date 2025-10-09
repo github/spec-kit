@@ -1,112 +1,33 @@
-{{ ... }}
-
-model Transaction {
-  id             Int      @id @default(autoincrement())
-  proposalId     Int      @unique
-  proposal       Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  stripeSessionId String  @unique // Stripe checkout session ID
-  amount         Float    // Amount in USD
-  currency       String   @default("USD")
-  status         String   @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
-  metadata       Json?    // Additional data: {customer_email, broker_email, etc.}
-  
-  // Stripe webhook data
-  paymentIntentId String? // Stripe payment intent ID
-  receiptUrl      String? // Stripe receipt URL
-  
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  paidAt         DateTime? // When payment was completed
-
-  @@map("transactions")
+// Simplified schema for Sprint 1 testing with SQLite
+generator client {
+  provider = "prisma-client-js"
 }
 
-model Conversation {
-  id           Int       @id @default(autoincrement())
-  requestId    Int       // Reference to printing request
-  customerId   Int       // Customer participant
-  brokerId     Int       // Broker participant
-  status       String    @default("ACTIVE") // ACTIVE, ARCHIVED, DELETED
-  lastActivity DateTime  @default(now())
-  metadata     Json?     // Additional settings and context
-  
-  // Relations
-  request      PrintingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  customer     User            @relation("CustomerConversations", fields: [customerId], references: [id], onDelete: Cascade)
-  broker       User            @relation("BrokerConversations", fields: [brokerId], references: [id], onDelete: Cascade)
-  messages     Message[]
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  // Ensure one conversation per customer-broker-request combination
-  @@unique([requestId, customerId, brokerId])
-  @@map("conversations")
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
-model Message {
-  id             Int          @id @default(autoincrement())
-  conversationId Int
-  senderId       Int
-  content        String       // Encrypted message content (max 2000 chars)
-  type           String       @default("TEXT") // TEXT, SYSTEM, FILE
-  attachments    Json?        // Array of file references
-  readBy         Json?        // Array of user IDs who read the message
-  isEdited       Boolean      @default(false)
-  editedAt       DateTime?
-  
-  // Relations
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  @@map("messages")
-}
-
-// Update User model to include messaging relations
 model User {
-  id              Int      @id @default(autoincrement())
-  email           String   @unique
-  password        String
-  role            String   @default("CUSTOMER")
-  companyName     String?
-  isEmailVerified Boolean  @default(false)
-  isVerified      Boolean  @default(false)
+  id                String     @id @default(cuid())
+  email             String     @unique
+  passwordHash      String
+  firstName         String
+  lastName          String
+  role              String     @default("CUSTOMER") // CUSTOMER, BROKER, ADMIN
+  status            String     @default("PENDING")  // PENDING, VERIFIED, SUSPENDED, BANNED
+  emailVerified     Boolean    @default(false)
+  emailVerifiedAt   DateTime?
   
-  // Messaging fields
-  lastSeen        DateTime @default(now())
-  isOnline        Boolean  @default(false)
-  notificationPreferences Json? // Email, push, etc.
+  // Profile information
+  phone             String?
+  companyName       String?
+  businessNumber    String?
   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastLoginAt       DateTime?
   
-  // Relations
-  requests        PrintingRequest[]
-  proposals       Proposal[]
-  
-  // Messaging relations
-  customerConversations Conversation[] @relation("CustomerConversations")
-  brokerConversations   Conversation[] @relation("BrokerConversations")
-  sentMessages          Message[]      @relation("SentMessages")
-
   @@map("users")
 }
-
-// Update PrintingRequest to include conversation relation
-model PrintingRequest {
-  id          Int         @id @default(autoincrement())
-  title       String
-  description String?
-  specs       Json        // JSON specs: {type, quantity, paper, color, files, etc.}
-  status      String      @default("PENDING") // PENDING, PROPOSED, APPROVED, COMPLETED, CANCELLED
-  userId      Int
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  proposals   Proposal[]
-  conversations Conversation[] // Conversations related to this request
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  @@map("printing_requests")
