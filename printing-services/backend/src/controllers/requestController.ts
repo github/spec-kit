@@ -1,11 +1,11 @@
-import { Request, Response } from 'express'
+﻿import { Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
 import { prisma } from '../lib/database'
 
 // Extend Express Request to include user from auth middleware
 interface AuthRequest extends Request {
   user?: {
-    id: number
+    id: string
     email: string
     role: string
     status: string
@@ -209,7 +209,7 @@ export const createProposal = async (req: AuthRequest, res: Response) => {
       })
     }
 
-    const { requestId, price, timeline, details } = req.body
+    const { requestId, price,  details } = req.body
 
     // Check if request exists and is available for proposals
     const request = await prisma.printingRequest.findUnique({
@@ -248,7 +248,7 @@ export const createProposal = async (req: AuthRequest, res: Response) => {
         requestId,
         brokerId: req.user.id,
         price,
-        timeline,
+        
         details
       },
       include: {
@@ -299,7 +299,7 @@ export const acceptProposal = async (req: AuthRequest, res: Response) => {
 
     // Get proposal with request details
     const proposal = await prisma.proposal.findUnique({
-      where: { id: proposalId },
+      where: { id: proposalId },\n      include: { request: true, broker: true },
       include: {
         request: true,
         broker: {
@@ -329,7 +329,7 @@ export const acceptProposal = async (req: AuthRequest, res: Response) => {
     // Accept the proposal and update request status
     const updatedProposal = await prisma.proposal.update({
       where: { id: proposalId },
-      data: { isAccepted: true },
+      data: { status: 'ACCEPTED' },
       include: {
         broker: {
           select: { id: true, email: true, companyName: true }
@@ -356,3 +356,5 @@ export const acceptProposal = async (req: AuthRequest, res: Response) => {
     })
   }
 }
+
+

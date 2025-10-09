@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import Login from '../pages/Login'
 import { AuthProvider } from '../contexts/AuthContext'
@@ -33,3 +33,4 @@ describe('Login Page', () => {
     expect(emailInput).toBeRequired()
   })
 })
+

@@ -2,8 +2,8 @@ import nodemailer from 'nodemailer'
 import { generateVerificationToken } from '@/utils/auth'
 
 // Email transporter configuration
-const createTransporter = () => {
-  return nodemailer.createTransporter({
+const createTransport = () => {
+  return nodemailer.createTransport({
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT || '587'),
     secure: false, // true for 465, false for other ports
@@ -122,7 +122,7 @@ export const sendVerificationEmail = async (
   userId: string
 ): Promise<void> => {
   try {
-    const transporter = createTransporter()
+    const transporter = createTransport()
     const token = generateVerificationToken(userId)
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${token}`
     
@@ -148,7 +148,7 @@ export const sendBrokerApprovalEmail = async (
   companyName: string
 ): Promise<void> => {
   try {
-    const transporter = createTransporter()
+    const transporter = createTransport()
     
     const mailOptions = {
       from: process.env.EMAIL_FROM || '"PrintMarket" <noreply@printmarket.ca>',
@@ -172,7 +172,7 @@ export const sendPasswordResetEmail = async (
   resetToken: string
 ): Promise<void> => {
   try {
-    const transporter = createTransporter()
+    const transporter = createTransport()
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`
     
     const mailOptions = {
@@ -199,7 +199,7 @@ export const sendPasswordResetEmail = async (
 // Test email configuration
 export const testEmailConfiguration = async (): Promise<boolean> => {
   try {
-    const transporter = createTransporter()
+    const transporter = createTransport()
     await transporter.verify()
     console.log('✅ Email configuration is valid')
     return true

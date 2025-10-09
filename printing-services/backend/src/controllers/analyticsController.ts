@@ -1,4 +1,4 @@
-import { Request, Response } from 'express'
+﻿import { Request, Response } from 'express'
 import { prisma } from '../lib/database'
 import { sendUserNotification } from '../services/websocketService'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
@@ -6,7 +6,7 @@ import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 // Extend Express Request to include user from auth middleware
 interface AuthRequest extends Request {
   user?: {
-    id: number
+    id: string
     email: string
     role: string
     status: string
@@ -98,7 +98,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
         by: ['brokerId'],
         where: { 
           ...dateFilter, 
-          isAccepted: true 
+          status: 'ACCEPTED' 
         },
         _count: { id: true },
         orderBy: { _count: { id: 'desc' } },
@@ -214,7 +214,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
       const acceptedProposals = await prisma.proposal.count({
         where: {
           brokerId: userId,
-          isAccepted: true,
+          status: 'ACCEPTED',
           ...dateFilter
         }
       })
@@ -246,7 +246,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
           proposals: {
             some: {
               brokerId: userId,
-              isAccepted: true
+              status: 'ACCEPTED'
             }
           },
           status: 'COMPLETED',
@@ -463,3 +463,4 @@ export const getAnalyticsSummary = async (req: AuthRequest, res: Response) => {
     })
   }
 }
+

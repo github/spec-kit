@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router-dom'
 import { User, Building, Mail, Lock, Eye, EyeOff } from 'lucide-react'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth } from '../../contexts/AuthContext'
 import toast from 'react-hot-toast'
 
 interface RegisterFormData {
@@ -12,6 +12,7 @@ interface RegisterFormData {
   firstName: string
   lastName: string
   role: 'CUSTOMER' | 'BROKER'
+  terms: boolean
   companyName?: string
   businessNumber?: string
 }
@@ -329,3 +330,6 @@ export default function RegisterForm() {
     </div>
   )
 }
+
+
+

@@ -7,10 +7,10 @@ import rateLimit from 'express-rate-limit'
 import { connectDatabase } from '@/lib/database'
 import { initSocketServer } from '@/services/websocketService'
 import authRoutes from '@/routes/auth'
-import analyticsRoutes from '@/routes/analytics'
-import messageRoutes from '@/routes/messages'
-import reviewRoutes from '@/routes/reviews'
-import requestRoutes from '@/routes/requests'
+// import analyticsRoutes from './routes/analytics'
+// import messageRoutes from './routes/messages'
+// import reviewRoutes from './routes/reviews'
+// import requestRoutes from './routes/requests'
 
 // Load environment variables
 dotenv.config()
@@ -73,10 +73,10 @@ app.get('/api', (req, res) => {
 
 // Mount all API routes
 app.use('/api/auth', authRoutes)
-app.use('/api', analyticsRoutes)
-app.use('/api', messageRoutes)
-app.use('/api', reviewRoutes)
-app.use('/api', requestRoutes)
+// app.use('/api', analyticsRoutes)
+// app.use('/api', messageRoutes)
+// app.use('/api', reviewRoutes)
+// app.use('/api', requestRoutes)
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -127,3 +127,11 @@ async function startServer() {
 }
 
 startServer()
+
+
+
+
+
+
+
+

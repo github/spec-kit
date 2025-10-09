@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import { UserRole } from '@prisma/client'
 
 // Password validation rules
 export const validatePassword = (password: string): { isValid: boolean; errors: string[] } => {
@@ -40,29 +39,15 @@ export const verifyPassword = async (password: string, hash: string): Promise<bo
 }
 
 // Generate JWT token
-export const generateToken = (user: {
-  id: string
-  email: string
-  role: UserRole
-  status: string
-}): string => {
+export const generateToken = (user: { id: string; email: string; role: string; status: string }): string => {
   const jwtSecret = process.env.JWT_SECRET
   if (!jwtSecret) {
     throw new Error('JWT_SECRET not configured')
   }
 
-  const expiresIn = process.env.JWT_EXPIRES_IN || '7d'
+  const expiresIn: string = process.env.JWT_EXPIRES_IN || '7d'
   
-  return jwt.sign(
-    {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      status: user.status
-    },
-    jwtSecret,
-    { expiresIn }
-  )
+  return jwt.sign({ userId: user.id, email: user.email, role: user.role, status: user.status }, jwtSecret, { expiresIn } as jwt.SignOptions)
 }
 
 // Verify JWT token
@@ -116,3 +101,6 @@ export const validateEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   return emailRegex.test(email)
 }
+
+
+
