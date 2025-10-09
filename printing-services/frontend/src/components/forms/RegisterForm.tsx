@@ -12,6 +12,7 @@ interface RegisterFormData {
   firstName: string
   lastName: string
   role: 'CUSTOMER' | 'BROKER'
+  terms: boolean
   companyName?: string
   businessNumber?: string
 }
@@ -329,3 +330,6 @@ export default function RegisterForm() {
     </div>
   )
 }
+
+
+

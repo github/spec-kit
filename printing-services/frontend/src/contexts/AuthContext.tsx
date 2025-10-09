@@ -1,43 +1,42 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+﻿import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 
 interface User {
   id: string
   email: string
-  role: 'CUSTOMER' | 'BROKER' | 'ADMIN'
-  firstName?: string
-  lastName?: string
+  firstName: string
+  lastName: string
+  role: string
+  status: string
 }
 
 interface AuthContextType {
   user: User | null
-  login: (email: string, password: string) => Promise<void>
-  register: (data: any) => Promise<void>
-  logout: () => void
   isLoading: boolean
+  login: (email: string, password: string) => Promise<void>
+  register: (formData: any) => Promise<void>
+  logout: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-      fetchProfile()
-    } else {
-      setIsLoading(false)
-    }
+    checkAuth()
   }, [])
 
-  const fetchProfile = async () => {
+  const checkAuth = async () => {
     try {
-      const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/api/auth/profile`)
-      setUser(data.user)
+      const token = localStorage.getItem('token')
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+        const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/api/auth/me`)
+        setUser(data.user)
+      }
     } catch (error) {
       localStorage.removeItem('token')
       delete axios.defaults.headers.common['Authorization']
@@ -56,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const register = async (formData: any) => {
-    const { data } = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/register`, formData)
+    await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/register`, formData)
     toast.success('Registration successful! Please check your email.')
     // Navigation handled by Register component
   }
@@ -66,11 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     delete axios.defaults.headers.common['Authorization']
     setUser(null)
     toast.success('Logged out successfully')
-    // Navigation handled by component
+    // Navigation handled by Layout component
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )
@@ -78,6 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export const useAuth = () => {
   const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within AuthProvider')
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider')
+  }
   return context
 }
