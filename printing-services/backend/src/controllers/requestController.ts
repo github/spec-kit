@@ -329,7 +329,7 @@ export const acceptProposal = async (req: AuthRequest, res: Response) => {
     // Accept the proposal and update request status
     const updatedProposal = await prisma.proposal.update({
       where: { id: proposalId },
-      data: { isAccepted: true },
+      data: { status: 'ACCEPTED' },
       include: {
         broker: {
           select: { id: true, email: true, companyName: true }

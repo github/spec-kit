@@ -98,7 +98,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
         by: ['brokerId'],
         where: { 
           ...dateFilter, 
-          isAccepted: true 
+          status: 'ACCEPTED' 
         },
         _count: { id: true },
         orderBy: { _count: { id: 'desc' } },
@@ -214,7 +214,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
       const acceptedProposals = await prisma.proposal.count({
         where: {
           brokerId: userId,
-          isAccepted: true,
+          status: 'ACCEPTED',
           ...dateFilter
         }
       })
@@ -246,7 +246,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
           proposals: {
             some: {
               brokerId: userId,
-              isAccepted: true
+              status: 'ACCEPTED'
             }
           },
           status: 'COMPLETED',
