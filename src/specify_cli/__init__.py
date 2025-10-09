@@ -64,6 +64,94 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     token = _github_token(cli_token)
     return {"Authorization": f"Bearer {token}"} if token else {}
 
+def fetch_remote_constitutions_list(repo_url: str, branch: str = "main", path: str = "", github_token: str = None) -> list[dict]:
+    """
+    Fetch a list of available constitutions from a remote GitHub repository.
+    
+    Args:
+        repo_url: GitHub repository URL (e.g., 'https://github.com/owner/repo' or 'owner/repo')
+        branch: Branch name to fetch from (default: 'main')
+        path: Path within the repository where constitutions are stored (default: root)
+        github_token: Optional GitHub token for private repositories
+        
+    Returns:
+        List of dicts with 'name', 'path', and 'download_url' keys
+    """
+    # Parse repo_url to extract owner and repo
+    repo_url = repo_url.strip()
+    if repo_url.startswith("https://github.com/"):
+        repo_url = repo_url.replace("https://github.com/", "")
+    repo_url = repo_url.rstrip("/")
+    
+    parts = repo_url.split("/")
+    if len(parts) < 2:
+        raise ValueError(f"Invalid repository URL: {repo_url}. Expected format: 'owner/repo' or 'https://github.com/owner/repo'")
+    
+    owner, repo = parts[0], parts[1]
+    
+    # Construct API URL to list directory contents
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+    if branch != "main":
+        api_url += f"?ref={branch}"
+    
+    try:
+        response = client.get(
+            api_url,
+            timeout=30,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token),
+        )
+        
+        if response.status_code == 404:
+            raise RuntimeError(f"Repository or path not found: {owner}/{repo}/{path}")
+        elif response.status_code != 200:
+            raise RuntimeError(f"GitHub API returned {response.status_code} for {api_url}")
+        
+        contents = response.json()
+        
+        # Filter for markdown files that look like constitutions
+        constitutions = []
+        for item in contents:
+            if item["type"] == "file" and item["name"].endswith(".md"):
+                constitutions.append({
+                    "name": item["name"].replace(".md", ""),
+                    "path": item["path"],
+                    "download_url": item["download_url"],
+                    "description": item["name"]  # Can be enhanced with metadata
+                })
+        
+        return constitutions
+        
+    except Exception as e:
+        raise RuntimeError(f"Error fetching constitutions from {owner}/{repo}: {e}")
+
+def fetch_remote_constitution_content(download_url: str, github_token: str = None) -> str:
+    """
+    Fetch the content of a specific constitution from a remote URL.
+    
+    Args:
+        download_url: Direct download URL for the constitution file
+        github_token: Optional GitHub token for private repositories
+        
+    Returns:
+        Content of the constitution file as a string
+    """
+    try:
+        response = client.get(
+            download_url,
+            timeout=30,
+            follow_redirects=True,
+            headers=_github_auth_headers(github_token),
+        )
+        
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to download constitution. Status: {response.status_code}")
+        
+        return response.text
+        
+    except Exception as e:
+        raise RuntimeError(f"Error fetching constitution content: {e}")
+
 AI_CHOICES = {
     "copilot": "GitHub Copilot",
     "claude": "Claude Code",
@@ -731,6 +819,11 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    constitution_repo: str = typer.Option(None, "--constitution-repo", help="GitHub repository containing constitutions (format: 'owner/repo')"),
+    constitution_name: str = typer.Option(None, "--constitution-name", help="Name of the constitution to use from the remote repository"),
+    constitution_path: str = typer.Option("", "--constitution-path", help="Path within constitution repository where constitutions are stored"),
+    constitution_branch: str = typer.Option("main", "--constitution-branch", help="Branch to fetch constitution from"),
+    constitution_interactive: bool = typer.Option(False, "--constitution-interactive", help="Interactively select a constitution from the remote repository"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -740,20 +833,30 @@ def init(
     2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf, Kilo Code, Auggie CLI, or Amazon Q Developer CLI)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
-    6. Optionally set up AI assistant commands
+    5. Optionally fetch and apply a constitution from a remote repository
+    6. Initialize a fresh git repository (if not --no-git and no existing repo)
+    7. Optionally set up AI assistant commands
     
     Examples:
+        # Basic usage
         specify init my-project
         specify init my-project --ai claude
         specify init my-project --ai copilot --no-git
         specify init --ignore-agent-tools my-project
+        
+        # Current directory initialization
         specify init . --ai claude         # Initialize in current directory
         specify init .                     # Initialize in current directory (interactive AI selection)
         specify init --here --ai claude    # Alternative syntax for current directory
         specify init --here --ai codex
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+        
+        # Remote constitution usage
+        specify init my-project --constitution-repo myorg/constitutions
+        specify init my-project --constitution-repo myorg/constitutions --constitution-name python-microservices
+        specify init my-project --constitution-repo myorg/constitutions --constitution-interactive
+        specify init . --constitution-repo myorg/constitutions --constitution-path templates/constitutions
     """
 
     show_banner()
@@ -902,6 +1005,78 @@ def init(
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
+    # Handle remote constitution if specified
+    remote_constitution_content = None
+    selected_constitution_name = None
+    
+    if constitution_repo:
+        console.print(f"\n[cyan]Fetching constitution from remote repository:[/cyan] {constitution_repo}")
+        
+        try:
+            # Fetch list of available constitutions
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Fetching constitution list...", total=None)
+                constitutions = fetch_remote_constitutions_list(
+                    constitution_repo, 
+                    constitution_branch, 
+                    constitution_path, 
+                    github_token
+                )
+                progress.update(task, completed=1)
+            
+            if not constitutions:
+                console.print("[red]Error:[/red] No constitutions found in the specified repository")
+                raise typer.Exit(1)
+            
+            # Determine which constitution to use
+            if constitution_interactive or not constitution_name:
+                # Interactive selection
+                constitution_choices = {c["name"]: c["description"] for c in constitutions}
+                selected_constitution_name = select_with_arrows(
+                    constitution_choices,
+                    "Choose a constitution:",
+                    list(constitution_choices.keys())[0]
+                )
+            else:
+                # Use specified constitution name
+                selected_constitution_name = constitution_name
+            
+            # Find the selected constitution
+            selected_constitution = next(
+                (c for c in constitutions if c["name"] == selected_constitution_name),
+                None
+            )
+            
+            if not selected_constitution:
+                console.print(f"[red]Error:[/red] Constitution '{selected_constitution_name}' not found")
+                console.print(f"[dim]Available constitutions:[/dim]")
+                for c in constitutions:
+                    console.print(f"  - {c['name']}")
+                raise typer.Exit(1)
+            
+            # Fetch the constitution content
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task(f"Downloading constitution '{selected_constitution_name}'...", total=None)
+                remote_constitution_content = fetch_remote_constitution_content(
+                    selected_constitution["download_url"],
+                    github_token
+                )
+                progress.update(task, completed=1)
+            
+            console.print(f"[green]✓[/green] Constitution '{selected_constitution_name}' fetched successfully")
+            
+        except Exception as e:
+            console.print(f"[red]Error fetching remote constitution:[/red] {e}")
+            raise typer.Exit(1)
+
     # Download and set up project
     # New tree-based progress (no emojis); include earlier substeps
     tracker = StepTracker("Initialize Specify Project")
@@ -937,6 +1112,21 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+
+            # Apply remote constitution if one was fetched
+            if remote_constitution_content:
+                tracker.add("constitution", "Apply remote constitution")
+                tracker.start("constitution")
+                constitution_file = project_path / "memory" / "constitution.md"
+                try:
+                    # Ensure memory directory exists
+                    constitution_file.parent.mkdir(parents=True, exist_ok=True)
+                    # Write the remote constitution
+                    constitution_file.write_text(remote_constitution_content, encoding="utf-8")
+                    tracker.complete("constitution", f"'{selected_constitution_name}' applied")
+                except Exception as e:
+                    tracker.error("constitution", str(e))
+                    console.print(f"[yellow]Warning: Could not write constitution file: {e}[/yellow]")
 
             # Ensure scripts are executable (POSIX)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -1017,6 +1207,11 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
+    # Add note about remote constitution if used
+    if remote_constitution_content:
+        steps_lines.append(f"{step_num}. [green]✓[/green] Constitution '{selected_constitution_name}' has been applied to [cyan]memory/constitution.md[/cyan]")
+        step_num += 1
+
     # Add Codex-specific setup step if needed
     if selected_ai == "codex":
         codex_path = project_path / ".codex"
@@ -1096,6 +1291,65 @@ def check():
         console.print("[dim]Tip: Install git for repository management[/dim]")
     if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or kilocode_ok or opencode_ok or codex_ok or auggie_ok or q_ok):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+
+@app.command()
+def list_constitutions(
+    repo: str = typer.Argument(..., help="GitHub repository containing constitutions (format: 'owner/repo' or full URL)"),
+    path: str = typer.Option("", "--path", help="Path within the repository where constitutions are stored"),
+    branch: str = typer.Option("main", "--branch", help="Branch to fetch from"),
+    github_token: str = typer.Option(None, "--github-token", help="GitHub token for private repositories"),
+):
+    """
+    List available constitutions from a remote GitHub repository.
+    
+    This command helps you discover pre-made constitutions that can be used
+    when initializing a new project. Useful for organizations that maintain
+    a catalog of standard constitutions for different project types.
+    
+    Examples:
+        specify list-constitutions myorg/constitutions-repo
+        specify list-constitutions myorg/constitutions-repo --path templates/constitutions
+        specify list-constitutions https://github.com/myorg/constitutions-repo --branch develop
+    """
+    show_banner()
+    
+    console.print(f"[cyan]Fetching constitutions from:[/cyan] {repo}")
+    if path:
+        console.print(f"[cyan]Path:[/cyan] {path}")
+    console.print(f"[cyan]Branch:[/cyan] {branch}\n")
+    
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Fetching constitution list...", total=None)
+            constitutions = fetch_remote_constitutions_list(repo, branch, path, github_token)
+            progress.update(task, completed=1)
+        
+        if not constitutions:
+            console.print("[yellow]No constitutions found in the specified repository path.[/yellow]")
+            console.print("[dim]Make sure the path contains .md files.[/dim]")
+            return
+        
+        console.print(f"[green]Found {len(constitutions)} constitution(s):[/green]\n")
+        
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Name", style="cyan", no_wrap=True)
+        table.add_column("Path", style="dim")
+        
+        for const in constitutions:
+            table.add_row(const["name"], const["path"])
+        
+        console.print(table)
+        
+        console.print("\n[dim]To use a constitution during project initialization:[/dim]")
+        console.print(f"[dim]  specify init <project-name> --constitution-repo {repo} --constitution-name <name>[/dim]")
+        
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 def main():
     app()

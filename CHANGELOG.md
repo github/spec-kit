@@ -7,6 +7,29 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Remote Constitutions Feature**: New capability to fetch and apply constitutions from remote GitHub repositories during project initialization
+  - `list-constitutions` command to browse available constitutions from a GitHub repository
+  - `--constitution-repo` option for `init` command to specify a GitHub repository containing constitutions
+  - `--constitution-name` option to directly specify which constitution to use
+  - `--constitution-interactive` flag to interactively select from available constitutions
+  - `--constitution-path` option to specify subdirectory within the constitution repository
+  - `--constitution-branch` option to fetch from a specific branch (default: main)
+  - Support for both public and private repositories (with GitHub token authentication)
+  - Comprehensive documentation in `docs/remote-constitutions.md`
+  - Example constitution repository guide in `docs/example-constitutions-repo.md`
+- New helper functions `fetch_remote_constitutions_list()` and `fetch_remote_constitution_content()` to handle GitHub API interactions
+- Constitution fetching integrated into the project initialization workflow with progress tracking
+
+### Changed
+
+- Enhanced `init` command help text to include remote constitution examples
+- Updated README.md with remote constitution feature documentation and usage examples
+- Added remote constitution options to CLI reference table in README.md
+
 ## [0.0.18] - 2025-10-06
 
 ### Added
