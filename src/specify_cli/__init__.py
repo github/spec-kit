@@ -1117,7 +1117,7 @@ def init(
             if remote_constitution_content:
                 tracker.add("constitution", "Apply remote constitution")
                 tracker.start("constitution")
-                constitution_file = project_path / "memory" / "constitution.md"
+                constitution_file = project_path / ".specify" / "memory" / "constitution.md"
                 try:
                     # Ensure memory directory exists
                     constitution_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1209,7 +1209,7 @@ def init(
 
     # Add note about remote constitution if used
     if remote_constitution_content:
-        steps_lines.append(f"{step_num}. [green]✓[/green] Constitution '{selected_constitution_name}' has been applied to [cyan]memory/constitution.md[/cyan]")
+        steps_lines.append(f"{step_num}. [green]✓[/green] Constitution '{selected_constitution_name}' has been applied to [cyan].specify/memory/constitution.md[/cyan]")
         step_num += 1
 
     # Add Codex-specific setup step if needed
