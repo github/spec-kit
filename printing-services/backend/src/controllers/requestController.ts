@@ -209,7 +209,7 @@ export const createProposal = async (req: AuthRequest, res: Response) => {
       })
     }
 
-    const { requestId, price, timeline, details } = req.body
+    const { requestId, price,  details } = req.body
 
     // Check if request exists and is available for proposals
     const request = await prisma.printingRequest.findUnique({
@@ -248,7 +248,7 @@ export const createProposal = async (req: AuthRequest, res: Response) => {
         requestId,
         brokerId: req.user.id,
         price,
-        timeline,
+        
         details
       },
       include: {
@@ -299,7 +299,7 @@ export const acceptProposal = async (req: AuthRequest, res: Response) => {
 
     // Get proposal with request details
     const proposal = await prisma.proposal.findUnique({
-      where: { id: proposalId },
+      where: { id: proposalId },\n      include: { request: true, broker: true },
       include: {
         request: true,
         broker: {
@@ -356,4 +356,5 @@ export const acceptProposal = async (req: AuthRequest, res: Response) => {
     })
   }
 }
+
 

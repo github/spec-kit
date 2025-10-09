@@ -168,7 +168,6 @@ export const getPaymentStatus = async (req: Request, res: Response) => {
       receiptUrl: transaction.receiptUrl,
       proposal: {
         id: transaction.proposal.id,
-        timeline: transaction.proposal.timeline,
         request: {
           title: transaction.proposal.request.title,
           status: transaction.proposal.request.status
@@ -200,12 +199,12 @@ export const retryFailedPayment = async (req: AuthRequest, res: Response) => {
       })
     }
 
-    const session = await retryPayment(transactionId, req.user.email)
+    const session = await retryPayment(transactionId)
 
     res.json({
       message: 'New payment session created',
-      paymentUrl: session.url,
-      sessionId: session.id
+      paymentUrl: session?.url || '',
+      sessionId: session?.id || ''
     })
 
   } catch (error) {
@@ -268,4 +267,5 @@ export const getTransactionStats = async (req: AuthRequest, res: Response) => {
     })
   }
 }
+
 
