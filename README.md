@@ -151,6 +151,7 @@ The `specify` command supports the following options:
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`) |
+| `list-constitutions` | List available constitutions from a remote GitHub repository |
 
 ### `specify init` Arguments & Options
 
@@ -166,6 +167,11 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
+| `--constitution-repo`  | Option   | GitHub repository containing constitutions (format: 'owner/repo')           |
+| `--constitution-name`  | Option   | Name of the constitution to use from the remote repository                  |
+| `--constitution-path`  | Option   | Path within constitution repository where constitutions are stored          |
+| `--constitution-branch`| Option   | Branch to fetch constitution from (default: main)                           |
+| `--constitution-interactive` | Flag | Interactively select a constitution from the remote repository        |
 
 ### Examples
 
@@ -197,6 +203,19 @@ specify init --here --force --ai copilot
 
 # Skip git initialization
 specify init my-project --ai gemini --no-git
+
+# Use a remote constitution from your company's repository
+specify init my-project --constitution-repo myorg/constitutions --constitution-name python-microservices
+
+# Interactively select a remote constitution
+specify init my-project --constitution-repo myorg/constitutions --constitution-interactive
+
+# List available constitutions
+specify list-constitutions myorg/constitutions
+specify list-constitutions myorg/constitutions --path backend
+```
+
+For more details on remote constitutions, see the [Remote Constitutions Guide](docs/remote-constitutions.md).
 
 # Enable debug output for troubleshooting
 specify init my-project --ai claude --debug

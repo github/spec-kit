@@ -9,6 +9,10 @@
       href: installation.md
     - name: Quick Start
       href: quickstart.md
+    - name: Remote Constitutions
+      href: remote-constitutions.md
+    - name: Example Constitution Repository
+      href: example-constitutions-repo.md
 
 # Development workflows
 - name: Development
