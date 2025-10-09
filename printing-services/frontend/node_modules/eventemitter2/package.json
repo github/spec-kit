@@ -1,0 +1,89 @@
+{
+  "name": "eventemitter2",
+  "version": "6.4.7",
+  "description": "A feature-rich Node.js event emitter implementation with namespaces, wildcards, TTL, async listeners and browser/worker support.",
+  "keywords": [
+    "event",
+    "events",
+    "emitter",
+    "eventemitter",
+    "addEventListener",
+    "addListener",
+    "pub/sub",
+    "emit",
+    "emits",
+    "on",
+    "once",
+    "publish",
+    "subscribe"
+  ],
+  "author": "hij1nx <paolo@async.ly> http://twitter.com/hij1nx",
+  "contributors": [
+    "Eric Elliott",
+    "Charlie Robbins <charlie@nodejitsu.com> http://twitter.com/indexzero",
+    "Jameson Lee <jameson@nodejitsu.com> http://twitter.com/Jamesonjlee",
+    "Jeroen van Duffelen <jvduf@nodejitsu.com> http://www.twitter.com/jvduf",
+    "Fedor Indutny <fedor.indutny@gmail.com> http://www.twitter.com/indutny"
+  ],
+  "license": "MIT",
+  "repository": "git://github.com/hij1nx/EventEmitter2.git",
+  "devDependencies": {
+    "benchmark": "^2.1.4",
+    "bluebird": "^3.7.2",
+    "coveralls": "^3.0.11",
+    "mocha": "^7.1.1",
+    "nodeunit": "*",
+    "nyc": "^15.0.0"
+  },
+  "main": "./lib/eventemitter2.js",
+  "scripts": {
+    "test": "mocha ./test/loader.js --exit --timeout=3000",
+    "test:legacy": "nodeunit test/simple/ test/wildcardEvents/",
+    "test:coverage": "nyc --check-coverage npm run test",
+    "coverage:report": "nyc report --reporter=html --reporter=text",
+    "coveralls": "nyc report --reporter=text-lcov | coveralls",
+    "benchmark": "node test/perf/benchmark.js",
+    "prepublishOnly": "npm run test:coverage",
+    "postversion": "git push && git push --tags"
+  },
+  "files": [
+    "lib/eventemitter2.js",
+    "index.js",
+    "eventemitter2.d.ts"
+  ],
+  "typings": "./eventemitter2.d.ts",
+  "typescript": {
+    "definition": "./eventemitter2.d.ts"
+  },
+  "nyc": {
+    "lines": 80,
+    "functions": 80,
+    "branches": 75,
+    "statements": 80,
+    "watermarks": {
+      "lines": [
+        80,
+        95
+      ],
+      "functions": [
+        80,
+        95
+      ],
+      "branches": [
+        80,
+        95
+      ],
+      "statements": [
+        80,
+        95
+      ]
+    },
+    "include": [
+      "lib/**/*.js"
+    ],
+    "reporter": [
+      "lcov",
+      "text-summary"
+    ]
+  }
+}

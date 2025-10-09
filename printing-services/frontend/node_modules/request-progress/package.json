@@ -1,0 +1,41 @@
+{
+  "name": "request-progress",
+  "version": "3.0.0",
+  "description": "Tracks the download progress of a request made with mikeal/request, giving insight of various metrics including progress percent, download speed and time remaining",
+  "main": "index.js",
+  "dependencies": {
+    "throttleit": "^1.0.0"
+  },
+  "devDependencies": {
+    "coveralls": "^2.11.6",
+    "expect.js": "^0.3.1",
+    "istanbul": "^0.4.1",
+    "mocha": "^3.0.2"
+  },
+  "scripts": {
+    "test": "mocha --bail",
+    "test-cov": "istanbul cover --dir test/coverage _mocha -- --bail && echo open test/coverage/lcov-report/index.html",
+    "test-travis": "istanbul cover _mocha --report lcovonly -- --bail && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/IndigoUnited/node-request-progress"
+  },
+  "bugs": {
+    "url": "http://github.com/IndigoUnited/node-request-progress/issues"
+  },
+  "keywords": [
+    "progress",
+    "request",
+    "mikeal",
+    "size",
+    "bytes",
+    "percent",
+    "percentage",
+    "speed",
+    "eta",
+    "etr"
+  ],
+  "author": "IndigoUnited <hello@indigounited.com> (http://indigounited.com)",
+  "license": "MIT"
+}

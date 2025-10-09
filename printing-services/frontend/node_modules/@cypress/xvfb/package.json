@@ -1,0 +1,63 @@
+{
+  "name": "@cypress/xvfb",
+  "version": "1.2.4",
+  "private": false,
+  "author": "Rob Wu <rob@robwu.nl> (https://robwu.nl)",
+  "contributors": [
+    "ProxV, Inc. <support@proxv.com> (http://proxv.com)"
+  ],
+  "description": "Easily start and stop an X Virtual Frame Buffer from your node apps.",
+  "publishConfig": {
+    "registry": "http://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cypress-io/xvfb.git"
+  },
+  "dependencies": {
+    "debug": "^3.1.0",
+    "lodash.once": "^4.1.1"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "test": "eslint **/*.js && mocha",
+    "test-watch": "mocha watch",
+    "semantic-release": "semantic-release",
+    "commit": "commit-wizard",
+    "demo": "node ./demo",
+    "size": "t=\"$(npm pack .)\"; wc -c \"${t}\"; tar tvf \"${t}\"; rm \"${t}\";"
+  },
+  "devDependencies": {
+    "bluebird": "^3.5.1",
+    "chai": "^4.1.2",
+    "eslint": "^4.13.1",
+    "eslint-plugin-cypress-dev": "^1.1.2",
+    "eslint-plugin-mocha": "^4.11.0",
+    "husky": "1.0.1",
+    "mocha": "^3.5.0",
+    "npm-utils": "^2.0.0",
+    "semantic-release": "15.9.16"
+  },
+  "release": {
+    "analyzeCommits": {
+      "preset": "angular",
+      "releaseRules": [
+        {
+          "type": "break",
+          "release": "major"
+        }
+      ]
+    }
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm test",
+      "pre-push": "npm run size"
+    }
+  }
+}

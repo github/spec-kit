@@ -1,0 +1,83 @@
+{
+  "name": "@cypress/angular",
+  "version": "0.0.0-development",
+  "description": "Test Angular Components with Cypress",
+  "main": "dist/index.js",
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "rollup -c rollup.config.mjs",
+    "postbuild": "node ../../scripts/sync-exported-npm-with-cli.js",
+    "check-ts": "tsc --noEmit",
+    "dev": "rollup -c rollup.config.mjs -w",
+    "lint": "eslint --ext .js,.ts,.json, ."
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@angular/common": "^18.0.0",
+    "@angular/core": "^18.0.0",
+    "@angular/platform-browser-dynamic": "^18.0.0",
+    "@cypress/mount-utils": "0.0.0-development",
+    "rollup": "^4.24.4",
+    "typescript": "~5.4.5",
+    "zone.js": "~0.14.6"
+  },
+  "peerDependencies": {
+    "@angular/common": ">=18.0.0",
+    "@angular/core": ">=18.0.0",
+    "@angular/platform-browser-dynamic": ">=18.0.0",
+    "rxjs": ">=7.5.0",
+    "zone.js": ">=0.14.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cypress-io/cypress.git"
+  },
+  "homepage": "https://github.com/cypress-io/cypress/blob/develop/npm/angular/#readme",
+  "bugs": "https://github.com/cypress-io/cypress/issues/new?assignees=&labels=npm%3A%20%40cypress%2Fangular&template=1-bug-report.md&title=",
+  "keywords": [
+    "angular",
+    "cypress",
+    "cypress-io",
+    "test",
+    "testing"
+  ],
+  "contributors": [
+    {
+      "name": "Bill Glesias",
+      "social": "@atofstryker"
+    },
+    {
+      "name": "Jordan Powell",
+      "social": "@jordanpowell88"
+    },
+    {
+      "name": "Zach Williams",
+      "social": "@ZachJW34"
+    }
+  ],
+  "module": "dist/index.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "nx": {
+    "targets": {
+      "build": {
+        "outputs": [
+          "{workspaceRoot}/cli/angular"
+        ]
+      }
+    }
+  },
+  "standard": {
+    "globals": [
+      "Cypress",
+      "cy",
+      "expect"
+    ]
+  }
+}

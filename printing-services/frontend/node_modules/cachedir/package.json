@@ -1,0 +1,19 @@
+{
+  "name": "cachedir",
+  "version": "2.4.0",
+  "license": "MIT",
+  "repository": "LinusU/node-cachedir",
+  "author": "Linus Unnebäck <linus@folkdatorn.se>",
+  "scripts": {
+    "test": "standard && mocha && ts-readme-generator --check"
+  },
+  "devDependencies": {
+    "mocha": "^5.2.0",
+    "proxyquire": "^2.0.1",
+    "standard": "^14.3.1",
+    "ts-readme-generator": "^0.7.3"
+  },
+  "engines": {
+    "node": ">=6"
+  }
+}

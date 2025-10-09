@@ -1,0 +1,71 @@
+{
+	"name": "execa",
+	"version": "4.1.0",
+	"description": "Process execution for humans",
+	"license": "MIT",
+	"repository": "sindresorhus/execa",
+	"funding": "https://github.com/sindresorhus/execa?sponsor=1",
+	"author": {
+		"name": "Sindre Sorhus",
+		"email": "sindresorhus@gmail.com",
+		"url": "https://sindresorhus.com"
+	},
+	"engines": {
+		"node": ">=10"
+	},
+	"scripts": {
+		"test": "xo && nyc ava && tsd"
+	},
+	"files": [
+		"index.js",
+		"index.d.ts",
+		"lib"
+	],
+	"keywords": [
+		"exec",
+		"child",
+		"process",
+		"execute",
+		"fork",
+		"execfile",
+		"spawn",
+		"file",
+		"shell",
+		"bin",
+		"binary",
+		"binaries",
+		"npm",
+		"path",
+		"local"
+	],
+	"dependencies": {
+		"cross-spawn": "^7.0.0",
+		"get-stream": "^5.0.0",
+		"human-signals": "^1.1.1",
+		"is-stream": "^2.0.0",
+		"merge-stream": "^2.0.0",
+		"npm-run-path": "^4.0.0",
+		"onetime": "^5.1.0",
+		"signal-exit": "^3.0.2",
+		"strip-final-newline": "^2.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^12.12.18",
+		"ava": "^2.1.0",
+		"coveralls": "^3.0.9",
+		"get-node": "^6.6.0",
+		"is-running": "^2.1.0",
+		"nyc": "^14.1.1",
+		"p-event": "^4.1.0",
+		"tempfile": "^3.0.0",
+		"tsd": "^0.11.0",
+		"xo": "^0.25.3"
+	},
+	"nyc": {
+		"exclude": [
+			"**/fixtures/**",
+			"**/test.js",
+			"**/test/**"
+		]
+	}
+}

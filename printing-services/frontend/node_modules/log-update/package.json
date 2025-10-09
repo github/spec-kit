@@ -1,0 +1,54 @@
+{
+	"name": "log-update",
+	"version": "4.0.0",
+	"description": "Log by overwriting the previous output in the terminal. Useful for rendering progress bars, animations, etc.",
+	"license": "MIT",
+	"repository": "sindresorhus/log-update",
+	"funding": "https://github.com/sponsors/sindresorhus",
+	"author": {
+		"name": "Sindre Sorhus",
+		"email": "sindresorhus@gmail.com",
+		"url": "sindresorhus.com"
+	},
+	"engines": {
+		"node": ">=10"
+	},
+	"scripts": {
+		"test": "xo && ava && tsd"
+	},
+	"files": [
+		"index.js",
+		"index.d.ts"
+	],
+	"keywords": [
+		"log",
+		"logger",
+		"logging",
+		"cli",
+		"terminal",
+		"term",
+		"console",
+		"shell",
+		"update",
+		"refresh",
+		"overwrite",
+		"output",
+		"stdout",
+		"progress",
+		"bar",
+		"animation"
+	],
+	"dependencies": {
+		"ansi-escapes": "^4.3.0",
+		"cli-cursor": "^3.1.0",
+		"slice-ansi": "^4.0.0",
+		"wrap-ansi": "^6.2.0"
+	},
+	"devDependencies": {
+		"@types/node": "^13.7.4",
+		"ava": "^3.3.0",
+		"terminal.js": "^1.0.10",
+		"tsd": "^0.11.0",
+		"xo": "^0.26.1"
+	}
+}

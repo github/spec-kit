@@ -1,0 +1,46 @@
+{
+	"name": "cli-truncate",
+	"version": "2.1.0",
+	"description": "Truncate a string to a specific width in the terminal",
+	"license": "MIT",
+	"repository": "sindresorhus/cli-truncate",
+	"funding": "https://github.com/sponsors/sindresorhus",
+	"author": {
+		"name": "Sindre Sorhus",
+		"email": "sindresorhus@gmail.com",
+		"url": "sindresorhus.com"
+	},
+	"engines": {
+		"node": ">=8"
+	},
+	"scripts": {
+		"test": "xo && ava && tsd"
+	},
+	"files": [
+		"index.js",
+		"index.d.ts"
+	],
+	"keywords": [
+		"truncate",
+		"ellipsis",
+		"text",
+		"limit",
+		"slice",
+		"cli",
+		"terminal",
+		"term",
+		"shell",
+		"width",
+		"ansi",
+		"string"
+	],
+	"dependencies": {
+		"slice-ansi": "^3.0.0",
+		"string-width": "^4.2.0"
+	},
+	"devDependencies": {
+		"ava": "^2.1.0",
+		"tsd": "^0.11.0",
+		"xo": "^0.25.3"
+	}
+}

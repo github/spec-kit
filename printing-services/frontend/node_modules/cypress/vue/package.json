@@ -1,0 +1,92 @@
+{
+  "name": "@cypress/vue",
+  "version": "0.0.0-development",
+  "description": "Browser-based Component Testing for Vue.js with Cypress.io ✌️🌲",
+  "main": "dist/cypress-vue.cjs.js",
+  "scripts": {
+    "build": "rimraf dist && rollup -c rollup.config.mjs",
+    "postbuild": "node ../../scripts/sync-exported-npm-with-cli.js",
+    "check-ts": "yarn tsd && vue-tsc --noEmit",
+    "cy:open": "node ../../scripts/cypress.js open --component --project ${PWD}",
+    "cy:run": "node ../../scripts/cypress.js run --component --project ${PWD}",
+    "lint": "eslint --ext .js,.jsx,.ts,.tsx,.json,.vue .",
+    "test": "yarn cy:run",
+    "tsd": "yarn build && yarn tsc -p test-tsd/tsconfig.json",
+    "watch": "yarn build --watch --watch.exclude ./dist/**/*"
+  },
+  "devDependencies": {
+    "@cypress/mount-utils": "0.0.0-development",
+    "@vitejs/plugin-vue": "6.0.0",
+    "@vue/compiler-sfc": "3.2.47",
+    "@vue/test-utils": "2.4.6",
+    "axios": "0.30.0",
+    "cypress": "0.0.0-development",
+    "debug": "^4.3.4",
+    "globby": "^11.0.1",
+    "tailwindcss": "1.1.4",
+    "typescript": "~5.4.5",
+    "vite": "6.3.5",
+    "vue": "3.2.47",
+    "vue-i18n": "9.14.5",
+    "vue-router": "^4.0.0",
+    "vue-tsc": "^2.0.19",
+    "vuex": "^4.0.0"
+  },
+  "peerDependencies": {
+    "@cypress/webpack-dev-server": "*",
+    "cypress": ">=7.0.0",
+    "vue": ">=3.0.0"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cypress-io/cypress.git"
+  },
+  "homepage": "https://github.com/cypress-io/cypress/blob/develop/npm/vue/#readme",
+  "bugs": "https://github.com/cypress-io/cypress/issues/new?assignees=&labels=npm%3A%20%40cypress%2Fvue&template=1-bug-report.md&title=",
+  "keywords": [
+    "cypress",
+    "vue"
+  ],
+  "contributors": [
+    {
+      "name": "Jessica Sachs",
+      "social": "@JessicaSachs"
+    },
+    {
+      "name": "Amir Rustamzadeh",
+      "social": "@amirrustam"
+    },
+    {
+      "name": "Lachlan Miller",
+      "social": "@Lachlan19900"
+    }
+  ],
+  "module": "dist/cypress-vue.esm-bundler.js",
+  "peerDependenciesMeta": {
+    "@cypress/webpack-dev-server": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "nx": {
+    "targets": {
+      "build": {
+        "outputs": [
+          "{workspaceRoot}/cli/vue",
+          "{projectRoot}/dist"
+        ]
+      }
+    }
+  }
+}

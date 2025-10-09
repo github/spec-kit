@@ -1,4 +1,4 @@
-import express from 'express'
+﻿import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
@@ -24,8 +24,10 @@ const httpServer = createServer(app)
 // Security middleware
 app.use(helmet())
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
 // Rate limiting
@@ -111,22 +113,24 @@ async function startServer() {
     app.set('io', io) // Make io available to routes
     
     httpServer.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`)
-      console.log(`📊 Health check: http://localhost:${PORT}/health`)
-      console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`)
-      console.log(`🗄️  Database: Connected`)
-      console.log(`🔌 WebSocket: initialized`)
-      console.log(`📈 Analytics: http://localhost:${PORT}/api/analytics-health`)
-      console.log(`💬 Messages: WebSocket + REST ready`)
-      console.log(`⭐ Reviews: Rating system active`)
+      console.log(`ðŸš€ Server running on port ${PORT}`)
+      console.log(`ðŸ“Š Health check: http://localhost:${PORT}/health`)
+      console.log(`ðŸ”§ Environment: ${process.env.NODE_ENV || 'development'}`)
+      console.log(`ðŸ—„ï¸  Database: Connected`)
+      console.log(`ðŸ”Œ WebSocket: initialized`)
+      console.log(`ðŸ“ˆ Analytics: http://localhost:${PORT}/api/analytics-health`)
+      console.log(`ðŸ’¬ Messages: WebSocket + REST ready`)
+      console.log(`â­ Reviews: Rating system active`)
     })
   } catch (error) {
-    console.error('❌ Failed to start server:', error)
+    console.error('âŒ Failed to start server:', error)
     process.exit(1)
   }
 }
 
 startServer()
+
+
 
 
 

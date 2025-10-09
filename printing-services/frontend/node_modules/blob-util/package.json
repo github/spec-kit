@@ -1,0 +1,69 @@
+{
+  "name": "blob-util",
+  "version": "2.0.2",
+  "description": "Utilities for working with Blob objects in the browser",
+  "main": "dist/blob-util.cjs.js",
+  "module": "dist/blob-util.es.js",
+  "types": "dist/blob-util.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/nolanlawson/blob-util.git"
+  },
+  "keywords": [
+    "blob",
+    "blobs",
+    "binary",
+    "util",
+    "utils"
+  ],
+  "author": "Nolan Lawson <nolan.lawson@gmail.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/nolanlawson/blob-util/issues"
+  },
+  "scripts": {
+    "lint": "standard test/*js bin/*js && tslint src/*ts",
+    "test": "npm run build && npm run lint && zuul --no-coverage ./test/test.js",
+    "test-local": "npm run build && zuul ./test/test.js --local 9000 --no-coverage",
+    "clean": "rimraf dist lib && mkdirp dist lib",
+    "prepublish": "npm run build",
+    "build": "run-s clean build-ts build-js min",
+    "build-ts": "tsc src/blob-util.ts --target ES6 --module es2015 --outDir lib -d && cpy lib/blob-util.d.ts dist/",
+    "build-js": "run-p build-es build-cjs build-umd && rimraf lib",
+    "build-es": "rollup -i lib/blob-util.js -f es -o dist/blob-util.es.js",
+    "build-cjs": "rollup -i lib/blob-util.js -f cjs -o dist/blob-util.cjs.js",
+    "build-umd": "rollup -i lib/blob-util.js -f umd -n blobUtil -o dist/blob-util.js",
+    "min": "uglifyjs dist/blob-util.js -mc > dist/blob-util.min.js",
+    "doc": "run-s cleanup-doc gen-doc gen-readme cleanup-doc",
+    "gen-doc": "typedoc --out docs-tmp --target ES6 --theme markdown --mdHideSources --excludePrivate --exclude private.ts src",
+    "gen-readme": "node bin/write-docs-to-readme.js",
+    "cleanup-doc": "rimraf docs-tmp"
+  },
+  "devDependencies": {
+    "bundle-collapser": "^1.1.4",
+    "chai": "~1.8.1",
+    "chai-as-promised": "~4.1.0",
+    "cpy-cli": "^1.0.1",
+    "istanbul": "^0.2.7",
+    "mkdirp": "^0.5.0",
+    "mocha": "~1.18",
+    "native-or-lie": "1.0.2",
+    "npm-run-all": "^4.1.3",
+    "pify": "^3.0.0",
+    "request": "^2.36.0",
+    "rimraf": "^2.6.2",
+    "rollup": "^0.59.1",
+    "standard": "^11.0.1",
+    "tslint": "^5.10.0",
+    "tslint-config-standard": "^7.0.0",
+    "typedoc": "^0.11.1",
+    "typedoc-plugin-markdown": "^1.1.11",
+    "typescript": "^2.8.3",
+    "uglify-js": "^2.4.13",
+    "zuul": "^3.10.1",
+    "zuul-ngrok": "nolanlawson/zuul-ngrok#patch-1"
+  },
+  "files": [
+    "dist"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "executable",
+  "version": "4.1.1",
+  "description": "Check if a file is executable",
+  "license": "MIT",
+  "repository": "kevva/executable",
+  "author": {
+    "name": "Kevin Mårtensson",
+    "email": "kevinmartensson@gmail.com",
+    "url": "https://github.com/kevva"
+  },
+  "engines": {
+    "node": ">=4"
+  },
+  "scripts": {
+    "test": "xo && ava"
+  },
+  "files": [
+    "index.js"
+  ],
+  "keywords": [
+    "exec",
+    "executable",
+    "permission"
+  ],
+  "dependencies": {
+    "pify": "^2.2.0"
+  },
+  "devDependencies": {
+    "ava": "*",
+    "xo": "*"
+  },
+  "xo": {
+    "esnext": true
+  }
+}

@@ -1,0 +1,26 @@
+{
+    "name": "@types/sizzle",
+    "version": "2.3.10",
+    "description": "TypeScript definitions for sizzle",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/sizzle",
+    "license": "MIT",
+    "contributors": [
+        {
+            "name": "Leonard Thieu",
+            "githubUsername": "leonard-thieu",
+            "url": "https://github.com/leonard-thieu"
+        }
+    ],
+    "main": "",
+    "types": "index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/sizzle"
+    },
+    "scripts": {},
+    "dependencies": {},
+    "peerDependencies": {},
+    "typesPublisherContentHash": "99e9eee7fa86a44e18a1ad5226b60aa59ed6b39d45b1ff9c9dccfe21e9bef207",
+    "typeScriptVersion": "5.2"
+}

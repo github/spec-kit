@@ -1,0 +1,84 @@
+{
+  "name": "@cypress/request",
+  "description": "Cypress's fork of a simplified HTTP request client.",
+  "keywords": [
+    "http",
+    "simple",
+    "util",
+    "utility"
+  ],
+  "version": "3.0.9",
+  "author": "Mikeal Rogers <mikeal.rogers@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cypress-io/request.git"
+  },
+  "bugs": {
+    "url": "http://github.com/cypress-io/request/issues"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">= 6"
+  },
+  "main": "index.js",
+  "files": [
+    "lib/",
+    "index.js",
+    "request.js"
+  ],
+  "dependencies": {
+    "aws-sign2": "~0.7.0",
+    "aws4": "^1.8.0",
+    "caseless": "~0.12.0",
+    "combined-stream": "~1.0.6",
+    "extend": "~3.0.2",
+    "forever-agent": "~0.6.1",
+    "form-data": "~4.0.4",
+    "http-signature": "~1.4.0",
+    "is-typedarray": "~1.0.0",
+    "isstream": "~0.1.2",
+    "json-stringify-safe": "~5.0.1",
+    "mime-types": "~2.1.19",
+    "performance-now": "^2.1.0",
+    "qs": "6.14.0",
+    "safe-buffer": "^5.1.2",
+    "tough-cookie": "^5.0.0",
+    "tunnel-agent": "^0.6.0",
+    "uuid": "^8.3.2"
+  },
+  "scripts": {
+    "test": "npm run lint && npm run test-ci && npm run test-browser",
+    "test-ci": "tap --no-check-coverage tests/test-*.js",
+    "test-cov": "nyc --reporter=lcov tape tests/test-*.js",
+    "test-browser": "echo 'Skipping browser tests.' || node tests/browser/start.js",
+    "lint": "standard"
+  },
+  "devDependencies": {
+    "bluebird": "^3.2.1",
+    "browserify": "^13.0.1",
+    "browserify-istanbul": "^2.0.0",
+    "buffer-equal": "^1.0.0",
+    "codecov": "^3.0.4",
+    "coveralls": "^3.0.2",
+    "function-bind": "^1.0.2",
+    "karma": "^3.0.0",
+    "karma-browserify": "^5.0.1",
+    "karma-cli": "^2.0.0",
+    "karma-coverage": "^2.0.3",
+    "karma-phantomjs-launcher": "^1.0.0",
+    "karma-tap": "^4.2.0",
+    "nyc": "^17.0.0",
+    "phantomjs-prebuilt": "^2.1.3",
+    "rimraf": "^2.2.8",
+    "server-destroy": "^1.0.1",
+    "standard": "^9.0.0",
+    "tap": "^15.1.5",
+    "tape": "^4.6.0"
+  },
+  "greenkeeper": {
+    "ignore": [
+      "hawk",
+      "har-validator"
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "http-signature",
+  "description": "Reference implementation of Joyent's HTTP Signature scheme.",
+  "version": "1.4.0",
+  "license": "MIT",
+  "author": "MNX Cloud (mnx.io)",
+  "contributors": [
+    "Mark Cavage <mcavage@gmail.com>",
+    "David I. Lehn <dil@lehn.org>",
+    "Patrick Mooney <patrick.f.mooney@gmail.com>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/TritonDataCenter/node-http-signature.git"
+  },
+  "homepage": "https://github.com/TritonDataCenter/node-http-signature/",
+  "bugs": "https://github.com/TritonDataCenter/node-http-signature/issues",
+  "keywords": [
+    "https",
+    "request"
+  ],
+  "engines": {
+    "node": ">=0.10"
+  },
+  "main": "lib/index.js",
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "test": "tap test/*.js"
+  },
+  "dependencies": {
+    "assert-plus": "^1.0.0",
+    "jsprim": "^2.0.2",
+    "sshpk": "^1.18.0"
+  },
+  "devDependencies": {
+    "tap": "0.4.2",
+    "uuid": "^2.0.2"
+  }
+}
