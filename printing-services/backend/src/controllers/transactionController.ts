@@ -1,11 +1,11 @@
-import { Request, Response } from 'express'
+﻿import { Request, Response } from 'express'
 import { prisma } from '../lib/database'
 import { handleStripeWebhook, getTransactionBySessionId, retryPayment } from '../services/stripeService'
 
 // Extend Express Request to include user from auth middleware
 interface AuthRequest extends Request {
   user?: {
-    id: number
+    id: string
     email: string
     role: string
     status: string
@@ -268,3 +268,4 @@ export const getTransactionStats = async (req: AuthRequest, res: Response) => {
     })
   }
 }
+

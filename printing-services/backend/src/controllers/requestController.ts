@@ -1,11 +1,11 @@
-import { Request, Response } from 'express'
+﻿import { Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
 import { prisma } from '../lib/database'
 
 // Extend Express Request to include user from auth middleware
 interface AuthRequest extends Request {
   user?: {
-    id: number
+    id: string
     email: string
     role: string
     status: string
@@ -356,3 +356,4 @@ export const acceptProposal = async (req: AuthRequest, res: Response) => {
     })
   }
 }
+

@@ -1,4 +1,4 @@
-import { Request, Response } from 'express'
+﻿import { Request, Response } from 'express'
 import { prisma } from '../lib/database'
 import { sendUserNotification } from '../services/websocketService'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
@@ -6,7 +6,7 @@ import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 // Extend Express Request to include user from auth middleware
 interface AuthRequest extends Request {
   user?: {
-    id: number
+    id: string
     email: string
     role: string
     status: string
@@ -463,3 +463,4 @@ export const getAnalyticsSummary = async (req: AuthRequest, res: Response) => {
     })
   }
 }
+
