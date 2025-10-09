@@ -233,6 +233,13 @@ Additional commands for enhanced quality and validation:
 | `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/speckit.ui`        | Generate a framework-agnostic UI blueprint (design tokens, component APIs, flows, semantic HTML skeleton, BDD, data contracts). Run on a feature branch (e.g., `001-xyz`) or set `SPECIFY_FEATURE` for non-Git repos. |
+
+#### UI Command Usage
+
+- Run `/speckit.ui` on a feature branch (e.g., `001-some-feature`) or set `SPECIFY_FEATURE` when not using Git.
+- After the command runs, use ONLY the JSON keys printed by the setup script (e.g., `README_FILE`, `TOKENS_FILE`, `COMPONENTS_SPEC`, `FLOWS_FILE`, `HTML_SKELETON`, `BDD_FILE`, `TYPES_SCHEMA`/`TYPES_TS`) to read/write files. Do not guess paths.
+- Prefer JSON Schema (`types.schema.json`) for technology-agnostic data contracts; TypeScript interfaces (`types.ts`) are optional.
 
 ### Environment Variables
 

@@ -1,0 +1,103 @@
+name: UI Blueprint Smoke Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Smoke on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install jq (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Install shellcheck (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y shellcheck
+
+      - name: Build packages
+        shell: bash
+        run: |
+          chmod +x .github/workflows/scripts/create-release-packages.sh
+          .github/workflows/scripts/create-release-packages.sh v0.0.99
+
+      - name: Lint bash scripts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck -x scripts/bash/*.sh .github/workflows/scripts/*.sh || true
+
+      - name: Lint PowerShell scripts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Force
+          Invoke-ScriptAnalyzer -Path scripts/powershell -Recurse -Severity Warning || $true
+
+      - name: Validate JSON templates (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          jq -e . templates/ui/tokens.json >/dev/null
+          jq -e . templates/ui/types.schema.json >/dev/null
+
+      - name: Verify no double .specify prefix (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          unzip -p .genreleases/spec-kit-template-claude-sh-v0.0.99.zip .claude/commands/speckit.ui.md |\
+            grep -qv '\.specify\.specify/'
+
+      - name: Smoke test packaged project (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p /tmp/ui-smoke && cd /tmp/ui-smoke
+          unzip -q $GITHUB_WORKSPACE/.genreleases/spec-kit-template-claude-sh-v0.0.99.zip -d ./pkg
+          cd pkg
+          # Create feature directory via the provided script
+          .specify/scripts/bash/create-new-feature.sh --json 'UI smoke' | tee /tmp/feat.json
+          BRANCH=$(jq -r .BRANCH_NAME /tmp/feat.json)
+          # Run UI setup and validate JSON keys
+          .specify/scripts/bash/setup-ui.sh | tee /tmp/ui.json
+          for key in UI_DIR TOKENS_FILE COMPONENTS_SPEC FLOWS_FILE HTML_SKELETON BDD_FILE README_FILE; do
+            jq -e ".${key}" /tmp/ui.json >/dev/null || (echo "Missing JSON key: $key" && exit 1)
+          done
+          # Ensure files exist and are non-empty
+          for key in TOKENS_FILE COMPONENTS_SPEC FLOWS_FILE HTML_SKELETON BDD_FILE README_FILE; do
+            f=$(jq -r ".${key}" /tmp/ui.json); test -s "$f" || (echo "Empty file: $f" && exit 1)
+          done
+
+      - name: Smoke test packaged project (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:GITHUB_WORKSPACE '.genreleases/spec-kit-template-claude-ps-v0.0.99.zip'
+          $dest = Join-Path $env:RUNNER_TEMP 'pkg'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
+          Set-Location $dest
+          .\.specify\scripts\powershell\create-new-feature.ps1 -Json 'UI smoke' | Out-File -Encoding utf8 -FilePath $env:RUNNER_TEMP\feat.json
+          .\.specify\scripts\powershell\setup-ui.ps1 | Out-File -Encoding utf8 -FilePath $env:RUNNER_TEMP\ui.json
+          $json = Get-Content $env:RUNNER_TEMP\ui.json | ConvertFrom-Json
+          foreach ($k in 'UI_DIR','TOKENS_FILE','COMPONENTS_SPEC','FLOWS_FILE','HTML_SKELETON','BDD_FILE','README_FILE') {
+            if (-not $json.$k) { throw "Missing JSON key: $k" }
+          }
+          foreach ($k in 'TOKENS_FILE','COMPONENTS_SPEC','FLOWS_FILE','HTML_SKELETON','BDD_FILE','README_FILE') {
+            $p = $json.$k
+            if (-not (Test-Path $p -PathType Leaf)) { throw "Missing file: $p" }
+            if ((Get-Item $p).Length -le 0) { throw "Empty file: $p" }
+          }
