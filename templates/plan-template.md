@@ -1,104 +1,124 @@
-# Implementation Plan: [FEATURE]
+# План реализации: [FEATURE]
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+**Ветка**: `[###-feature-name]` | **Дата**: [DATE] | **Спецификация**: [link]  
+**Входные данные**: `/specs/[###-feature-name]/spec.md` (последняя утверждённая спецификация)  
+**Исполнитель**: Roo Code. Перед началом работ освежите правила из `.specify/memory/constitution.md`.
 
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
+---
 
-## Summary
+## Резюме
 
-[Extract from feature spec: primary requirement + technical approach from research]
+[Кратко опишите целевую ценность и основные ограничения из спецификации и исследований. Укажите, что запускается через FSD + Vite + React + Tailwind + shadcn/ui.]
 
-## Technical Context
+---
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
+## Технический контекст
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+- **Бандлер и окружение**: Vite (React шаблон). Сверьте актуальные версии через context7 (`resolve-library-id` → `get-library-docs`).
+- **UI-стек**: Tailwind CSS + shadcn/ui. Все компоненты — декларативные, без неподтверждённых библиотек.
+- **Язык реализации**: JavaScript (ESNext). TypeScript подключаем **только** если в спецификации явно указано требование.
+- **Архитектура**: Feature-Sliced Design (FSD). Обязательные уровни: `app`, `processes`, `pages`, `widgets`, `features`, `entities`, `shared`.
+- **Состояние/данные**: [NEEDS CLARIFICATION, если хранение/бэкенд не описаны].
+- **Соглашения по стилю**: Tailwind utility-first, компоненты shadcn/ui переопределяем через `shared/ui`.
+- **Ограничения производительности**: [Указать SLA/метрики из спецификации или пометить NEEDS CLARIFICATION].
+- **Цели доступности**: [WCAG/ARIA, если требуются].
 
-## Constitution Check
+---
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+## Проверка конституции
 
-[Gates determined based on constitution file]
+*Контрольные вопросы до исследования (Phase 0) и повторной проверки после Phase 1.*
 
-## Project Structure
+- Соответствует ли Feature-Sliced Design?  
+- Нет ли скрытых требований на TypeScript/серверные фреймворки?  
+- Соблюдается правило «тесты только после завершения функционала»?  
+- Все зависимости подтверждены и задокументированы через context7?
 
-### Documentation (this feature)
+При нарушении правил фиксируйте пункт, ссылку на конституцию и план смягчения.
 
-```
-specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
-```
+---
 
-### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
+## Структура артефактов
+
+### Документация (ветка feature)
 
 ```
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+specs/[###-feature-name]/
+├── plan.md          # текущий план (этот документ)
+├── research.md      # результаты Phase 0 (обязательно ссылаться на context7)
+├── data-model.md    # модели, схемы, контракты данных
+├── quickstart.md    # сценарии проверки и конфигурации окружения
+├── contracts/       # OpenAPI/GraphQL или иные контракты
+└── tasks.md         # чеклист реализации (генерируется на Phase 2)
+```
+
+### Исходный код (корень репозитория)
+
+```
 src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+├── app/             # инициализация приложения, маршрутизация, провайдеры
+├── processes/       # долгоживущие процессы (auth, session и т.п.)
+├── pages/           # страницы уровня маршрутов
+├── widgets/         # композиция из нескольких features/entities
+├── features/        # горизонт с публичным API для конкретной функции
+├── entities/        # модели предметной области + их представления
+└── shared/
+    ├── lib/         # утилиты, helpers
+    ├── api/         # клиент для запросов
+    ├── config/      # константы, настройки
+    └── ui/          # базовые компоненты (включая обёртки shadcn/ui)
 
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+public/              # статика Vite
+styles/              # Tailwind конфигурация, postcss
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Решение по структуре**: [Подтвердите, какие подпапки создаются и какие отклонения от эталона требуются. Любое отклонение поясните ссылкой на спецификацию.]
 
-## Complexity Tracking
+---
 
-*Fill ONLY if Constitution Check has violations that must be justified*
+## План работ по фазам
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+1. **Phase 0 — Research**  
+   - Зафиксируйте нерешённые вопросы как `NEEDS CLARIFICATION`.  
+   - Получите выдержки из context7 (Tailwind, Vite, React, shadcn/ui) и приложите ссылки/версии.  
+   - Примите технические решения и зафиксируйте их в `research.md`.
+
+2. **Phase 1 — Design**  
+   - Обновите `data-model.md` с опорой на FSD (какие сущности → в какой слой).  
+   - Подготовьте структуру директорий, алиасы, базовые конфиги `tailwind.config.js`, `postcss.config.js`, `vite.config.js`.  
+   - Обновите `quickstart.md` с командами `npm install`, `npm run dev`, `npm run build`.  
+   - Синхронизируйте контексты агентов через `scripts/.../update-agent-context`.
+
+3. **Phase 2 — Tasks**  
+   - Сгенерируйте `tasks.md`, гарантируя, что тестовые задачи располагаются в конце после фазы “feature complete”.  
+   - Убедитесь, что каждая задача указывает точный путь (например, `src/features/cart/ui/AddButton.jsx`).
+
+4. **Phase 3 — Implementation**  
+   - Выполняйте задачи по приоритету user story.  
+   - Тестовые задачи выполняйте **последними**, после реализации всех историй (ручные/авто).  
+   - По завершении обновите `tasks.md`, `checklists/`, `quickstart.md`.
+
+---
+
+## Контроль сложности и рисков
+
+| Риск/нарушение | Причина | План смягчения | Ссылка на конституцию |
+|----------------|---------|----------------|------------------------|
+| [Напр., добавляем новый процесс] | [Почему необходимо] | [Что делаем] | [Пункт/версия] |
+
+---
+
+## План тестирования (фаза финализации)
+
+- **Автоматические тесты**: запускаются после завершения всех user story. Если TypeScript подключён, добавьте `tsc --noEmit` в финальную проверку.  
+- **Визуальные проверки**: описать шаги ручного тестирования с использованием Vite dev server.  
+- **Accessibility**: если требуется, укажите чеклист для проверки компонентов shadcn/ui.
+
+---
+
+## Источники и ссылки
+
+- context7: [ID библиотеки Tailwind], [ID Vite], [ID React], [ID shadcn/ui]  
+- Дополнительные материалы: [Список статей/гайдов]  
+- Открытые вопросы: [Перечень вопросов, ожидающих уточнения пользователем]
+

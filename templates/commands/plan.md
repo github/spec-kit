@@ -1,5 +1,5 @@
 ---
-description: Execute the implementation planning workflow using the plan template to generate design artifacts.
+description: Сформировать план реализации под архитектуру FSD + Vite + React + Tailwind + shadcn/ui.
 scripts:
   sh: scripts/bash/setup-plan.sh --json
   ps: scripts/powershell/setup-plan.ps1 -Json
@@ -8,79 +8,78 @@ agent_scripts:
   ps: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
-## User Input
+## Пользовательский ввод
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+Всегда учитывайте пользовательский ввод, даже если он пустой (в этом случае нужно сообщить об ошибке).
 
-## Outline
+---
 
-1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+## Алгоритм
 
-2. **Load context**: Read FEATURE_SPEC and `.specify/memory/constitution.md`. Load IMPL_PLAN template (already copied).
+1. **Получите контекст проекта**
+   - Выполните `{SCRIPT}` из корня репозитория (только один запуск).
+   - Разберите JSON и сохраните абсолютные пути: `FEATURE_SPEC`, `FEATURE_DIR`, `PLAN_TEMPLATE`, `BRANCH`.
+   - Если вывод пустой или повреждён — остановитесь с ошибкой.
 
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
-   - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
-   - Fill Constitution Check section from constitution
-   - Evaluate gates (ERROR if violations unjustified)
-   - Phase 0: Generate research.md (resolve all NEEDS CLARIFICATION)
-   - Phase 1: Generate data-model.md, contracts/, quickstart.md
-   - Phase 1: Update agent context by running the agent script
-   - Re-evaluate Constitution Check post-design
+2. **Загрузите основы**
+   - `templates/plan-template.md` — заполнить структуру.
+   - `specs/[...]/spec.md` — потребности и пользовательские истории.
+   - `.specify/memory/constitution.md` — соблюдение внутренних правил.
 
-4. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+3. **Изучите документацию через context7**
+   - Выполните последовательность JSON-RPC:
+     1. `initialize` (укажите `clientInfo.name = "roo-code"`).
+     2. `tools/list` → убедитесь, что доступны `resolve-library-id` и `get-library-docs`.
+     3. Для каждой библиотеки (`tailwindcss`, `vite`, `react`, `shadcn/ui`):
+        - `tools/call` → `resolve-library-id` с `libraryName`.
+        - `tools/call` → `get-library-docs` с полученным ID и указанием интересующей темы (например, `"routing"`, `"styling"`).
+   - Вставьте ссылки/версии в раздел “Источники и ссылки” плана.
+   - Если доступ отклонён (неверный ключ), зафиксируйте это и попросите пользователя обновить ключ. План продолжайте со ссылкой на проблему.
 
-## Phases
+4. **Соберите технический контекст**
+   - Подтвердите стек: Vite + React + Tailwind + shadcn/ui.
+   - Убедитесь, что язык реализации — JavaScript. TypeScript подключайте только если в спецификации явно указано требование.
+   - Уточните нужные сущности/данные по `spec.md`. Неясности помечайте `NEEDS CLARIFICATION` (максимум 5).
 
-### Phase 0: Outline & Research
+5. **Заполните `plan.md`**
+   - Следуйте структуре шаблона:
+     - Резюме, технический контекст, проверка конституции.
+     - FSD-структура директорий.
+     - Фазы: Research → Design → Tasks → Implementation → Testing.
+     - Контроль сложности, план тестирования (в конце), источники.
+   - Все пути указывайте абсолютные (`src/features/...`).
+   - Для каждой фазы зафиксируйте конкретные действия и ожидаемые артефакты.
+   - Обязательно отметьте, что тесты запускаются только после завершения всех пользовательских историй.
 
-1. **Extract unknowns from Technical Context** above:
-   - For each NEEDS CLARIFICATION → research task
-   - For each dependency → best practices task
-   - For each integration → patterns task
+6. **Синхронизация агентов**
+   - После заполнения плана вызовите `{AGENT_SCRIPT}` из шаблона команд (bash или PowerShell) с `__AGENT__ = roo`.
+   - Убедитесь, что контекст Roo Code обновлён (новые технологии, директории).
 
-2. **Generate and dispatch research agents**:
-   ```
-   For each unknown in Technical Context:
-     Task: "Research {unknown} for {feature context}"
-   For each technology choice:
-     Task: "Find best practices for {tech} in {domain}"
-   ```
+7. **Валидация плана**
+   - Проверьте, что нет `NEEDS CLARIFICATION` без адресата.
+   - Убедитесь, что все решения подкреплены ссылками на context7 или исследования.
+   - План должен быть выполним без изменения глобальных требований конституции.
 
-3. **Consolidate findings** in `research.md` using format:
-   - Decision: [what was chosen]
-   - Rationale: [why chosen]
-   - Alternatives considered: [what else evaluated]
+8. **Отчёт**
+   - Сообщите:
+     - Путь к `plan.md`.
+     - Созданные/обновлённые документы (research.md, data-model.md и т.д., если затронуты).
+     - Список ссылок на документацию из context7.
+     - Нерешённые вопросы и риски (если остались).
 
-**Output**: research.md with all NEEDS CLARIFICATION resolved
+---
 
-### Phase 1: Design & Contracts
+## Правила
 
-**Prerequisites:** `research.md` complete
+- Русский — основной язык всех документов.  
+- Любая новая зависимость должна быть подтверждена выпиской из context7.  
+- Не добавляйте TypeScript, если пользователь не потребовал этого в спецификации.  
+- Тесты описываются только в финальной фазе.  
+- Все отклонения от FSD фиксируйте в разделе “Контроль сложности и рисков”.  
+- Не генерируйте чеклисты внутри `plan.md` — для этого есть отдельная команда.
 
-1. **Extract entities from feature spec** → `data-model.md`:
-   - Entity name, fields, relationships
-   - Validation rules from requirements
-   - State transitions if applicable
-
-2. **Generate API contracts** from functional requirements:
-   - For each user action → endpoint
-   - Use standard REST/GraphQL patterns
-   - Output OpenAPI/GraphQL schema to `/contracts/`
-
-3. **Agent context update**:
-   - Run `{AGENT_SCRIPT}`
-   - These scripts detect which AI agent is in use
-   - Update the appropriate agent-specific context file
-   - Add only new technology from current plan
-   - Preserve manual additions between markers
-
-**Output**: data-model.md, /contracts/*, quickstart.md, agent-specific file
-
-## Key rules
-
-- Use absolute paths
-- ERROR on gate failures or unresolved clarifications
+При возникновении ошибок или пропуска обязательного шага останавливайте выполнение и подробно описывайте проблему пользователю.

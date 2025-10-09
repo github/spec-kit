@@ -1,92 +1,66 @@
 ---
-description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+description: Исполнить tasks.md, соблюдая архитектуру FSD и правило «тесты в конце».
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
-## User Input
+## Подготовка
 
-```text
-$ARGUMENTS
-```
+1. Выполните `{SCRIPT}` из корня репозитория. Разберите JSON:
+   - `FEATURE_DIR`, `PLAN_PATH`, `TASKS_PATH`, список доступных документов.
+   - Если `tasks.md` отсутствует — остановитесь и предложите запустить `/speckit.tasks`.
+2. Проверьте чеклисты (`FEATURE_DIR/checklists/*`):
+   - Посчитайте количества `[ ]` и `[x]`.
+   - Если есть незакрытые пункты, покажите таблицу и спросите, продолжать ли выполнение. Уважайте ответ пользователя.
+3. Загрузите контекст:
+   - `plan.md`, `tasks.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md` (при наличии).
+   - Убедитесь, что план фиксирует стек FSD + Vite + React + Tailwind + shadcn/ui.
 
-You **MUST** consider the user input before proceeding (if not empty).
+---
 
-## Outline
+## Правила выполнения
 
-1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+- Следуйте фазам и порядку из `tasks.md`.  
+- `[P]` означает, что задачи можно выполнять параллельно (разные файлы).  
+- Любые изменения файлов из разных слоёв FSD должны сохранять границы (например, `features` не импортирует напрямую из `widgets`).  
+- Не добавляйте TypeScript, если это не указано в спецификации или планах.
+- Если для реализации требуется дополнительная информация, используйте context7 (как в `/speckit.plan`) и приложите ссылки к отчёту.
+- После выполнения задачи помечайте её как `[x]` в `tasks.md`.
 
-2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
-   - Scan all checklist files in the checklists/ directory
-   - For each checklist, count:
-     * Total items: All lines matching `- [ ]` or `- [X]` or `- [x]`
-     * Completed items: Lines matching `- [X]` or `- [x]`
-     * Incomplete items: Lines matching `- [ ]`
-   - Create a status table:
-     ```
-     | Checklist | Total | Completed | Incomplete | Status |
-     |-----------|-------|-----------|------------|--------|
-     | ux.md     | 12    | 12        | 0          | ✓ PASS |
-     | test.md   | 8     | 5         | 3          | ✗ FAIL |
-     | security.md | 6   | 6         | 0          | ✓ PASS |
-     ```
-   - Calculate overall status:
-     * **PASS**: All checklists have 0 incomplete items
-     * **FAIL**: One or more checklists have incomplete items
-   
-   - **If any checklist is incomplete**:
-     * Display the table with incomplete item counts
-     * **STOP** and ask: "Some checklists are incomplete. Do you want to proceed with implementation anyway? (yes/no)"
-     * Wait for user response before continuing
-     * If user says "no" or "wait" or "stop", halt execution
-     * If user says "yes" or "proceed" or "continue", proceed to step 3
-   
-   - **If all checklists are complete**:
-     * Display the table showing all checklists passed
-     * Automatically proceed to step 3
+---
 
-3. Load and analyze the implementation context:
-   - **REQUIRED**: Read tasks.md for the complete task list and execution plan
-   - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
-   - **IF EXISTS**: Read data-model.md for entities and relationships
-   - **IF EXISTS**: Read contracts/ for API specifications and test requirements
-   - **IF EXISTS**: Read research.md for technical decisions and constraints
-   - **IF EXISTS**: Read quickstart.md for integration scenarios
+## Исполнение
 
-4. Parse tasks.md structure and extract:
-   - **Task phases**: Setup, Tests, Core, Integration, Polish
-   - **Task dependencies**: Sequential vs parallel execution rules
-   - **Task details**: ID, description, file paths, parallel markers [P]
-   - **Execution flow**: Order and dependency requirements
+1. **Фаза 1** — инициализация: настройки Vite, Tailwind, структура директорий.
+2. **Фаза 2** — инфраструктура: общие провайдеры, базовые сущности/компоненты.
+3. **Фазы пользовательских историй**:
+   - Выполняйте истории по приоритету (P1 → P2 → ...).
+   - Убедитесь, что история остаётся независимой (можно продемонстрировать отдельно).
+   - При необходимости обновляйте контекст Roo Code.
+4. **Финальная фаза** — тестирование и выпуск:
+   - Только здесь запускайте и пишите тесты (авто/ручные), `npm run build`, `npm run preview`.
+   - Обновите документацию, чеклисты и `quickstart.md`.
 
-5. Execute implementation following the task plan:
-   - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
-   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
-   - **File-based coordination**: Tasks affecting the same files must run sequentially
-   - **Validation checkpoints**: Verify each phase completion before proceeding
+Если во время выполнения задача блокируется вопросом из `NEEDS CLARIFICATION`, остановитесь и запросите уточнение.
 
-6. Implementation execution rules:
-   - **Setup first**: Initialize project structure, dependencies, configuration
-   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
-   - **Core development**: Implement models, services, CLI commands, endpoints
-   - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+---
 
-7. Progress tracking and error handling:
-   - Report progress after each completed task
-   - Halt execution if any non-parallel task fails
-   - For parallel tasks [P], continue with successful tasks, report failed ones
-   - Provide clear error messages with context for debugging
-   - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
+## Контроль качества
 
-8. Completion validation:
-   - Verify all required tasks are completed
-   - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
-   - Confirm the implementation follows the technical plan
-   - Report final status with summary of completed work
+- После каждой фазы делайте краткий отчёт: какие файлы изменены, какие задачи закрыты.
+- Проверяйте консистентность FSD: импорты идут сверху вниз (`shared → entities → features → widgets → pages → app`).
+- tailwind/shadcn компоненты должны располагаться в `shared/ui` и переиспользоваться.
+- Если приходилось отклоняться от плана, зафиксируйте причину и ссылку на спецификацию.
 
-Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/tasks` first to regenerate the task list.
+---
+
+## Завершение
+
+1. Подтвердите, что все задачи в `tasks.md` отмечены.
+2. Опишите итог: реализованные истории, состояние чеклистов, результаты сборок/тестов.
+3. Укажите, какие материалы из context7 использованы (если были).
+4. Отметьте, что тесты выполнены после завершения функционала.
+5. Если остались риски или долги — перечислите их с предложениями по следующему шагу.
+
+При любой критической ошибке (сборка падает, команды npm не выполняются) приостановите выполнение и запросите дальнейшие инструкции.

@@ -1,115 +1,105 @@
-# Feature Specification: [FEATURE NAME]
+# Спецификация фичи: [FEATURE NAME]
 
-**Feature Branch**: `[###-feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
-**Input**: User description: "$ARGUMENTS"
+**Ветка**: `[###-feature-name]`  
+**Дата создания**: [DATE]  
+**Статус**: Черновик  
+**Источник запроса**: "$ARGUMENTS"
 
-## User Scenarios & Testing *(mandatory)*
-
-<!--
-  IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
-  Each user story/journey must be INDEPENDENTLY TESTABLE - meaning if you implement just ONE of them,
-  you should still have a viable MVP (Minimum Viable Product) that delivers value.
-  
-  Assign priorities (P1, P2, P3, etc.) to each story, where P1 is the most critical.
-  Think of each story as a standalone slice of functionality that can be:
-  - Developed independently
-  - Tested independently
-  - Deployed independently
-  - Demonstrated to users independently
--->
-
-### User Story 1 - [Brief Title] (Priority: P1)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently - e.g., "Can be fully tested by [specific action] and delivers [specific value]"]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-2. **Given** [initial state], **When** [action], **Then** [expected outcome]
+> По умолчанию реализация выполняется на стеке FSD + Vite + React + Tailwind + shadcn/ui. Если требуется другой подход, зафиксируйте это явно.
 
 ---
 
-### User Story 2 - [Brief Title] (Priority: P2)
+## Пользовательские сценарии и тестирование *(обязательно)*
 
-[Describe this user journey in plain language]
+Каждый сценарий — самостоятельная пользовательская история. Присвойте приоритет (P1 — критичный, далее по убыванию) и убедитесь, что история даёт пользователю ценность даже без остальных.
 
-**Why this priority**: [Explain the value and why it has this priority level]
+### История 1 — [Краткое название] (Приоритет: P1)
 
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-### User Story 3 - [Brief Title] (Priority: P3)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
+- **Описание**: [Повествовательно опишите путь пользователя]
+- **Почему такой приоритет**: [Ценность, бизнес-обоснование]
+- **Самостоятельная проверка**: [Как протестировать историю отдельно]
+- **Критерии приёмки**:
+  1. **Дано** [...], **Когда** [...], **Тогда** [...]
+  2. [...]
 
 ---
 
-[Add more user stories as needed, each with an assigned priority]
+### История 2 — [Краткое название] (Приоритет: P2)
 
-### Edge Cases
+[Аналогичная структура]
 
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right edge cases.
--->
+---
 
-- What happens when [boundary condition]?
-- How does system handle [error scenario]?
+### История 3 — [Краткое название] (Приоритет: P3)
 
-## Requirements *(mandatory)*
+[Аналогичная структура. Добавьте больше историй при необходимости.]
 
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right functional requirements.
--->
+---
 
-### Functional Requirements
+### Краевые случаи
 
-- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
-- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
-- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
-- **FR-005**: System MUST [behavior, e.g., "log all security events"]
+- Что происходит, когда [граница входных данных]?
+- Как система реагирует на [ошибочную ситуацию]?
+- Какие сценарии отказоустойчивости необходимы?
 
-*Example of marking unclear requirements:*
+---
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+## Требования *(обязательно)*
 
-### Key Entities *(include if feature involves data)*
+### Функциональные требования
 
-- **[Entity 1]**: [What it represents, key attributes without implementation]
-- **[Entity 2]**: [What it represents, relationships to other entities]
+- **FR-001**: Система должна [...]
+- **FR-002**: Пользователь должен иметь возможность [...]
+- **FR-003**: [Если информация отсутствует, отмечайте `NEEDS CLARIFICATION` с конкретным вопросом.]
 
-## Success Criteria *(mandatory)*
+### Нефункциональные требования (по необходимости)
 
-<!--
-  ACTION REQUIRED: Define measurable success criteria.
-  These must be technology-agnostic and measurable.
--->
+- **NFR-001**: Время отклика/производительность [...]
+- **NFR-002**: Требования по доступности/локализации [...]
+- **NFR-003**: Ограничения безопасности/конфиденциальности [...]
 
-### Measurable Outcomes
+### Ограничения и технические допущения
 
-- **SC-001**: [Measurable metric, e.g., "Users can complete account creation in under 2 minutes"]
-- **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
-- **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
-- **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+- **Стек по умолчанию**: FSD + Vite + React + Tailwind + shadcn/ui.  
+  - TypeScript включается только при явном требовании.  
+  - Любое отступление фиксируется в плане реализации.
+- **Сторонние сервисы/интеграции**: [Перечислите или отметьте `NEEDS CLARIFICATION`]
+- **Хранение данных**: [Если применимо, уточните или отметьте `NEEDS CLARIFICATION`]
+
+### Ключевые сущности (если присутствуют данные)
+
+- **[Entity]**: [Что описывает, какие основные поля, связи]
+- **[Entity]**: [...]
+
+### Ассумпции
+
+- [Зафиксируйте разумные предположения. Каждое предположение должно иметь основание.]
+
+---
+
+## Критерии успеха *(обязательно)*
+
+- **SC-001**: [Измеримый результат, например “Пользователь оформляет заказ менее чем за 2 минуты”.]
+- **SC-002**: [Показатель бизнес-ценности, например “Конверсия в оплату растёт на 15%”.]
+- **SC-003**: [Показатель удовлетворённости/качества.]
+- **SC-004**: [Опционально. Добавьте дополнительные метрики при необходимости.]
+
+---
+
+## Открытые вопросы
+
+| ID | Вопрос | Воздействие | Кому адресован |
+|----|--------|-------------|----------------|
+| Q1 | [Сформулируйте вопрос] | [Высокое/Среднее/Низкое] | [Имя/роль] |
+
+> Максимум три критичных вопроса. Остальные уточнения решайте через исследования и context7.
+
+---
+
+## Проверка качества спецификации
+
+- Нет ли в тексте описаний реализации (код, библиотеки)?  
+- Все ли требования тестируемы и однозначны?  
+- Указаны ли критерии приёмки для каждой пользовательской истории?  
+- Совместима ли спецификация с базовым стеком (если нет — описано ли исключение)?  
+- Зафиксированы ли все риски и вопросы, блокирующие планирование?
