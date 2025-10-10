@@ -256,4 +256,4 @@ After each step: PHR automatically created; ADR suggestion surfaced when appropr
 - ADR suggestion text after plan/tasks when significance test passes; wait for consent.
 
 ## Code Standards
-See `docs/constitution.md` for code quality, testing, performance, security, and architecture principles.
+See `.memory/constitution.md` for code quality, testing, performance, security, and architecture principles.
