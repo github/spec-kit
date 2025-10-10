@@ -1,0 +1,79 @@
+<!-- Framework-agnostic structural skeleton (low fidelity) -->
+<!-- Use tokens from tokens.json; do not hard-code colors, spacing, or fonts in production styles. -->
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Feature UI Skeleton</title>
+  </head>
+  <body>
+    <header role="banner" class="app-header">
+      <h1 class="app-title">Feature Title</h1>
+      <nav aria-label="Primary" class="app-nav">
+        <a href="#" aria-current="page">Home</a>
+        <a href="#">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main" role="main" class="container">
+      <section aria-labelledby="config-heading" class="panel panel-config">
+        <h2 id="config-heading">Configuration</h2>
+        <form aria-describedby="config-help">
+          <div class="field">
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" />
+          </div>
+
+          <div class="field">
+            <span class="label">Probability</span>
+            <div class="option-group" role="radiogroup" aria-label="Probability">
+              <label><input type="radio" name="probability" value="1e-9" /> 1 in 1,000,000,000</label>
+              <label><input type="radio" name="probability" value="1e-8" /> 1 in 100,000,000</label>
+              <label><input type="radio" name="probability" value="1e-7" /> 1 in 10,000,000</label>
+            </div>
+          </div>
+
+          <p id="config-help" class="help-text">Adjust inputs, then start processing.</p>
+        </form>
+      </section>
+
+      <section aria-labelledby="action-heading" class="panel panel-actions">
+        <h2 id="action-heading">Actions</h2>
+        <button type="button" class="btn btn-primary" id="start">Start</button>
+        <div class="loading" aria-live="polite" hidden>Loading…</div>
+      </section>
+
+      <section aria-labelledby="result-heading" class="panel panel-result">
+        <h2 id="result-heading">Result</h2>
+        <article class="result-card" aria-live="polite">
+          <h3>Summary</h3>
+          <dl class="kv">
+            <dt>Value A</dt><dd>—</dd>
+            <dt>Value B</dt><dd>—</dd>
+          </dl>
+        </article>
+      </section>
+
+      <aside aria-labelledby="leaderboard-heading" class="panel panel-leaderboard">
+        <h2 id="leaderboard-heading">Leaderboard</h2>
+        <ol class="leaderboard">
+          <li>—</li>
+          <li>—</li>
+        </ol>
+      </aside>
+    </main>
+
+    <footer role="contentinfo" class="app-footer">
+      <small>© Your Org</small>
+    </footer>
+
+    <!-- Notes for framework mapping:
+      - React: convert elements to JSX; replace class with className.
+      - Vue/Svelte: retain HTML; bind events/props in framework style.
+      - Accessibility: preserve roles/labels; ensure focus management.
+    -->
+  </body>
+  </html>
+
