@@ -1,9 +1,0 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
-
-exports[`createGlobalStyles regular 1`] = `" html, body{background:dodgerblue;}"`;
-
-exports[`createGlobalStyles regular 2`] = `"<div></div>"`;
-
-exports[`createGlobalStyles with theme 1`] = `"html, body{margin:0;background:blue;}"`;
-
-exports[`createGlobalStyles with theme 2`] = `"<div></div>"`;

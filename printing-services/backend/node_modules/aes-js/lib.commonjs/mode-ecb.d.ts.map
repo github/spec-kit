@@ -1,1 +1,0 @@
-{"version":3,"file":"mode-ecb.d.ts","sourceRoot":"","sources":["../src.ts/mode-ecb.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,eAAe,EAAE,MAAM,WAAW,CAAC;AAE5C,qBAAa,GAAI,SAAQ,eAAe;gBAE1B,GAAG,EAAE,UAAU;IAI3B,OAAO,CAAC,SAAS,EAAE,UAAU,GAAG,UAAU;IAa1C,OAAO,CAAC,SAAS,EAAE,UAAU,GAAG,UAAU;CAY3C"}

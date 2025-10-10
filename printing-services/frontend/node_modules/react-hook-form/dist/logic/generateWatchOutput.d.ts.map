@@ -1,1 +1,0 @@
-{"version":3,"file":"generateWatchOutput.d.ts","sourceRoot":"","sources":["../../src/logic/generateWatchOutput.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,WAAW,EAAE,WAAW,EAAE,KAAK,EAAE,MAAM,UAAU,CAAC;yBAIhD,CAAC,EACf,OAAO,MAAM,GAAG,MAAM,EAAE,GAAG,SAAS,EACpC,QAAQ,KAAK,EACb,aAAa,WAAW,EACxB,WAAW,OAAO,EAClB,eAAe,WAAW,CAAC,CAAC,CAAC,GAAG,OAAO;AALzC,wBAwBE"}

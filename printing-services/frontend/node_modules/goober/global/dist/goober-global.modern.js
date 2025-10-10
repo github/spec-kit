@@ -1,1 +1,0 @@
-import{css as n,styled as l}from"goober";let o=n.bind({g:1});function r(){const n=l.call({g:1},"div").apply(null,arguments);return function(l){return n(l),null}}export{r as createGlobalStyles,o as glob};

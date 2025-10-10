@@ -1,8 +1,0 @@
-{
-  "name": "engine.io-parser",
-  "type": "module",
-  "browser": {
-    "./encodePacket.js": "./encodePacket.browser.js",
-    "./decodePacket.js": "./decodePacket.browser.js"
-  }
-}
