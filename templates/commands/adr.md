@@ -38,8 +38,14 @@ Act as a senior software architect with expertise in:
 ## OUTPUT STRUCTURE (with quick flywheel hooks)
 
 Execute this workflow in 6 sequential steps. At Steps 2 and 4, apply lightweight Analyze→Measure checks:
- - Analyze: name likely failure modes (over‑granular ADRs, missing alternatives).
- - Measure: checklist graders (PASS only if ADR has: clustered decision, explicit alternatives, pros/cons).
+ - Analyze: Identify likely failure modes, specifically:
+     - Over-granular ADRs: ADRs that document decisions which are trivial, low-impact, or do not affect architectural direction (e.g., naming conventions, minor refactorings).
+     - Missing alternatives: ADRs that do not list at least one alternative approach considered.
+ - Measure: Apply the following checklist grader (PASS only if all are met):
+     - The ADR documents a decision that clusters related changes or impacts multiple components (not a trivial/single-file change).
+     - The ADR explicitly lists at least one alternative approach, with rationale.
+     - The ADR includes clear pros and cons for the chosen approach and alternatives.
+     - The ADR is concise but sufficiently detailed for future reference.
 
 ## Step 1: Load Planning Context
 

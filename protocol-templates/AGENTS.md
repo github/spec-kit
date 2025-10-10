@@ -156,7 +156,8 @@ Use this structure when generating or updating prompts/specs. Follow sections in
 2) List constraints, invariants, non‑goals.
 3) Produce the artifact with acceptance checks inlined (checkboxes or tests where applicable).
 4) Add follow‑ups and risks (max 3 bullets).
-5) Trigger implicit PHR; if plan/tasks identified decisions that meet significance, surface ADR suggestion text.
+5) Trigger implicit PHR by creating a new Markdown file in the appropriate directory (`docs/prompts/` or `specs/<feature>/prompts/`), named with a timestamp and prompt identifier.
+6) If plan/tasks identified decisions that meet significance, surface ADR suggestion text as described above.
 
 ### Minimum acceptance criteria
 - Clear, testable acceptance criteria included

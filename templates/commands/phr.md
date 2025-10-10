@@ -127,7 +127,9 @@ Read the file at `path` from JSON output. Replace ALL {{PLACEHOLDERS}}:
 - `{{NEXT_PROMPTS}}` → Suggested next steps or "none"
 - `{{REFLECTION_NOTE}}` → One key insight
 
-Add evaluation notes (short): failure modes observed; next experiment to improve prompt quality.
+Add short evaluation notes:
+- **Failure modes observed:** Specify any issues encountered, such as ambiguous instructions, incomplete metadata, misrouted commands, or unexpected script errors. Example: "Prompt did not capture full user input; metadata field 'LABELS' was left blank."
+- **Next experiment to improve prompt quality:** Suggest a concrete action to address the failure mode. Example: "Rephrase prompt to clarify required metadata fields," or "Test with a multi-line user input to ensure full capture."
 
 **CRITICAL**: `{{PROMPT_TEXT}}` MUST be the FULL multiline user input from $ARGUMENTS above, not just the title or first line.
 
