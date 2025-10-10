@@ -7,6 +7,13 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.19] - 2025-10-09
+
+### Added
+
+- Support for Tencent CodeBuddy Code CLI as additional AI assistant option. The `codebuddy` CLI command uses commands stored in `.codebuddy/commands/` directory and context file at `CODEBUDDY.md` in the project root (similar to Claude Code).
+- Official documentation link for CodeBuddy Code: https://cnb.cool/codebuddy/codebuddy-code
+
 ## [0.0.18] - 2025-10-06
 
 ### Added
