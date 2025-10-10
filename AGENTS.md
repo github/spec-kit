@@ -14,6 +14,80 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 - Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
 
+### Prompt Evaluation Flywheel (Analyze → Measure → Improve)
+
+Apply this loop whenever writing or refining prompts, specs, or command templates:
+
+1) Analyze: list likely failure modes and translate them into binary pass/fail oracles.
+2) Measure: create a few strict binary graders (formatting, requirements, safety) with few‑shot PASS/FAIL examples; keep examples in PHRs or `eval/`.
+3) Improve: when a grader FAILs, adjust the smallest part of the prompt to address that failure; re‑run graders until PASS.
+
+This complements TDD and ADRs—tests verify behavior; graders verify prompt structure and clarity; ADRs preserve consequential reasoning.
+
+### System Instructions (Prompt Structure)
+
+Adopt this 10‑part structure (inspired by Anthropic’s guidance) when writing prompts/specs:
+
+1. Task context – one‑sentence goal, surface (spec/plan/tasks/code), success criteria
+2. Tone context – professional, concise, constructive
+3. Background data – files/PRDs/screens; cite with code references
+4. Detailed task description & rules – constraints, non‑goals, invariants; never invent APIs; no secrets; prefer minimal diffs
+5. Examples – minimal happy‑path + edge example
+6. Conversation history – 1–3 bullets of prior decisions; link PHR
+7. Immediate request – what to produce now with acceptance criteria
+8. Think step by step – reasoning is private; output decisions and results only
+9. Output formatting – diffs, lists, checkboxes; cite existing code with code references (start:end:path)
+10. Prefilled response (if any) – skeletons to fill
+
+Tie‑ins:
+- After output, create a PHR (implicit). Feature branches add `specs/<feature>/prompts/`.
+- If decision significance test passes, show ADR suggestion text and wait for consent.
+
+Minimum acceptance criteria for any prompt output
+- Clear, testable acceptance criteria included
+- Explicit error paths and constraints stated
+- Smallest viable change; no unrelated edits
+- Code references to modified/inspected files where relevant
+
+### Default policies (must follow)
+- Do not invent APIs, data, or contracts; ask targeted clarifiers if missing.
+- Never hardcode secrets or tokens; use `.env` and docs.
+- Prefer the smallest viable diff; do not refactor unrelated code.
+- Cite existing code with code references; propose new code in fenced blocks.
+- Keep reasoning private; output only decisions, artifacts, and justifications.
+
+### Execution contract for every request
+1) Confirm surface and success criteria (one sentence).
+2) List constraints, invariants, non‑goals.
+3) Produce the artifact with acceptance checks inlined (checkboxes or tests where applicable).
+4) Add follow‑ups and risks (max 3 bullets).
+5) Trigger implicit PHR; if plan/tasks identified decisions that meet significance, surface ADR suggestion text.
+
+### Compact grader template (copy/paste)
+Use this to create binary evaluators for outputs.
+
+```
+You are a strict PASS/FAIL grader.
+Task: Judge whether the candidate output satisfies the criteria.
+If ALL criteria are satisfied → PASS, else → FAIL and list violated items.
+
+Criteria:
+- {criterion 1}
+- {criterion 2}
+- {criterion 3}
+
+Few‑shot examples:
+PASS:
+- Input: {short}
+- Output: {short}
+- Rationale: All criteria satisfied.
+
+FAIL:
+- Input: {short}
+- Output: {short}
+- Rationale: Violates {criterion}.
+```
+
 ## Adding New Agent Support
 
 This section explains how to add support for new AI agents/assistants to the Specify CLI. Use this guide as a reference when integrating new AI tools into the Spec-Driven Development workflow.

@@ -7,6 +7,12 @@
 - **Feature:** {{FEATURE_NAME}}
 - **Context:** {{CONTEXT}}
 
+<!-- Significance checklist (ALL must be true to justify this ADR)
+     1) Impact: Long-term consequence for architecture/platform/security?
+     2) Alternatives: Multiple viable options considered with tradeoffs?
+     3) Scope: Cross-cutting concern (not an isolated detail)?
+     If any are false, prefer capturing as a PHR note instead of an ADR. -->
+
 ## Decision
 
 {{DECISION}}
@@ -47,3 +53,4 @@
 - Feature Spec: {{SPEC_LINK}}
 - Implementation Plan: {{PLAN_LINK}}
 - Related ADRs: {{RELATED_ADRS}}
+- Evaluator Evidence: {{EVAL_NOTES_LINK}} <!-- link to eval notes/PHR showing graders and outcomes -->
