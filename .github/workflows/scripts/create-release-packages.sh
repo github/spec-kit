@@ -106,6 +106,7 @@ generate_commands() {
     
     case $ext in
       toml)
+        body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
         { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/sp.$name.$ext" ;;
       md)
         echo "$body" > "$output_dir/sp.$name.$ext" ;;
@@ -310,6 +311,10 @@ This file is generated during init for the selected agent.
       mkdir -p "$base_dir/.roo/commands"
       generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script"
       generate_agent_rules roo "$base_dir" ;;
+    codebuddy)
+      mkdir -p "$base_dir/.codebuddy/commands"
+      generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script" ;;
+
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script"
@@ -320,9 +325,8 @@ This file is generated during init for the selected agent.
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo q)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo codebuddy q)
 ALL_SCRIPTS=(sh ps)
-
 
 norm_list() {
   # convert comma+space separated -> space separated unique while preserving order of first occurrence
