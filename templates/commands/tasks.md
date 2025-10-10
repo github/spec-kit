@@ -1,5 +1,5 @@
 ---
-description: Сформировать tasks.md с зависимостями под архитектуру FSD + Vite + React + Tailwind + shadcn/ui.
+description: Сформировать tasks.md под архитектуру FSD + Vite + React + TypeScript + Mantine.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
@@ -18,7 +18,7 @@ $ARGUMENTS
 1. **Запусти `{SCRIPT}`** из корня репозитория. Извлеки `FEATURE_DIR`, `PLAN_PATH`, `SPEC_PATH`, список доступных документов. Если `plan.md` или `spec.md` отсутствуют — остановись и сообщи причину.
 
 2. **Загрузить артефакты**:
-   - `plan.md` — стек, структура FSD, фазы;
+   - `plan.md` — стек (Vite + React + TS + Mantine), FSD-структура, фазы;
    - `spec.md` — пользовательские истории с приоритетами;
    - при наличии: `research.md`, `data-model.md`, `contracts/`, `quickstart.md`.
 
@@ -50,13 +50,13 @@ $ARGUMENTS
 8. **Отчёт**:
    - путь к `tasks.md`;
    - количество задач всего и по каждой истории;
-   - наличие незакрытых вопросов;
-   - напоминание, что тесты выполняются после завершения функционала.
+   - напоминание, что тесты (Vitest + RTL) выполняются после завершения функционала;
+   - наличие незакрытых вопросов.
 
 ---
 
 ## Нельзя
 
 - Пропускать истории или объединять их в одну фазу.
-- Добавлять TypeScript или сторонние инструменты, если этого нет в планах/спецификации.
+- Игнорировать ограничения по стеку (TypeScript strict, Mantine theme, отсутствие Tailwind).
 - Изменять файлы кроме `tasks.md`.

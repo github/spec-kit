@@ -1,5 +1,5 @@
 ---
-description: Сформировать план реализации, совместимый с архитектурой FSD + Vite + React + Tailwind + shadcn/ui.
+description: Сформировать план реализации под FSD + Vite + React + TypeScript + Mantine.
 scripts:
   sh: scripts/bash/setup-plan.sh --json
   ps: scripts/powershell/setup-plan.ps1 -Json
@@ -21,41 +21,42 @@ $ARGUMENTS
 ## Алгоритм
 
 1. **Запусти `{SCRIPT}`** из корня репозитория (один раз). Разбери JSON и получи:
-   - `FEATURE_SPEC`, `FEATURE_DIR`, `PLAN_TEMPLATE`, `BRANCH`
-   - абсолютные пути ко всем артефактам  
+   - `FEATURE_SPEC`, `FEATURE_DIR`, `PLAN_TEMPLATE`, `BRANCH`;
+   - абсолютные пути ко всем артефактам.  
    Ошибка → остановись.
 
 2. **Загрузи исходные данные**:
-   - `templates/plan-template.md` — структура плана;
-   - `specs/.../spec.md` — требования и истории;
-   - `.specify/memory/constitution.md` — обязательные правила.
+   - `templates/plan-template.md`;
+   - `specs/.../spec.md`;
+   - `.specify/memory/constitution.md`.
 
 3. **Получить свежую документацию через context7**:
-   - JSON-RPC `initialize`, затем `tools/list`;
-   - для библиотек `tailwindcss`, `vite`, `react`, `shadcn/ui` последовательно:
-     1. `tools/call` → `resolve-library-id` (передай название библиотеки);
-     2. `tools/call` → `get-library-docs` (укажи ID и тему, например `"структура проекта"`, `"компоненты"`, `"настройка"`);
-   - сохрани ссылки/версии в разделе “Источники и ссылки”.  
-   Если ключ недействителен — зафиксируй проблему и продолжай с отметкой.
+   - JSON-RPC `initialize`, затем `tools/list`.
+   - Последовательно запроси: `vite`, `react`, `typescript`, `mantine`, `react-router`, `zustand` (или Redux Toolkit).
+   - Для каждой библиотеки: `resolve-library-id` → `get-library-docs` (темы: “setup”, “best practices”, “upgrading”).
+   - Сохрани версии и ссылки в разделе “Источники и ссылки”.  
+   Если ключ недействителен — зафиксируй проблему и продолжай с пометкой.
 
 4. **Сформировать технический контекст**:
-   - подтвердить стек: Vite + React + Tailwind + shadcn/ui (JavaScript без TypeScript, если не указано иное);
-  - описать уровни FSD: `app`, `processes`, `pages`, `widgets`, `features`, `entities`, `shared`;
-   - отметить требования к данным, состоянию, внешним API.
+   - Vite + React + TypeScript (strict) + Mantine (Emotion), Zustand (по умолчанию).
+   - FSD-уровни: `app`, `shared`, `entities`, `features`, `widgets`, `pages`, `processes`.
+   - Паттерны: Mantine theme, i18n (i18next), routing (react-router).
+   - Отметь требования по линтингу (ESLint + Prettier) и CI (lint/typecheck/build).
 
 5. **Заполнить план по фазам**:
-   - Phase 0 — Research (закрываем `NEEDS CLARIFICATION`, фиксируем решения);
-   - Phase 1 — Design (описать структуру директорий, конфиги Vite/Tailwind/shadcn, обновить quickstart);
-   - Phase 2 — Tasks (логика генерации `tasks.md`, правило “тесты в конце”);
-   - Phase 3+ — Implementation/Testing (при необходимости уточни дополнительные шаги).
+   - Phase 0 — Research (закрыть `NEEDS CLARIFICATION`, собрать выдержки из context7, оформить ADR-заметки).
+   - Phase 1 — Design (структура FSD, `vite.config.ts`, `tsconfig.*`, Mantine theme, i18n, Zustand store).
+   - Phase 2 — Tasks (правила генерации `tasks.md`, контроль DoD, подготовка CI).
+   - Phase 3+ — Implementation/Testing (итерации по историям, финальный Verify, тесты в конце).
 
 6. **Обновить структуру проекта**:
-   - опиши фактические директории FSD, укажи отклонения и обоснования;
-   - выдели риски и сложность (таблица нарушений конституции).
+   - опиши директории FSD и публичные контракты (index.ts).
+   - отметь алиасы (`vite-tsconfig-paths`), Mantine theme расположение, провайдеры в `app/`.
+   - зафиксируй риски и нарушения конституции (таблица).
 
 7. **Сохранить результат** в `plan.md`:
-   - текст на русском, используй шаблон и заполни все placeholders;
-   - приложи ссылки на context7 и нерешённые вопросы.
+   - заполни шаблон полностью, текст на русском;
+   - прилепи ссылки на документацию и список рисков/вопросов.
 
 8. **Синхронизировать контекст агентов**:
    - выполни `{AGENT_SCRIPT}` с `__AGENT__ = roo` после записи плана;
@@ -71,5 +72,5 @@ $ARGUMENTS
 ## Нельзя
 
 - Изменять файлы вне каталога фичи.
-- Игнорировать конституцию и правила стека.
-- Пропускать context7, если доступен ключ (ошибку нужно явно отметить).
+- Игнорировать конституцию и требования стека (TypeScript strict, Mantine, отсутствие Tailwind).
+- Оминать запросы к context7 при наличии ключа (ошибку нужно явно отметить).
