@@ -1,5 +1,7 @@
 # Complete GitHub Tutorial: WSL, Mac & Linux
 
+[Git Version Control and Github in Urdu/Hindi Complete Playlist](https://www.youtube.com/playlist?list=PLKueo-cldy_HjRnPUL4G3pWHS7FREAizF)
+
 ## Table of Contents
 1. [Introduction to GitHub](#introduction)
 2. [Setting Up Git](#setup)
