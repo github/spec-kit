@@ -165,49 +165,155 @@ build_variant() {
   #   * TOML (gemini, qwen): {{args}}
   # This keeps formats readable without extra abstraction.
 
+  # Generate agent-specific rule file
+  generate_agent_rules() {
+    local agent=$1
+    local base_dir=$2
+    
+    # Load the base AGENTS.md content
+    local agents_content=""
+    if [[ -f "protocol-templates/AGENTS.md" ]]; then
+      agents_content=$(tr -d '\r' < "protocol-templates/AGENTS.md")
+    else
+      echo "Warning: protocol-templates/AGENTS.md not found - cannot generate agent rules" >&2
+      return 1
+    fi
+    
+    # Create agent-specific preface
+    local agent_name=""
+    case $agent in
+      claude) agent_name="Claude Code" ;;
+      gemini) agent_name="Gemini CLI" ;;
+      copilot) agent_name="GitHub Copilot" ;;
+      cursor) agent_name="Cursor" ;;
+      qwen) agent_name="Qwen Code" ;;
+      opencode) agent_name="opencode" ;;
+      windsurf) agent_name="Windsurf" ;;
+      codex) agent_name="Codex CLI" ;;
+      kilocode) agent_name="Kilo Code" ;;
+      auggie) agent_name="Auggie CLI" ;;
+      roo) agent_name="Roo Code" ;;
+      q) agent_name="Amazon Q Developer CLI" ;;
+      *) agent_name="$agent" ;;
+    esac
+    
+    local preface="# $agent_name Rules
+
+This file is generated during init for the selected agent.
+
+"
+    
+    # Generate the complete content
+    local full_content="${preface}${agents_content}"
+    
+    # Write to appropriate location based on agent
+    case $agent in
+      cursor)
+        mkdir -p "$base_dir/.cursor/rules"
+        echo "$full_content" > "$base_dir/.cursor/rules/guidelines.md"
+        echo "Generated .cursor/rules/guidelines.md"
+        ;;
+      gemini)
+        echo "$full_content" > "$base_dir/GEMINI.md"
+        echo "Generated GEMINI.md"
+        ;;
+      qwen)
+        echo "$full_content" > "$base_dir/QWEN.md"
+        echo "Generated QWEN.md"
+        ;;
+      claude)
+        echo "$full_content" > "$base_dir/CLAUDE.md"
+        echo "Generated CLAUDE.md"
+        ;;
+      auggie)
+        echo "$full_content" > "$base_dir/AUGGIE.md"
+        echo "Generated AUGGIE.md"
+        ;;
+      q)
+        echo "$full_content" > "$base_dir/Q.md"
+        echo "Generated Q.md"
+        ;;
+      opencode)
+        echo "$full_content" > "$base_dir/opencode.md"
+        echo "Generated opencode.md"
+        ;;
+      windsurf)
+        echo "$full_content" > "$base_dir/windsurf.md"
+        echo "Generated windsurf.md"
+        ;;
+      kilocode)
+        echo "$full_content" > "$base_dir/kilocode.md"
+        echo "Generated kilocode.md"
+        ;;
+      roo)
+        echo "$full_content" > "$base_dir/roo.md"
+        echo "Generated roo.md"
+        ;;
+      copilot)
+        mkdir -p "$base_dir/.github"
+        echo "$full_content" > "$base_dir/.github/copilot-instructions.md"
+        echo "Generated .github/copilot-instructions.md"
+        ;;
+      codex)
+        mkdir -p "$base_dir/.codex/rules"
+        echo "$full_content" > "$base_dir/.codex/rules/guidelines.md"
+        echo "Generated .codex/rules/guidelines.md"
+        ;;
+    esac
+  }
+
   case $agent in
     claude)
       mkdir -p "$base_dir/.claude/commands"
-      generate_commands claude md "\$ARGUMENTS" "$base_dir/.claude/commands" "$script" ;;
+      generate_commands claude md "\$ARGUMENTS" "$base_dir/.claude/commands" "$script"
+      generate_agent_rules claude "$base_dir" ;;
     gemini)
       mkdir -p "$base_dir/.gemini/commands"
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
-      [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md "$base_dir/GEMINI.md" ;;
+      generate_agent_rules gemini "$base_dir" ;;
     copilot)
       mkdir -p "$base_dir/.github/prompts"
       generate_commands copilot prompt.md "\$ARGUMENTS" "$base_dir/.github/prompts" "$script"
       # Create VS Code workspace settings
       mkdir -p "$base_dir/.vscode"
       [[ -f templates/vscode-settings.json ]] && cp templates/vscode-settings.json "$base_dir/.vscode/settings.json"
-      ;;
+      generate_agent_rules copilot "$base_dir" ;;
     cursor)
       mkdir -p "$base_dir/.cursor/commands"
-      generate_commands cursor md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
+      generate_commands cursor md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script"
+      generate_agent_rules cursor "$base_dir" ;;
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
       generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
-      [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
+      generate_agent_rules qwen "$base_dir" ;;
     opencode)
       mkdir -p "$base_dir/.opencode/command"
-      generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
+      generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script"
+      generate_agent_rules opencode "$base_dir" ;;
     windsurf)
       mkdir -p "$base_dir/.windsurf/workflows"
-      generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
+      generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script"
+      generate_agent_rules windsurf "$base_dir" ;;
     codex)
       mkdir -p "$base_dir/.codex/prompts"
-      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" ;;
+      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script"
+      generate_agent_rules codex "$base_dir" ;;
     kilocode)
       mkdir -p "$base_dir/.kilocode/workflows"
-      generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
+      generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script"
+      generate_agent_rules kilocode "$base_dir" ;;
     auggie)
       mkdir -p "$base_dir/.augment/commands"
-      generate_commands auggie md "\$ARGUMENTS" "$base_dir/.augment/commands" "$script" ;;
+      generate_commands auggie md "\$ARGUMENTS" "$base_dir/.augment/commands" "$script"
+      generate_agent_rules auggie "$base_dir" ;;
     roo)
       mkdir -p "$base_dir/.roo/commands"
-      generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script" ;;
+      generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script"
+      generate_agent_rules roo "$base_dir" ;;
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
-      generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
+      generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script"
+      generate_agent_rules q "$base_dir" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
