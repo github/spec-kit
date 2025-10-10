@@ -18,11 +18,74 @@ You are an expert AI assistant specializing in Spec-Driven Development (SDD). Yo
 
 ## Development Guidelines
 
-1. Authoritative Source Mandate:
+### 1. Authoritative Source Mandate:
 Agents MUST prioritize and use MCP tools and CLI commands for all information gathering and task execution. NEVER assume a solution from internal knowledge; all methods require external verification.
 
-2. Execution Flow:
+### 2. Execution Flow:
 Treat MCP servers as first-class tools for discovery, verification, execution, and state capture. PREFER CLI interactions (running commands and capturing outputs) over manual file creation or reliance on internal knowledge.
+
+### 3. Knowledge capture (PHR) for Every User Input.
+As the main request completes, you **MUST** create and complete a PHR (Prompt History Record) using agent‑native tools.
+
+1) Detect stage
+   - One of: constitution | spec | plan | tasks | implementation | debugging | refactoring | discussion | general
+
+2) Generate title
+   - 3–7 words; create a slug for the filename.
+
+2a) Resolve route
+  - If feature context is detected (explicit marker, branch name, or touched specs/<name>/), target specs/<name>/prompts/; else target docs/prompts/.
+  - Use this route when computing the output path in step 3. If you later detect feature context after writing to docs/, move the file to specs/<name>/prompts/ and update feature/branch in front‑matter.
+
+3) Prefer agent‑native flow (no shell)
+   - Read the PHR template from one of:
+     - `.specify/templates/phr-template.prompt.md`
+     - `templates/phr-template.prompt.md`
+   - Allocate an ID (increment; on collision, increment again).
+   - Compute output path, use the route from 2a:
+     - Pre‑feature → docs → docs/prompts/<ID>-<slug>.<stage>.prompt.md
+     - feature → specs/<feature>/prompts/<ID>-<slug>.<stage>.prompt.md
+   - Fill ALL placeholders in YAML and body:
+     - ID, TITLE, STAGE, DATE_ISO (YYYY‑MM‑DD), SURFACE="agent"
+     - MODEL (best known), FEATURE (or "none"), BRANCH, USER
+     - COMMAND (current command), LABELS (["topic1","topic2",...])
+     - LINKS: SPEC/TICKET/ADR/PR (URLs or "null")
+     - FILES_YAML: list created/modified files (one per line, " - ")
+     - TESTS_YAML: list tests run/added (one per line, " - ")
+     - PROMPT_TEXT: full user input (verbatim, not truncated)
+     - RESPONSE_TEXT: key assistant output (concise but representative)
+     - Any OUTCOME/EVALUATION fields required by the template
+   - Write the completed file with agent file tools (WriteFile/Edit).
+   - Confirm absolute path in output.
+
+4) Use sp.phr command file if present
+   - If `.**/commands/sp.phr.*` exists, follow its structure.
+   - If it references shell but Shell is unavailable, still perform step 3 with agent‑native tools.
+
+5) Shell fallback (only if step 3 is unavailable or fails, and Shell is permitted)
+   - Run: `.specify/scripts/bash/create-phr.sh --title "<title>" --stage <stage> --json`
+   - Then open/patch the created file to ensure all placeholders are filled and prompt/response are embedded.
+
+6) Routing (branch‑aware)
+   - Default target: `docs/prompts/`
+   - If a feature branch or feature context is detected, also route to `specs/<feature>/prompts/` and set FEATURE/BRANCH fields accordingly.
+
+7) Post‑creation validations (must pass)
+   - No unresolved placeholders (e.g., `{{THIS}}`, `[THAT]`).
+   - Title, stage, and dates match front‑matter.
+   - PROMPT_TEXT is complete (not truncated).
+   - File exists at the expected path and is readable.
+   - Path matches route.
+
+8) Report
+   - Print: ID, path, stage, title.
+   - On any failure: warn but do not block the main command.
+   - Skip PHR only for `/sp.phr` itself.
+
+### 4. Explicit ADR suggestions
+- When significant architectural decisions are made (typically during `/sp.plan` and sometimes `/sp.tasks`), run the three‑part test and suggest documenting with:
+  "📋 Architectural decision detected: <brief> — Document reasoning and tradeoffs? Run `/sp.adr <decision-title>`"
+- Wait for user consent; never auto‑create the ADR.
 
 ## Default policies (must follow)
 - Clarify and plan first - keep business understanding seperate form technical plan and carefully architect and implement.
@@ -48,37 +111,10 @@ Knowledge capture:
 Analysis:
 - `/sp.analyze` - Cross-check specs, plans, and tasks for consistency
 
-## Automatic Documentation Protocol
-
-CRITICAL: This project requires comprehensive knowledge capture for team learning, compliance, and pattern recognition.
-
-### Prompt History Records (PHR) - Always Automatic
-
-After completing ANY work, automatically create a PHR:
-
-1. Detect work type: constitution|spec|architect|implementation|debugging|refactoring|discussion|general
-2. Generate title: 3-7 word descriptive title summarizing the work
-3. Capture context: COMPLETE conversation (never truncate to summaries)
-4. Route correctly:
-   - Pre-feature work → `docs/prompts/`
-   - Feature-specific work → `specs/<feature>/prompts/`
-5. Confirm: Show "📝 PHR-NNNN recorded"
-
-Documentation captures everything:
-- Design discussions and technical decisions
-- Architecture planning and API design
-- Implementation (new features, debugging, refactoring)
-- Problem-solving and troubleshooting
-- Code reviews and optimizations
-- Questions, clarifications, exploratory conversations
-- All development activity - complete history
-
-Only exception: Skip PHR for `/sp.phr` command itself (prevents recursion).
-
-Technical execution:
-- Use `.**/commands/sp.phr.md` template for creation
-- Preserve FULL context - never truncate
-- On error: warn but don't block workflow
+## Automatic Documentation Protocol (concise)
+- After any work, create a PHR following Development Guidelines §3.
+- Route correctly (docs vs specs). Prefer Shell; fallback to agent-native file tools.
+- Fill placeholders; embed prompt/response; validate and report path.
 
 ## System Instructions (Structured Prompt Template)
 
