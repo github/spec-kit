@@ -186,7 +186,7 @@ build_variant() {
       claude) agent_name="Claude Code" ;;
       gemini) agent_name="Gemini CLI" ;;
       copilot) agent_name="GitHub Copilot" ;;
-      cursor) agent_name="Cursor" ;;
+      cursor-agent) agent_name="Cursor" ;;
       qwen) agent_name="Qwen Code" ;;
       opencode) agent_name="opencode" ;;
       windsurf) agent_name="Windsurf" ;;
@@ -194,6 +194,7 @@ build_variant() {
       kilocode) agent_name="Kilo Code" ;;
       auggie) agent_name="Auggie CLI" ;;
       roo) agent_name="Roo Code" ;;
+      codebuddy) agent_name="CodeBuddy" ;;
       q) agent_name="Amazon Q Developer CLI" ;;
       *) agent_name="$agent" ;;
     esac
@@ -209,7 +210,7 @@ This file is generated during init for the selected agent.
     
     # Write to appropriate location based on agent
     case $agent in
-      cursor)
+      cursor-agent)
         mkdir -p "$base_dir/.cursor/rules"
         echo "$full_content" > "$base_dir/.cursor/rules/guidelines.md"
         echo "Generated .cursor/rules/guidelines.md"
@@ -260,6 +261,11 @@ This file is generated during init for the selected agent.
         echo "$full_content" > "$base_dir/.codex/rules/guidelines.md"
         echo "Generated .codex/rules/guidelines.md"
         ;;
+      codebuddy)
+        mkdir -p "$base_dir/.codebuddy/rules"
+        echo "$full_content" > "$base_dir/.codebuddy/rules/guidelines.md"
+        echo "Generated .codebuddy/rules/guidelines.md"
+        ;;
     esac
   }
 
@@ -279,10 +285,10 @@ This file is generated during init for the selected agent.
       mkdir -p "$base_dir/.vscode"
       [[ -f templates/vscode-settings.json ]] && cp templates/vscode-settings.json "$base_dir/.vscode/settings.json"
       generate_agent_rules copilot "$base_dir" ;;
-    cursor)
+    cursor-agent)
       mkdir -p "$base_dir/.cursor/commands"
-      generate_commands cursor md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script"
-      generate_agent_rules cursor "$base_dir" ;;
+      generate_commands cursor-agent md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script"
+      generate_agent_rules cursor-agent "$base_dir" ;;
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
       generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
@@ -313,7 +319,8 @@ This file is generated during init for the selected agent.
       generate_agent_rules roo "$base_dir" ;;
     codebuddy)
       mkdir -p "$base_dir/.codebuddy/commands"
-      generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script" ;;
+      generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script"
+      generate_agent_rules codebuddy "$base_dir" ;;
 
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
@@ -325,7 +332,7 @@ This file is generated during init for the selected agent.
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo codebuddy q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy q)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
