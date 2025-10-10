@@ -51,7 +51,7 @@ Usage: $0 --title <title> --stage <stage> [options]
 Required:
   --title <text>       Title for the PHR (used for filename)
   --stage <stage>      Pre-feature: constitution|spec
-                       Feature work: architect|red|green|refactor|explainer|misc|general
+                       Feature work: architect|plan|tasks|red|green|refactor|explainer|misc|general
 
 Optional:
   --feature <slug>     Feature slug (e.g., 001-auth). Auto-detected from branch if omitted.
@@ -59,11 +59,11 @@ Optional:
 
 Stage Extensions:
   Pre-feature stages: .constitution.prompt.md, .spec.prompt.md
-  Feature stages: .architect.prompt.md, .red.prompt.md, .green.prompt.md, .general.prompt.md, etc.
+  Feature stages: .architect.prompt.md, .plan.prompt.md, .tasks.prompt.md, .red.prompt.md, .green.prompt.md, .general.prompt.md, etc.
   
 Location Rules:
   - constitution, spec → always docs/prompts/
-  - architect, red, green, refactor, explainer, misc → requires specs/<feature>/prompts/
+  - architect, plan, tasks, red, green, refactor, explainer, misc → requires specs/<feature>/prompts/
   - general → specs/<feature>/prompts/ if exists, else docs/prompts/ with warning
 
 Output:
@@ -111,7 +111,7 @@ fi
 
 # Deterministic location logic based on STAGE
 PRE_FEATURE_STAGES=("constitution" "spec")
-FEATURE_STAGES=("architect" "red" "green" "refactor" "explainer" "misc" "general")
+FEATURE_STAGES=("architect" "plan" "tasks" "red" "green" "refactor" "explainer" "misc" "general")
 
 # Check if this is a pre-feature stage (constitution or spec only)
 IS_PRE_FEATURE=false
@@ -128,7 +128,7 @@ if [[ "$IS_PRE_FEATURE" == "true" ]]; then
   VALID_STAGES=("${PRE_FEATURE_STAGES[@]}")
   CONTEXT="pre-feature"
 else
-  # Feature stage: architect, red, green, refactor, explainer, misc, general
+  # Feature stage: architect, plan, tasks, red, green, refactor, explainer, misc, general
   # These require specs/ directory and feature context
   
   if [[ ! -d "$SPECS_DIR" ]]; then
@@ -198,7 +198,7 @@ else
   fi
   
     PROMPTS_DIR="$SPECS_DIR/$FEATURE/prompts"
-    VALID_STAGES=("architect" "red" "green" "refactor" "explainer" "misc" "general")
+    VALID_STAGES=("architect" "plan" "tasks" "red" "green" "refactor" "explainer" "misc" "general")
     CONTEXT="feature"
   fi
 fi

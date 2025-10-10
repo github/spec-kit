@@ -1010,6 +1010,50 @@ def init(
         console.print()
         console.print(security_notice)
 
+    # Generate agent-specific rule file in project
+    try:
+        rules_src = Path(__file__).resolve().parents[2] / "protocol-templates" / "AGENTS.md"
+        if rules_src.is_file():
+            content = rules_src.read_text(encoding="utf-8")
+            # Minimal per-agent preface; keep shared rules body as-is
+            preface = f"# {AI_CHOICES.get(selected_ai, selected_ai)} Rules\n\nThis file is generated during init for the selected agent.\n\n"
+            out_text = preface + content
+            if selected_ai == "cursor":
+                out_path = project_path / ".cursor" / "rules" / "guidelines.md"
+            elif selected_ai == "gemini":
+                out_path = project_path / "GEMINI.md"
+            elif selected_ai == "qwen":
+                out_path = project_path / "QWEN.md"
+            elif selected_ai == "claude":
+                out_path = project_path / "CLAUDE.md"
+            elif selected_ai == "auggie":
+                out_path = project_path / "AUGGIE.md"
+            elif selected_ai == "q":
+                out_path = project_path / "Q.md"
+            elif selected_ai == "opencode":
+                out_path = project_path / "opencode.md"
+            elif selected_ai == "windsurf":
+                out_path = project_path / "windsurf.md"
+            elif selected_ai == "kilocode":
+                out_path = project_path / "kilocode.md"
+            elif selected_ai == "roo":
+                out_path = project_path / "roo.md"
+            elif selected_ai == "copilot":
+                out_path = project_path / ".github" / "copilot-instructions.md"
+            elif selected_ai == "codex":
+                out_path = project_path / ".codex" / "rules" / "guidelines.md"
+            elif selected_ai == "agent":
+                out_path = project_path / "agent.md"
+            else:
+                out_path = None
+
+            if out_path is not None:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(out_text, encoding="utf-8")
+                console.print(Panel(f"Wrote agent rules to [cyan]{out_path}[/cyan]", border_style="green"))
+    except Exception as e:
+        console.print(Panel(f"Could not generate agent rule file: {e}", title="Agent Rules", border_style="yellow"))
+
     # Boxed "Next steps" section
     steps_lines = []
     if not here:

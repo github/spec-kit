@@ -31,7 +31,7 @@ Act as a meticulous documentation specialist with expertise in:
 - Metadata extraction and classification
 - Creating structured, searchable technical records
 
-## QUICK OVERVIEW
+## QUICK OVERVIEW (strict)
 
 After completing ANY work, automatically create a PHR:
 
@@ -43,7 +43,7 @@ After completing ANY work, automatically create a PHR:
    - Feature-specific work → `specs/<feature>/prompts/`
 5. **Confirm**: Show "📝 PHR-NNNN recorded"
 
-## OUTPUT STRUCTURE
+## OUTPUT STRUCTURE (with quick flywheel hooks)
 
 Execute this workflow in 5 sequential steps, reporting progress after each:
 
@@ -96,7 +96,7 @@ scripts/bash/create-phr.sh \
 
 Parse the JSON output to get: `id`, `path`, `context`, `stage`, `feature`
 
-## Step 4: Fill ALL Template Placeholders
+## Step 4: Fill ALL Template Placeholders (Analyze→Measure)
 
 Read the file at `path` from JSON output. Replace ALL {{PLACEHOLDERS}}:
 
@@ -127,6 +127,10 @@ Read the file at `path` from JSON output. Replace ALL {{PLACEHOLDERS}}:
 - `{{NEXT_PROMPTS}}` → Suggested next steps or "none"
 - `{{REFLECTION_NOTE}}` → One key insight
 
+Add short evaluation notes:
+- **Failure modes observed:** Specify any issues encountered, such as ambiguous instructions, incomplete metadata, misrouted commands, or unexpected script errors. Example: "Prompt did not capture full user input; metadata field 'LABELS' was left blank."
+- **Next experiment to improve prompt quality:** Suggest a concrete action to address the failure mode. Example: "Rephrase prompt to clarify required metadata fields," or "Test with a multi-line user input to ensure full capture."
+
 **CRITICAL**: `{{PROMPT_TEXT}}` MUST be the FULL multiline user input from $ARGUMENTS above, not just the title or first line.
 
 ## Step 5: Report Completion
@@ -143,6 +147,11 @@ Stage: {stage}
 Feature: {feature or "none"}
 Files modified: {count}
 Tests involved: {count}
+
+Acceptance Criteria (PASS only if all true)
+- Full prompt preserved verbatim (no truncation)
+- Stage and routing determined correctly
+- Metadata fields populated; missing values noted explicitly
 ```
 
 ## ERROR HANDLING

@@ -14,15 +14,19 @@ Protocol templates define how agents interact with Spec Kit projects in a standa
 
 ### AGENTS.md
 
-Standard agent documentation file (see https://agents.md/) that explains:
+Standard agent documentation delivered to users. It now includes:
 
-- Automatic PHR creation (comprehensive knowledge capture)
-- ADR suggestion workflow (architectural decision records)
-- Spec-Driven Development commands
-- Project structure and workflow patterns
+- System Instructions (10‑part prompt structure)
+- Prompt Evaluation Flywheel (Analyze→Measure→Improve) with documentation hooks
+- Default policies and execution contract
+- Compact binary grader template (copy/paste)
+- Automatic PHR creation rules and ADR suggestion workflow
+- Spec‑Driven Development commands and project structure
 
-**Destination in release packages**: Project root (`AGENTS.md`)  
-**NOT copied to**: `.specify/memory/` (keeps it clean)
+**Destination in release packages**: Project root (`AGENTS.md`). It may also be transformed into per‑agent files during `specify init`:
+
+- `GEMINI.md`, `QWEN.md`, `CLAUDE.md` (root)
+- `.cursor/rules/guidelines.md` (Cursor)
 
 ## Why Separate from memory/?
 
@@ -45,4 +49,5 @@ When adding new universal protocol files:
 1. Place them in this directory
 2. Update `create-release-packages.sh` to copy them
 3. Choose appropriate destination (project root or subdirectory)
-4. Document in this README
+4. Update per‑agent generation logic in `src/specify_cli/__init__.py` if needed
+5. Document in this README

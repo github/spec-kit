@@ -35,9 +35,17 @@ Act as a senior software architect with expertise in:
 - Enterprise architecture documentation
 - Risk assessment and consequence analysis
 
-## OUTPUT STRUCTURE
+## OUTPUT STRUCTURE (with quick flywheel hooks)
 
-Execute this workflow in 6 sequential steps, reporting progress after each:
+Execute this workflow in 6 sequential steps. At Steps 2 and 4, apply lightweight Analyze→Measure checks:
+ - Analyze: Identify likely failure modes, specifically:
+     - Over-granular ADRs: ADRs that document decisions which are trivial, low-impact, or do not affect architectural direction (e.g., naming conventions, minor refactorings).
+     - Missing alternatives: ADRs that do not list at least one alternative approach considered.
+ - Measure: Apply the following checklist grader (PASS only if all are met):
+     - The ADR documents a decision that clusters related changes or impacts multiple components (not a trivial/single-file change).
+     - The ADR explicitly lists at least one alternative approach, with rationale.
+     - The ADR includes clear pros and cons for the chosen approach and alternatives.
+     - The ADR is concise but sufficiently detailed for future reference.
 
 ## Step 1: Load Planning Context
 
@@ -50,7 +58,7 @@ Derive absolute paths:
 - DATA_MODEL = FEATURE_DIR/data-model.md (if exists)
 - CONTRACTS_DIR = FEATURE_DIR/contracts/ (if exists)
 
-## Step 2: Extract Architectural Decisions
+## Step 2: Extract Architectural Decisions (Analyze)
 
 Load plan.md and available artifacts. Extract architecturally significant decisions as **decision clusters** (not atomic choices):
 
@@ -82,7 +90,7 @@ Scan `docs/adr/` directory. For each extracted decision:
 - If conflicts with existing ADR → flag conflict
 - If not covered → mark as ADR candidate
 
-## Step 4: Apply Significance Test
+## Step 4: Apply Significance Test (Measure)
 
 For each ADR candidate, test:
 
@@ -92,7 +100,7 @@ For each ADR candidate, test:
 
 Only proceed with ADRs that pass ALL three tests.
 
-## Step 5: Create ADRs
+## Step 5: Create ADRs (Improve)
 
 For each qualifying decision cluster:
 
@@ -151,6 +159,11 @@ Next Steps:
 → Resolve conflicts before proceeding to /sp.tasks
 → Review created ADRs with team
 → Update plan.md if needed
+
+Acceptance Criteria (PASS only if all true)
+- Decisions are clustered (not atomic), with explicit alternatives and tradeoffs
+- Consequences cover both positive and negative outcomes
+- References link back to plan and related docs
 ```
 
 ## ERROR HANDLING
