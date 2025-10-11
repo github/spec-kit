@@ -1,0 +1,174 @@
+{
+  "name": "@noble/hashes",
+  "version": "1.3.2",
+  "description": "Audited & minimal 0-dependency JS implementation of SHA2, SHA3, RIPEMD, BLAKE2/3, HMAC, HKDF, PBKDF2, Scrypt",
+  "files": [
+    "/*.js",
+    "/*.d.ts",
+    "/*.js.map",
+    "esm",
+    "src/*.ts"
+  ],
+  "scripts": {
+    "bench": "node benchmark/index.js noble",
+    "bench:all": "node benchmark/index.js",
+    "bench:install": "cd benchmark && npm install && cd ../../",
+    "build": "npm run build:clean; tsc && tsc -p tsconfig.esm.json",
+    "build:release": "cd build; npm i; npm run build",
+    "build:clean": "rm *.{js,d.ts,js.map} esm/*.{js,js.map} 2> /dev/null",
+    "lint": "prettier --check 'src/**/*.{js,ts}' 'test/**/*.{js,ts}'",
+    "format": "prettier --write 'src/**/*.{js,ts}' 'test/**/*.{js,ts}'",
+    "test": "node test/index.js",
+    "test:dos": "node test/slow-dos.test.js",
+    "test:big": "node test/slow-big.test.js"
+  },
+  "author": "Paul Miller (https://paulmillr.com)",
+  "homepage": "https://paulmillr.com/noble/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paulmillr/noble-hashes.git"
+  },
+  "license": "MIT",
+  "sideEffects": false,
+  "browser": {
+    "node:crypto": false,
+    "./crypto": "./crypto.js"
+  },
+  "devDependencies": {
+    "micro-bmark": "0.3.1",
+    "micro-should": "0.4.0",
+    "prettier": "2.8.4",
+    "typescript": "5.0.2"
+  },
+  "engines": {
+    "node": ">= 16"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./index.js"
+    },
+    "./crypto": {
+      "types": "./crypto.d.ts",
+      "node": {
+        "import": "./esm/cryptoNode.js",
+        "default": "./cryptoNode.js"
+      },
+      "import": "./esm/crypto.js",
+      "default": "./crypto.js"
+    },
+    "./_assert": {
+      "types": "./_assert.d.ts",
+      "import": "./esm/_assert.js",
+      "default": "./_assert.js"
+    },
+    "./_sha2": {
+      "types": "./_sha2.d.ts",
+      "import": "./esm/_sha2.js",
+      "default": "./_sha2.js"
+    },
+    "./argon2": {
+      "types": "./argon2.d.ts",
+      "import": "./esm/argon2.js",
+      "default": "./argon2.js"
+    },
+    "./blake2b": {
+      "types": "./blake2b.d.ts",
+      "import": "./esm/blake2b.js",
+      "default": "./blake2b.js"
+    },
+    "./blake2s": {
+      "types": "./blake2s.d.ts",
+      "import": "./esm/blake2s.js",
+      "default": "./blake2s.js"
+    },
+    "./blake3": {
+      "types": "./blake3.d.ts",
+      "import": "./esm/blake3.js",
+      "default": "./blake3.js"
+    },
+    "./eskdf": {
+      "types": "./eskdf.d.ts",
+      "import": "./esm/eskdf.js",
+      "default": "./eskdf.js"
+    },
+    "./hkdf": {
+      "types": "./hkdf.d.ts",
+      "import": "./esm/hkdf.js",
+      "default": "./hkdf.js"
+    },
+    "./hmac": {
+      "types": "./hmac.d.ts",
+      "import": "./esm/hmac.js",
+      "default": "./hmac.js"
+    },
+    "./pbkdf2": {
+      "types": "./pbkdf2.d.ts",
+      "import": "./esm/pbkdf2.js",
+      "default": "./pbkdf2.js"
+    },
+    "./ripemd160": {
+      "types": "./ripemd160.d.ts",
+      "import": "./esm/ripemd160.js",
+      "default": "./ripemd160.js"
+    },
+    "./scrypt": {
+      "types": "./scrypt.d.ts",
+      "import": "./esm/scrypt.js",
+      "default": "./scrypt.js"
+    },
+    "./sha1": {
+      "types": "./sha1.d.ts",
+      "import": "./esm/sha1.js",
+      "default": "./sha1.js"
+    },
+    "./sha3-addons": {
+      "types": "./sha3-addons.d.ts",
+      "import": "./esm/sha3-addons.js",
+      "default": "./sha3-addons.js"
+    },
+    "./sha3": {
+      "types": "./sha3.d.ts",
+      "import": "./esm/sha3.js",
+      "default": "./sha3.js"
+    },
+    "./sha256": {
+      "types": "./sha256.d.ts",
+      "import": "./esm/sha256.js",
+      "default": "./sha256.js"
+    },
+    "./sha512": {
+      "types": "./sha512.d.ts",
+      "import": "./esm/sha512.js",
+      "default": "./sha512.js"
+    },
+    "./utils": {
+      "types": "./utils.d.ts",
+      "import": "./esm/utils.js",
+      "default": "./utils.js"
+    }
+  },
+  "keywords": [
+    "sha",
+    "sha2",
+    "sha3",
+    "sha256",
+    "sha512",
+    "keccak",
+    "kangarootwelve",
+    "ripemd160",
+    "blake2",
+    "blake3",
+    "hmac",
+    "hkdf",
+    "pbkdf2",
+    "scrypt",
+    "kdf",
+    "hash",
+    "cryptography",
+    "security",
+    "noble"
+  ],
+  "funding": "https://paulmillr.com/funding/"
+}

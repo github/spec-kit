@@ -1,0 +1,1 @@
+{"version":3,"file":"getCheckboxValue.d.ts","sourceRoot":"","sources":["../../src/logic/getCheckboxValue.ts"],"names":[],"mappings":"AAEA,KAAK,mBAAmB,GAAG;IACzB,OAAO,EAAE,OAAO,CAAC;IACjB,KAAK,EAAE,MAAM,GAAG,MAAM,EAAE,GAAG,OAAO,GAAG,SAAS,CAAC;CAChD,CAAC;yBASc,UAAU,gBAAgB,EAAE,KAAG,mBAAmB;AAAlE,wBAoBE"}

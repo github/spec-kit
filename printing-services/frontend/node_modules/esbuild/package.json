@@ -1,0 +1,42 @@
+{
+  "name": "esbuild",
+  "version": "0.18.20",
+  "description": "An extremely fast JavaScript and CSS bundler and minifier.",
+  "repository": "https://github.com/evanw/esbuild",
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "main": "lib/main.js",
+  "types": "lib/main.d.ts",
+  "engines": {
+    "node": ">=12"
+  },
+  "bin": {
+    "esbuild": "bin/esbuild"
+  },
+  "optionalDependencies": {
+    "@esbuild/android-arm": "0.18.20",
+    "@esbuild/android-arm64": "0.18.20",
+    "@esbuild/android-x64": "0.18.20",
+    "@esbuild/darwin-arm64": "0.18.20",
+    "@esbuild/darwin-x64": "0.18.20",
+    "@esbuild/freebsd-arm64": "0.18.20",
+    "@esbuild/freebsd-x64": "0.18.20",
+    "@esbuild/linux-arm": "0.18.20",
+    "@esbuild/linux-arm64": "0.18.20",
+    "@esbuild/linux-ia32": "0.18.20",
+    "@esbuild/linux-loong64": "0.18.20",
+    "@esbuild/linux-mips64el": "0.18.20",
+    "@esbuild/linux-ppc64": "0.18.20",
+    "@esbuild/linux-riscv64": "0.18.20",
+    "@esbuild/linux-s390x": "0.18.20",
+    "@esbuild/linux-x64": "0.18.20",
+    "@esbuild/netbsd-x64": "0.18.20",
+    "@esbuild/openbsd-x64": "0.18.20",
+    "@esbuild/sunos-x64": "0.18.20",
+    "@esbuild/win32-arm64": "0.18.20",
+    "@esbuild/win32-ia32": "0.18.20",
+    "@esbuild/win32-x64": "0.18.20"
+  },
+  "license": "MIT"
+}

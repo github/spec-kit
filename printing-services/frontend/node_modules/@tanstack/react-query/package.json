@@ -1,0 +1,87 @@
+{
+  "name": "@tanstack/react-query",
+  "version": "5.90.2",
+  "description": "Hooks for managing, caching and syncing asynchronous and remote data in React",
+  "author": "tannerlinsley",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TanStack/query.git",
+    "directory": "packages/react-query"
+  },
+  "homepage": "https://tanstack.com/query",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/tannerlinsley"
+  },
+  "type": "module",
+  "types": "build/legacy/index.d.ts",
+  "main": "build/legacy/index.cjs",
+  "module": "build/legacy/index.js",
+  "react-native": "src/index.ts",
+  "exports": {
+    ".": {
+      "@tanstack/custom-condition": "./src/index.ts",
+      "import": {
+        "types": "./build/modern/index.d.ts",
+        "default": "./build/modern/index.js"
+      },
+      "require": {
+        "types": "./build/modern/index.d.cts",
+        "default": "./build/modern/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "build",
+    "src",
+    "!src/__tests__",
+    "!build/codemods/node_modules",
+    "!build/codemods/vite.config.ts",
+    "!build/codemods/**/__testfixtures__",
+    "!build/codemods/**/__tests__"
+  ],
+  "dependencies": {
+    "@tanstack/query-core": "5.90.2"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/react-render-stream": "^2.0.0",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "cpy-cli": "^5.0.0",
+    "npm-run-all2": "^5.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-error-boundary": "^4.1.2",
+    "@tanstack/query-persist-client-core": "5.90.2",
+    "@tanstack/query-test-utils": "0.0.0"
+  },
+  "peerDependencies": {
+    "react": "^18 || ^19"
+  },
+  "scripts": {
+    "clean": "premove ./build ./coverage ./dist-ts",
+    "compile": "tsc --build",
+    "test:eslint": "eslint --concurrency=auto ./src",
+    "test:types": "npm-run-all --serial test:types:*",
+    "test:types:ts50": "node ../../node_modules/typescript50/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts51": "node ../../node_modules/typescript51/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts52": "node ../../node_modules/typescript52/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts53": "node ../../node_modules/typescript53/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts54": "node ../../node_modules/typescript54/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts55": "node ../../node_modules/typescript55/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts56": "node ../../node_modules/typescript56/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts57": "node ../../node_modules/typescript57/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:tscurrent": "tsc --build",
+    "test:lib": "vitest",
+    "test:lib:dev": "pnpm run test:lib --watch",
+    "test:build": "publint --strict && attw --pack",
+    "build": "pnpm build:tsup && pnpm build:codemods",
+    "build:tsup": "tsup --tsconfig tsconfig.prod.json",
+    "build:codemods": "cpy ../query-codemods/* ./build/codemods"
+  }
+}

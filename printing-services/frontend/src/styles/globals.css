@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 text-slate-900;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .glass { @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-lg; }
+  .btn-primary { @apply px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300; }
+  .input-field { @apply w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-primary-500 focus:ring-4 focus:ring-primary-100 transition-all bg-white/50; }
+  .card { @apply glass rounded-2xl p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1; }
+}

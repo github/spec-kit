@@ -1,0 +1,56 @@
+{
+  "name": "aes-js",
+  "version": "4.0.0-beta.5",
+  "description": "A pure JavaScript implementation of the AES block cipher and all common modes of operation.",
+  "devDependencies": {
+    "@types/mocha": "^9.1.0",
+    "@types/node": "^16.7.10",
+    "mocha": "^9.2.2",
+    "typescript": "^4.7.4"
+  },
+  "exports": {
+    ".": {
+      "import": "./lib.esm/index.js",
+      "default": "./lib.commonjs/index.js"
+    }
+  },
+  "scripts": {
+    "auto-build": "npm run build -- -w",
+    "build": "tsc --build ./tsconfig.esm.json",
+    "build-all": "npm run build && npm run build-commonjs",
+    "build-clean": "npm run clean && npm run build-all",
+    "build-commonjs": "tsc --build ./tsconfig.commonjs.json && cp ./package-commonjs.json ./lib.commonjs/package.json",
+    "clean": "rm -rf lib.commonjs lib.esm && cp -r misc/basedirs/* .",
+    "test-commonjs": "mocha ./lib.commonjs/tests.js",
+    "test-esm": "mocha ./lib.esm/tests.js",
+    "test": "npm run test-commonjs && npm run test-esm"
+  },
+  "main": "./lib.commonjs/index.js",
+  "module": "./lib.esm/index.js",
+  "publishConfig": {
+    "tag": "beta"
+  },
+  "sideEffects": false,
+  "keywords": [
+    "aes",
+    "aes-ctr",
+    "aes-ofb",
+    "aes-ecb",
+    "aes-cbc",
+    "aes-cfb",
+    "encrypt",
+    "decrypt",
+    "block",
+    "cipher"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/ricmoo/aes-js.git"
+  },
+  "bugs": {
+    "url": "http://github.com/ricmoo/aes-js/issues",
+    "email": "github@ricmoo.com"
+  },
+  "author": "Richard Moore <me@ricmoo.com>",
+  "license": "MIT"
+}

@@ -1,0 +1,65 @@
+{
+  "name": "@tanstack/query-core",
+  "version": "5.90.2",
+  "description": "The framework agnostic core that powers TanStack Query",
+  "author": "tannerlinsley",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TanStack/query.git",
+    "directory": "packages/query-core"
+  },
+  "homepage": "https://tanstack.com/query",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/tannerlinsley"
+  },
+  "type": "module",
+  "types": "build/legacy/index.d.ts",
+  "main": "build/legacy/index.cjs",
+  "module": "build/legacy/index.js",
+  "react-native": "src/index.ts",
+  "exports": {
+    ".": {
+      "@tanstack/custom-condition": "./src/index.ts",
+      "import": {
+        "types": "./build/modern/index.d.ts",
+        "default": "./build/modern/index.js"
+      },
+      "require": {
+        "types": "./build/modern/index.d.cts",
+        "default": "./build/modern/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "build",
+    "src",
+    "!src/__tests__"
+  ],
+  "devDependencies": {
+    "npm-run-all2": "^5.0.0",
+    "@tanstack/query-test-utils": "0.0.0"
+  },
+  "scripts": {
+    "clean": "premove ./build ./coverage ./dist-ts",
+    "compile": "tsc --build",
+    "test:eslint": "eslint --concurrency=auto ./src",
+    "test:types": "npm-run-all --serial test:types:*",
+    "test:types:ts50": "node ../../node_modules/typescript50/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts51": "node ../../node_modules/typescript51/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts52": "node ../../node_modules/typescript52/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts53": "node ../../node_modules/typescript53/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts54": "node ../../node_modules/typescript54/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts55": "node ../../node_modules/typescript55/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts56": "node ../../node_modules/typescript56/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:ts57": "node ../../node_modules/typescript57/lib/tsc.js --build tsconfig.legacy.json",
+    "test:types:tscurrent": "tsc --build",
+    "test:lib": "vitest",
+    "test:lib:dev": "pnpm run test:lib --watch",
+    "test:build": "publint --strict && attw --pack",
+    "build": "tsup --tsconfig tsconfig.prod.json"
+  }
+}
