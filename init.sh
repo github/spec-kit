@@ -13,7 +13,7 @@ DEFAULT_SCRIPT="sh"
 DESTROY=false
 ALL_REPOS=false
 SEARCH_PATH="$EXEC_DIR"
-MAX_DEPTH=2
+MAX_DEPTH=3
 EXECUTE=false
 
 usage() {
@@ -28,7 +28,7 @@ usage() {
     echo "Multi-Repository Mode:"
     echo "  --all-repos           Process all repos containing .specify folders"
     echo "  --search-path PATH    Directory to search (default: current directory)"
-    echo "  --max-depth N         Search depth for .specify folders (default: 2)"
+    echo "  --max-depth N         Search depth for .specify folders (default: 3)"
     echo "  --execute             Skip preview and execute immediately"
     echo ""
     echo "Options:"
@@ -443,6 +443,9 @@ process_single_repo() {
             return
         fi
 
+        # IMPORTANT: All spec-kit commands are isolated in spec-kit/ subfolders
+        # This ensures user's custom commands in parent directories are NEVER overwritten
+        # Pattern: .{assistant}/commands/spec-kit/ for all assistants
         case "$AI_ASSISTANT" in
             claude)
                 mkdir -p "$project_path/.claude/commands/spec-kit"
@@ -451,20 +454,20 @@ process_single_repo() {
                 local ext="md"
                 ;;
             gemini)
-                mkdir -p "$project_path/.gemini/commands"
-                local target_dir="$project_path/.gemini/commands"
+                mkdir -p "$project_path/.gemini/commands/spec-kit"
+                local target_dir="$project_path/.gemini/commands/spec-kit"
                 local arg_format='{{args}}'
                 local ext="toml"
                 ;;
             copilot)
-                mkdir -p "$project_path/.github/prompts"
-                local target_dir="$project_path/.github/prompts"
+                mkdir -p "$project_path/.github/prompts/spec-kit"
+                local target_dir="$project_path/.github/prompts/spec-kit"
                 local arg_format='$ARGUMENTS'
                 local ext="prompt.md"
                 ;;
             cursor)
-                mkdir -p "$project_path/.cursor/commands"
-                local target_dir="$project_path/.cursor/commands"
+                mkdir -p "$project_path/.cursor/commands/spec-kit"
+                local target_dir="$project_path/.cursor/commands/spec-kit"
                 local arg_format='$ARGUMENTS'
                 local ext="md"
                 ;;
