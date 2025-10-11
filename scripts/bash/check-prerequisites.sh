@@ -82,6 +82,11 @@ source "$SCRIPT_DIR/common.sh"
 eval $(get_feature_paths)
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
+# Check if branch and spec directory are in sync (skip in paths-only mode)
+if ! $PATHS_ONLY; then
+    check_and_fix_spec_directory_mismatch || exit 1
+fi
+
 # If paths-only mode, output paths and exit (support JSON + paths-only combined)
 if $PATHS_ONLY; then
     if $JSON_MODE; then
