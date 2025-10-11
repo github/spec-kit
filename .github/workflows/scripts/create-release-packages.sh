@@ -184,13 +184,16 @@ build_variant() {
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
+    trae)
+      mkdir -p "$base_dir/.trae/workflows"
+      generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/workflows" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo codebuddy q)
+ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf codex kilocode auggie roo codebuddy q trae)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {

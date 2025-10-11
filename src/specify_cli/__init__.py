@@ -64,6 +64,20 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     token = _github_token(cli_token)
     return {"Authorization": f"Bearer {token}"} if token else {}
 
+AI_CHOICES = {
+    "copilot": "GitHub Copilot",
+    "claude": "Claude Code",
+    "gemini": "Gemini CLI",
+    "cursor": "Cursor",
+    "qwen": "Qwen Code",
+    "opencode": "opencode",
+    "codex": "Codex CLI",
+    "windsurf": "Windsurf",
+    "kilocode": "Kilo Code",
+    "auggie": "Auggie CLI",
+    "roo": "Roo Code",
+    "q": "Amazon Q Developer CLI",
+    "trae": "Trae AI",
 # Agent configuration with name, folder, install URL, and CLI tool requirement
 AGENT_CONFIG = {
     "copilot": {
@@ -788,7 +802,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, or q"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, trae,codebuddy, or q"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -1027,6 +1041,24 @@ def init(
         console.print(git_error_panel)
 
     # Agent folder security notice
+    agent_folder_map = {
+        "claude": ".claude/",
+        "gemini": ".gemini/",
+        "cursor": ".cursor/",
+        "qwen": ".qwen/",
+        "opencode": ".opencode/",
+        "codex": ".codex/",
+        "windsurf": ".windsurf/",
+        "kilocode": ".kilocode/",
+        "auggie": ".augment/",
+        "copilot": ".github/",
+        "roo": ".roo/",
+        "q": ".amazonq/",
+        "trae": ".trae/"
+    }
+
+    if selected_ai in agent_folder_map:
+        agent_folder = agent_folder_map[selected_ai]
     agent_config = AGENT_CONFIG.get(selected_ai)
     if agent_config:
         agent_folder = agent_config["folder"]
@@ -1106,6 +1138,30 @@ def check():
     code_ok = check_tool("code", tracker=tracker)
     
     tracker.add("code-insiders", "Visual Studio Code Insiders")
+    tracker.add("cursor-agent", "Cursor IDE agent")
+    tracker.add("windsurf", "Windsurf IDE")
+    tracker.add("kilocode", "Kilo Code IDE")
+    tracker.add("opencode", "opencode")
+    tracker.add("codex", "Codex CLI")
+    tracker.add("auggie", "Auggie CLI")
+    tracker.add("q", "Amazon Q Developer CLI")
+    tracker.add("trae", "Trae AI")
+    
+
+    git_ok = check_tool_for_tracker("git", tracker)
+    claude_ok = check_tool_for_tracker("claude", tracker)  
+    gemini_ok = check_tool_for_tracker("gemini", tracker)
+    qwen_ok = check_tool_for_tracker("qwen", tracker)
+    code_ok = check_tool_for_tracker("code", tracker)
+    code_insiders_ok = check_tool_for_tracker("code-insiders", tracker)
+    cursor_ok = check_tool_for_tracker("cursor-agent", tracker)
+    windsurf_ok = check_tool_for_tracker("windsurf", tracker)
+    kilocode_ok = check_tool_for_tracker("kilocode", tracker)
+    opencode_ok = check_tool_for_tracker("opencode", tracker)
+    codex_ok = check_tool_for_tracker("codex", tracker)
+    auggie_ok = check_tool_for_tracker("auggie", tracker)
+    q_ok = check_tool_for_tracker("q", tracker)
+    trae_ok = check_tool_for_tracker("trae", tracker)
     code_insiders_ok = check_tool("code-insiders", tracker=tracker)
 
     console.print(tracker.render())
@@ -1114,6 +1170,7 @@ def check():
 
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
+    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or kilocode_ok or opencode_ok or codex_ok or auggie_ok or q_ok or trae_ok):
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
