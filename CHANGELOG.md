@@ -2,17 +2,30 @@
 
 <!-- markdownlint-disable MD024 -->
 
-All notable changes to the Specify CLI and templates are documented here.
+All notable changes to the Diagramly CLI and templates are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.0.20] - 2025-10-11
+
+### Added
+
+- Support for uv tool install diagramly-cli (project renamed from Specify CLI to Diagramly CLI with new command `diagramly` replacing `specify`).
+
+### Changed
+
+- Renamed CLI tool from `specify` to `diagramly`
+- Updated all documentation and references to use `diagramly` command instead of `specify`
+- Updated slash commands from `/speckit.*` to `/diagramly.*` 
+- Updated installation instructions to use `uv tool install diagramly-cli`
 
 ## [0.0.19] - 2025-10-10
 
 ### Added
 
 - Support for CodeBuddy (thank you to [@lispking](https://github.com/lispking) for the contribution).
-- You can now see Git-sourced errors in the Specify CLI.
+- You can now see Git-sourced errors in the Diagramly CLI.
 
 ### Changed
 

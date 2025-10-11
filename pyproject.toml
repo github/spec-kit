@@ -1,7 +1,7 @@
 [project]
-name = "specify-cli"
-version = "0.0.19"
-description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
+name = "diagramly-cli"
+version = "0.0.20"
+description = "Diagramly CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [
     "typer",
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-specify = "specify_cli:main"
+diagramly = "specify_cli:main"
 
 [build-system]
 requires = ["hatchling"]

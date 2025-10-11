@@ -51,20 +51,20 @@ Choose your preferred installation method:
 Install once and use everywhere:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+uv tool install diagramly-cli --from git+https://github.com/github/spec-kit.git
 ```
 
 Then use the tool directly:
 
 ```bash
-specify init <PROJECT_NAME>
-specify check
+diagramly init <PROJECT_NAME>
+diagramly check
 ```
 
-To upgrade specify run:
+To upgrade diagramly run:
 
 ```bash
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
+uv tool install diagramly-cli --force --from git+https://github.com/github/spec-kit.git
 ```
 
 #### Option 2: One-time Usage
@@ -72,7 +72,7 @@ uv tool install specify-cli --force --from git+https://github.com/github/spec-ki
 Run directly without installing:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/github/spec-kit.git diagramly init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -148,18 +148,18 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
 
-## 🔧 Specify CLI Reference
+## 🔧 Diagramly CLI Reference
 
-The `specify` command supports the following options:
+The `diagramly` command supports the following options:
 
 ### Commands
 
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
-| `init`      | Initialize a new Specify project from the latest template      |
+| `init`      | Initialize a new Diagramly project from the latest template      |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`) |
 
-### `specify init` Arguments & Options
+### `diagramly init` Arguments & Options
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
@@ -178,46 +178,46 @@ The `specify` command supports the following options:
 
 ```bash
 # Basic project initialization
-specify init my-project
+diagramly init my-project
 
 # Initialize with specific AI assistant
-specify init my-project --ai claude
+diagramly init my-project --ai claude
 
 # Initialize with Cursor support
-specify init my-project --ai cursor-agent
+diagramly init my-project --ai cursor-agent
 
 # Initialize with Windsurf support
-specify init my-project --ai windsurf
+diagramly init my-project --ai windsurf
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
-specify init my-project --ai copilot --script ps
+diagramly init my-project --ai copilot --script ps
 
 # Initialize in current directory
-specify init . --ai copilot
+diagramly init . --ai copilot
 # or use the --here flag
-specify init --here --ai copilot
+diagramly init --here --ai copilot
 
 # Force merge into current (non-empty) directory without confirmation
-specify init . --force --ai copilot
+diagramly init . --force --ai copilot
 # or 
-specify init --here --force --ai copilot
+diagramly init --here --force --ai copilot
 
 # Skip git initialization
-specify init my-project --ai gemini --no-git
+diagramly init my-project --ai gemini --no-git
 
 # Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
+diagramly init my-project --ai claude --debug
 
 # Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
+diagramly init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
-specify check
+diagramly check
 ```
 
 ### Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+After running `diagramly init`, your AI coding agent will have access to these slash commands for structured development:
 
 #### Core Commands
 
@@ -225,11 +225,11 @@ Essential commands for the Spec-Driven Development workflow:
 
 | Command                  | Description                                                           |
 |--------------------------|-----------------------------------------------------------------------|
-| `/speckit.constitution`  | Create or update project governing principles and development guidelines |
-| `/speckit.specify`       | Define what you want to build (requirements and user stories)        |
-| `/speckit.plan`          | Create technical implementation plans with your chosen tech stack     |
-| `/speckit.tasks`         | Generate actionable task lists for implementation                     |
-| `/speckit.implement`     | Execute all tasks to build the feature according to the plan         |
+| `/diagramly.constitution`  | Create or update project governing principles and development guidelines |
+| `/diagramly.specify`       | Define what you want to build (requirements and user stories)        |
+| `/diagramly.plan`          | Create technical implementation plans with your chosen tech stack     |
+| `/diagramly.tasks`         | Generate actionable task lists for implementation                     |
+| `/diagramly.implement`     | Execute all tasks to build the feature according to the plan         |
 
 #### Optional Commands
 
@@ -237,9 +237,9 @@ Additional commands for enhanced quality and validation:
 
 | Command              | Description                                                           |
 |----------------------|-----------------------------------------------------------------------|
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/diagramly.clarify`   | Clarify underspecified areas (recommended before `/diagramly.plan`; formerly `/quizme`) |
+| `/diagramly.analyze`   | Cross-artifact consistency & coverage analysis (run after `/diagramly.tasks`, before `/diagramly.implement`) |
+| `/diagramly.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
 ### Environment Variables
 
@@ -312,22 +312,22 @@ If you encounter issues with an agent, please open an issue so we can refine the
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
 
-You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
+You can use the Diagramly CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
 
 ```bash
-specify init <project_name>
+diagramly init <project_name>
 ```
 
 Or initialize in the current directory:
 
 ```bash
-specify init .
+diagramly init .
 # or use the --here flag
-specify init --here
+diagramly init --here
 # Skip confirmation when the directory already has files
-specify init . --force
+diagramly init . --force
 # or
-specify init --here --force
+diagramly init --here --force
 ```
 
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
@@ -335,29 +335,29 @@ specify init --here --force
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai claude
-specify init <project_name> --ai gemini
-specify init <project_name> --ai copilot
+diagramly init <project_name> --ai claude
+diagramly init <project_name> --ai gemini
+diagramly init <project_name> --ai copilot
 
 # Or in current directory:
-specify init . --ai claude
-specify init . --ai codex
+diagramly init . --ai claude
+diagramly init . --ai codex
 
 # or use --here flag
-specify init --here --ai claude
-specify init --here --ai codex
+diagramly init --here --ai claude
+diagramly init --here --ai codex
 
 # Force merge into a non-empty current directory
-specify init . --force --ai claude
+diagramly init . --force --ai claude
 
 # or
-specify init --here --force --ai claude
+diagramly init --here --force --ai claude
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, or Amazon Q Developer CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai claude --ignore-agent-tools
+diagramly init <project_name> --ai claude --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles
