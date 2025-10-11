@@ -22,8 +22,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-claude-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-gemini-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-gemini-ps-"$VERSION".zip \
-  .genreleases/spec-kit-template-cursor-sh-"$VERSION".zip \
-  .genreleases/spec-kit-template-cursor-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-cursor-agent-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-cursor-agent-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-opencode-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-opencode-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-qwen-sh-"$VERSION".zip \
