@@ -72,9 +72,45 @@ if (Test-Path $specsDir) {
 $next = $highest + 1
 $featureNum = ('{0:000}' -f $next)
 
-$branchName = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
-$words = ($branchName -split '-') | Where-Object { $_ } | Select-Object -First 3
-$branchName = "$featureNum-$([string]::Join('-', $words))"
+# Better feature name generation
+$normalized = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+
+# Common stop words to filter out
+$stopWords = @(
+    'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from',
+    'as', 'is', 'was', 'are', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+    'will', 'would', 'should', 'could', 'can', 'may', 'might', 'must', 'shall', 'that', 'this', 'these',
+    'those', 'it', 'its', 'i', 'me', 'my', 'we', 'us', 'our', 'you', 'your', 'he', 'him', 'his', 'she',
+    'her', 'they', 'them', 'their', 'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all', 'each',
+    'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own',
+    'same', 'so', 'than', 'too', 'very', 'just', 'also', 'into', 'onto', 'up', 'down', 'out', 'over',
+    'under', 'again', 'further', 'then', 'once', 'here', 'there', 'am', 'want', 'need', 'get', 'make',
+    'let', 'help', 'using', 'use', 'uses', 'used', 'install', 'implement', 'configure', 'setup', 'enable',
+    'disable', 'update', 'upgrade', 'modify', 'change'
+)
+
+# Extract meaningful words
+$meaningfulWords = ($normalized -split '-') | Where-Object {
+    $word = $_
+    # Keep words that are longer than 2 characters and not in stop words list
+    $word.Length -gt 2 -and $word -notin $stopWords
+}
+
+# Fall back to first few words of normalized string
+if ($meaningfulWords.Count -eq 0) {
+    $meaningfulWords = ($normalized -split '-') | Where-Object { $_ } | Select-Object -First 5
+}
+
+$maxWords = 4
+$selectedWords = $meaningfulWords | Select-Object -First $maxWords
+$featureName = $selectedWords -join '-'
+$featureName = $featureName -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+
+if ([string]::IsNullOrWhiteSpace($featureName)) {
+    $featureName = 'feature'
+}
+
+$branchName = "$featureNum-$featureName"
 
 if ($hasGit) {
     try {

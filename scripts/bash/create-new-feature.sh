@@ -67,9 +67,40 @@ fi
 NEXT=$((HIGHEST + 1))
 FEATURE_NUM=$(printf "%03d" "$NEXT")
 
-BRANCH_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
-WORDS=$(echo "$BRANCH_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
-BRANCH_NAME="${FEATURE_NUM}-${WORDS}"
+# Better feature name generation
+NORMALIZED=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+
+# Common stop words to filter out 
+STOP_WORDS="^(a|an|the|and|or|but|in|on|at|to|for|of|with|by|from|as|is|was|are|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|that|this|these|those|it|its|i|me|my|we|us|our|you|your|he|him|his|she|her|they|them|their|what|which|who|when|where|why|how|all|each|every|both|few|more|most|other|some|such|no|nor|not|only|own|same|so|than|too|very|just|also|into|onto|up|down|out|over|under|again|further|then|once|here|there|am|want|need|get|make|let|help|using|use|uses|used|install|implement|configure|setup|enable|disable|update|upgrade|modify|change)$"
+
+# Extract meaningful words
+MEANINGFUL_WORDS=()
+while IFS='-' read -ra WORDS; do
+    for word in "${WORDS[@]}"; do
+        # Skip empty, very short (1-2 chars), or stop words
+        if [ -n "$word" ] && [ ${#word} -gt 2 ] && ! echo "$word" | grep -qE "$STOP_WORDS"; then
+            MEANINGFUL_WORDS+=("$word")
+        fi
+    done
+done <<< "$NORMALIZED"
+
+# Fall back to first few words of normalized string
+if [ ${#MEANINGFUL_WORDS[@]} -eq 0 ]; then
+    MEANINGFUL_WORDS=($(echo "$NORMALIZED" | tr '-' '\n' | grep -v '^$' | head -5))
+fi
+
+MAX_WORDS=4
+SELECTED_WORDS=("${MEANINGFUL_WORDS[@]:0:$MAX_WORDS}")
+
+FEATURE_NAME=$(IFS='-'; echo "${SELECTED_WORDS[*]}")
+
+FEATURE_NAME=$(echo "$FEATURE_NAME" | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+
+if [ -z "$FEATURE_NAME" ]; then
+    FEATURE_NAME="feature"
+fi
+
+BRANCH_NAME="${FEATURE_NUM}-${FEATURE_NAME}"
 
 if [ "$HAS_GIT" = true ]; then
     git checkout -b "$BRANCH_NAME"
