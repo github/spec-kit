@@ -73,7 +73,7 @@ Given the feature description provided as an argument, do this:
 
 5. Load `templates/spec-template.md` to understand required sections, paying special attention to the enhanced Context Engineering section.
 
-6. Write the specification to SPEC_FILE using the template structure, ensuring:
+6. Write the specification to SPEC_FILE **using UTF-8 encoding** and following the template structure, ensuring:
    - **Context Engineering section is thoroughly populated** with research findings
    - All [NEEDS CLARIFICATION] markers are used appropriately for genuine unknowns
    - Similar features and patterns from codebase research are referenced

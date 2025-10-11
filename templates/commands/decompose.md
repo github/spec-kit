@@ -82,7 +82,7 @@ Given a parent feature specification, decompose it into independently-implementa
 
 ### Phase 4: Generate Capability Breakdown
 
-1. **Fill capabilities.md template**:
+1. **Fill capabilities.md template using UTF-8 encoding**:
    - Load CAPABILITIES_FILE (already created by script)
    - Fill each capability section:
      - Cap-001, Cap-002, ... Cap-00X
@@ -102,7 +102,7 @@ Given a parent feature specification, decompose it into independently-implementa
      - Populate with scoped requirements from parent spec
    ```
 
-3. **Populate scoped specs**:
+3. **Populate scoped specs using UTF-8 encoding**:
    - For each capability directory, fill spec.md:
      - Link to parent spec
      - Extract relevant FRs from parent

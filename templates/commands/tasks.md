@@ -67,7 +67,7 @@ Given the context provided as an argument, do this:
    - Group [P] tasks that can run together
    - Show actual Task agent commands
 
-7. Create FEATURE_DIR/tasks.md with:
+7. Create FEATURE_DIR/tasks.md **using UTF-8 encoding** with:
    - Correct feature name from implementation plan
    - Numbered tasks (T001, T002, etc.)
    - Clear file paths for each task

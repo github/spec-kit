@@ -147,7 +147,7 @@ Generate product-level strategic vision (Tier 1) that provides context for all f
 
 9. **Write Product Vision File**
 
-   Write the completed product-vision.md to PRODUCT_VISION_FILE (absolute path from script output).
+   Write the completed product-vision.md to PRODUCT_VISION_FILE **using UTF-8 encoding** (absolute path from script output).
 
    Ensure:
    - All template sections filled appropriately

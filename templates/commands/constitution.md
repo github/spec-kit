@@ -54,7 +54,7 @@ Follow this execution flow:
     - Dates ISO format YYYY-MM-DD.
     - Principles are declarative, testable, and free of vague language ("should" → replace with MUST/SHOULD rationale where appropriate).
 
-7. Write the completed constitution back to `memory/constitution.md` (overwrite).
+7. Write the completed constitution back to `memory/constitution.md` **using UTF-8 encoding** (overwrite).
 
 8. Output a final summary to the user with:
     - New version and bump rationale.
