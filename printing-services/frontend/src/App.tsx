@@ -11,6 +11,7 @@ import Requests from './pages/Requests'
 import Chat from './pages/Chat'
 import Analytics from './pages/Analytics'
 import Profile from './pages/Profile'
+import VerifyEmail from './pages/VerifyEmail'
 
 const queryClient = new QueryClient()
 
@@ -23,6 +24,9 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/verify-email/:token" element={<VerifyEmail />} />
+
               <Route path="/" element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
