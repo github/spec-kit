@@ -2,6 +2,8 @@
 
 ## How a Simple Markup Language Became the Programming Language of the AI Era
 
+**[Markdown Tutorial For Developers](markdown-tutorial-for-developers.md)**
+
 **October 2025**
 
 ---
@@ -1721,6 +1723,6 @@ Markdown stumbled into this role. Now it's defining the future of software devel
 
 **Document Version 1.0 • October 2025**
 
-*Author: AI Technology Research*
+*Author: Panaversity Technology Research*
 *Classification: Public Analysis*
 *License: CC BY 4.0*
