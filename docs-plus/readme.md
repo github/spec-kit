@@ -4552,7 +4552,6 @@ python -m src.main  # Run app locally
 **Spec-Kit Plus:**
 - Repository: https://github.com/panaversity/spec-kit-plus
 - Documentation: https://github.com/panaversity/spec-kit-plus/tree/main/docs-plus
-- Community Forum: [Coming Soon]
 
 **AI CLI Agents:**
 - Gemini CLI: https://ai.google.dev/gemini-api/docs/cli
@@ -4571,46 +4570,11 @@ python -m src.main  # Run app locally
 - Dapr: https://docs.dapr.io
 - Ray: https://docs.ray.io
 
-### Learning Resources
 
-**Official Documentation:**
-- [Paper 1: AI Turning Point 2025](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/00_ai_turning_point_2025/readme.md)
-- [Paper 2: SDD Concepts](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_research_concepts/01a_sdd_concepts/readme.md)
-- [Paper 3: SDD+ for Multi-Agent Systems](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_research_concepts/01b_sdd_plus_concepts/readme.md)
-- [Paper 4: Vibe Coding Responsibly](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_research_concepts/01c_vibe_coding_in_production/readme.md)
-
-**Tutorials:**
-- Spec-Kit Plus Getting Started: [Coming Soon]
-- Markdown for AI Specifications: [Coming Soon]
-- TDD with AI Agents: [Coming Soon]
-- Multi-Agent Orchestration: [Coming Soon]
-
-### Community
-
-**Discussion Forums:**
-- Discord Server: [Coming Soon]
-- GitHub Discussions: https://github.com/panaversity/spec-kit-plus/discussions
-- Reddit: r/SpecDrivenDev [Coming Soon]
-
-**Social Media:**
-- Twitter: @SpecKitPlus [Coming Soon]
-- LinkedIn: Spec-Driven Development Community [Coming Soon]
-
-### Support
-
-**For Organizations:**
-- Enterprise Support: [Contact Information Coming Soon]
-- Training Programs: [Coming Soon]
-- Consulting Services: [Coming Soon]
-
-**For Open Source:**
-- GitHub Issues: https://github.com/panaversity/spec-kit-plus/issues
-- Contributing Guide: https://github.com/panaversity/spec-kit-plus/blob/main/CONTRIBUTING.md
-- Code of Conduct: https://github.com/panaversity/spec-kit-plus/blob/main/CODE_OF_CONDUCT.md
 
 ---
 
-**Document Version 2.0**  
+**Document Version 1.0**  
 **October 2025**  
 **The Seven Pillars of AI-Driven Development**
 
