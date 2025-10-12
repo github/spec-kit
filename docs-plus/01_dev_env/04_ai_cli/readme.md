@@ -2,9 +2,9 @@
 
 ## Agentic Tooling, Plugin Ecosystems, and the Convergence Around the Model Context Protocol
 
-Additional Must-Read Reports:
+### Additional Must-Read Reports:
 
-**[Spect Driven Development Analysis](spec-driven-development-analysis.md)**
+**[Spec Driven Development Analysis](spec-driven-development-analysis.md)**
 
 **[Zed IDE Strategic Analysis](zed-ide-strategic-analysis.md)**
 
