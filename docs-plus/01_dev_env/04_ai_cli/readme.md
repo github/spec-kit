@@ -2,6 +2,12 @@
 
 ## Agentic Tooling, Plugin Ecosystems, and the Convergence Around the Model Context Protocol
 
+Additional Reports:
+
+**[Zed IDE Strategic Analysis](zed-ide-strategic-analysis.md)**
+
+
+
 ### A Technical Analysis for Agentic Developers
 
 **October 2025**
