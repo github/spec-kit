@@ -59,12 +59,6 @@ Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/__init__.
 ```python
 AGENT_CONFIG = {
     # ... existing agents ...
-    "iflow": {
-        "name": "iFlow CLI",
-        "folder": ".iflow/",
-        "install_url": "https://iflow.example.com/install",
-        "requires_cli": True,
-    },
     "new-agent-cli": {  # Use the ACTUAL CLI tool name (what users type in terminal)
         "name": "New Agent Display Name",
         "folder": ".newagent/",  # Directory for agent files
