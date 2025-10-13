@@ -180,7 +180,9 @@ build_variant() {
     codebuddy)
       mkdir -p "$base_dir/.codebuddy/commands"
       generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script" ;;
-
+    shinkuro)
+      mkdir -p "$base_dir/.shinkuro/prompts"
+      generate_commands shinkuro md "\$ARGUMENTS" "$base_dir/.shinkuro/prompts" "$script" ;;
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
@@ -190,7 +192,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy shinkuro q)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {

@@ -146,7 +146,8 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [CodeBuddy](https://www.codebuddy.ai/)                    | ✅ |                                                   |
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
 | [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
-| [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
+| [Shinkuro](https://github.com/shinkuro/shinkuro)          | ✅ | MCP based bridge to support unsupported AI agents via MCP prompt |
+| [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. Can be supported via Shinkuro. |
 
 ## 🔧 Specify CLI Reference
 
