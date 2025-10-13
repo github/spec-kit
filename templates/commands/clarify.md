@@ -5,15 +5,19 @@ scripts:
    ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
 ---
 
-The user input to you can be provided directly by the agent or as a command argument - you **MUST** consider it before proceeding with the prompt (if not empty).
+## User Input
 
-User input:
-
+```text
 $ARGUMENTS
+```
+
+You **MUST** consider the user input before proceeding (if not empty).
+
+## Outline
 
 Goal: Detect and reduce ambiguity or missing decision points in the active feature specification and record the clarifications directly in the spec file.
 
-Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `/plan`. If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, but must warn that downstream rework risk increases.
+Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `/speckit.plan`. If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, but must warn that downstream rework risk increases.
 
 Execution steps:
 
@@ -21,7 +25,8 @@ Execution steps:
    - `FEATURE_DIR`
    - `FEATURE_SPEC`
    - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)
-   - If JSON parsing fails, abort and instruct user to re-run `/specify` or verify feature branch environment.
+   - If JSON parsing fails, abort and instruct user to re-run `/speckit.specify` or verify feature branch environment.
+   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. Load the current spec file. Perform a structured ambiguity & coverage scan using this taxonomy. For each category, mark status: Clear / Partial / Missing. Produce an internal coverage map used for prioritization (do not output raw map unless no questions will be asked).
 
@@ -80,7 +85,7 @@ Execution steps:
    - Information is better deferred to planning phase (note internally)
 
 3. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5). Do NOT output them all at once. Apply these constraints:
-    - Maximum of 5 total questions across the whole session.
+    - Maximum of 10 total questions across the whole session.
     - Each question must be answerable with EITHER:
        * A short multiple‑choice selection (2–5 distinct, mutually exclusive options), OR
        * A one-word / short‑phrase answer (explicitly constrain: "Answer in <=5 words").
@@ -92,7 +97,15 @@ Execution steps:
 
 4. Sequential questioning loop (interactive):
     - Present EXACTLY ONE question at a time.
-    - For multiple‑choice questions render options as a Markdown table:
+    - For multiple‑choice questions:
+       * **Analyze all options** and determine the **most suitable option** based on:
+          - Best practices for the project type
+          - Common patterns in similar implementations
+          - Risk reduction (security, performance, maintainability)
+          - Alignment with any explicit project goals or constraints visible in the spec
+       * Present your **recommended option prominently** at the top with clear reasoning (1-2 sentences explaining why this is the best choice).
+       * Format as: `**Recommended:** Option [X] - <reasoning>`
+       * Then render all options as a Markdown table:
 
        | Option | Description |
        |--------|-------------|
@@ -101,9 +114,14 @@ Execution steps:
        | C | <Option C description> | (add D/E as needed up to 5)
        | Short | Provide a different short answer (<=5 words) | (Include only if free-form alternative is appropriate)
 
-    - For short‑answer style (no meaningful discrete options), output a single line after the question: `Format: Short answer (<=5 words)`.
+       * After the table, add: `You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.`
+    - For short‑answer style (no meaningful discrete options):
+       * Provide your **suggested answer** based on best practices and context.
+       * Format as: `**Suggested:** <your proposed answer> - <brief reasoning>`
+       * Then output: `Format: Short answer (<=5 words). You can accept the suggestion by saying "yes" or "suggested", or provide your own answer.`
     - After the user answers:
-       * Validate the answer maps to one option or fits the <=5 word constraint.
+       * If the user replies with "yes", "recommended", or "suggested", use your previously stated recommendation/suggestion as the answer.
+       * Otherwise, validate the answer maps to one option or fits the <=5 word constraint.
        * If ambiguous, ask for a quick disambiguation (count still belongs to same question; do not advance).
        * Once satisfactory, record it in working memory (do not yet write to disk) and move to the next queued question.
     - Stop asking further questions when:
@@ -146,12 +164,12 @@ Execution steps:
    - Path to updated spec.
    - Sections touched (list names).
    - Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
-   - If any Outstanding or Deferred remain, recommend whether to proceed to `/plan` or run `/clarify` again later post-plan.
+   - If any Outstanding or Deferred remain, recommend whether to proceed to `/speckit.plan` or run `/speckit.clarify` again later post-plan.
    - Suggested next command.
 
 Behavior rules:
 - If no meaningful ambiguities found (or all potential questions would be low-impact), respond: "No critical ambiguities detected worth formal clarification." and suggest proceeding.
-- If spec file missing, instruct user to run `/specify` first (do not create a new spec here).
+- If spec file missing, instruct user to run `/speckit.specify` first (do not create a new spec here).
 - Never exceed 5 total asked questions (clarification retries for a single question do not count as new questions).
 - Avoid speculative tech stack questions unless the absence blocks functional clarity.
 - Respect user early termination signals ("stop", "done", "proceed").

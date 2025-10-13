@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, iFlow
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, iFlow, Kilo Code, Auggie CLI, CodeBuddy, or Amazon Q Developer CLI
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|iflow
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|iflow|kilocode|auggie|codebuddy|q
 # Leave empty to update all existing agent files
 
 set -e
@@ -70,6 +70,8 @@ WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
 AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
+CODEBUDDY_FILE="$REPO_ROOT/.codebuddy/rules/specify-rules.md"
+Q_FILE="$REPO_ROOT/AGENTS.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -557,7 +559,7 @@ update_specific_agent() {
         copilot)
             update_agent_file "$COPILOT_FILE" "GitHub Copilot"
             ;;
-        cursor)
+        cursor-agent)
             update_agent_file "$CURSOR_FILE" "Cursor IDE"
             ;;
         qwen)
@@ -584,9 +586,15 @@ update_specific_agent() {
         iflow)
             update_agent_file "$IFLOW_FILE" "iFlow CLI"
             ;;
+        codebuddy)
+            update_agent_file "$CODEBUDDY_FILE" "CodeBuddy"
+            ;;
+        q)
+            update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
+            ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo|iflow"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|iflow|kilocode|auggie|roo|codebuddy|q"
             exit 1
             ;;
     esac
@@ -645,6 +653,16 @@ update_all_existing_agents() {
         update_agent_file "$ROO_FILE" "Roo Code"
         found_agent=true
     fi
+
+    if [[ -f "$CODEBUDDY_FILE" ]]; then
+        update_agent_file "$CODEBUDDY_FILE" "CodeBuddy"
+        found_agent=true
+    fi
+
+    if [[ -f "$Q_FILE" ]]; then
+        update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
+        found_agent=true
+    fi
     
     if [[ -f "$IFLOW_FILE" ]]; then
         update_agent_file "$IFLOW_FILE" "iFlow CLI"
@@ -674,7 +692,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo|iflow]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|iflow|kilocode|auggie|roo|codebuddy|q]"
 }
 
 #==============================================================================

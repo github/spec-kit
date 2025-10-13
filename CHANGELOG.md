@@ -2,16 +2,37 @@
 
 <!-- markdownlint-disable MD024 -->
 
-All notable changes to the Specify CLI will be documented in this file.
+All notable changes to the Specify CLI and templates are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [LATEST_VERSION] - RELEASE_DATE
+## [0.0.19] - 2025-10-10
 
 ### Added
 
-- Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users
+- Support for CodeBuddy (thank you to [@lispking](https://github.com/lispking) for the contribution).
+- You can now see Git-sourced errors in the Specify CLI.
+
+### Changed
+
+- Fixed the path to the constitution in `plan.md` (thank you to [@lyzno1](https://github.com/lyzno1) for spotting).
+- Fixed backslash escapes in generated TOML files for Gemini (thank you to [@hsin19](https://github.com/hsin19) for the contribution).
+- Implementation command now ensures that the correct ignore files are added (thank you to [@sigent-amazon](https://github.com/sigent-amazon) for the contribution).
+
+## [0.0.18] - 2025-10-06
+
+### Added
+
+- Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users.
+- Use the `/speckit.` command prefix to easily discover Spec Kit-related commands.
+- Refactor the prompts and templates to simplify their capabilities and how they are tracked. No more polluting things with tests when they are not needed.
+- Ensure that tasks are created per user story (simplifies testing and validation).
+- Add support for Visual Studio Code prompt shortcuts and automatic script execution.
+
+### Changed
+
+- All command files now prefixed with `speckit.` (e.g., `speckit.specify.md`, `speckit.plan.md`) for better discoverability and differentiation in IDE/CLI command palettes and file explorers
 
 ## [0.0.17] - 2025-09-22
 
