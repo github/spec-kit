@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
-import { authAPI } from '@/services/api'
-import { useAuth } from '@/contexts/AuthContext'
+import { authAPI } from '../services/api'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function VerifyEmail() {
   const { token: routeToken } = useParams<{ token?: string }>()
