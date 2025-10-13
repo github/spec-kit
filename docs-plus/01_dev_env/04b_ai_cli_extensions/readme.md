@@ -16,8 +16,7 @@
 5. [Model Context Protocol (MCP): The Universal Standard](#model-context-protocol-mcp-the-universal-standard)
 6. [Platform-Specific Extension Systems](#platform-specific-extension-systems)
 7. [Comparative Analysis](#comparative-analysis)
-8. [Future Directions](#future-directions)
-9. [Conclusion](#conclusion)
+8. [Conclusion](#conclusion)
 
 ---
 
