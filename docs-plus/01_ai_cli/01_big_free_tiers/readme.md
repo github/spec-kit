@@ -4,8 +4,10 @@
 
 [Gemini CLI Tutorial 12 Parts Series](https://medium.com/google-cloud/gemini-cli-tutorial-series-77da7d494718)
 
-This functionality is soon coming to Gemini CLI:
+Subagent feature is coming soon to Gemini CLI:
 
 [How I Turned Gemini CLI into a Multi-Agent System with Just Prompts](https://aipositive.substack.com/p/how-i-turned-gemini-cli-into-a-multi)
 
 https://docs.claude.com/en/docs/claude-code/sub-agents
+
+https://github.com/google-gemini/gemini-cli/issues/3132
