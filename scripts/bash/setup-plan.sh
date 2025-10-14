@@ -2,15 +2,24 @@
 set -e
 JSON_MODE=false
 CAPABILITY_ID=""
+NEXT_IS_CAPABILITY=false
+
 for arg in "$@"; do
+  if $NEXT_IS_CAPABILITY; then
+    CAPABILITY_ID="$arg"
+    NEXT_IS_CAPABILITY=false
+    continue
+  fi
+
   case "$arg" in
     --json) JSON_MODE=true ;;
     --capability=*) CAPABILITY_ID="${arg#*=}" ;;
+    --capability) NEXT_IS_CAPABILITY=true ;;
     --help|-h)
-      echo "Usage: $0 [--json] [--capability=cap-XXX]"
+      echo "Usage: $0 [--json] [--capability cap-XXX]"
       echo ""
       echo "Options:"
-      echo "  --capability=cap-XXX  Create capability branch and plan for atomic PR"
+      echo "  --capability cap-XXX  Create capability branch and plan for atomic PR"
       echo "  --json                Output in JSON format"
       exit 0
       ;;
