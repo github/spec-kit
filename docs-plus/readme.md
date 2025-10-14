@@ -1,4 +1,4 @@
-# The Seven Pillars of AI-Driven Development (AI-DD)
+# AI-Driven Development (AI-DD) using Spec-Kit-Plus
 ## A Comprehensive Framework for Spec-Driven Vibe-Coding in the AI Era
 
 **October 2025**
