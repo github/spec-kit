@@ -52,8 +52,23 @@ import readchar
 import ssl
 import truststore
 
+
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
+
+
+if __package__ is None:
+    # hardcode the version for local development
+    __package__ = "specify_cli"
+    __version__ = "0.0.0"
+else:
+    # get the version from the metadata
+    import importlib.metadata
+    try:
+        __version__ = importlib.metadata.version(__package__)
+    except importlib.metadata.PackageNotFoundError:
+        __version__ = "0.0.0"
+        
 
 def _github_token(cli_token: str | None = None) -> str | None:
     """Return sanitized GitHub token (cli arg takes precedence) or None."""
@@ -63,6 +78,7 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     """Return Authorization header dict only when a non-empty token exists."""
     token = _github_token(cli_token)
     return {"Authorization": f"Bearer {token}"} if token else {}
+
 
 # Agent configuration with name, folder, install URL, and CLI tool requirement
 AGENT_CONFIG = {
@@ -373,9 +389,22 @@ def show_banner():
     console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
     console.print()
 
+def show_version():
+    """Show the application version."""
+    typer.echo(f"{__package__} {__version__}")
+
 @app.callback()
-def callback(ctx: typer.Context):
+def callback(
+        ctx: typer.Context, 
+        version: bool = typer.Option(
+            None, "--version", help="Show version and exit.", is_eager=True
+        ),
+    ):
     """Show banner when no subcommand is provided."""
+    if version:
+        show_version()
+        raise typer.Exit()
+
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
@@ -1117,6 +1146,11 @@ def check():
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+
+@app.command()
+def version():
+    """Show the application version."""
+    show_version()
 
 def main():
     app()
