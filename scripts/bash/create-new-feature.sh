@@ -16,40 +16,23 @@ for arg in "$@"; do
             echo "  --capability=cap-XXX  Create capability within parent feature (e.g., cap-001)"
             echo "  --json                Output in JSON format"
             echo ""
+            echo "Note: JIRA key is required only for user 'hnimitanakit'"
+            echo "      Other users can omit JIRA key and use: username/feature-name"
+            echo ""
             echo "Examples:"
-            echo "  $0 proj-123 \"User authentication\"           # Create parent feature"
+            echo "  # With JIRA key (required for hnimitanakit):"
+            echo "  $0 proj-123 \"User authentication\"           # Branch: username/proj-123.user-authentication"
+            echo ""
+            echo "  # Without JIRA key (allowed for other users):"
+            echo "  $0 \"User authentication\"                    # Branch: username/user-authentication"
+            echo ""
+            echo "  # Capability mode:"
             echo "  $0 --capability=cap-001 \"Login flow\"        # Create capability in current feature"
             exit 0
             ;;
         *) ARGS+=("$arg") ;;
     esac
 done
-
-# Check if first arg is JIRA key format
-if [[ "${ARGS[0]}" =~ ^[a-z]+-[0-9]+$ ]]; then
-    JIRA_KEY="${ARGS[0]}"
-    FEATURE_DESCRIPTION="${ARGS[@]:1}"
-else
-    # Interactive prompt for JIRA key if not provided
-    if [ -t 0 ]; then  # Only prompt if stdin is a terminal
-        read -p "Enter JIRA issue key (e.g., proj-123): " JIRA_KEY
-    else
-        echo "ERROR: JIRA key required. Usage: $0 [--json] jira-key feature_description" >&2
-        exit 1
-    fi
-    FEATURE_DESCRIPTION="${ARGS[*]}"
-fi
-
-if [ -z "$FEATURE_DESCRIPTION" ] || [ -z "$JIRA_KEY" ]; then
-    echo "Usage: $0 [--json] [jira-key] <feature_description>" >&2
-    exit 1
-fi
-
-# Validate JIRA key format
-if [[ ! "$JIRA_KEY" =~ ^[a-z]+-[0-9]+$ ]]; then
-    echo "ERROR: Invalid JIRA key format. Expected format: proj-123" >&2
-    exit 1
-fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 SPECS_DIR="$REPO_ROOT/specs"
@@ -65,6 +48,41 @@ fi
 
 # Sanitize username for branch name (replace spaces/special chars with hyphens)
 USERNAME=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+
+# Determine if JIRA key is required based on username
+REQUIRE_JIRA=false
+if [[ "$USERNAME" == "hnimitanakit" ]]; then
+    REQUIRE_JIRA=true
+fi
+
+# Check if first arg is JIRA key format
+JIRA_KEY=""
+if [[ "${ARGS[0]}" =~ ^[a-z]+-[0-9]+$ ]]; then
+    JIRA_KEY="${ARGS[0]}"
+    FEATURE_DESCRIPTION="${ARGS[@]:1}"
+else
+    if $REQUIRE_JIRA; then
+        # Interactive prompt for JIRA key if not provided
+        if [ -t 0 ]; then  # Only prompt if stdin is a terminal
+            read -p "Enter JIRA issue key (e.g., proj-123): " JIRA_KEY
+        else
+            echo "ERROR: JIRA key required for user '$USERNAME'. Usage: $0 [--json] jira-key feature_description" >&2
+            exit 1
+        fi
+    fi
+    FEATURE_DESCRIPTION="${ARGS[*]}"
+fi
+
+if [ -z "$FEATURE_DESCRIPTION" ]; then
+    echo "Usage: $0 [--json] [jira-key] <feature_description>" >&2
+    exit 1
+fi
+
+# Validate JIRA key format if provided
+if [ -n "$JIRA_KEY" ] && [[ ! "$JIRA_KEY" =~ ^[a-z]+-[0-9]+$ ]]; then
+    echo "ERROR: Invalid JIRA key format. Expected format: proj-123" >&2
+    exit 1
+fi
 
 # Sanitize feature description
 FEATURE_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
@@ -95,7 +113,7 @@ if [ -n "$CAPABILITY_ID" ]; then
     mkdir -p "$CAPABILITY_DIR"
 
     # Create spec file in capability directory using capability template
-    TEMPLATE="$REPO_ROOT/templates/capability-spec-template.md"
+    TEMPLATE="$REPO_ROOT/.specify/templates/capability-spec-template.md"
     SPEC_FILE="$CAPABILITY_DIR/spec.md"
 
     if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
@@ -113,11 +131,16 @@ if [ -n "$CAPABILITY_ID" ]; then
     fi
 else
     # Parent feature mode: create new feature branch and directory
-    # Create branch name: username/jira-123.feature-name
-    BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${WORDS}"
+    if [ -n "$JIRA_KEY" ]; then
+        # With JIRA key: username/jira-123.feature-name
+        BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${WORDS}"
+        FEATURE_ID="${JIRA_KEY}.${WORDS}"
+    else
+        # Without JIRA key: username/feature-name
+        BRANCH_NAME="${USERNAME}/${WORDS}"
+        FEATURE_ID="${USERNAME}.${WORDS}"
+    fi
 
-    # Create feature directory name: jira-123.feature-name
-    FEATURE_ID="${JIRA_KEY}.${WORDS}"
     FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
 
     git checkout -b "$BRANCH_NAME"
@@ -126,19 +149,26 @@ else
     mkdir -p "$FEATURE_DIR"
 
     # Create spec file in feature directory
-    TEMPLATE="$REPO_ROOT/templates/spec-template.md"
+    TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
     SPEC_FILE="$FEATURE_DIR/spec.md"
 
     if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
 
     # Output for parent feature mode
     if $JSON_MODE; then
-        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_ID":"%s","JIRA_KEY":"%s"}\n' \
-            "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_ID" "$JIRA_KEY"
+        if [ -n "$JIRA_KEY" ]; then
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_ID":"%s","JIRA_KEY":"%s"}\n' \
+                "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_ID" "$JIRA_KEY"
+        else
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_ID":"%s"}\n' \
+                "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_ID"
+        fi
     else
         echo "BRANCH_NAME: $BRANCH_NAME"
         echo "SPEC_FILE: $SPEC_FILE"
         echo "FEATURE_ID: $FEATURE_ID"
-        echo "JIRA_KEY: $JIRA_KEY"
+        if [ -n "$JIRA_KEY" ]; then
+            echo "JIRA_KEY: $JIRA_KEY"
+        fi
     fi
 fi

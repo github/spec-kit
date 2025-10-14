@@ -6,16 +6,24 @@ get_current_branch() { git rev-parse --abbrev-ref HEAD; }
 
 check_feature_branch() {
     local branch="$1"
-    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/[a-z]+-[0-9]+\. ]]; then
+    # Support both patterns:
+    # 1. username/jira-123.feature-name (with JIRA key)
+    # 2. username/feature-name (without JIRA key)
+    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/([a-z]+-[0-9]+\.)?[a-z0-9._-]+$ ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: username/jira-123.feature-name" >&2
+        echo "Feature branches should be named like:" >&2
+        echo "  username/jira-123.feature-name (with JIRA key)" >&2
+        echo "  username/feature-name (without JIRA key)" >&2
         return 1
     fi; return 0
 }
 
 get_feature_id() {
     local branch="$1"
-    echo "$branch" | sed 's|.*/||'  # Extract jira-123.feature-name part
+    # Extract feature ID from branch name (everything after username/)
+    # Examples: username/jira-123.feature-name → jira-123.feature-name
+    #           username/feature-name → feature-name
+    echo "$branch" | sed 's|.*/||'
 }
 
 get_feature_dir() {

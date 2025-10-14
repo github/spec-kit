@@ -40,7 +40,7 @@ SPEC_DIR=$(dirname "$SPEC_PATH")
 REPO_ROOT=$(git rev-parse --show-toplevel)
 
 # Create capabilities.md from template
-DECOMPOSE_TEMPLATE="$REPO_ROOT/templates/decompose-template.md"
+DECOMPOSE_TEMPLATE="$REPO_ROOT/.specify/templates/decompose-template.md"
 CAPABILITIES_FILE="$SPEC_DIR/capabilities.md"
 
 if [ ! -f "$DECOMPOSE_TEMPLATE" ]; then

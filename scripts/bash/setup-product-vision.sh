@@ -14,7 +14,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 DOCS_DIR="$REPO_ROOT/docs"
 mkdir -p "$DOCS_DIR"
 
-TEMPLATE="$REPO_ROOT/templates/product-vision-template.md"
+TEMPLATE="$REPO_ROOT/.specify/templates/product-vision-template.md"
 PRODUCT_VISION_FILE="$DOCS_DIR/product-vision.md"
 
 if [ -f "$TEMPLATE" ]; then

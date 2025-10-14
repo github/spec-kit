@@ -3,8 +3,8 @@
 <!-- VARIANT:sh - Run `/scripts/bash/update-agent-context.sh __AGENT__` for your AI assistant -->
 <!-- VARIANT:ps - Run `/scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__` for your AI assistant -->
 
-**Branch**: `[username/jira-123.feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[jira-123.feature-name]/spec.md`
+**Branch**: `[username/jira-123.feature-name]` OR `[username/feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[feature-id]/spec.md`
 **Optional Inputs**:
 - docs/product-vision.md: Product strategy and context (if exists)
 - docs/system-architecture.md: Existing system architecture (if exists)
@@ -243,7 +243,7 @@ Phase 0-10: Feature Planning
 
 ### Documentation (this feature)
 ```
-specs/[jira-123.feature-name]/
+specs/[feature-id]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
 ├── data-model.md        # Phase 1 output (/plan command)

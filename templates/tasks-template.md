@@ -1,6 +1,6 @@
 # Tasks: [FEATURE NAME]
 
-**Input**: Design documents from `/specs/[jira-123.feature-name]/`
+**Input**: Design documents from `/specs/[feature-id]/`
 **Prerequisites**: plan.md (required), research.md, data-model.md, contracts/
 
 ## LOC Budget Validation

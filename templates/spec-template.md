@@ -1,6 +1,6 @@
 # Feature Specification: [FEATURE NAME]
 
-**Feature Branch**: `[username/jira-123.feature-name]`
+**Feature Branch**: `[username/jira-123.feature-name]` OR `[username/feature-name]`
 **Created**: [DATE]
 **Status**: Draft
 **Input**: User description: "$ARGUMENTS"
