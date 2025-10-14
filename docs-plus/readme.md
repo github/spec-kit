@@ -12,7 +12,7 @@ We stand at a transformative moment in software engineering. The convergence of 
 * **Frontier models crossed thresholds** in reasoning, tool use, and latency that make human-AI pair programming not just viable but often preferable.
 * **Mainstream adoption** Survey data shows AI tool usage among professional developers has shifted from experimental (minority) to default (overwhelming majority).
 * **AI coding agents**
-* **Terminal-based workflows**
+
 * **Natural language specifications**
 * **Standardized protocols**
 * **Cloud-native infrastructure**
