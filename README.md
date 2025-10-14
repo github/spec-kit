@@ -20,7 +20,8 @@
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
-- [⚡ Get started](#-get-started)
+- [⚡ Get started with the CLI](#-get-started-with-the-cli)
+- [⚡ Get started with the VS Code Extension](#-get-started-with-the-vs-code-extension)
 - [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
@@ -40,7 +41,7 @@
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
 
-## ⚡ Get started
+## ⚡ Get started with the CLI
 
 ### 1. Install Specify
 
@@ -123,6 +124,60 @@ Use **`/speckit.implement`** to execute all tasks and build your feature accordi
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+
+## ⚡ Get started with the VS Code Extension
+
+> 🧪 **New & Experimental**: The [Specify VS Code Extension](https://github.com/cassiebreviu/sdd-vscode-ext) provides a visual interface for Spec-Driven Development workflows directly in VS Code.
+
+### 📹 Demo Video
+
+See the VS Code extension in action:
+[![Video Title](./media/vscode-capture.jpg)](./media/sdd-vs-demo.mp4)
+
+
+#### 1. Install from GitHub Releases
+
+1. **Download the latest release:**
+   - Go to [GitHub Releases](https://github.com/cassiebreviu/sdd-vscode-ext/releases)
+   - Find the latest release and download the `.vsix` file
+
+2. **Install in VS Code:**
+   - Open VS Code
+   - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
+   - Type "Extensions: Install from VSIX..."
+   - Select the downloaded `.vsix` file
+   - Click "Install" when prompted
+
+3. **Reload VS Code:**
+   - Press `Ctrl+Shift+P` / `Cmd+Shift+P`
+   - Type "Developer: Reload Window" and press Enter
+   - The Specify extension should now be active
+
+#### 2. Verify Installation
+
+After installation, you should see:
+- Specify icon (📝) in the VS Code Activity Bar (left sidebar)
+- Four panel views when you click the Specify icon:
+  - **Actions** - Quick access to workflow steps
+  - **Spec Navigation** - Document structure overview  
+  - **Requirements** - User stories and functional requirements
+  - **Implementations** - Development progress tracking
+
+#### 3. Begin Your Spec-Driven Workflow
+
+1. **Start a New Project:**
+   - Click the Specify icon in the Activity Bar
+   - Click "1. Start Specify" in the Actions panel
+   - Follow the interactive prompts to set up your project
+
+> **Note:** This extension utilizes the 'uv' package manager for Python environments. If 'uv' is not installed, you will need to install it and restart your environment.
+
+2. **Use the numbered workflow actions:**
+   - **2. Specify** - Define what you want to build
+   - **3. Plan** - Create technical implementation plans
+   - **4. Tasks** - Generate actionable task lists
+   - **5. Implement** - Execute implementation with AI assistance
 
 ## 📽️ Video Overview
 
