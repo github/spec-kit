@@ -3,3 +3,9 @@
 > Note: Qwen Code is a fork of Gemini CLI therefore most things covered here also apply to Qwen Code.
 
 [Gemini CLI Tutorial 12 Parts Series](https://medium.com/google-cloud/gemini-cli-tutorial-series-77da7d494718)
+
+This functionality is soon coming to Gemini CLI:
+
+[How I Turned Gemini CLI into a Multi-Agent System with Just Prompts](https://aipositive.substack.com/p/how-i-turned-gemini-cli-into-a-multi)
+
+https://docs.claude.com/en/docs/claude-code/sub-agents
