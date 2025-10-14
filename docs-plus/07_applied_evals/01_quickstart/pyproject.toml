@@ -1,0 +1,15 @@
+[project]
+name = "applied-evals"
+version = "0.1.0"
+description = "Applied evaluation workflows using OpenAI Agents SDK and Gemini"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "openai-agents>=0.1.0",
+    "python-dotenv>=1.0.0",
+    "pydantic-ai[logfire]>=1.0.15",
+    "langfuse>=2.0.0",
+    "typer>=0.12.3",
+]
+
+
