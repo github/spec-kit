@@ -1,4 +1,4 @@
-# Natural Language Programming: The Convergence of Markdown, SudoLang, and GitHub Spec Kit
+# Natural Language Programming: The Convergence of Markdown, SudoLang, and Spec Kit Plus
 
 **A Technical Framework for AI-Driven Software Development**
 
