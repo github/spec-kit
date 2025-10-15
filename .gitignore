@@ -43,3 +43,7 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+#ai configuration
+.mcp.json
+settings.local.json
