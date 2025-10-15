@@ -1,4 +1,4 @@
-# AI-Driven Development (AI-DD) using Spec-Kit-Plus
+# AI-Driven Development (AIDD) using Spec-Kit-Plus
 ## A Comprehensive Framework for Spec-Driven Vibe-Coding in the AI Era
 
 **October 2025**
@@ -23,7 +23,7 @@ Has created the conditions for a fundamental reimagining of how software is buil
 
 **October 2025 marks a structural break in software development.** The convergence of major AI providers around command-line agents and the standardization of protocols like MCP have transitioned AI assistance from an optional tool to a foundational practice. This shift answers the most important question for today's developer: **If AI writes the code, what's left for us to do?**
 
-The answer is a move away from the mechanics of writing syntax and toward higher-order skills: strategic problem-solving, system architecture, and technical governance. Our development methodology, **AI-Driven Development (AI-DD)**, operationalizes this shift. It combines the rapid generation of "vibe coding" with the discipline of "spec-driven" engineering, creating a sustainable, scalable workflow built on seven core pillars.
+The answer is a move away from the mechanics of writing syntax and toward higher-order skills: strategic problem-solving, system architecture, and technical governance. Our development methodology, **AI-Driven Development (AIDD)**, operationalizes this shift. It combines the rapid generation of "vibe coding" with the discipline of "spec-driven" engineering, creating a sustainable, scalable workflow built on seven core pillars.
 
 This document outlines our implementation strategy, which leverages these seven pillars to build advanced, distributed multi-agent systems using our **Spec-Kit Plus** toolkit.
 
@@ -111,13 +111,13 @@ The ultimate goal is to deploy scalable, resilient, and distributed AI systems. 
   * **Distributed Compute**: **Ray** for parallel agent execution and scaling compute-intensive AI workloads.
 
 
-# Implementation Strategy: The AI-Driven Development (AI-DD) Workflow
+# Implementation Strategy: The AI-Driven Development (AIDD) Workflow
 
 Our strategy integrates these seven pillars into a single, cohesive development flow managed by Spec-Kit Plus.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│              AI-Driven Development (AI-DD) Workflow             │
+│              AI-Driven Development (AIDD) Workflow             │
 └─────────────────────────────────────────────────────────────────┘
 
 PHASE 1: SPECIFICATION (Pillars 1, 6)
