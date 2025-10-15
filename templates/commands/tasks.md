@@ -22,27 +22,13 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Optional**: data-model.md (entities), contracts/ (API endpoints), research.md (decisions), quickstart.md (test scenarios)
    - Note: Not all projects have all documents. Generate tasks based on what's available.
 
-3. **Execute task generation workflow** (follow the template structure):
+3. **Execute task generation workflow**:
    - Load plan.md and extract tech stack, libraries, project structure
-   - **Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)**
-   - If data-model.md exists: Extract entities → map to user stories
-   - If contracts/ exists: Each file → map endpoints to user stories
-   - If research.md exists: Extract decisions → generate setup tasks
-   - **Generate tasks ORGANIZED BY USER STORY**:
-     - Setup tasks (shared infrastructure needed by all stories)
-     - **Foundational tasks (prerequisites that must complete before ANY user story can start)**
-     - For each user story (in priority order P1, P2, P3...):
-       - Group all tasks needed to complete JUST that story
-       - Include models, services, endpoints, UI components specific to that story
-       - Mark which tasks are [P] parallelizable
-       - If tests requested: Include tests specific to that story
-     - Polish/Integration tasks (cross-cutting concerns)
-   - **Tests are OPTIONAL**: Only generate test tasks if explicitly requested in the feature spec or user asks for TDD approach
-   - Apply task rules:
-     - Different files = mark [P] for parallel
-     - Same file = sequential (no [P])
-     - If tests requested: Tests before implementation (TDD order)
-   - Number tasks sequentially (T001, T002...)
+   - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
+   - If data-model.md exists: Extract entities and map to user stories
+   - If contracts/ exists: Map endpoints to user stories
+   - If research.md exists: Extract decisions for setup tasks
+   - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
    - Create parallel execution examples per user story
    - Validate task completeness (each user story has all needed tasks, independently testable)
@@ -52,12 +38,9 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Setup tasks (project initialization)
    - Phase 2: Foundational tasks (blocking prerequisites for all user stories)
    - Phase 3+: One phase per user story (in priority order from spec.md)
-     - Each phase includes: story goal, independent test criteria, tests (if requested), implementation tasks
-     - Clear [Story] labels (US1, US2, US3...) for each task
-     - [P] markers for parallelizable tasks within each story
-     - Checkpoint markers after each story phase
+   - Each phase includes: story goal, independent test criteria, tests (if requested), implementation tasks
    - Final Phase: Polish & cross-cutting concerns
-   - Numbered tasks (T001, T002...) in execution order
+   - All tasks must follow the strict checklist format (see Task Generation Rules below)
    - Clear file paths for each task
    - Dependencies section showing story completion order
    - Parallel execution examples per story
@@ -69,6 +52,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Parallel opportunities identified
    - Independent test criteria for each story
    - Suggested MVP scope (typically just User Story 1)
+   - Format validation: Confirm ALL tasks follow the checklist format (checkbox, ID, labels, file paths)
 
 Context for task generation: {ARGS}
 
@@ -76,9 +60,43 @@ The tasks.md should be immediately executable - each task must be specific enoug
 
 ## Task Generation Rules
 
-**IMPORTANT**: Tests are optional. Only generate test tasks if the user explicitly requested testing or TDD approach in the feature specification.
-
 **CRITICAL**: Tasks MUST be organized by user story to enable independent implementation and testing.
+
+**Tests are OPTIONAL**: Only generate test tasks if explicitly requested in the feature specification or if user requests TDD approach.
+
+### Checklist Format (REQUIRED)
+
+Every task MUST strictly follow this format:
+
+```text
+- [ ] [TaskID] [P?] [Story?] Description with file path
+```
+
+**Format Components**:
+
+1. **Checkbox**: ALWAYS start with `- [ ]` (markdown checkbox)
+2. **Task ID**: Sequential number (T001, T002, T003...) in execution order
+3. **[P] marker**: Include ONLY if task is parallelizable (different files, no dependencies on incomplete tasks)
+4. **[Story] label**: REQUIRED for user story phase tasks only
+   - Format: [US1], [US2], [US3], etc. (maps to user stories from spec.md)
+   - Setup phase: NO story label
+   - Foundational phase: NO story label  
+   - User Story phases: MUST have story label
+   - Polish phase: NO story label
+5. **Description**: Clear action with exact file path
+
+**Examples**:
+
+- ✅ CORRECT: `- [ ] T001 Create project structure per implementation plan`
+- ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
+- ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
+- ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
+- ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
+- ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
+- ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)
+- ❌ WRONG: `- [ ] T001 [US1] Create model` (missing file path)
+
+### Task Organization
 
 1. **From User Stories (spec.md)** - PRIMARY ORGANIZATION:
    - Each user story (P1, P2, P3...) gets its own phase
@@ -94,22 +112,21 @@ The tasks.md should be immediately executable - each task must be specific enoug
    - If tests requested: Each contract → contract test task [P] before implementation in that story's phase
    
 3. **From Data Model**:
-   - Map each entity → to the user story(ies) that need it
+   - Map each entity to the user story(ies) that need it
    - If entity serves multiple stories: Put in earliest story or Setup phase
    - Relationships → service layer tasks in appropriate story phase
    
 4. **From Setup/Infrastructure**:
    - Shared infrastructure → Setup phase (Phase 1)
    - Foundational/blocking tasks → Foundational phase (Phase 2)
-     - Examples: Database schema setup, authentication framework, core libraries, base configurations
-     - These MUST complete before any user story can be implemented
    - Story-specific setup → within that story's phase
 
-5. **Ordering**:
-   - Phase 1: Setup (project initialization)
-   - Phase 2: Foundational (blocking prerequisites - must complete before user stories)
-   - Phase 3+: User Stories in priority order (P1, P2, P3...)
-     - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
-   - Final Phase: Polish & Cross-Cutting Concerns
-   - Each user story phase should be a complete, independently testable increment
+### Phase Structure
+
+- **Phase 1**: Setup (project initialization)
+- **Phase 2**: Foundational (blocking prerequisites - MUST complete before user stories)
+- **Phase 3+**: User Stories in priority order (P1, P2, P3...)
+  - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
+  - Each phase should be a complete, independently testable increment
+- **Final Phase**: Polish & Cross-Cutting Concerns
 
