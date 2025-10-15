@@ -8,6 +8,10 @@
 
 **[SudoLang](https://github.com/paralleldrive/sudolang-llm-support)**
 
+**[Book: The Art of Effortless Programming](https://leanpub.com/effortless-programming)**
+
+**[Watch: Eric Elliott, Author of The Art of Effortless Programming](https://www.youtube.com/watch?v=eBHtlPXB1FY)**
+
 **[Spec-Kit-Plus](https://github.com/panaversity/spec-kit-plus)**
 
 ---
