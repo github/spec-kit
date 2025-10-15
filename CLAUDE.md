@@ -1,0 +1,531 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**Spec Kit** is a toolkit for Spec-Driven Development (SDD) - a methodology that flips traditional development by making specifications executable and directly generating working implementations. The toolkit provides structured workflows through slash commands that guide users from feature specification through implementation.
+
+## Core Architecture
+
+### Command-Driven Workflow System
+
+The repository implements a multi-phase development workflow orchestrated through slash commands in `.specify/templates/commands/`:
+
+1. **`/speckit.constitution`** - Establish project governance and development principles
+2. **`/speckit.specify`** - Create technology-agnostic feature specifications
+3. **`/speckit.clarify`** - Resolve ambiguities through structured questioning (optional)
+4. **`/speckit.plan`** - Generate technical implementation plans with tech stack choices
+5. **`/speckit.tasks`** - Break down plans into actionable, dependency-aware task lists
+6. **`/speckit.implement`** - Execute tasks following TDD and the generated plan
+
+**Enhancement commands** (optional):
+- **`/speckit.analyze`** - Cross-artifact consistency validation
+- **`/speckit.checklist`** - Generate quality checklists for requirements validation
+
+### Three-Tier Architecture
+
+**1. CLI Layer** (`src/specify_cli/__init__.py`)
+- Python-based Typer CLI that bootstraps new projects
+- Fetches versioned templates from GitHub releases
+- Supports multiple AI agents (Claude, Copilot, Gemini, Cursor, etc.)
+- Handles both bash and PowerShell script variants
+
+**2. Script Layer** (`scripts/bash/` and `scripts/powershell/`)
+- **`common.sh`**: Core utilities for repository navigation, branch detection, and feature path resolution
+- **`create-new-feature.sh`**: Creates feature branches and spec directories with numeric prefixes (e.g., `001-feature-name`)
+- **`setup-plan.sh`**: Validates prerequisites and sets up planning artifacts
+- **`check-prerequisites.sh`**: Validates that required artifacts exist before execution
+- **`update-agent-context.sh`**: Updates AI agent-specific context files with new technology decisions
+
+**3. Template Layer** (`templates/`)
+- **Specification templates**: Technology-agnostic requirements with user stories, acceptance criteria, and success metrics
+- **Plan templates**: Technical implementation plans with research, data models, API contracts
+- **Task templates**: Dependency-aware task breakdowns organized by user story
+- **Command templates**: Markdown files with YAML frontmatter defining script execution and workflow logic
+
+### Key Design Patterns
+
+**Feature Directory Structure**
+```
+specs/###-feature-name/
+├── spec.md              # Technology-agnostic requirements
+├── plan.md              # Technical implementation plan
+├── research.md          # Phase 0: Technology research and decisions
+├── data-model.md        # Phase 1: Entity definitions and relationships
+├── quickstart.md        # Phase 1: Getting started guide
+├── contracts/           # Phase 1: API specs (OpenAPI, GraphQL, etc.)
+├── tasks.md             # Phase 2: Actionable task breakdown
+└── checklists/          # Quality validation checklists
+```
+
+**Branch Naming Convention**
+- Format: `###-short-descriptive-name` (e.g., `001-user-auth`, `002-payment-flow`)
+- The numeric prefix enables multiple branches to work on the same spec
+- Scripts use prefix matching to find the correct spec directory
+
+**Git and Non-Git Support**
+- All scripts detect git availability via `git rev-parse --is-inside-work-tree`
+- Fallback to `SPECIFY_FEATURE` environment variable for non-git workflows
+- Feature directories always use numeric prefixes for consistency
+
+**Constitution as Source of Truth**
+- Project principles stored in `memory/constitution.md`
+- All commands must validate against constitutional gates
+- Gates include TDD requirements, testing standards, complexity limits, etc.
+
+## Common Development Commands
+
+### CLI Development
+```bash
+# Install CLI locally for testing
+uv tool install specify-cli --from .
+
+# Install from repo (for users)
+uv tool install specify-cli --from git+https://github.com/aloyxa1226/spec-kit.git
+
+# Upgrade to latest
+uv tool install specify-cli --force --from git+https://github.com/aloyxa1226/spec-kit.git
+
+# Run without installing
+uvx --from . specify init test-project
+
+# Initialize new project
+specify init my-project --ai claude
+specify init --here --ai copilot  # Initialize in current directory
+```
+
+### Testing Slash Commands
+```bash
+# Commands are tested by initializing a project and running them in an AI agent
+specify init test-project --ai claude
+cd test-project
+claude  # Start Claude Code
+# Then run slash commands like /speckit.specify, /speckit.plan, etc.
+```
+
+### Script Execution
+```bash
+# Scripts are designed to be called from slash commands, but can be tested directly
+cd /path/to/project
+bash .specify/scripts/bash/check-prerequisites.sh --json
+bash .specify/scripts/bash/create-new-feature.sh --short-name "my-feature"
+```
+
+## Important Implementation Details
+
+### Script Output Parsing
+All bash scripts output **JSON** when called with `--json` flag. The JSON contains absolute paths that slash commands parse to locate files:
+```json
+{
+  "BRANCH_NAME": "001-feature-name",
+  "SPEC_FILE": "/absolute/path/to/specs/001-feature-name/spec.md",
+  "FEATURE_DIR": "/absolute/path/to/specs/001-feature-name"
+}
+```
+
+### Command Template Format
+Templates in `templates/commands/` use YAML frontmatter to define script execution:
+```yaml
+---
+description: Brief command description
+scripts:
+  sh: scripts/bash/script-name.sh --json "{ARGS}"
+  ps: scripts/powershell/script-name.ps1 -Json "{ARGS}"
+---
+```
+
+The markdown body contains detailed execution instructions for the AI agent, including:
+- Input parsing logic
+- Execution flow with numbered steps
+- Error handling and validation rules
+- Output requirements
+
+### Phase-Based Execution Model
+
+**Phase 0: Research** (`/speckit.plan`)
+- Resolves all "NEEDS CLARIFICATION" markers from spec
+- Researches best practices for chosen tech stack
+- Outputs `research.md` with decisions and rationale
+
+**Phase 1: Design** (`/speckit.plan`)
+- Generates data models from spec entities
+- Creates API contracts (OpenAPI/GraphQL schemas)
+- Produces quickstart documentation
+- Updates AI agent context files
+
+**Phase 2: Task Planning** (`/speckit.tasks`)
+- Breaks implementation into user-story-aligned phases
+- Marks parallel tasks with `[P]` prefix
+- Orders tasks to respect dependencies
+- Integrates TDD workflow (tests before implementation)
+
+**Phase 3: Implementation** (`/speckit.implement`)
+- Validates checklists before proceeding (with override option)
+- Executes tasks phase-by-phase
+- Follows TDD approach strictly
+- Marks completed tasks as `[X]` in tasks.md
+
+### Multi-Agent Support
+The system supports multiple AI agents through:
+- **Agent detection**: Scripts detect current agent from environment/config
+- **Agent-specific context files**: Each agent has its own context file (e.g., `.claude/commands/README.md`, `.github/copilot-instructions.md`)
+- **Script variants**: Both bash (Unix) and PowerShell (Windows/cross-platform) versions
+- **Template customization**: Agent-specific template releases on GitHub
+
+### Quality Gates and Validation
+
+**Specification Quality**
+- Maximum 3 `[NEEDS CLARIFICATION]` markers per spec
+- All requirements must be testable and unambiguous
+- Success criteria must be measurable and technology-agnostic
+- Checklist validation at `specs/###-feature/checklists/requirements.md`
+
+**Constitutional Validation**
+- Every plan must pass constitution gates before implementation
+- Gates defined in `memory/constitution.md`
+- Common gates: TDD mandatory, complexity justification, library-first approach
+
+**Implementation Validation**
+- Checklist status checked before `/speckit.implement` runs
+- User can override incomplete checklists with explicit confirmation
+- All tasks marked complete `[X]` in tasks.md upon execution
+
+## Working with This Repository
+
+### Adding a New Slash Command
+1. Create command markdown in `templates/commands/new-command.md`
+2. Add YAML frontmatter with script paths
+3. Write execution workflow in markdown body
+4. Create corresponding bash/PowerShell scripts in `scripts/`
+5. Test by initializing a new project and running the command
+
+### Modifying Templates
+1. Edit templates in `templates/` directory
+2. Test changes by running `specify init test-project`
+3. Templates are copied into new projects during initialization
+4. Existing projects won't get template updates automatically
+
+### Updating the CLI
+1. Modify `src/specify_cli/__init__.py`
+2. Update version in `pyproject.toml`
+3. Test with `uvx --from . specify init test`
+4. Release creates new GitHub release with template assets
+
+### Supporting a New AI Agent
+1. Add agent config to `AGENT_CONFIG` dict in `src/specify_cli/__init__.py`
+2. Create agent-specific template structure in release assets
+3. Update `AGENTS.md` with setup instructions
+4. Test initialization and command execution
+
+## Technology Stack Reference
+
+- **Language**: Python 3.11+ (CLI), Bash/PowerShell (scripts)
+- **CLI Framework**: Typer with Rich for terminal UI
+- **Package Management**: uv (Astral's Python package manager)
+- **HTTP**: httpx with truststore for SSL
+- **Build System**: Hatchling
+- **Supported Platforms**: Linux, macOS, Windows
+
+## Fork Management (aloyxa1226/spec-kit)
+
+**IMPORTANT**: This repository is a fork of `github/spec-kit`. All modifications must follow the fork workflow to prevent losing custom changes when syncing with upstream.
+
+### Repository Structure
+
+- **Parent Repository**: `github/spec-kit` (upstream)
+- **Fork Repository**: `aloyxa1226/spec-kit` (origin)
+- **Branch Strategy**:
+  - `upstream-main`: Pristine copy of parent repo (never modify directly)
+  - `fork-main`: Stable custom branch with fork-specific modifications
+  - `fork-main`: Current working branch (default)
+  - `sync-upstream-YYYYMMDD`: Temporary branches for upstream syncs
+
+### Remote Configuration
+
+```bash
+# Verify remotes are properly configured
+git remote -v
+# origin    https://github.com/aloyxa1226/spec-kit.git
+# upstream  https://github.com/github/spec-kit.git
+
+# If upstream is missing, add it:
+git remote add upstream https://github.com/github/spec-kit.git
+git fetch upstream
+```
+
+### Protected Custom Files
+
+**NEVER OVERWRITE** these files during upstream syncs - they contain fork-specific customizations:
+
+**Command/Prompt Files** (High modification likelihood):
+- `templates/commands/specify.md` - Enhanced prompt engineering
+- `templates/commands/plan.md` - Additional planning steps
+- `templates/commands/tasks.md` - Custom task generation logic
+- `templates/commands/implement.md` - Modified implementation workflow
+- `templates/commands/clarify.md` - Custom clarification approach
+- `templates/commands/constitution.md` - Fork-specific constitution rules
+
+**Utility Scripts** (Medium modification likelihood):
+- `scripts/bash/common.sh` - Additional utility functions
+- `scripts/bash/create-new-feature.sh` - Custom feature numbering
+- `scripts/bash/setup-plan.sh` - Modified planning setup
+- `scripts/bash/check-prerequisites.sh` - Custom validation logic
+- `scripts/bash/update-agent-context.sh` - Fork-specific context updates
+
+**Templates** (Low-Medium modification likelihood):
+- `templates/spec-template.md` - Custom specification format
+- `templates/plan-template.md` - Modified planning template
+- `templates/tasks-template.md` - Custom task breakdown format
+
+**Agent-Specific Files** (Fork-specific):
+- `.claude/CLAUDE.md` - This file
+- Agent integration files in `.claude/`, `.copilot/`, etc.
+
+**CLI Customizations**:
+- `src/specify_cli/__init__.py` - Custom CLI behavior
+- `pyproject.toml` - Fork-specific dependencies/versions
+
+### Upstream Sync Workflow
+
+**Before making ANY changes to the repository**, check if you need to sync with upstream:
+
+```bash
+# Step 1: Fetch upstream changes (weekly check)
+git fetch upstream
+
+# Step 2: Review what changed upstream
+git log --oneline upstream/main ^fork-main --no-merges
+
+# Step 3: Check for conflicts with your customizations
+git diff fork-main...upstream/main --name-only
+```
+
+**Full Sync Process** (run monthly or before major changes):
+
+```bash
+# Step 1: Ensure clean working directory
+git status
+# Commit or stash any pending changes
+
+# Step 2: Create backup branch
+git branch backup-fork-main-$(date +%Y%m%d)
+
+# Step 3: Create sync branch
+git checkout -b sync-upstream-$(date +%Y%m%d) fork-main
+
+# Step 4: Merge upstream changes (NO COMMIT yet)
+git merge upstream/main --no-commit --no-ff
+
+# Step 5: Identify conflicts
+git status | grep "both modified"
+
+# Step 6: Protect custom files - keep our version
+git checkout --ours templates/commands/specify.md
+git checkout --ours templates/commands/plan.md
+git checkout --ours templates/commands/tasks.md
+git checkout --ours templates/commands/implement.md
+git checkout --ours scripts/bash/common.sh
+git checkout --ours scripts/bash/create-new-feature.sh
+git checkout --ours .claude/CLAUDE.md
+git checkout --ours FORK_CUSTOMIZATIONS.md
+
+# Step 7: Accept upstream for unmodified files
+# Review each file individually:
+git checkout --theirs templates/spec-template.md  # Example
+
+# Step 8: Manually merge files requiring both changes
+# Open in editor and merge carefully:
+code templates/commands/constitution.md
+# Merge both sets of changes intelligently
+
+# Step 9: Test the merge
+bash scripts/bash/check-prerequisites.sh --json
+uvx --from . specify init test-sync-project --ai claude
+
+# Step 10: Complete the merge
+git add .
+git commit -m "sync: Merge upstream changes from github/spec-kit ($(git rev-parse --short upstream/main))"
+
+# Step 11: Merge into fork-main
+git checkout fork-main
+git merge sync-upstream-$(date +%Y%m%d) --no-ff
+
+# Step 12: Push to origin
+git push origin fork-main
+
+# Step 13: Update sync documentation
+# Edit FORK_CUSTOMIZATIONS.md with sync date and commit SHA
+```
+
+### Conflict Resolution Strategy
+
+When conflicts occur during sync:
+
+**1. Protected custom files** (keep ours):
+```bash
+git checkout --ours <file>
+```
+
+**2. Unmodified upstream files** (keep theirs):
+```bash
+git checkout --theirs <file>
+```
+
+**3. Files requiring manual merge**:
+```bash
+# Open file in editor
+code <file>
+
+# Look for conflict markers:
+
+# Carefully merge both changes
+# Test thoroughly after resolution
+```
+
+**4. Priority rules**:
+- **Core functionality/bug fixes**: Prefer upstream
+- **Custom extensions/enhancements**: Prefer fork
+- **Templates**: Merge manually, combine best of both
+- **Scripts**: Review carefully, test extensively
+- **Security fixes**: ALWAYS take upstream immediately
+
+### Pre-Commit Checklist for Fork Modifications
+
+Before committing changes to fork-specific files:
+
+```bash
+# 1. Document the customization
+# Add entry to FORK_CUSTOMIZATIONS.md
+
+# 2. Test the modification
+bash scripts/bash/check-prerequisites.sh --json
+uvx --from . specify init test-project --ai claude
+
+# 3. Commit with clear description
+git add <files>
+git commit -m "fork: <description of customization>
+
+- Customized <file> to add <feature>
+- Reason: <why this is needed for the fork>
+- Upstream merge strategy: <ours|manual|n/a>
+"
+
+# 4. Push to fork
+git push origin fork-main
+```
+
+### Emergency Recovery
+
+If a sync goes wrong:
+
+```bash
+# Option 1: Abort the merge
+git merge --abort
+
+# Option 2: Reset to backup branch
+git checkout fork-main
+git reset --hard backup-fork-main-[DATE]
+git push origin fork-main --force-with-lease
+
+# Option 3: Start fresh from backup
+git checkout backup-fork-main-[DATE]
+git checkout -b fork-main-recovery
+# Review and fix issues
+git branch -D fork-main
+git branch -m fork-main-recovery fork-main
+git push origin fork-main --force-with-lease
+```
+
+### Automation Helpers
+
+**Check if sync is needed**:
+```bash
+# Add this to your shell profile or create a script
+git fetch upstream &>/dev/null
+BEHIND=$(git rev-list --count fork-main..upstream/main)
+if [ $BEHIND -gt 0 ]; then
+    echo "⚠️  Fork is $BEHIND commits behind upstream. Consider syncing."
+fi
+```
+
+**Create sync preparation script** (`scripts/prepare-sync.sh`):
+```bash
+#!/bin/bash
+set -e
+
+echo "=== Fork Sync Preparation ==="
+
+# Check for uncommitted changes
+if [[ -n $(git status -s) ]]; then
+    echo "❌ Uncommitted changes detected. Commit or stash first."
+    exit 1
+fi
+
+# Fetch upstream
+echo "📡 Fetching upstream changes..."
+git fetch upstream
+
+# Show files modified in both repos
+echo -e "\n🔍 Files modified in both fork and upstream:"
+git diff upstream/main...fork-main --name-only | sort | uniq
+
+# Show upstream commits since last sync
+echo -e "\n📝 New upstream commits:"
+git log fork-main..upstream/main --oneline --no-merges
+
+# Create backup
+BACKUP="backup-fork-main-$(date +%Y%m%d-%H%M%S)"
+echo -e "\n💾 Creating backup: $BACKUP"
+git branch $BACKUP
+
+echo -e "\n✅ Ready to sync. Review changes above."
+echo "   Next: git checkout -b sync-upstream-$(date +%Y%m%d)"
+```
+
+### Documentation Requirements
+
+**Maintain `FORK_CUSTOMIZATIONS.md`** at repository root with:
+- List of all modified files
+- Reason for each modification
+- Merge strategy (ours/manual/theirs)
+- Last sync date and upstream commit SHA
+- Known conflicts and resolutions
+
+**Example entry**:
+```markdown
+## Modified: templates/commands/specify.md
+- **Reason**: Enhanced prompt engineering for better spec generation
+- **Merge strategy**: Keep ours (--ours)
+- **Last reviewed**: 2025-10-15
+- **Upstream conflicts**: None expected (pure addition to prompt)
+```
+
+### Testing After Sync
+
+**ALWAYS test these after upstream sync**:
+
+```bash
+# 1. CLI functionality
+uvx --from . specify init test-post-sync --ai claude
+
+# 2. Script execution
+cd test-post-sync
+bash .specify/scripts/bash/check-prerequisites.sh --json
+
+# 3. Slash commands in AI agent
+claude  # or your agent
+# Test: /speckit.specify, /speckit.plan, /speckit.tasks, /speckit.implement
+
+# 4. Template generation
+# Verify spec.md, plan.md, tasks.md are generated correctly
+```
+
+## References
+
+- Full methodology: `spec-driven.md`
+- Agent support matrix: `AGENTS.md`
+- Contributing guidelines: `CONTRIBUTING.md`
+- Installation instructions: `docs/installation.md`
+- Local development setup: `docs/local-development.md`
+- **Fork customizations**: `FORK_CUSTOMIZATIONS.md` (document all fork-specific changes here)
