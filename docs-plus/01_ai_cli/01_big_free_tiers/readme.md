@@ -6,7 +6,9 @@
 
 [About Gemini CLI](https://www.youtube.com/watch?v=A3AOeX1s7yw)
 
-[Hands-on with Gemini CLI](https://codelabs.developers.google.com/gemini-cli-hands-on#0)
+[Advanced Gemini CLI: Part 1](https://medium.com/google-cloud/advanced-gemini-cli-part-1-whats-the-context-6fd91326979b)
+
+[Advanced Gemini CLI: Part 2— Decoding the Context](https://medium.com/google-cloud/advanced-gemini-cli-part-2-decoding-the-context-edc9e815b548)
 
 Subagent feature is coming soon to Gemini CLI:
 
