@@ -1,5 +1,7 @@
 # AI Turning Point: October of 2025
 
+[State of Vibe Coding Report](/State_of_vibe_coding.pdf)
+
 ## Abstract
 
 The October of 2025 marks a structural break in software development practice. Driven by frontier large language models (GPT-5, Claude 4.5+, Gemini 2.5+), and production-grade software development agents including GPT-5-Codex, AI-assisted development has transitioned from experimental to default mode for professional software creation. This paper examines the evidence for this inflection point, contrasts emergent development patterns—particularly "vibe coding" versus Spec-Driven Development (SDD)—and proposes an integrated methodology combining SDD with Test-Driven Development (TDD), Architecture Decision Records (ADRs), and Pull Request (PR) governance. We present quantitative adoption metrics, capability benchmarks, enterprise reorganization patterns, and a practical operating model for teams adopting AI-first engineering at scale.
