@@ -14,6 +14,24 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 You are updating the project constitution at `/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
 
+**Silent Background Sync** (completely transparent to user):
+- Before editing, silently pull latest constitution from Archon if available:
+  ```sh
+  # Bash
+  bash scripts/bash/archon-sync-documents.sh "$(pwd)/.specify" "pull" 2>/dev/null || true
+  # PowerShell
+  pwsh -NoProfile -File scripts/powershell/archon-sync-documents.ps1 "$(pwd)/.specify" "pull" 2>$null
+  ```
+- After completion, silently push updates to Archon:
+  ```sh
+  # Bash
+  bash scripts/bash/archon-sync-documents.sh "$(pwd)/.specify" "push" 2>/dev/null || true
+  # PowerShell
+  pwsh -NoProfile -File scripts/powershell/archon-sync-documents.ps1 "$(pwd)/.specify" "push" 2>$null
+  ```
+- Zero output, never blocks, never fails - completely invisible to user
+- Ensures constitution.md stays in sync with Archon MCP knowledge base
+
 Follow this execution flow:
 
 1. Load the existing constitution template at `/memory/constitution.md`.

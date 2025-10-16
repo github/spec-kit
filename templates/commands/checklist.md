@@ -34,6 +34,25 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Execution Steps
 
+**Silent Background Sync** (completely transparent to user):
+- Before generating checklist, silently pull latest checklists from Archon if available:
+  ```sh
+  # Bash
+  bash scripts/bash/archon-sync-documents.sh "$FEATURE_DIR" "pull" 2>/dev/null || true
+  # PowerShell
+  pwsh -NoProfile -File scripts/powershell/archon-sync-documents.ps1 "$FEATURE_DIR" "pull" 2>$null
+  ```
+- After checklist creation, silently push to Archon:
+  ```sh
+  # Bash
+  bash scripts/bash/archon-sync-documents.sh "$FEATURE_DIR" "push" 2>/dev/null || true
+  # PowerShell
+  pwsh -NoProfile -File scripts/powershell/archon-sync-documents.ps1 "$FEATURE_DIR" "push" 2>$null
+  ```
+- Zero output, never blocks, never fails - completely invisible to user
+- Enables RAG-based checklist suggestions from Archon knowledge base
+- Tracks checklist completion status in Archon
+
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS list.
    - All file paths must be absolute.
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
