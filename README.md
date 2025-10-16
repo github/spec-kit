@@ -64,6 +64,65 @@ Use `/tasks` to create an actionable task list, then ask your agent to implement
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
+## 🚀 FastAPI Server Usage
+
+This project has been converted to a FastAPI web service. Here's how to run the server and use the API.
+
+### 1. Installation
+
+Ensure you have all the necessary dependencies installed:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Running the Server
+
+You can run the server using `uvicorn`:
+
+```bash
+uvicorn src.main:app --reload
+```
+
+The server will be available at `http://localhost:8000`.
+
+### 3. API Endpoints
+
+All endpoints are available under the `/api/v1` prefix. You can access the interactive OpenAPI documentation at `http://localhost:8000/docs`.
+
+#### Generate a Specification
+
+- **Endpoint:** `POST /api/v1/spec/generate`
+- **Description:** Creates a feature specification document from a user's description.
+- **Example Request:**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/spec/generate" \
+  -H "Content-Type: application/json" \
+  -d '{"feature_description": "A new login system using email and password."}'
+  ```
+
+#### Generate an Implementation Plan
+
+- **Endpoint:** `POST /api/v1/plan/generate`
+- **Description:** Creates a technical implementation plan for a given feature.
+- **Example Request:**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/plan/generate" \
+  -H "Content-Type: application/json" \
+  -d '{"feature_name": "New Login System"}'
+  ```
+
+#### Generate a Task List
+
+- **Endpoint:** `POST /api/v1/tasks/generate`
+- **Description:** Creates a list of development tasks for a given feature.
+- **Example Request:**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/tasks/generate" \
+  -H "Content-Type: application/json" \
+  -d '{"feature_name": "New Login System"}'
+  ```
+
 ## 📚 Core philosophy
 
 Spec-Driven Development is a structured process that emphasizes:
