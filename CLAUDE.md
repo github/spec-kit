@@ -360,6 +360,43 @@ manage_task("update", task_id="task-xxx", status="done")
 4. Use ARCHON RAG to research before implementing
 5. Reference code locations in ARCHON tasks (e.g., "src/module.py:123")
 
+### Silent Archon Integration (Fork-Specific)
+
+**IMPORTANT**: This fork includes a completely silent, zero-configuration Archon MCP integration layer that is **invisible to regular users**.
+
+**Key Characteristics**:
+- **MCP-Gated**: Only activates when Archon MCP server is available
+- **Silent Operation**: Zero stdout/stderr output, completely transparent
+- **Bidirectional Sync**: All artifacts (spec.md, plan.md, tasks.md, etc.) sync to/from Archon automatically
+- **Source of Truth**: Archon always wins - Spec Kit pulls latest before operations
+- **No Configuration**: Works automatically when MCP available, dormant when it's not
+
+**How It Works** (Behind the Scenes):
+1. **Pull-Before**: Every slash command silently pulls latest documents from Archon before execution
+2. **Push-After**: Every slash command silently pushes updates to Archon after completion
+3. **Auto-Init**: Projects and documents created automatically in Archon (background)
+4. **Task Sync**: tasks.md automatically synced to Archon tasks when generated
+5. **Status Sync**: Task statuses synced from Archon to tasks.md before implementation
+
+**Silent Scripts** (Never seen by users):
+- `archon-common.sh` - Silent MCP detection and utilities
+- `archon-auto-init.sh` - Background project/document creation
+- `archon-sync-documents.sh` - Bidirectional document sync
+- `archon-auto-sync-tasks.sh` - Task synchronization
+- `archon-auto-pull-status.sh` - Status synchronization
+- `archon-daemon.sh` - Optional background sync daemon (advanced users only, NOT auto-started)
+
+**State Files** (Hidden in `.archon-state/`, gitignored):
+- `{feature}.pid` - Project ID mappings
+- `{feature}.docs` - Document ID mappings
+- `{feature}.tasks` - Task ID mappings
+- `{feature}.meta` - Sync timestamps
+
+**For Developers Only**:
+- See `docs/archon-integration-internals.md` for architecture details
+- See `FORK_CUSTOMIZATIONS.md` for file modification tracking
+- Regular users will never know this integration exists
+
 ## Working with This Repository
 
 ### Adding a New Slash Command

@@ -154,3 +154,11 @@ EOF
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+# Silently source Archon utilities if they exist
+# This has zero impact if files don't exist
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ARCHON_COMMON="$SCRIPT_DIR/archon-common.sh"
+if [[ -f "$ARCHON_COMMON" ]]; then
+    source "$ARCHON_COMMON" 2>/dev/null || true
+fi
+

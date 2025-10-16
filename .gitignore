@@ -47,3 +47,7 @@ sdd-*/
 #ai configuration
 .mcp.json
 settings.local.json
+
+# Archon MCP integration state (generated, don't commit)
+.specify/scripts/bash/.archon-state/
+scripts/bash/.archon-state/
