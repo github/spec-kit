@@ -6,6 +6,8 @@
 
 [About Gemini CLI](https://www.youtube.com/watch?v=A3AOeX1s7yw)
 
+[Hands-on with Gemini CLI](https://codelabs.developers.google.com/gemini-cli-hands-on#0)
+
 Subagent feature is coming soon to Gemini CLI:
 
 [How I Turned Gemini CLI into a Multi-Agent System with Just Prompts](https://aipositive.substack.com/p/how-i-turned-gemini-cli-into-a-multi)
