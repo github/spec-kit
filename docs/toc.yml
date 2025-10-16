@@ -9,10 +9,11 @@
       href: installation.md
     - name: Quick Start
       href: quickstart.md
+    - name: Existing Project Guide
+      href: existing-project-guide.md
 
 # Development workflows
 - name: Development
   items:
     - name: Local Development
       href: local-development.md
-
