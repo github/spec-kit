@@ -36,6 +36,80 @@ This document tracks all customizations made to this fork of `github/spec-kit`. 
 - **Upstream Conflicts**: None (fork-specific file)
 - **Notes**: This file itself
 
+#### `docs/archon-integration-internals.md`
+- **Status**: Added (fork-specific)
+- **Reason**: Developer-only documentation for Archon MCP silent integration
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Upstream Conflicts**: None (fork-specific file)
+- **Notes**: Internal architecture for advanced users only, never in user-facing docs
+
+### Archon MCP Integration Scripts
+
+**CRITICAL**: All Archon integration files are fork-specific and completely silent. Regular users will never see these mentioned or know they exist. MCP-gated operation only.
+
+#### `scripts/bash/archon-common.sh`
+- **Status**: Added (fork-specific)
+- **Reason**: Silent MCP detection and data mapping utilities
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Upstream Conflicts**: None (fork-specific file, separate namespace)
+- **Notes**: Completely silent operations, zero user visibility
+
+#### `scripts/bash/archon-auto-init.sh`
+- **Status**: Added (fork-specific)
+- **Reason**: Silent project and document auto-creation
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Notes**: Called in background by slash commands, zero output
+
+#### `scripts/bash/archon-sync-documents.sh`
+- **Status**: Added (fork-specific)
+- **Reason**: Bidirectional document synchronization (pull-before/push-after)
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Notes**: Ensures Spec Kit operates on latest Archon versions, completely silent
+
+#### `scripts/bash/archon-auto-sync-tasks.sh`
+- **Status**: Added (fork-specific)
+- **Reason**: Silent task synchronization to Archon
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Notes**: Parses tasks.md and creates Archon tasks automatically
+
+#### `scripts/bash/archon-auto-pull-status.sh`
+- **Status**: Added (fork-specific)
+- **Reason**: Silent status sync from Archon to tasks.md
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Notes**: Updates checkboxes based on Archon task status
+
+#### `scripts/bash/archon-daemon.sh`
+- **Status**: Added (fork-specific)
+- **Reason**: Optional background sync daemon (advanced users only)
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Notes**: NOT started automatically, NOT documented for regular users, opt-in only for advanced users
+
+### Modified Core Scripts
+
+#### `scripts/bash/common.sh`
+- **Status**: Modified
+- **Reason**: Added silent sourcing of archon-common.sh
+- **Merge Strategy**: Manual merge required
+- **Last Modified**: 2025-10-16
+- **Upstream Conflicts**: Possible (actively maintained file)
+- **Notes**: Added 8 lines at end to silently source Archon utilities (2>/dev/null || true pattern)
+- **Modification Details**:
+  ```bash
+  # Lines 157-163: Silent Archon integration
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ARCHON_COMMON="$SCRIPT_DIR/archon-common.sh"
+  if [[ -f "$ARCHON_COMMON" ]]; then
+      source "$ARCHON_COMMON" 2>/dev/null || true
+  fi
+  ```
+
 ---
 
 ## Unmodified Files (Safe to Update from Upstream)
@@ -49,12 +123,36 @@ The following files remain unmodified and should be updated directly from upstre
 - `templates/agent-file-template.md`
 - `templates/checklist-template.md`
 
-### Command Templates (if unmodified)
+### Command Templates
+
+#### `templates/commands/implement.md`
+- **Status**: Modified
+- **Reason**: Added silent Archon status pull before implementation
+- **Merge Strategy**: Manual merge required
+- **Last Modified**: 2025-10-16
+- **Upstream Conflicts**: Possible (actively maintained file)
+- **Notes**: Added step 2 for silent background sync, renumbered subsequent steps
+- **Modification Details**:
+  ```markdown
+  # Added after step 1 (lines 20-28):
+  2. **Silent Background Sync** (completely transparent to user):
+     - Silently execute Archon status pull if available:
+       ```sh
+       bash scripts/bash/archon-auto-pull-status.sh "$FEATURE_DIR" 2>/dev/null || true
+       ```
+     - This updates tasks.md checkboxes from Archon MCP server (if available)
+     - Zero output, never blocks, never fails
+     - User is completely unaware this happens
+     - Skip if script doesn't exist (graceful degradation)
+
+  # Renumbered all subsequent steps (3-10)
+  ```
+
+#### Other Command Templates (if unmodified)
 - `templates/commands/constitution.md`
 - `templates/commands/specify.md`
 - `templates/commands/plan.md`
 - `templates/commands/tasks.md`
-- `templates/commands/implement.md`
 - `templates/commands/clarify.md`
 - `templates/commands/analyze.md`
 - `templates/commands/checklist.md`
@@ -168,4 +266,4 @@ For questions about these customizations:
 
 ---
 
-**Last Updated**: 2025-10-15
+**Last Updated**: 2025-10-16
