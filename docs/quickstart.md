@@ -36,9 +36,9 @@ Use the `/plan` command to provide your tech stack and architecture choices.
 /plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 3.5. Decompose Large Features (Optional, for >500 LOC)
+### 3.5. Decompose Large Features (Optional, for >1000 LOC total)
 
-For large features estimated at >500 LOC, use `/decompose` to break into atomic capabilities (200-500 LOC each):
+For large features estimated at >1000 LOC total, use `/decompose` to break into atomic capabilities (200-500 LOC each):
 
 ```bash
 /decompose  # Creates cap-001/, cap-002/, etc.
@@ -137,7 +137,7 @@ implement specs/proj-123.create-taskify/plan.md
 - **Iterate and refine** your specifications before implementation
 - **Validate** the plan before coding begins
 - **Let the AI agent handle** the implementation details
-- **For large features (>500 LOC):** Use `/decompose` to create atomic PRs for faster reviews and parallel development
+- **For large features (>1000 LOC total):** Use `/decompose` to create atomic PRs for faster reviews and parallel development
 
 ## Next Steps
 

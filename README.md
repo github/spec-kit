@@ -157,7 +157,7 @@ Use the **`/plan`** command to provide your tech stack and architecture choices.
 
 ### 4. Decompose into capabilities (optional, for large features)
 
-For features >500 LOC, use **`/decompose`** to break into atomic capabilities (200-500 LOC each).
+For features >1000 LOC total, use **`/decompose`** to break into atomic capabilities (400-1000 LOC total each).
 
 ```bash
 /decompose
@@ -172,30 +172,30 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 
 ## 🔧 Workflow: Simple vs Complex Features
 
-### Simple Features (<500 LOC)
+### Simple Features (<1000 LOC total)
 ```bash
 /specify → /plan → /tasks → /implement
 ```
 
-### Complex Features (>500 LOC) - Atomic PRs
+### Complex Features (>1000 LOC total) - Atomic PRs
 ```bash
 # On parent branch: username/jira-123.user-system
 /specify → /decompose → creates cap-001/, cap-002/, cap-003/ on parent branch
 
 # For each capability (creates NEW branch per capability):
 /plan --capability cap-001 → creates branch username/jira-123.user-system-cap-001
-/tasks → /implement → PR: cap-001 branch → main (200-500 LOC) ✓ MERGED
+/tasks → /implement → PR: cap-001 branch → main (400-1000 LOC total) ✓ MERGED
 
 # Back to parent, sync with main, repeat:
 git checkout username/jira-123.user-system
 git pull origin main
 /plan --capability cap-002 → creates branch username/jira-123.user-system-cap-002
-/tasks → /implement → PR: cap-002 branch → main (200-500 LOC) ✓ MERGED
+/tasks → /implement → PR: cap-002 branch → main (400-1000 LOC total) ✓ MERGED
 
 # Continue for cap-003, cap-004, etc.
 ```
 
-**Result:** Multiple atomic PRs (200-500 LOC each) instead of one massive PR.
+**Result:** Multiple atomic PRs (400-1000 LOC total each) instead of one massive PR.
 
 **Key Benefits:**
 - Each capability gets its own branch and atomic PR to main
@@ -219,7 +219,7 @@ The `specify` command supports the following options:
 | Command     | Purpose | When to Use |
 |-------------|---------|-------------|
 | `/specify`  | Create feature specification | Always - first step for any feature |
-| `/decompose` | Break feature into capabilities | For complex features (>500 LOC, >5 requirements) |
+| `/decompose` | Break feature into capabilities | For complex features (>1000 LOC total, >5 requirements) |
 | `/plan`     | Create implementation plan | After `/specify` (simple) or `/decompose` (complex) |
 | `/tasks`    | Generate task list | After `/plan` is complete |
 | `/implement`| Execute implementation | After `/tasks` is complete |

@@ -5,24 +5,29 @@
 
 ## LOC Budget Validation
 
-**From plan.md:** [Load estimated total from plan.md LOC Budget Tracking section]
+**From plan.md:** [Load implementation, test, and total estimates from plan.md LOC Budget Tracking section]
 
 **Status Check:**
-- ✓ **Within budget** (200-500 LOC) - Proceed with task generation
-- ⚠️ **Approaching limit** (450-500 LOC) - Review task breakdown carefully
-- ❌ **Exceeds 500 LOC** - STOP: Decomposition required
+- ✓ **Within budget** - Impl: X (✓ ≤500) | Tests: Y (✓ ≤500) | Total: Z (✓ ≤1000) - Proceed with task generation
+- ⚠️ **Approaching limits** - Any metric >450 or total >900 - Review task breakdown carefully
+- ❌ **Exceeds limits** - Impl >500 OR Tests >500 OR Total >1000 - STOP: See options below
 
-**If >500 LOC:**
+**If any limit exceeded:**
 ```
-⚠️  WARNING: This implementation exceeds 500 LOC budget
-    Estimated: XXX LOC (from plan.md)
+⚠️  WARNING: This implementation exceeds LOC budget limits
+    Estimated from plan.md:
+    - Implementation: XXX LOC [✓ ≤500 | ❌ >500]
+    - Tests: XXX LOC [✓ ≤500 | ❌ >500]
+    - Total: XXX LOC [✓ ≤1000 | ❌ >1000]
 
     OPTIONS:
-    1. Run `/decompose` to split into multiple capabilities
+    1. Run `/decompose` to split into multiple capabilities (recommended if total >1000)
     2. Document justification in plan.md and get approval
     3. Review plan.md to identify scope reduction opportunities
+       - Can test coverage be reduced without compromising quality?
+       - Can implementation be simplified?
 
-    RECOMMENDATION: Capabilities should target 200-400 LOC for optimal PR review
+    RECOMMENDATION: Capabilities should target 400-800 LOC total for optimal PR review
 ```
 
 ## Execution Flow (main)

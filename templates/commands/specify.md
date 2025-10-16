@@ -91,27 +91,29 @@ Given the feature description provided as an argument, do this:
 ## Next Steps After Specification
 
 **Option 1: Direct Implementation (Simple Features)**
-- If feature is naturally small (estimated <500 LOC total):
+- If feature is naturally small (estimated <1000 LOC total):
   - Proceed directly to `/plan` for implementation
+  - Target: 400-800 LOC total (200-400 impl + 200-400 tests)
   - Skip decomposition step
 
 **Option 2: Capability Decomposition (Complex Features)**
-- If feature is large or complex (estimated >500 LOC):
-  - Run `/decompose` to break into atomic capabilities (200-500 LOC each)
+- If feature is large or complex (estimated >1000 LOC total):
+  - Run `/decompose` to break into atomic capabilities
+  - Each capability: 400-1000 LOC total (200-500 impl + 200-500 tests)
   - Then run `/plan --capability cap-001` for each capability
 
 **Decision Criteria:**
 - **Use `/decompose` if:**
   - Feature has >5 functional requirements
   - Multiple entities or bounded contexts
-  - Estimated >500 LOC total
+  - Estimated >1000 LOC total (implementation + tests)
   - Multiple developers working in parallel
-  - Want atomic PRs (200-400 LOC ideal)
+  - Want atomic PRs (400-800 LOC ideal)
 
 - **Skip `/decompose` if:**
   - Simple CRUD or single entity
   - <5 functional requirements
-  - Estimated <500 LOC total
+  - Estimated <1000 LOC total (implementation + tests)
   - Single developer working sequentially
 
 ## Research Integration Guidelines

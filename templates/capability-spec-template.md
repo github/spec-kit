@@ -2,7 +2,7 @@
 
 **Parent Feature:** [../spec.md](../spec.md)
 **Capability ID:** Cap-XXX
-**Estimated LOC:** XXX (target: 200-500)
+**Estimated LOC:** Implementation XXX + Tests XXX = Total XXX (target: 400-1000 total)
 **Dependencies:** [Cap-XXX, Cap-YYY | None]
 **Created**: [DATE]
 **Status**: Draft
@@ -21,12 +21,12 @@
 5. Define acceptance criteria
    → Testable conditions for capability completion
 6. Estimate component breakdown
-   → Validate 200-500 LOC budget
+   → Validate Implementation 200-500 LOC + Tests 200-500 LOC = Total 400-1000 LOC
 7. Fill Context Engineering for this capability
    → Research codebase patterns specific to this scope
    → Document libraries/gotchas relevant to this capability
 8. Run Review Checklist
-   → If >500 LOC: WARN "Exceeds budget, add justification"
+   → If Impl >500 OR Tests >500 OR Total >1000: WARN "Exceeds budget, add justification"
 9. Return: SUCCESS (ready for /plan --capability)
 ```
 
@@ -36,7 +36,7 @@
 
 - ✅ Focus on single bounded context (e.g., "User Auth", not "Entire User System")
 - ✅ Independently testable and deployable
-- ✅ 200-500 LOC target (justification required if >500)
+- ✅ Implementation 200-500 LOC + Tests 200-500 LOC = Total 400-1000 LOC (justification required if any limit exceeded)
 - ❌ Avoid dependencies on uncompleted capabilities
 - ❌ No cross-capability concerns (handle in separate capability)
 
@@ -138,17 +138,17 @@ Research findings specific to this capability's scope:
 
 ## Component Breakdown *(LOC estimation)*
 
-| Component | Estimated LOC | Notes |
-|-----------|---------------|-------|
-| Contract tests | XX | [e.g., 3 endpoints × 25 LOC] |
-| Models | XX | [e.g., 2 entities × 50 LOC] |
-| Services | XX | [e.g., Service layer logic] |
-| Integration tests | XX | [e.g., E2E scenarios for this capability] |
-| CLI (if applicable) | XX | [e.g., Command interface] |
-| **Total** | **XXX** | [✓ Within 200-500 | ⚠️ >500 requires justification] |
+| Component | Implementation LOC | Test LOC | Notes |
+|-----------|-------------------|----------|-------|
+| Models | XX | XX | [e.g., 2 entities × 50 LOC + validation tests] |
+| Services | XX | XX | [e.g., Service layer logic + service tests] |
+| API/CLI | XX | XX | [e.g., 3 endpoints × 30 LOC + contract tests] |
+| Integration | XX | XX | [e.g., E2E scenarios] |
+| **Subtotals** | **XXX** | **XXX** | **Total: XXX LOC** |
+| **Status** | [✓ <500 \| ⚠️ >500] | [✓ <500 \| ⚠️ >500] | [✓ <1000 \| ⚠️ >1000] |
 
-**Justification (if >500 LOC):**
-[If total >500 LOC: Explain why this capability cannot be split further, what keeps it cohesive]
+**Justification (if any limit exceeded):**
+[If Implementation >500 OR Tests >500 OR Total >1000: Explain why this capability cannot be split further, what keeps it cohesive, why tests require more LOC than typical]
 
 ---
 
@@ -185,7 +185,7 @@ Research findings specific to this capability's scope:
 - [ ] Capability-specific requirements (CFR-XXX) defined
 - [ ] Requirements are testable within this capability
 - [ ] Success criteria measurable for THIS capability
-- [ ] LOC estimate within 200-500 (or justified if >500)
+- [ ] LOC estimate: Implementation ≤500, Tests ≤500, Total ≤1000 (or justified if any exceeded)
 
 ### Capability Independence
 - [ ] Can be implemented independently (given dependencies are met)
@@ -203,8 +203,8 @@ Research findings specific to this capability's scope:
 - [ ] Capability scope defined
 - [ ] Functional requirements scoped
 - [ ] User scenarios extracted
-- [ ] Component breakdown estimated
-- [ ] LOC budget validated
+- [ ] Component breakdown estimated (impl + test LOC)
+- [ ] LOC budget validated (impl ≤500, tests ≤500, total ≤1000)
 - [ ] Dependencies identified
 - [ ] Review checklist passed
 

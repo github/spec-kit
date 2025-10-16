@@ -35,10 +35,10 @@ Given the implementation details provided as an argument, do this:
    - Any technical constraints or dependencies mentioned
 
 4. **If CAPABILITY_MODE=true:**
-   - Verify LOC budget from capability spec (should be 200-500 LOC)
+   - Verify LOC budget from capability spec (impl ≤500, tests ≤500, total ≤1000)
    - Check dependencies on other capabilities (from capabilities.md)
    - Ensure capability scope is clear and bounded
-   - Warn if estimated total >500 LOC
+   - Warn if impl >500 OR tests >500 OR total >1000
 
 5. Read the constitution at `/memory/constitution.md` to understand constitutional requirements.
 
@@ -56,8 +56,8 @@ Given the implementation details provided as an argument, do this:
    - Update Progress Tracking as you complete each phase
 
 7. **If CAPABILITY_MODE=true:**
-   - Validate LOC Budget Tracking section shows ≤500 LOC
-   - If >500 LOC: Require justification OR suggest further decomposition
+   - Validate LOC Budget Tracking section shows impl ≤500, tests ≤500, total ≤1000
+   - If any limit exceeded: Require justification OR suggest further decomposition
    - Ensure capability dependencies are documented
    - Verify all components scoped to this capability only
 
@@ -72,18 +72,18 @@ Given the implementation details provided as an argument, do this:
 
 ## Usage Examples
 
-**Parent feature planning (simple features <500 LOC):**
+**Parent feature planning (simple features <1000 LOC total):**
 ```bash
 /plan "Use FastAPI + PostgreSQL + React"
 → Generates plan.md for entire feature on current branch
 → Single PR workflow
 ```
 
-**Capability planning (atomic PRs, 200-500 LOC each):**
+**Capability planning (atomic PRs, 400-1000 LOC total each):**
 ```bash
 /plan --capability cap-001 "Use FastAPI + JWT for auth"
 → Creates NEW branch: username/jira-123.feature-cap-001
-→ Generates cap-001/plan.md scoped to 200-500 LOC
+→ Generates cap-001/plan.md scoped to 400-1000 LOC total
 → Atomic PR: cap-001 branch → main
 ```
 
@@ -101,7 +101,7 @@ When using `--capability cap-XXX`, the script:
    - All work happens on capability branch
 
 3. **PR workflow**:
-   - Implement on `cap-001` branch (200-500 LOC)
+   - Implement on `cap-001` branch (400-1000 LOC total)
    - Create PR: `cap-001` → `main`
    - After merge, checkout parent branch
    - Pull latest main into parent

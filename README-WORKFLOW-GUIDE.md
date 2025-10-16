@@ -26,11 +26,11 @@ Think of the Spec Kit commands as different specialists in a world-class constru
 - **Enhancement:** Includes Implementation Blueprint with validation gates to prevent failures
 - **When to use:** After specifications are complete and approved
 - **Example:** Takes auth specification → Technical architecture with data models, APIs, and quality gates
-- **Capability mode:** Use `/plan --capability cap-001` to create atomic PR branches (200-500 LOC each)
+- **Capability mode:** Use `/plan --capability cap-001` to create atomic PR branches (400-1000 LOC total each)
 
 ### **🔀 The Feature Decomposer** (`/decompose`)
-- **What they do:** Break large features (>500 LOC) into independently-implementable capabilities for atomic PRs
-- **When to use:** When a feature specification is too large (>500 LOC estimated)
+- **What they do:** Break large features (>1000 LOC total) into independently-implementable capabilities for atomic PRs
+- **When to use:** When a feature specification is too large (>1000 LOC total estimated)
 - **Example:** "User System" specification → cap-001-auth (380 LOC), cap-002-profiles (320 LOC), cap-003-permissions (290 LOC)
 - **Output:** Creates capability subdirectories with scoped specs, enables parallel development and fast PR reviews
 - **Benefit:** Atomic PRs reviewed in 1-2 days vs 7+ days for large PRs
@@ -383,7 +383,7 @@ Every feature goes through multiple validation gates, just like building inspect
 
 ### **Use `/decompose` when:**
 - Your feature specification estimates >500 LOC
-- You want atomic PRs (200-500 LOC each) for faster reviews
+- You want atomic PRs (400-1000 LOC total each) for faster reviews
 - You need to enable parallel team development
 - You want independent, reviewable chunks
 - Your feature has multiple distinct bounded contexts
@@ -434,7 +434,7 @@ Every feature goes through multiple validation gates, just like building inspect
 /smart-commit
 ```
 
-### **New Feature from Scratch (Complex, >500 LOC)**
+### **New Feature from Scratch (Complex, >1000 LOC total)**
 ```bash
 /prime-core
 /specify "large feature description"
@@ -485,8 +485,8 @@ Every feature goes through multiple validation gates, just like building inspect
 ### **When to Use Decomposition**
 
 Use `/decompose` when your feature specification estimates >500 LOC:
-- **Simple features (<500 LOC):** Use standard workflow (`/specify` → `/plan` → `/tasks` → `/implement`)
-- **Complex features (>500 LOC):** Use atomic PR workflow with `/decompose`
+- **Simple features (<1000 LOC total):** Use standard workflow (`/specify` → `/plan` → `/tasks` → `/implement`)
+- **Complex features (>1000 LOC total):** Use atomic PR workflow with `/decompose`
 
 ### **The Atomic PR Workflow**
 
@@ -538,16 +538,16 @@ The `/tasks` and `/implement` commands **automatically detect** capability branc
 
 **Parent branch** (`username/jira-123.feature-name`):
 - Reads from: `specs/jira-123.feature-name/plan.md`
-- Workflow: Single PR (<500 LOC)
+- Workflow: Single PR (<1000 LOC total)
 
 **Capability branch** (`username/jira-123.feature-name-cap-001`):
 - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`
-- Workflow: Atomic PR (200-500 LOC)
+- Workflow: Atomic PR (400-1000 LOC total)
 - **No flag needed** - detection based on branch name pattern
 
 ### **Benefits of Atomic PRs**
 
-1. **Fast reviews:** 1-2 days for 200-500 LOC vs 7+ days for 1500+ LOC
+1. **Fast reviews:** 1-2 days for 400-1000 LOC total vs 7+ days for 2000+ LOC
 2. **Parallel development:** Team members work on different capabilities simultaneously
 3. **Early integration:** Merge to main quickly, catch integration issues early
 4. **Manageable TDD:** Test-first approach easier with smaller scope
@@ -762,9 +762,9 @@ This isn't about replacing human creativity - it's about amplifying your vision 
 |-------|---------|---------|--------|
 | **Context** | `/prime-core` | Load project understanding | Project context analysis |
 | **Specify** | `/specify` | Research-driven specification | Complete feature blueprint |
-| **Decompose** | `/decompose` | Break large features into capabilities | Atomic capability specs (200-500 LOC each) |
+| **Decompose** | `/decompose` | Break large features into capabilities | Atomic capability specs (400-1000 LOC total each) |
 | **Plan** | `/plan` | Technical implementation plan | Architecture with validation gates |
-| **Plan** | `/plan --capability cap-XXX` | Plan single capability (atomic PR) | Capability-scoped plan (200-500 LOC) |
+| **Plan** | `/plan --capability cap-XXX` | Plan single capability (atomic PR) | Capability-scoped plan (400-1000 LOC total) |
 | **Execute** | `/tasks` | Actionable task breakdown (auto-detects capability mode) | Ordered implementation tasks |
 | **Execute** | `/implement` | Implementation with TDD (auto-detects capability mode) | Working feature with tests |
 | **Quality** | `/review` | Code quality inspection | Comprehensive review report |

@@ -200,8 +200,8 @@ The SDD methodology is significantly enhanced through three powerful commands th
 
 **Three workflows supported:**
 
-1. **Simple Features (<500 LOC):** `/specify` → `/plan` → `/tasks` → `/implement`
-2. **Complex Features (>500 LOC):** `/specify` → `/decompose` → `/plan --capability` → `/tasks` → `/implement`
+1. **Simple Features (<1000 LOC total):** `/specify` → `/plan` → `/tasks` → `/implement`
+2. **Complex Features (>1000 LOC total):** `/specify` → `/decompose` → `/plan --capability` → `/tasks` → `/implement`
 3. **Existing Feature Enhancement:** Same as above, starting from existing spec
 
 ### The `/specify` Command
@@ -225,21 +225,21 @@ Once a feature specification exists, this command creates a comprehensive implem
 
 ### The `/decompose` Command (NEW)
 
-For features exceeding 500 LOC, this command breaks the parent specification into atomic capabilities:
+For features exceeding 1000 LOC total, this command breaks the parent specification into atomic capabilities:
 
 1. **Analysis**: Reads parent spec.md and extracts functional requirements
 2. **Grouping**: Identifies bounded contexts (entities, workflows, API clusters)
-3. **Estimation**: Calculates LOC per capability (target: 200-500 LOC)
+3. **Estimation**: Calculates LOC per capability (target: impl 200-500 + tests 200-500 = total 400-1000)
 4. **Ordering**: Creates dependency-aware implementation sequence
 5. **Generation**: Creates capability subdirectories (cap-001/, cap-002/, etc.) with scoped specs
 6. **Output**: Writes `capabilities.md` with breakdown and dependency graph
 
 **Benefits:**
-- Atomic PRs (200-500 LOC instead of 4,000+ LOC)
+- Atomic PRs (400-1000 LOC total instead of 4,000+ LOC)
 - Parallel development (independent capabilities can be built concurrently)
 - Faster reviews (1-2 days instead of 7+ days)
 - Lower risk (smaller PRs = easier rollback)
-- TDD at manageable scope (RED-GREEN-REFACTOR within 500 LOC)
+- TDD at manageable scope (RED-GREEN-REFACTOR within 1000 LOC, tests and impl both bounded)
 
 ### The `/tasks` Command
 

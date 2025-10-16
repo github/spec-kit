@@ -70,29 +70,30 @@ Phase 0-10: Feature Planning
 
 ## LOC Budget Tracking
 
-**Target:** 200-400 LOC (ideal)
-**Acceptable:** 400-500 LOC
-**Maximum:** 500 LOC (requires justification below)
+**Targets:**
+- Implementation: 200-500 LOC
+- Tests: 200-500 LOC
+- Total: 400-1000 LOC
 
 **Estimated Breakdown:**
-| Component | Estimated LOC | Notes |
-|-----------|---------------|-------|
-| Contract tests | | [e.g., 4 endpoints × 20 LOC each = 80] |
-| Models | | [e.g., User + Profile models = 120] |
-| Services | | [e.g., UserService CRUD = 180] |
-| Integration tests | | [e.g., Auth flow scenarios = 100] |
-| CLI (if applicable) | | [e.g., Command interface = 50] |
-| **Total** | **0** | [✓ Within budget \| ⚠️ Approaching limit \| ❌ Exceeds 500] |
+| Component | Implementation LOC | Test LOC | Notes |
+|-----------|-------------------|----------|-------|
+| Models | | | [e.g., User + Profile entities + validation tests] |
+| Services | | | [e.g., UserService CRUD + service layer tests] |
+| API/CLI | | | [e.g., 4 endpoints × 20 LOC + contract tests] |
+| Integration | | | [e.g., E2E test scenarios] |
+| **Subtotals** | **0** | **0** | **Total: 0 LOC** |
 
-**Status:** [Calculate total above]
-- ✓ **Within budget** (200-500 LOC) - Proceed with implementation
-- ⚠️ **Approaching limit** (450-500 LOC) - Review for optimization opportunities
-- ❌ **Exceeds 500 LOC** - Justification required below OR run `/decompose` to split into capabilities
+**Status:** [Calculate totals above]
+- ✓ **Within budget** - Impl: X (✓ ≤500) \| Tests: Y (✓ ≤500) \| Total: Z (✓ ≤1000)
+- ⚠️ **Approaching limits** - Any metric >450 or total >900 - Review for optimization opportunities
+- ❌ **Exceeds limits** - Impl >500 OR Tests >500 OR Total >1000 - See justification below OR run `/decompose`
 
-**Justification for >500 LOC (if applicable):**
-[If total >500 LOC, document here:
+**Justification (if any limit exceeded):**
+[If Implementation >500 OR Tests >500 OR Total >1000, document here:
 - Why this scope cannot be split further
 - What keeps these components tightly coupled
+- If tests >500: Why comprehensive test coverage requires this LOC (complex scenarios, many edge cases, etc.)
 - Why splitting would harm cohesion or introduce artificial boundaries
 - Approval status from tech lead]
 

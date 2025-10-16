@@ -1,5 +1,5 @@
 ---
-description: Decompose parent feature spec into atomic capabilities (200-500 LOC each)
+description: Decompose parent feature spec into atomic capabilities (400-1000 LOC total each)
 scripts:
   sh: scripts/bash/decompose-feature.sh --json
   ps: scripts/powershell/decompose-feature.ps1 -Json
@@ -50,21 +50,24 @@ Given a parent feature specification, decompose it into independently-implementa
 ### Phase 2: Estimate LOC Per Capability
 
 **For each identified group, estimate:**
-| Component | Typical Range | Notes |
-|-----------|---------------|-------|
-| Contract tests | 50-100 LOC | ~20-25 LOC per endpoint/contract |
-| Models | 50-100 LOC | ~50 LOC per entity with validation |
-| Services | 100-200 LOC | CRUD + business logic |
-| Integration tests | 50-100 LOC | E2E scenarios for the capability |
-| CLI (if applicable) | 30-80 LOC | Command interface |
+| Component | Implementation LOC | Test LOC | Notes |
+|-----------|-------------------|----------|-------|
+| Models | 50-100 | 50-80 | Entities + validation tests |
+| Services | 100-200 | 100-150 | CRUD + business logic + service tests |
+| API/CLI | 50-100 | 50-100 | Endpoints/commands + contract tests |
+| Integration | N/A | 50-100 | E2E scenarios |
 
-**Target total: 250-500 LOC per capability**
+**Target totals per capability:**
+- Implementation: 200-400 LOC
+- Tests: 200-400 LOC
+- **Total: 400-800 LOC**
 
 **Validation rules:**
-- **<200 LOC**: Too small, consider merging with related capability
-- **200-400 LOC**: ✓ Ideal range
-- **400-500 LOC**: ✓ Acceptable, ensure well-scoped
-- **>500 LOC**: ⚠️ Requires detailed justification OR further decomposition
+- **<400 LOC total**: Too small, consider merging with related capability
+- **400-600 LOC**: ✓ Ideal range (200-300 impl + 200-300 tests)
+- **600-800 LOC**: ✓ Acceptable, well-scoped (300-400 impl + 300-400 tests)
+- **800-1000 LOC**: ✓ Acceptable with justification (400-500 impl + 400-500 tests)
+- **>1000 LOC OR impl >500 OR tests >500**: ⚠️ Requires detailed justification OR further decomposition
 
 ### Phase 3: Order Capabilities
 
@@ -89,8 +92,8 @@ Given a parent feature specification, decompose it into independently-implementa
      - Scope description
      - Dependencies
      - Business value
-     - Component breakdown with LOC estimates
-     - Justification if >500 LOC
+     - Component breakdown with implementation and test LOC estimates
+     - Justification if impl >500 OR tests >500 OR total >1000
    - Generate dependency graph
    - Document implementation strategy
 
@@ -110,12 +113,12 @@ Given a parent feature specification, decompose it into independently-implementa
      - List dependencies on other capabilities
      - Scope user scenarios to this capability
      - Estimate component breakdown
-     - Validate 200-500 LOC budget
+     - Validate dual LOC budget (impl ≤500, tests ≤500, total ≤1000)
 
 ### Phase 5: Validation
 
 **Decomposition quality checks:**
-- [ ] All capabilities fall within 200-500 LOC (or justified)
+- [ ] All capabilities: impl ≤500, tests ≤500, total ≤1000 (or justified)
 - [ ] Each capability independently testable
 - [ ] No circular dependencies
 - [ ] All parent FRs assigned to a capability (no orphans)
@@ -149,9 +152,9 @@ specs/[jira-123.feature-name]/
 
 **For each capability (can be done in parallel where dependencies allow):**
 
-1. **Plan**: `/plan --capability cap-001` → generates cap-001/plan.md (200-500 LOC scoped)
+1. **Plan**: `/plan --capability cap-001` → generates cap-001/plan.md (400-1000 LOC scoped)
 2. **Tasks**: `/tasks` → generates cap-001/tasks.md (8-15 tasks)
-3. **Implement**: `/implement` → atomic PR (200-500 LOC)
+3. **Implement**: `/implement` → atomic PR (400-1000 LOC total)
 4. **Repeat** for cap-002, cap-003, etc.
 
 ## Example Workflow
@@ -196,7 +199,7 @@ git pull origin main
 → PR #2: cap-002 branch → main (320 LOC) ✓ MERGED
 
 # Step 5: Repeat for cap-003...
-# Each capability = separate branch + atomic PR (200-500 LOC)
+# Each capability = separate branch + atomic PR (400-1000 LOC total)
 ```
 
 **Key Points:**
@@ -212,7 +215,7 @@ git pull origin main
 - Consider merging tightly-coupled capabilities
 - Review if feature scope is too large (might need multiple parent features)
 
-**"Capabilities too small (<200 LOC)":**
+**"Capabilities too small (<400 LOC total)":**
 - Merge with related capabilities
 - Ensure not over-decomposing simple features
 

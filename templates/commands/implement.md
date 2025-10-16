@@ -12,11 +12,11 @@ description: Execute implementation following the plan and tasks with strict TDD
 
 - **Parent feature branch** (`username/jira-123.feature-name`):
    - Reads from: `specs/jira-123.feature-name/plan.md`, `tasks.md`
-   - Implementation: Single PR workflow (<500 LOC)
+   - Implementation: Single PR workflow (<1000 LOC total)
 
 - **Capability branch** (`username/jira-123.feature-name-cap-001`):
    - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`, `tasks.md`
-   - Implementation: Atomic PR workflow (200-500 LOC)
+   - Implementation: Atomic PR workflow (400-1000 LOC total)
    - PR target: `cap-001` branch → `main` (not to parent branch)
 
 **No flag needed** - detection is automatic based on branch name pattern.
@@ -207,8 +207,9 @@ npm test || python -m pytest || go test ./...
 ### If on capability branch (e.g., `username/jira-123.feature-cap-001`):
 
 1. **Verify atomic scope**:
-   - Run: `git diff main --stat` to confirm 200-500 LOC
-   - If >500 LOC: document justification in PR description
+   - Run: `git diff main --stat` to confirm 400-1000 LOC total
+   - Break down: Implementation LOC vs Test LOC
+   - If Impl >500 OR Tests >500 OR Total >1000: document justification in PR description
 
 2. **Create PR to main**:
    ```bash
@@ -222,8 +223,9 @@ npm test || python -m pytest || go test ./...
    - [Key component 3]
 
    ## LOC Impact
-   - Estimated: XXX LOC
-   - Actual: XXX LOC (within 200-500 target)
+   - Implementation: XXX LOC (target ≤500)
+   - Tests: XXX LOC (target ≤500)
+   - Total: XXX LOC (target ≤1000)
 
    ## Dependencies
    - Depends on: [cap-XXX if any]
@@ -260,11 +262,12 @@ npm test || python -m pytest || go test ./...
    ```
 
 ### Benefits of Capability PR Workflow:
-- **Fast reviews**: 200-500 LOC reviewed in 1-2 days vs 1500+ LOC taking 7+ days
+- **Fast reviews**: 400-1000 LOC reviewed in 1-2 days vs 2000+ LOC taking 7+ days
 - **Parallel development**: Multiple team members work on different capabilities simultaneously
 - **Early integration**: Merge to main quickly, catch integration issues early
-- **Manageable TDD**: Test-first approach easier with smaller scope
+- **Manageable TDD**: Test-first approach easier with smaller scope (impl + tests both bounded)
 - **Clear ownership**: Each PR has focused scope and clear acceptance criteria
+- **Bounded test growth**: Prevents test files from ballooning without limit
 
 ## Error Handling & Recovery
 

@@ -2,7 +2,7 @@
 
 **Parent Spec:** [link to parent spec.md]
 **Decomposition Date:** [DATE]
-**LOC Budget:** 200-500 LOC per capability (justification required >500)
+**LOC Budget per Capability:** Implementation 200-500 + Tests 200-500 = Total 400-1000 LOC (justification required if any limit exceeded)
 
 ## Execution Flow (main)
 ```
@@ -14,16 +14,14 @@
    → Group by: entity lifecycle, workflow stage, API clusters
    → Analyze dependencies between contexts
 4. Estimate LOC per capability:
-   → Contract tests: 50-100 LOC
-   → Models: 50-100 LOC
-   → Services: 100-200 LOC
-   → Integration tests: 50-100 LOC
-   → Target total: 250-500 LOC per capability
+   → Implementation: Models (50-100) + Services (100-200) + API/CLI (50-100) = 200-400 LOC
+   → Tests: Contract tests (50-100) + Integration tests (50-100) + Unit tests (100-200) = 200-400 LOC
+   → Target total: 400-800 LOC per capability (max 1000 with justification)
 5. Order capabilities:
    → By: infrastructure dependencies + business value
    → Mark foundation capabilities (no dependencies)
 6. Validate decomposition:
-   → Each capability 200-500 LOC (or justified >500)
+   → Each capability: Impl ≤500, Tests ≤500, Total ≤1000 (or justified if any exceeded)
    → No circular dependencies
    → All capabilities independently testable
    → Max 10 capabilities per parent feature
@@ -38,7 +36,7 @@
 ### Analysis Checklist
 - [ ] Analyzed functional requirements (FR-001 to FR-XXX)
 - [ ] Identified bounded contexts
-- [ ] Estimated LOC per capability
+- [ ] Estimated LOC per capability (impl + test)
 - [ ] Ordered by dependencies and business value
 - [ ] Validated each capability is independently testable
 - [ ] Confirmed no circular dependencies
@@ -46,23 +44,24 @@
 
 ### Sizing Guidelines
 
-**Ideal Distribution:**
-- **200-300 LOC:** Simple CRUD, single entity (target 30% of capabilities)
-- **300-400 LOC:** Standard workflow, 2-3 entities (target 50% of capabilities)
-- **400-500 LOC:** Complex integration, multiple services (target 15% of capabilities)
-- **>500 LOC:** Exceptional, requires detailed justification (<5% of capabilities)
+**Ideal Distribution (Total LOC including tests):**
+- **400-600 LOC:** Simple CRUD, single entity (200-300 impl + 200-300 tests) - target 30% of capabilities
+- **600-800 LOC:** Standard workflow, 2-3 entities (300-400 impl + 300-400 tests) - target 50% of capabilities
+- **800-1000 LOC:** Complex integration, multiple services (400-500 impl + 400-500 tests) - target 15% of capabilities
+- **>1000 LOC:** Exceptional, requires detailed justification (<5% of capabilities)
 
-**Justification Required for >500 LOC:**
+**Justification Required if Implementation >500 OR Tests >500 OR Total >1000:**
 - Tight coupling that would break if split
 - Single cohesive algorithm that must stay together
 - Complex rule engine with interdependent logic
+- For tests >500: Extensive edge cases, complex integration scenarios requiring detailed testing
 - Approved by tech lead with rationale documented
 
 ---
 
 ## Capabilities
 
-### Cap-001: [Capability Name] (Est: XXX LOC)
+### Cap-001: [Capability Name] (Est: XXX total LOC)
 
 **Scope:** [One sentence describing what this capability delivers]
 
@@ -75,19 +74,20 @@
 - FR-YYY: [Requirement scoped to this capability]
 
 **Component Breakdown:**
-| Component | Estimated LOC | Notes |
-|-----------|---------------|-------|
-| Contract tests | XX | [e.g., 4 endpoints × 20 LOC each] |
-| Models | XX | [e.g., User + Profile models] |
-| Services | XX | [e.g., UserService CRUD] |
-| Integration tests | XX | [e.g., Auth flow scenarios] |
-| **Total** | **XXX** | [✓ Within budget | ⚠️ Requires justification] |
+| Component | Implementation LOC | Test LOC | Notes |
+|-----------|-------------------|----------|-------|
+| Models | XX | XX | [e.g., User + Profile entities + validation tests] |
+| Services | XX | XX | [e.g., UserService CRUD + service tests] |
+| API/CLI | XX | XX | [e.g., 4 endpoints + contract tests] |
+| Integration | XX | XX | [e.g., E2E test scenarios] |
+| **Subtotals** | **XXX** | **XXX** | **Total: XXX LOC** |
+| **Status** | [✓ ≤500 \| ⚠️ >500] | [✓ ≤500 \| ⚠️ >500] | [✓ ≤1000 \| ⚠️ >1000] |
 
-**Justification (if >500 LOC):**
-[If total >500: Explain why splitting would harm cohesion, what keeps this together, why it's a single unit of work]
+**Justification (if any limit exceeded):**
+[If Impl >500 OR Tests >500 OR Total >1000: Explain why splitting would harm cohesion, what keeps this together, why it's a single unit of work, why tests require extensive LOC]
 
-**Capability Branch:** `[username]/[feature-id]-cap-001`
-**PR Target:** `cap-001` branch → `main` (atomic PR, 200-500 LOC)
+**Capability Branch:** `[username]/[jira-key].[feature-name]-cap-001`
+**PR Target:** `cap-001` branch → `main` (atomic PR, 400-1000 LOC total)
 
 **Acceptance Criteria:**
 - [ ] [Specific testable criterion for this capability]
@@ -158,7 +158,7 @@ Cap-006 [Independent - no dependencies]
 ## Validation Checklist
 
 ### Decomposition Quality
-- [ ] All capabilities fall within 200-500 LOC (or have documented justification)
+- [ ] All capabilities: Impl ≤500, Tests ≤500, Total ≤1000 (or have documented justification)
 - [ ] Each capability delivers independently testable value
 - [ ] No circular dependencies in dependency graph
 - [ ] Foundation capabilities identified (enable others)
@@ -198,6 +198,6 @@ Cap-006 [Independent - no dependencies]
 ---
 
 **Total Capabilities:** [X]
-**Total Estimated LOC:** [Sum of all capabilities]
+**Total Estimated LOC:** [Sum of all capabilities - implementation + tests]
 **Average LOC per Capability:** [Total / X]
-**Capabilities >500 LOC:** [Count requiring justification]
+**Capabilities Exceeding Limits:** [Count requiring justification (impl >500 OR tests >500 OR total >1000)]

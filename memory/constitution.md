@@ -41,7 +41,7 @@
 ### [PRINCIPLE_8_NAME]
 <!-- Example: VIII. Atomic Development & Scope Management -->
 [PRINCIPLE_8_DESCRIPTION]
-<!-- Example: Target 200-500 LOC per capability/PR; Use /decompose for features >500 LOC; Benefits: faster reviews (1-2 days vs 7+ days), manageable TDD scope, parallel development; Justification required for >500 LOC with approval -->
+<!-- Example: Target per capability/PR: Implementation 200-500 LOC + Tests 200-500 LOC = Total 400-1000 LOC; Use /decompose for features >1000 LOC total; Benefits: faster reviews (1-2 days vs 7+ days), manageable TDD scope, parallel development, bounded test growth; Justification required if Implementation >500 OR Tests >500 OR Total >1000 with approval -->
 
 ## [SECTION_2_NAME]
 <!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
