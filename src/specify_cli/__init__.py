@@ -342,13 +342,19 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
     return selected_key
 
 def get_version() -> str:
-    """Get the current version of the specify-cli package.
+    """Get the current version of the CLI package.
 
     Returns:
         Version string from package metadata, or "unknown (development mode)" if not installed.
+
+    Note:
+        Uses __package__ to dynamically determine the package name, avoiding hardcoding.
     """
     try:
-        return version("specify-cli")
+        # Use __package__ to get the current package name dynamically
+        package_name = __package__ or "specify_cli"
+        dist_name = package_name.replace("_", "-")
+        return version(dist_name)
     except PackageNotFoundError:
         return "unknown (development mode)"
 
