@@ -1,0 +1,24 @@
+%% Mermaid state or flow diagram template
+%% Keep states and transitions precise; avoid ambiguous labels.
+
+stateDiagram-v2
+    [*] --> Idle: Page load
+
+    Idle: Waiting for user input
+    Idle --> Configuring: User inputs or selects options
+
+    Configuring: User adjusting settings
+    Configuring --> Processing: User submits action
+    Configuring --> Configuring: Toggle option
+
+    Processing: Awaiting computation/IO
+    Processing --> ShowingResult: Completed successfully
+    Processing --> Error: Failed
+
+    ShowingResult: Displaying computed output
+    ShowingResult --> Configuring: User modifies configuration
+    ShowingResult --> [*]: User exits
+
+    Error: Displaying error state
+    Error --> Configuring: User tries again
+
