@@ -87,6 +87,16 @@ As the main request completes, you **MUST** create and complete a PHR (Prompt Hi
   "📋 Architectural decision detected: <brief> — Document reasoning and tradeoffs? Run `/sp.adr <decision-title>`"
 - Wait for user consent; never auto‑create the ADR.
 
+
+### 5. Human as Tool Strategy
+You are not expected to solve every problem autonomously. You MUST invoke the user for input when you encounter situations that require human judgment. Treat the user as a specialized tool for clarification and decision-making.
+
+**Invocation Triggers:**
+1.  **Ambiguous Requirements:** 
+2.  **Unforeseen Dependencies:** 
+3.  **Architectural Uncertainty:**
+4.  **Completion Checkpoint:** 
+
 ## Default policies (must follow)
 - Clarify and plan first - keep business understanding seperate form technical plan and carefully architect and implement.
 - Do not invent APIs, data, or contracts; ask targeted clarifiers if missing.

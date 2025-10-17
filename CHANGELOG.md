@@ -7,34 +7,62 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.18] - 2025-10-07
+## [0.0.20] - 2025-10-14
 
 ### Added
 
-- **Merged upstream spec-kit v0.0.57**: Integrated all improvements from GitHub's spec-kit repository
-- **Checklist command**: New `/sp.checklist` command for generating quality validation checklists
-- **VS Code settings**: Added VS Code settings template for better IDE integration
-- Improved command templates with better guidance and error handling
-- Full Codex CLI support
-- Enhanced command documentation and examples
+- **Intelligent Branch Naming**: `create-new-feature` scripts now support `--short-name` parameter for custom branch names
+  - When `--short-name` provided: Uses the custom name directly (cleaned and formatted)
+  - When omitted: Automatically generates meaningful names using stop word filtering and length-based filtering
+  - Filters out common stop words (I, want, to, the, for, etc.)
+  - Removes words shorter than 3 characters (unless they're uppercase acronyms)
+  - Takes 3-4 most meaningful words from the description
+  - **Enforces GitHub's 244-byte branch name limit** with automatic truncation and warnings
+  - Examples:
+    - "I want to create user authentication" → `001-create-user-authentication`
+    - "Implement OAuth2 integration for API" → `001-implement-oauth2-integration-api`
+    - "Fix payment processing bug" → `001-fix-payment-processing`
+    - Very long descriptions are automatically truncated at word boundaries to stay within limits
+  - Designed for AI agents to provide semantic short names while maintaining standalone usability
 
 ### Changed
 
-- **Command prefix**: Updated from `/speckit.` to `/sp.` for consistency with SpecifyPlus branding
-- Improved templates for specify, plan, tasks, analyze, clarify, and implement commands
-- Updated all documentation to use `/sp.` prefix
-- Refined spec, plan, and tasks templates for better clarity
-- Enhanced prerequisite checking in scripts
+- Enhanced help documentation for `create-new-feature.sh` and `create-new-feature.ps1` scripts with examples
+- Branch names now validated against GitHub's 244-byte limit with automatic truncation if needed
 
-### Preserved
+## [0.0.19] - 2025-10-10
 
-- All docs-plus/ educational content (100+ files)
-- memory/ constitutional rules
-- protocol-templates/ agent protocols  
-- specifyplus and sp CLI commands
-- ADR and PHR features
-- Context7 integration
-- Issue templates and workflows
+### Added
+
+- **Intelligent Branch Naming**: `create-new-feature` scripts now support `--short-name` parameter for custom branch names
+  - When `--short-name` provided: Uses the custom name directly (cleaned and formatted)
+  - When omitted: Automatically generates meaningful names using stop word filtering and length-based filtering
+  - Filters out common stop words (I, want, to, the, for, etc.)
+  - Removes words shorter than 3 characters (unless they're uppercase acronyms)
+  - Takes 3-4 most meaningful words from the description
+  - **Enforces GitHub's 244-byte branch name limit** with automatic truncation and warnings
+  - Examples:
+    - "I want to create user authentication" → `001-create-user-authentication`
+    - "Implement OAuth2 integration for API" → `001-implement-oauth2-integration-api`
+    - "Fix payment processing bug" → `001-fix-payment-processing`
+    - Very long descriptions are automatically truncated at word boundaries to stay within limits
+  - Designed for AI agents to provide semantic short names while maintaining standalone usability
+
+### Changed
+
+- Fixed the path to the constitution in `plan.md` (thank you to [@lyzno1](https://github.com/lyzno1) for spotting).
+- Fixed backslash escapes in generated TOML files for Gemini (thank you to [@hsin19](https://github.com/hsin19) for the contribution).
+- Implementation command now ensures that the correct ignore files are added (thank you to [@sigent-amazon](https://github.com/sigent-amazon) for the contribution).
+
+## [0.0.18] - 2025-10-06
+
+### Added
+
+- Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users.
+- Use the `/speckit.` command prefix to easily discover Spec Kit-related commands.
+- Refactor the prompts and templates to simplify their capabilities and how they are tracked. No more polluting things with tests when they are not needed.
+- Ensure that tasks are created per user story (simplifies testing and validation).
+- Add support for Visual Studio Code prompt shortcuts and automatic script execution.
 
 ### Changed
 
@@ -149,3 +177,4 @@ N/A
 ### Changed
 
 N/A
+

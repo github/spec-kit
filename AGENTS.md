@@ -116,7 +116,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Kilo Code** | `.kilocode/rules/` | Markdown | N/A (IDE-based) | Kilo Code IDE |
 | **Auggie CLI** | `.augment/rules/` | Markdown | `auggie` | Auggie CLI |
 | **Roo Code** | `.roo/rules/` | Markdown | N/A (IDE-based) | Roo Code IDE |
-| **CodeBuddy** | `.codebuddy/commands/` | Markdown | `codebuddy` | CodeBuddy |
+| **CodeBuddy CLI** | `.codebuddy/commands/` | Markdown | `codebuddy` | CodeBuddy CLI |
 | **Amazon Q Developer CLI** | `.amazonq/prompts/` | Markdown | `q` | Amazon Q Developer CLI |
 
 ### Step-by-Step Integration Guide
@@ -178,7 +178,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 
 ##### Add to ALL_AGENTS array:
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
 ```
 
 ##### Add case statement for directory structure:
@@ -323,7 +323,7 @@ Require a command-line tool to be installed:
 - **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
-- **CodeBuddy**: `codebuddy` CLI
+- **CodeBuddy CLI**: `codebuddy` CLI
 
 ### IDE-Based Agents
 Work within integrated development environments:
@@ -400,3 +400,4 @@ When adding new agents:
 ---
 
 *This documentation should be updated whenever new agents are added to maintain accuracy and completeness.*
+
