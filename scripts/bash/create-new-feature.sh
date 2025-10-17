@@ -6,7 +6,7 @@ JSON_MODE=false
 SHORT_NAME=""
 ARGS=()
 i=0
-while [ $i -lt $# ]; do
+while [ $i -le $# ]; do
     arg="${!i}"
     case "$arg" in
         --json) 
