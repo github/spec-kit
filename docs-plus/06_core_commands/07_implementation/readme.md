@@ -71,3 +71,7 @@
 - Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
 - PyPI package: https://pypi.org/project/specifyplus/
 - Original Spec Kit repo: https://github.com/github/spec-kit
+
+## Next Step
+
+When implementation is complete and you have verified the work locally, continue to [Step 8: Ship with `/git.commit_pr`](../09_git_commit_pr/readme.md) to package the branch into commits and a pull request.

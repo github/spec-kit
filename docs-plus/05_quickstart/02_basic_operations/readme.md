@@ -308,6 +308,14 @@ Your agent will create the appropriate spec artifacts under your project's specs
 - [ ] Spec loop artifacts created (.speckit/specs/basic-operations/)
 - [ ] Tasks marked complete in tasks.md
 
+## Ship It with `/git.commit_pr`
+
+Once every task is complete and all verification checks are green, hand the Git work to the agentic workflow command documented in [Core Commands · Step 8](../../06_core_commands/09_git_commit_pr/readme.md).
+
+- Run `/git.commit_pr Wrap up the basic calculator feature.` (or omit the argument and let it infer the summary)
+- Approve the generated branch, commit message, and PR details before announcing completion
+- If the command surfaces blockers (e.g., missing credentials), resolve them and re-run so the PR accurately reflects the finished loop
+
 ## What's Next
 
 You've completed your first full spec loop! The basic operations are now implemented with comprehensive testing and documentation. The next step is to add a [CLI Interface](03_cli_interface/readme.md) to make the calculator usable from the command line.

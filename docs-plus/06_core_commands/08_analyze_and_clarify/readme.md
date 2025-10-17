@@ -66,3 +66,7 @@ Two key commands that enhance the Spec Kit workflow are /clarify and /analyze. T
 - Spec Kit Clarify/Analyze Demo (optional deep dive): https://www.youtube.com/watch?v=YD66SBpJY2M
 - Spec Kit Nine Articles: https://github.com/panaversity/spec-kit-plus/blob/main/spec-driven.md#the-nine-articles-of-development
 - Original Spec Kit repo: https://github.com/github/spec-kit
+
+## Next Step
+
+With clarifications resolved and coverage verified, proceed to [Step 8: Ship with `/git.commit_pr`](../09_git_commit_pr/readme.md) to finalize the branch and open the pull request.
