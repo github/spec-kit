@@ -2,7 +2,7 @@ name: Create Release
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fork-main ]
     paths:
       - 'memory/**'
       - 'scripts/**'
