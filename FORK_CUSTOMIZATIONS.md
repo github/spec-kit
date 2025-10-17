@@ -179,6 +179,9 @@ This document tracks all customizations made to this fork of `github/spec-kit`. 
 The following files remain unmodified and should be updated directly from upstream during syncs:
 
 ### Core Templates
+
+All template files remain unmodified and should be updated directly from upstream during syncs:
+
 - `templates/spec-template.md`
 - `templates/plan-template.md`
 - `templates/tasks-template.md`
@@ -214,30 +217,81 @@ The following files remain unmodified and should be updated directly from upstre
   ```
 
 #### `templates/commands/plan.md`
-- **Status**: Modified (2025-10-16)
-- **Reason**: Added brownfield analysis mode from archon-example-workflow codebase-analyst pattern
+- **Status**: Modified (2025-10-16, 2025-10-17)
+- **Reason**: Added brownfield analysis mode + interactive ignore pattern confirmation + Archon sync hooks
 - **Merge Strategy**: Manual merge required
-- **Last Modified**: 2025-10-16
+- **Last Modified**: 2025-10-17
 - **Upstream Conflicts**: Possible (actively maintained file)
 - **Modification Details**:
   ```markdown
-  # Outline steps renumbered (1-5 instead of 1-4)
+  # Outline steps renumbered (1-7 instead of 1-4)
 
-  # Step 2: Detect Brownfield Mode (lines 23-26)
+  # Step 2: Silent Background Sync (NEW 2025-10-17, lines 23-31)
+  - Added silent Archon document pull before planning
+  - Ensures we work with latest spec.md from Archon
+
+  # Step 3: Detect Brownfield Mode (lines 33-36)
   - Added optional brownfield detection for existing codebases
 
-  # New Section: Brownfield Analysis (lines 41-85)
+  # Step 6: Silent Push to Archon (NEW 2025-10-17, lines 49-55)
+  - Added silent Archon document push after planning
+  - Syncs plan.md, research.md, data-model.md to Archon
+
+  # New Section: Brownfield Analysis (lines 59-191)
   - Pattern discovery process for existing codebases
+  - **NEW (2025-10-17)**: Interactive ignore pattern confirmation (lines 72-149)
+    * Auto-detects large directories (>1000 files or >100MB)
+    * Scans for common patterns (node_modules, bin, obj, *.min.js, etc.)
+    * Presents interactive table with size/file counts
+    * User chooses: A (exclude all), B (no filtering), C (custom), D (show samples)
+    * Environment variable `$SPECKIT_IGNORE` for automation (skip prompt)
+    * NO dotfiles created - everything done interactively
+    * Prevents context overload with large files/dependencies
+    * Applied to ALL Glob/Grep operations during analysis
   - Discovers: architecture patterns, naming conventions, testing patterns
-  - Documents constraints in research.md
+  - Documents constraints (including exclusion metrics) in research.md
   - Feeds discovered patterns into plan generation
   - Only activates for codebases >20 files with established architecture
   ```
 
+#### `templates/commands/specify.md`
+- **Status**: Modified (2025-10-17)
+- **Reason**: Added Archon sync hook to push spec.md after creation
+- **Merge Strategy**: Manual merge required
+- **Last Modified**: 2025-10-17
+- **Upstream Conflicts**: Possible (actively maintained file)
+- **Modification Details**:
+  ```markdown
+  # Outline steps renumbered (1-8 instead of 1-7)
+
+  # Step 6: Silent push to Archon (NEW 2025-10-17, lines 75-83)
+  - Added silent Archon document push after spec creation
+  - Syncs spec.md to Archon MCP and creates project if needed
+  - Zero output, never blocks, never fails
+  ```
+
+#### `templates/commands/tasks.md`
+- **Status**: Modified (2025-10-17)
+- **Reason**: Added Archon sync hooks for document pull and task creation
+- **Merge Strategy**: Manual merge required
+- **Last Modified**: 2025-10-17
+- **Upstream Conflicts**: Possible (actively maintained file)
+- **Modification Details**:
+  ```markdown
+  # Outline steps renumbered (1-7 instead of 1-5)
+
+  # Step 2: Silent Background Sync (NEW 2025-10-17, lines 20-28)
+  - Added silent Archon document pull before task generation
+  - Ensures we work with latest plan.md, spec.md from Archon
+
+  # Step 6: Silent push to Archon (NEW 2025-10-17, lines 59-65)
+  - Added silent Archon task sync after tasks.md generation
+  - Syncs tasks.md to Archon MCP and creates manageable tasks
+  - Zero output, never blocks, never fails
+  ```
+
 #### Other Command Templates (unmodified - safe for upstream)
 - `templates/commands/constitution.md`
-- `templates/commands/specify.md`
-- `templates/commands/tasks.md`
 - `templates/commands/clarify.md`
 - `templates/commands/analyze.md`
 - `templates/commands/checklist.md`
@@ -321,6 +375,40 @@ Document planned modifications here before implementing them:
   - Zero user visibility (completely transparent)
   - Injected after "## Project Overview" section
 - **Status**: ✅ Enhanced SDD workflow with Archon best practices while maintaining constitutional integrity and silent integration model
+
+### Archon Runtime Sync + Interactive Brownfield Filtering (2025-10-17)
+- **Action**: Fixed Archon integration not executing during workflow + Added interactive confirmation for brownfield path exclusions
+- **Changes**:
+  - **Added Archon sync hooks to ALL workflow commands**:
+    - `templates/commands/specify.md`: Added silent push after spec creation (step 6)
+    - `templates/commands/plan.md`: Added silent pull (step 2) and push (step 6)
+    - `templates/commands/tasks.md`: Added silent pull (step 2) and push (step 6 with task creation)
+    - `templates/commands/implement.md`: Already had sync (step 2) - no changes needed
+  - **Added interactive brownfield ignore pattern confirmation**:
+    - Enhanced `templates/commands/plan.md` brownfield section (lines 72-149):
+      - Auto-detection of large directories (>1000 files or >100MB)
+      - Scan for common patterns: node_modules, bin, obj, dist, *.min.js, etc.
+      - Interactive table showing detected directories with size/file count
+      - User confirmation with 4 options:
+        * A: Exclude all recommended (default)
+        * B: No filtering (analyze everything)
+        * C: Custom selection (pick individually)
+        * D: Show sample files first
+      - Environment variable override: `$SPECKIT_IGNORE` for silent automation
+      - Documents exclusions in research.md with detailed metrics
+  - **Documentation**: Updated `FORK_CUSTOMIZATIONS.md` with these enhancements
+- **Problem Solved**:
+  - ❌ **Before**: Archon integration only ran during `specify init` (CLI-level injection)
+  - ✅ **After**: Archon sync runs automatically during EVERY workflow command
+  - ❌ **Before**: Brownfield analysis could overload context with large files/dependencies
+  - ✅ **After**: Interactive confirmation lets user decide what to exclude (no dotfiles needed)
+- **User Impact**:
+  - **Archon users**: Documents now sync automatically to/from Archon during workflow (completely silent)
+  - **Brownfield users**: AI assistant detects and asks permission before excluding large directories
+  - **No dotfiles**: No `.speckit-ignore` file clutter - everything done interactively
+  - **Automation available**: Use `$SPECKIT_IGNORE` env var to skip confirmation
+  - **No breaking changes**: All enhancements are additive and gracefully degrade if unavailable
+- **Status**: ✅ Archon integration now fully operational + Brownfield analysis with user-friendly interactive filtering
 
 ---
 

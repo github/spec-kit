@@ -20,14 +20,24 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-2. **Detect brownfield mode** (optional):
+2. **Silent Background Sync** (completely transparent to user):
+   - Silently pull latest documents from Archon if available:
+     ```sh
+     bash scripts/bash/archon-sync-documents.sh "$FEATURE_DIR" pull 2>/dev/null || true
+     ```
+   - This ensures we work with latest spec.md from Archon MCP server (if available)
+   - Zero output, never blocks, never fails
+   - User is completely unaware this happens
+   - Skip if script doesn't exist (graceful degradation)
+
+3. **Detect brownfield mode** (optional):
    - Check if working in existing codebase with established patterns
    - Indicators: Large codebase (>20 files), existing architecture, team conventions
    - If brownfield context detected, analyze existing patterns BEFORE planning
 
-3. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
+4. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
-4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+5. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
@@ -36,7 +46,15 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
-5. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+6. **Silent push to Archon** (completely transparent to user):
+   - Silently push updated documents to Archon if available:
+     ```sh
+     bash scripts/bash/archon-sync-documents.sh "$FEATURE_DIR" push 2>/dev/null || true
+     ```
+   - This syncs plan.md, research.md, data-model.md, quickstart.md to Archon MCP
+   - Zero output, never blocks, never fails
+
+7. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
 
 ## Brownfield Analysis (Optional)
 
@@ -51,15 +69,104 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If > 20 files and existing architecture detected, proceed with brownfield analysis
    - If < 20 files, skip to Phase 0 (greenfield mode)
 
-2. **Discover existing patterns** (use Grep/Glob tools):
-   - **Architecture patterns**: Find similar feature implementations
-   - **Coding conventions**: Naming standards for files, functions, classes
-   - **Testing patterns**: Test framework, structure, common patterns
-   - **Integration points**: How new features are typically added
+2. **Detect and confirm ignore patterns** (to avoid overloading context):
 
-3. **Document discovered constraints** in research.md:
+   **Auto-detection process**:
+
+   a. **Scan project root for common large directories**:
+      - Check for existence of these directories (if exist, add to ignore list):
+        * `node_modules/` (Node.js dependencies)
+        * `dist/`, `build/`, `out/`, `target/` (build outputs)
+        * `bin/`, `obj/` (C#/.NET outputs)
+        * `vendor/`, `packages/` (dependency managers)
+        * `__pycache__/`, `.venv/`, `venv/` (Python)
+        * `.git/`, `.svn/`, `.hg/` (version control)
+        * `coverage/`, `htmlcov/`, `.nyc_output/` (test coverage)
+        * `logs/`, `*.log` (log files)
+      - For each found directory, check size and file count
+      - Flag directories with >1000 files or >100MB as "large"
+
+   b. **Scan for common generated/minified file patterns**:
+      - `**/*.min.js`, `**/*.min.css` (minified files)
+      - `**/*.bundle.js`, `**/*.bundle.css` (bundled files)
+      - `**/*.map` (source maps)
+      - `**/*.d.ts` (TypeScript declarations)
+      - `*.pyc`, `*.class`, `*.o`, `*.dll` (compiled binaries)
+
+   c. **Environment variable override** (optional, skip confirmation):
+      - Check `$SPECKIT_IGNORE` or `$Env:SPECKIT_IGNORE` (PowerShell)
+      - Format: Colon-separated glob patterns (Unix) or semicolon-separated (Windows)
+      - Example: `export SPECKIT_IGNORE="node_modules:dist:build:*.min.js"`
+      - If set, use this list and skip confirmation (silent mode)
+
+   **Confirmation prompt** (only if no env var set):
+
+   Present findings to user in a clear table format:
+
+   ```markdown
+   ## Brownfield Analysis: Large Directories Detected
+
+   I found these directories/patterns that may overload context during analysis:
+
+   | Path/Pattern | Type | Size | Files | Recommend Ignore? |
+   |--------------|------|------|-------|-------------------|
+   | node_modules/ | Dependencies | 450 MB | 12,458 | ✅ Yes |
+   | bin/ | Build output | 85 MB | 234 | ✅ Yes |
+   | obj/ | Build output | 120 MB | 567 | ✅ Yes |
+   | packages/ | NuGet cache | 200 MB | 1,234 | ✅ Yes |
+   | logs/ | Log files | 15 MB | 89 | ✅ Yes |
+   | **/*.min.js | Minified JS | - | 45 | ✅ Yes |
+   | **/*.map | Source maps | - | 67 | ✅ Yes |
+
+   **Question**: Should I exclude these paths/patterns from analysis?
+
+   **Options**:
+   - **A**: Yes, exclude all recommended (default)
+   - **B**: No, analyze everything (may be slow and use lots of context)
+   - **C**: Custom - let me pick which ones to exclude
+   - **D**: Show me example files first, then I'll decide
+
+   **Your choice**: _[Wait for user response]_
+   ```
+
+   **Handle user response**:
+
+   - **Option A (default)**: Use all recommended ignore patterns
+   - **Option B**: No filtering, analyze everything (warn about potential slowness)
+   - **Option C**: Present each directory/pattern individually:
+     ```markdown
+     Exclude `node_modules/` (450 MB, 12,458 files)? [Y/n]
+     Exclude `bin/` (85 MB, 234 files)? [Y/n]
+     Exclude `obj/` (120 MB, 567 files)? [Y/n]
+     ...
+     ```
+   - **Option D**: Show 5 sample file paths from each directory, then ask again
+
+   **Pattern Application**:
+   - Apply confirmed ignore patterns to ALL file discovery operations (Glob, find, ls)
+   - Use `--exclude` flags or filter results programmatically
+   - Report in output: "Analyzing codebase (excluded X directories, Y file patterns)"
+
+3. **Discover existing patterns** (use Grep/Glob tools with ignore filters):
+   - **Architecture patterns**: Find similar feature implementations (filtered)
+   - **Coding conventions**: Naming standards for files, functions, classes (filtered)
+   - **Testing patterns**: Test framework, structure, common patterns (filtered)
+   - **Integration points**: How new features are typically added (filtered)
+
+4. **Document discovered constraints** in research.md:
    ```markdown
    ## Brownfield Constraints (Existing Codebase Patterns)
+
+   ### Analysis Scope
+   - **Directories analyzed**: [list of directories scanned]
+   - **Directories excluded**: [list from user confirmation]
+     * node_modules/ (450 MB, 12,458 files) - Dependencies
+     * bin/ (85 MB, 234 files) - Build outputs
+     * obj/ (120 MB, 567 files) - Intermediate build files
+     * packages/ (200 MB, 1,234 files) - NuGet cache
+   - **File patterns excluded**: `**/*.min.js`, `**/*.map`, `*.dll`
+   - **Total files analyzed**: ~X files across Y directories
+   - **Total files excluded**: ~Z files (user confirmed)
 
    ### Architecture Patterns Discovered
    - Services pattern: `src/services/*.service.ts`
@@ -79,7 +186,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Services wired in: `src/di/container.ts`
    ```
 
-4. **Feed constraints into plan**:
+5. **Feed constraints into plan**:
    - Reference discovered patterns in Technical Context
    - Ensure plan follows existing conventions
    - Document any necessary deviations with justification
