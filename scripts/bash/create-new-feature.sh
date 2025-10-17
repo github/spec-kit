@@ -5,20 +5,26 @@ set -e
 JSON_MODE=false
 SHORT_NAME=""
 ARGS=()
-i=0
-while [ $i -lt $# ]; do
+i=1
+while [ $i -le $# ]; do
     arg="${!i}"
     case "$arg" in
         --json) 
             JSON_MODE=true 
             ;;
         --short-name)
-            if [ $((i + 1)) -ge $# ]; then
+            if [ $((i + 1)) -gt $# ]; then
                 echo 'Error: --short-name requires a value' >&2
                 exit 1
             fi
             i=$((i + 1))
-            SHORT_NAME="${!i}"
+            next_arg="${!i}"
+            # Check if the next argument is another option (starts with --)
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --short-name requires a value' >&2
+                exit 1
+            fi
+            SHORT_NAME="$next_arg"
             ;;
         --help|-h) 
             echo "Usage: $0 [--json] [--short-name <name>] <feature_description>"
