@@ -34,6 +34,7 @@ import shlex
 import json
 from pathlib import Path
 from typing import Optional, Tuple
+from importlib.metadata import version, PackageNotFoundError
 
 import typer
 import httpx
@@ -340,6 +341,23 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
 
     return selected_key
 
+def get_version() -> str:
+    """Get the current version of the CLI package.
+
+    Returns:
+        Version string from package metadata, or "unknown (development mode)" if not installed.
+
+    Note:
+        Uses __package__ to dynamically determine the package name, avoiding hardcoding.
+    """
+    try:
+        # Use __package__ to get the current package name dynamically
+        package_name = __package__ or "specify_cli"
+        dist_name = package_name.replace("_", "-")
+        return version(dist_name)
+    except PackageNotFoundError:
+        return "unknown (development mode)"
+
 console = Console()
 
 class BannerGroup(TyperGroup):
@@ -374,8 +392,23 @@ def show_banner():
     console.print()
 
 @app.callback()
-def callback(ctx: typer.Context):
-    """Show banner when no subcommand is provided."""
+def callback(
+    ctx: typer.Context,
+    version_flag: bool = typer.Option(
+        False,
+        "--version",
+        "-v",
+        help="Show the version and exit",
+        is_eager=True
+    )
+):
+    """Show banner when no subcommand is provided, or version if requested."""
+    # Handle version flag first (eager option)
+    if version_flag:
+        console.print(f"specify version {get_version()}")
+        raise typer.Exit()
+
+    # Show banner when no subcommand is provided
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
@@ -966,8 +999,8 @@ def init(
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
-            ai_choices, 
-            "Choose your AI assistant:", 
+            ai_choices,
+            "Choose your AI assistant:",
             "copilot"
         )
 
