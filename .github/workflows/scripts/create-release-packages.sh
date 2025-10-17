@@ -18,8 +18,8 @@ if [[ $# -ne 1 ]]; then
   exit 1
 fi
 NEW_VERSION="$1"
-if [[ ! $NEW_VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Version must look like v0.0.0" >&2
+if [[ ! $NEW_VERSION =~ ^(fork-)?v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Version must look like v0.0.0 or fork-v0.0.0" >&2
   exit 1
 fi
 
