@@ -20,9 +20,14 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
+2. **Detect brownfield mode** (optional):
+   - Check if working in existing codebase with established patterns
+   - Indicators: Large codebase (>20 files), existing architecture, team conventions
+   - If brownfield context detected, analyze existing patterns BEFORE planning
 
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+3. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
+
+4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
@@ -31,7 +36,53 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
-4. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+5. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+
+## Brownfield Analysis (Optional)
+
+**When to use**: If implementing features in an existing codebase with established patterns.
+
+**Skip if**: Greenfield (0→1) development or new project.
+
+### Pattern Discovery Process
+
+1. **Check for existing codebase**:
+   - Count files in repository: `find . -type f -name "*.js" -o -name "*.py" -o -name "*.go" | wc -l`
+   - If > 20 files and existing architecture detected, proceed with brownfield analysis
+   - If < 20 files, skip to Phase 0 (greenfield mode)
+
+2. **Discover existing patterns** (use Grep/Glob tools):
+   - **Architecture patterns**: Find similar feature implementations
+   - **Coding conventions**: Naming standards for files, functions, classes
+   - **Testing patterns**: Test framework, structure, common patterns
+   - **Integration points**: How new features are typically added
+
+3. **Document discovered constraints** in research.md:
+   ```markdown
+   ## Brownfield Constraints (Existing Codebase Patterns)
+
+   ### Architecture Patterns Discovered
+   - Services pattern: `src/services/*.service.ts`
+   - Repository pattern: `src/repositories/*.repository.ts`
+
+   ### Naming Conventions
+   - File naming: kebab-case (e.g., `user-service.ts`)
+   - Function naming: camelCase with verb prefix (e.g., `getUserById`)
+
+   ### Testing Requirements
+   - Framework: Jest with React Testing Library
+   - Test location: `__tests__/` adjacent to source
+   - Coverage requirement: 80% (from existing config)
+
+   ### Integration Points
+   - New routes registered in: `src/routes/index.ts`
+   - Services wired in: `src/di/container.ts`
+   ```
+
+4. **Feed constraints into plan**:
+   - Reference discovered patterns in Technical Context
+   - Ensure plan follows existing conventions
+   - Document any necessary deviations with justification
 
 ## Phases
 

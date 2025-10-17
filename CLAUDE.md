@@ -322,29 +322,90 @@ manage_task("create",
 ```
 
 ### 4. Implementation Phase (ARCHON-Driven)
+
+**CRITICAL: Explicit Archon Workflow During `/speckit.implement`**
+
+#### Step-by-Step Implementation Cycle
+
+**A. Project Setup** (if not already exists):
+```bash
+# Create Archon project for this feature
+project_id = manage_project("create",
+  title="Feature: User Authentication",
+  description="Implementation of spec 001-user-auth"
+)
+
+# Project ID stored in .archon-state/001-user-auth.pid (silent)
+```
+
+**B. Bulk Task Creation** (upfront, before any coding):
+```bash
+# Parse tasks.md and create ALL tasks in Archon
+# Example for 10 tasks in tasks.md:
+
+manage_task("create", project_id="proj-123",
+  title="Setup database schema",
+  description="Create users table with email, password_hash fields",
+  task_order=10, status="todo"
+)
+manage_task("create", project_id="proj-123",
+  title="Implement User model",
+  description="Create User entity with validation",
+  task_order=9, status="todo"
+)
+# ... repeat for all 10 tasks from tasks.md
+
+# Task IDs stored in .archon-state/001-user-auth.tasks (silent)
+```
+
+**C. Implementation Cycle** (one task at a time):
 ```bash
 # Step 1: Find next task
-find_tasks(filter_by="status", filter_value="todo")
+tasks = find_tasks(filter_by="status", filter_value="todo")
+next_task = tasks[0]  # Get first todo task
 
-# Step 2: Start work
-manage_task("update", task_id="task-xxx", status="doing")
+# Step 2: Start work (ONLY ONE task in "doing" at a time)
+manage_task("update", task_id=next_task.id, status="doing")
 
 # Step 3: Research (if needed)
-rag_search_knowledge_base(query="relevant keywords", match_count=5)
+rag_search_knowledge_base(query="bcrypt password hashing", match_count=5)
 
-# Step 4: Implement following TDD
-# - Write tests first
-# - Implement code
-# - Run tests
+# Step 4: Implement following TDD (Article III: Test-First Imperative)
+# - Write contract tests first (from contracts/)
+# - Write integration tests
+# - Write unit tests
+# - Run tests to verify FAIL (red phase)
+# - Implement code to make tests pass (green phase)
+# - Run tests to verify PASS
 
-# Step 5: Mark for review
-manage_task("update", task_id="task-xxx", status="review")
+# Step 5: Mark for review (NOT done yet)
+manage_task("update", task_id=next_task.id, status="review")
 
-# Step 6: After review passes, mark done
+# Step 6: Move to next task
+# Repeat steps 1-5 until ALL tasks are in "review" status
+```
+
+**D. Validation Phase** (after ALL tasks in review):
+```bash
+# Run full test suite
+# Verify implementation against spec.md acceptance criteria
+# Test all user stories from quickstart.md
+
+# For each validated task:
 manage_task("update", task_id="task-xxx", status="done")
 
-# Optional: Update tasks.md with [X] for documentation
+# Optional: Update tasks.md with [X] for git documentation
 ```
+
+**E. Critical Rules**:
+- ✅ Create ALL tasks upfront (bulk creation before coding)
+- ✅ Only ONE task in "doing" status at any time
+- ✅ Complete each task before starting next
+- ✅ Move to "review" after implementation (not "done")
+- ✅ Move to "done" only after validation passes
+- ❌ NEVER skip task status updates
+- ❌ NEVER work on multiple tasks simultaneously
+- ❌ NEVER mark "done" before validation
 
 ### Workflow Benefits
 
@@ -399,12 +460,42 @@ manage_task("update", task_id="task-xxx", status="done")
 
 ## Working with This Repository
 
+### CRITICAL: Script Consistency Rule
+
+**MANDATORY: When modifying ANY script, ALWAYS update BOTH bash AND PowerShell variants.**
+
+This repository maintains dual script implementations for cross-platform support:
+- **Bash scripts**: `scripts/bash/*.sh` (Unix/Linux/macOS)
+- **PowerShell scripts**: `scripts/powershell/*.ps1` (Windows/cross-platform)
+
+**Enforcement checklist before committing script changes:**
+- [ ] If you modified `scripts/bash/script-name.sh`, did you also update `scripts/powershell/script-name.ps1`?
+- [ ] If you modified `scripts/powershell/script-name.ps1`, did you also update `scripts/bash/script-name.sh`?
+- [ ] Did you test BOTH variants to ensure identical functionality?
+- [ ] Did you update command templates to reference both script paths in YAML frontmatter?
+
+**Example of proper dual-script development:**
+```yaml
+# In templates/commands/example.md frontmatter:
+scripts:
+  sh: scripts/bash/example-script.sh --json "{ARGS}"
+  ps: scripts/powershell/example-script.ps1 -Json "{ARGS}"
+```
+
+**Common pitfalls to avoid:**
+- ❌ Updating only bash script and forgetting PowerShell
+- ❌ Testing on Unix only and assuming PowerShell works
+- ❌ Using bash-specific syntax without PowerShell equivalent
+- ❌ Different logic paths between bash and PowerShell variants
+
+**Best practice**: Implement feature in bash first, then immediately port to PowerShell before committing.
+
 ### Adding a New Slash Command
 1. Create command markdown in `templates/commands/new-command.md`
-2. Add YAML frontmatter with script paths
+2. Add YAML frontmatter with script paths (BOTH sh and ps)
 3. Write execution workflow in markdown body
-4. Create corresponding bash/PowerShell scripts in `scripts/`
-5. Test by initializing a new project and running the command
+4. Create corresponding bash/PowerShell scripts in `scripts/` (BOTH variants)
+5. Test by initializing a new project and running the command (test BOTH script types)
 
 ### Modifying Templates
 1. Edit templates in `templates/` directory

@@ -124,19 +124,48 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Polish and validation**: Unit tests, performance optimization, documentation
 
 9. Progress tracking and error handling:
+   - **CRITICAL**: Only ONE task should be in "doing" status at any time in Archon
    - Report progress after each completed task
    - Halt execution if any non-parallel task fails
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
+   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file
 
-10. Completion validation:
+10. Post-implementation validation:
+
+   **IMPORTANT: Validate test-driven implementation quality**
+
+   After ALL tasks are in "review" status in Archon:
+
+   a. **Automated test verification** (validates TDD adherence):
+      - Verify tests were written BEFORE implementation code (per Article III: Test-First Imperative)
+      - Run full test suite to confirm all tests pass
+      - Check test coverage matches acceptance criteria from spec.md
+      - Validate integration tests pass with real dependencies
+      - Confirm contract tests validate API specifications from contracts/
+
+   b. **Manual validation** (user stories and scenarios):
+      - Run the application and verify each user story works end-to-end
+      - Test against scenarios in quickstart.md
+      - Check browser console for errors (if web application)
+      - Validate against original acceptance criteria in spec.md
+
+   c. **Update Archon task status**:
+      - For tasks passing all validation: `manage_task("update", task_id="...", status="done")`
+      - For tasks with issues: leave in "review" status and document what needs fixing
+      - Update tasks.md with final [X] marks for completed tasks
+
+11. Completion report:
    - Verify all required tasks are completed
    - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
-   - Report final status with summary of completed work
+   - Report final status with summary of completed work:
+     * Total tasks: X
+     * Completed: Y
+     * In review: Z (if any, explain why)
+     * Test coverage achieved
+     * Key features implemented
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/tasks` first to regenerate the task list.
 

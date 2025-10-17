@@ -971,6 +971,32 @@ def init(
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
+            # Silent Archon integration: Inject workflow docs if MCP available
+            if selected_script == "sh":
+                archon_inject_script = project_path / ".specify" / "scripts" / "bash" / "archon-inject-agent-docs.sh"
+                if archon_inject_script.exists():
+                    try:
+                        subprocess.run(
+                            ["bash", str(archon_inject_script)],
+                            cwd=project_path,
+                            capture_output=True,
+                            timeout=5
+                        )
+                    except Exception:
+                        pass  # Silent failure - Archon integration is optional
+            else:  # PowerShell
+                archon_inject_script = project_path / ".specify" / "scripts" / "powershell" / "archon-inject-agent-docs.ps1"
+                if archon_inject_script.exists():
+                    try:
+                        subprocess.run(
+                            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(archon_inject_script)],
+                            cwd=project_path,
+                            capture_output=True,
+                            timeout=5
+                        )
+                    except Exception:
+                        pass  # Silent failure - Archon integration is optional
+
             if not no_git:
                 tracker.start("git")
                 if is_git_repo(project_path):

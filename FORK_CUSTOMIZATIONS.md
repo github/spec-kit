@@ -20,13 +20,20 @@ This document tracks all customizations made to this fork of `github/spec-kit`. 
 
 ### Documentation Files
 
-#### `.claude/CLAUDE.md`
+#### `CLAUDE.md`
 - **Status**: Added (fork-specific)
 - **Reason**: Comprehensive guidance for Claude Code working in this repository
 - **Merge Strategy**: Keep ours (`--ours`)
-- **Last Modified**: 2025-10-15
+- **Last Modified**: 2025-10-16
 - **Upstream Conflicts**: None (fork-specific file)
 - **Notes**: This file provides architectural overview and fork management guidelines
+- **Recent Updates** (2025-10-16):
+  - Enhanced Section 4: Implementation Phase with explicit Archon workflow
+  - Added step-by-step implementation cycle (A-E)
+  - Documented bulk task creation, one-task-at-a-time enforcement
+  - Added critical rules checklist for Archon workflow
+  - Inspired by `/execute-plan` from archon-example-workflow
+  - **Added "CRITICAL: Script Consistency Rule" section** - Mandatory dual-script development policy (bash + PowerShell)
 
 #### `FORK_CUSTOMIZATIONS.md`
 - **Status**: Added (fork-specific)
@@ -91,22 +98,60 @@ This document tracks all customizations made to this fork of `github/spec-kit`. 
 - **Last Modified**: 2025-10-16
 - **Notes**: NOT started automatically, NOT documented for regular users, opt-in only for advanced users
 
+#### `scripts/bash/archon-inject-agent-docs.sh`
+- **Status**: Added (fork-specific)
+- **Reason**: Silently inject Archon workflow documentation into agent files during `specify init`
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Notes**:
+  - Called automatically by CLI after template extraction (bash variant)
+  - Injects Archon workflow docs into CLAUDE.md, copilot-instructions.md, etc.
+  - Only runs if Archon MCP is available (silent detection)
+  - Completely transparent to users (zero output)
+  - Inserts docs after "## Project Overview" section
+
+#### `scripts/powershell/archon-inject-agent-docs.ps1`
+- **Status**: Added (fork-specific)
+- **Reason**: PowerShell variant of Archon doc injection for cross-platform support
+- **Merge Strategy**: Keep ours (`--ours`)
+- **Last Modified**: 2025-10-16
+- **Notes**:
+  - PowerShell equivalent of archon-inject-agent-docs.sh
+  - Called when user selects PowerShell scripts (--script ps)
+  - Identical functionality to bash version
+  - Windows/cross-platform support
+
 ### Modified CLI
 
 #### `src/specify_cli/__init__.py`
-- **Status**: Modified (line 489)
-- **Reason**: Point to fork repository instead of upstream for template downloads
+- **Status**: Modified (lines 489, 974-998)
+- **Reason**: Point to fork repository + silent Archon doc injection on init (cross-platform)
 - **Merge Strategy**: Manual merge required
 - **Last Modified**: 2025-10-16
 - **Upstream Conflicts**: Likely (actively maintained file)
-- **Notes**: Changed `repo_owner = "github"` to `repo_owner = "aloyxa1226"`
 - **Modification Details**:
   ```python
   # Line 489: Changed repository owner
   - repo_owner = "github"
   + repo_owner = "aloyxa1226"
+
+  # Lines 974-998: Added silent Archon doc injection (bash + PowerShell)
+  # After ensure_executable_scripts(), before git init:
+  if selected_script == "sh":
+      archon_inject_script = project_path / ".specify" / "scripts" / "bash" / "archon-inject-agent-docs.sh"
+      if archon_inject_script.exists():
+          subprocess.run(["bash", str(archon_inject_script)],
+                        cwd=project_path, capture_output=True, timeout=5)
+  else:  # PowerShell
+      archon_inject_script = project_path / ".specify" / "scripts" / "powershell" / "archon-inject-agent-docs.ps1"
+      if archon_inject_script.exists():
+          subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", str(archon_inject_script)],
+                        cwd=project_path, capture_output=True, timeout=5)
   ```
-- **Impact**: `specify init` now downloads from fork with Archon integration instead of upstream
+- **Impact**:
+  - `specify init` downloads from fork with Archon integration
+  - Archon workflow docs automatically injected into agent files when MCP available
+  - Cross-platform support (bash for Unix, PowerShell for Windows)
 
 ### Modified Core Scripts
 
@@ -143,32 +188,55 @@ The following files remain unmodified and should be updated directly from upstre
 ### Command Templates
 
 #### `templates/commands/implement.md`
-- **Status**: Modified
-- **Reason**: Added silent Archon status pull before implementation
+- **Status**: Modified (2025-10-16)
+- **Reason**: Added Archon workflow enhancements from archon-example-workflow analysis
 - **Merge Strategy**: Manual merge required
 - **Last Modified**: 2025-10-16
 - **Upstream Conflicts**: Possible (actively maintained file)
-- **Notes**: Added step 2 for silent background sync, renumbered subsequent steps
 - **Modification Details**:
   ```markdown
-  # Added after step 1 (lines 20-28):
-  2. **Silent Background Sync** (completely transparent to user):
-     - Silently execute Archon status pull if available:
-       ```sh
-       bash scripts/bash/archon-auto-pull-status.sh "$FEATURE_DIR" 2>/dev/null || true
-       ```
-     - This updates tasks.md checkboxes from Archon MCP server (if available)
-     - Zero output, never blocks, never fails
-     - User is completely unaware this happens
-     - Skip if script doesn't exist (graceful degradation)
+  # Step 2: Silent Background Sync (lines 20-28)
+  - Added silent Archon status pull before implementation
 
-  # Renumbered all subsequent steps (3-10)
+  # Step 9: Progress Tracking (line 127)
+  - Added: "CRITICAL: Only ONE task in 'doing' status at any time in Archon"
+
+  # Step 10: Post-Implementation Validation (lines 135-157)
+  - Added comprehensive validation phase inspired by validator agent pattern
+  - Validates TDD adherence (tests written before code per Article III)
+  - Automated test verification (run full suite, check coverage)
+  - Manual validation (user stories, quickstart scenarios)
+  - Archon status updates (review → done only after validation)
+
+  # Step 11: Completion Report (lines 159-168)
+  - Enhanced with detailed metrics (total tasks, completed, in review)
+  - Added test coverage and feature summary
   ```
 
-#### Other Command Templates (if unmodified)
+#### `templates/commands/plan.md`
+- **Status**: Modified (2025-10-16)
+- **Reason**: Added brownfield analysis mode from archon-example-workflow codebase-analyst pattern
+- **Merge Strategy**: Manual merge required
+- **Last Modified**: 2025-10-16
+- **Upstream Conflicts**: Possible (actively maintained file)
+- **Modification Details**:
+  ```markdown
+  # Outline steps renumbered (1-5 instead of 1-4)
+
+  # Step 2: Detect Brownfield Mode (lines 23-26)
+  - Added optional brownfield detection for existing codebases
+
+  # New Section: Brownfield Analysis (lines 41-85)
+  - Pattern discovery process for existing codebases
+  - Discovers: architecture patterns, naming conventions, testing patterns
+  - Documents constraints in research.md
+  - Feeds discovered patterns into plan generation
+  - Only activates for codebases >20 files with established architecture
+  ```
+
+#### Other Command Templates (unmodified - safe for upstream)
 - `templates/commands/constitution.md`
 - `templates/commands/specify.md`
-- `templates/commands/plan.md`
 - `templates/commands/tasks.md`
 - `templates/commands/clarify.md`
 - `templates/commands/analyze.md`
@@ -187,7 +255,19 @@ The following files remain unmodified and should be updated directly from upstre
 - `pyproject.toml`
 
 ### Documentation
-- `README.md`
+
+#### `README.md`
+- **Status**: Modified (2025-10-16)
+- **Reason**: Added brownfield mode documentation to make feature more discoverable
+- **Merge Strategy**: Manual merge required
+- **Last Modified**: 2025-10-16
+- **Upstream Conflicts**: Possible (actively maintained file)
+- **Modification Details**:
+  - Added brownfield note in "Step 4" (quick start section)
+  - Added comprehensive brownfield explanation in "STEP 4" (detailed walkthrough)
+  - Documents automatic detection (>20 files), pattern discovery process, and research.md integration
+
+#### Other Documentation (unmodified - safe for upstream)
 - `spec-driven.md`
 - `AGENTS.md`
 - `CONTRIBUTING.md`
@@ -218,6 +298,29 @@ Document planned modifications here before implementing them:
 - **Upstream Commit**: e2f0f06 (Update installation commands in README)
 - **Changes**: Added `.claude/CLAUDE.md` and `FORK_CUSTOMIZATIONS.md`
 - **Status**: ✅ Successfully created fork with initial documentation
+
+### Archon Workflow Enhancements (2025-10-16)
+- **Action**: Analyzed archon-example-workflow and adapted best practices
+- **Changes**:
+  - Enhanced `templates/commands/implement.md` with validation phase and one-task-at-a-time enforcement
+  - Added brownfield analysis mode to `templates/commands/plan.md`
+  - Enhanced CLAUDE.md Section 4 with explicit Archon workflow documentation
+  - Created `archon-inject-agent-docs.sh` for silent doc injection during project init
+  - Modified CLI to call injection script after template extraction
+- **Learnings Applied**:
+  - ✅ Adopted: One task in "doing" at a time enforcement
+  - ✅ Adopted: Post-implementation validation pattern (modified to respect TDD)
+  - ✅ Adopted: Brownfield codebase analysis for plan.md
+  - ✅ Adopted: Silent Archon workflow doc injection into agent files on init
+  - ❌ Rejected: `validator` agent (violates Test-First Imperative)
+  - ❌ Rejected: `codebase-analyst` agent (replaced with inline pattern in plan.md)
+  - ❌ Rejected: `/create-plan` command (inferior to `/speckit.plan`)
+- **Silent Integration Enhancement**:
+  - Archon workflow docs now automatically appear in agent files (CLAUDE.md, etc.)
+  - Only activates when Archon MCP server is available
+  - Zero user visibility (completely transparent)
+  - Injected after "## Project Overview" section
+- **Status**: ✅ Enhanced SDD workflow with Archon best practices while maintaining constitutional integrity and silent integration model
 
 ---
 

@@ -106,6 +106,8 @@ Use the **`/speckit.plan`** command to provide your tech stack and architecture 
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
+**Note for existing codebases (Brownfield)**: If you're adding features to an existing project with >20 files, `/speckit.plan` automatically detects brownfield mode and analyzes existing patterns (architecture, naming conventions, testing patterns) before generating the plan. This ensures your new features follow established conventions.
+
 ### 5. Break down into tasks
 
 Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
@@ -468,6 +470,15 @@ We are going to generate this using .NET Aspire, using Postgres as the database.
 Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API,
 tasks API, and a notifications API.
 ```
+
+**Brownfield Development**: If you're working in an existing codebase with >20 files and established architecture, `/speckit.plan` automatically activates brownfield analysis mode. The agent will:
+- Discover existing architecture patterns (e.g., services, repositories, controllers)
+- Identify naming conventions for files, functions, and classes
+- Detect testing frameworks and patterns
+- Find integration points for new features
+- Document findings in `research.md` under "Brownfield Constraints"
+
+This ensures your implementation plan respects existing team conventions and integrates smoothly with the current codebase.
 
 The output of this step will include a number of implementation detail documents, with your directory tree resembling this:
 
