@@ -1,4 +1,4 @@
-# **Step 8: Ship with `/git.commit_pr`**
+# **Step 8: Ship with `/sp.git.commit_pr`**
 
 **Goal:** Turn a completed feature branch into a clean Git history and ready-to-review pull request by delegating the mechanics to the agentic Git workflow command.
 
@@ -6,7 +6,8 @@
 
 ## **When to Run This Command**
 
-Use `/git.commit_pr` after you finish the Spec → Plan → Tasks → Implement loop and have already:
+Use `/sp.git.commit_pr` after you finish the Spec → Plan → Tasks → Implement loop and have already:
+
 - Reviewed the final diff locally (Cursor, VS Code, etc.)
 - Re-run your verification suite (tests, type checks, lint)
 - Updated documentation and task checklists
@@ -41,7 +42,7 @@ The agent never runs long-lived processes, executes non-Git commands, or touches
 ## **Example Prompt**
 
 ```text
-/git.commit_pr Wrap up the basic calculator feature. Tests are green and tasks.md is fully checked off.
+/sp.git.commit_pr Wrap up the basic calculator feature. Tests are green and tasks.md is fully checked off.
 ```
 
 You can omit the argument if you want the agent to infer everything from the diff.
@@ -77,6 +78,6 @@ You can omit the argument if you want the agent to infer everything from the dif
 
 ## **References**
 
-- Command template: `templates/commands/git.commit_pr.md`
+- Command template: `templates/commands/sp.git.commit_pr.md`
 - Spec Kit Plus repo: https://github.com/panaversity/spec-kit-plus
 - GitHub CLI authentication: https://cli.github.com/manual/

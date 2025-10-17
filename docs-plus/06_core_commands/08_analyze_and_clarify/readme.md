@@ -69,4 +69,4 @@ Two key commands that enhance the Spec Kit workflow are /clarify and /analyze. T
 
 ## Next Step
 
-With clarifications resolved and coverage verified, proceed to [Step 8: Ship with `/git.commit_pr`](../09_git_commit_pr/readme.md) to finalize the branch and open the pull request.
+With clarifications resolved and coverage verified, proceed to [Step 8: Ship with `/sp.git.commit_pr`](../09_git_commit_pr/readme.md) to finalize the branch and open the pull request.

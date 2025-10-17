@@ -61,18 +61,18 @@ ADRs created in docs/adr/ (if decisions are significant)
 
 ## Quick Reference: Commands & Automation
 
-| Command            | What It Does                           | PHR Created? | ADR Created?       |
-| ------------------ | -------------------------------------- | ------------ | ------------------ |
-| `/sp.constitution` | Define project principles              | ✅ Automatic | ❌ No              |
-| `/sp.specify`      | Write feature spec                     | ✅ Automatic | ❌ No              |
-| `/sp.plan`         | Design architecture                    | ✅ Automatic | 📋 Suggestion only |
-| `/sp.adr`          | Review architectural decisions         | ❌ No\*      | ✅ Explicit        |
-| `/sp.tasks`        | Break down implementation              | ✅ Automatic | ❌ No              |
-| `/sp.implement`    | Execute TDD cycle                      | ✅ Automatic | ❌ No              |
-| `/git.commit_pr`   | Generate commits/PR from finished loop | ❌ No        | ❌ No              |
-| Debugging          | Fix errors                             | ✅ Automatic | ❌ No              |
-| Refactoring        | Clean up code                          | ✅ Automatic | ❌ No              |
-| `/sp.phr` (manual) | Override automatic PHR                 | ✅ Explicit  | ❌ No              |
+| Command             | What It Does                           | PHR Created? | ADR Created?       |
+| ------------------- | -------------------------------------- | ------------ | ------------------ |
+| `/sp.constitution`  | Define project principles              | ✅ Automatic | ❌ No              |
+| `/sp.specify`       | Write feature spec                     | ✅ Automatic | ❌ No              |
+| `/sp.plan`          | Design architecture                    | ✅ Automatic | 📋 Suggestion only |
+| `/sp.adr`           | Review architectural decisions         | ❌ No\*      | ✅ Explicit        |
+| `/sp.tasks`         | Break down implementation              | ✅ Automatic | ❌ No              |
+| `/sp.implement`     | Execute TDD cycle                      | ✅ Automatic | ❌ No              |
+| `/sp.git.commit_pr` | Generate commits/PR from finished loop | ❌ No        | ❌ No              |
+| Debugging           | Fix errors                             | ✅ Automatic | ❌ No              |
+| Refactoring         | Clean up code                          | ✅ Automatic | ❌ No              |
+| `/sp.phr` (manual)  | Override automatic PHR                 | ✅ Explicit  | ❌ No              |
 
 \* The `/adr` command itself doesn't create a PHR, but the planning session before it does
 
@@ -82,7 +82,7 @@ Ready to build muscle memory for spec-driven development? Start Shipping! 🚀
 
 > **Note**: Use `specifyplus` or `sp` commands.
 
-> **Loop reminder:** The core workflow now spans eight steps—wrap every finished feature with `/git.commit_pr` after `/analyze` confirms coverage.
+> **Loop reminder:** The core workflow now spans eight steps—wrap every finished feature with `/sp.git.commit_pr` after `/analyze` confirms coverage.
 
 ## Official Spec Kit Plus resources
 

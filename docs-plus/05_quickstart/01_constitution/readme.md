@@ -5,6 +5,7 @@
 The constitution is your project's rule book. It sets up your coding standards and technical choices that apply to ALL features you'll build. You only do this **once** at the start of your project.
 
 **What you'll accomplish:**
+
 - Set up project-wide coding rules and standards
 - Choose your technical tools and preferences
 - Establish principles that apply to ALL features (not just one app)
@@ -21,17 +22,20 @@ The constitution is your project's rule book. It sets up your coding standards a
 ### Step 1: Navigate to Your Project and understand structure
 
 **Your Prompt:**
+
 ```
 show me the current project structure.
 ```
 
 **Agent Does:**
+
 - Shows the created directory structure
 - Confirms SpecKit installation and setup
 
 ### Step 2: Run Constitution Command
 
 **Your Prompt:**
+
 ```
 /sp.constitution
 
@@ -54,6 +58,7 @@ Quality requirements:
 ```
 
 **Agent Does:**
+
 - Creates comprehensive constitution file
 - Sets up project standards and OOP principles
 - Defines coding principles and best practices
@@ -62,11 +67,13 @@ Quality requirements:
 ### Step 3: Review Generated Constitution and Commit to GitHub
 
 **Your Prompt:**
+
 ```
 Show me the generated constitution file and explain what it contains.
 ```
 
 **Agent Does:**
+
 - Displays the constitution content
 - Explains each section:
   - **Project Principles** - Core development philosophy and OOP principles
@@ -76,17 +83,20 @@ Show me the generated constitution file and explain what it contains.
   - **Quality Gates** - CI/CD requirements and code quality checks
 
 **Your Prompt**
+
 ```
-Commit and push the constitution along with current work to github as private repository.
+Use the agent to commit and open a PR for the constitution: /sp.git.commit_pr Commit and push the constitution along with current work.
 ```
 
 **Agent Does:**
-- Commit and Push to GitHub
 
+- Create a conventional commit for the constitution and push to a new feature branch
+- Create a draft PR (or share the compare URL if `gh` auth is missing)
 
 ### Step 4: Customize Constitution (Optional)
 
 **Your Prompt:**
+
 ```
 Review the constitution and suggest any modifications based on my preferences:
 - I want comprehensive type hints everywhere
@@ -98,6 +108,7 @@ Review the constitution and suggest any modifications based on my preferences:
 ```
 
 **Agent Does:**
+
 - Analyzes current constitution
 - Suggests specific modifications
 - Updates constitution file if requested
@@ -106,6 +117,7 @@ Review the constitution and suggest any modifications based on my preferences:
 ### Step 5: Verify Constitution Setup (Optional)
 
 **Your Prompt:**
+
 ```
 Verify that the constitution is properly set up by:
 1. Showing the final constitution file
@@ -114,6 +126,7 @@ Verify that the constitution is properly set up by:
 ```
 
 **Agent Does:**
+
 - Shows final constitution content
 - Confirms file location
 - Explains how constitution guides future spec loops
@@ -122,6 +135,7 @@ Verify that the constitution is properly set up by:
 ## Expected Output
 
 ### Constitution File Structure
+
 ```
 .speckit/memory/constitution.md
 ```
@@ -131,6 +145,7 @@ Verify that the constitution is properly set up by:
 The constitution is now established and will guide all future development. The next step is to begin the first spec loop with the [Basic Operations](02_basic_operations/readme.md) feature.
 
 **Key Points:**
+
 - Constitution is a living document - update as needed
 - All future spec loops will reference this constitution
 - This establishes HOW to build (principles), not WHAT to build (specific apps)
