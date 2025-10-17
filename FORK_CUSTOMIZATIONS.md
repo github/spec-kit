@@ -91,6 +91,23 @@ This document tracks all customizations made to this fork of `github/spec-kit`. 
 - **Last Modified**: 2025-10-16
 - **Notes**: NOT started automatically, NOT documented for regular users, opt-in only for advanced users
 
+### Modified CLI
+
+#### `src/specify_cli/__init__.py`
+- **Status**: Modified (line 489)
+- **Reason**: Point to fork repository instead of upstream for template downloads
+- **Merge Strategy**: Manual merge required
+- **Last Modified**: 2025-10-16
+- **Upstream Conflicts**: Likely (actively maintained file)
+- **Notes**: Changed `repo_owner = "github"` to `repo_owner = "aloyxa1226"`
+- **Modification Details**:
+  ```python
+  # Line 489: Changed repository owner
+  - repo_owner = "github"
+  + repo_owner = "aloyxa1226"
+  ```
+- **Impact**: `specify init` now downloads from fork with Archon integration instead of upstream
+
 ### Modified Core Scripts
 
 #### `scripts/bash/common.sh`
