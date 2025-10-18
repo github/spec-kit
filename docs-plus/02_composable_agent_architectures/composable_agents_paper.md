@@ -1,4 +1,5 @@
-# A Unified Framework for Skills, Subagents, MCP, and the Agentic Economy
+# Composable Agent Architecture
+**A Unified Framework for Skills, Subagents, MCP, and the Agentic Economy**
 
 **Author:** Panaversity Team 
 **Version:** 2.0  
