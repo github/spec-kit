@@ -243,6 +243,31 @@ Additional commands for enhanced quality and validation:
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
+#### Worktree Commands (Parallel Development)
+
+Spec-kit automatically creates git worktrees for parallel AI agent workflows:
+
+| Command                    | Description                                                      |
+|----------------------------|------------------------------------------------------------------|
+| `/speckit.worktree`        | Create worktree for current branch (for existing features)       |
+| `/speckit.worktree list`   | Display all worktrees with status [PLANNED]                     |
+| `/speckit.worktree remove` | Remove specific worktree [PLANNED]                               |
+| `/speckit.worktree cleanup`| Remove all stale worktrees [PLANNED]                             |
+
+**Automatic Worktree Creation**: When you run `/speckit.specify`, a worktree is automatically created at `.worktrees/<branch-name>/` enabling parallel development:
+
+```bash
+# Terminal 1 (main repo) - Refine specifications
+cd /path/to/project
+claude  # Work on specs/001-feature/spec.md
+
+# Terminal 2 (worktree) - Implement features
+cd /path/to/project/.worktrees/001-feature
+claude  # Implement code, run tests
+```
+
+Both AI agents can work simultaneously without conflicts!
+
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
