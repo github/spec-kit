@@ -92,11 +92,11 @@ generate_commands() {
     case $ext in
       toml)
         body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
-        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckit.$name.$ext" ;;
+        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/diagramlykit.$name.$ext" ;;
       md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/diagramlykit.$name.$ext" ;;
       prompt.md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/diagramlykit.$name.$ext" ;;
     esac
   done
 }

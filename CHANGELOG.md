@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Renamed CLI tool from `specify` to `diagramly`
 - Updated all documentation and references to use `diagramly` command instead of `specify`
-- Updated slash commands from `/speckit.*` to `/diagramly.*` 
+- Updated slash commands from `/diagramlykit.*` to `/diagramly.*` 
 - Updated installation instructions to use `uv tool install diagramly-cli`
 
 ## [0.0.19] - 2025-10-10
@@ -38,14 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Support for using `.` as a shorthand for current directory in `specify init .` command, equivalent to `--here` flag but more intuitive for users.
-- Use the `/speckit.` command prefix to easily discover Spec Kit-related commands.
+- Use the `/diagramlykit.` command prefix to easily discover Spec Kit-related commands.
 - Refactor the prompts and templates to simplify their capabilities and how they are tracked. No more polluting things with tests when they are not needed.
 - Ensure that tasks are created per user story (simplifies testing and validation).
 - Add support for Visual Studio Code prompt shortcuts and automatic script execution.
 
 ### Changed
 
-- All command files now prefixed with `speckit.` (e.g., `speckit.specify.md`, `speckit.plan.md`) for better discoverability and differentiation in IDE/CLI command palettes and file explorers
+- All command files now prefixed with `diagramlykit.` (e.g., `diagramlykit.specify.md`, `diagramlykit.plan.md`) for better discoverability and differentiation in IDE/CLI command palettes and file explorers
 
 ## [0.0.17] - 2025-09-22
 

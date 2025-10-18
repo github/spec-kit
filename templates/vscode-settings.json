@@ -1,10 +1,10 @@
 {
     "chat.promptFilesRecommendations": {
-        "speckit.constitution": true,
-        "speckit.specify": true,
-        "speckit.plan": true,
-        "speckit.tasks": true,
-        "speckit.implement": true
+        "diagramlykit.constitution": true,
+        "diagramlykit.specify": true,
+        "diagramlykit.plan": true,
+        "diagramlykit.tasks": true,
+        "diagramlykit.implement": true
     },
     "chat.tools.terminal.autoApprove": {
         ".specify/scripts/bash/": true,
