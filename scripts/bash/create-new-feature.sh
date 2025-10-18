@@ -10,24 +10,24 @@ for arg in "$@"; do
         --json) JSON_MODE=true ;;
         --capability=*) CAPABILITY_ID="${arg#*=}" ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--capability=cap-XXX] [jira-key] <feature_description>"
+            echo "Usage: $0 [--json] [--capability=cap-XXX] [jira-key] <hyphenated-feature-name>"
             echo ""
             echo "Options:"
             echo "  --capability=cap-XXX  Create capability within parent feature (e.g., cap-001)"
             echo "  --json                Output in JSON format"
             echo ""
-            echo "Note: JIRA key is required only for user 'hnimitanakit'"
-            echo "      Other users can omit JIRA key and use: username/feature-name"
+            echo "Note: Feature name must be provided as hyphenated-words (e.g., my-feature-name)"
+            echo "      JIRA key is required for user 'hnimitanakit' or github.marqeta.com hosts"
             echo ""
             echo "Examples:"
-            echo "  # With JIRA key (required for hnimitanakit):"
-            echo "  $0 proj-123 \"User authentication\"           # Branch: username/proj-123.user-authentication"
+            echo "  # With JIRA key (required for hnimitanakit or Marqeta):"
+            echo "  $0 proj-123 my-feature-name           # Branch: hnimitanakit/proj-123.my-feature-name"
             echo ""
-            echo "  # Without JIRA key (allowed for other users):"
-            echo "  $0 \"User authentication\"                    # Branch: username/user-authentication"
+            echo "  # Without JIRA key (for user hcnimi):"
+            echo "  $0 my-feature-name                    # Branch: my-feature-name (no prefix)"
             echo ""
             echo "  # Capability mode:"
-            echo "  $0 --capability=cap-001 \"Login flow\"        # Create capability in current feature"
+            echo "  $0 --capability=cap-001 login-flow    # Create capability in current feature"
             exit 0
             ;;
         *) ARGS+=("$arg") ;;
@@ -49,32 +49,48 @@ fi
 # Sanitize username for branch name (replace spaces/special chars with hyphens)
 USERNAME=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
 
-# Determine if JIRA key is required based on username
+# Detect GitHub host
+GIT_REMOTE_URL=$(git config remote.origin.url 2>/dev/null || echo "")
+IS_MARQETA_HOST=false
+if [[ "$GIT_REMOTE_URL" == *"github.marqeta.com"* ]]; then
+    IS_MARQETA_HOST=true
+fi
+
+# Determine if JIRA key and username prefix are required
 REQUIRE_JIRA=false
-if [[ "$USERNAME" == "hnimitanakit" ]]; then
+USE_USERNAME_PREFIX=true
+if [[ "$USERNAME" == "hnimitanakit" ]] || [[ "$IS_MARQETA_HOST" == true ]]; then
     REQUIRE_JIRA=true
+    USE_USERNAME_PREFIX=true
+elif [[ "$USERNAME" == "hcnimi" ]]; then
+    REQUIRE_JIRA=false
+    USE_USERNAME_PREFIX=false
 fi
 
 # Check if first arg is JIRA key format
 JIRA_KEY=""
+FEATURE_NAME=""
 if [[ "${ARGS[0]}" =~ ^[a-z]+-[0-9]+$ ]]; then
     JIRA_KEY="${ARGS[0]}"
-    FEATURE_DESCRIPTION="${ARGS[@]:1}"
+    FEATURE_NAME="${ARGS[1]}"
 else
     if $REQUIRE_JIRA; then
         # Interactive prompt for JIRA key if not provided
         if [ -t 0 ]; then  # Only prompt if stdin is a terminal
             read -p "Enter JIRA issue key (e.g., proj-123): " JIRA_KEY
+            FEATURE_NAME="${ARGS[0]}"
         else
-            echo "ERROR: JIRA key required for user '$USERNAME'. Usage: $0 [--json] jira-key feature_description" >&2
+            echo "ERROR: JIRA key required for user '$USERNAME'. Usage: $0 [--json] jira-key hyphenated-feature-name" >&2
             exit 1
         fi
+    else
+        FEATURE_NAME="${ARGS[0]}"
     fi
-    FEATURE_DESCRIPTION="${ARGS[*]}"
 fi
 
-if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [jira-key] <feature_description>" >&2
+# Validate feature name is provided
+if [ -z "$FEATURE_NAME" ]; then
+    echo "Usage: $0 [--json] [jira-key] <hyphenated-feature-name>" >&2
     exit 1
 fi
 
@@ -84,9 +100,15 @@ if [ -n "$JIRA_KEY" ] && [[ ! "$JIRA_KEY" =~ ^[a-z]+-[0-9]+$ ]]; then
     exit 1
 fi
 
-# Sanitize feature description
-FEATURE_NAME=$(echo "$FEATURE_DESCRIPTION" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
-WORDS=$(echo "$FEATURE_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
+# Normalize feature name to lowercase with hyphens
+FEATURE_NAME=$(echo "$FEATURE_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+
+# Validate feature name contains hyphens (or is a single word, which is acceptable)
+if [[ ! "$FEATURE_NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+    echo "ERROR: Feature name must be hyphenated words (e.g., my-feature-name)" >&2
+    echo "Received: $FEATURE_NAME" >&2
+    exit 1
+fi
 
 # Handle capability mode
 if [ -n "$CAPABILITY_ID" ]; then
@@ -103,7 +125,7 @@ if [ -n "$CAPABILITY_ID" ]; then
     fi
 
     # Create capability directory: cap-001-feature-name
-    CAPABILITY_NAME="${CAPABILITY_ID}-${WORDS}"
+    CAPABILITY_NAME="${CAPABILITY_ID}-${FEATURE_NAME}"
     CAPABILITY_DIR="$PARENT_DIR/$CAPABILITY_NAME"
 
     # No new branch in capability mode - use current branch
@@ -132,13 +154,21 @@ if [ -n "$CAPABILITY_ID" ]; then
 else
     # Parent feature mode: create new feature branch and directory
     if [ -n "$JIRA_KEY" ]; then
-        # With JIRA key: username/jira-123.feature-name
-        BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${WORDS}"
-        FEATURE_ID="${JIRA_KEY}.${WORDS}"
+        # With JIRA key and username prefix
+        if $USE_USERNAME_PREFIX; then
+            BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${FEATURE_NAME}"
+        else
+            BRANCH_NAME="${JIRA_KEY}.${FEATURE_NAME}"
+        fi
+        FEATURE_ID="${JIRA_KEY}.${FEATURE_NAME}"
     else
-        # Without JIRA key: username/feature-name
-        BRANCH_NAME="${USERNAME}/${WORDS}"
-        FEATURE_ID="${USERNAME}.${WORDS}"
+        # Without JIRA key
+        if $USE_USERNAME_PREFIX; then
+            BRANCH_NAME="${USERNAME}/${FEATURE_NAME}"
+        else
+            BRANCH_NAME="${FEATURE_NAME}"
+        fi
+        FEATURE_ID="${FEATURE_NAME}"
     fi
 
     FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"

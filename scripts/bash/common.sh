@@ -6,24 +6,39 @@ get_current_branch() { git rev-parse --abbrev-ref HEAD; }
 
 check_feature_branch() {
     local branch="$1"
-    # Support both patterns:
-    # 1. username/jira-123.feature-name (with JIRA key)
-    # 2. username/feature-name (without JIRA key)
-    if [[ ! "$branch" =~ ^[a-zA-Z0-9_-]+/([a-z]+-[0-9]+\.)?[a-z0-9._-]+$ ]]; then
+    # Support three patterns:
+    # 1. username/jira-123.feature-name (with JIRA key and prefix)
+    # 2. username/feature-name (with prefix, no JIRA)
+    # 3. feature-name (no prefix, for hcnimi)
+    # 4. jira-123.feature-name (with JIRA key, no prefix)
+    if [[ "$branch" =~ ^[a-zA-Z0-9_-]+/([a-z]+-[0-9]+\.)?[a-z0-9._-]+$ ]] || \
+       [[ "$branch" =~ ^([a-z]+-[0-9]+\.)?[a-z0-9._-]+$ ]]; then
+        return 0
+    else
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
         echo "Feature branches should be named like:" >&2
-        echo "  username/jira-123.feature-name (with JIRA key)" >&2
-        echo "  username/feature-name (without JIRA key)" >&2
+        echo "  username/jira-123.feature-name (with JIRA key and prefix)" >&2
+        echo "  username/feature-name (with prefix, no JIRA)" >&2
+        echo "  feature-name (no prefix, for hcnimi)" >&2
+        echo "  jira-123.feature-name (with JIRA key, no prefix)" >&2
         return 1
-    fi; return 0
+    fi
 }
 
 get_feature_id() {
     local branch="$1"
-    # Extract feature ID from branch name (everything after username/)
-    # Examples: username/jira-123.feature-name → jira-123.feature-name
-    #           username/feature-name → feature-name
-    echo "$branch" | sed 's|.*/||'
+    # Extract feature ID from branch name
+    # With prefix: username/jira-123.feature-name → jira-123.feature-name
+    # With prefix: username/feature-name → feature-name
+    # No prefix: feature-name → feature-name
+    # No prefix: jira-123.feature-name → jira-123.feature-name
+    if [[ "$branch" == *"/"* ]]; then
+        # Has prefix - extract part after slash
+        echo "$branch" | sed 's|.*/||'
+    else
+        # No prefix - use entire branch name
+        echo "$branch"
+    fi
 }
 
 get_feature_dir() {
