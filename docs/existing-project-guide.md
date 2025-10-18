@@ -1,6 +1,6 @@
-# Using Spec‑Kit in an Existing Project
+# Using Spec-Kit in an Existing Project
 
-> You already have a codebase. You want to try Spec‑Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10‑minute guide**—pick realistic scope; save the grand redesign for later.
+> You already have a codebase. You want to try Spec-Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10‑minute guide**-pick realistic scope; save the grand redesign for later.
 
 ---
 
@@ -16,7 +16,7 @@ Install the CLI by following the [Installation Guide](installation.md), then jum
 
 ## 2. Init
 
-> Spec‑Kit initializes a **workspace** in your repo and registers **slash commands** with your coding agent. This workspace holds your **specs, plans, and tasks**.
+> Spec-Kit initializes a **workspace** in your repo and registers **slash commands** with your coding agent. This workspace holds your **specs, plans, and tasks**.
 
 * Substitute any [supported assistant](../README.md#-supported-ai-agents) (`claude`, `gemini`, `copilot`, `cursor-agent`, etc.) for the `--ai` argument in place of `copilot`.
 * When prompted for script type, **pick your flavor** and continue.
@@ -81,7 +81,7 @@ Out of scope: stacking, gift cards, loyalty.
 
 ### Checkpoint
 
-* Spec‑Kit automatically creates and checks out a **feature branch**, e.g. `001-checkout-apply-coupon`.
+* Spec-Kit automatically creates and checks out a **feature branch**, e.g. `001-checkout-apply-coupon`.
 * It also creates a `./specs/001-checkout-apply-coupon/` folder and a set of `.md` files.
 * `spec.md` is the specification derived from your prompt — **review it now for accuracy.**
 
@@ -159,12 +159,12 @@ If your org enforces separation, use **two commits:** (1) specs + plan + tasks, 
 
 ## Troubleshooting (quick)
 
-| Symptom                                    | Likely Cause                                             | Fix                                                                        |
-| ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Slash commands not recognized              | Init not executed or failed                              | Re‑run init with `--ai copilot` in repo root; restart agent                |
-| “No such option: --ai”                     | Missing assistant name                                   | Use `--ai copilot` (or another supported value)                            |
-| Nothing generated after `/speckit.specify` | Missing model creds / provider blocked / init incomplete | Fix credentials; verify init output; retry with a smaller story            |
-| Implement touches unrelated files          | Spec / plan too vague                                    | Tighten scope; add explicit constraints / out‑of‑scope; rerun plan / tasks |
+| Symptom | Likely Cause | Fix |
+| - | - | - |
+| Slash commands not recognized | Init not executed or failed | Re-run init with `--ai copilot` in repo root; restart agent |
+| “No such option: --ai” | Missing assistant name | Use `--ai copilot` (or another supported value) |
+| Nothing generated after `/speckit.specify` | Missing model creds / provider blocked / init incomplete | Fix credentials; verify init output; retry with a smaller story |
+| Implement touches unrelated files | Spec / plan too vague | Tighten scope; add explicit constraints / out‑of‑scope; re-run plan / tasks |
 
 ---
 
