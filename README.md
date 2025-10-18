@@ -225,11 +225,11 @@ Essential commands for the Spec-Driven Development workflow:
 
 | Command                  | Description                                                           |
 |--------------------------|-----------------------------------------------------------------------|
-| `/diagramly.constitution`  | Create or update project governing principles and development guidelines |
-| `/diagramly.specify`       | Define what you want to build (requirements and user stories)        |
-| `/diagramly.plan`          | Create technical implementation plans with your chosen tech stack     |
-| `/diagramly.tasks`         | Generate actionable task lists for implementation                     |
-| `/diagramly.implement`     | Execute all tasks to build the feature according to the plan         |
+| `/diagramlykit.constitution`  | Create or update project governing principles and development guidelines |
+| `/diagramlykit.specify`       | Define what you want to build (requirements and user stories)        |
+| `/diagramlykit.plan`          | Create technical implementation plans with your chosen tech stack     |
+| `/diagramlykit.tasks`         | Generate actionable task lists for implementation                     |
+| `/diagramlykit.implement`     | Execute all tasks to build the feature according to the plan         |
 
 #### Optional Commands
 
@@ -237,9 +237,9 @@ Additional commands for enhanced quality and validation:
 
 | Command              | Description                                                           |
 |----------------------|-----------------------------------------------------------------------|
-| `/diagramly.clarify`   | Clarify underspecified areas (recommended before `/diagramly.plan`; formerly `/quizme`) |
-| `/diagramly.analyze`   | Cross-artifact consistency & coverage analysis (run after `/diagramly.tasks`, before `/diagramly.implement`) |
-| `/diagramly.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/diagramlykit.clarify`   | Clarify underspecified areas (recommended before `/diagramlykit.plan`; formerly `/quizme`) |
+| `/diagramlykit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/diagramlykit.tasks`, before `/diagramlykit.implement`) |
+| `/diagramlykit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
 ### Environment Variables
 
@@ -330,7 +330,7 @@ diagramly init . --force
 diagramly init --here --force
 ```
 
-![Diagramly CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
+![Diagramly CLI bootstrapping a new project in the terminal](./media/diagramly_cli.gif)
 
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 

@@ -19,14 +19,14 @@ You can execute the CLI via the module entrypoint without installing anything:
 
 ```bash
 # From repo root
-python -m src.specify_cli --help
-python -m src.specify_cli init demo-project --ai claude --ignore-agent-tools --script sh
+python -m src.diagramly_cli --help
+python -m src.diagramly_cli init demo-project --ai claude --ignore-agent-tools --script sh
 ```
 
 If you prefer invoking the script file style (uses shebang):
 
 ```bash
-python src/specify_cli/__init__.py init demo-project --script ps
+python src/diagramly_cli/__init__.py init demo-project --script ps
 ```
 
 ## 3. Use Editable Install (Isolated Environment)
@@ -99,7 +99,7 @@ On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
 Currently no enforced lint config is bundled, but you can quickly sanity check importability:
 ```bash
-python -c "import specify_cli; print('Import OK')"
+python -c "import diagramly_cli; print('Import OK')"
 ```
 
 ## 7. Build a Wheel Locally (Optional)
@@ -118,7 +118,7 @@ When testing `init --here` in a dirty directory, create a temp workspace:
 
 ```bash
 mkdir /tmp/spec-test && cd /tmp/spec-test
-python -m src.specify_cli init --here --ai claude --ignore-agent-tools --script sh  # if repo copied here
+python -m src.diagramly_cli init --here --ai claude --ignore-agent-tools --script sh  # if repo copied here
 ```
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
@@ -136,7 +136,7 @@ diagramly init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 
 | Action | Command |
 |--------|---------|
-| Run CLI directly | `python -m src.specify_cli --help` |
+| Run CLI directly | `python -m src.diagramly_cli --help` |
 | Editable install | `uv pip install -e .` then `diagramly ...` |
 | Local uvx run (repo root) | `uvx --from . diagramly ...` |
 | Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit diagramly ...` |

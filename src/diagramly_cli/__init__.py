@@ -1062,11 +1062,11 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
 
-    steps_lines.append("   2.1 [cyan]/diagramly.constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/diagramly.specify[/] - Create baseline specification")
-    steps_lines.append("   2.3 [cyan]/diagramly.plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/diagramly.tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/diagramly.implement[/] - Execute implementation")
+    steps_lines.append("   2.1 [cyan]/diagramlykit.constitution[/] - Establish project principles")
+    steps_lines.append("   2.2 [cyan]/diagramlykit.specify[/] - Create baseline specification")
+    steps_lines.append("   2.3 [cyan]/diagramlykit.plan[/] - Create implementation plan")
+    steps_lines.append("   2.4 [cyan]/diagramlykit.tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [cyan]/diagramlykit.implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
@@ -1075,9 +1075,9 @@ def init(
     enhancement_lines = [
         "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
         "",
-        f"○ [cyan]/diagramly.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/diagramly.plan[/] if used)",
-        f"○ [cyan]/diagramly.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/diagramly.tasks[/], before [cyan]/diagramly.implement[/])",
-        f"○ [cyan]/diagramly.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/diagramly.plan[/])"
+        f"○ [cyan]/diagramlykit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/diagramlykit.plan[/] if used)",
+        f"○ [cyan]/diagramlykit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/diagramlykit.tasks[/], before [cyan]/diagramlykit.implement[/])",
+        f"○ [cyan]/diagramlykit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/diagramlykit.plan[/])"
     ]
     enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
     console.print()

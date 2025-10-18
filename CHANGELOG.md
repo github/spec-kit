@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Renamed CLI tool from `specify` to `diagramly`
 - Updated all documentation and references to use `diagramly` command instead of `specify`
-- Updated slash commands from `/diagramlykit.*` to `/diagramly.*` 
+- Updated slash commands from `/diagramlykit.*` to `/diagramlykit.*` 
 - Updated installation instructions to use `uv tool install diagramly-cli`
 
 ## [0.0.19] - 2025-10-10
