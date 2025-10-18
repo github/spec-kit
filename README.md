@@ -48,6 +48,8 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 If you have this repository cloned locally, you can use the `init.sh` script directly:
 
 ```bash
+# Single repository mode:
+
 # Basic usage - creates project in new directory
 ./init.sh my-project
 
@@ -64,6 +66,23 @@ If you have this repository cloned locally, you can use the `init.sh` script dir
 
 # Use PowerShell scripts instead of bash
 ./init.sh my-project --ai claude --script ps
+
+# Multi-repository mode:
+
+# Preview updates for all repos in current directory
+./init.sh --all-repos --ai claude
+
+# Search specific path with custom depth
+./init.sh --all-repos --search-path ~/git/myorg --max-depth 2
+
+# Execute without preview (still asks for confirmation)
+./init.sh --all-repos --execute --ai claude
+
+# Bulk refresh with --destroy (extra safety prompt)
+./init.sh --all-repos --destroy --ai claude --search-path ~/git
+
+# Combine with different script types
+./init.sh --all-repos --ai gemini --script ps
 ```
 
 #### `init.sh` Options
@@ -73,6 +92,10 @@ If you have this repository cloned locally, you can use the `init.sh` script dir
 | `--ai` | AI assistant to use | `claude`, `gemini`, `copilot`, `cursor` (default: `claude`) |
 | `--script` | Script type to install | `sh` (bash), `ps` (PowerShell) (default: `sh`) |
 | `--destroy` | Delete existing `.specify/` directory and start fresh | Flag |
+| `--all-repos` | Process all repos containing `.specify` folders (multi-repo mode) | Flag |
+| `--search-path` | Directory to search for repos with `.specify` (multi-repo mode only) | Path (default: current directory) |
+| `--max-depth` | Search depth for `.specify` folders (multi-repo mode only) | Number (default: `3`) |
+| `--execute` | Skip preview and execute immediately (multi-repo mode only) | Flag |
 | `--help` | Show help message | Flag |
 
 #### What `--destroy` Does
@@ -97,12 +120,87 @@ The `--destroy` flag removes the entire `.specify/` directory to start with a cl
 - `constitution.md` (if you choose to preserve it)
 - `.gitignore` entries (updated, not destroyed)
 
+**Multi-repo mode with --destroy:**
+When using `--all-repos` with `--destroy`, you'll receive an extra safety confirmation prompt requiring you to type `"yes, I'm sure"` before proceeding. This prevents accidental bulk deletion across multiple repositories. The constitution preservation prompt will be asked for each repository individually.
+
 The script will:
 - Create a `.specify/` directory with all necessary templates and scripts
 - Generate AI-specific command files (`.claude/commands/`, `.gemini/commands/`, etc.)
 - Preserve your existing `constitution.md` if you choose to
 - Set up proper `.gitignore` entries
 - Copy scripts based on your chosen platform (bash or PowerShell)
+
+#### Multi-Repository Mode
+
+The `--all-repos` flag enables bulk initialization across multiple repositories containing `.specify` folders. This is useful for:
+- Updating spec-kit templates across your organization's microservices
+- Rolling out spec-kit updates to multiple projects simultaneously
+- Standardizing configurations across team repositories
+
+**How it works:**
+
+1. **Discovery**: Searches for all directories containing `.specify` folders within the specified search path and depth
+2. **Preview**: Always shows a preview of all repositories that will be updated (unless `--execute` is used)
+3. **Confirmation**: Asks for user confirmation before making any changes
+4. **Execution**: Processes each repository sequentially with detailed progress reporting
+
+**Safety features:**
+
+- **Preview-first workflow**: Always previews changes before execution (can skip with `--execute`)
+- **Extra confirmation for --destroy**: Requires typing `"yes, I'm sure"` when combining `--all-repos` with `--destroy`
+- **Individual prompts**: Constitution preservation is asked per repository
+- **Failure isolation**: If one repository fails, others continue processing
+- **Summary report**: Shows success/failure counts and lists any failed repositories
+
+**Usage examples:**
+
+```bash
+# Preview updates for all repos in current directory (depth 3)
+./init.sh --all-repos --ai claude
+
+# Search in specific directory with custom depth
+./init.sh --all-repos --search-path ~/git/myorg --max-depth 2 --ai claude
+
+# Preview updates for all repos and specify script type
+./init.sh --all-repos --ai gemini --script ps
+
+# Skip preview and execute immediately
+./init.sh --all-repos --execute --ai claude
+
+# Bulk refresh with --destroy (requires extra confirmation)
+./init.sh --all-repos --destroy --ai claude
+```
+
+**Configuration options:**
+
+- `--search-path`: Directory to search (default: current directory)
+- `--max-depth`: How deep to search for `.specify` folders (default: 3)
+- `--execute`: Skip preview and proceed directly to confirmation
+
+**Example output:**
+
+```
+Found 5 repositories with .specify:
+  1. /Users/you/git/project-a
+  2. /Users/you/git/project-b
+  3. /Users/you/git/project-c
+  4. /Users/you/git/project-d
+  5. /Users/you/git/project-e
+
+Settings:
+  AI: claude
+  Script: sh
+  Destroy: no
+
+=== PREVIEW MODE ===
+
+[1/5] Would update: project-a
+Would create .specify directory structure
+Would copy memory folder
+[...]
+
+Do you want to proceed with these changes? (y/N):
+```
 
 #### Install from a Fork or Custom Branch
 
