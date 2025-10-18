@@ -45,6 +45,69 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
+## Testing template and command changes locally
+
+When you run `uv run specify`, it pulls the latest release packages from GitHub and will **not** include your local changes to templates, scripts, or memory files. To work around this, you could manually copy files, rename them with the appropriate prefixes (`.specify/`, `.claude/`, etc.), and configure the agent-specific directory structures, but this is tedious and error-prone.
+
+To avoid this manual work, use the `test-local-init.py` utility to test the entire workflow locally before raising a PR. Follow these instructions:
+
+### Prerequisites
+
+1. Make your changes to templates, scripts, or memory files
+1. Ensure you have `zip` and `bash` (version 4.0+) available on your system
+   - **macOS users**: The default bash is version 3.x. Install bash 4+ using Homebrew:
+     ```bash
+     brew install bash
+     ```
+
+### Build and test with local packages
+
+> **Note:** You may need to add execute permissions to the build script first:
+> ```bash
+> chmod +x .github/workflows/scripts/create-release-packages.sh
+> ```
+
+1. **Build local template packages** from your working directory:
+   ```bash
+   bash .github/workflows/scripts/create-release-packages.sh v0.0.70
+   ```
+   Replace `v0.0.70` with any version string (it's only used for naming). This creates ZIP files in `.genreleases/` directory containing your local changes.
+
+1. **Test initialization with local packages**:
+   ```bash
+   uv run test-local-init.py /path/to/test-project --ai claude --script sh --version v0.0.70
+   ```
+
+   This script uses monkey patching to bypass GitHub downloads and load the local ZIPs you just built. Replace:
+   - `/path/to/test-project` with your test project directory
+   - `--ai` with your agent choice (claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, q)
+   - `--script` with sh or ps
+   - `--version` with the same version you used in step 1
+
+1. **Verify the setup** in your test project:
+   ```bash
+   cd /path/to/test-project
+   # Check that .specify/ contains your local changes
+   # Test the workflow commands in your AI agent
+   ```
+
+### Limiting what gets built
+
+You can optionally limit which agent packages get built using environment variables:
+
+```bash
+# Build only for Claude with bash scripts
+AGENTS=claude SCRIPTS=sh bash .github/workflows/scripts/create-release-packages.sh v0.0.70
+
+# Build for multiple agents
+AGENTS="claude,copilot" bash .github/workflows/scripts/create-release-packages.sh v0.0.70
+
+# Build only PowerShell variants
+SCRIPTS=ps bash .github/workflows/scripts/create-release-packages.sh v0.0.70
+```
+
+This local testing workflow ensures your template and script changes work correctly before submitting a pull request.
+
 ## AI contributions in Spec Kit
 
 > [!IMPORTANT]
