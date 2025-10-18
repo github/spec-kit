@@ -7,7 +7,7 @@
         "diagramlykit.implement": true
     },
     "chat.tools.terminal.autoApprove": {
-        ".specify/scripts/bash/": true,
-        ".specify/scripts/powershell/": true
+        ".diagramly/scripts/bash/": true,
+        ".diagramly/scripts/powershell/": true
     }
 }

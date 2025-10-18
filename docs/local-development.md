@@ -7,8 +7,8 @@ This guide shows how to iterate on the `diagramly` CLI locally without publishin
 ## 1. Clone and Switch Branches
 
 ```bash
-git clone https://github.com/github/spec-kit.git
-cd spec-kit
+git clone https://github.com/github/diagramly-kit.git
+cd diagramly-kit
 # Work on a feature branch
 git checkout -b your-feature-branch
 ```
@@ -60,7 +60,7 @@ You can also point uvx at a specific branch without merging:
 ```bash
 # Push your working branch first
 git push origin your-feature-branch
-uvx --from git+https://github.com/github/spec-kit.git@your-feature-branch diagramly init demo-branch-test --script ps
+uvx --from git+https://github.com/github/diagramly-kit.git@your-feature-branch diagramly init demo-branch-test --script ps
 ```
 
 ### 4a. Absolute Path uvx (Run From Anywhere)
@@ -68,19 +68,19 @@ uvx --from git+https://github.com/github/spec-kit.git@your-feature-branch diagra
 If you're in another directory, use an absolute path instead of `.`:
 
 ```bash
-uvx --from /mnt/c/GitHub/spec-kit diagramly --help
-uvx --from /mnt/c/GitHub/spec-kit diagramly init demo-anywhere --ai copilot --ignore-agent-tools --script sh
+uvx --from /mnt/c/GitHub/diagramly-kit diagramly --help
+uvx --from /mnt/c/GitHub/diagramly-kit diagramly init demo-anywhere --ai copilot --ignore-agent-tools --script sh
 ```
 
 Set an environment variable for convenience:
 ```bash
-export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit
+export SPEC_KIT_SRC=/mnt/c/GitHub/diagramly-kit
 uvx --from "$SPEC_KIT_SRC" diagramly init demo-env --ai copilot --ignore-agent-tools --script ps
 ```
 
 (Optional) Define a shell function:
 ```bash
-diagramly-dev() { uvx --from /mnt/c/GitHub/spec-kit diagramly "$@"; }
+diagramly-dev() { uvx --from /mnt/c/GitHub/diagramly-kit diagramly "$@"; }
 # Then
 diagramly-dev --help
 ```
@@ -139,7 +139,7 @@ diagramly init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 | Run CLI directly | `python -m src.diagramly_cli --help` |
 | Editable install | `uv pip install -e .` then `diagramly ...` |
 | Local uvx run (repo root) | `uvx --from . diagramly ...` |
-| Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit diagramly ...` |
+| Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/diagramly-kit diagramly ...` |
 | Git branch uvx | `uvx --from git+URL@branch diagramly ...` |
 | Build wheel | `uv build` |
 

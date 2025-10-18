@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/github/spec-kit/actions/workflows/release.yml"><img src="https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
-    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
+    <a href="https://github.com/github/diagramly-kit/actions/workflows/release.yml"><img src="https://github.com/github/diagramly-kit/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
+    <a href="https://github.com/github/diagramly-kit/stargazers"><img src="https://img.shields.io/github/stars/github/diagramly-kit?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/github/diagramly-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/diagramly-kit" alt="License"/></a>
+    <a href="https://github.github.io/diagramly-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
 </p>
 
 ---
@@ -51,7 +51,7 @@ Choose your preferred installation method:
 Install once and use everywhere:
 
 ```bash
-uv tool install diagramly-cli --from git+https://github.com/github/spec-kit.git
+uv tool install diagramly-cli --from git+https://github.com/github/diagramly-kit.git
 ```
 
 Then use the tool directly:
@@ -64,7 +64,7 @@ diagramly check
 To upgrade diagramly run:
 
 ```bash
-uv tool install diagramly-cli --force --from git+https://github.com/github/spec-kit.git
+uv tool install diagramly-cli --force --from git+https://github.com/github/diagramly-kit.git
 ```
 
 #### Option 2: One-time Usage
@@ -72,7 +72,7 @@ uv tool install diagramly-cli --force --from git+https://github.com/github/spec-
 Run directly without installing:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git diagramly init <PROJECT_NAME>
+uvx --from git+https://github.com/github/diagramly-kit.git diagramly init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -128,7 +128,7 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 
 Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
 
-[![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
+[![Spec Kit video header](/media/diagramly-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
 ## 🤖 Supported AI Agents
 
@@ -374,7 +374,7 @@ The first step should be establishing your project's governing principles using 
 /diagramlykit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
 ```
 
-This step creates or updates the `.specify/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
+This step creates or updates the `.diagramly/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
 
 ### **STEP 2:** Create project specifications
 
@@ -413,7 +413,7 @@ The produced specification should contain a set of user stories and functional r
 At this stage, your project folder contents should resemble the following:
 
 ```text
-└── .specify
+└── .diagramly
     ├── memory
     │	 └── constitution.md
     ├── scripts
@@ -595,7 +595,7 @@ rm gcm-linux_amd64.2.6.1.deb
 
 ## 💬 Support
 
-For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
+For support, please open a [GitHub issue](https://github.com/github/diagramly-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
 ## 🙏 Acknowledgements
 
