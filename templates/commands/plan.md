@@ -41,6 +41,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - For each NEEDS CLARIFICATION → research task
    - For each dependency → best practices task
    - For each integration → patterns task
+   - For async communication patterns → protocol/technology evaluation task
 
 2. **Generate and dispatch research agents**:
    ```
@@ -48,6 +49,9 @@ You **MUST** consider the user input before proceeding (if not empty).
      Task: "Research {unknown} for {feature context}"
    For each technology choice:
      Task: "Find best practices for {tech} in {domain}"
+   For async communication patterns:
+     Task: "Evaluate {WebSocket vs SSE vs Webhooks vs Message Queues} for {feature requirements}"
+     Task: "Research AsyncAPI specification best practices for {identified pattern}"
    ```
 
 3. **Consolidate findings** in `research.md` using format:
@@ -66,12 +70,40 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Validation rules from requirements
    - State transitions if applicable
 
-2. **Generate API contracts** from functional requirements:
+2. **Detect communication patterns** from functional requirements and feature spec:
+   - Scan for **async indicators**: "real-time", "live", "streaming", "push", "event", "notification", "bidirectional", "chat", "feed", "updates", "subscribe", "publish", "webhook", "message"
+   - Scan for **sync indicators**: "request", "query", "fetch", "get", "create", "update", "delete", "CRUD"
+   - **If async indicators found**: Mark as async or hybrid
+   - **If ambiguous**: Add to Technical Context as "NEEDS CLARIFICATION: Does [feature] require synchronous (request-response) or asynchronous (real-time/event-driven) communication?"
+   - Document decision in Technical Context → Communication Patterns field
+
+3. **Generate API contracts** based on detected communication patterns:
+
+   **For Synchronous Operations** (REST/GraphQL):
    - For each user action → endpoint
    - Use standard REST/GraphQL patterns
-   - Output OpenAPI/GraphQL schema to `/contracts/`
+   - Generate OpenAPI specification → `/contracts/openapi.yaml` or `/contracts/rest-api.yaml`
+   - Generate GraphQL schema → `/contracts/graphql.schema` (if GraphQL detected)
 
-3. **Agent context update**:
+   **For Asynchronous Operations** (Events/WebSocket/Messaging):
+   - For each real-time feature → channel/event type
+   - Identify: channel names, message payloads, event types
+   - Define: publish/subscribe patterns, message schemas
+   - Generate AsyncAPI specification → `/contracts/asyncapi.yaml` or `/contracts/events-api.yaml`
+   - Document: WebSocket endpoints, event types, message formats
+
+   **For Hybrid APIs** (Both sync and async):
+   - Generate both OpenAPI and AsyncAPI specifications
+   - Document integration points between sync and async operations
+   - Clarify which operations use which pattern and why
+
+   **Contract File Naming**:
+   - `openapi.yaml` or `rest-api.yaml` - REST API specifications
+   - `asyncapi.yaml` or `events-api.yaml` - Event/WebSocket specifications
+   - `graphql.schema` - GraphQL schema definitions
+   - Multiple contracts allowed in `/contracts/` directory
+
+4. **Agent context update**:
    - Run `{AGENT_SCRIPT}`
    - These scripts detect which AI agent is in use
    - Update the appropriate agent-specific context file
