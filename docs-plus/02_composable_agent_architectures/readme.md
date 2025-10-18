@@ -1,6 +1,6 @@
 # The Main Reusable Abstraction are Subagent
 
-**[Detailed Technical Whitepaper on Coposable Agents](composable_agents_paper.md)**
+**[Detailed Technical Whitepaper on Composable Agents](composable_agents_paper.md)**
 
 We will discuss how Anthropic’s *Skills* concept, *subagents*, and the *Model Context Protocol (MCP)* fit together.
 
