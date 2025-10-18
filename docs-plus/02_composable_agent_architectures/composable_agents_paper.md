@@ -1,7 +1,7 @@
-# Composable Agent Architectures: A Unified Framework for Skills, Subagents, and MCP Integration
+# A Unified Framework for Skills, Subagents, MCP, and the Agentic Economy
 
 **Author:** Panaversity Team 
-**Version:** 1.0  
+**Version:** 2.0  
 **Date:** October 2025  
 **Status:** Technical Whitepaper
 
@@ -13,6 +13,8 @@ This paper presents a comprehensive framework for building modular, composable, 
 
 The framework applies equally to extending AI Command-Line Interfaces (AI CLIs) like Claude Code and Gemini CLI, and to building distributed multi-agent systems across domains including DevOps, finance, healthcare, education, and robotics.
 
+Beyond technical architecture, we introduce the **Agentic Economy**—a marketplace ecosystem where AI agents act as economic entities, offering capabilities for compensation through standardized identity, billing, and trust infrastructure.
+
 Through detailed case studies and architectural patterns, we demonstrate how this composable approach enables:
 
 - **Reusability**: Skills and subagents as versioned, shareable modules
@@ -20,6 +22,7 @@ Through detailed case studies and architectural patterns, we demonstrate how thi
 - **Scalability**: Cloud-native deployment patterns via container orchestration
 - **Security**: Bounded execution contexts with explicit capability grants
 - **Extensibility**: Dynamic loading and composition of capabilities
+- **Economic Sustainability**: Fair markets for cognitive capabilities with built-in billing and trust
 
 ---
 
@@ -35,7 +38,10 @@ Through detailed case studies and architectural patterns, we demonstrate how thi
 8. [Agent-to-Agent Protocol (A2A)](#a2a-protocol)
 9. [Deployment and Operations](#deployment)
 10. [Future Directions](#future-directions)
-11. [Conclusion](#conclusion)
+11. [The Agentic Economy](#agentic-economy)
+12. [Conclusion](#conclusion)
+13. [References](#references)
+14. [Appendices](#appendices)
 
 ---
 
@@ -78,6 +84,19 @@ This paper introduces a **three-layer abstraction model** that addresses these c
 
 Together, these enable a **composable agent ecosystem** where capabilities can be developed once, shared broadly, and composed flexibly.
 
+**Beyond Technical Architecture: The Agentic Economy**
+
+This paper extends beyond traditional software architecture to address a fundamental question: *How do AI agents participate in economic exchange?*
+
+We introduce the concept of the **Agentic Economy**—a marketplace where:
+- **Agents are economic entities**: Remote, network-addressable services with identity and reputation
+- **Capabilities are tradeable resources**: Skills and subagents can be monetized and exchanged
+- **Interactions are measurable and billable**: Every agent invocation is metered, priced, and settled
+- **Trust is quantifiable**: Reputation scores emerge from verified performance data
+- **Governance is distributed**: Registries and marketplaces operate through federated consensus
+
+This economic layer transforms agents from isolated tools into participants in a global network of cognitive commerce—analogous to how cloud APIs created an economy around data and computation, but operating at the intelligence layer.
+
 ---
 
 ## 2. Theoretical Foundations {#theoretical-foundations}
@@ -93,6 +112,15 @@ We conceptualize subagents as **cognitive microservices**—autonomous units of 
 
 This mirrors the microservices architecture pattern from distributed systems, but operates at the **reasoning layer** rather than the data processing layer.
 
+**Economic Extension**: When deployed as remote services, these cognitive microservices become **economic actors**—capable of:
+- **Advertising** their capabilities through registries
+- **Negotiating** terms through standardized pricing models
+- **Executing** work with measurable resource consumption
+- **Billing** consumers based on usage metrics
+- **Accumulating** reputation through performance history
+
+This transforms the microservices pattern from a technical architecture into an **economic architecture**, where each service participates in a marketplace of intelligence.
+
 ### 2.2 Separation of Concerns
 
 The architecture enforces clear boundaries:
@@ -103,6 +131,9 @@ The architecture enforces clear boundaries:
 | **Capability** | What actions are possible | Skill registry + permissions |
 | **Integration** | How to access external systems | MCP servers + authentication |
 | **Communication** | Agent-to-agent interaction | A2A protocol + routing |
+| **Economic** | Identity, billing, and trust | DID + metering + registries |
+
+The addition of the **Economic Layer** ensures that as agents compose and collaborate, their interactions remain **accountable, measurable, and compensable**.
 
 ### 2.3 Composability Principles
 
@@ -115,6 +146,74 @@ Our framework adheres to key composability principles:
 **Combinability**: Complex behaviors emerge from combining simple, well-understood components.
 
 **Discoverability**: Capabilities are self-describing through standardized metadata.
+
+**Economic Sustainability**: Components can be monetized independently, creating incentives for quality and innovation.
+
+### 2.4 From Local to Federated: The Evolution of Agent Systems
+
+Traditional agent systems operate as **local utilities**:
+```
+Developer → Local Agent → Local Tools → Local Results
+```
+
+Composable agent architectures enable **federated ecosystems**:
+```
+                    ┌─────────────────────────────────┐
+                    │      Agent Registry             │
+                    │  (Discovery, Trust, Billing)    │
+                    └──────────┬──────────────────────┘
+                               │
+                    ┌──────────┴──────────┐
+                    │                     │
+        ┌───────────▼──────────┐  ┌──────▼─────────────┐
+        │  Consumer Framework  │  │  Provider Agent    │
+        │  (OpenAI SDK, CLI)   │  │  (Remote Service)  │
+        └──────────────────────┘  └────────────────────┘
+              │                            │
+              └────────A2A Protocol────────┘
+                (Identity + Metering + Trust)
+```
+
+This evolution creates several foundational shifts:
+
+**From Ownership to Access**: Instead of building and owning every capability, frameworks access capabilities as needed from a marketplace.
+
+**From Static to Dynamic**: Agents can discover and compose new capabilities at runtime based on task requirements.
+
+**From Isolated to Collaborative**: Multi-agent systems operate across organizational boundaries with standardized protocols.
+
+**From Free to Metered**: Resource consumption is tracked, attributed, and compensated, creating sustainable economic incentives.
+
+### 2.5 Network Effects in the Agentic Economy
+
+The Agentic Economy exhibits powerful network effects:
+
+**Supply-Side Network Effects**:
+- More provider agents → More capabilities available
+- More capabilities → Higher framework value
+- Higher value → More consumers
+- More consumers → More revenue for providers
+- More revenue → More investment in quality agents
+
+**Demand-Side Network Effects**:
+- More consumer frameworks → Larger market
+- Larger market → More provider incentive
+- More providers → Better capability coverage
+- Better coverage → More framework adoption
+
+**Data Network Effects**:
+- More usage → Better performance metrics
+- Better metrics → More accurate trust scores
+- Accurate trust → Better discovery
+- Better discovery → More usage
+
+**Standardization Network Effects**:
+- More A2A adoption → Greater interoperability
+- Greater interoperability → Lower integration costs
+- Lower costs → Faster ecosystem growth
+- Faster growth → Stronger standards
+
+These network effects create a **virtuous cycle** that compounds the value of participation for all ecosystem members.
 
 ---
 
@@ -219,53 +318,6 @@ spec:
       default: 1800
 ```
 
-#### Skill Implementation Pattern
-
-```python
-# implementation/__init__.py
-from typing import Dict, List, Optional
-from .mcp_client import MCPClient
-
-class DockerSkill:
-    def __init__(self, mcp_client: MCPClient, config: Dict):
-        self.mcp = mcp_client
-        self.config = config
-    
-    async def build(
-        self, 
-        context_path: str, 
-        tag: str, 
-        dockerfile: str = "Dockerfile"
-    ) -> Dict:
-        """Build a Docker image."""
-        return await self.mcp.call("docker", "build", {
-            "context": context_path,
-            "tag": tag,
-            "dockerfile": dockerfile,
-            "timeout": self.config.get("build_timeout", 1800)
-        })
-    
-    async def run(
-        self,
-        image: str,
-        ports: Optional[List[str]] = None,
-        environment: Optional[Dict] = None
-    ) -> Dict:
-        """Run a container."""
-        return await self.mcp.call("docker", "run", {
-            "image": image,
-            "ports": ports or [],
-            "env": environment or {}
-        })
-    
-    async def push(self, image: str, registry: str) -> Dict:
-        """Push image to registry."""
-        return await self.mcp.call("docker", "push", {
-            "image": image,
-            "registry": registry
-        })
-```
-
 ### 3.2 Subagents: Specialized Cognitive Units
 
 A **Subagent** is a composable AI component that combines:
@@ -275,39 +327,6 @@ A **Subagent** is a composable AI component that combines:
 - **Capabilities**: A set of installed skills
 - **Connections**: Configured MCP servers for external system access
 - **Context**: Persistent memory and state management
-
-#### Subagent Lifecycle
-
-```
-┌─────────────┐
-│ Definition  │ ──► YAML manifest created
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│Registration │ ──► Validated and added to registry
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│ Installation│ ──► Skills and MCP servers configured
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│ Activation  │ ──► Loaded into runtime environment
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│  Execution  │ ──► Processes tasks using skills
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│Deactivation │ ──► State persisted, resources released
-└─────────────┘
-```
 
 #### Subagent Manifest Example
 
@@ -321,9 +340,7 @@ metadata:
   labels:
     domain: devops
     team: platform
-  annotations:
-    description: "Automates container deployment and orchestration"
-    
+  
 spec:
   model:
     provider: anthropic
@@ -427,48 +444,6 @@ spec:
 
 The **Model Context Protocol** standardizes how agents interact with external systems. MCP servers act as **typed, auditable drivers** for real-world infrastructure.
 
-#### MCP Server Architecture
-
-```
-┌──────────────┐
-│              │
-│    Agent     │
-│              │
-└──────┬───────┘
-       │
-       │ MCP Client Request
-       │
-       ▼
-┌──────────────────────────────────┐
-│      MCP Protocol Layer          │
-│  ┌────────────────────────────┐  │
-│  │  Authentication            │  │
-│  │  Authorization             │  │
-│  │  Request Validation        │  │
-│  │  Response Serialization    │  │
-│  └────────────────────────────┘  │
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│       MCP Server                 │
-│  ┌────────────────────────────┐  │
-│  │  Capability Registry       │  │
-│  │  Resource Management       │  │
-│  │  Execution Engine          │  │
-│  │  State Management          │  │
-│  └────────────────────────────┘  │
-└──────────┬───────────────────────┘
-           │
-           │ System API Calls
-           │
-           ▼
-┌──────────────────────────────────┐
-│      Target System               │
-│  (Docker, K8s, GitHub, etc.)     │
-└──────────────────────────────────┘
-```
-
 #### MCP Server Manifest
 
 ```yaml
@@ -520,13 +495,6 @@ spec:
         - pods
         - deployments
         - services
-        
-    - name: logs
-      description: "Retrieve pod logs"
-      permissions:
-        - get
-      resources:
-        - pods/log
   
   rate_limits:
     requests_per_minute: 60
@@ -581,8 +549,24 @@ spec:
 ┌────────────────────▼────────────────────────────────────┐
 │              Observability Layer                        │
 │    (Logging, Tracing, Metrics, Policy Enforcement)      │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│              Economic Layer                             │
+│  (Identity, Registry, Billing, Trust, Governance)       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │     DID      │  │   Registry   │  │   Billing    │  │
+│  │  Identity    │  │  Discovery   │  │   Gateway    │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**The Economic Layer enables**:
+- **Monetization**: Skills and subagents can be offered as paid services
+- **Discovery**: Registries allow agents to find and evaluate capabilities
+- **Trust**: Reputation systems ensure quality and reliability
+- **Sustainability**: Usage-based billing creates incentives for optimization
+- **Federation**: Organizations can share and consume capabilities securely
 
 ### 4.2 Component Interactions
 
@@ -831,68 +815,6 @@ DevOps Agent Execution:
 └─────────────────────────────────────────────┘
 ```
 
-### 6.4 Generated Kubernetes Manifest
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: forecasting-agent
-  namespace: production
-  labels:
-    app: forecasting-agent
-    version: v1.2.0
-    managed-by: devops-agent
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: forecasting-agent
-  template:
-    metadata:
-      labels:
-        app: forecasting-agent
-        version: v1.2.0
-      annotations:
-        dapr.io/enabled: "true"
-        dapr.io/app-id: "forecasting-agent"
-        dapr.io/app-port: "8080"
-        dapr.io/actor-idle-timeout: "1h"
-        dapr.io/actor-scan-interval: "30s"
-    spec:
-      containers:
-      - name: agent
-        image: registry.company.internal/forecaster:v1.2.0
-        ports:
-        - containerPort: 8080
-        env:
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: openai-credentials
-              key: api-key
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "2000m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: forecasting-agent
-  namespace: production
-spec:
-  selector:
-    app: forecasting-agent
-  ports:
-  - port: 80
-    targetPort: 8080
-  type: ClusterIP
-```
-
 ---
 
 ## 7. Multi-Domain Applications {#applications}
@@ -916,13 +838,6 @@ system_prompt: |
   You ensure financial compliance across the organization.
   Generate audit reports, validate transactions, and respond
   to regulatory inquiries via A2A protocol.
-```
-
-**Use Case:** Partner companies can query your audit trail securely:
-```
-PartnerAuditAgent → A2A → YourAuditAgent
-Request: "Provide evidence of Q4 2024 revenue recognition compliance"
-Response: SOX-compliant audit report with supporting documents
 ```
 
 ### 7.2 Healthcare Domain
@@ -959,10 +874,6 @@ skills:
   - assessment-generation
   - student-progress-tracking
   - lms-integration  # Learning Management System
-  
-system_prompt: |
-  You assist educators in curriculum planning and student assessment.
-  Generate personalized learning paths based on student performance data.
 ```
 
 ### 7.4 Robotics Domain
@@ -979,11 +890,6 @@ skills:
   - slam           # Simultaneous Localization and Mapping
   - path-planning  # Motion planning algorithms
   - sensor-fusion  # Multi-sensor data integration
-  
-mcp_connections:
-  - name: ros2-bridge
-    transport: dds
-    qos: reliable
 ```
 
 ---
@@ -1000,6 +906,11 @@ A2A enables secure, semantic communication between agents across organizational 
 - Capability negotiation
 - Auditable interactions
 - Transport-agnostic
+- **Economic integration**: Built-in support for metering, billing, and payment settlement
+
+The A2A protocol serves dual purposes:
+1. **Technical**: Enables interoperable agent communication
+2. **Economic**: Facilitates measurable, billable interactions in the Agentic Economy
 
 ### 8.2 Message Structure
 
@@ -1044,6 +955,15 @@ A2A enables secure, semantic communication between agents across organizational 
     "timeout": 300
   },
   
+  "billing": {
+    "account_id": "did:a2a:acme-corp:billing-account-001",
+    "estimate_requested": true,
+    "max_cost": {
+      "value": 1.00,
+      "currency": "AGT"
+    }
+  },
+  
   "security": {
     "encryption": "aes-256-gcm",
     "signature_algorithm": "ecdsa-p256",
@@ -1052,9 +972,9 @@ A2A enables secure, semantic communication between agents across organizational 
 }
 ```
 
-### 8.3 Capability Discovery
+**Note**: The addition of the `billing` field enables economic integration directly into the protocol, allowing agents to negotiate costs before execution.
 
-Agents expose their capabilities via standardized endpoints:
+### 8.3 Capability Discovery
 
 ```http
 GET https://a2a.partner-corp.com/agents/forecast-agent/capabilities
@@ -1092,9 +1012,24 @@ Response:
   "authentication": {
     "methods": ["did", "oauth2"],
     "scopes": ["forecast:read", "forecast:write"]
+  },
+  "pricing": {
+    "model": "usage-based",
+    "currency": "AGT",
+    "rates": {
+      "per_invocation": 0.10,
+      "per_1k_tokens": 0.005
+    }
+  },
+  "trust": {
+    "score": 96.3,
+    "invocations_30d": 8472,
+    "success_rate": 99.1
   }
 }
 ```
+
+**Economic Enhancement**: The `/capabilities` endpoint now includes pricing and trust information, enabling consumers to make informed decisions about which agents to engage.
 
 ### 8.4 A2A Skill Implementation
 
@@ -1146,146 +1081,6 @@ class A2ASkill:
         )
         
         return response.json()
-    
-    async def register_capability(
-        self,
-        capability_name: str,
-        input_schema: Dict,
-        output_schema: Dict,
-        handler: Callable
-    ):
-        """Register a capability that other agents can invoke."""
-        registration = {
-            "agent_id": self.identity,
-            "capability": {
-                "name": capability_name,
-                "input_schema": input_schema,
-                "output_schema": output_schema,
-                "endpoint": f"/capabilities/{capability_name}"
-            }
-        }
-        
-        # Register with gateway
-        await self.gateway_client.post(
-            f"{self.gateway_url}/register",
-            json=registration
-        )
-        
-        # Set up local handler
-        self.capability_handlers[capability_name] = handler
-    
-    async def discover_agents(self, domain: str = None) -> List[Dict]:
-        """Discover available agents in the network."""
-        params = {"domain": domain} if domain else {}
-        response = await self.gateway_client.get(
-            f"{self.gateway_url}/discover",
-            params=params
-        )
-        return response.json()['agents']
-```
-
-### 8.5 Cross-Organization Workflow Example
-
-**Scenario:** Multi-company project collaboration
-
-```
-┌──────────────────────────────────────────────────────┐
-│ Company A: Project Management Agent                 │
-│                                                      │
-│ Task: "Get resource forecast for Project PX-1003"   │
-└────────────────────┬─────────────────────────────────┘
-                     │
-                     │ A2A Message
-                     │ intent: "forecast_project"
-                     │
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│ A2A Gateway (Authentication & Routing)               │
-│                                                      │
-│ - Verify sender signature                           │
-│ - Check authorization policy                        │
-│ - Route to recipient                                │
-└────────────────────┬─────────────────────────────────┘
-                     │
-                     │ Authenticated Request
-                     │
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│ Company B: Forecasting Agent                        │
-│                                                      │
-│ 1. Receive request                                  │
-│ 2. Validate project_id exists                       │
-│ 3. Analyze historical data                          │
-│ 4. Generate forecast                                │
-│ 5. Return response                                  │
-└────────────────────┬─────────────────────────────────┘
-                     │
-                     │ A2A Response
-                     │
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│ Company A: Project Management Agent                 │
-│                                                      │
-│ - Integrate forecast into project plan              │
-│ - Adjust resource allocation                        │
-│ - Notify stakeholders                               │
-└──────────────────────────────────────────────────────┘
-```
-
-### 8.6 Security Considerations
-
-**Authentication:**
-- Decentralized Identifiers (DIDs) for agent identity
-- Message signing using ECDSA or EdDSA
-- Mutual TLS for transport security
-
-**Authorization:**
-- Capability-based access control
-- Policy enforcement at gateway
-- Rate limiting per organization
-
-**Privacy:**
-- End-to-end encryption for sensitive payloads
-- Selective disclosure of agent capabilities
-- Audit logs with privacy preservation
-
-**Example Policy:**
-
-```yaml
-apiVersion: policy.a2a.dev/v1
-kind: AccessPolicy
-metadata:
-  name: partner-collaboration
-  
-spec:
-  principals:
-    - organization: partner-corp
-      agents:
-        - did:partner:forecast-agent
-        - did:partner:analytics-agent
-  
-  permissions:
-    allow:
-      - action: forecast_project
-        resources:
-          - projects/PX-*
-        conditions:
-          - time_range: business_hours
-          - rate_limit: 100/hour
-      
-      - action: get_status
-        resources:
-          - deployments/*
-  
-  deny:
-    - action: "*"
-      resources:
-        - internal/*
-        - confidential/*
-  
-  audit:
-    log_level: detailed
-    retention_days: 365
 ```
 
 ---
@@ -1299,390 +1094,65 @@ spec:
 ```dockerfile
 FROM python:3.11-slim
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    git curl && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy subagent manifest and dependencies
 COPY subagent.yaml .
 COPY skills/ ./skills/
 COPY requirements.txt .
 
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install subagent runtime
 RUN pip install subagent-runtime==2.0.0
 
-# Copy entrypoint
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
-# Expose ports
 EXPOSE 8080 9090
 
-# Run as non-root
 RUN useradd -m -u 1000 agent
 USER agent
 
 ENTRYPOINT ["./entrypoint.sh"]
 ```
 
-### 9.2 Kubernetes Deployment Pattern
-
-**Helm Chart Structure:**
-
-```
-subagent-chart/
-├── Chart.yaml
-├── values.yaml
-├── templates/
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   ├── configmap.yaml
-│   ├── secret.yaml
-│   ├── serviceaccount.yaml
-│   ├── rbac.yaml
-│   └── hpa.yaml
-└── crds/
-    └── subagent-crd.yaml
-```
-
-**Custom Resource Definition:**
+### 9.2 Kubernetes Deployment
 
 ```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: subagents.agent.dev
+  name: devops-agent
+  namespace: agents
 spec:
-  group: agent.dev
-  versions:
-    - name: v1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              properties:
-                model:
-                  type: object
-                skills:
-                  type: array
-                  items:
-                    type: object
-                mcpConnections:
-                  type: array
-                  items:
-                    type: object
-                replicas:
-                  type: integer
-                  minimum: 1
-  scope: Namespaced
-  names:
-    plural: subagents
-    singular: subagent
-    kind: Subagent
-    shortNames:
-      - sa
-```
-
-### 9.3 Dapr Integration for State Management
-
-**Dapr Actor Pattern:**
-
-```python
-from dapr.actor import Actor, Remindable
-from dapr.actor.runtime.runtime import ActorRuntime
-
-class ForecastingAgentActor(Actor, Remindable):
-    def __init__(self, ctx, actor_id):
-        super().__init__(ctx, actor_id)
-        self.state_manager = ctx.state_manager
-        
-    async def _on_activate(self) -> None:
-        """Called when actor is activated."""
-        # Load persistent state
-        conversation = await self.state_manager.try_get_state('conversation')
-        if conversation:
-            self.conversation_history = conversation.value
-        else:
-            self.conversation_history = []
-    
-    async def forecast_project(self, project_data: dict) -> dict:
-        """Main capability: forecast project outcomes."""
-        # Add to conversation history
-        self.conversation_history.append({
-            'timestamp': datetime.now().isoformat(),
-            'action': 'forecast_project',
-            'input': project_data
-        })
-        
-        # Perform forecasting logic
-        result = await self.execute_forecast(project_data)
-        
-        # Save state
-        await self.state_manager.set_state(
-            'conversation',
-            self.conversation_history
-        )
-        await self.state_manager.save_state()
-        
-        return result
-    
-    async def receive_reminder(self, name: str, state: bytes,
-                              due_time: datetime, period: timedelta):
-        """Handle scheduled tasks."""
-        if name == 'refresh_forecast':
-            await self.refresh_all_forecasts()
-
-# Register actor
-ActorRuntime.register_actor(ForecastingAgentActor)
-```
-
-**Dapr Sidecar Configuration:**
-
-```yaml
-apiVersion: dapr.io/v1alpha1
-kind: Component
-metadata:
-  name: statestore
-spec:
-  type: state.redis
-  version: v1
-  metadata:
-  - name: redisHost
-    value: redis-master:6379
-  - name: redisPassword
-    secretKeyRef:
-      name: redis-secret
-      key: password
-  - name: actorStateStore
-    value: "true"
----
-apiVersion: dapr.io/v1alpha1
-kind: Configuration
-metadata:
-  name: appconfig
-spec:
-  tracing:
-    samplingRate: "1"
-    zipkin:
-      endpointAddress: "http://zipkin:9411/api/v2/spans"
-  features:
-    - name: Actor
-      enabled: true
-  actorIdleTimeout: 1h
-  actorScanInterval: 30s
-  drainOngoingCallTimeout: 1m
-  drainRebalancedActors: true
-```
-
-### 9.4 Observability Stack
-
-**OpenTelemetry Configuration:**
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: otel-collector-config
-data:
-  config.yaml: |
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-    
-    processors:
-      batch:
-        timeout: 10s
-        send_batch_size: 1024
-      
-      attributes:
-        actions:
-          - key: subagent.name
-            action: insert
-            from_attribute: service.name
-          - key: subagent.version
-            action: insert
-            from_attribute: service.version
-    
-    exporters:
-      jaeger:
-        endpoint: jaeger-collector:14250
-        tls:
-          insecure: true
-      
-      prometheus:
-        endpoint: 0.0.0.0:9090
-      
-      logging:
-        loglevel: debug
-    
-    service:
-      pipelines:
-        traces:
-          receivers: [otlp]
-          processors: [batch, attributes]
-          exporters: [jaeger, logging]
-        
-        metrics:
-          receivers: [otlp]
-          processors: [batch, attributes]
-          exporters: [prometheus, logging]
-```
-
-**Agent Instrumentation:**
-
-```python
-from opentelemetry import trace, metrics
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-
-# Initialize tracing
-trace.set_tracer_provider(TracerProvider())
-tracer = trace.get_tracer(__name__)
-span_exporter = OTLPSpanExporter(endpoint="otel-collector:4317")
-
-# Initialize metrics
-metrics.set_meter_provider(MeterProvider())
-meter = metrics.get_meter(__name__)
-metric_exporter = OTLPMetricExporter(endpoint="otel-collector:4317")
-
-# Create metrics
-task_counter = meter.create_counter(
-    name="subagent.tasks.total",
-    description="Total number of tasks processed",
-    unit="1"
-)
-
-task_duration = meter.create_histogram(
-    name="subagent.task.duration",
-    description="Task execution duration",
-    unit="ms"
-)
-
-# Instrument subagent execution
-class InstrumentedSubagent:
-    async def execute_task(self, task: str):
-        with tracer.start_as_current_span("execute_task") as span:
-            span.set_attribute("task.type", task['type'])
-            span.set_attribute("subagent.name", self.name)
-            
-            start_time = time.time()
-            try:
-                result = await self._execute(task)
-                span.set_attribute("task.status", "success")
-                task_counter.add(1, {"status": "success"})
-                return result
-            except Exception as e:
-                span.set_attribute("task.status", "error")
-                span.record_exception(e)
-                task_counter.add(1, {"status": "error"})
-                raise
-            finally:
-                duration = (time.time() - start_time) * 1000
-                task_duration.record(duration)
-```
-
-### 9.5 CI/CD Pipeline
-
-**GitHub Actions Workflow:**
-
-```yaml
-name: Build and Deploy Subagent
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'subagents/devops-agent/**'
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
-      
-      - name: Run tests
-        run: pytest tests/ --cov=skills --cov-report=xml
-      
-      - name: Validate manifest
-        run: |
-          python -m subagent.cli validate subagent.yaml
-  
-  build:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Build Docker image
-        run: |
-          docker build -t devops-agent:${{ github.sha }} .
-          docker tag devops-agent:${{ github.sha }} \
-                     devops-agent:latest
-      
-      - name: Push to registry
-        run: |
-          echo ${{ secrets.REGISTRY_PASSWORD }} | \
-            docker login -u ${{ secrets.REGISTRY_USER }} --password-stdin
-          docker push devops-agent:${{ github.sha }}
-          docker push devops-agent:latest
-  
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Configure kubectl
-        run: |
-          echo ${{ secrets.KUBECONFIG }} | base64 -d > kubeconfig
-          export KUBECONFIG=./kubeconfig
-      
-      - name: Deploy via Helm
-        run: |
-          helm upgrade --install devops-agent \
-            ./helm/subagent-chart \
-            --set image.tag=${{ github.sha }} \
-            --set subagent.manifest=./subagent.yaml \
-            --namespace agents \
-            --create-namespace \
-            --wait
-      
-      - name: Verify deployment
-        run: |
-          kubectl rollout status deployment/devops-agent -n agents
-          kubectl get pods -n agents -l app=devops-agent
+  replicas: 3
+  selector:
+    matchLabels:
+      app: devops-agent
+  template:
+    metadata:
+      labels:
+        app: devops-agent
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "devops-agent"
+    spec:
+      containers:
+      - name: agent
+        image: registry.company.internal/devops-agent:v2.1.0
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
 ```
 
 ---
@@ -1691,81 +1161,40 @@ jobs:
 
 ### 10.1 Advanced Orchestration
 
-**Multi-Agent Coordination Patterns:**
-
 ```yaml
 apiVersion: workflow.agent.dev/v1
 kind: AgentWorkflow
 metadata:
   name: release-pipeline
 spec:
+  billing:
+    account: "did:company:billing-001"
+    budget_limit: 10.00
+    currency: AGT
+  
   agents:
     - name: code-review-agent
-      role: reviewer
+      source: a2a://acme.dev/code-review@v1
     - name: security-scan-agent
-      role: security
+      source: a2a://security-tools.io/scanner@v2
     - name: devops-agent
-      role: deployer
+      source: local
   
   stages:
     - name: review
       agent: code-review-agent
       timeout: 3600
-      outputs:
-        - approval_status
-        - code_quality_score
-      
+    
     - name: security-check
       agent: security-scan-agent
       dependsOn: [review]
-      condition: review.approval_status == "approved"
-      outputs:
-        - vulnerabilities
-        - compliance_status
-      
+    
     - name: deploy
       agent: devops-agent
       dependsOn: [security-check]
-      condition: |
-        security-check.compliance_status == "pass" &&
-        len(security-check.vulnerabilities) == 0
-      parameters:
-        environment: production
-        strategy: blue-green
 ```
 
-### 10.2 Learning and Adaptation
-
-**Skill Evolution Through Experience:**
-
-```python
-class AdaptiveSkill:
-    def __init__(self):
-        self.performance_metrics = PerformanceTracker()
-        self.optimization_engine = SkillOptimizer()
-    
-    async def execute(self, params: Dict) -> Dict:
-        # Execute with performance tracking
-        with self.performance_metrics.track() as tracker:
-            result = await self._execute(params)
-        
-        # Learn from execution
-        feedback = {
-            'latency': tracker.latency,
-            'success': tracker.success,
-            'params': params,
-            'result': result
-        }
-        
-        # Optimize for future executions
-        await self.optimization_engine.learn(feedback)
-        
-        return result
-```
-
-### 10.3 Federated Agent Marketplaces
-
-**Skill and Subagent Registry:**
+### 10.2 Federated Agent Marketplaces
 
 ```yaml
 apiVersion: marketplace.agent.dev/v1
@@ -1773,6 +1202,7 @@ kind: SkillListing
 metadata:
   name: kubernetes-skill
   publisher: acme-devops
+  publisher_did: did:a2a:acme-devops
 spec:
   version: 2.1.0
   description: "Production-grade Kubernetes management"
@@ -1782,219 +1212,360 @@ spec:
     tiers:
       - name: basic
         price_monthly: 99
-        usage_limits:
-          deployments_per_month: 100
+        currency: AGT
       - name: enterprise
         price_monthly: 999
-        usage_limits:
-          deployments_per_month: unlimited
+        currency: AGT
   
-  certification:
-    security_audit: passed
-    compliance: [soc2, iso27001]
-    tested_environments:
-      - eks
-      - gke
-      - aks
-  
-  support:
-    documentation_url: https://docs.acme.com/k8s-skill
-    sla: 99.9%
-    response_time: 4h
-```
-
-### 10.4 Cross-Cloud Agent Mesh
-
-**Distributed Agent Network:**
-
-```
-┌─────────────────────────────────────────────────────┐
-│              Global Agent Mesh                      │
-│                                                     │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐     │
-│  │   AWS    │───▶│   GCP    │───▶│  Azure   │     │
-│  │  Region  │    │  Region  │    │  Region  │     │
-│  └────┬─────┘    └────┬─────┘    └────┬─────┘     │
-│       │               │               │            │
-│  ┌────▼─────────┐┌────▼─────────┐┌────▼─────────┐ │
-│  │ DevOps Agent ││ Data Agent   ││Finance Agent │ │
-│  │ + Skills     ││ + Skills     ││+ Skills      │ │
-│  └──────────────┘└──────────────┘└──────────────┘ │
-│                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │     Service Mesh (Istio/Linkerd)            │   │
-│  │     - Routing, Load Balancing               │   │
-│  │     - mTLS, Authorization                   │   │
-│  │     - Observability                         │   │
-│  └─────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-```
-
-### 10.5 Formal Verification
-
-**Skill Contract Verification:**
-
-```python
-from typing_extensions import Protocol
-from pydantic import BaseModel, validator
-
-class SkillContract(Protocol):
-    """Formal contract for skill behavior."""
-    
-    def preconditions(self, params: Dict) -> bool:
-        """Conditions that must be true before execution."""
-        ...
-    
-    def postconditions(self, params: Dict, result: Dict) -> bool:
-        """Conditions that must be true after execution."""
-        ...
-    
-    def invariants(self) -> bool:
-        """Conditions that must always be true."""
-        ...
-
-class KubernetesDeployContract(SkillContract):
-    def preconditions(self, params: Dict) -> bool:
-        return (
-            'manifest' in params and
-            self.validate_yaml(params['manifest']) and
-            self.cluster_accessible()
-        )
-    
-    def postconditions(self, params: Dict, result: Dict) -> bool:
-        return (
-            result['status'] in ['success', 'failed'] and
-            (result['status'] == 'success' implies 
-             self.deployment_exists(params['name']))
-        )
-    
-    def invariants(self) -> bool:
-        return (
-            self.connection_pool_size > 0 and
-            self.rate_limit_not_exceeded()
-        )
+  trust_metrics:
+    score: 97.8
+    total_users: 1247
+    avg_rating: 4.7
 ```
 
 ---
 
-## 11. Conclusion {#conclusion}
+## 11. The Agentic Economy {#agentic-economy}
 
-### 11.1 Key Contributions
+### 11.1 From Local Tools to Economic Entities
 
-This paper has presented a comprehensive framework for composable agent architectures, introducing three foundational abstractions:
+The transformative potential of composable agent architectures fully manifests when subagents transcend their role as local utilities and become **remote, billable, network-addressable cognitive services**.
 
-1. **Skills** as the unit of reusable capability
-2. **Subagents** as domain-specialized cognitive components
-3. **MCP** as the standard for secure system integration
+When subagents are:
+- **Deployed remotely** (as Dapr Actors, containerized services)
+- **Exposed via A2A protocol** with standardized interfaces
+- **Metered and billed** for usage by consuming frameworks
 
-Together with the A2A protocol for agent-to-agent communication, these abstractions enable:
+They transform into **economic units of intelligence**—autonomous participants in a global marketplace of cognitive capabilities.
 
-- **Modularity**: Build complex systems from simple, well-understood components
-- **Reusability**: Share capabilities across agents, teams, and organizations
-- **Interoperability**: Enable agents to collaborate across organizational boundaries
-- **Scalability**: Deploy agents using cloud-native patterns
-- **Security**: Enforce least-privilege access and maintain audit trails
+### 11.2 Core Economic Components
 
-### 11.2 Impact on AI Development
+#### 11.2.1 Identity and Trust Infrastructure
 
-The composable architecture pattern transforms AI agent development in several fundamental ways:
+**Agent Identity System:**
 
-**From Monolithic to Modular:**  
-Instead of building complete agents from scratch, developers compose them from vetted, reusable skills.
+Every agent requires a verifiable, decentralized identity (DID):
 
-**From Isolated to Federated:**  
-Agents become nodes in collaborative networks, able to delegate specialized tasks to peers.
+```
+did:a2a:zia.devops/agent/deploy@v2.1.0
+```
 
-**From Static to Evolutionary:**  
-Skills can be updated, improved, and shared independently of the agents that use them.
+**DID Document Structure:**
 
-**From Proprietary to Open:**  
-Standardized interfaces enable ecosystem development around shared protocols.
+```json
+{
+  "@context": "https://www.w3.org/ns/did/v1",
+  "id": "did:a2a:zia.devops/agent/deploy@v2.1.0",
+  "verificationMethod": [{
+    "id": "did:a2a:zia.devops/agent/deploy#key-1",
+    "type": "EcdsaSecp256k1VerificationKey2019",
+    "publicKeyMultibase": "zH3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV"
+  }],
+  "service": [{
+    "id": "did:a2a:zia.devops/agent/deploy#a2a",
+    "type": "A2AEndpoint",
+    "serviceEndpoint": "https://a2a.zia.devops/agent/deploy",
+    "capabilities": ["deploy", "build", "scale", "rollback"]
+  }],
+  "metadata": {
+    "version": "2.1.0",
+    "trust_score": 98.7,
+    "verified": true
+  }
+}
+```
 
-### 11.3 Applicability Across Domains
+#### 11.2.2 Agent Registry Architecture
 
-While demonstrated through the DevOps subagent case study, this architecture applies universally:
+**Registry Record Schema:**
 
-- **Finance**: Audit agents, compliance checking, fraud detection
-- **Healthcare**: Diagnostic assistants, treatment planning, patient monitoring
-- **Education**: Personalized tutoring, curriculum design, assessment generation
-- **Robotics**: Navigation, manipulation, multi-robot coordination
-- **AI CLIs**: Extending development tools with specialized capabilities
+```json
+{
+  "agent_id": "did:a2a:zia.devops/deploy@v2.1.0",
+  "name": "DevOps Deployment Agent",
+  "organization": {
+    "name": "Zia Labs",
+    "did": "did:a2a:zia.devops",
+    "verified": true
+  },
+  "capabilities": [
+    {
+      "name": "deploy",
+      "description": "Deploy applications to Kubernetes",
+      "sla": {
+        "response_time_p95_ms": 500,
+        "availability": "99.9%"
+      }
+    }
+  ],
+  "pricing": {
+    "model": "usage-based",
+    "currency": "AGT",
+    "rates": {
+      "per_1k_tokens": 0.005,
+      "per_deployment": 0.10
+    },
+    "tiers": [
+      {
+        "name": "basic",
+        "monthly_fee": 99,
+        "included_deployments": 100
+      },
+      {
+        "name": "enterprise",
+        "monthly_fee": 999,
+        "included_deployments": "unlimited"
+      }
+    ]
+  },
+  "trust_metrics": {
+    "trust_score": 98.7,
+    "total_invocations": 1284567,
+    "success_rate": 99.2,
+    "avg_response_time_ms": 247
+  }
+}
+```
 
-### 11.4 The Path Forward
+#### 11.2.3 Billing and Metering System
 
-The composable agent architecture represents a convergence of:
+**Usage Receipt Schema:**
 
-- **Software Engineering**: Microservices, containerization, API design
-- **AI Research**: Multi-agent systems, tool use, reasoning frameworks
-- **Distributed Systems**: Service meshes, observability, security protocols
+```json
+{
+  "receipt_id": "rcpt_d34f9c2a8b71e5f3",
+  "version": "1.0",
+  "timestamp": "2025-10-18T14:32:15Z",
+  "session": {
+    "id": "sess_9a7c2f1b4e8d3a6c",
+    "duration_ms": 15234
+  },
+  "parties": {
+    "consumer": {
+      "id": "did:a2a:openai.sdk@v1"
+    },
+    "provider": {
+      "id": "did:a2a:zia.devops/deploy@v2.1.0"
+    }
+  },
+  "capability_invoked": "deploy",
+  "resource_usage": {
+    "tokens_total": 1842,
+    "compute_time_ms": 273
+  },
+  "pricing": {
+    "total_cost": {
+      "total": 0.01012,
+      "currency": "AGT"
+    }
+  },
+  "signature": {
+    "algorithm": "ECDSA-P256",
+    "value": "0xE74F9C3A2D8B1E5F..."
+  }
+}
+```
 
-As AI systems become more capable and integrated into critical workflows, the principles of composability, modularity, and standardization become essential.
+### 11.3 Economic Models
 
-The future of AI is not isolated superintelligent systems, but rather **ecosystems of specialized, collaborative agents** built on shared foundations—much like how modern software is built from libraries, frameworks, and services rather than written from scratch.
+| Model | Description | Example |
+|-------|-------------|---------|
+| **Pay-per-Use** | Charged per invocation/token | $0.005 per 1K tokens |
+| **Subscription** | Fixed monthly fee + quotas | $99/month for 100 deployments |
+| **Freemium** | Free tier + paid upgrades | Free: 10 calls/day |
+| **Revenue Share** | Marketplace commission | 10% platform fee |
 
-### 11.5 Call to Action
+### 11.4 The Vision
 
-We invite the broader AI community to:
+The Agentic Economy represents a paradigm shift where:
 
-1. **Adopt** these architectural patterns in agent development
-2. **Contribute** to open standards for skills, subagents, and protocols
-3. **Build** marketplaces and registries for sharing capabilities
-4. **Research** formal methods for agent composition and verification
-5. **Collaborate** on cross-organizational agent networks
-
-The composable agent architecture is not just a technical framework—it's a paradigm shift toward a more modular, collaborative, and scalable future for AI systems.
+- **Self-Sustaining Agents**: Agents earn revenue and pay for their own infrastructure
+- **Agent Organizations**: Multi-agent DAOs that operate businesses
+- **Global Capability Markets**: Anyone can offer specialized AI capabilities
+- **Intelligence as Infrastructure**: Intelligence becomes a utility—accessible and economically sustainable
 
 ---
 
-## References
+## 12. Conclusion {#conclusion}
+
+### 12.1 Key Contributions
+
+This paper has presented a comprehensive framework introducing foundational abstractions at both technical and economic levels:
+
+**Technical Abstractions:**
+1. Skills as reusable capability units
+2. Subagents as specialized cognitive components
+3. MCP as system integration standard
+4. A2A as agent communication protocol
+
+**Economic Abstractions:**
+1. Identity and Trust via DIDs and reputation systems
+2. Registries for discovery and governance
+3. Billing Infrastructure for metering and settlement
+4. Marketplaces for capability exchange
+
+Together, these enable modularity, reusability, interoperability, scalability, security, and economic sustainability.
+
+### 12.2 The Path Forward
+
+The composable agent architecture represents a convergence of software engineering, AI research, distributed systems, economics, and governance.
+
+The future of AI is **ecosystems of specialized, collaborative agents** built on shared foundations and participating in open markets.
+
+### 12.3 Call to Action
+
+We invite the AI community to:
+
+**For Researchers:**
+- Develop formal methods for agent composition
+- Design reputation systems resistant to manipulation
+- Create economic models for sustainable ecosystems
+
+**For Practitioners:**
+- Adopt these architectural patterns
+- Contribute to open-source implementations
+- Share learnings through case studies
+
+**For Organizations:**
+- Invest in composable architectures
+- Build internal skill libraries
+- Participate in federated registries
+
+**For Entrepreneurs:**
+- Create specialized agent capabilities
+- Build marketplace infrastructure
+- Develop trust and reputation services
+
+> "The future of AI is not a single superintelligence, but a thriving ecosystem of specialized agents collaborating in open markets—where every capability is discoverable, every interaction is accountable, and every participant benefits from network effects."
+
+**The Agentic Economy awaits.**
+
+---
+
+## 13. References {#references}
 
 1. Anthropic. (2025). *Model Context Protocol Specification*. https://modelcontextprotocol.io
 2. OpenAI. (2024). *Agents SDK Documentation*. https://platform.openai.com/docs/agents
 3. Dapr Contributors. (2024). *Distributed Application Runtime*. https://dapr.io
 4. W3C. (2022). *Decentralized Identifiers (DIDs) v1.0*. https://www.w3.org/TR/did-core/
-5. Cloud Native Computing Foundation. (2024). *Service Mesh Interface Specification*.
-6. OpenTelemetry Contributors. (2024). *OpenTelemetry Specification*. https://opentelemetry.io
+5. Wooldridge, M. (2009). *An Introduction to MultiAgent Systems*. Wiley.
+6. Nakamoto, S. (2008). *Bitcoin: A Peer-to-Peer Electronic Cash System*.
+7. Buterin, V. (2014). *Ethereum White Paper*.
+8. Russell, S., & Norvig, P. (2021). *Artificial Intelligence: A Modern Approach*. Pearson.
 
 ---
 
-## Appendix A: Complete Examples
+## 14. Appendices {#appendices}
 
-### A.1 Full DevOps Agent Implementation
+### Appendix A: Repository Links
 
-Available at: `https://github.com/composable-agents/devops-agent`
+- **DevOps Agent**: https://github.com/composable-agents/devops-agent
+- **Skill Tutorial**: https://github.com/composable-agents/skill-tutorial
+- **A2A Protocol**: https://github.com/composable-agents/a2a-protocol
+- **Billing Gateway**: https://github.com/composable-agents/billing-gateway
+- **Agent Registry**: https://github.com/composable-agents/agent-registry
 
-### A.2 Skill Development Tutorial
+### Appendix B: Glossary
 
-Available at: `https://github.com/composable-agents/skill-tutorial`
+**A2A Protocol**: Communication standard for secure inter-agent messaging
 
-### A.3 A2A Protocol Implementation
+**Agent**: AI system capable of autonomous reasoning and action execution
 
-Available at: `https://github.com/composable-agents/a2a-protocol`
+**Agentic Economy**: Marketplace ecosystem where AI agents act as economic entities
+
+**AGT (Agent Token)**: Unit of account for agent services
+
+**Capability**: Well-defined action that an agent or skill can perform
+
+**DID**: Decentralized Identifier for cryptographically verifiable identity
+
+**MCP**: Model Context Protocol for agent-system interaction
+
+**Skill**: Modular, reusable capability module
+
+**Subagent**: Specialized agent component for specific domains
+
+**Trust Score**: Quantitative measure of agent trustworthiness
 
 ---
 
-## Appendix B: Glossary
+### Appendix C: Implementation Roadmap
 
-**Agent**: An AI system capable of autonomous reasoning, planning, and action execution.
+**Phase 1: Foundation (Months 1-3)**
+- Define skill manifest schema v1.0
+- Implement basic MCP client/server
+- Create reference skill implementations
+- Establish A2A message format
+- Build DID resolver prototype
 
-**Skill**: A modular, reusable capability that can be installed into agents.
+**Phase 2: Economic Infrastructure (Months 4-6)**
+- Implement billing gateway MVP
+- Create agent registry with discovery
+- Develop usage metering SDK
+- Build receipt verification
+- Establish trust score framework
 
-**Subagent**: A specialized agent component focused on a specific domain or task type.
+**Phase 3: Ecosystem Integration (Months 7-9)**
+- Integrate with OpenAI Agents SDK
+- Build Claude Code plugin
+- Create Gemini CLI adapter
+- Develop marketplace UI
+- Implement federated registry
 
-**MCP (Model Context Protocol)**: A standardized protocol for AI agents to interact with external systems.
+**Phase 4: Production Hardening (Months 10-12)**
+- Security audit and testing
+- Performance optimization
+- Comprehensive documentation
+- Developer tutorials
+- Community governance
 
-**A2A (Agent-to-Agent) Protocol**: A communication standard for secure inter-agent messaging.
-
-**Dapr Actor**: A stateful agent execution pattern using the Distributed Application Runtime.
-
-**DID (Decentralized Identifier)**: A cryptographically verifiable identifier for agents and organizations.
-
-**Capability**: A well-defined action that an agent or skill can perform.
+**Phase 5: Ecosystem Growth (Months 13+)**
+- Agent certification program
+- Advanced analytics
+- Multi-currency support
+- International expansion
+- Standards body engagement
 
 ---
 
 **Document Version**: 2.0  
 **Last Updated**: October 18, 2025  
 **License**: CC BY 4.0  
-**Contact**: zia@composable-agents.dev
+**Contact**: zia@composable-agents.dev  
+**Repository**: https://github.com/composable-agents/whitepaper
+
+---
+
+**Acknowledgments**
+
+This work builds on foundational research in multi-agent systems, distributed computing, blockchain economics, and AI safety. We thank the teams at Anthropic, OpenAI, Microsoft, and the Cloud Native Computing Foundation for their pioneering work.
+
+---
+
+**Citation**
+
+```bibtex
+@techreport{zia2025composable,
+  title={Composable Agent Architectures: A Unified Framework},
+  author={Zia},
+  year={2025},
+  month={October},
+  institution={Composable Agents Project},
+  type={Technical Whitepaper},
+  version={2.0}
+}
+```
+
+---
+
+**Contributing**
+
+- **GitHub**: https://github.com/composable-agents/whitepaper
+- **Discussions**: https://github.com/composable-agents/whitepaper/discussions
+- **Email**: zia@composable-agents.dev
+
+Join us in building the future of composable, collaborative, and economically sustainable AI systems.
+
+---
+
+*End of Document*

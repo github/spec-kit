@@ -2,6 +2,12 @@
 
 **[Detailed Technical Whitepaper on Composable Agents](composable_agents_paper.md)**
 
+**[Executive Summary](executive_summary.md)**
+
+**[Presentation Deck](./presentation_deck.md)**
+
+**[Infograph](/infographic.html)**
+
 We will discuss how Anthropic’s *Skills* concept, *subagents*, and the *Model Context Protocol (MCP)* fit together.
 
 In a **Claude Code / Gemini CLI / OpenAI Agents SDK**–style ecosystem,

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Composable Agent Architectures - Infographic</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 20px;
+            min-height: 100vh;
+        }
+        
+        .infographic {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 50px 60px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            font-size: 20px;
+            opacity: 0.95;
+            font-weight: 400;
+        }
+        
+        .content {
+            padding: 60px;
+        }
+        
+        .section {
+            margin-bottom: 50px;
+        }
+        
+        .section-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .section-title .icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        
+        .architecture {
+            display: grid;
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .layer {
+            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+            border: 2px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 30px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        
+        .layer:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+        
+        .layer-number {
+            position: absolute;
+            top: -15px;
+            left: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .layer h3 {
+            font-size: 24px;
+            color: #2d3748;
+            margin-bottom: 12px;
+            font-weight: 700;
+        }
+        
+        .layer p {
+            color: #4a5568;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+        
+        .layer-examples {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .tag {
+            background: white;
+            border: 2px solid #e2e8f0;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+        }
+        
+        .stat-value {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+        
+        .stat-label {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        
+        .benefits {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .benefit-card {
+            background: white;
+            border: 2px solid #e2e8f0;
+            padding: 25px;
+            border-radius: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .benefit-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+        
+        .benefit-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        
+        .benefit-card h4 {
+            font-size: 20px;
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .benefit-card p {
+            color: #4a5568;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        
+        .workflow {
+            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+            border-radius: 16px;
+            padding: 40px;
+            margin: 30px 0;
+        }
+        
+        .workflow-steps {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .workflow-step {
+            background: white;
+            border-left: 4px solid #667eea;
+            padding: 20px 25px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .step-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        
+        .step-content {
+            flex: 1;
+        }
+        
+        .step-title {
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+        
+        .step-desc {
+            color: #4a5568;
+            font-size: 14px;
+        }
+        
+        .cta {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 50px;
+            border-radius: 16px;
+            text-align: center;
+            margin-top: 40px;
+        }
+        
+        .cta h3 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+        
+        .cta p {
+            font-size: 18px;
+            opacity: 0.95;
+            margin-bottom: 25px;
+        }
+        
+        .cta-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .cta-button {
+            background: white;
+            color: #667eea;
+            padding: 15px 35px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        }
+        
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .comparison-card {
+            padding: 30px;
+            border-radius: 16px;
+            border: 2px solid #e2e8f0;
+        }
+        
+        .comparison-card.old {
+            background: #fff5f5;
+            border-color: #fc8181;
+        }
+        
+        .comparison-card.new {
+            background: #f0fff4;
+            border-color: #68d391;
+        }
+        
+        .comparison-card h4 {
+            font-size: 20px;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+        
+        .comparison-card.old h4 {
+            color: #c53030;
+        }
+        
+        .comparison-card.new h4 {
+            color: #22543d;
+        }
+        
+        .comparison-list {
+            list-style: none;
+        }
+        
+        .comparison-list li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+            color: #4a5568;
+            line-height: 1.5;
+        }
+        
+        .comparison-list li:before {
+            position: absolute;
+            left: 0;
+            font-weight: 700;
+        }
+        
+        .comparison-card.old li:before {
+            content: "✗";
+            color: #c53030;
+        }
+        
+        .comparison-card.new li:before {
+            content: "✓";
+            color: #22543d;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 32px;
+            }
+            
+            .header p {
+                font-size: 16px;
+            }
+            
+            .content {
+                padding: 30px;
+            }
+            
+            .section-title {
+                font-size: 24px;
+            }
+            
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .footer {
+            background: #2d3748;
+            color: white;
+            padding: 30px 60px;
+            text-align: center;
+        }
+        
+        .footer p {
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="infographic">
+        <div class="header">
+            <h1>🚀 Composable Agent Architectures</h1>
+            <p>Building the Agentic Economy: Intelligence as Infrastructure</p>
+        </div>
+        
+        <div class="content">
+            <!-- The Problem -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="icon">⚠️</div>
+                    <span>The Problem</span>
+                </div>
+                <div class="comparison">
+                    <div class="comparison-card old">
+                        <h4>Traditional Approach</h4>
+                        <ul class="comparison-list">
+                            <li>Build everything from scratch</li>
+                            <li>6+ months development time</li>
+                            <li>$200K+ initial investment</li>
+                            <li>Isolated within organization</li>
+                            <li>No standard for collaboration</li>
+                            <li>Pure cost center</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card new">
+                        <h4>Composable Approach</h4>
+                        <ul class="comparison-list">
+                            <li>Compose from reusable skills</li>
+                            <li>Hours to days deployment</li>
+                            <li>99% cost reduction</li>
+                            <li>Global marketplace access</li>
+                            <li>Standard A2A protocol</li>
+                            <li>Revenue generating asset</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- The Architecture -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="icon">🏗️</div>
+                    <span>The Architecture: 4 Layers</span>
+                </div>
+                <div class="architecture">
+                    <div class="layer">
+                        <div class="layer-number">1</div>
+                        <h3>Skills Layer</h3>
+                        <p>Reusable, portable modules of functional capability. Write once, use everywhere.</p>
+                        <div class="layer-examples">
+                            <span class="tag">Docker</span>
+                            <span class="tag">Kubernetes</span>
+                            <span class="tag">Dapr</span>
+                            <span class="tag">A2A</span>
+                            <span class="tag">GitHub</span>
+                        </div>
+                    </div>
+                    
+                    <div class="layer">
+                        <div class="layer-number">2</div>
+                        <h3>Subagent Layer</h3>
+                        <p>Domain-specialized cognitive units composed of system prompt + skills + MCP connections.</p>
+                        <div class="layer-examples">
+                            <span class="tag">DevOps Agent</span>
+                            <span class="tag">Finance Agent</span>
+                            <span class="tag">Data Agent</span>
+                            <span class="tag">Security Agent</span>
+                        </div>
+                    </div>
+                    
+                    <div class="layer">
+                        <div class="layer-number">3</div>
+                        <h3>Protocol Layer</h3>
+                        <p>Standardized communication: MCP (agent↔systems) + A2A (agent↔agents) with built-in billing.</p>
+                        <div class="layer-examples">
+                            <span class="tag">Authentication</span>
+                            <span class="tag">Authorization</span>
+                            <span class="tag">Metering</span>
+                            <span class="tag">Audit Logging</span>
+                        </div>
+                    </div>
+                    
+                    <div class="layer">
+                        <div class="layer-number">4</div>
+                        <h3>Economic Layer</h3>
+                        <p>Identity, registry, billing, and trust infrastructure enabling the Agentic Economy.</p>
+                        <div class="layer-examples">
+                            <span class="tag">DID Identity</span>
+                            <span class="tag">Agent Registry</span>
+                            <span class="tag">Billing Gateway</span>
+                            <span class="tag">Trust Scores</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Key Stats -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="icon">📊</div>
+                    <span>Impact by Numbers</span>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">99%</div>
+                        <div class="stat-label">Cost Reduction</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">10x</div>
+                        <div class="stat-label">Faster Development</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">$0.10</div>
+                        <div class="stat-label">Per Agent Call</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">98.7</div>
+                        <div class="stat-label">Trust Score</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- How It Works -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="icon">⚙️</div>
+                    <span>How the Agentic Economy Works</span>
+                </div>
+                <div class="workflow">
+                    <div class="workflow-steps">
+                        <div class="workflow-step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <div class="step-title">Provider Publishes Agent</div>
+                                <div class="step-desc">Developer creates DevOps agent and registers in marketplace with DID, pricing, and capabilities</div>
+                            </div>
+                        </div>
+                        <div class="workflow-step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <div class="step-title">Consumer Discovers</div>
+                                <div class="step-desc">Search registry by domain, review trust scores, pricing, SLA guarantees, and user ratings</div>
+                            </div>
+                        </div>
+                        <div class="workflow-step">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <div class="step-title">Invocation via A2A</div>
+                                <div class="step-desc">Consumer calls agent through A2A protocol with DID authentication and usage metering</div>
+                            </div>
+                        </div>
+                        <div class="workflow-step">
+                            <div class="step-number">4</div>
+                            <div class="step-content">
+                                <div class="step-title">Automatic Billing</div>
+                                <div class="step-desc">Usage tracked, receipt signed, payment settled: Consumer -$0.12, Provider +$0.108, Platform +$0.012</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Key Benefits -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="icon">🎯</div>
+                    <span>Key Benefits</span>
+                </div>
+                <div class="benefits">
+                    <div class="benefit-card">
+                        <div class="benefit-icon">👨‍💻</div>
+                        <h4>For Developers</h4>
+                        <p>Build once, reuse everywhere. Monetize globally. Focus on innovation, not infrastructure.</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">🏢</div>
+                        <h4>For Organizations</h4>
+                        <p>Access vs. build. Deploy in hours. Collaborate securely across boundaries.</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">🌍</div>
+                        <h4>For Ecosystem</h4>
+                        <p>Network effects amplify value. Quality incentives. Sustainable economics.</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">💰</div>
+                        <h4>Economic Sustainability</h4>
+                        <p>Usage-based billing. Fair compensation. Self-funding agent improvements.</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">🔒</div>
+                        <h4>Trust & Security</h4>
+                        <p>DID-based identity. Reputation scores. Audit trails for compliance.</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">🚀</div>
+                        <h4>Scalability</h4>
+                        <p>Cloud-native deployment. Container orchestration. Global distribution.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Multi-Domain -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="icon">🌐</div>
+                    <span>Universal Applications</span>
+                </div>
+                <div class="benefits">
+                    <div class="benefit-card">
+                        <div class="benefit-icon">⚙️</div>
+                        <h4>DevOps</h4>
+                        <p>Deploy, Monitor, Scale agents with Docker, K8s, Dapr skills</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">💵</div>
+                        <h4>Finance</h4>
+                        <p>Audit, Compliance agents with Xero, PowerBI, SOX skills</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">🏥</div>
+                        <h4>Healthcare</h4>
+                        <p>Diagnosis, Care Planning with EHR, DICOM, HIPAA skills</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">📚</div>
+                        <h4>Education</h4>
+                        <p>Tutoring, Assessment with LMS, Curriculum skills</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">⚖️</div>
+                        <h4>Legal</h4>
+                        <p>Contract Analysis with Document AI, Case Law skills</p>
+                    </div>
+                    <div class="benefit-card">
+                        <div class="benefit-icon">🤖</div>
+                        <h4>Robotics</h4>
+                        <p>Navigation, Control with ROS2, SLAM, Sensor skills</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- CTA -->
+            <div class="cta">
+                <h3>🚀 The Agentic Economy Awaits</h3>
+                <p>Join us in building the future of composable, collaborative, and economically sustainable AI systems</p>
+                <div class="cta-buttons">
+                    <a href="https://github.com/composable-agents/whitepaper" class="cta-button">Read Full Whitepaper</a>
+                    <a href="mailto:zia@composable-agents.dev" class="cta-button">Get In Touch</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p><strong>Composable Agent Architectures</strong> | Version 2.0 | October 2025</p>
+            <p>Author: Panaversity Team | License: CC BY 4.0</p>
+        </div>
+    </div>
+</body>
+</html>
