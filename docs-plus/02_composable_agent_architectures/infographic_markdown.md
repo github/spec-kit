@@ -1,7 +1,7 @@
 # 🚀 Composable Agent Architectures
 ## Building the Agentic Economy: Intelligence as Infrastructure
 
-**Author:** Zia | **Version:** 2.0 | **Date:** October 2025
+**Author:** Panaversity Team | **Version:** 2.0 | **Date:** October 2025
 
 ---
 
