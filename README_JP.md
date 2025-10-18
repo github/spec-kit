@@ -621,7 +621,7 @@ rm gcm-linux_amd64.2.6.1.deb
 
 ## 🙏 謝辞
 
-このプロジェクトは [John Lam](https://github.com/jflam) の作業と研究に大きく影響を受けており、その基础上に成り立っています。
+このプロジェクトは [John Lam](https://github.com/jflam) の作業と研究に大きく影響を受けており、その基礎上に成り立っています。
 
 ## 📄 ライセンス
 
