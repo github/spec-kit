@@ -43,3 +43,6 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Git worktrees (parallel development)
+.worktrees/

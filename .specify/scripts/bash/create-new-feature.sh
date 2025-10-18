@@ -190,29 +190,6 @@ if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"
 # Set the SPECIFY_FEATURE environment variable for the current session
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
-# Commit the spec template before creating worktree
-if [ "$HAS_GIT" = true ]; then
-    git add "$FEATURE_DIR/spec.md"
-    git commit -m "Initialize spec for $BRANCH_NAME
-
-🤖 Generated with spec-kit
-Feature: $FEATURE_DESCRIPTION" >/dev/null 2>&1 || true
-fi
-
-# Create worktree for parallel development (T012-T013)
-if [ "$HAS_GIT" = true ]; then
-    # Source worktree management functions
-    WORKTREE_SCRIPT="$SCRIPT_DIR/manage-worktrees.sh"
-    if [ -f "$WORKTREE_SCRIPT" ]; then
-        source "$WORKTREE_SCRIPT"
-        # Create worktree (non-fatal - feature creation continues even if this fails)
-        if ! create_worktree "$BRANCH_NAME"; then
-            >&2 echo "[specify] Warning: Worktree creation failed (non-fatal)"
-            >&2 echo "[specify] Branch and spec created successfully. You can create worktree later with /speckit.worktree"
-        fi
-    fi
-fi
-
 if $JSON_MODE; then
     printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
 else
