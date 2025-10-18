@@ -59,21 +59,22 @@ find_repo_root() {
     return 1
 }
 
-# Resolve repository root. Prefer git information when available, but fall back
-# to searching for repository markers so the workflow still functions in repositories that
-# were initialised with --no-git.
+# Resolve repository root. Prioritize .specify directory over git information
+# to ensure specs/ is created in the correct location for multiproject setups.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if git rev-parse --show-toplevel >/dev/null 2>&1; then
-    REPO_ROOT=$(git rev-parse --show-toplevel)
-    HAS_GIT=true
-else
-    REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
-    if [ -z "$REPO_ROOT" ]; then
-        echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
-        exit 1
+# First try to find .specify directory (highest priority)
+REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
+if [ -n "$REPO_ROOT" ]; then
+    # Check if this is a git repository
+    if git rev-parse --show-toplevel >/dev/null 2>&1; then
+        HAS_GIT=true
+    else
+        HAS_GIT=false
     fi
-    HAS_GIT=false
+else
+    echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
+    exit 1
 fi
 
 cd "$REPO_ROOT"
