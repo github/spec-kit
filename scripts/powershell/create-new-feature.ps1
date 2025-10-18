@@ -168,6 +168,11 @@ if ($branchName.Length -gt $maxBranchLength) {
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
 }
 
+# Capture original branch before creating new one (needed for worktree creation)
+if ($hasGit) {
+    $originalBranch = git rev-parse --abbrev-ref HEAD 2>$null
+}
+
 if ($hasGit) {
     try {
         git checkout -b $branchName | Out-Null
@@ -203,6 +208,10 @@ Initialize spec for $branchName
 Feature: $featureDesc
 "@
         git commit -m $commitMessage 2>$null | Out-Null
+
+        # Switch back to original branch before creating worktree
+        # (Git doesn't allow a branch to be checked out in multiple places)
+        git checkout $originalBranch 2>$null | Out-Null
     } catch {
         # Commit failed - non-fatal, continue
     }

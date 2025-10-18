@@ -174,6 +174,11 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
+# Capture original branch before creating new one (needed for worktree creation)
+if [ "$HAS_GIT" = true ]; then
+    ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+fi
+
 if [ "$HAS_GIT" = true ]; then
     git checkout -b "$BRANCH_NAME"
 else
@@ -197,6 +202,10 @@ if [ "$HAS_GIT" = true ]; then
 
 🤖 Generated with spec-kit
 Feature: $FEATURE_DESCRIPTION" >/dev/null 2>&1 || true
+
+    # Switch back to original branch before creating worktree
+    # (Git doesn't allow a branch to be checked out in multiple places)
+    git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1
 fi
 
 # Create worktree for parallel development (T012-T013)
