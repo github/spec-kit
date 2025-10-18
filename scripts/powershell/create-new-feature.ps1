@@ -76,7 +76,7 @@ try {
 
 Set-Location $repoRoot
 
-$specsDir = Join-Path $repoRoot 'specs'
+$specsDir = Join-Path $repoRoot '.specify/specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 $highest = 0

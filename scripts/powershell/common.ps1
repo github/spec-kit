@@ -30,11 +30,11 @@ function Get-CurrentBranch {
     } catch {
         # Git command failed
     }
-    
+
     # For non-git repos, try to find the latest feature directory
     $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
-    
+    $specsDir = Join-Path $repoRoot ".specify/specs"
+
     if (Test-Path $specsDir) {
         $latestFeature = ""
         $highest = 0
@@ -89,7 +89,7 @@ function Test-FeatureBranch {
 
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    Join-Path $RepoRoot ".specify/specs/$Branch"
 }
 
 function Get-FeaturePathsEnv {
