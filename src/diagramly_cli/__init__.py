@@ -151,15 +151,15 @@ SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
 BANNER = """
-███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
-██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
-███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝ 
-╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝  
-███████║██║     ███████╗╚██████╗██║██║        ██║   
-╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
+██████╗ ██╗ █████╗  ██████╗ ███╗   ███╗ █████╗ ███╗   ██╗
+██╔══██╗██║██╔══██╗██╔════╝ ████╗ ████║██╔══██╗████╗  ██║
+██║  ██║██║███████║██║  ███╗██╔████╔██║███████║██╔██╗ ██║
+██║  ██║██║██╔══██║██║   ██║██║╚██╔╝██║██╔══██║██║╚██╗██║
+██████╔╝██║██║  ██║╚██████╔╝██║ ╚═╝ ██║██║  ██║██║ ╚████║
+╚═════╝ ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝
 """
 
-TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
+TAGLINE = "Zenuml Diagramly kit"
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
