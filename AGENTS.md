@@ -43,6 +43,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Auggie CLI** | `.augment/rules/` | Markdown | `auggie` | Auggie CLI |
 | **Roo Code** | `.roo/rules/` | Markdown | N/A (IDE-based) | Roo Code IDE |
 | **CodeBuddy CLI** | `.codebuddy/commands/` | Markdown | `codebuddy` | CodeBuddy CLI |
+| **ECA** | `.eca/commands/` | Markdown | N/A (IDE-based) | ECA |
 | **Amazon Q Developer CLI** | `.amazonq/prompts/` | Markdown | `q` | Amazon Q Developer CLI |
 
 ### Step-by-Step Integration Guide
@@ -259,7 +260,7 @@ Work within integrated development environments:
 ## Command File Formats
 
 ### Markdown Format
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer
+Used by: Claude, Cursor, opencode, Windsurf, ECA, Amazon Q Developer
 
 ```markdown
 ---
@@ -293,8 +294,11 @@ Command content with {SCRIPT} and {{args}} placeholders.
 Different agents use different argument placeholders:
 - **Markdown/prompt-based**: `$ARGUMENTS`
 - **TOML-based**: `{{args}}`
+- **ECA**: `$ARGS`, `$ARG1`, `$ARG2`, etc. (supports multiple positional arguments)
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
+
+**Note**: ECA shares the project-level `AGENTS.md` file with opencode, codex, and Amazon Q Developer CLI. This file serves as the rules/instructions file for all these tools.
 
 ## Testing New Agent Integration
 

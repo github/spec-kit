@@ -40,6 +40,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-roo-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-codebuddy-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-codebuddy-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-eca-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-eca-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-q-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-q-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \
