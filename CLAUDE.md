@@ -160,14 +160,16 @@ Both can run simultaneously without conflicts!
 - Worktree starts clean with the committed spec (no uncommitted files)
 - Clear separation: spec work (main) vs implementation work (worktree)
 
-**Commit happens automatically** at:
-```bash
-create-new-feature.sh line 195:
-git add specs/001-feature/spec.md
-git commit -m "Initialize spec for 001-feature"
-```
+**Workflow sequence**:
+1. Capture original branch (e.g., `main` or `001-git-worktree-support`)
+2. Create and checkout new feature branch (e.g., `002-user-auth`)
+3. Create spec directory and copy template
+4. Commit spec template to new branch
+5. **Switch back to original branch** (critical - prevents git conflict)
+6. Create worktree for new feature branch
+7. User remains on original branch, ready to work in either location
 
-Then worktree is created (line 200).
+This design prevents the git error "branch already in use" that would occur if trying to create a worktree for the currently-checked-out branch.
 
 ### Parallel Development Pattern
 
