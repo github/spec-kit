@@ -1,6 +1,6 @@
 # Using Spec-Kit in an Existing Project
 
-> You already have a codebase. You want to try Spec-Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10‑minute guide**-pick realistic scope; save the grand redesign for later.
+> You already have a codebase. You want to try Spec-Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10-minute guide** — pick realistic scope; save the grand redesign for later.
 
 ---
 
@@ -27,7 +27,7 @@ Install the CLI by following the [Installation Guide](installation.md), then jum
 specify init --here --ai copilot
 ```
 
-### B) If you used uvx one‑shot
+### B) If you used uvx one-shot
 
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init --here --ai copilot
@@ -49,13 +49,13 @@ Your agent now recognizes:
 
 ## 3. Constitution
 
-Use the `/speckit.constitution` command to define the project's non‑negotiable rules and constraints that AI must follow.
+Use the `/speckit.constitution` command to define the project's non-negotiable rules and constraints that AI must follow.
 
-> You'll want to spend serious time here later, but for now write the **high‑priority or high‑impact** rules you want AI to always follow in your repo.
+> You'll want to spend serious time here later, but for now write the **high-priority or high-impact** rules you want AI to always follow in your repo.
 
 ```markdown
 /speckit.constitution Create principles for:
-- Quality: tests for all new endpoints; critical‑path coverage > 80%.
+- Quality: tests for all new endpoints; critical-path coverage > 80%.
 - Performance/UX: totals update within 200 ms of coupon apply.
 - Security/Compliance: log coupon usage with order ID; no PII in logs.
 ```
@@ -64,10 +64,10 @@ Use the `/speckit.constitution` command to define the project's non‑negotiable
 
 ## 4. Specify
 
-Use `/speckit.specify` inside your coding agent to create a single, focused story. Keep it high‑level—what and why. Don’t worry about technical details yet; those come later.
+Use `/speckit.specify` inside your coding agent to create a single, focused story. Keep it high-level—what and why. Don’t worry about technical details yet; those come later.
 
-> 💡 Use a model that can handle systems‑level reasoning. Don’t pick a tiny “mini” model for a brand‑new UI. Things will *not go well*. 😉
-> This is a 10‑minute starter, so pick something achievable—save the joyrides until your constraints file is done!
+> 💡 Use a model that can handle systems-level reasoning. Don’t pick a tiny “mini” model for a brand-new UI. Things will *not go well*. 😉
+> This is a 10-minute starter, so pick something achievable—save the joyrides until your constraints file is done!
 
 ```markdown
 /speckit.specify Create story “Apply coupon during checkout.”
@@ -92,7 +92,7 @@ Out of scope: stacking, gift cards, loyalty.
 If you find any mistakes in your `spec.md` or need to tighten constraints, use the `/speckit.clarify` prompt.
 
 ```markdown
-/speckit.clarify Tighten ACs: add duplicate‑apply and expired‑coupon edge cases.
+/speckit.clarify Tighten ACs: add duplicate-apply and expired-coupon edge cases.
 ```
 
 Repeat until you’re satisfied — this shapes **the plan**.
@@ -164,7 +164,7 @@ If your org enforces separation, use **two commits:** (1) specs + plan + tasks, 
 | Slash commands not recognized | Init not executed or failed | Re-run init with `--ai copilot` in repo root; restart agent |
 | “No such option: --ai” | Missing assistant name | Use `--ai copilot` (or another supported value) |
 | Nothing generated after `/speckit.specify` | Missing model creds / provider blocked / init incomplete | Fix credentials; verify init output; retry with a smaller story |
-| Implement touches unrelated files | Spec / plan too vague | Tighten scope; add explicit constraints / out‑of‑scope; re-run plan / tasks |
+| Implement touches unrelated files | Spec / plan too vague | Tighten scope; add explicit constraints / out-of-scope; re-run plan / tasks |
 
 ---
 
