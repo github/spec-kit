@@ -486,8 +486,8 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Option
         os.chdir(original_cwd)
 
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "diagramly-kit"
+    repo_owner = "danshuitaihejie" #"github"
+    repo_name = "diagramly-kit" #"spec-kit"
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
