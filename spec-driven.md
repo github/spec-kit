@@ -279,7 +279,7 @@ The constitution defines nine articles that shape every aspect of the developmen
 Every feature must begin as a standalone library—no exceptions. This forces modular design from the start:
 
 ```text
-Every feature in Specify MUST begin its existence as a standalone library.
+Every feature in Diagramly MUST begin its existence as a standalone library.
 No feature shall be implemented directly within application code without
 first being abstracted into a reusable library component.
 ```

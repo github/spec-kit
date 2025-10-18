@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Support for uv tool install diagramly-cli (project renamed from Specify CLI to Diagramly CLI with new command `diagramly` replacing `specify`).
+- Support for uv tool install diagramly-cli (project renamed from Diagramly CLI to Diagramly CLI with new command `diagramly` replacing `specify`).
 
 ### Changed
 

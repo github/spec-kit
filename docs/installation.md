@@ -26,7 +26,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init .
 uvx --from git+https://github.com/github/spec-kit.git specify init --here
 ```
 
-### Specify AI Agent
+### Diagramly AI Agent
 
 You can proactively specify your AI agent during initialization:
 
@@ -36,7 +36,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
 ```
 
-### Specify Script Type (Shell vs PowerShell)
+### Diagramly Script Type (Shell vs PowerShell)
 
 All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
 

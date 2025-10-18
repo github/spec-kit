@@ -28,7 +28,7 @@ fi
 
 # Create release notes
 cat > release_notes.md << EOF
-This is the latest set of releases that you can use with your agent of choice. We recommend using the Specify CLI to scaffold your projects, however you can download these independently and manage them yourself.
+This is the latest set of releases that you can use with your agent of choice. We recommend using the Diagramly CLI to scaffold your projects, however you can download these independently and manage them yourself.
 
 EOF
 
