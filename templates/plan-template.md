@@ -4,6 +4,12 @@
 <!-- VARIANT:ps - Run `/scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__` for your AI assistant -->
 
 **Branch**: `[username/jira-123.feature-name]` OR `[username/feature-name]` | **Date**: [DATE] | **Spec**: [link]
+
+<!-- Workspace Metadata (auto-populated in multi-repo workspaces) -->
+**Workspace**: [WORKSPACE_NAME] (if workspace mode)
+**Target Repository**: [REPO_NAME] (if workspace mode)
+**Repository Path**: [REPO_PATH] (absolute path to implementation repo)
+
 **Input**: Feature specification from `/specs/[feature-id]/spec.md`
 **Optional Inputs**:
 - docs/product-vision.md: Product strategy and context (if exists)

@@ -7,6 +7,10 @@
 **Created**: [DATE]
 **Status**: Draft
 
+<!-- Workspace Metadata (auto-populated in multi-repo workspaces) -->
+**Workspace**: [WORKSPACE_NAME] (if workspace mode)
+**Target Repository**: [REPO_NAME] (required for capabilities in multi-repo workspace)
+
 ## Execution Flow (main)
 ```
 1. Verify parent spec exists at ../spec.md
