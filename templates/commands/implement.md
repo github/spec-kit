@@ -3,6 +3,9 @@ description: Execute the implementation plan by processing and executing all tas
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+agent_scripts:
+  sh: "python3 -c \"from pathlib import Path; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); guards = registry.list_guards(); all_history = {}; [all_history.update({g['id']: registry.get_guard_history(g['id'], 5)}) for g in guards]; print(json.dumps({'guards': guards, 'history_by_guard': all_history}, indent=2))\""
+  ps: "python -c \"from pathlib import Path; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); guards = registry.list_guards(); all_history = {}; [all_history.update({g['id']: registry.get_guard_history(g['id'], 5)}) for g in guards]; print(json.dumps({'guards': guards, 'history_by_guard': all_history}, indent=2))\""
 ---
 
 ## User Input
@@ -16,6 +19,14 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Outline
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+
+1.5. **Load Guard History**: Run `{AGENT_SCRIPT}` to get all guards and their execution history.
+   
+   Use this for **self-healing**:
+   - Before running a guard, check its history for past failures
+   - Read `notes` field from failed executions to understand common issues
+   - Apply learnings proactively before running the guard
+   - After guard failure, analyze error, add notes to history for future runs
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Scan all checklist files in the checklists/ directory
@@ -113,7 +124,53 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Integration work**: Database connections, middleware, logging, external services
    - **Polish and validation**: Unit tests, performance optimization, documentation
 
-8. Progress tracking and error handling:
+8. Guard validation (Constitutional Principle V):
+   - **Before running guard**, check history for learnings:
+     * Load guard history from agent script output
+     * Review past failures and `notes` field for common issues
+     * Apply proactive fixes based on learnings
+   
+   - **Before marking any task [X] complete**, check for guard markers:
+     * Parse task description for `[Guard: G###]` pattern
+     * If no guard marker found: Mark task complete normally
+     * If guard marker found: Execute guard validation
+   
+   - **Guard execution workflow**:
+     ```bash
+     specify guard run G###
+     ```
+   
+   - **Interpret guard results**:
+     * **Exit code 0** (PASS) → Mark task [X] complete, add ✓ to guard marker
+     * **Exit code non-zero** (FAIL) → Do NOT mark task complete
+       - Display guard failure output
+       - **Analyze failure** and determine root cause
+       - **Add notes to history** documenting:
+         * What went wrong
+         * What fix was applied
+         * Patterns to watch for in future runs
+       - Fix implementation and re-run guard
+       - Only mark complete after guard passes
+   
+   - **Self-healing workflow**:
+     1. Read guard history before running
+     2. Apply known fixes from past failures
+     3. Run guard
+     4. If failure: Diagnose, fix, document in notes
+     5. If success: Mark complete with ✓
+   
+   - **Example task completion**:
+     ```markdown
+     Before: - [ ] T016 [US1] Implement auth endpoint in src/api/auth.py [Guard: G001]
+     After:  - [X] T016 [US1] Implement auth endpoint in src/api/auth.py [Guard: G001 ✓]
+     ```
+   
+   - **History notes help future runs**:
+     - Next time G001 runs, agent can read notes about common auth issues
+     - Patterns emerge across guard executions
+     - Knowledge compounds over time
+
+9. Progress tracking and error handling:
    - Report progress after each completed task
    - Halt execution if any non-parallel task fails
    - For parallel tasks [P], continue with successful tasks, report failed ones
@@ -121,12 +178,13 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Suggest next steps if implementation cannot proceed
    - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
 
-9. Completion validation:
-   - Verify all required tasks are completed
-   - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
-   - Confirm the implementation follows the technical plan
-   - Report final status with summary of completed work
+10. Completion validation:
+    - Verify all required tasks are completed
+    - **Verify all guards have passed** (all `[Guard: G###]` markers should show ✓)
+    - Check that implemented features match the original specification
+    - Validate that tests pass and coverage meets requirements
+    - Confirm the implementation follows the technical plan
+    - Report final status with summary of completed work
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/tasks` first to regenerate the task list.
 

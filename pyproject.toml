@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.0.20"
+version = "0.0.25"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [
@@ -10,6 +10,8 @@ dependencies = [
     "platformdirs",
     "readchar",
     "truststore>=0.10.4",
+    "jinja2",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
@@ -21,4 +23,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
 

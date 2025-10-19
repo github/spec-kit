@@ -243,6 +243,33 @@ Additional commands for enhanced quality and validation:
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
+### Guard CLI
+
+The Guard CLI provides validation checkpoints to ensure code quality throughout development:
+
+```bash
+# Create a guard (validation checkpoint)
+specify guard create --type unit-pytest --name feature-tests
+
+# Run a specific guard
+specify guard run G001
+
+# List all guards
+specify guard list
+
+# List available guard types
+specify guard types
+
+# Create custom guard type
+specify guard create-type --name custom-validation --category validation
+```
+
+**Built-in Guard Types:**
+- `unit-pytest`: Python unit test validation
+- `api`: API endpoint validation
+
+Guards are automatically integrated into the `/speckit.plan` and `/speckit.tasks` workflows, ensuring validation checkpoints are created during feature development.
+
 ### Environment Variables
 
 | Variable         | Description                                                                                    |

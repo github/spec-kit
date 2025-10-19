@@ -43,3 +43,14 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Guard CLI artifacts (runtime guard registry and history)
+.specify/guards/list/
+.specify/guards/history/
+.specify/guards/index.json
+.guards/
+.pytest_cache/
+coverage/
+htmlcov/
+.coverage
+*.cover

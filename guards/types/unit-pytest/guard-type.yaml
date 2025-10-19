@@ -1,0 +1,45 @@
+name: unit-pytest
+version: 1.0.0
+description: |
+  Opinionated unit test scaffolds using pytest.
+  Generates comprehensive test files with fixtures, mocks, and assertions.
+category: unit
+author: Spec Kit Core Team
+license: MIT
+scaffolder_class: UnitPytestScaffolder
+
+dependencies:
+  runtime:
+    - python: ">=3.11"
+  packages:
+    - pytest: ">=7.0"
+    - pytest-mock: ">=3.10"
+
+compatibility:
+  languages: [python]
+  frameworks: [fastapi, flask, django, cli]
+
+scaffolding:
+  creates:
+    - tests/unit/guards/{guard_id}_{name}.py
+  updates:
+    - Makefile
+
+execution:
+  command: "pytest tests/unit/guards/{guard_id}_{name}.py -v"
+  timeout: 60
+  exit_codes:
+    success: 0
+    failure: 1
+
+ai_hints:
+  when_to_use: |
+    Use this guard type when validating individual functions or classes in isolation.
+    Ideal for testing business logic, utility functions, and class methods.
+  boilerplate_explanation: |
+    Generates a pytest test file with:
+    - Comprehensive test structure (setup, execution, assertion)
+    - Fixture definitions for test dependencies
+    - Mock objects for external dependencies
+    - Assertion examples for common validation patterns
+    - TODO comments guiding AI agent where to add tests

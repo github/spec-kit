@@ -3,6 +3,9 @@ description: Generate an actionable, dependency-ordered tasks.md for the feature
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
+agent_scripts:
+  sh: "python3 -c \"from pathlib import Path; from specify_cli.guards.types import GuardType; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); types_info = GuardType.get_all_types_with_descriptions(guards_base); guards_list = registry.list_guards(); history = registry.get_all_history(20); print(json.dumps({'guard_types': types_info, 'existing_guards': guards_list, 'recent_history': history}, indent=2))\""
+  ps: "python -c \"from pathlib import Path; from specify_cli.guards.types import GuardType; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); types_info = GuardType.get_all_types_with_descriptions(guards_base); guards_list = registry.list_guards(); history = registry.get_all_history(20); print(json.dumps({'guard_types': types_info, 'existing_guards': guards_list, 'recent_history': history}, indent=2))\""
 ---
 
 ## User Input
@@ -17,6 +20,17 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
+1.5. **Load Guard Context** (MANDATORY): Run `{AGENT_SCRIPT}` to get:
+   - Available guard types (for new guard creation)
+   - Existing guards (to avoid duplicates, understand current coverage)
+   - Recent execution history (to learn from past failures/successes)
+   
+   Use this information to:
+   - Identify which guard types match validation needs from plan.md
+   - Reference existing guards in tasks (avoid creating duplicates)
+   - Learn from history notes about common pitfalls
+   - **CRITICAL**: If plan.md has "Guard Validation Strategy" section, use it to create guards
+
 2. **Load design documents**: Read from FEATURE_DIR:
    - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
    - **Optional**: data-model.md (entities), contracts/ (API endpoints), research.md (decisions), quickstart.md (test scenarios)
@@ -28,6 +42,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map endpoints to user stories
    - If research.md exists: Extract decisions for setup tasks
+   - **Identify guard opportunities** for critical validation checkpoints (see Guard Integration below)
    - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
    - Create parallel execution examples per user story
@@ -126,8 +141,73 @@ Every task MUST strictly follow this format:
 - **Phase 1**: Setup (project initialization)
 - **Phase 2**: Foundational (blocking prerequisites - MUST complete before user stories)
 - **Phase 3+**: User Stories in priority order (P1, P2, P3...)
-  - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
+  - Within each story: **Guards (REQUIRED - create custom type if needed)** → Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
+  - **NO user story is complete without at least one passing guard**
 - **Final Phase**: Polish & Cross-Cutting Concerns
+
+### Guard Integration (MANDATORY)
+
+**Constitutional Principle V**: Tasks MUST NOT be marked complete without a passing guard when validation checkpoints exist.
+
+**CRITICAL WORKFLOW**:
+1. **Read plan.md "Guard Validation Strategy"** (if exists)
+2. **For EACH validation checkpoint** in spec.md user stories:
+   - Check if existing guard covers it (from guard context in step 1.5)
+   - If NO existing guard → CREATE guard creation task
+   - Tag implementation task with `[Guard: G###]`
+3. **Guard creation is FIRST task** in each user story phase (before any implementation)
+4. **Every user story MUST have at least one guard** (no exceptions)
+
+**When to create guards** (EVERY user story needs validation):
+
+**If guard type exists** (check available types from step 1.5):
+- **API endpoints** → `specify guard create --type api --name <feature-name>`
+- **Business logic/algorithms** → `specify guard create --type unit-pytest --name <feature-name>`
+- **Use existing guard types when available**
+
+**If NO guard type matches** (validation checkpoint but no suitable type):
+- **MUST create custom guard type FIRST**:
+  ```markdown
+  Phase X: User Story Y
+  - [ ] T### [USY] Create custom guard type for <validation-need>
+    Command: specify guard create-type --name <type-name> --category <category>
+    Then: Implement scaffolder in .specify/guards/types-custom/<type-name>/
+  - [ ] T### [USY] Create guard using new custom type
+    Command: specify guard create --type <type-name> --name <feature-name>
+  - [ ] T### [USY] Implement <feature> [Guard: G###]
+  ```
+
+**Example validation checkpoints requiring custom guards**:
+- **Database migrations** → Create `database-migration` guard type
+- **UI workflows** → Create `e2e-workflow` guard type
+- **Code quality** → Create `lint-<project>` guard type
+- **Performance** → Create `performance-benchmark` guard type
+- **Security scans** → Create `security-scan` guard type
+- **Contract testing** → Create `contract-test` guard type
+
+**Task sequence template**:
+```markdown
+Phase 3: User Story 1 - <Feature Name>
+
+### Guards (Create FIRST)
+- [ ] T015 [US1] Create custom guard type 'checkout-flow' for E2E validation
+  Command: specify guard create-type --name checkout-flow --category e2e
+- [ ] T016 [US1] Implement checkout-flow scaffolder with Playwright templates
+- [ ] T017 [US1] Create guard for checkout workflow
+  Command: specify guard create --type checkout-flow --name user-checkout
+
+### Implementation (Tagged with guards)
+- [ ] T018 [US1] Implement checkout API endpoint [Guard: G001]
+- [ ] T019 [US1] Implement payment processing [Guard: G001]
+- [ ] T020 [US1] Implement order confirmation [Guard: G001]
+```
+
+**Existing guards** (loaded in step 1.5):
+- Reference guard IDs from existing guards when applicable
+- Don't create duplicate guards for same validation checkpoint
+- Update existing guard if validation requirements changed
+
+**Guard execution**: Guards are executed via `/implement` command before marking tasks complete. Implementation stops if guard fails.
 
 

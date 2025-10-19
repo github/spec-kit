@@ -1190,6 +1190,8 @@ def check():
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
 def main():
+    from specify_cli.guards.commands import guard_app
+    app.add_typer(guard_app, name="guard")
     app()
 
 if __name__ == "__main__":

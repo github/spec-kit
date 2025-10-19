@@ -113,6 +113,43 @@ build_variant() {
   
   [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
   
+  # Copy guard types (core guards functionality)
+  # Official types go to .specify/guards/types/ (will be replaced on update)
+  # Custom types in .specify/guards/types-custom/ are preserved
+  if [[ -d guards ]]; then
+    mkdir -p "$SPEC_DIR/guards/types"
+    cp -r guards/types/* "$SPEC_DIR/guards/types/"
+    echo "Copied official guard types -> .specify/guards/types"
+    
+    # Create types-custom directory with README
+    mkdir -p "$SPEC_DIR/guards/types-custom"
+    cat > "$SPEC_DIR/guards/types-custom/README.md" << 'EOF'
+# Custom Guard Types
+
+This directory contains user-defined guard types that are preserved across spec-kit updates.
+
+Official guard types in `../types/` are replaced when you run `specify init`, but custom types here are never touched.
+
+## Creating Custom Guard Types
+
+```bash
+specify guard create-type --name my-custom-type --category validation
+```
+
+Or manually create a directory structure:
+
+```
+my-custom-type/
+├── guard-type.yaml      # Type manifest
+├── scaffolder.py        # Scaffolding logic
+└── templates/           # Jinja2 templates
+    └── test.py.j2
+```
+
+See official types in `../types/` for examples.
+EOF
+  fi
+  
   # Only copy the relevant script variant directory
   if [[ -d scripts ]]; then
     mkdir -p "$SPEC_DIR/scripts"

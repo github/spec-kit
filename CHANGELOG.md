@@ -7,6 +7,54 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.25] - 2025-10-19
+
+### Added
+
+- **Guard CLI System** - Validation guards for spec-driven development workflows
+  - `specify guard create --type <type> --name <name>` - Create guards with opinionated boilerplate
+  - `specify guard run <id>` - Execute guard validation with pass/fail exit codes
+  - `specify guard list` - View all registered guards with status
+  - `specify guard types` - Discover available guard types (official + custom)
+  - `specify guard create-type` - Create custom guard type scaffolds
+  
+- **Guard Types (MVP)**
+  - `unit-pytest` - Unit testing with pytest (fixtures, parametrization, mocks)
+  - `api` - REST API contract validation with schema validation
+  - Custom types architecture (types/ for official, types-custom/ for user-defined)
+  
+- **Guard Registry System**
+  - File-based registry (`.specify/guards/list/`, `history/`, `index.json`)
+  - Execution history tracking with notes field for self-healing
+  - Guard metadata (ID, type, name, command, status, last execution)
+  - Automatic history recording on every guard run
+  
+- **Slash Command Integration**
+  - `/plan` - Auto-loads available guard types for planning
+  - `/tasks` - Loads guard types + existing guards + execution history
+  - `/implement` - Full guard history for self-healing implementation
+  - Agent scripts embedded in command YAML frontmatter
+  
+- **Self-Healing Guards**
+  - History notes field for documenting failures and fixes
+  - Agents can read past failures before running guards
+  - Knowledge compounds across executions
+  - Proactive fix application based on learnings
+
+### Changed
+
+- Updated command templates (plan.md, tasks.md, implement.md) with guard integration
+- Fixed YAML frontmatter escaping in command templates for Python one-liners
+- Updated `.gitignore` to include guard directories and test artifacts
+- Enhanced constitutional principles with Principle V (guards required for task completion)
+
+### Technical
+
+- Added dependencies: `jinja2`, `pyyaml>=6.0.3`
+- New modules: `src/specify_cli/guards/` (registry, executor, types, scaffolder, commands, utils)
+- 21 unit tests covering guard system (100% passing)
+- Guard distribution via release packages (types copied to `.specify/guards/types/`)
+
 ## [0.0.20] - 2025-10-14
 
 ### Added
