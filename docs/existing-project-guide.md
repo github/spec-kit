@@ -1,6 +1,6 @@
 # Using Spec Kit in an Existing Project
 
-> You already have a codebase. You want to try Spec Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10-minute guide** — pick realistic scope; save the grand redesign for later.
+> You already have a codebase. You want to try Spec Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10-minute guide** — pick a realistic scope and save any grand redesigns for later.
 
 ---
 
@@ -16,7 +16,7 @@ Install the CLI by following the [Installation Guide](installation.md), then jum
 
 ## 2. Init
 
-> Spec Kit initializes a **workspace** in your repo and registers **slash commands** with your coding agent. This workspace holds your **specs, plans, and tasks**.
+> Spec Kit initializes a **workspace** in the current directory and registers **slash commands** with your coding agent. This workspace holds your **specs, plans, and tasks**.
 
 * Substitute any [supported assistant](../README.md#-supported-ai-agents) (`claude`, `gemini`, `copilot`, `cursor-agent`, etc.) for the `--ai` argument in place of `copilot`.
 * When prompted for script type, **pick your flavor** and continue.
@@ -35,7 +35,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here --ai c
 
 ### Checkpoint
 
-Your agent now recognizes:
+Spec Kit registers these slash commands in your coding agent:
 
 - `/speckit.constitution`
 - `/speckit.specify`
@@ -66,8 +66,9 @@ Use the `/speckit.constitution` command to define the project's non-negotiable r
 
 Use `/speckit.specify` inside your coding agent to create a single, focused story. Keep it high-level—what and why. Don’t worry about technical details yet; those come later.
 
-> 💡 Use a model that can handle systems-level reasoning. Don’t pick a tiny “mini” model for a brand-new UI. Things will *not go well*. 😉
-> This is a 10-minute starter, so pick something achievable—save the joyrides until your constraints file is done!
+> 💡 **Model selection matters:** Pick a model capable of handling systems-level reasoning, such as `Claude 4.5`, `GPT-5`, or `Gemini 2.5 Pro`. Avoid smaller, lower-capacity models (like `GPT-5-mini` or similar) for systems-level tasks; they can miss context or produce incomplete plans. Use smaller models for narrow, well-defined edits or straightforward refactors.
+>
+> **This is a 10-minute starter**, so pick something achievable — save the joyrides until your constraints file is complete!
 
 ```markdown
 /speckit.specify Create story “Apply coupon during checkout.”

@@ -402,7 +402,7 @@ Simplicity gate: max 3 projects per feature
 # Executes: tasks in order, enforces test-first, validates checklist completion
 ```
 
-In about 20 minutes, you have:
+In under an hour, you get:
 
 - Constitutional principles established and enforced across all templates
 - A complete feature specification with user stories and acceptance criteria
