@@ -1,12 +1,12 @@
-# Using Spec-Kit in an Existing Project
+# Using Spec Kit in an Existing Project
 
-> You already have a codebase. You want to try Spec-Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10-minute guide** — pick realistic scope; save the grand redesign for later.
+> You already have a codebase. You want to try Spec Kit without rearranging the furniture. This is a surgical guide: minimum steps, clear checkpoints, easy rollback. This is a **10-minute guide** — pick realistic scope; save the grand redesign for later.
 
 ---
 
 ## 1. Prerequisites
 
-Before starting, you need the Spec-Kit CLI tool installed on your machine.
+Before starting, you need the Spec Kit CLI tool installed on your machine.
 
 Install the CLI by following the [Installation Guide](installation.md), then jump back here for step 2.
 
@@ -16,7 +16,7 @@ Install the CLI by following the [Installation Guide](installation.md), then jum
 
 ## 2. Init
 
-> Spec-Kit initializes a **workspace** in your repo and registers **slash commands** with your coding agent. This workspace holds your **specs, plans, and tasks**.
+> Spec Kit initializes a **workspace** in your repo and registers **slash commands** with your coding agent. This workspace holds your **specs, plans, and tasks**.
 
 * Substitute any [supported assistant](../README.md#-supported-ai-agents) (`claude`, `gemini`, `copilot`, `cursor-agent`, etc.) for the `--ai` argument in place of `copilot`.
 * When prompted for script type, **pick your flavor** and continue.
@@ -81,7 +81,7 @@ Out of scope: stacking, gift cards, loyalty.
 
 ### Checkpoint
 
-* Spec-Kit automatically creates and checks out a **feature branch**, e.g. `001-checkout-apply-coupon`.
+* Spec Kit automatically creates and checks out a **feature branch**, e.g. `001-checkout-apply-coupon`.
 * It also creates a `./specs/001-checkout-apply-coupon/` folder and a set of `.md` files.
 * `spec.md` is the specification derived from your prompt — **review it now for accuracy.**
 
