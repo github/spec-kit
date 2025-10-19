@@ -1,6 +1,27 @@
 # Best Paid AI CLI: Claude Code
 
-[Official Documentation](https://docs.claude.com/en/docs/claude-code/overview)
+[Overview](https://docs.claude.com/en/docs/claude-code/overview)
+
+[Quick Start](https://docs.claude.com/en/docs/claude-code/quickstart)
+
+[Common Workflows](https://docs.claude.com/en/docs/claude-code/common-workflows)
+
+[Subagents](https://docs.claude.com/en/docs/claude-code/sub-agents)
+
+[Plugins](https://docs.claude.com/en/docs/claude-code/plugins)
+
+[Skills](https://docs.claude.com/en/docs/claude-code/skills)
+
+[Output Styles](https://docs.claude.com/en/docs/claude-code/output-styles)
+
+[Hooks](https://docs.claude.com/en/docs/claude-code/hooks-guide)
+
+[Headless Mode](https://docs.claude.com/en/docs/claude-code/headless)
+
+[Connect Claude Code to tools via MCP](https://docs.claude.com/en/docs/claude-code/mcp)
+
+
+### Additional Reading
 
 [Claude Code — Tutorial](https://medium.com/aimonks/claude-code-tutorial-80037240aaab)
 
