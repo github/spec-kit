@@ -11,7 +11,130 @@ In a multi-repo workspace:
 - **Convention-based routing** automatically determines which repo(s) a spec targets
 - **Capabilities are single-repo** while parent specs can span multiple repos
 
-## Quick Start
+## Two Multi-Repo Modes
+
+Spec-kit provides **two different multi-repo features** that serve complementary purposes:
+
+### Mode 1: Batch Updates (`init.sh --all-repos`)
+
+**Purpose**: Update multiple independent spec-kit repositories in bulk
+
+**What it does**:
+- Finds repos that **already have** `.specify/` folders
+- Applies the same initialization/update to each one
+- Updates templates, scripts, and AI commands in parallel
+- Each repo remains independent with its own `specs/` folder
+
+**When to use**:
+- You have multiple separate projects using spec-kit
+- You want to update templates/scripts across all projects
+- Each repo manages its own specifications independently
+- Projects are not tightly coupled
+
+**Example**:
+```bash
+# Update all my spec-kit projects at once
+cd ~/git
+./spec-kit/init.sh --all-repos --ai claude --search-path . --max-depth 3
+
+# Preview shows:
+# Found 5 repos with .specify:
+#   ~/git/project-a (.specify exists)
+#   ~/git/project-b (.specify exists)
+#   ~/git/api-service (.specify exists)
+# ...
+```
+
+**Result**: Each repo gets updated independently, maintains its own specs.
+
+---
+
+### Mode 2: Centralized Workspace (`init-workspace.sh --workspace`)
+
+**Purpose**: Create a unified workspace for related repositories that work together
+
+**What it does**:
+- Finds **all git repos** in a directory (whether they have `.specify/` or not)
+- Creates workspace configuration (`.specify/workspace.yml`)
+- Sets up centralized `specs/` folder at workspace level
+- Enables cross-repo features and convention-based routing
+- Optionally initializes `.specify/` in each repo
+
+**When to use**:
+- You have related repos that form a single system (e.g., backend + frontend)
+- You want centralized spec management for the entire system
+- You need features that span multiple repos
+- You want convention-based routing of specs to repos
+
+**Example**:
+```bash
+# Initialize workspace for multi-repo project
+cd ~/git/attun-project
+specify init --workspace --auto-init
+
+# Creates:
+# ~/git/attun-project/
+#   .specify/workspace.yml   ← Workspace config
+#   specs/                     ← Centralized specs
+#   attun-backend/.specify/    ← Repo-specific config
+#   attun-frontend/.specify/
+```
+
+**Result**: Unified workspace with centralized specs, specs can target multiple repos.
+
+---
+
+### Comparison Table
+
+| Feature | `--all-repos` (Batch) | `--workspace` (Centralized) |
+|---------|----------------------|----------------------------|
+| **Discovery** | Repos with `.specify/` | All git repos |
+| **Specs Location** | Each repo's `specs/` | Workspace `specs/` |
+| **Use Case** | Independent projects | Related system |
+| **Updates** | Templates/scripts | Workspace structure |
+| **Cross-repo Features** | ❌ No | ✅ Yes |
+| **Convention Routing** | ❌ No | ✅ Yes |
+| **Repo Independence** | ✅ Full | 🔗 Coordinated |
+
+### Can They Work Together?
+
+**Yes!** You can use both features in combination:
+
+```bash
+# 1. Initialize workspace for your multi-repo system
+cd ~/git/attun-project
+specify init --workspace --auto-init
+
+# 2. Later, bulk update templates in all repos
+cd ~/git
+./spec-kit/init.sh --all-repos --search-path attun-project --max-depth 2
+```
+
+This gives you:
+- ✅ Centralized workspace for related repos (backend + frontend)
+- ✅ Ability to bulk update `.specify/` folders when templates change
+
+### Decision Guide
+
+**Choose `--all-repos` if**:
+- ✅ You maintain multiple independent projects
+- ✅ Each project has its own specification lifecycle
+- ✅ You want to update spec-kit tooling across all projects
+- ✅ Projects don't share features or capabilities
+
+**Choose `--workspace` if**:
+- ✅ You have a backend + frontend (or similar multi-repo system)
+- ✅ Features span multiple repositories
+- ✅ You want centralized spec management
+- ✅ You need convention-based routing (e.g., `backend-*` → backend repo)
+
+**Use both if**:
+- ✅ You have a workspace AND want to bulk update templates
+- ✅ You manage multiple workspaces and want to update them all
+
+---
+
+## Quick Start (Workspace Mode)
 
 ### 1. Initialize a Workspace
 
@@ -22,13 +145,13 @@ specify init --workspace --auto-init
 
 This will:
 - ✅ Discover all git repositories in the directory
-- ✅ Create `.spec-kit/workspace.yml` with auto-detected configuration
+- ✅ Create `.specify/workspace.yml` with auto-detected configuration
 - ✅ Create `specs/` directory for centralized specifications
 - ✅ Initialize `.specify/` in each repo (with `--auto-init`)
 
 ### 2. Customize Conventions
 
-Edit `.spec-kit/workspace.yml` to define how spec names map to repositories:
+Edit `.specify/workspace.yml` to define how spec names map to repositories:
 
 ```yaml
 conventions:
@@ -89,7 +212,7 @@ You'll be prompted to select the target repo if not specified.
 
 ```
 my-workspace/                    # Parent directory
-  .spec-kit/
+  .specify/
     workspace.yml                # Workspace configuration
   specs/                         # Centralized specifications
     backend-user-auth/
@@ -130,7 +253,7 @@ Specs are automatically routed to repositories based on their names:
 | `fullstack-admin` | Prefix: `fullstack-` | All repos |
 | `random-feature` | No match | Prompts user to select |
 
-Configure custom rules in `.spec-kit/workspace.yml`.
+Configure custom rules in `.specify/workspace.yml`.
 
 ## Workflow Examples
 
@@ -260,7 +383,7 @@ cp -r my-repo/specs/* specs/
 
 4. **Update conventions:**
 
-Edit `.spec-kit/workspace.yml` to configure routing rules.
+Edit `.specify/workspace.yml` to configure routing rules.
 
 ## Troubleshooting
 
@@ -268,11 +391,11 @@ Edit `.spec-kit/workspace.yml` to configure routing rules.
 
 **Problem**: Scripts can't detect workspace mode.
 
-**Solution**: Ensure `.spec-kit/workspace.yml` exists in parent directory.
+**Solution**: Ensure `.specify/workspace.yml` exists in parent directory.
 
 ```bash
 cd ~/git/my-workspace
-ls .spec-kit/workspace.yml  # Should exist
+ls .specify/workspace.yml  # Should exist
 ```
 
 ### "No target repository found" Error
@@ -281,7 +404,7 @@ ls .spec-kit/workspace.yml  # Should exist
 
 **Solutions**:
 1. Use explicit targeting: `/specify --repo=backend my-feature`
-2. Update conventions in `.spec-kit/workspace.yml`
+2. Update conventions in `.specify/workspace.yml`
 3. Choose from prompt when multiple matches
 
 ### Branch Created in Wrong Repo
@@ -304,7 +427,7 @@ ls .spec-kit/workspace.yml  # Should exist
 
 ## Configuration Reference
 
-### Workspace Config (`.spec-kit/workspace.yml`)
+### Workspace Config (`.specify/workspace.yml`)
 
 ```yaml
 workspace:
@@ -450,6 +573,6 @@ conventions:
 
 **Next Steps:**
 1. Initialize your first workspace: `specify init --workspace`
-2. Customize conventions in `.spec-kit/workspace.yml`
+2. Customize conventions in `.specify/workspace.yml`
 3. Create a test spec to validate routing
 4. Review the testing guide for comprehensive examples

@@ -49,7 +49,7 @@ cd /tmp/test-workspace
 bash ~/git/spec-kit/scripts/bash/init-workspace.sh .
 
 # Expected outcomes:
-# 1. ✓ .spec-kit/workspace.yml created
+# 1. ✓ .specify/workspace.yml created
 # 2. ✓ specs/ directory created
 # 3. ✓ Configuration shows all 3 discovered repos
 # 4. ✓ Convention rules are auto-generated
@@ -59,7 +59,7 @@ bash ~/git/spec-kit/scripts/bash/init-workspace.sh .
 
 ```bash
 # Check workspace config exists
-cat .spec-kit/workspace.yml
+cat .specify/workspace.yml
 
 # Should show:
 # - workspace name and root
@@ -110,7 +110,7 @@ get_repo_path /tmp/test-workspace backend-repo
 
 **Objective**: Test automatic repository targeting based on spec naming
 
-**Setup**: Edit `.spec-kit/workspace.yml` to configure conventions:
+**Setup**: Edit `.specify/workspace.yml` to configure conventions:
 
 ```yaml
 conventions:
@@ -256,12 +256,12 @@ cd repo-b && git init && cd ..
 specify init --workspace --auto-init
 
 # Expected outcomes:
-# 1. ✓ .spec-kit/workspace.yml created
+# 1. ✓ .specify/workspace.yml created
 # 2. ✓ specs/ directory created
 # 3. ✓ .specify/ initialized in repo-a and repo-b (with --auto-init)
 
 # Validation
-cat .spec-kit/workspace.yml
+cat .specify/workspace.yml
 ls -la repo-a/.specify
 ls -la repo-b/.specify
 ```

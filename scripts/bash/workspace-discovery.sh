@@ -6,10 +6,10 @@
 detect_workspace() {
     local current_dir="${1:-$(pwd)}"
 
-    # Check if .spec-kit/workspace.yml exists in current or parent directories
+    # Check if .specify/workspace.yml exists in current or parent directories
     local check_dir="$current_dir"
     while [[ "$check_dir" != "/" ]]; do
-        if [[ -f "$check_dir/.spec-kit/workspace.yml" ]]; then
+        if [[ -f "$check_dir/.specify/workspace.yml" ]]; then
             echo "$check_dir"
             return 0
         fi
@@ -53,7 +53,7 @@ get_repo_name() {
 # Usage: parse_workspace_config <workspace_root>
 parse_workspace_config() {
     local workspace_root="$1"
-    local config_file="$workspace_root/.spec-kit/workspace.yml"
+    local config_file="$workspace_root/.specify/workspace.yml"
 
     if [[ ! -f "$config_file" ]]; then
         echo "ERROR: Workspace config not found: $config_file" >&2
@@ -69,7 +69,7 @@ parse_workspace_config() {
 get_target_repos_for_spec() {
     local workspace_root="$1"
     local spec_id="$2"
-    local config_file="$workspace_root/.spec-kit/workspace.yml"
+    local config_file="$workspace_root/.specify/workspace.yml"
 
     if [[ ! -f "$config_file" ]]; then
         echo "ERROR: Workspace config not found: $config_file" >&2
@@ -135,7 +135,7 @@ get_target_repos_for_spec() {
 get_repo_path() {
     local workspace_root="$1"
     local repo_name="$2"
-    local config_file="$workspace_root/.spec-kit/workspace.yml"
+    local config_file="$workspace_root/.specify/workspace.yml"
 
     if [[ ! -f "$config_file" ]]; then
         echo "ERROR: Workspace config not found: $config_file" >&2
@@ -193,10 +193,10 @@ git_exec() {
 # Usage: build_workspace_config <workspace_root>
 build_workspace_config() {
     local workspace_root="$1"
-    local config_file="$workspace_root/.spec-kit/workspace.yml"
+    local config_file="$workspace_root/.specify/workspace.yml"
 
-    # Create .spec-kit directory if it doesn't exist
-    mkdir -p "$workspace_root/.spec-kit"
+    # Create .specify directory if it doesn't exist
+    mkdir -p "$workspace_root/.specify"
 
     # Find all repos
     local repos=($(find_repos "$workspace_root" 2))
@@ -276,7 +276,7 @@ get_specs_dir() {
 # Usage: list_workspace_repos <workspace_root>
 list_workspace_repos() {
     local workspace_root="$1"
-    local config_file="$workspace_root/.spec-kit/workspace.yml"
+    local config_file="$workspace_root/.specify/workspace.yml"
 
     if [[ ! -f "$config_file" ]]; then
         echo "ERROR: Workspace config not found: $config_file" >&2

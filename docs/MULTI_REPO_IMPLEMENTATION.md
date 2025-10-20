@@ -33,7 +33,7 @@ Spec-kit previously assumed a single git repository context. Users working with 
 **Location**: `scripts/bash/workspace-discovery.sh`
 
 **Core Functions**:
-- `detect_workspace()` - Find workspace root by `.spec-kit/workspace.yml`
+- `detect_workspace()` - Find workspace root by `.specify/workspace.yml`
 - `find_repos()` - Discover all git repositories in directory
 - `get_target_repos_for_spec()` - Convention-based repo matching
 - `build_workspace_config()` - Auto-generate workspace.yml
@@ -98,7 +98,7 @@ Spec-kit previously assumed a single git repository context. Users working with 
 
 **Features**:
 - Auto-discover git repos (configurable depth)
-- Generate `.spec-kit/workspace.yml`
+- Generate `.specify/workspace.yml`
 - Create workspace `specs/` directory
 - Generate `specs/README.md` with usage guide
 - Optional `--auto-init` to initialize `.specify/` in all repos
@@ -159,7 +159,7 @@ Spec-kit previously assumed a single git repository context. Users working with 
 
 ## Configuration Schema
 
-### Workspace Config (`.spec-kit/workspace.yml`)
+### Workspace Config (`.specify/workspace.yml`)
 
 ```yaml
 workspace:
@@ -288,7 +288,7 @@ See `docs/multi-repo-testing.md` for complete test suite.
 - Branch operations only in target repos
 
 ### Configuration
-- YAML configuration in `.spec-kit/` (gitignored)
+- YAML configuration in `.specify/` (gitignored)
 - No secrets or credentials stored
 - User-controlled convention rules
 
@@ -311,15 +311,37 @@ See `docs/multi-repo-testing.md` for complete test suite.
 
 ### User Documentation
 - `docs/multi-repo-workspaces.md` - Comprehensive user guide
-- Includes quick start, examples, troubleshooting
-- Configuration reference
-- Best practices
+  - **NEW**: Comparison with `init.sh --all-repos` (batch mode)
+  - Quick start, examples, troubleshooting
+  - Configuration reference
+  - Best practices
+- `docs/multi-repo-modes-comparison.md` - **NEW**: Visual comparison guide
+  - Batch mode vs Workspace mode decision guide
+  - Architecture diagrams and flowcharts
+  - Real-world scenarios (freelancer, SaaS, microservices, OSS)
+  - Feature matrix and FAQ
 
 ### Developer Documentation
 - `docs/multi-repo-testing.md` - Testing guide
 - `docs/example-workspace.yml` - Example config
 - Inline code comments in bash scripts
 - This implementation summary
+
+### Important Note: Two Multi-Repo Features
+
+Spec-kit now has **two different multi-repo capabilities**:
+
+1. **Batch Mode** (`init.sh --all-repos`) - **Existing feature**
+   - Updates multiple independent repos with `.specify/`
+   - Each repo maintains its own `specs/` directory
+   - Use for: Unrelated projects needing same tooling
+
+2. **Workspace Mode** (`specify init --workspace`) - **New feature**
+   - Creates centralized `specs/` for related repos
+   - Convention-based routing to target repos
+   - Use for: Multi-repo systems (backend + frontend)
+
+See `docs/multi-repo-modes-comparison.md` for detailed comparison.
 
 ### Help Text
 - Updated CLI help messages
@@ -374,7 +396,7 @@ bash docs/multi-repo-testing.md  # Follow test cases
 ```
 
 **Extend Conventions**:
-Edit `.spec-kit/workspace.yml` and add new rules.
+Edit `.specify/workspace.yml` and add new rules.
 
 **Debug**:
 ```bash

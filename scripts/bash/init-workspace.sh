@@ -33,7 +33,7 @@ for arg in "$@"; do
             echo ""
             echo "This script will:"
             echo "  1. Discover all git repositories in the workspace"
-            echo "  2. Create .spec-kit/workspace.yml with auto-detected configuration"
+            echo "  2. Create .specify/workspace.yml with auto-detected configuration"
             echo "  3. Create workspace-level specs/ directory"
             echo "  4. Optionally initialize .specify/ in each repo (with --auto-init)"
             echo ""
@@ -51,7 +51,7 @@ echo "Initializing workspace at: $WORKSPACE_DIR"
 echo ""
 
 # Check if already a workspace
-if [[ -f "$WORKSPACE_DIR/.spec-kit/workspace.yml" ]] && ! $FORCE; then
+if [[ -f "$WORKSPACE_DIR/.specify/workspace.yml" ]] && ! $FORCE; then
     echo "ERROR: Workspace already initialized at $WORKSPACE_DIR"
     echo "Use --force to reinitialize"
     exit 1
@@ -132,14 +132,14 @@ if $AUTO_INIT_REPOS; then
     echo ""
 fi
 
-# Add .spec-kit to .gitignore if workspace is a git repo
+# Add .specify to .gitignore if workspace is a git repo
 if [[ -d "$WORKSPACE_DIR/.git" ]]; then
     GITIGNORE="$WORKSPACE_DIR/.gitignore"
-    if ! grep -q "^\.spec-kit/$" "$GITIGNORE" 2>/dev/null; then
+    if ! grep -q "^\.specify/$" "$GITIGNORE" 2>/dev/null; then
         echo "" >> "$GITIGNORE"
         echo "# spec-kit workspace configuration" >> "$GITIGNORE"
-        echo ".spec-kit/" >> "$GITIGNORE"
-        echo "✓ Added .spec-kit/ to .gitignore"
+        echo ".specify/" >> "$GITIGNORE"
+        echo "✓ Added .specify/ to .gitignore"
     fi
 fi
 
@@ -161,7 +161,7 @@ Specs are automatically routed to target repositories based on naming convention
 - `*-api` → API/backend repository
 - `*-ui` → UI/frontend repository
 
-See `.spec-kit/workspace.yml` for full convention configuration.
+See `.specify/workspace.yml` for full convention configuration.
 
 ## Creating a New Spec
 
@@ -191,7 +191,7 @@ for a multi-repo parent spec, you'll be prompted to select the target repository
 
 ```
 workspace-root/
-  .spec-kit/
+  .specify/
     workspace.yml          # Workspace configuration
   specs/                   # Centralized specifications
     feature-id/

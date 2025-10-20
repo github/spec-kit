@@ -1094,7 +1094,7 @@ def init(
 
     Workspace mode (--workspace):
     1. Discover all git repositories in the workspace directory
-    2. Generate .spec-kit/workspace.yml with auto-detected configuration
+    2. Generate .specify/workspace.yml with auto-detected configuration
     3. Create workspace-level specs/ directory
     4. Optionally initialize .specify/ in each repo (with --auto-init)
 
