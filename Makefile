@@ -23,3 +23,9 @@ test-guard-G004:
 
 test-guard-G006:
 	uv run pytest /home/royceld/Programming/Personal/spec-kit/tests/unit/guards/G006_smoke-test.py -v
+
+test-guard-G001:
+	uv run pytest /home/royceld/Programming/Personal/spec-kit/tests/unit/guards/G001_test-commands.py -v
+
+lint-guard-G005:
+	uv run pytest /home/royceld/Programming/Personal/spec-kit/tests/quality/guards/G005_code-quality-check.py -v

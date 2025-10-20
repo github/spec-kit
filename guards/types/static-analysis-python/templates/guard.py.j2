@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Guard {{ guard_id }}: {{ name }} - {{ description }}"""
+import json
+import subprocess
+import sys
+from typing import Dict, Any
+
+def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
+    paths = params.get("paths", ["src/"])
+    select = params.get("select", ["E", "F", "I"])
+    ignore = params.get("ignore", ["E501"])
+    
+    cmd = ["uvx", "ruff", "check", *paths, "--select", ",".join(select), "--ignore", ",".join(ignore), "--output-format", "json"]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        return {"passed": False, "analysis": "uvx or ruff not found. Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh", "details": {}}
+    except subprocess.TimeoutExpired:
+        return {"passed": False, "analysis": "Timeout after 30s", "details": {}}
+    
+    violations = json.loads(result.stdout) if result.stdout else []
+    passed = len(violations) == 0
+    
+    if passed:
+        analysis = f"✓ All checks passed ({len(paths)} paths)"
+    else:
+        counts = {}
+        for v in violations:
+            code = v.get("code", "?")
+            counts[code] = counts.get(code, 0) + 1
+        top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        summary = ", ".join([f"{code}({count})" for code, count in top])
+        analysis = f"✗ Found {len(violations)} violations: {summary}"
+    
+    return {
+        "passed": passed,
+        "analysis": analysis,
+        "details": {
+            "total_violations": len(violations),
+            "paths_checked": paths,
+            "violations": violations[:10]
+        }
+    }
+
+def main():
+    params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    result = run_guard(params)
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["passed"] else 1)
+
+if __name__ == "__main__":
+    main()

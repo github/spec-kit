@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Guard {{ guard_id }}: {{ name }} - {{ description }}"""
+import json
+import subprocess
+import sys
+from typing import Any, Dict
+
+
+def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
+    base_url = params.get("base_url", "{{ base_url }}")
+    endpoints = params.get("endpoints", {{ endpoints }})
+    timeout = params.get("timeout", {{ timeout }})
+    verify_ssl = params.get("verify_ssl", {{ "True" if verify_ssl else "False" }})
+    follow_redirects = params.get("follow_redirects", {{ "True" if follow_redirects else "False" }})
+    
+    if not base_url:
+        return {
+            "passed": False,
+            "analysis": "No base_url configured. Set base_url in guard.yaml",
+            "details": {}
+        }
+    
+    if not endpoints:
+        return {
+            "passed": False,
+            "analysis": "No endpoints configured. Add endpoints to guard.yaml",
+            "details": {}
+        }
+    
+    results = []
+    failed_count = 0
+    
+    # Create a Python script to run with uvx
+    test_script = """
+import httpx
+import json
+import sys
+
+params = json.loads(sys.argv[1])
+base_url = params['base_url']
+endpoints = params['endpoints']
+timeout = params['timeout']
+verify_ssl = params['verify_ssl']
+follow_redirects = params['follow_redirects']
+
+results = []
+
+with httpx.Client(
+    timeout=timeout,
+    verify=verify_ssl,
+    follow_redirects=follow_redirects
+) as client:
+    for endpoint in endpoints:
+        path = endpoint.get('path', '')
+        method = endpoint.get('method', 'GET').upper()
+        expected_status = endpoint.get('expected_status', 200)
+        headers = endpoint.get('headers', {})
+        body = endpoint.get('body', None)
+        
+        url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+        
+        try:
+            response = client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=body if body else None
+            )
+            
+            status_match = response.status_code == expected_status
+            
+            result = {
+                'endpoint': path,
+                'method': method,
+                'url': url,
+                'status_code': response.status_code,
+                'expected_status': expected_status,
+                'passed': status_match,
+                'response_time_ms': int(response.elapsed.total_seconds() * 1000),
+            }
+            
+            if not status_match:
+                result['error'] = f"Expected {expected_status}, got {response.status_code}"
+            
+            results.append(result)
+            
+        except httpx.TimeoutException:
+            results.append({
+                'endpoint': path,
+                'method': method,
+                'url': url,
+                'passed': False,
+                'error': f"Request timed out after {timeout}s"
+            })
+        except httpx.RequestError as e:
+            results.append({
+                'endpoint': path,
+                'method': method,
+                'url': url,
+                'passed': False,
+                'error': str(e)
+            })
+
+print(json.dumps(results))
+"""
+    
+    # Run the test script with uvx
+    try:
+        result = subprocess.run(
+            ["uvx", "--with", "httpx", "python", "-c", test_script, json.dumps(params)],
+            capture_output=True,
+            text=True,
+            timeout=timeout * len(endpoints) + 30
+        )
+        
+        if result.returncode != 0:
+            return {
+                "passed": False,
+                "analysis": "Failed to run API tests. Error: " + (result.stderr or "Unknown error"),
+                "details": {"error": result.stderr}
+            }
+        
+        results = json.loads(result.stdout)
+        
+    except subprocess.TimeoutExpired:
+        return {
+            "passed": False,
+            "analysis": "API tests timed out",
+            "details": {}
+        }
+    except json.JSONDecodeError as e:
+        return {
+            "passed": False,
+            "analysis": f"Failed to parse test results: {e}",
+            "details": {"stdout": result.stdout, "stderr": result.stderr}
+        }
+    except Exception as e:
+        return {
+            "passed": False,
+            "analysis": f"Unexpected error: {e}",
+            "details": {}
+        }
+    
+    # Analyze results
+    failed_count = sum(1 for r in results if not r.get("passed", False))
+    passed = failed_count == 0
+    total_endpoints = len(endpoints)
+    
+    if passed:
+        avg_time = sum(r.get("response_time_ms", 0) for r in results) / len(results) if results else 0
+        analysis = f"✓ All {total_endpoints} endpoints responding correctly (avg: {avg_time:.0f}ms)"
+    else:
+        failed_endpoints = [r["endpoint"] for r in results if not r.get("passed", False)]
+        failure_summary = ", ".join(failed_endpoints[:3])
+        if len(failed_endpoints) > 3:
+            failure_summary += f" (+{len(failed_endpoints) - 3} more)"
+        analysis = f"✗ {failed_count} of {total_endpoints} endpoints failed: {failure_summary}"
+    
+    return {
+        "passed": passed,
+        "analysis": analysis,
+        "details": {
+            "total_endpoints": total_endpoints,
+            "failed_endpoints": failed_count,
+            "base_url": base_url,
+            "results": results,
+        }
+    }
+
+
+def main():
+    params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    result = run_guard(params)
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["passed"] else 1)
+
+
+if __name__ == "__main__":
+    main()

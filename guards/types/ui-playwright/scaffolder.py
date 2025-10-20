@@ -1,4 +1,4 @@
-"""Scaffolder for unit-pytest guard type"""
+"""Scaffolder for ui-playwright guard type"""
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 from specify_cli.guards.scaffolder import BaseScaffolder
 
 
-class UnitPytestScaffolder(BaseScaffolder):
-    """Scaffolder for unit-pytest guard type."""
+class UiPlaywrightScaffolder(BaseScaffolder):
+    """Scaffolder for ui-playwright guard type."""
     
     def scaffold(self) -> Dict[str, Any]:
         guard_file = self.project_root / ".specify" / "guards" / self.guard_id / f"{self.guard_id}.py"
@@ -17,12 +17,12 @@ class UnitPytestScaffolder(BaseScaffolder):
         context = {
             "guard_id": self.guard_id,
             "name": self.name,
-            "description": f"Unit testing with pytest for {self.name}",
-            "test_paths": ["tests/unit/"],
-            "coverage_threshold": 80,
-            "markers": [],
-            "verbose": False,
-            "fail_under": True,
+            "description": f"UI E2E testing with Playwright for {self.name}",
+            "browser": "chromium",
+            "headless": True,
+            "test_paths": ["tests/ui/"],
+            "screenshots_on_failure": True,
+            "timeout": 30000,
         }
         
         guard_content = self.render_template("guard.py.j2", context)
@@ -34,8 +34,8 @@ class UnitPytestScaffolder(BaseScaffolder):
             "command": f"python {guard_file}",
             "next_steps": [
                 f"1. Review guard configuration in .specify/guards/{self.guard_id}/guard.yaml",
-                "2. Ensure pytest and pytest-cov are installed: uv pip install pytest pytest-cov pytest-json-report",
-                "3. Create test files in: tests/unit/",
+                "2. Ensure Playwright is installed: uvx playwright install chromium",
+                "3. Create test files in: tests/ui/",
                 f"4. Run the guard: specify guard run {self.guard_id}",
                 f"5. View results: specify guard history {self.guard_id}",
             ]

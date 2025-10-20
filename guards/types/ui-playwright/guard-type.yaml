@@ -1,0 +1,198 @@
+name: ui-playwright
+category: ui
+type: playwright
+description: |
+  End-to-end UI testing with Playwright browser automation.
+  
+  **What this guard validates:**
+  - User interface functionality and workflows
+  - Cross-browser compatibility (Chromium, Firefox, WebKit)
+  - Visual rendering and element visibility
+  - User interactions (clicks, form submissions, navigation)
+  - JavaScript-heavy applications and SPAs
+  
+  **Behind the scenes:**
+  - Runs Python pytest tests using Playwright's Python API
+  - Launches real browsers (chromium/firefox/webkit) to execute tests
+  - Can run headless (no UI) or headed (visible browser) for debugging
+  - Captures screenshots automatically when tests fail
+  - Generates JSON test reports with detailed failure information
+  
+  **When to use:**
+  ✅ Testing complete user workflows (checkout, registration, login)
+  ✅ Validating UI changes that affect user experience
+  ✅ Ensuring cross-browser compatibility
+  ✅ Testing responsive design across viewports
+  ✅ Verifying JavaScript-heavy applications
+  
+  **When NOT to use:**
+  ❌ Testing API endpoints (use api-requests instead)
+  ❌ Unit testing business logic (use unit-pytest instead)
+  ❌ Checking code quality (use static-analysis-python instead)
+  
+  **Example use cases:**
+  - E2E checkout flow validation
+  - Login/authentication workflow testing
+  - Form submission and validation testing
+  - Navigation and routing testing
+  - Smoke tests for critical user paths
+
+how_to_use: |
+  **Step 1: Create the guard**
+  ```bash
+  specify guard create --type ui-playwright --name checkout-flow
+  ```
+  
+  **Step 2: Install Playwright and browsers**
+  
+  **Local development:**
+  ```bash
+  uv pip install pytest pytest-playwright
+  playwright install chromium
+  ```
+  
+  **Docker/CI environment:**
+  ```bash
+  # Use Playwright's official Docker image (includes browsers)
+  docker run -it mcr.microsoft.com/playwright/python:v1.40.0-jammy /bin/bash
+  
+  # Or install in your Dockerfile:
+  FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+  WORKDIR /app
+  COPY . .
+  RUN pip install pytest pytest-playwright
+  ```
+  
+  **Step 3: Create test files** in the configured test_paths:
+  ```python
+  # tests/ui/test_checkout.py
+  from playwright.sync_api import Page, expect
+  
+  def test_add_to_cart(page: Page):
+      page.goto("https://example.com")
+      page.click("button:text('Add to Cart')")
+      expect(page.locator(".cart-count")).to_contain_text("1")
+  
+  def test_checkout_flow(page: Page):
+      page.goto("https://example.com/cart")
+      page.click("button:text('Checkout')")
+      page.fill("#email", "test@example.com")
+      page.fill("#card-number", "4242424242424242")
+      page.click("button:text('Place Order')")
+      expect(page).to_have_url(lambda url: "confirmation" in url)
+  ```
+  
+  **Step 4: Configure parameters** in `.specify/guards/G00X/guard.yaml`:
+  ```yaml
+  params:
+    browser: chromium              # Or firefox, webkit
+    headless: true                  # Set false to watch tests run
+    test_paths:
+      - tests/ui/checkout/          # Path to your Playwright tests
+    screenshots_on_failure: true    # Capture screenshots on failure
+    timeout: 30000                  # 30 seconds per test
+  ```
+  
+  **Step 5: Run the guard**
+  ```bash
+  specify guard run G00X
+  ```
+  
+  **Debugging failures:**
+  - Set `headless: false` to watch the browser
+  - Check screenshots in test output directory
+  - View detailed history: `specify guard history G00X`
+  - Run tests manually: `uv run pytest tests/ui/ -v`
+
+params_schema:
+  browser:
+    type: string
+    enum: [chromium, firefox, webkit]
+    default: chromium
+    description: |
+      Browser engine to use for testing.
+      - chromium: Chrome/Edge (most common, fastest)
+      - firefox: Mozilla Firefox
+      - webkit: Safari engine
+      Choose based on your target audience browser usage.
+    examples:
+      - chromium
+      - firefox
+      - webkit
+  
+  headless:
+    type: boolean
+    default: true
+    description: |
+      Run browser without visible GUI.
+      - true: Faster, suitable for CI/CD pipelines
+      - false: See the browser during tests (useful for debugging)
+      Set to false when developing tests to see what's happening.
+    examples:
+      - true
+      - false
+  
+  test_paths:
+    type: array
+    items:
+      type: string
+    default: ["tests/ui/"]
+    description: |
+      Paths to Playwright test files or directories (Python pytest format).
+      Tests should use Playwright's Python API with pytest.
+      Multiple paths can be specified to organize tests by feature.
+    examples:
+      - ["tests/ui/"]
+      - ["tests/ui/smoke/", "tests/ui/critical/"]
+      - ["tests/e2e/checkout/"]
+  
+  screenshots_on_failure:
+    type: boolean
+    default: true
+    description: |
+      Automatically capture screenshots when tests fail.
+      Screenshots are saved to test-results/ directory.
+      Useful for debugging visual issues and CI/CD failure analysis.
+      Disable if storage is a concern or tests are non-visual.
+    examples:
+      - true
+      - false
+  
+  timeout:
+    type: integer
+    default: 30000
+    description: |
+      Default timeout for tests in milliseconds.
+      Individual test steps can override this.
+      Increase for slow-loading applications or complex workflows.
+      30000ms (30s) is a reasonable default for most tests.
+    examples:
+      - 30000    # 30 seconds
+      - 60000    # 60 seconds
+      - 10000    # 10 seconds (for fast smoke tests)
+
+common_pitfalls:
+  - issue: "Tests pass locally but fail in CI"
+    cause: "Browser not installed or environment differences"
+    fix: "Run 'uvx playwright install chromium' in CI setup"
+  
+  - issue: "Element not found errors"
+    cause: "Selectors changed or dynamic content not loaded"
+    fix: "Use proper wait conditions (page.wait_for_selector) and update selectors"
+  
+  - issue: "Flaky tests that sometimes pass/fail"
+    cause: "Race conditions or timing issues"
+    fix: "Use Playwright's built-in waits, avoid fixed setTimeout delays"
+  
+  - issue: "Tests are too slow"
+    cause: "Running headed mode or waiting unnecessarily"
+    fix: "Use headless: true and optimize wait conditions"
+
+best_practices:
+  - "Organize tests by feature/workflow in separate directories"
+  - "Use data-testid attributes for stable selectors"
+  - "Keep tests independent and idempotent"
+  - "Use page objects for reusable UI patterns"
+  - "Run fast smoke tests separately from comprehensive E2E tests"
+  - "Enable screenshots_on_failure for debugging"
+  - "Use meaningful test names that describe user behavior"

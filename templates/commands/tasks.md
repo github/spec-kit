@@ -4,8 +4,8 @@ scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 agent_scripts:
-  sh: "python3 -c \"from pathlib import Path; from specify_cli.guards.types import GuardType; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); types_info = GuardType.get_all_types_with_descriptions(guards_base); guards_list = registry.list_guards(); history = registry.get_all_history(20); print(json.dumps({'guard_types': types_info, 'existing_guards': guards_list, 'recent_history': history}, indent=2))\""
-  ps: "python -c \"from pathlib import Path; from specify_cli.guards.types import GuardType; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); types_info = GuardType.get_all_types_with_descriptions(guards_base); guards_list = registry.list_guards(); history = registry.get_all_history(20); print(json.dumps({'guard_types': types_info, 'existing_guards': guards_list, 'recent_history': history}, indent=2))\""
+  sh: "specify guard types -v; echo '\n=== EXISTING GUARDS ==='; specify guard list"
+  ps: "specify guard types -v; Write-Output '\n=== EXISTING GUARDS ==='; specify guard list"
 ---
 
 ## User Input
@@ -20,16 +20,25 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-1.5. **Load Guard Context** (MANDATORY): Run `{AGENT_SCRIPT}` to get:
-   - Available guard types (for new guard creation)
-   - Existing guards (to avoid duplicates, understand current coverage)
-   - Recent execution history (to learn from past failures/successes)
+1.5. **Load Guard Context** (MANDATORY): 
+   
+   **Step 1 - Check available guard types**:
+   ```bash
+   uv run specify guard types -v
+   ```
+   This shows the Category × Type matrix with all available guard types.
+   
+   **Step 2 - Check existing guards**:
+   ```bash
+   uv run specify guard list
+   ```
+   This shows all created guards grouped by category with their status.
    
    Use this information to:
-   - Identify which guard types match validation needs from plan.md
-   - Reference existing guards in tasks (avoid creating duplicates)
-   - Learn from history notes about common pitfalls
-   - **CRITICAL**: If plan.md has "Guard Validation Strategy" section, use it to create guards
+   - Match validation needs from plan.md to available guard types
+   - Avoid creating duplicate guards (check guard list)
+   - Understand current test coverage
+   - **CRITICAL**: If plan.md has "Guard Validation Strategy" section, use it to determine which guards to create
 
 2. **Load design documents**: Read from FEATURE_DIR:
    - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
@@ -162,9 +171,17 @@ Every task MUST strictly follow this format:
 **When to create guards** (EVERY user story needs validation):
 
 **If guard type exists** (check available types from step 1.5):
-- **API endpoints** → `specify guard create --type api --name <feature-name>`
-- **Business logic/algorithms** → `specify guard create --type unit-pytest --name <feature-name>`
-- **Use existing guard types when available**
+- **API endpoints** → 
+  ```bash
+  uv run specify guard create --type api --name <feature-name> --task <task-id> --tag api
+  ```
+- **Business logic/algorithms** → 
+  ```bash
+  uv run specify guard create --type unit-pytest --name <feature-name> --task <task-id> --tag unit
+  ```
+- Replace `<feature-name>` with kebab-case description (e.g., user-authentication)
+- Replace `<task-id>` with the user story ID (e.g., US1, US2, T015)
+- Add relevant tags for organization
 
 **If NO guard type matches** (validation checkpoint but no suitable type):
 - **MUST create custom guard type FIRST**:

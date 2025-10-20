@@ -1,45 +1,263 @@
 name: unit-pytest
-version: 1.0.0
-description: |
-  Opinionated unit test scaffolds using pytest.
-  Generates comprehensive test files with fixtures, mocks, and assertions.
 category: unit
-author: Spec Kit Core Team
-license: MIT
-scaffolder_class: UnitPytestScaffolder
+type: pytest
+description: |
+  Unit test validation with pytest framework and code coverage tracking.
+  
+  **What this guard validates:**
+  - Unit test execution and pass/fail status
+  - Code coverage percentage against thresholds
+  - Test quality through pytest markers (unit, integration, slow, fast)
+  - Business logic correctness
+  - Function and class behavior in isolation
+  
+  **Behind the scenes:**
+  - Runs Python pytest tests via `uv run pytest`
+  - Measures code coverage with pytest-cov plugin
+  - Generates JSON reports for structured result parsing
+  - Enforces minimum coverage thresholds (configurable)
+  - Supports test filtering via pytest markers
+  - Fails if coverage below threshold or tests fail
+  
+  **When to use:**
+  ✅ Testing business logic and algorithms
+  ✅ Validating individual functions and classes
+  ✅ Ensuring code coverage meets standards
+  ✅ Running fast, isolated unit tests
+  ✅ Testing Python modules and packages
+  ✅ Verifying refactoring didn't break functionality
+  
+  **When NOT to use:**
+  ❌ Testing UI functionality (use ui-playwright instead)
+  ❌ Testing API endpoints end-to-end (use api-requests instead)
+  ❌ Checking code style (use static-analysis-python instead)
+  ❌ Testing database integration (use separate integration guard)
+  
+  **Example use cases:**
+  - Guard for core business logic tests
+  - Coverage enforcement for critical modules
+  - Pre-commit test validation
+  - CI/CD test gates
+  - TDD workflow validation
 
-dependencies:
-  runtime:
-    - python: ">=3.11"
-  packages:
-    - pytest: ">=7.0"
-    - pytest-mock: ">=3.10"
+how_to_use: |
+  **Step 1: Create the guard**
+  ```bash
+  specify guard create --type unit-pytest --name unit-tests
+  ```
+  
+  **Step 2: Install pytest and coverage tools**
+  ```bash
+  uv pip install pytest pytest-cov pytest-json-report
+  ```
+  
+  **Step 3: Create test files** in the configured test_paths:
+  ```python
+  # tests/unit/test_calculator.py
+  import pytest
+  from myproject.calculator import Calculator
+  
+  def test_addition():
+      calc = Calculator()
+      assert calc.add(2, 3) == 5
+  
+  def test_subtraction():
+      calc = Calculator()
+      assert calc.subtract(5, 3) == 2
+  
+  @pytest.mark.unit
+  def test_multiplication():
+      calc = Calculator()
+      assert calc.multiply(3, 4) == 12
+  
+  @pytest.mark.unit
+  @pytest.mark.fast
+  def test_division():
+      calc = Calculator()
+      assert calc.divide(10, 2) == 5
+  
+  @pytest.mark.unit
+  def test_division_by_zero():
+      calc = Calculator()
+      with pytest.raises(ValueError):
+          calc.divide(10, 0)
+  ```
+  
+  **Step 4: Configure parameters** in `.specify/guards/G00X/guard.yaml`:
+  ```yaml
+  params:
+    test_paths:
+      - tests/unit/              # Path to your unit tests
+    coverage_threshold: 80       # Require 80% coverage
+    markers:                     # Optional: filter by markers
+      - unit
+      - fast
+    verbose: false               # Set true for detailed output
+    fail_under: true             # Fail if coverage < threshold
+  ```
+  
+  **Step 5: Run the guard**
+  ```bash
+  specify guard run G00X
+  ```
+  
+  **Debugging failures:**
+  - Set `verbose: true` to see each test result
+  - Generate HTML coverage report: `uv run pytest --cov --cov-report=html`
+  - View report: Open `htmlcov/index.html` in browser
+  - Check guard history: `specify guard history G00X`
+  - Run tests manually: `uv run pytest tests/unit/ -v`
+  
+  **Docker usage:**
+  Works out of the box - uses `uv run pytest` which handles dependencies.
+  No special Docker configuration needed.
 
-compatibility:
-  languages: [python]
-  frameworks: [fastapi, flask, django, cli]
+params_schema:
+  test_paths:
+    type: array
+    items:
+      type: string
+    default: ["tests/unit/"]
+    description: |
+      Paths to pytest test files or directories.
+      Can specify multiple paths to organize tests by module/feature.
+      Tests should follow pytest naming conventions (test_*.py or *_test.py).
+    examples:
+      - ["tests/unit/"]
+      - ["tests/unit/core/", "tests/unit/utils/"]
+      - ["tests/"]
+  
+  coverage_threshold:
+    type: integer
+    minimum: 0
+    maximum: 100
+    default: 80
+    description: |
+      Minimum code coverage percentage required for guard to pass.
+      - 80%: Good baseline for most projects
+      - 90%+: Strict coverage for critical code
+      - 70%: Acceptable for legacy code being improved
+      Set to 0 to disable coverage enforcement (not recommended).
+    examples:
+      - 80   # Good baseline
+      - 90   # Strict coverage
+      - 70   # Legacy code
+      - 100  # Perfect coverage (rarely achievable)
+  
+  markers:
+    type: array
+    items:
+      type: string
+    default: []
+    description: |
+      Pytest markers to filter tests (ANDed together).
+      Use markers to organize tests by type, speed, or feature.
+      Empty array = run all tests.
+      Configure markers in pytest.ini or pyproject.toml.
+    examples:
+      - []                    # Run all tests
+      - ["unit"]              # Only unit tests
+      - ["unit", "fast"]      # Unit tests marked as fast
+      - ["core"]              # Tests for core functionality
+  
+  verbose:
+    type: boolean
+    default: false
+    description: |
+      Enable verbose pytest output showing each test result.
+      - false: Summary only (faster, cleaner output)
+      - true: Show each test name and result (debugging)
+      Useful when developing tests or debugging failures.
+    examples:
+      - false  # Production/CI
+      - true   # Development/debugging
+  
+  fail_under:
+    type: boolean
+    default: true
+    description: |
+      Fail guard if coverage is below threshold.
+      - true: Enforce coverage threshold (recommended)
+      - false: Report coverage but don't fail on low coverage
+      Setting to false defeats the purpose of coverage tracking.
+    examples:
+      - true   # Enforce coverage (recommended)
+      - false  # Report only (not recommended)
 
-scaffolding:
-  creates:
-    - tests/unit/guards/{guard_id}_{name}.py
-  updates:
-    - Makefile
+common_pitfalls:
+  - issue: "Coverage below threshold"
+    cause: "Insufficient test coverage for new/changed code"
+    fix: |
+      1. Generate HTML coverage report: `uv run pytest --cov --cov-report=html`
+      2. Open htmlcov/index.html to see uncovered lines
+      3. Write tests for uncovered code paths
+      4. Exclude non-testable files in .coveragerc if needed
+  
+  - issue: "Tests fail but pass locally"
+    cause: "Environment differences or missing dependencies"
+    fix: |
+      1. Ensure all dependencies installed: `uv pip install -e .`
+      2. Check for hard-coded paths or assumptions
+      3. Review guard history for patterns
+      4. Use fixtures for test data and setup
+  
+  - issue: "ImportError or ModuleNotFoundError"
+    cause: "Python path issues or missing package installation"
+    fix: |
+      1. Install project in editable mode: `uv pip install -e .`
+      2. Check PYTHONPATH is correctly set
+      3. Verify test file imports match package structure
+  
+  - issue: "Tests are too slow"
+    cause: "Running integration tests or unnecessary setup"
+    fix: |
+      1. Use markers to separate fast unit tests from slow integration tests
+      2. Mark slow tests: `@pytest.mark.slow`
+      3. Run only fast tests: Set markers: ["unit", "fast"]
+      4. Use mocking for external dependencies
 
-execution:
-  command: "pytest tests/unit/guards/{guard_id}_{name}.py -v"
-  timeout: 60
-  exit_codes:
-    success: 0
-    failure: 1
+best_practices:
+  - "Organize tests to mirror source code structure (tests/unit/mymodule/test_feature.py)"
+  - "Use meaningful test names that describe behavior (test_user_can_login_with_valid_credentials)"
+  - "Keep tests isolated and independent (no shared state between tests)"
+  - "Use pytest fixtures for setup and teardown"
+  - "Tag tests with markers (unit, integration, slow, fast)"
+  - "Aim for 80%+ coverage on critical business logic"
+  - "Mock external dependencies (databases, APIs, file systems)"
+  - "Keep unit tests fast (<1s each when possible)"
+  - "Write tests before implementation (TDD workflow)"
+  - "Review coverage reports regularly to find gaps"
 
-ai_hints:
-  when_to_use: |
-    Use this guard type when validating individual functions or classes in isolation.
-    Ideal for testing business logic, utility functions, and class methods.
-  boilerplate_explanation: |
-    Generates a pytest test file with:
-    - Comprehensive test structure (setup, execution, assertion)
-    - Fixture definitions for test dependencies
-    - Mock objects for external dependencies
-    - Assertion examples for common validation patterns
-    - TODO comments guiding AI agent where to add tests
+failure_recovery: |
+  **When the guard fails:**
+  
+  1. **Check guard output** for specific error:
+     ```bash
+     specify guard history G00X
+     ```
+  
+  2. **Analyze failure type:**
+     - Test failures: Fix broken tests or code
+     - Coverage too low: Add tests for uncovered code
+     - Import errors: Fix package installation
+  
+  3. **Add diagnostic comment** (REQUIRED):
+     ```bash
+     specify guard comment G00X \
+       --category root-cause \
+       --done "Identified failing test: test_user_login" \
+       --expected "Test passes after fixing auth logic" \
+       --todo "Update authentication service to handle edge case"
+     ```
+  
+  4. **Fix and re-run:**
+     - Apply fix based on analysis
+     - Re-run guard: `specify guard run G00X`
+     - Add follow-up comment documenting fix
+  
+  **Comment categories:**
+  - `root-cause`: Initial diagnosis of failure
+  - `fix-applied`: Document what was changed
+  - `investigation`: Note findings during debugging
+  - `workaround`: Temporary fix applied
+  - `false-positive`: Guard failure was incorrect

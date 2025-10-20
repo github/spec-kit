@@ -4,8 +4,8 @@ scripts:
   sh: scripts/bash/setup-plan.sh --json
   ps: scripts/powershell/setup-plan.ps1 -Json
 agent_scripts:
-  sh: "scripts/bash/update-agent-context.sh __AGENT__; python3 -c \"from pathlib import Path; from specify_cli.guards.types import GuardType; import json; guards_base = Path('.specify/guards'); print('\\n=== AVAILABLE GUARD TYPES ==='); [print(f\\\"{t['name']} ({t['category']}) [{t['source']}]: {t['when_to_use']}\\\") for t in GuardType.get_all_types_with_descriptions(guards_base)]\""
-  ps: "scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__; python -c \"from pathlib import Path; from specify_cli.guards.types import GuardType; import json; guards_base = Path('.specify/guards'); print('\\n=== AVAILABLE GUARD TYPES ==='); [print(f\\\"{t['name']} ({t['category']}) [{t['source']}]: {t['when_to_use']}\\\") for t in GuardType.get_all_types_with_descriptions(guards_base)]\""
+  sh: "scripts/bash/update-agent-context.sh __AGENT__; specify guard types -v"
+  ps: "scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__; specify guard types -v"
 ---
 
 ## User Input
@@ -21,16 +21,28 @@ You **MUST** consider the user input before proceeding (if not empty).
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied). **Run {AGENT_SCRIPT} to load guard types and agent context.**
+   
+   **CRITICAL - Load Available Guard Types**:
+   ```bash
+   uv run specify guard types -v
+   ```
+   This displays the Category × Type matrix showing:
+   - Available guard types (e.g., unit-pytest, api)
+   - Category (how to build guards): pytest, requests, etc.
+   - Type (what to validate): unit-testing, api-contracts, etc.
+   - Teaching content for each type
+   
+   Use this output to identify which guard types match your validation needs.
 
 3. **Identify validation requirements** (MANDATORY):
    - Scan feature spec for validation checkpoints (APIs, data models, workflows, business logic, quality standards)
-   - For EACH validation checkpoint, determine appropriate guard type:
-     * **API endpoints** → `api` guard type
+   - For EACH validation checkpoint, determine appropriate guard type by matching against output from `specify guard types -v`:
+     * **API endpoints** → `api` guard type (if available)
      * **Database/data models** → Create custom `database` or `data-validation` guard type
      * **UI/user workflows** → Create custom `e2e` or `workflow` guard type  
-     * **Business logic/algorithms** → `unit-pytest` guard type
+     * **Business logic/algorithms** → `unit-pytest` guard type (if available)
      * **Code quality/standards** → Create custom `lint` or `quality` guard type
-   - **If no existing guard type matches**: Document need for custom guard type creation
+   - **If no existing guard type matches**: Document need for custom guard type creation (will be created in /tasks)
    - Add "Guard Validation Strategy" section to plan.md documenting:
      ```markdown
      ## Guard Validation Strategy

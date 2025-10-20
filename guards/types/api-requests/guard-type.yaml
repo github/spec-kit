@@ -1,0 +1,334 @@
+name: api-requests
+category: api
+type: requests
+description: |
+  API endpoint contract validation with HTTP requests using httpx library.
+  
+  **What this guard validates:**
+  - API endpoint availability and response codes
+  - HTTP method support (GET, POST, PUT, PATCH, DELETE, etc.)
+  - Response status code correctness
+  - API performance (response times)
+  - SSL/TLS certificate validity
+  - Redirect behavior
+  - Custom headers and authentication
+  
+  **Behind the scenes:**
+  - Uses httpx library via `uvx` (no local installation needed)
+  - Executes inline Python script for each endpoint test
+  - Makes real HTTP requests to configured endpoints
+  - Validates response status codes against expectations
+  - Tracks response times for performance monitoring
+  - Supports all HTTP methods and custom headers
+  - Works in Docker containers without additional setup
+  
+  **When to use:**
+  ✅ Validating API health and availability
+  ✅ Testing API contracts and status codes
+  ✅ Monitoring API performance
+  ✅ Checking authentication endpoints
+  ✅ Verifying external API integrations
+  ✅ Smoke testing API deployments
+  ✅ Testing both success and error responses
+  
+  **When NOT to use:**
+  ❌ Testing complex business logic (use unit-pytest instead)
+  ❌ Testing UI functionality (use ui-playwright instead)
+  ❌ Checking code quality (use static-analysis-python instead)
+  ❌ Deep response schema validation (extend this guard or use contracts)
+  
+  **Example use cases:**
+  - API health checks and smoke tests
+  - External API integration validation
+  - Authentication endpoint testing
+  - Status code contract validation
+  - Performance monitoring (response times)
+  - CI/CD deployment verification
+
+how_to_use: |
+  **Step 1: Create the guard**
+  ```bash
+  specify guard create --type api-requests --name api-health
+  ```
+  
+  **Step 2: No installation needed!**
+  Guard uses `uvx --with httpx` so no local httpx installation required.
+  Works immediately in any environment with uvx (Docker, CI/CD, local).
+  
+  **Step 3: Configure endpoints** in `.specify/guards/G00X/guard.yaml`:
+  ```yaml
+  params:
+    base_url: https://api.example.com
+    timeout: 10
+    verify_ssl: true
+    follow_redirects: true
+    endpoints:
+      # Health check endpoint
+      - path: /health
+        method: GET
+        expected_status: 200
+      
+      # API status endpoint
+      - path: /api/v1/status
+        method: GET
+        expected_status: 200
+      
+      # Test authentication required
+      - path: /api/v1/users
+        method: GET
+        expected_status: 401  # Expect 401 without auth
+      
+      # Test with authentication
+      - path: /api/v1/profile
+        method: GET
+        expected_status: 200
+        headers:
+          Authorization: Bearer ${API_TOKEN}
+      
+      # Test POST request
+      - path: /api/v1/users
+        method: POST
+        expected_status: 201
+        headers:
+          Content-Type: application/json
+        body:
+          name: "Test User"
+          email: "test@example.com"
+  ```
+  
+  **Step 4: Set environment variables** (if using auth):
+  ```bash
+  export API_TOKEN=your-token-here
+  specify guard run G00X
+  ```
+  
+  **Step 5: Run the guard**
+  ```bash
+  specify guard run G00X
+  ```
+  
+  **Example: Testing public APIs**
+  ```yaml
+  # Test PyPI API
+  params:
+    base_url: https://pypi.org/pypi
+    timeout: 10
+    verify_ssl: true
+    endpoints:
+      - path: /httpx/json
+        method: GET
+        expected_status: 200
+      - path: /pytest/json
+        method: GET
+        expected_status: 200
+  ```
+  
+  **Debugging failures:**
+  - Check guard output for specific endpoint failures
+  - Test manually: `curl -v https://api.example.com/endpoint`
+  - Review response status codes in guard details
+  - Check network connectivity and SSL certificates
+  - View guard history: `specify guard history G00X`
+  
+  **Docker usage:**
+  Works perfectly in Docker - uses uvx for dependency isolation.
+  No special configuration needed.
+
+params_schema:
+  base_url:
+    type: string
+    default: ""
+    description: |
+      Base URL for all API endpoints.
+      All endpoint paths will be appended to this base URL.
+      Should include protocol (https:// or http://) but NOT trailing slash.
+      Can be overridden per-endpoint if needed.
+    examples:
+      - "https://api.example.com"
+      - "https://pypi.org/pypi"
+      - "http://localhost:8000"
+      - "https://httpbin.org"
+  
+  endpoints:
+    type: array
+    items:
+      type: object
+      properties:
+        path:
+          type: string
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+        expected_status:
+          type: integer
+        headers:
+          type: object
+        body:
+          type: object
+    default: []
+    description: |
+      List of endpoints to test.
+      Each endpoint specifies:
+      - path: Endpoint path (relative to base_url)
+      - method: HTTP method (GET, POST, PUT, DELETE, etc.)
+      - expected_status: Expected HTTP status code
+      - headers: Optional custom headers (e.g., Authorization)
+      - body: Optional request body for POST/PUT/PATCH
+      
+      Test both success (200, 201) and error (401, 404, 500) responses.
+    examples:
+      - path: "/health"
+        method: "GET"
+        expected_status: 200
+      - path: "/api/v1/users"
+        method: "POST"
+        expected_status: 201
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer token"
+        body:
+          name: "Test"
+  
+  timeout:
+    type: integer
+    default: 10
+    description: |
+      Request timeout in seconds.
+      How long to wait for each endpoint before timing out.
+      - 10s: Good default for most APIs
+      - 5s: Fast APIs or health checks
+      - 30s: Slow APIs or complex operations
+      Increase for slow endpoints or network latency.
+    examples:
+      - 10   # Default - most APIs
+      - 5    # Fast APIs
+      - 30   # Slow APIs
+      - 60   # Very slow operations
+  
+  verify_ssl:
+    type: boolean
+    default: true
+    description: |
+      Verify SSL/TLS certificates.
+      - true: Verify certificates (recommended for production)
+      - false: Skip verification (only for development/testing)
+      Use false only for self-signed certificates in dev environments.
+    examples:
+      - true   # Production (verify SSL)
+      - false  # Development only (skip verification)
+  
+  follow_redirects:
+    type: boolean
+    default: true
+    description: |
+      Follow HTTP redirects (301, 302, 307, 308).
+      - true: Follow redirects automatically
+      - false: Don't follow redirects (test redirect response)
+      Set to false if testing redirect behavior specifically.
+    examples:
+      - true   # Follow redirects (normal behavior)
+      - false  # Test redirect itself
+
+common_pitfalls:
+  - issue: "Unexpected status code (e.g., Expected 200, got 404)"
+    cause: "Endpoint path incorrect, API changed, or resource doesn't exist"
+    fix: |
+      1. Verify endpoint path in guard.yaml
+      2. Check API documentation for correct path
+      3. Test manually: `curl -v https://api.example.com/endpoint`
+      4. Update expected_status if API behavior changed legitimately
+  
+  - issue: "Request timeout"
+    cause: "API slow to respond, network issues, or server down"
+    fix: |
+      1. Increase timeout parameter in guard.yaml
+      2. Check API server status and health
+      3. Verify network connectivity
+      4. Check for rate limiting
+      5. Review guard history for timeout patterns
+  
+  - issue: "SSL certificate verification failed"
+    cause: "Invalid, expired, or self-signed certificate"
+    fix: |
+      1. For production: Fix certificate on server
+      2. For development: Set verify_ssl: false (temporary)
+      3. Check certificate expiration
+      4. Verify certificate chain
+  
+  - issue: "Connection refused or cannot connect"
+    cause: "Server not running, wrong URL, firewall blocking"
+    fix: |
+      1. Verify base_url is correct
+      2. Check server is running and accessible
+      3. Test with curl: `curl https://api.example.com/health`
+      4. Check firewall and network rules
+      5. Ensure correct port in URL
+
+best_practices:
+  - "Organize endpoints by feature or service in separate guards"
+  - "Test both success scenarios (200, 201) and expected errors (401, 404)"
+  - "Use environment variables for sensitive data (tokens, API keys)"
+  - "Set appropriate timeouts for different endpoint types"
+  - "Include health check endpoints for smoke tests"
+  - "Monitor response times in guard details"
+  - "Test error responses explicitly (401, 403, 404, 500)"
+  - "Use meaningful endpoint names in path field"
+  - "Group related endpoints in single guard"
+  - "Keep timeout reasonable (10s default, adjust as needed)"
+
+failure_recovery: |
+  **When the guard fails:**
+  
+  1. **Check guard output** for which endpoint(s) failed:
+     ```bash
+     specify guard history G00X
+     ```
+  
+  2. **Analyze failure details:**
+     - Review actual vs expected status code
+     - Check response time (timeout?)
+     - Look for error messages in details
+  
+  3. **Test endpoint manually:**
+     ```bash
+     curl -v -X GET https://api.example.com/endpoint
+     # Or with auth:
+     curl -v -H "Authorization: Bearer token" https://api.example.com/endpoint
+     ```
+  
+  4. **Add diagnostic comment** (REQUIRED):
+     ```bash
+     specify guard comment G00X \
+       --category root-cause \
+       --done "Endpoint /api/users returning 500 instead of 200" \
+       --expected "Status 200 after server fix" \
+       --todo "Check server logs and fix internal error"
+     ```
+  
+  5. **Common fixes:**
+     - Update expected_status if API behavior changed
+     - Increase timeout if requests are slow
+     - Fix authentication headers if 401/403
+     - Correct endpoint path if 404
+     - Check server health if 500/503
+  
+  6. **Re-run after fix:**
+     ```bash
+     specify guard run G00X
+     ```
+  
+  7. **Document resolution** (REQUIRED):
+     ```bash
+     specify guard comment G00X \
+       --category fix-applied \
+       --done "Updated endpoint path from /users to /api/v1/users" \
+       --expected "All endpoints pass" \
+       --todo "None - monitor for stability"
+     ```
+  
+  **Comment categories:**
+  - `root-cause`: Initial diagnosis
+  - `fix-applied`: What was changed to fix
+  - `investigation`: Findings during debugging
+  - `workaround`: Temporary fix
+  - `false-positive`: Guard failure was incorrect

@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Guard {{ guard_id }}: {{ name }} - {{ description }}"""
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict
+
+
+def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
+    browser = params.get("browser", "{{ browser }}")
+    headless = params.get("headless", {{ "True" if headless else "False" }})
+    test_paths = params.get("test_paths", {{ test_paths }})
+    screenshots = params.get("screenshots_on_failure", {{ "True" if screenshots_on_failure else "False" }})
+    timeout = params.get("timeout", {{ timeout }})
+    
+    # Build pytest command with playwright
+    cmd = ["uv", "run", "pytest"]
+    
+    # Add test paths
+    for path in test_paths:
+        if Path(path).exists():
+            cmd.append(path)
+        else:
+            return {
+                "passed": False,
+                "analysis": f"Test path not found: {path}",
+                "details": {"missing_path": path}
+            }
+    
+    # Playwright pytest options
+    cmd.extend([
+        f"--browser={browser}",
+        "--headed" if not headless else "--headless",
+        "--tracing=retain-on-failure" if screenshots else "--tracing=off",
+        "--screenshot=only-on-failure" if screenshots else "--screenshot=off",
+        f"--timeout={timeout}",
+        "-v",  # Verbose output
+        "--tb=short",  # Short traceback format
+        "--json-report",  # Generate JSON report
+        "--json-report-file=.pytest-report.json",
+    ])
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except FileNotFoundError:
+        return {
+            "passed": False,
+            "analysis": "pytest or playwright not found. Install: uv pip install pytest pytest-playwright",
+            "details": {}
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "passed": False,
+            "analysis": "Tests timed out after 300s",
+            "details": {}
+        }
+    
+    # Parse pytest JSON report
+    test_report = {}
+    report_file = Path(".pytest-report.json")
+    if report_file.exists():
+        with open(report_file) as f:
+            test_report = json.load(f)
+        report_file.unlink()  # Clean up
+    
+    passed = result.returncode == 0
+    
+    summary = test_report.get("summary", {})
+    total_tests = summary.get("total", 0)
+    passed_tests = summary.get("passed", 0)
+    failed_tests = summary.get("failed", 0)
+    
+    if passed:
+        analysis = f"✓ All {total_tests} UI tests passed ({browser}, {'headless' if headless else 'headed'})"
+    else:
+        failures = []
+        for test in test_report.get("tests", []):
+            if test.get("outcome") == "failed":
+                test_name = test.get("nodeid", "unknown").split("::")[-1]
+                failures.append(test_name)
+        
+        failure_summary = ", ".join(failures[:3])
+        if len(failures) > 3:
+            failure_summary += f" (+{len(failures) - 3} more)"
+        
+        analysis = f"✗ {failed_tests} of {total_tests} tests failed: {failure_summary}"
+    
+    return {
+        "passed": passed,
+        "analysis": analysis,
+        "details": {
+            "total_tests": total_tests,
+            "passed_tests": passed_tests,
+            "failed_tests": failed_tests,
+            "browser": browser,
+            "headless": headless,
+            "paths_checked": test_paths,
+            "screenshots_enabled": screenshots,
+        }
+    }
+
+
+def main():
+    params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    result = run_guard(params)
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["passed"] else 1)
+
+
+if __name__ == "__main__":
+    main()

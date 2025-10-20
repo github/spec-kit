@@ -1,132 +1,181 @@
-import yaml
+"""
+Guard CLI Data Models - Category × Type Architecture
+
+This module defines all data models for the guard system following
+the Category × Type matrix organization.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 
+@dataclass
+class Category:
+    """
+    Technology/tooling for building guards (how you build the guard).
+    
+    Examples: pytest, docker, vitest, shell, mermaid
+    """
+    name: str
+    description: str
+    yaml_path: Path
+    src_path: Optional[Path]
+    invocation_pattern: str
+    input_schema: dict
+    output_schema: dict
+    params_schema: dict
+    teaching_content: str
+
+
+@dataclass
+class Type:
+    """
+    Functional validation purpose (what the guard validates).
+    
+    Examples: unit-testing, api-contracts, security, ux-flows
+    """
+    name: str
+    description: str
+    standard_definition: str
+    success_criteria: list[str]
+    common_failures: list[str]
+    teaching_content: str
+
+
+@dataclass
 class GuardType:
+    """
+    Intersection of Category × Type (defines how to build/run guards).
     
-    def __init__(self, guard_type_dir: Path):
-        self.guard_type_dir = guard_type_dir
-        self.name = guard_type_dir.name
-        self.manifest_path = guard_type_dir / "guard-type.yaml"
-        self.manifest = self._load_manifest()
+    Example: pytest-unit-tests = pytest (category) × unit-testing (type)
+    """
+    id: str
+    category: Category
+    type: Type
+    scaffolder_path: Path
+    templates_dir: Path
+    combined_teaching: str
+
+
+@dataclass
+class GuardInstance:
+    """
+    Instantiated guard in a codebase (parameterized microapp).
     
-    def _load_manifest(self) -> Dict:
-        if not self.manifest_path.exists():
-            raise FileNotFoundError(f"Guard type manifest not found: {self.manifest_path}")
-        
-        with open(self.manifest_path, 'r') as f:
-            return yaml.safe_load(f)
+    Example: G007 - a specific pytest unit test guard for feature X
+    """
+    id: str
+    guard_type: GuardType
+    name: str
+    created_at: datetime
+    files: list[Path]
+    command: str
+    params: dict
+    tags: list[str] = field(default_factory=list)
+    tasks: list[str] = field(default_factory=list)
+
+
+class CommentCategory(Enum):
+    """Limited set of comment categories for structured diagnostics."""
+    ROOT_CAUSE = "root-cause"
+    FIX_APPLIED = "fix-applied"
+    INVESTIGATION = "investigation"
+    WORKAROUND = "workaround"
+    FALSE_POSITIVE = "false-positive"
+
+
+@dataclass
+class CommentNote:
+    """
+    Structured note template for guard run comments.
     
-    def validate_structure(self) -> bool:
-        required_fields = ["name", "version", "description", "category"]
-        
-        for field in required_fields:
-            if field not in self.manifest:
-                raise ValueError(f"Missing required field in manifest: {field}")
-        
-        return True
+    Creates diagnostic narrative: done → expected → todo
+    """
+    done: str  # What was done since last run
+    expected: str  # What is expected next run
+    todo: str  # What will be done before next run
+
+
+@dataclass
+class Comment:
+    """
+    Differential diagnosis comment for a guard run.
     
-    @staticmethod
-    def list_types(types_dir: Path) -> List[str]:
-        """List all guard types from both official and custom directories.
-        
-        Args:
-            types_dir: Base guards directory (e.g., .specify/guards)
-        
-        Returns:
-            List of type names from types/ and types-custom/ combined
-        """
-        type_names = []
-        
-        official_dir = types_dir / "types"
-        if official_dir.exists():
-            type_names.extend([
-                d.name for d in official_dir.iterdir() 
-                if d.is_dir() and (d / "guard-type.yaml").exists()
-            ])
-        
-        custom_dir = types_dir / "types-custom"
-        if custom_dir.exists():
-            type_names.extend([
-                d.name for d in custom_dir.iterdir() 
-                if d.is_dir() and (d / "guard-type.yaml").exists()
-            ])
-        
-        return type_names
+    Provides structured tracking of investigation and fixes.
+    """
+    timestamp: datetime
+    category: CommentCategory
+    note: CommentNote
+
+
+@dataclass
+class GuardRun:
+    """
+    Single execution of a guard with results and analysis.
     
-    @staticmethod
-    def load_type(types_dir: Path, type_name: str) -> Optional['GuardType']:
-        """Load a guard type from either official or custom directory.
-        
-        Args:
-            types_dir: Base guards directory (e.g., .specify/guards)
-            type_name: Name of the guard type
-        
-        Returns:
-            GuardType instance or None if not found
-        """
-        # Check official types first
-        official_dir = types_dir / "types" / type_name
-        if official_dir.exists() and (official_dir / "guard-type.yaml").exists():
-            return GuardType(official_dir)
-        
-        # Check custom types
-        custom_dir = types_dir / "types-custom" / type_name
-        if custom_dir.exists() and (custom_dir / "guard-type.yaml").exists():
-            return GuardType(custom_dir)
-        
-        return None
+    Stored in guard's history.json file.
+    """
+    run_id: str
+    guard_id: str
+    timestamp: datetime
+    passed: bool  # Simplified: whether guard passed
+    exit_code: int
+    duration_ms: int  # Duration in milliseconds
+    stdout: str
+    stderr: str = ""
+    analysis: str = ""  # Simplified: text analysis instead of dict
+    comments: list[Comment] = field(default_factory=list)
     
-    @staticmethod
-    def get_all_types_with_descriptions(types_dir: Path) -> List[Dict]:
-        """Get all guard types with their descriptions for AI agent context.
-        
-        Scans both official (types/) and custom (types-custom/) directories.
-        
-        Args:
-            types_dir: Base guards directory (e.g., .specify/guards)
-        
-        Returns:
-            List of dicts with type metadata, includes 'source' field (official/custom)
-        """
-        types_info = []
-        
-        official_dir = types_dir / "types"
-        custom_dir = types_dir / "types-custom"
-        
-        # Scan official types
-        if official_dir.exists():
-            for type_name in [d.name for d in official_dir.iterdir() 
-                             if d.is_dir() and (d / "guard-type.yaml").exists()]:
-                guard_type = GuardType(official_dir / type_name)
-                types_info.append({
-                    "name": guard_type.manifest.get("name"),
-                    "version": guard_type.manifest.get("version"),
-                    "category": guard_type.manifest.get("category"),
-                    "description": guard_type.manifest.get("description", "").strip(),
-                    "when_to_use": guard_type.manifest.get("ai_hints", {}).get("when_to_use", "").strip(),
-                    "boilerplate_explanation": guard_type.manifest.get("ai_hints", {}).get("boilerplate_explanation", "").strip(),
-                    "dependencies": guard_type.manifest.get("dependencies", {}),
-                    "scaffolder_class": guard_type.manifest.get("scaffolder_class"),
-                    "source": "official"
-                })
-        
-        # Scan custom types
-        if custom_dir.exists():
-            for type_name in [d.name for d in custom_dir.iterdir() 
-                             if d.is_dir() and (d / "guard-type.yaml").exists()]:
-                guard_type = GuardType(custom_dir / type_name)
-                types_info.append({
-                    "name": guard_type.manifest.get("name"),
-                    "version": guard_type.manifest.get("version"),
-                    "category": guard_type.manifest.get("category"),
-                    "description": guard_type.manifest.get("description", "").strip(),
-                    "when_to_use": guard_type.manifest.get("ai_hints", {}).get("when_to_use", "").strip(),
-                    "boilerplate_explanation": guard_type.manifest.get("ai_hints", {}).get("boilerplate_explanation", "").strip(),
-                    "dependencies": guard_type.manifest.get("dependencies", {}),
-                    "scaffolder_class": guard_type.manifest.get("scaffolder_class"),
-                    "source": "custom"
-                })
-        
-        return types_info
+    # Optional fields for future use
+    git_commit: Optional[str] = None
+    params: dict = field(default_factory=dict)
+    guard_version: Optional[str] = None
+
+
+class GuardPolicy(Enum):
+    """Policy for task completion based on guard results."""
+    ALL_PASS = "all_pass"  # All guards must pass
+    ANY_PASS = "any_pass"  # At least one guard must pass
+    MAJORITY_PASS = "majority_pass"  # >50% guards must pass
+
+
+@dataclass
+class GuardMetadata:
+    """
+    Guard metadata for manifest tracking.
+    
+    Stored in guards-manifest.yaml.
+    """
+    type: str
+    category: str
+    name: str
+    created: datetime
+    tags: list[str]
+    tasks: list[str]
+
+
+@dataclass
+class TaskGuards:
+    """
+    Guards required for a specific task.
+    
+    Stored in guards-manifest.yaml tasks section.
+    """
+    name: str
+    guards: list[str]
+    guard_policy: GuardPolicy
+
+
+@dataclass
+class GuardsManifest:
+    """
+    Central manifest tracking guard-task-tag associations.
+    
+    Stored at .specify/guards-manifest.yaml.
+    """
+    guards: dict[str, GuardMetadata] = field(default_factory=dict)
+    tasks: dict[str, TaskGuards] = field(default_factory=dict)
+    tags: dict[str, list[str]] = field(default_factory=dict)

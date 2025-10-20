@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Guard {{ guard_id }}: {{ name }} - {{ description }}"""
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict
+
+
+def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
+    test_paths = params.get("test_paths", {{ test_paths }})
+    coverage_threshold = params.get("coverage_threshold", {{ coverage_threshold }})
+    markers = params.get("markers", {{ markers }})
+    verbose = params.get("verbose", {{ "True" if verbose else "False" }})
+    fail_under = params.get("fail_under", {{ "True" if fail_under else "False" }})
+    
+    cmd = ["uv", "run", "pytest"]
+    
+    for path in test_paths:
+        if Path(path).exists():
+            cmd.append(path)
+        else:
+            return {
+                "passed": False,
+                "analysis": f"Test path not found: {path}",
+                "details": {"missing_path": path}
+            }
+    
+    if markers:
+        marker_expr = " and ".join(markers)
+        cmd.extend(["-m", marker_expr])
+    
+    if verbose:
+        cmd.append("-v")
+    
+    cmd.extend([
+        "--cov",
+        "--cov-report=json",
+        "--cov-report=term",
+        f"--cov-fail-under={coverage_threshold}" if fail_under else "",
+        "--tb=short",
+        "--json-report",
+        "--json-report-file=pytest-report.json"
+    ])
+    
+    cmd = [arg for arg in cmd if arg]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except FileNotFoundError:
+        return {
+            "passed": False,
+            "analysis": "pytest not found. Install: uv pip install pytest pytest-cov pytest-json-report",
+            "details": {}
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "passed": False,
+            "analysis": "Tests timed out after 300s",
+            "details": {}
+        }
+    
+    coverage_data = {}
+    if Path("coverage.json").exists():
+        with open("coverage.json") as f:
+            coverage_data = json.load(f)
+    
+    test_report = {}
+    if Path("pytest-report.json").exists():
+        with open("pytest-report.json") as f:
+            test_report = json.load(f)
+    
+    passed = result.returncode == 0
+    total_coverage = coverage_data.get("totals", {}).get("percent_covered", 0)
+    
+    summary = test_report.get("summary", {})
+    total_tests = summary.get("total", 0)
+    passed_tests = summary.get("passed", 0)
+    failed_tests = summary.get("failed", 0)
+    
+    if passed:
+        analysis = f"✓ All {total_tests} tests passed (coverage: {total_coverage:.1f}%)"
+    else:
+        if failed_tests > 0:
+            failures = []
+            for test in test_report.get("tests", []):
+                if test.get("outcome") == "failed":
+                    nodeid = test.get("nodeid", "unknown")
+                    failures.append(nodeid.split("::")[-1])
+            
+            failure_summary = ", ".join(failures[:3])
+            if len(failures) > 3:
+                failure_summary += f" (+{len(failures) - 3} more)"
+            
+            analysis = f"✗ {failed_tests} of {total_tests} tests failed: {failure_summary}"
+        elif total_coverage < coverage_threshold:
+            analysis = f"✗ Coverage {total_coverage:.1f}% below threshold {coverage_threshold}%"
+        else:
+            analysis = f"✗ Tests failed (coverage: {total_coverage:.1f}%)"
+    
+    Path("pytest-report.json").unlink(missing_ok=True)
+    Path("coverage.json").unlink(missing_ok=True)
+    
+    return {
+        "passed": passed,
+        "analysis": analysis,
+        "details": {
+            "total_tests": total_tests,
+            "passed_tests": passed_tests,
+            "failed_tests": failed_tests,
+            "coverage": total_coverage,
+            "threshold": coverage_threshold,
+            "paths_checked": test_paths,
+            "markers": markers,
+        }
+    }
+
+
+def main():
+    params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    result = run_guard(params)
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["passed"] else 1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,38 @@
+name: static-analysis-python
+version: 3.0.0
+description: Python static code analysis using ruff
+category: static-analysis
+type: python
+
+params_schema:
+  type: object
+  properties:
+    paths:
+      type: array
+      items:
+        type: string
+      default: ["src/"]
+    select:
+      type: array
+      items:
+        type: string
+      default: ["E", "F", "I"]
+    ignore:
+      type: array
+      items:
+        type: string
+      default: ["E501"]
+
+output_schema:
+  type: object
+  required: [passed, analysis]
+
+scaffolder_class: StaticAnalysisPythonScaffolder
+
+dependencies:
+  packages:
+    - ruff: ">=0.1.0"
+
+execution:
+  timeout: 60
+  returns_json: true

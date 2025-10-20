@@ -4,8 +4,8 @@ scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 agent_scripts:
-  sh: "python3 -c \"from pathlib import Path; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); guards = registry.list_guards(); all_history = {}; [all_history.update({g['id']: registry.get_guard_history(g['id'], 5)}) for g in guards]; print(json.dumps({'guards': guards, 'history_by_guard': all_history}, indent=2))\""
-  ps: "python -c \"from pathlib import Path; from specify_cli.guards.registry import GuardRegistry; import json; guards_base = Path('.specify/guards'); registry = GuardRegistry(guards_base); guards = registry.list_guards(); all_history = {}; [all_history.update({g['id']: registry.get_guard_history(g['id'], 5)}) for g in guards]; print(json.dumps({'guards': guards, 'history_by_guard': all_history}, indent=2))\""
+  sh: "specify guard list"
+  ps: "specify guard list"
 ---
 
 ## User Input
@@ -20,13 +20,24 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-1.5. **Load Guard History**: Run `{AGENT_SCRIPT}` to get all guards and their execution history.
+1.5. **Load Guard Context**:
+   
+   **Step 1 - List all guards**:
+   ```bash
+   uv run specify guard list
+   ```
+   This shows all guards with their last run status.
+   
+   **Step 2 - Check specific guard history** (before running):
+   ```bash
+   uv run specify guard history <guard-id>
+   ```
+   Replace `<guard-id>` with the guard ID from the task (e.g., G001, G002).
    
    Use this for **self-healing**:
-   - Before running a guard, check its history for past failures
-   - Read `notes` field from failed executions to understand common issues
-   - Apply learnings proactively before running the guard
-   - After guard failure, analyze error, add notes to history for future runs
+   - Review past failures and comments before running a guard
+   - Apply known fixes from comment history
+   - Understand common failure patterns for this guard
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Scan all checklist files in the checklists/ directory
@@ -137,20 +148,31 @@ You **MUST** consider the user input before proceeding (if not empty).
    
    - **Guard execution workflow**:
      ```bash
-     specify guard run G###
+     # 1. Check guard history first
+     uv run specify guard history <guard-id>
+     
+     # 2. Run the guard
+     uv run specify guard run <guard-id>
+     
+     # 3. If guard fails, add diagnostic comment
+     uv run specify guard comment <guard-id> \
+       --category investigation \
+       --done "Implemented feature X" \
+       --expected "All tests pass" \
+       --todo "Fix error Y found in output"
      ```
+     
+     Replace `<guard-id>` with actual guard ID (e.g., G001).
    
    - **Interpret guard results**:
      * **Exit code 0** (PASS) → Mark task [X] complete, add ✓ to guard marker
      * **Exit code non-zero** (FAIL) → Do NOT mark task complete
-       - Display guard failure output
-       - **Analyze failure** and determine root cause
-       - **Add notes to history** documenting:
-         * What went wrong
-         * What fix was applied
-         * Patterns to watch for in future runs
-       - Fix implementation and re-run guard
-       - Only mark complete after guard passes
+       1. Display guard failure output
+       2. Analyze failure and determine root cause
+       3. Add diagnostic comment using command above
+       4. Fix implementation
+       5. Re-run guard
+       6. Only mark complete after guard passes
    
    - **Self-healing workflow**:
      1. Read guard history before running
@@ -165,10 +187,33 @@ You **MUST** consider the user input before proceeding (if not empty).
      After:  - [X] T016 [US1] Implement auth endpoint in src/api/auth.py [Guard: G001 ✓]
      ```
    
-   - **History notes help future runs**:
-     - Next time G001 runs, agent can read notes about common auth issues
-     - Patterns emerge across guard executions
-     - Knowledge compounds over time
+   - **Additional Guard Helper Commands**:
+     
+     **View all guards and their status**:
+     ```bash
+     uv run specify guard list
+     ```
+     
+     **Check what guard types are available** (when creating new guards):
+     ```bash
+     uv run specify guard types -v
+     ```
+     
+     **View detailed history for a guard**:
+     ```bash
+     uv run specify guard history <guard-id>
+     ```
+     
+     **Add investigation notes after failure**:
+     ```bash
+     uv run specify guard comment <guard-id> \
+       --category root-cause \
+       --done "Identified issue in module X" \
+       --expected "Fix will resolve the error" \
+       --todo "Refactor function Y"
+     ```
+     
+     Comment categories: `root-cause`, `fix-applied`, `investigation`, `workaround`, `false-positive`
 
 9. Progress tracking and error handling:
    - Report progress after each completed task
