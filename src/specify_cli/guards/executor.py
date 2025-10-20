@@ -254,39 +254,6 @@ class GuardExecutor:
         # Save history
         with open(history_file, 'w') as f:
             json.dump(history, f, indent=2)
-    
-    def parse_pytest_output(self, stdout: str, stderr: str) -> Dict:
-        """Parse pytest output (feature 001 compatibility)."""
-        tests_run = 0
-        tests_passed = 0
-        tests_failed = 0
-        
-        for line in stdout.split('\n'):
-            if 'passed' in line.lower():
-                parts = line.split()
-                for i, part in enumerate(parts):
-                    if 'passed' in part.lower() and i > 0:
-                        try:
-                            tests_passed = int(parts[i-1])
-                        except (ValueError, IndexError):
-                            pass
-            
-            if 'failed' in line.lower():
-                parts = line.split()
-                for i, part in enumerate(parts):
-                    if 'failed' in part.lower() and i > 0:
-                        try:
-                            tests_failed = int(parts[i-1])
-                        except (ValueError, IndexError):
-                            pass
-        
-        tests_run = tests_passed + tests_failed
-        
-        return {
-            "tests_run": tests_run,
-            "tests_passed": tests_passed,
-            "tests_failed": tests_failed
-        }
 
 
 class GuardHistory:
