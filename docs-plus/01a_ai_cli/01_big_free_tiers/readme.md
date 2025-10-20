@@ -4,6 +4,10 @@
 
 [Gemini CLI Tutorial Series](https://medium.com/google-cloud/gemini-cli-tutorial-series-77da7d494718)
 
+[Now open for building: Introducing Gemini CLI extensions](https://blog.google/technology/developers/gemini-cli-extensions/)
+
+[Gemini CLI Extensions Docs](https://geminicli.com/docs/extensions/)
+
 [About Gemini CLI](https://www.youtube.com/watch?v=A3AOeX1s7yw)
 
 [Advanced Gemini CLI: Part 1](https://medium.com/google-cloud/advanced-gemini-cli-part-1-whats-the-context-6fd91326979b)
