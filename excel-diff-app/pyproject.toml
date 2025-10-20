@@ -1,0 +1,19 @@
+[project]
+name = "excel-diff-app"
+version = "0.0.0"
+description = "Excel diff utility (prototype)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "openpyxl",
+    "matplotlib",
+    "seaborn",
+]
+
+[project.scripts]
+excel-diff = "excel_diff.cli:main"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
