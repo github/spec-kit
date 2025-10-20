@@ -1204,9 +1204,9 @@ def check():
 try:
     from specify_cli.guards.commands import guard_app
     app.add_typer(guard_app, name="guard")
-except ImportError:
+except ImportError as e:
     # Guard commands not available yet
-    pass
+    console.print(f"[yellow]Warning: Guard commands could not be loaded: {e}[/yellow]")
 
 def main():
     app()

@@ -581,7 +581,7 @@ def cmd_history(
         console.print()
     
     # Teaching: Pattern analysis
-    pass_rate = sum(1 for r in runs if r.get("passed")) / len(runs) * 100
+    pass_rate = (sum(1 for r in runs if r.get("passed")) / len(runs) * 100) if runs else 0
     console.print(f"[cyan]Pass rate:[/cyan] {pass_rate:.1f}%")
     
     if pass_rate < 50:

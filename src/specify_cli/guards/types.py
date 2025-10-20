@@ -147,7 +147,7 @@ class GuardMetadata:
     """
     Guard metadata for manifest tracking.
     
-    Stored in guards-manifest.yaml.
+    Stored in .specify/guards/list/ directory as individual guard files.
     """
     type: str
     category: str

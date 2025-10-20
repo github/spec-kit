@@ -131,10 +131,7 @@ class GuardExecutor:
         Build execution command from guard type + params.
         
         Guards are Python files that accept params as JSON and return JSON.
-        Command: python .specify/guards/G001/G001.py '{"param1": "value1"}'
-        
-        Returns:
-            Command string to execute
+        Command: python3 .specify/guards/G001/G001.py '{"param1": "value1"}'
         """
         if not self.guard_data:
             raise ValueError(f"No guard data found for {self.guard_id}")

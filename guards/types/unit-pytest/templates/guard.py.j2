@@ -14,6 +14,10 @@ def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
     verbose = params.get("verbose", {{ "True" if verbose else "False" }})
     fail_under = params.get("fail_under", {{ "True" if fail_under else "False" }})
     
+    # Use guard-specific file names to avoid conflicts with concurrent guards
+    report_file = f"pytest-report-{{ guard_id }}.json"
+    coverage_file = f"coverage-{{ guard_id }}.json"
+    
     cmd = ["uv", "run", "pytest"]
     
     for path in test_paths:
@@ -35,12 +39,12 @@ def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
     
     cmd.extend([
         "--cov",
-        "--cov-report=json",
+        f"--cov-report=json:{coverage_file}",
         "--cov-report=term",
         f"--cov-fail-under={coverage_threshold}" if fail_under else "",
         "--tb=short",
         "--json-report",
-        "--json-report-file=pytest-report.json"
+        f"--json-report-file={report_file}"
     ])
     
     cmd = [arg for arg in cmd if arg]
@@ -61,13 +65,13 @@ def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     coverage_data = {}
-    if Path("coverage.json").exists():
-        with open("coverage.json") as f:
+    if Path(coverage_file).exists():
+        with open(coverage_file) as f:
             coverage_data = json.load(f)
     
-    test_report = {}
-    if Path("pytest-report.json").exists():
-        with open("pytest-report.json") as f:
+    test_data = {}
+    if Path(report_file).exists():
+        with open(report_file) as f:
             test_report = json.load(f)
     
     passed = result.returncode == 0
@@ -98,8 +102,8 @@ def run_guard(params: Dict[str, Any]) -> Dict[str, Any]:
         else:
             analysis = f"✗ Tests failed (coverage: {total_coverage:.1f}%)"
     
-    Path("pytest-report.json").unlink(missing_ok=True)
-    Path("coverage.json").unlink(missing_ok=True)
+    Path(report_file).unlink(missing_ok=True)
+    Path(coverage_file).unlink(missing_ok=True)
     
     return {
         "passed": passed,
