@@ -1,5 +1,7 @@
 # The Complete Guide to Zed IDE: AI-Powered Development with Claude Code and Gemini CLI
 
+[Docs](https://zed.dev/docs/)
+
 ## Introduction to Zed IDE
 
 Zed is a next-generation code editor built for performance and collaboration. Developed by the creators of Atom and Tree-sitter, Zed is written in Rust and designed from the ground up to be blazingly fast, with native GPU-accelerated rendering that makes it feel incredibly responsive even with large codebases.
@@ -16,7 +18,7 @@ What sets Zed apart is its modern architecture that embraces the AI era of softw
 
 ## Why Use Zed with AI CLI Tools?
 
-The combination of Zed with AI command-line tools like Claude Code and Gemini CLI creates a powerful development environment that augments your coding capabilities:
+The combination of Zed with AI command-line tools like Claude Code, Codex, and Gemini CLI creates a powerful development environment that augments your coding capabilities:
 
 ### 1. **Seamless Workflow Integration**
 
