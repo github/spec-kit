@@ -11,6 +11,42 @@ In a multi-repo workspace:
 - **Convention-based routing** automatically determines which repo(s) a spec targets
 - **Capabilities are single-repo** while parent specs can span multiple repos
 
+## Initialization Methods
+
+There are **two ways** to initialize a workspace:
+
+### Method 1: Python CLI (Recommended)
+
+```bash
+# Install the CLI globally (one time)
+uvx --from git+https://github.com/github/spec-kit.git@main specify-cli
+
+# Then use it anywhere
+specify init --workspace
+specify init --workspace --auto-init
+```
+
+**Advantages:**
+- ✅ Works from anywhere
+- ✅ User-friendly `--workspace` flag
+- ✅ Auto-finds scripts
+- ✅ Pretty formatted output
+
+### Method 2: Bash Script (Direct)
+
+```bash
+# Call the script directly (no installation needed)
+/path/to/spec-kit/scripts/bash/init-workspace.sh .
+/path/to/spec-kit/scripts/bash/init-workspace.sh . --auto-init
+```
+
+**Advantages:**
+- ✅ No Python CLI installation required
+- ✅ Direct, no wrapper
+- ✅ Works immediately after cloning spec-kit
+
+**Note:** Both methods are functionally identical - the Python CLI simply wraps the bash script with a nicer interface.
+
 ## Two Multi-Repo Modes
 
 Spec-kit provides **two different multi-repo features** that serve complementary purposes:
@@ -49,7 +85,7 @@ cd ~/git
 
 ---
 
-### Mode 2: Centralized Workspace (`init-workspace.sh --workspace`)
+### Mode 2: Centralized Workspace (`specify init --workspace`)
 
 **Purpose**: Create a unified workspace for related repositories that work together
 
