@@ -32,6 +32,7 @@ import shutil
 import json
 from pathlib import Path
 from typing import Optional, Tuple
+from importlib.resources import files
 
 import typer
 import httpx
@@ -1119,11 +1120,12 @@ def init(
             border_style="cyan"
         ))
 
-        # Find init-workspace.sh script
-        script_path = Path(__file__).parent.parent.parent / "scripts" / "bash" / "init-workspace.sh"
-        if not script_path.exists():
-            console.print(f"[red]Error:[/red] init-workspace.sh not found at {script_path}")
+        # Find init-workspace.sh script from package resources
+        script_resource = files("specify_cli").joinpath("scripts", "bash", "init-workspace.sh")
+        if not script_resource.is_file():
+            console.print(f"[red]Error:[/red] init-workspace.sh not found in package resources")
             raise typer.Exit(1)
+        script_path = Path(str(script_resource))
 
         # Build command
         cmd = ["bash", str(script_path), str(workspace_path)]

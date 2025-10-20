@@ -43,6 +43,38 @@ Initialize your project depending on the coding agent you're using:
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
+#### What does this command mean?
+
+- `uvx --from git+https://github.com/github/spec-kit.git` - Where to get the package (temporary execution, doesn't install permanently)
+- `specify` - The CLI tool to execute
+- `init <PROJECT_NAME>` - Command and arguments passed to the CLI
+
+### Global Installation
+
+If you prefer to install the `specify` CLI globally for repeated use:
+
+**Using uv (recommended):**
+```bash
+uv tool install git+https://github.com/github/spec-kit.git
+```
+
+**Using pip:**
+```bash
+pip install git+https://github.com/github/spec-kit.git
+```
+
+After global installation, use `specify` directly:
+```bash
+specify init <PROJECT_NAME> --ai claude
+```
+
+To uninstall:
+```bash
+uv tool uninstall specify-cli
+# or
+pip uninstall specify-cli
+```
+
 ### Alternative: Direct Script Usage
 
 If you have this repository cloned locally, you can use the `init.sh` script directly:

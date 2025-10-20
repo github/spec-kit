@@ -21,4 +21,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
-include = ["templates/"]
+include = [
+    "templates/",
+    "src/specify_cli/scripts/**/*.sh",
+]
