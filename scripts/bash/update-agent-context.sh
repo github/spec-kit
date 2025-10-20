@@ -232,7 +232,7 @@ format_technology_stack() {
 get_project_structure() {
     local project_type="$1"
     
-    if [[ "$project_type" == *"web"* ]]; then
+    if [[ "$project_type" == *"Web"* ]]; then
         echo "backend/\\nfrontend/\\ntests/"
     else
         echo "src/\\ntests/"
