@@ -6,7 +6,7 @@ set -euo pipefail
 # This should be run in CI to catch documentation drift
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo "🔍 Validating documentation sync..."
 echo "Repository: $REPO_ROOT"
@@ -48,10 +48,24 @@ echo ""
 
 # Show current agent count
 AGENT_COUNT=$(python3 -c "
+import ast
 import sys
-sys.path.insert(0, '$REPO_ROOT/src')
-from specify_cli import AGENT_CONFIG
-print(len(AGENT_CONFIG))
+
+# Read the AGENT_CONFIG directly from the source file
+with open('$REPO_ROOT/src/specify_cli/__init__.py', 'r') as f:
+    content = f.read()
+
+# Parse the AST to find AGENT_CONFIG
+tree = ast.parse(content)
+for node in ast.walk(tree):
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == 'AGENT_CONFIG':
+                if isinstance(node.value, ast.Dict):
+                    print(len(node.value.keys))
+                    sys.exit(0)
+
+print('0')  # fallback
 ")
 
 echo "📊 Current status:"
