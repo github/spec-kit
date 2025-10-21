@@ -51,6 +51,7 @@ from typer.core import TyperGroup
 import readchar
 import ssl
 import truststore
+from datetime import datetime, timezone
 
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
@@ -63,6 +64,63 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     """Return Authorization header dict only when a non-empty token exists."""
     token = _github_token(cli_token)
     return {"Authorization": f"Bearer {token}"} if token else {}
+
+def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
+    """Extract and parse GitHub rate-limit headers."""
+    info = {}
+    
+    # Standard GitHub rate-limit headers
+    if "X-RateLimit-Limit" in headers:
+        info["limit"] = headers.get("X-RateLimit-Limit")
+    if "X-RateLimit-Remaining" in headers:
+        info["remaining"] = headers.get("X-RateLimit-Remaining")
+    if "X-RateLimit-Reset" in headers:
+        reset_epoch = int(headers.get("X-RateLimit-Reset", "0"))
+        if reset_epoch:
+            reset_time = datetime.fromtimestamp(reset_epoch, tz=timezone.utc)
+            info["reset_epoch"] = reset_epoch
+            info["reset_time"] = reset_time
+            info["reset_local"] = reset_time.astimezone()
+    
+    # Retry-After header (seconds or HTTP-date)
+    if "Retry-After" in headers:
+        retry_after = headers.get("Retry-After")
+        try:
+            info["retry_after_seconds"] = int(retry_after)
+        except ValueError:
+            # HTTP-date format - not implemented, just store as string
+            info["retry_after"] = retry_after
+    
+    return info
+
+def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str) -> str:
+    """Format a user-friendly error message with rate-limit information."""
+    rate_info = _parse_rate_limit_headers(headers)
+    
+    lines = [f"GitHub API returned status {status_code} for {url}"]
+    lines.append("")
+    
+    if rate_info:
+        lines.append("[bold]Rate Limit Information:[/bold]")
+        if "limit" in rate_info:
+            lines.append(f"  • Rate Limit: {rate_info['limit']} requests/hour")
+        if "remaining" in rate_info:
+            lines.append(f"  • Remaining: {rate_info['remaining']}")
+        if "reset_local" in rate_info:
+            reset_str = rate_info["reset_local"].strftime("%Y-%m-%d %H:%M:%S %Z")
+            lines.append(f"  • Resets at: {reset_str}")
+        if "retry_after_seconds" in rate_info:
+            lines.append(f"  • Retry after: {rate_info['retry_after_seconds']} seconds")
+        lines.append("")
+    
+    # Add troubleshooting guidance
+    lines.append("[bold]Troubleshooting Tips:[/bold]")
+    lines.append("  • If you're on a shared CI or corporate environment, you may be rate-limited.")
+    lines.append("  • Consider using a GitHub token via --github-token or the GH_TOKEN/GITHUB_TOKEN")
+    lines.append("    environment variable to increase rate limits.")
+    lines.append("  • Authenticated requests have a limit of 5,000/hour vs 60/hour for unauthenticated.")
+    
+    return "\n".join(lines)
 
 # Agent configuration with name, folder, install URL, and CLI tool requirement
 AGENT_CONFIG = {
@@ -577,10 +635,11 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         )
         status = response.status_code
         if status != 200:
-            msg = f"GitHub API returned {status} for {api_url}"
+            # Format detailed error message with rate-limit info
+            error_msg = _format_rate_limit_error(status, response.headers, api_url)
             if debug:
-                msg += f"\nResponse headers: {response.headers}\nBody (truncated 500): {response.text[:500]}"
-            raise RuntimeError(msg)
+                error_msg += f"\n\n[dim]Response body (truncated 500):[/dim]\n{response.text[:500]}"
+            raise RuntimeError(error_msg)
         try:
             release_data = response.json()
         except ValueError as je:
@@ -627,8 +686,11 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
             headers=_github_auth_headers(github_token),
         ) as response:
             if response.status_code != 200:
-                body_sample = response.text[:400]
-                raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
+                # Handle rate-limiting on download as well
+                error_msg = _format_rate_limit_error(response.status_code, response.headers, download_url)
+                if debug:
+                    error_msg += f"\n\n[dim]Response body (truncated 400):[/dim]\n{response.text[:400]}"
+                raise RuntimeError(error_msg)
             total_size = int(response.headers.get('content-length', 0))
             with open(zip_path, 'wb') as f:
                 if total_size == 0:
