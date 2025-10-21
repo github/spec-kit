@@ -326,6 +326,7 @@ Work within integrated development environments:
 Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp
 
 **Standard format:**
+
 ```markdown
 ---
 description: "Command description"
@@ -335,6 +336,7 @@ Command content with {SCRIPT} and $ARGUMENTS placeholders.
 ```
 
 **GitHub Copilot Chat Mode format:**
+
 ```markdown
 ---
 description: "Command description"
