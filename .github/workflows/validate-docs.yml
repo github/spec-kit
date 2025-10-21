@@ -1,0 +1,79 @@
+name: Validate Documentation Sync
+
+on:
+  pull_request:
+    paths:
+      - 'src/specify_cli/__init__.py'
+      - 'README.md'
+      - 'AGENTS.md'
+      - '.github/workflows/scripts/create-github-release.sh'
+      - 'scripts/generate-docs.py'
+      - 'scripts/generate-release-script.py'
+  push:
+    branches: [main]
+    paths:
+      - 'src/specify_cli/__init__.py'
+      - 'README.md'
+      - 'AGENTS.md'
+      - '.github/workflows/scripts/create-github-release.sh'
+
+jobs:
+  validate-docs:
+    name: Validate Documentation Sync
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install typer rich platformdirs readchar httpx truststore
+      
+      - name: Make validation script executable
+        run: chmod +x .github/workflows/scripts/validate-docs-sync.sh
+      
+      - name: Validate documentation sync
+        run: .github/workflows/scripts/validate-docs-sync.sh
+      
+      - name: Comment on PR if out of sync
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ❌ Documentation Sync Check Failed
+              
+              The documentation is out of sync with \`AGENT_CONFIG\`.
+              
+              **To fix this issue:**
+              
+              1. Run the documentation generator:
+                 \`\`\`bash
+                 python scripts/generate-docs.py --update
+                 python scripts/generate-release-script.py --update
+                 \`\`\`
+              
+              2. Commit the changes:
+                 \`\`\`bash
+                 git add README.md .github/workflows/scripts/create-github-release.sh
+                 git commit -m 'chore: sync documentation with AGENT_CONFIG'
+                 git push
+                 \`\`\`
+              
+              This ensures that:
+              - ✅ README.md agent table matches AGENT_CONFIG
+              - ✅ Release script includes all agents
+              - ✅ Documentation stays in sync with code
+              
+              See the [workflow logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`
+            })

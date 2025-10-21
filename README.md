@@ -134,21 +134,25 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 ## 🤖 Supported AI Agents
 
-| Agent                                                     | Support | Notes                                             |
-|-----------------------------------------------------------|---------|---------------------------------------------------|
-| [Claude Code](https://www.anthropic.com/claude-code)      | ✅ |                                                   |
-| [GitHub Copilot](https://code.visualstudio.com/)          | ✅ |                                                   |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | ✅ |                                                   |
-| [Cursor](https://cursor.sh/)                              | ✅ |                                                   |
-| [Qwen Code](https://github.com/QwenLM/qwen-code)          | ✅ |                                                   |
-| [opencode](https://opencode.ai/)                          | ✅ |                                                   |
-| [Windsurf](https://windsurf.com/)                         | ✅ |                                                   |
-| [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
-| [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
-| [CodeBuddy CLI](https://www.codebuddy.ai/cli)             | ✅ |                                                   |
-| [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
-| [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
-| [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
+Spec Kit supports the following AI coding assistants:
+
+| Agent | CLI Tool | Type | Installation |
+|-------|----------|------|--------------|
+| **GitHub Copilot** | N/A (IDE-based) | IDE | Built-in IDE |
+| **Claude Code** | `claude` | CLI | [Install Guide](https://docs.anthropic.com/en/docs/claude-code/setup) |
+| **Gemini CLI** | `gemini` | CLI | [Install Guide](https://github.com/google-gemini/gemini-cli) |
+| **Cursor** | N/A (IDE-based) | IDE | Built-in IDE |
+| **Qwen Code** | `qwen` | CLI | [Install Guide](https://github.com/QwenLM/qwen-code) |
+| **opencode** | `opencode` | CLI | [Install Guide](https://opencode.ai) |
+| **Codex CLI** | `codex` | CLI | [Install Guide](https://github.com/openai/codex) |
+| **Windsurf** | N/A (IDE-based) | IDE | Built-in IDE |
+| **Kilo Code** | N/A (IDE-based) | IDE | Built-in IDE |
+| **Auggie CLI** | `auggie` | CLI | [Install Guide](https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli) |
+| **CodeBuddy** | `codebuddy` | CLI | [Install Guide](https://www.codebuddy.ai/cli) |
+| **Roo Code** | N/A (IDE-based) | IDE | Built-in IDE |
+| **Amazon Q Developer CLI** | `q` | CLI | [Install Guide](https://aws.amazon.com/developer/learning/q-developer-cli/) |
+
+**Total Supported Agents:** 13
 
 ## 🔧 Specify CLI Reference
 
