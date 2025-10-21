@@ -95,7 +95,7 @@ generate_commands() {
         { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckit.$name.$ext" ;;
       md)
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
-      prompt.md)
+      chatmode.md)
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
     esac
   done
@@ -146,8 +146,8 @@ build_variant() {
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
       [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md "$base_dir/GEMINI.md" ;;
     copilot)
-      mkdir -p "$base_dir/.github/prompts"
-      generate_commands copilot prompt.md "\$ARGUMENTS" "$base_dir/.github/prompts" "$script"
+      mkdir -p "$base_dir/.github/chatmodes"
+      generate_commands copilot chatmode.md "\$ARGUMENTS" "$base_dir/.github/chatmodes" "$script"
       # Create VS Code workspace settings
       mkdir -p "$base_dir/.vscode"
       [[ -f templates/vscode-settings.json ]] && cp templates/vscode-settings.json "$base_dir/.vscode/settings.json"

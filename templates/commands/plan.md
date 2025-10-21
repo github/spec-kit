@@ -1,6 +1,5 @@
 ---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
-mode: speckit.plan
 handoffs: 
   - label: Create Tasks
     agent: speckit.tasks
