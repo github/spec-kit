@@ -75,7 +75,7 @@ Given that feature description, do this:
 6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
    a. **Create Spec Quality Checklist**: Generate a checklist file at `FEATURE_DIR/checklists/requirements.md` using the checklist template structure with these validation items:
-   
+
       ```markdown
       # Specification Quality Checklist: [FEATURE NAME]
       
@@ -112,26 +112,26 @@ Given that feature description, do this:
       
       - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`
       ```
-   
+
    b. **Run Validation Check**: Review the spec against each checklist item:
       - For each item, determine if it passes or fails
       - Document specific issues found (quote relevant spec sections)
-   
+
    c. **Handle Validation Results**:
-      
+
       - **If all items pass**: Mark checklist complete and proceed to step 6
-      
+
       - **If items fail (excluding [NEEDS CLARIFICATION])**:
         1. List the failing items and specific issues
         2. Update the spec to address each issue
         3. Re-run validation until all items pass (max 3 iterations)
         4. If still failing after 3 iterations, document remaining issues in checklist notes and warn user
-      
+
       - **If [NEEDS CLARIFICATION] markers remain**:
         1. Extract all [NEEDS CLARIFICATION: ...] markers from the spec
         2. **LIMIT CHECK**: If more than 3 markers exist, keep only the 3 most critical (by scope/security/UX impact) and make informed guesses for the rest
         3. For each clarification needed (max 3), present options to user in this format:
-        
+
            ```markdown
            ## Question [N]: [Topic]
            
@@ -150,7 +150,7 @@ Given that feature description, do this:
            
            **Your choice**: _[Wait for user response]_
            ```
-        
+
         4. **CRITICAL - Table Formatting**: Ensure markdown tables are properly formatted:
            - Use consistent spacing with pipes aligned
            - Each cell should have spaces around content: `| Content |` not `|Content|`
@@ -161,7 +161,7 @@ Given that feature description, do this:
         7. Wait for user to respond with their choices for all questions (e.g., "Q1: A, Q2: Custom - [details], Q3: B")
         8. Update the spec by replacing each [NEEDS CLARIFICATION] marker with the user's selected or provided answer
         9. Re-run validation after all clarifications are resolved
-   
+
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
 7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
@@ -199,7 +199,7 @@ When creating this spec from a user prompt:
    - Feature scope and boundaries (include/exclude specific use cases)
    - User types and permissions (if multiple conflicting interpretations possible)
    - Security/compliance requirements (when legally/financially significant)
-   
+
 **Examples of reasonable defaults** (don't ask about these):
 
 - Data retention: Industry-standard practices for the domain
@@ -230,4 +230,3 @@ Success criteria must be:
 - "Database can handle 1000 TPS" (implementation detail, use user-facing metric)
 - "React components render efficiently" (framework-specific)
 - "Redis cache hit rate above 80%" (technology-specific)
-

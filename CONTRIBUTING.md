@@ -1,4 +1,4 @@
-## Contributing to Spec Kit
+# Contributing to Spec Kit
 
 Hi there! We're thrilled that you'd like to contribute to Spec Kit. Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](LICENSE).
 

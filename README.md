@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="./media/logo_small.webp"/>
+    <img src="./media/logo_small.webp" alt="Spec Kit Logo"/>
     <h1>🌱 Spec Kit</h1>
     <h3><em>Build high-quality software faster.</em></h3>
 </div>
@@ -253,7 +253,7 @@ Additional commands for enhanced quality and validation:
 
 Spec-Driven Development is a structured process that emphasizes:
 
-- **Intent-driven development** where specifications define the "_what_" before the "_how_"
+- **Intent-driven development** where specifications define the "*what*" before the "*how*"
 - **Rich specification creation** using guardrails and organizational principles
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
@@ -383,7 +383,7 @@ This step creates or updates the `.specify/memory/constitution.md` file with you
 With your project principles established, you can now create the functional specifications. Use the `/speckit.specify` command and then provide the concrete requirements for the project you want to develop.
 
 >[!IMPORTANT]
->Be as explicit as possible about _what_ you are trying to build and _why_. **Do not focus on the tech stack at this point**.
+>Be as explicit as possible about *what* you are trying to build and *why*. **Do not focus on the tech stack at this point**.
 
 An example prompt:
 
@@ -417,16 +417,16 @@ At this stage, your project folder contents should resemble the following:
 ```text
 └── .specify
     ├── memory
-    │	 └── constitution.md
+    │  └── constitution.md
     ├── scripts
-    │	 ├── check-prerequisites.sh
-    │	 ├── common.sh
-    │	 ├── create-new-feature.sh
-    │	 ├── setup-plan.sh
-    │	 └── update-claude-md.sh
+    │  ├── check-prerequisites.sh
+    │  ├── common.sh
+    │  ├── create-new-feature.sh
+    │  ├── setup-plan.sh
+    │  └── update-claude-md.sh
     ├── specs
-    │	 └── 001-create-taskify
-    │	     └── spec.md
+    │  └── 001-create-taskify
+    │      └── spec.md
     └── templates
         ├── plan-template.md
         ├── spec-template.md
@@ -440,6 +440,7 @@ With the baseline specification created, you can go ahead and clarify any of the
 You should run the structured clarification workflow **before** creating a technical plan to reduce rework downstream.
 
 Preferred order:
+
 1. Use `/speckit.clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
 2. Optionally follow up with ad-hoc free-form refinement if something still feels vague.
 
@@ -477,23 +478,23 @@ The output of this step will include a number of implementation detail documents
 .
 ├── CLAUDE.md
 ├── memory
-│	 └── constitution.md
+│  └── constitution.md
 ├── scripts
-│	 ├── check-prerequisites.sh
-│	 ├── common.sh
-│	 ├── create-new-feature.sh
-│	 ├── setup-plan.sh
-│	 └── update-claude-md.sh
+│  ├── check-prerequisites.sh
+│  ├── common.sh
+│  ├── create-new-feature.sh
+│  ├── setup-plan.sh
+│  └── update-claude-md.sh
 ├── specs
-│	 └── 001-create-taskify
-│	     ├── contracts
-│	     │	 ├── api-spec.json
-│	     │	 └── signalr-spec.md
-│	     ├── data-model.md
-│	     ├── plan.md
-│	     ├── quickstart.md
-│	     ├── research.md
-│	     └── spec.md
+│  └── 001-create-taskify
+│      ├── contracts
+│      │  ├── api-spec.json
+│      │  └── signalr-spec.md
+│      ├── data-model.md
+│      ├── plan.md
+│      ├── quickstart.md
+│      ├── research.md
+│      └── spec.md
 └── templates
     ├── CLAUDE-template.md
     ├── plan-template.md
@@ -575,6 +576,7 @@ Once ready, use the `/speckit.implement` command to execute your implementation 
 ```
 
 The `/speckit.implement` command will:
+
 - Validate that all prerequisites are in place (constitution, spec, plan, and tasks)
 - Parse the task breakdown from `tasks.md`
 - Execute tasks in the correct order, respecting dependencies and parallel execution markers
@@ -625,4 +627,3 @@ This project is heavily influenced by and based on the work and research of [Joh
 ## 📄 License
 
 This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
-

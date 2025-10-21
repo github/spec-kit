@@ -1,4 +1,4 @@
-# Support 
+# Support
 
 ## How to file issues and get help
 
@@ -17,4 +17,3 @@ For help or questions about using this project, please:
 ## GitHub Support Policy
 
 Support for this project is limited to the resources listed above.
-
