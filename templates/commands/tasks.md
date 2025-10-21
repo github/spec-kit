@@ -17,7 +17,7 @@ scripts:
 - **Capability branch** (`username/jira-123.feature-name-cap-001`):
   - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`
   - Generates: `specs/jira-123.feature-name/cap-001-auth/tasks.md`
-  - Use case: Atomic PRs (400-1000 LOC total per capability)
+  - Use case: Atomic PRs (~1000 LOC total per capability, 800-1200 acceptable)
 
 **No flag needed** - detection is automatic based on branch name pattern.
 

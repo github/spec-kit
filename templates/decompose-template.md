@@ -2,7 +2,7 @@
 
 **Parent Spec:** [link to parent spec.md]
 **Decomposition Date:** [DATE]
-**LOC Budget per Capability:** Implementation 200-500 + Tests 200-500 = Total 400-1000 LOC (justification required if any limit exceeded)
+**LOC Budget per Capability:** Implementation 400-600 + Tests 400-600 = Total ~1000 LOC (ideal 1000, range 800-1200, test ratio ≥0.8:1)
 
 ## Execution Flow (main)
 ```
@@ -14,14 +14,14 @@
    → Group by: entity lifecycle, workflow stage, API clusters
    → Analyze dependencies between contexts
 4. Estimate LOC per capability:
-   → Implementation: Models (50-100) + Services (100-200) + API/CLI (50-100) = 200-400 LOC
-   → Tests: Contract tests (50-100) + Integration tests (50-100) + Unit tests (100-200) = 200-400 LOC
-   → Target total: 400-800 LOC per capability (max 1000 with justification)
+   → Implementation: Models (100-150) + Services (150-250) + API/CLI (100-150) = 400-600 LOC
+   → Tests: Contract tests (100-150) + Integration tests (100-150) + Unit tests (150-250) = 400-600 LOC
+   → Target total: ~1000 LOC per capability (ideal 1000, acceptable 800-1200)
 5. Order capabilities:
    → By: infrastructure dependencies + business value
    → Mark foundation capabilities (no dependencies)
 6. Validate decomposition:
-   → Each capability: Impl ≤500, Tests ≤500, Total ≤1000 (or justified if any exceeded)
+   → Each capability: Total 800-1200 (ideal 1000), Test ratio ≥0.8:1 (or justified if outside range)
    → No circular dependencies
    → All capabilities independently testable
    → Max 10 capabilities per parent feature
@@ -45,17 +45,17 @@
 ### Sizing Guidelines
 
 **Ideal Distribution (Total LOC including tests):**
-- **400-600 LOC:** Simple CRUD, single entity (200-300 impl + 200-300 tests) - target 30% of capabilities
-- **600-800 LOC:** Standard workflow, 2-3 entities (300-400 impl + 300-400 tests) - target 50% of capabilities
-- **800-1000 LOC:** Complex integration, multiple services (400-500 impl + 400-500 tests) - target 15% of capabilities
-- **>1000 LOC:** Exceptional, requires detailed justification (<5% of capabilities)
+- **800-900 LOC:** Simple capability, focused scope (350-400 impl + 400-500 tests, 1.1:1 ratio) - target 25% of capabilities
+- **900-1000 LOC:** Standard capability, 2-3 components (400-450 impl + 450-550 tests, 1.2:1 ratio) - target 40% of capabilities
+- **1000-1100 LOC:** Complex capability, multiple integrations (450-500 impl + 500-600 tests, 1.2:1 ratio) - target 25% of capabilities
+- **1100-1200 LOC:** Very complex, tightly cohesive (500-550 impl + 550-650 tests, 1.2:1 ratio) - target 8% of capabilities
+- **>1200 LOC:** Exceptional, requires detailed justification (<2% of capabilities)
 
-**Justification Required if Implementation >500 OR Tests >500 OR Total >1000:**
-- Tight coupling that would break if split
-- Single cohesive algorithm that must stay together
-- Complex rule engine with interdependent logic
-- For tests >500: Extensive edge cases, complex integration scenarios requiring detailed testing
-- Approved by tech lead with rationale documented
+**Justification Required if Total <800 OR Total >1200 OR Test ratio <0.8:1:**
+- **<800 LOC:** Explain why this is a standalone capability vs merging with another
+- **>1200 LOC:** Tight coupling that would break if split, single cohesive algorithm, complex rule engine
+- **Test ratio <0.8:1:** Justify why lower test coverage is acceptable (e.g., simple CRUD, heavy code generation)
+- All exceptions approved by tech lead with rationale documented
 
 ---
 
@@ -81,13 +81,14 @@
 | API/CLI | XX | XX | [e.g., 4 endpoints + contract tests] |
 | Integration | XX | XX | [e.g., E2E test scenarios] |
 | **Subtotals** | **XXX** | **XXX** | **Total: XXX LOC** |
-| **Status** | [✓ ≤500 \| ⚠️ >500] | [✓ ≤500 \| ⚠️ >500] | [✓ ≤1000 \| ⚠️ >1000] |
+| **Status** | [✓ 400-600 \| ⚠️ outside] | [✓ 400-600 \| ⚠️ outside] | [✓ 800-1200 \| ⚠️ outside] |
+| **Test Ratio** | | **X.X:1** | [✓ ≥1:1 \| ⚠️ <0.8:1] |
 
-**Justification (if any limit exceeded):**
-[If Impl >500 OR Tests >500 OR Total >1000: Explain why splitting would harm cohesion, what keeps this together, why it's a single unit of work, why tests require extensive LOC]
+**Justification (if outside ideal range):**
+[If Total <800 OR Total >1200 OR Test ratio <0.8:1: Explain why this size is appropriate, what keeps it cohesive, why tests are proportioned this way]
 
 **Capability Branch:** `[username]/[jira-key].[feature-name]-cap-001`
-**PR Target:** `cap-001` branch → `main` (atomic PR, 400-1000 LOC total)
+**PR Target:** `cap-001` branch → `main` (atomic PR, ~1000 LOC total ideal, 800-1200 acceptable)
 
 **Acceptance Criteria:**
 - [ ] [Specific testable criterion for this capability]
@@ -158,7 +159,7 @@ Cap-006 [Independent - no dependencies]
 ## Validation Checklist
 
 ### Decomposition Quality
-- [ ] All capabilities: Impl ≤500, Tests ≤500, Total ≤1000 (or have documented justification)
+- [ ] All capabilities: Total 800-1200 (ideal 1000), Test ratio ≥0.8:1 (or have documented justification)
 - [ ] Each capability delivers independently testable value
 - [ ] No circular dependencies in dependency graph
 - [ ] Foundation capabilities identified (enable others)

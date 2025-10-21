@@ -16,7 +16,7 @@ description: Execute implementation following the plan and tasks with strict TDD
 
 - **Capability branch** (`username/jira-123.feature-name-cap-001`):
    - Reads from: `specs/jira-123.feature-name/cap-001-auth/plan.md`, `tasks.md`
-   - Implementation: Atomic PR workflow (400-1000 LOC total)
+   - Implementation: Atomic PR workflow (~1000 LOC total, 800-1200 acceptable)
    - PR target: `cap-001` branch → `main` (not to parent branch)
 
 **No flag needed** - detection is automatic based on branch name pattern.
@@ -207,9 +207,9 @@ npm test || python -m pytest || go test ./...
 ### If on capability branch (e.g., `username/jira-123.feature-cap-001`):
 
 1. **Verify atomic scope**:
-   - Run: `git diff main --stat` to confirm 400-1000 LOC total
-   - Break down: Implementation LOC vs Test LOC
-   - If Impl >500 OR Tests >500 OR Total >1000: document justification in PR description
+   - Run: `git diff main --stat` to confirm ~1000 LOC total (800-1200 acceptable)
+   - Break down: Implementation LOC vs Test LOC (target ratio ≥0.8:1)
+   - If Total <800 OR Total >1200 OR Test ratio <0.8:1: document justification in PR description
 
 2. **Create PR to main**:
    ```bash
@@ -223,9 +223,9 @@ npm test || python -m pytest || go test ./...
    - [Key component 3]
 
    ## LOC Impact
-   - Implementation: XXX LOC (target ≤500)
-   - Tests: XXX LOC (target ≤500)
-   - Total: XXX LOC (target ≤1000)
+   - Implementation: XXX LOC (target 400-600)
+   - Tests: XXX LOC (target 400-600, ratio ≥0.8:1)
+   - Total: XXX LOC (target ~1000, acceptable 800-1200)
 
    ## Dependencies
    - Depends on: [cap-XXX if any]
@@ -262,7 +262,7 @@ npm test || python -m pytest || go test ./...
    ```
 
 ### Benefits of Capability PR Workflow:
-- **Fast reviews**: 400-1000 LOC reviewed in 1-2 days vs 2000+ LOC taking 7+ days
+- **Fast reviews**: 800-1200 LOC reviewed in 1-2 days vs 2000+ LOC taking 7+ days
 - **Parallel development**: Multiple team members work on different capabilities simultaneously
 - **Early integration**: Merge to main quickly, catch integration issues early
 - **Manageable TDD**: Test-first approach easier with smaller scope (impl + tests both bounded)

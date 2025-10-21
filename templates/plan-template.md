@@ -77,9 +77,9 @@ Phase 0-10: Feature Planning
 ## LOC Budget Tracking
 
 **Targets:**
-- Implementation: 200-500 LOC
-- Tests: 200-500 LOC
-- Total: 400-1000 LOC
+- Implementation: 400-600 LOC
+- Tests: 400-600 LOC (≥1:1 ratio, minimum 0.8:1)
+- Total: ~1000 LOC (ideal 1000, acceptable 800-1200)
 
 **Estimated Breakdown:**
 | Component | Implementation LOC | Test LOC | Notes |
@@ -90,16 +90,16 @@ Phase 0-10: Feature Planning
 | Integration | | | [e.g., E2E test scenarios] |
 | **Subtotals** | **0** | **0** | **Total: 0 LOC** |
 
-**Status:** [Calculate totals above]
-- ✓ **Within budget** - Impl: X (✓ ≤500) \| Tests: Y (✓ ≤500) \| Total: Z (✓ ≤1000)
-- ⚠️ **Approaching limits** - Any metric >450 or total >900 - Review for optimization opportunities
-- ❌ **Exceeds limits** - Impl >500 OR Tests >500 OR Total >1000 - See justification below OR run `/decompose`
+**Status:** [Calculate totals and test ratio above]
+- ✓ **Within ideal range** - Total: X (✓ 800-1200) \| Test ratio: Y:1 (✓ ≥0.8)
+- ⚠️ **Review recommended** - Total 700-800 or 1200-1300 \| Test ratio 0.7-0.8 - Consider optimization
+- ❌ **Outside range** - Total <700 OR Total >1300 OR Test ratio <0.7 - See justification below OR run `/decompose`
 
-**Justification (if any limit exceeded):**
-[If Implementation >500 OR Tests >500 OR Total >1000, document here:
-- Why this scope cannot be split further
+**Justification (if outside ideal range):**
+[If Total <800 OR Total >1200 OR Test ratio <0.8:1, document here:
+- Why this scope cannot be split further (for >1200) or why it's standalone (for <800)
 - What keeps these components tightly coupled
-- If tests >500: Why comprehensive test coverage requires this LOC (complex scenarios, many edge cases, etc.)
+- Why this test ratio is appropriate for the complexity
 - Why splitting would harm cohesion or introduce artificial boundaries
 - Approval status from tech lead]
 

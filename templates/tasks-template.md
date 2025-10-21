@@ -8,26 +8,27 @@
 **From plan.md:** [Load implementation, test, and total estimates from plan.md LOC Budget Tracking section]
 
 **Status Check:**
-- ✓ **Within budget** - Impl: X (✓ ≤500) | Tests: Y (✓ ≤500) | Total: Z (✓ ≤1000) - Proceed with task generation
-- ⚠️ **Approaching limits** - Any metric >450 or total >900 - Review task breakdown carefully
-- ❌ **Exceeds limits** - Impl >500 OR Tests >500 OR Total >1000 - STOP: See options below
+- ✓ **Within ideal range** - Total: X (✓ 800-1200) | Test ratio: Y:1 (✓ ≥0.8) - Proceed with task generation
+- ⚠️ **Review recommended** - Total 700-800 or 1200-1300 | Test ratio 0.7-0.8 - Review task breakdown carefully
+- ❌ **Outside range** - Total <700 OR Total >1300 OR Test ratio <0.7 - STOP: See options below
 
-**If any limit exceeded:**
+**If outside ideal range:**
 ```
-⚠️  WARNING: This implementation exceeds LOC budget limits
+⚠️  WARNING: This implementation is outside the ideal LOC range
     Estimated from plan.md:
-    - Implementation: XXX LOC [✓ ≤500 | ❌ >500]
-    - Tests: XXX LOC [✓ ≤500 | ❌ >500]
-    - Total: XXX LOC [✓ ≤1000 | ❌ >1000]
+    - Implementation: XXX LOC [✓ 400-600 | ❌ outside]
+    - Tests: XXX LOC [✓ 400-600 | ❌ outside]
+    - Total: XXX LOC [✓ 800-1200 | ❌ outside]
+    - Test ratio: X.X:1 [✓ ≥0.8 | ❌ <0.8]
 
     OPTIONS:
-    1. Run `/decompose` to split into multiple capabilities (recommended if total >1000)
+    1. Run `/decompose` to split into multiple capabilities (recommended if total >1200)
     2. Document justification in plan.md and get approval
-    3. Review plan.md to identify scope reduction opportunities
-       - Can test coverage be reduced without compromising quality?
-       - Can implementation be simplified?
+    3. Review plan.md to identify scope reduction opportunities (if <800, consider merging with another capability)
+       - Can test coverage be adjusted to meet minimum 0.8:1 ratio?
+       - Can implementation be optimized?
 
-    RECOMMENDATION: Capabilities should target 400-800 LOC total for optimal PR review
+    RECOMMENDATION: Capabilities should target ~1000 LOC total (800-1200 acceptable) for optimal PR review
 ```
 
 ## Execution Flow (main)

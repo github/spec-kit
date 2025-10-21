@@ -79,11 +79,11 @@ Given the implementation details provided as an argument, do this:
 → Single PR workflow
 ```
 
-**Capability planning (atomic PRs, 400-1000 LOC total each):**
+**Capability planning (atomic PRs, ~1000 LOC total each, 800-1200 acceptable):**
 ```bash
 /plan --capability cap-001 "Use FastAPI + JWT for auth"
 → Creates NEW branch: username/jira-123.feature-cap-001
-→ Generates cap-001/plan.md scoped to 400-1000 LOC total
+→ Generates cap-001/plan.md scoped to ~1000 LOC total (800-1200 acceptable)
 → Atomic PR: cap-001 branch → main
 ```
 
@@ -101,7 +101,7 @@ When using `--capability cap-XXX`, the script:
    - All work happens on capability branch
 
 3. **PR workflow**:
-   - Implement on `cap-001` branch (400-1000 LOC total)
+   - Implement on `cap-001` branch (~1000 LOC total, 800-1200 acceptable)
    - Create PR: `cap-001` → `main`
    - After merge, checkout parent branch
    - Pull latest main into parent

@@ -97,9 +97,9 @@ Given the feature description provided as an argument, do this:
   - Skip decomposition step
 
 **Option 2: Capability Decomposition (Complex Features)**
-- If feature is large or complex (estimated >1000 LOC total):
+- If feature is large or complex (estimated >1200 LOC total):
   - Run `/decompose` to break into atomic capabilities
-  - Each capability: 400-1000 LOC total (200-500 impl + 200-500 tests)
+  - Each capability: ~1000 LOC total (400-600 impl + 400-600 tests, 800-1200 acceptable)
   - Then run `/plan --capability cap-001` for each capability
 
 **Decision Criteria:**

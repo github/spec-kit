@@ -1,5 +1,5 @@
 ---
-description: Decompose parent feature spec into atomic capabilities (400-1000 LOC total each)
+description: Decompose parent feature spec into atomic capabilities (~1000 LOC total each, 800-1200 acceptable)
 scripts:
   sh: scripts/bash/decompose-feature.sh --json
   ps: scripts/powershell/decompose-feature.ps1 -Json
@@ -152,9 +152,9 @@ specs/[jira-123.feature-name]/
 
 **For each capability (can be done in parallel where dependencies allow):**
 
-1. **Plan**: `/plan --capability cap-001` → generates cap-001/plan.md (400-1000 LOC scoped)
+1. **Plan**: `/plan --capability cap-001` → generates cap-001/plan.md (~1000 LOC scoped, 800-1200 acceptable)
 2. **Tasks**: `/tasks` → generates cap-001/tasks.md (8-15 tasks)
-3. **Implement**: `/implement` → atomic PR (400-1000 LOC total)
+3. **Implement**: `/implement` → atomic PR (~1000 LOC total, 800-1200 acceptable)
 4. **Repeat** for cap-002, cap-003, etc.
 
 ## Example Workflow
@@ -199,7 +199,7 @@ git pull origin main
 → PR #2: cap-002 branch → main (320 LOC) ✓ MERGED
 
 # Step 5: Repeat for cap-003...
-# Each capability = separate branch + atomic PR (400-1000 LOC total)
+# Each capability = separate branch + atomic PR (~1000 LOC total, 800-1200 acceptable)
 ```
 
 **Key Points:**
