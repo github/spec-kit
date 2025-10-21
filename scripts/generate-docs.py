@@ -15,6 +15,7 @@ import sys
 import re
 from pathlib import Path
 from typing import Dict, List, Tuple
+import ast
 
 
 def set_utf8_output():
@@ -32,34 +33,21 @@ def load_agent_config():
     if not init_file.exists():
         raise FileNotFoundError(f"Cannot find {init_file}")
     
-    # Extract AGENT_CONFIG by parsing the file
-    namespace = {}
-    exec_code = init_file.read_text(encoding="utf-8")
+    # Parse AGENT_CONFIG using AST for security
+    with open(init_file, 'r', encoding='utf-8') as f:
+        content = f.read()
     
-    in_config = False
-    config_lines = []
-    brace_count = 0
+    tree = ast.parse(content)
     
-    for line in exec_code.split('\n'):
-        if 'AGENT_CONFIG = {' in line:
-            in_config = True
-            config_lines.append(line)
-            brace_count += line.count('{') - line.count('}')
-            continue
-        
-        if in_config:
-            config_lines.append(line)
-            brace_count += line.count('{') - line.count('}')
-            
-            if brace_count == 0:
-                break
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == 'AGENT_CONFIG':
+                    if isinstance(node.value, ast.Dict):
+                        # Safely evaluate the dictionary using ast.literal_eval
+                        return ast.literal_eval(node.value)
     
-    if not config_lines:
-        raise ValueError("Could not find AGENT_CONFIG in __init__.py")
-    
-    # Execute just the AGENT_CONFIG assignment
-    exec('\n'.join(config_lines), namespace)
-    return namespace['AGENT_CONFIG']
+    raise ValueError("Could not find AGENT_CONFIG in __init__.py")
 
 
 AGENT_CONFIG = load_agent_config()
