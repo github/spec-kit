@@ -101,6 +101,26 @@ generate_commands() {
   done
 }
 
+generate_copilot_prompts() {
+  local chatmodes_dir=$1 prompts_dir=$2
+  mkdir -p "$prompts_dir"
+  
+  # Generate a .prompt.md file for each .chatmode.md file
+  for chatmode_file in "$chatmodes_dir"/speckit.*.chatmode.md; do
+    [[ -f "$chatmode_file" ]] || continue
+    
+    local basename=$(basename "$chatmode_file" .chatmode.md)
+    local prompt_file="$prompts_dir/${basename}.prompt.md"
+    
+    # Create prompt file with agent frontmatter
+    cat > "$prompt_file" <<EOF
+---
+agent: ${basename}
+---
+EOF
+  done
+}
+
 build_variant() {
   local agent=$1 script=$2
   local base_dir="$GENRELEASES_DIR/sdd-${agent}-package-${script}"
@@ -148,6 +168,8 @@ build_variant() {
     copilot)
       mkdir -p "$base_dir/.github/chatmodes"
       generate_commands copilot chatmode.md "\$ARGUMENTS" "$base_dir/.github/chatmodes" "$script"
+      # Generate companion prompt files
+      generate_copilot_prompts "$base_dir/.github/chatmodes" "$base_dir/.github/prompts"
       # Create VS Code workspace settings
       mkdir -p "$base_dir/.vscode"
       [[ -f templates/vscode-settings.json ]] && cp templates/vscode-settings.json "$base_dir/.vscode/settings.json"
