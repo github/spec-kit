@@ -1312,7 +1312,6 @@ def version():
             release_date = release_data.get("published_at", "unknown")
             if release_date != "unknown":
                 # Format the date nicely
-                from datetime import datetime
                 try:
                     dt = datetime.fromisoformat(release_date.replace('Z', '+00:00'))
                     release_date = dt.strftime("%Y-%m-%d")
