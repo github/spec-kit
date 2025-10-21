@@ -4,7 +4,9 @@ handoffs:
   - label: Create Tasks
     agent: speckit.tasks
     prompt: Break the plan into tasks
-    send: true
+  - label: Create Checklist
+    agent: speckit.checklist
+    prompt: Create a checklist for the following domain...
 scripts:
   sh: scripts/bash/setup-plan.sh --json
   ps: scripts/powershell/setup-plan.ps1 -Json
