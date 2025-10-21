@@ -87,15 +87,43 @@ cd "$REPO_ROOT"
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
-HIGHEST=0
+# Get highest number from specs directory
+HIGHEST_FROM_SPECS=0
 if [ -d "$SPECS_DIR" ]; then
     for dir in "$SPECS_DIR"/*; do
         [ -d "$dir" ] || continue
         dirname=$(basename "$dir")
         number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
         number=$((10#$number))
-        if [ "$number" -gt "$HIGHEST" ]; then HIGHEST=$number; fi
+        if [ "$number" -gt "$HIGHEST_FROM_SPECS" ]; then HIGHEST_FROM_SPECS=$number; fi
     done
+fi
+
+# Get highest number from branch names (both local and remote)
+HIGHEST_FROM_BRANCHES=0
+if [ "$HAS_GIT" = true ]; then
+    # Get all branches (local and remote)
+    branches=$(git branch -a 2>/dev/null || echo "")
+    
+    if [ -n "$branches" ]; then
+        while IFS= read -r branch; do
+            # Clean branch name: remove leading markers and remote prefixes
+            clean_branch=$(echo "$branch" | sed 's/^[* ]*//; s|^remotes/[^/]*/||')
+            
+            # Extract feature number if branch matches pattern ###-*
+            if echo "$clean_branch" | grep -q '^[0-9]\{3\}-'; then
+                number=$(echo "$clean_branch" | grep -o '^[0-9]\{3\}' || echo "0")
+                number=$((10#$number))
+                if [ "$number" -gt "$HIGHEST_FROM_BRANCHES" ]; then HIGHEST_FROM_BRANCHES=$number; fi
+            fi
+        done <<< "$branches"
+    fi
+fi
+
+# Use the highest number from either source
+HIGHEST=$HIGHEST_FROM_SPECS
+if [ "$HIGHEST_FROM_BRANCHES" -gt "$HIGHEST" ]; then
+    HIGHEST=$HIGHEST_FROM_BRANCHES
 fi
 
 NEXT=$((HIGHEST + 1))

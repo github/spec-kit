@@ -79,15 +79,40 @@ Set-Location $repoRoot
 $specsDir = Join-Path $repoRoot 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
-$highest = 0
+# Get highest number from specs directory
+$highestFromSpecs = 0
 if (Test-Path $specsDir) {
     Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
         if ($_.Name -match '^(\d{3})') {
             $num = [int]$matches[1]
-            if ($num -gt $highest) { $highest = $num }
+            if ($num -gt $highestFromSpecs) { $highestFromSpecs = $num }
         }
     }
 }
+
+# Get highest number from branch names (both local and remote)
+$highestFromBranches = 0
+try {
+    $branches = git branch -a 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        foreach ($branch in $branches) {
+            # Clean branch name: remove leading markers and remote prefixes
+            $cleanBranch = $branch.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
+            
+            # Extract feature number if branch matches pattern ###-*
+            if ($cleanBranch -match '^(\d{3})-') {
+                $num = [int]$matches[1]
+                if ($num -gt $highestFromBranches) { $highestFromBranches = $num }
+            }
+        }
+    }
+} catch {
+    # If git command fails, just continue with specs-only check
+    Write-Verbose "Could not check Git branches: $_"
+}
+
+# Use the highest number from either source
+$highest = [Math]::Max($highestFromSpecs, $highestFromBranches)
 $next = $highest + 1
 $featureNum = ('{0:000}' -f $next)
 
