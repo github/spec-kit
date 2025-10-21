@@ -1,5 +1,6 @@
 ---
 description: Generate a custom checklist for the current feature based on user requirements.
+mode: speckit.checklist
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
