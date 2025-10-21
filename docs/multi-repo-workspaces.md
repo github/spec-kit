@@ -291,6 +291,217 @@ Specs are automatically routed to repositories based on their names:
 
 Configure custom rules in `.specify/workspace.yml`.
 
+## GitHub Host Conventions and Jira Keys
+
+### Overview
+
+Spec-kit automatically detects each repository's GitHub host during workspace initialization and configures Jira key requirements accordingly. This enables workspaces with mixed requirements:
+- Repos hosted on `github.marqeta.com` → **Jira keys required**
+- Repos hosted on `github.com` → **Jira keys optional**
+- Mixed workspaces → **Per-repo Jira requirements**
+
+### How It Works
+
+1. **Workspace Initialization:**
+   ```bash
+   specify init --workspace --auto-init
+   ```
+   - Detects GitHub remote URL for each repo
+   - Extracts GitHub host (e.g., `github.marqeta.com`, `github.com`)
+   - Sets `require_jira: true` for enterprise GitHub hosts
+   - Sets `require_jira: false` for standard `github.com`
+
+2. **Workspace Configuration:**
+   ```yaml
+   repos:
+     - name: attun-backend
+       path: ./attun-backend
+       aliases: [backend, api]
+       github_host: github.marqeta.com
+       require_jira: true               # ← Auto-detected
+
+     - name: attun-frontend
+       path: ./attun-frontend
+       aliases: [frontend, ui]
+       github_host: github.com
+       require_jira: false              # ← Auto-detected
+   ```
+
+3. **Smart Spec Routing:**
+   - Convention matching **strips Jira keys** for routing
+   - Example: `proj-123.backend-api` → matches `backend-` rule (using `backend-api`)
+   - Full spec ID (with Jira key) preserved for directories and branches
+
+### Spec Naming Patterns
+
+**With Jira Key (required for github.marqeta.com):**
+```bash
+/specify proj-123.backend-api
+# → Spec: specs/proj-123.backend-api/
+# → Branch: hnimitanakit/proj-123.backend-api
+# → Routes to: backend repo (matches "backend-" convention)
+```
+
+**Without Jira Key (allowed for github.com):**
+```bash
+/specify backend-api
+# → Spec: specs/backend-api/
+# → Branch: hnimitanakit/backend-api
+# → Routes to: backend repo (matches "backend-" convention)
+```
+
+### Automatic Jira Key Prompts
+
+When targeting a repo that requires Jira keys, you'll be prompted automatically:
+
+```bash
+/specify backend-api   # Forgot Jira key
+
+# Output:
+# Target repo 'attun-backend' requires JIRA key.
+# Enter JIRA issue key (e.g., proj-123): _
+```
+
+### Mixed Workspace Example
+
+**Workspace Structure:**
+```
+my-workspace/
+  .specify/workspace.yml
+  internal-service/        # github.marqeta.com (Jira required)
+  public-docs/             # github.com (Jira optional)
+```
+
+**Workspace Config:**
+```yaml
+repos:
+  - name: internal-service
+    github_host: github.marqeta.com
+    require_jira: true
+
+  - name: public-docs
+    github_host: github.com
+    require_jira: false
+
+conventions:
+  prefix_rules:
+    internal-: [internal-service]
+    docs-: [public-docs]
+```
+
+**Usage:**
+```bash
+# Internal service (Jira required)
+/specify proj-123.internal-auth
+# ✓ Creates specs/proj-123.internal-auth/
+# ✓ Routes to internal-service (stripped "proj-123." for matching)
+
+# Public docs (Jira optional)
+/specify docs-quickstart
+# ✓ Creates specs/docs-quickstart/
+# ✓ Routes to public-docs (no Jira key needed)
+```
+
+### Troubleshooting
+
+#### "Jira key required" Error
+
+**Problem**: Targeting a repo that requires Jira keys without providing one.
+
+**Solution**:
+```bash
+# Option 1: Provide Jira key upfront
+/specify proj-123.backend-feature
+
+# Option 2: Respond to interactive prompt
+/specify backend-feature
+# Enter JIRA issue key (e.g., proj-123): proj-456
+```
+
+#### Convention Routing with Jira Keys
+
+**Problem**: Spec with Jira key doesn't match conventions.
+
+**Explanation**: Jira keys are automatically stripped for matching.
+
+```bash
+/specify proj-123.backend-api
+# ↓ Convention matching uses: "backend-api"
+# ✓ Matches "backend-" prefix rule
+# ✓ Routes to backend repo
+# ✓ Creates specs/proj-123.backend-api/ (keeps full name)
+```
+
+#### Checking Repo Requirements
+
+**Check workspace config manually:**
+```bash
+cat .specify/workspace.yml | grep -A5 "name: backend-repo"
+```
+
+**Look for:**
+```yaml
+  - name: backend-repo
+    github_host: github.marqeta.com   # ← GitHub host
+    require_jira: true                # ← Jira requirement
+```
+
+### Best Practices
+
+1. **Let workspace init detect requirements automatically**
+   - Don't manually set `require_jira` unless overriding
+   - Workspace initialization reads GitHub remotes accurately
+
+2. **Use descriptive spec names** even with Jira keys
+   ```bash
+   # ✅ Good (clear feature name)
+   /specify proj-123.user-auth-flow
+
+   # ❌ Bad (unclear purpose)
+   /specify proj-123.feature
+   ```
+
+3. **Document Jira key conventions** in team guidelines
+   - Specify Jira project keys to use
+   - Document branch naming conventions
+   - Include examples for your organization
+
+4. **Test convention routing** with sample specs
+   ```bash
+   # Test without creating branches (dry-run)
+   /specify proj-123.test-backend-api --help
+   # Check which repo would be targeted
+   ```
+
+### Enterprise GitHub Support
+
+Spec-kit automatically detects and supports:
+- **github.marqeta.com** (Marqeta enterprise)
+- **github.{company}.com** (any enterprise GitHub)
+- **Custom GitHub hosts** (set via git remote URL)
+
+**Detection Logic:**
+```bash
+# github.marqeta.com → require_jira: true
+# github.company.com → require_jira: true
+# github.com → require_jira: false
+```
+
+### Configuration Override
+
+**Manual override** (advanced use cases only):
+```yaml
+repos:
+  - name: special-repo
+    github_host: github.com
+    require_jira: true    # ← Override: force Jira even for github.com
+```
+
+**Use cases for override:**
+- Team policy requires Jira for all repos
+- Repo switched from enterprise to github.com
+- Testing Jira workflows
+
 ## Workflow Examples
 
 ### Example 1: Backend-Only Feature

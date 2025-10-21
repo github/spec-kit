@@ -69,7 +69,7 @@ fi
 # Sanitize username for branch name (replace spaces/special chars with hyphens)
 USERNAME=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
 
-# Detect GitHub host
+# Detect GitHub host (for single-repo mode)
 GIT_REMOTE_URL=$(git config remote.origin.url 2>/dev/null || echo "")
 IS_MARQETA_HOST=false
 if [[ "$GIT_REMOTE_URL" == *"github.marqeta.com"* ]]; then
@@ -77,6 +77,7 @@ if [[ "$GIT_REMOTE_URL" == *"github.marqeta.com"* ]]; then
 fi
 
 # Determine if JIRA key and username prefix are required
+# In workspace mode, this will be refined after target repo is determined
 REQUIRE_JIRA=false
 USE_USERNAME_PREFIX=true
 if [[ "$USERNAME" == "hnimitanakit" ]] || [[ "$IS_MARQETA_HOST" == true ]]; then
@@ -230,6 +231,35 @@ else
         if [[ -z "$REPO_PATH" ]]; then
             echo "ERROR: Repository not found: $TARGET_REPO" >&2
             exit 1
+        fi
+
+        # Check if target repo requires Jira keys (workspace mode)
+        REPO_REQUIRE_JIRA=$(get_repo_require_jira "$WORKSPACE_ROOT" "$TARGET_REPO")
+        if [[ "$REPO_REQUIRE_JIRA" == "true" ]] && [[ -z "$JIRA_KEY" ]]; then
+            # Target repo requires Jira key but none was provided
+            if [ -t 0 ]; then
+                read -p "Target repo '$TARGET_REPO' requires JIRA key. Enter JIRA issue key (e.g., proj-123): " JIRA_KEY
+                if [[ -z "$JIRA_KEY" ]]; then
+                    echo "ERROR: JIRA key is required for repo: $TARGET_REPO" >&2
+                    exit 1
+                fi
+                # Validate JIRA key format
+                if [[ ! "$JIRA_KEY" =~ ^[a-z]+-[0-9]+$ ]]; then
+                    echo "ERROR: Invalid JIRA key format. Expected format: proj-123" >&2
+                    exit 1
+                fi
+                # Rebuild feature ID and branch name with Jira key
+                if $USE_USERNAME_PREFIX; then
+                    BRANCH_NAME="${USERNAME}/${JIRA_KEY}.${FEATURE_NAME}"
+                else
+                    BRANCH_NAME="${JIRA_KEY}.${FEATURE_NAME}"
+                fi
+                FEATURE_ID="${JIRA_KEY}.${FEATURE_NAME}"
+                FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
+            else
+                echo "ERROR: JIRA key required for repo '$TARGET_REPO' but not provided. Use: $0 jira-key feature-name" >&2
+                exit 1
+            fi
         fi
 
         # Create branch in target repo

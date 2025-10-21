@@ -71,6 +71,35 @@ Given the feature description provided as an argument, do this:
 
 4. Run the script `{SCRIPT}` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
 
+**Workspace Mode & Jira Keys**:
+- In workspace mode, target repository is determined by convention-based routing
+- Some repos require Jira keys based on their GitHub host (e.g., `github.marqeta.com`)
+- Script will prompt for Jira key if needed: `"Target repo 'X' requires JIRA key"`
+- Convention matching strips Jira keys: `proj-123.backend-api` → matches `backend-` rule
+- Full spec ID (with Jira key) is preserved for directories and branches
+- If Jira key is provided or prompted, the SPEC_FILE path will include it
+
+**Examples**:
+```bash
+# Without Jira key (allowed for github.com repos)
+/specify backend-api
+# → SPEC_FILE: specs/backend-api/spec.md
+# → BRANCH_NAME: username/backend-api
+
+# With Jira key (required for github.marqeta.com repos)
+/specify proj-123.backend-api
+# → SPEC_FILE: specs/proj-123.backend-api/spec.md
+# → BRANCH_NAME: username/proj-123.backend-api
+# → Routes to backend repo (matches "backend-" after stripping Jira key)
+
+# Workspace mode with prompt (if Jira key forgot to provide)
+/specify backend-api
+# → Prompts: "Enter JIRA issue key (e.g., proj-123): "
+# → User enters: proj-456
+# → SPEC_FILE: specs/proj-456.backend-api/spec.md
+# → BRANCH_NAME: username/proj-456.backend-api
+```
+
 5. Load `templates/spec-template.md` to understand required sections, paying special attention to the enhanced Context Engineering section.
 
 6. Write the specification to SPEC_FILE **using UTF-8 encoding** and following the template structure, ensuring:
