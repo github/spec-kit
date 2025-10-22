@@ -2,6 +2,17 @@
 # Common PowerShell functions analogous to common.sh
 
 function Get-RepoRoot {
+    # First check for .specify directory (highest priority)
+    $currentDir = Get-Location
+    while ($currentDir.Path -ne $currentDir.Drive.Root) {
+        $specifyPath = Join-Path $currentDir ".specify"
+        if (Test-Path $specifyPath -PathType Container) {
+            return $currentDir.Path
+        }
+        $currentDir = $currentDir.Parent
+    }
+    
+    # Then check git if available
     try {
         $result = git rev-parse --show-toplevel 2>$null
         if ($LASTEXITCODE -eq 0) {
