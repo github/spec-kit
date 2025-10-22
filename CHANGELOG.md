@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Introduced `specify update` for selectively refreshing templates, scripts, and command prompts without touching `.specify/memory` or previously generated specs, plans, and tasks. Supports dry-run previews and non-interactive application.
+- Introduced `specify update` for selectively refreshing templates, scripts, and command prompts without touching `.specify/memory` or previously generated specs, plans, and tasks. Supports dry-run previews, non-interactive application, and removes allowlisted files that were dropped upstream.
 
 ## [0.0.20] - 2025-10-14
 

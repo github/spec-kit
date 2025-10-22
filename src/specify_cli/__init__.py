@@ -188,9 +188,9 @@ class UpdateContext:
 @dataclass
 class PlannedFileChange:
     relative_path: Path
-    source_path: Path
+    source_path: Path | None
     destination_path: Path
-    change_type: str  # "create" or "update"
+    change_type: str  # "create", "update", or "delete"
     size: int
 
 
@@ -336,20 +336,23 @@ def files_are_identical(source: Path, destination: Path) -> bool:
 
 
 
-def iter_allowlisted_files(staging_root: Path):
+def collect_allowlisted_files(base_root: Path) -> dict[Path, Path]:
+    files: dict[Path, Path] = {}
     for relative_root in UPDATE_ALLOWLIST:
-        candidate_root = staging_root / relative_root
+        candidate_root = base_root / relative_root
         if not candidate_root.exists():
             continue
         for path in candidate_root.rglob("*"):
             if not path.is_file():
                 continue
-            relative_path = path.relative_to(staging_root)
+            try:
+                relative_path = path.relative_to(base_root)
+            except ValueError:
+                continue
             if is_protected_path(relative_path):
                 continue
-            yield relative_path, path
-
-
+            files[relative_path] = path
+    return files
 
 
 def format_size(num_bytes: int) -> str:
@@ -364,7 +367,11 @@ def format_size(num_bytes: int) -> str:
 
 def build_update_plan(project_root: Path, staging_root: Path) -> list[PlannedFileChange]:
     changes: list[PlannedFileChange] = []
-    for relative_path, source_path in iter_allowlisted_files(staging_root):
+
+    staged_files = collect_allowlisted_files(staging_root)
+    project_files = collect_allowlisted_files(project_root)
+
+    for relative_path, source_path in staged_files.items():
         destination_path = project_root / relative_path
         if destination_path.exists() and destination_path.is_dir():
             raise RuntimeError(f"Cannot replace directory with file: {relative_path}")
@@ -388,8 +395,40 @@ def build_update_plan(project_root: Path, staging_root: Path) -> list[PlannedFil
             )
         )
 
+    for relative_path, destination_path in project_files.items():
+        if relative_path in staged_files:
+            continue
+        if not destination_path.exists() or not destination_path.is_file():
+            continue
+        try:
+            size = destination_path.stat().st_size
+        except OSError:
+            size = 0
+
+        changes.append(
+            PlannedFileChange(
+                relative_path=relative_path,
+                source_path=None,
+                destination_path=destination_path,
+                change_type="delete",
+                size=size,
+            )
+        )
+
     changes.sort(key=lambda change: change.relative_path.as_posix())
     return changes
+
+
+def prune_allowlisted_empty_dirs(start_dir: Path, *, project_root: Path, stop_path: Path) -> None:
+    current = start_dir
+    try:
+        while current != project_root and current != stop_path:
+            if stop_path not in current.parents and current != stop_path:
+                break
+            current.rmdir()
+            current = current.parent
+    except OSError:
+        pass
 
 
 BANNER = """
@@ -1501,7 +1540,10 @@ def update(
                     console.print(Panel(str(exc), title="Update failed", border_style="red"))
                     raise typer.Exit(1)
 
-                has_shell_changes = any(change.relative_path.suffix == ".sh" for change in changes)
+                has_shell_changes = any(
+                    change.relative_path.suffix == ".sh" and change.change_type != "delete"
+                    for change in changes
+                )
 
                 if changes:
                     tracker.complete("diff", f"{len(changes)} file(s)")
@@ -1532,7 +1574,7 @@ def update(
         table.add_column("Size", justify="right")
         for change in changes:
             table.add_row(
-                "create" if change.change_type == "create" else "update",
+                change.change_type,
                 change.relative_path.as_posix(),
                 format_size(change.size),
             )
@@ -1561,14 +1603,30 @@ def update(
             result_message = "Update cancelled. No changes applied."
             result_style = "yellow"
         else:
-            tracker.start("apply", f"{len(changes)} file(s)")
+            tracker.start("apply", f"{len(changes)} change(s)")
             failures: list[str] = []
             for change in changes:
                 try:
-                    change.destination_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(change.source_path, change.destination_path)
-                    applied_files += 1
-                except OSError as exc:
+                    if change.change_type == "delete":
+                        if change.destination_path.exists():
+                            change.destination_path.unlink()
+                            if change.relative_path.parts:
+                                stop_path = project_root / change.relative_path.parts[0]
+                            else:
+                                stop_path = project_root
+                            prune_allowlisted_empty_dirs(
+                                change.destination_path.parent,
+                                project_root=project_root,
+                                stop_path=stop_path,
+                            )
+                            applied_files += 1
+                    else:
+                        if change.source_path is None:
+                            raise RuntimeError("Missing source for copy operation")
+                        change.destination_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(change.source_path, change.destination_path)
+                        applied_files += 1
+                except Exception as exc:
                     failures.append(f"{change.relative_path.as_posix()}: {exc}")
             if failures:
                 tracker.error("apply", f"{len(failures)} failed")
@@ -1591,7 +1649,7 @@ def update(
                         ensure_executable_scripts(project_root, tracker=tracker)
                 else:
                     tracker.skip("chmod", "no script updates")
-                result_message = f"Applied {applied_files} update(s). Review git diff for detail."
+                result_message = f"Applied {applied_files} change(s). Review git diff for detail."
 
     if temp_dir is not None:
         temp_dir.cleanup()

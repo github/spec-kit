@@ -228,6 +228,7 @@ Keep your project templates current without overwriting specs, plans, or constit
 
 - Downloads the latest release bundle that matches your assistant (`--ai`) and script preference (`--script`).
 - Applies changes only to the allowlisted directories (`.specify/templates`, `.specify/scripts`, `.specify/commands`, top-level `templates/` and `scripts/`).
+- Removes allowlisted files that no longer exist upstream so stale commands/scripts do not linger.
 - Skips `.specify/memory`, existing specs, tasks, and other generated artifacts so historical work stays intact.
 - Supports `--dry-run` to preview changes and `--yes` for non-interactive automation.
 
