@@ -1,1376 +1,955 @@
-# Complete Bash Tutorial: WSL, Mac & Linux
+# Bash Essentials for AI CLI Development
 
-## Table of Contents
-1. [Getting Started with Bash](#getting-started)
-2. [Why Use Bash?](#why-bash)
-3. [Platform-Specific Setup](#setup)
-4. [Bash Fundamentals](#fundamentals)
-5. [WSL Fundamentals for Beginners] {#beginners}
-6. [Essential Commands](#essential-commands)
-7. [File Operations](#file-operations)
-8. [Text Processing](#text-processing)
-9. [Scripting Basics](#scripting)
-10. [Advanced Techniques](#advanced)
-11. [Practical Examples for AI Development](#ai-examples)
+A minimal guide to get you productive with AI development tools like Claude Code, Cursor, and other AI CLIs.
 
----
+## Navigation & File Management
 
-## Getting Started with Bash {#getting-started}
-
-Bash (Bourne Again Shell) is a command-line interpreter that provides a powerful interface to your operating system. It's the default shell on most Linux distributions and macOS, and available on Windows through WSL.
-
-### What You'll Learn
-- Navigate and manipulate files and directories
-- Process text and data efficiently
-- Automate repetitive tasks with scripts
-- Chain commands together for powerful workflows
-- Manage processes and system resources
-
----
-
-## Why Use Bash? {#why-bash}
-
-### 1. **Universal Availability**
-Bash is available on virtually every Unix-like system. Scripts you write work across platforms without modification.
-
-### 2. **Automation Power**
-Automate repetitive tasks with simple scripts. What takes 100 mouse clicks can become a single command.
-
-### 3. **Text Processing Excellence**
-Bash excels at manipulating text, logs, CSV files, and configuration files—critical for AI development and data processing.
-
-### 4. **Composability**
-The Unix philosophy: small tools that do one thing well, combined through pipes into powerful workflows.
-
-### 5. **Efficiency**
-Once mastered, command-line operations are faster than GUI equivalents. Batch operations become trivial.
-
-### 6. **Remote Access**
-SSH into remote servers and work exactly as you do locally. Essential for cloud deployments.
-
-### 7. **Reproducibility**
-Scripts document exactly what you did and can be version-controlled, shared, and repeated.
-
-### 8. **System Control**
-Direct access to system resources, processes, and configuration without abstraction layers.
-
----
-
-## Platform-Specific Setup {#setup}
-
-### Windows (WSL)
-
-**Installing WSL 2:**
-
-1. Open PowerShell as Administrator and run:
-```powershell
-wsl --install
-```
-
-* Windows 10 (version 2004 or later) or any Windows 11.
-
-2. Restart your computer when prompted
-
-3. After restart, WSL will complete installation and ask you to create a username and password
-
-4. Update WSL to the latest version:
-```powershell
-wsl --update
-```
-
-**Accessing Bash:**
-- Open "Ubuntu" from the Start menu, or
-- Type `wsl` in PowerShell/Command Prompt, or
-- Use Windows Terminal (recommended)
-
-**Installing Windows Terminal (Recommended):**
-- Install from Microsoft Store: "Windows Terminal"
-- Provides tabs, Unicode support, and better appearance
-
-**File System Access:**
-- Windows files accessible at `/mnt/c/`, `/mnt/d/`, etc.
-- Linux files stored in `\\wsl$\Ubuntu\home\yourusername\`
-- **Best Practice:** Keep project files in Linux filesystem for better performance
-
-### macOS
-
-**Accessing Bash/Zsh:**
-
-1. Open Terminal (Applications > Utilities > Terminal, or press `Cmd + Space` and type "Terminal")
-
-2. macOS Catalina and later use Zsh by default, but Bash is still available
-
-**Installing Homebrew (Recommended):**
+### Where am I?
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+pwd                    # Print working directory (shows current location)
 ```
 
-**Switching to Bash (if desired):**
+### Moving around
 ```bash
-chsh -s /bin/bash
+cd project-name        # Go into a folder
+cd ..                  # Go up one level
+cd ~                   # Go to home directory
+cd -                   # Go back to previous directory
 ```
 
-**Recommended Terminal Apps:**
-- Built-in Terminal (good)
-- iTerm2 (excellent, feature-rich)
-
-### Linux
-
-**Accessing Bash:**
-- Usually Bash is the default shell
-- Open terminal with `Ctrl + Alt + T` (most distributions)
-- Or search for "Terminal" in your application menu
-
-**Checking Your Shell:**
+### Seeing what's here
 ```bash
-echo $SHELL
+ls                     # List files
+ls -la                 # List all files (including hidden) with details
+tree                   # Show directory structure (may need to install)
 ```
 
-**Setting Bash as Default (if needed):**
+### Creating & removing
 ```bash
-chsh -s /bin/bash
+mkdir my-project       # Create directory
+touch file.txt         # Create empty file
+rm file.txt            # Delete file
+rm -rf folder/         # Delete folder and contents (use carefully!)
 ```
 
----
+## Working with Files
 
-## Bash Fundamentals {#fundamentals}
-
-### The Command Prompt
-
-When you open a terminal, you'll see a prompt like:
-```
-username@hostname:~$
-```
-
-- `username`: Your user account
-- `hostname`: Your computer's name
-- `~`: Current directory (~ means home directory)
-- `$`: Regular user prompt (`#` for root/admin)
-
-### Basic Command Structure
-
+### Reading files
 ```bash
-command [options] [arguments]
+cat file.txt           # Show entire file
+head file.txt          # Show first 10 lines
+tail file.txt          # Show last 10 lines
+tail -f log.txt        # Follow file updates (great for logs)
+less file.txt          # Browse file (q to quit, / to search)
 ```
 
-Example:
+### Editing files
 ```bash
-ls -la /home
+nano file.txt          # Simple editor (Ctrl+X to exit)
 ```
-- `ls`: command (list directory contents)
-- `-la`: options (long format, all files)
-- `/home`: argument (directory to list)
 
-### Getting Help
-
-Every command has built-in documentation:
-
+### Copying & moving
 ```bash
-# View manual page
-man ls
-
-# Quick help
-ls --help
-
-# Search manual pages
-man -k search_term
+cp source.txt dest.txt           # Copy file
+cp -r source-dir/ dest-dir/      # Copy directory
+mv old-name.txt new-name.txt     # Rename/move file
 ```
 
-### Command History
+## Process Management
 
-Bash remembers your commands:
-
+### Running commands
 ```bash
-# View history
-history
-
-# Repeat last command
-!!
-
-# Repeat command #42 from history
-!42
-
-# Search history (press Ctrl+R, then type)
-# Press Ctrl+R repeatedly to cycle through matches
-
-# Navigate history with arrow keys
-# Up/Down arrows
+command                # Run in foreground
+command &              # Run in background
+Ctrl+C                 # Stop current process
+Ctrl+Z                 # Pause process
 ```
 
----
-
-
-## WSL Fundamentals for Beginners {#beginners}
-
-Here’s a **complete beginner-friendly setup + first commands** guide to get you learning Bash *the right way* on Windows.
-
-## 🪟 **STEP 1: Install WSL (Windows Subsystem for Linux)**
-
-### 🧰 Requirements:
-
-* Windows 10 (version 2004 or later) or any Windows 11.
-
-### ⚙️ Install via Command Prompt or PowerShell:
-
-Open **PowerShell as Administrator** and run:
-
-```powershell
-wsl --install
+### Seeing what's running
+```bash
+ps aux                 # List all processes
+top                    # Interactive process viewer (q to quit)
+kill 12345             # Stop process with PID 12345
+killall process-name   # Stop all processes with that name
 ```
 
-This will:
+## AI CLI Essentials
 
-* Enable the Linux subsystem
-* Download **Ubuntu** by default
-* Set it up automatically
+### Environment variables (API keys, etc.)
+```bash
+export API_KEY="your-key-here"         # Set for current session
+echo $API_KEY                          # View variable
+env                                    # See all environment variables
+```
 
-🕒 After installation → Restart your PC.
+### Making variables permanent
+Add to `~/.bashrc` or `~/.zshrc`:
+```bash
+export ANTHROPIC_API_KEY="your-key"
+```
+Then reload:
+```bash
+source ~/.bashrc       # Reload bash config
+```
 
----
+### Command history
+```bash
+history                # See past commands
+!123                   # Run command #123 from history
+!!                     # Run last command
+Ctrl+R                 # Search command history (type to search)
+```
 
-## 🐧 **STEP 2: Open and Set Up Ubuntu**
+## Pipes & Redirection
 
-After restart:
+### Connecting commands
+```bash
+command1 | command2    # Send output of command1 to command2
+cat file.txt | grep "error"        # Find "error" in file
+ls | wc -l                          # Count files in directory
+```
 
-1. Open **Start → search “Ubuntu” → open it**
-2. It will initialize and ask for:
+### Saving output
+```bash
+command > file.txt     # Save output to file (overwrite)
+command >> file.txt    # Append output to file
+command 2> errors.txt  # Save errors to file
+```
 
-   * A **UNIX username** (e.g., `zia`)
-   * A **password** (type it carefully; it won’t show as you type)
+## Package Management
 
-You now have a **real Linux terminal** inside Windows 🎉
+### macOS (Homebrew)
+```bash
+brew install package-name
+brew update
+brew upgrade
+```
 
----
-
-## 🧱 **STEP 3: Update Your System**
-
-Run these commands first:
-
+### Ubuntu/Debian
 ```bash
 sudo apt update
-sudo apt upgrade -y
+sudo apt install package-name
 ```
 
-(`sudo` means “run as admin/root”.)
+### Python packages
+```bash
+pip install package-name
+pip install -r requirements.txt
+```
 
----
+### Node packages
+```bash
+npm install package-name
+npm install              # Install from package.json
+```
 
-## ⚡ **STEP 4: Your First 10 Bash Commands**
-
-Here’s your essential starter pack ⬇️
-
-| Command | Purpose                     | Example                   |
-| ------- | --------------------------- | ------------------------- |
-| `pwd`   | Show current directory      | `pwd`                     |
-| `ls`    | List files                  | `ls -l`                   |
-| `cd`    | Change directory            | `cd /home`                |
-| `mkdir` | Create folder               | `mkdir testdir`           |
-| `touch` | Create file                 | `touch notes.txt`         |
-| `cat`   | Show file contents          | `cat notes.txt`           |
-| `cp`    | Copy files                  | `cp notes.txt backup.txt` |
-| `mv`    | Move or rename              | `mv notes.txt old.txt`    |
-| `rm`    | Remove files                | `rm old.txt`              |
-| `echo`  | Print text or write to file | `echo "Hello" > hi.txt`   |
-
-👉 Try chaining commands:
+## Useful Shortcuts
 
 ```bash
-ls | grep txt
+Tab                    # Auto-complete
+Tab Tab                # Show all options
+Ctrl+A                 # Go to start of line
+Ctrl+E                 # Go to end of line
+Ctrl+U                 # Clear line
+Ctrl+L                 # Clear screen (or type 'clear')
+Ctrl+D                 # Exit terminal/shell
 ```
 
-(This finds all `.txt` files.)
+## Finding Things
 
----
+```bash
+find . -name "*.py"              # Find Python files
+grep "search-term" file.txt      # Search in file
+grep -r "search-term" .          # Search in all files recursively
+which python                     # Find program location
+```
 
-## ✍️ **STEP 5: Create and Run a Simple Bash Script**
+## Permissions (when you get "permission denied")
 
-1. Create a file:
+```bash
+chmod +x script.sh     # Make file executable
+sudo command           # Run with admin privileges
+```
 
+## Common Patterns for AI CLI Work
+
+### Check what's installed
+```bash
+which claude           # Check if Claude CLI is installed
+python --version       # Check Python version
+node --version         # Check Node version
+```
+
+### Create project structure
+```bash
+mkdir -p project/{src,tests,docs}    # Create nested folders
+cd project && git init               # Initialize git repo
+touch README.md .gitignore           # Create essential files
+```
+
+### Monitor AI CLI output
+```bash
+claude code "task" | tee output.log  # Show output AND save to file
+```
+
+### Chain AI operations
+```bash
+claude analyze code.py > analysis.txt && cat analysis.txt
+```
+
+## Quick Troubleshooting
+
+**Command not found?**
+- Check if installed: `which command-name`
+- Check PATH: `echo $PATH`
+- Reinstall or add to PATH
+
+**Permission denied?**
+- Try `chmod +x filename` for scripts
+- Use `sudo` for system operations
+- Check file ownership: `ls -la`
+
+**API key not working?**
+- Check it's set: `echo $API_KEY`
+- Reload config: `source ~/.bashrc`
+- Check for typos in variable name
+
+## Pro Tips
+
+1. Use `!!` to quickly rerun the last command with sudo: `sudo !!`
+2. Use `Ctrl+R` to search history - huge time saver
+3. Create aliases for common commands in `~/.bashrc`:
    ```bash
-   nano hello.sh
+   alias ll='ls -la'
+   alias gs='git status'
    ```
+4. Use `man command` to read documentation for any command
+5. When copying commands from AI, understand what they do before running
 
-2. Type this inside:
+## Next Steps
 
-   ```bash
-   #!/bin/bash
-   echo "Hello, $(whoami)! Today is $(date)."
-   ```
+This covers 90% of what you'll need for AI-driven development. As you work:
+- Commands will become muscle memory
+- You'll discover shortcuts specific to your workflow
+- Your AI assistant can help with complex one-liners when needed
 
-3. Save with `Ctrl + O`, then `Enter`, then `Ctrl + X`.
+**Remember:** You don't need to memorize everything. Keep this guide handy and refer back as needed. The AI tools you're using can also help explain bash commands when you're stuck!
 
-4. Make it executable:
+## Appendix: Natural Language Prompts for AI CLI Tools
 
-   ```bash
-   chmod +x hello.sh
-   ```
-
-5. Run it:
-
-   ```bash
-   ./hello.sh
-   ```
-
-You’ve now written and executed your **first Bash script** ✅
+This appendix provides natural language prompts you can use with AI CLI tools like Claude Code, Gemini CLI, and similar assistants to execute the commands covered in the tutorial. The format shows the bash command first, followed by natural language prompts you can use to have the AI execute that command.
 
 ---
 
-## 🧠 **STEP 6: (Optional) Learn More**
+## Navigation & File Management
 
-To go deeper, explore:
+### Finding Your Location
 
-* `man <command>` → manual for any command (`man ls`)
-* `history` → see all commands you’ve run
-* `grep`, `awk`, `sed` → text processing tools
-* `for`, `if`, `while` → scripting logic
+Instead of: `pwd`
 
-And install more tools:
-
-```bash
-sudo apt install vim curl git tree
+```
+Prompt: "Show me my current directory path"
+Prompt: "Where am I right now in the filesystem?"
+Prompt: "What's my current working directory?"
 ```
 
+### Moving Around
 
----
+Instead of: `cd project-name`
 
-## Essential Commands {#essential-commands}
-
-### Navigation
-
-```bash
-# Print working directory (where am I?)
-pwd
-
-# Change directory
-cd /path/to/directory
-cd ~              # Go to home directory
-cd ..             # Go up one directory
-cd -              # Go to previous directory
-
-# List directory contents
-ls                # Basic listing
-ls -l             # Long format (detailed)
-ls -a             # Show hidden files (starting with .)
-ls -lh            # Human-readable file sizes
-ls -lt            # Sort by modification time
-ls -R             # Recursive (include subdirectories)
+```
+Prompt: "Go into the project-name folder"
+Prompt: "Navigate to the project-name directory"
+Prompt: "Change to the project-name directory"
 ```
 
-### File and Directory Management
+Instead of: `cd ..`
 
-```bash
-# Create directory
-mkdir my_directory
-mkdir -p path/to/nested/directory  # Create parent directories
-
-# Create empty file or update timestamp
-touch filename.txt
-
-# Copy files
-cp source.txt destination.txt
-cp -r source_dir/ dest_dir/        # Copy directory recursively
-cp -i file.txt backup.txt          # Interactive (ask before overwrite)
-
-# Move/rename files
-mv oldname.txt newname.txt
-mv file.txt /path/to/destination/
-mv *.txt documents/                # Move all .txt files
-
-# Remove files
-rm file.txt
-rm -r directory/                   # Remove directory recursively
-rm -i file.txt                     # Interactive (ask confirmation)
-rm -f file.txt                     # Force (no confirmation)
-
-# Remove empty directory
-rmdir empty_directory
+```
+Prompt: "Navigate to the parent directory"
+Prompt: "Go up one level"
+Prompt: "Move to the directory above this one"
 ```
 
-### Viewing File Contents
+Instead of: `cd ~`
 
-```bash
-# Display entire file
-cat file.txt
-
-# Display with line numbers
-cat -n file.txt
-
-# View file page by page
-less file.txt                      # Use space/arrow keys, q to quit
-more file.txt                      # Simpler pager
-
-# View first lines
-head file.txt                      # First 10 lines
-head -n 20 file.txt                # First 20 lines
-
-# View last lines
-tail file.txt                      # Last 10 lines
-tail -n 20 file.txt                # Last 20 lines
-tail -f logfile.txt                # Follow (watch for new lines)
+```
+Prompt: "Take me to my home directory"
+Prompt: "Go to my home folder"
+Prompt: "Navigate to my user home directory"
 ```
 
-### File Permissions
+Instead of: `cd -`
 
-```bash
-# View permissions
-ls -l
-
-# Change permissions (numeric)
-chmod 755 script.sh                # rwxr-xr-x
-chmod 644 file.txt                 # rw-r--r--
-
-# Change permissions (symbolic)
-chmod +x script.sh                 # Add execute permission
-chmod u+w file.txt                 # User can write
-chmod go-r file.txt                # Group/others cannot read
-
-# Change ownership
-chown user:group file.txt
-sudo chown root:root file.txt      # Change to root (requires sudo)
+```
+Prompt: "Go back to the previous directory I was in"
+Prompt: "Switch back to where I just came from"
+Prompt: "Return to my last directory"
 ```
 
-### Searching
+### Listing Files
 
-```bash
-# Find files
-find . -name "*.txt"               # Find all .txt files
-find /path -type f -name "test*"   # Find files starting with "test"
-find . -mtime -7                   # Modified in last 7 days
-find . -size +100M                 # Larger than 100MB
+Instead of: `ls`
 
-# Search inside files
-grep "search_term" file.txt
-grep -r "pattern" directory/       # Recursive search
-grep -i "case_insensitive" file    # Ignore case
-grep -n "show_line_numbers" file   # Show line numbers
-grep -v "exclude_lines" file       # Invert match (show non-matching)
+```
+Prompt: "List all files in the current directory"
+Prompt: "Show me what's in this folder"
+Prompt: "Display the contents of this directory"
+```
 
-# Advanced search
-grep -E "regex|pattern" file       # Extended regex
-grep -A 3 "pattern" file           # Show 3 lines after match
-grep -B 3 "pattern" file           # Show 3 lines before match
+Instead of: `ls -la`
+
+```
+Prompt: "Show me all files including hidden ones with full details"
+Prompt: "Give me a detailed listing of everything here, including hidden files"
+Prompt: "List all files with permissions, owners, and sizes including hidden ones"
+```
+
+Instead of: `tree`
+
+```
+Prompt: "Display the directory structure as a tree"
+Prompt: "Show me the folder hierarchy"
+Prompt: "Visualize the directory tree structure"
+```
+
+### Creating Files and Directories
+
+Instead of: `mkdir my-project`
+
+```
+Prompt: "Create a new directory called my-project"
+Prompt: "Make a folder named my-project"
+Prompt: "Create a directory for my-project"
+```
+
+Instead of: `touch file.txt`
+
+```
+Prompt: "Make a new empty file named file.txt"
+Prompt: "Create an empty file called file.txt"
+Prompt: "Create a blank file.txt"
+```
+
+### Deleting Files and Directories
+
+Instead of: `rm file.txt`
+
+```
+Prompt: "Delete the file named file.txt"
+Prompt: "Remove file.txt"
+Prompt: "Delete file.txt from the current directory"
+```
+
+Instead of: `rm -rf folder/`
+
+```
+Prompt: "Remove the folder named old-project and everything inside it"
+Prompt: "Permanently delete the directory temp-data with all its contents"
+Prompt: "Delete the folder recursively including all files"
 ```
 
 ---
 
-## File Operations {#file-operations}
+## Working with Files
 
-### Redirection and Pipes
+### Reading File Contents
 
-**Output Redirection:**
-```bash
-# Redirect output to file (overwrite)
-echo "Hello" > file.txt
-ls -l > directory_listing.txt
+Instead of: `cat file.txt`
 
-# Append to file
-echo "More text" >> file.txt
-
-# Redirect errors
-command 2> error.log
-
-# Redirect both output and errors
-command > output.log 2>&1
-command &> combined.log            # Shorter syntax
+```
+Prompt: "Show me the entire contents of file.txt"
+Prompt: "Display what's in file.txt"
+Prompt: "Print the contents of file.txt"
 ```
 
-**Input Redirection:**
-```bash
-# Read from file
-sort < unsorted.txt
+Instead of: `head file.txt`
 
-# Here document (multi-line input)
-cat << EOF > file.txt
-Line 1
-Line 2
-Line 3
-EOF
+```
+Prompt: "Display the first 10 lines of data.log"
+Prompt: "Show me the beginning of file.txt"
+Prompt: "Give me the first few lines of the file"
 ```
 
-**Pipes (Chain Commands):**
-```bash
-# Send output of one command to another
-ls -l | grep ".txt"
-cat file.txt | grep "error" | wc -l
+Instead of: `tail file.txt`
 
-# Complex pipeline
-ps aux | grep python | awk '{print $2}' | xargs kill
+```
+Prompt: "Show me the last 10 lines of error.log"
+Prompt: "Display the end of file.txt"
+Prompt: "Show the most recent entries in the log file"
 ```
 
-### Working with Archives
+Instead of: `tail -f log.txt`
 
-```bash
-# Create tar archive
-tar -czf archive.tar.gz directory/
-tar -cjf archive.tar.bz2 directory/
-
-# Extract tar archive
-tar -xzf archive.tar.gz
-tar -xjf archive.tar.bz2
-
-# View archive contents
-tar -tzf archive.tar.gz
-
-# Zip files
-zip -r archive.zip directory/
-unzip archive.zip
+```
+Prompt: "Monitor server.log and show new lines as they're added in real-time"
+Prompt: "Follow the application.log file and display updates live"
+Prompt: "Watch log.txt for new entries"
 ```
 
-### Downloading Files
+Instead of: `less file.txt`
 
-```bash
-# Download with wget
-wget https://example.com/file.zip
-wget -O custom_name.zip https://example.com/file.zip
-
-# Download with curl
-curl -O https://example.com/file.zip
-curl -o custom_name.zip https://example.com/file.zip
-curl -L https://example.com/redirect  # Follow redirects
+```
+Prompt: "Open readme.txt in a scrollable viewer"
+Prompt: "Let me browse through documentation.md with search capability"
+Prompt: "Open file.txt in a paginated viewer"
 ```
 
----
+### Editing Files
 
-## Text Processing {#text-processing}
+Instead of: `nano file.txt`
 
-### Essential Text Tools
-
-**Word Count:**
-```bash
-wc file.txt                        # Lines, words, characters
-wc -l file.txt                     # Count lines only
-wc -w file.txt                     # Count words only
+```
+Prompt: "Open config.txt in a simple text editor"
+Prompt: "Let me edit settings.conf using nano"
+Prompt: "Edit file.txt in the terminal"
 ```
 
-**Sort:**
-```bash
-sort file.txt                      # Alphabetical sort
-sort -n numbers.txt                # Numeric sort
-sort -r file.txt                   # Reverse sort
-sort -u file.txt                   # Unique (remove duplicates)
-sort -k2 file.txt                  # Sort by 2nd column
+### Copying and Moving Files
+
+Instead of: `cp source.txt dest.txt`
+
+```
+Prompt: "Copy source.txt to dest.txt"
+Prompt: "Make a copy of data.json and name it backup.json"
+Prompt: "Duplicate source.txt as dest.txt"
 ```
 
-**Unique:**
-```bash
-uniq file.txt                      # Remove adjacent duplicates
-sort file.txt | uniq               # Remove all duplicates
-uniq -c file.txt                   # Count occurrences
-uniq -d file.txt                   # Show only duplicates
+Instead of: `cp -r source-dir/ dest-dir/`
+
+```
+Prompt: "Copy the entire src directory to backup-src including all contents"
+Prompt: "Duplicate the configs folder with everything inside to configs-old"
+Prompt: "Recursively copy source-dir to dest-dir"
 ```
 
-**Cut (Extract Columns):**
-```bash
-cut -d',' -f1,3 data.csv           # Extract columns 1 and 3
-cut -c1-10 file.txt                # Extract characters 1-10
-echo "user:password" | cut -d':' -f1
+Instead of: `mv old-name.txt new-name.txt`
+
 ```
-
-**Paste (Merge Lines):**
-```bash
-paste file1.txt file2.txt          # Merge side by side
-paste -d',' file1.txt file2.txt    # Use comma delimiter
-```
-
-**AWK (Pattern Processing):**
-```bash
-# Print specific columns
-awk '{print $1, $3}' file.txt
-awk -F',' '{print $2}' data.csv    # CSV with comma delimiter
-
-# Filter and process
-awk '$3 > 100' data.txt            # Lines where column 3 > 100
-awk '/error/ {print $0}' log.txt   # Lines containing "error"
-
-# Calculate
-awk '{sum += $1} END {print sum}' numbers.txt
-```
-
-**SED (Stream Editor):**
-```bash
-# Replace text
-sed 's/old/new/' file.txt          # First occurrence per line
-sed 's/old/new/g' file.txt         # All occurrences
-sed -i 's/old/new/g' file.txt      # Edit file in-place
-
-# Delete lines
-sed '5d' file.txt                  # Delete line 5
-sed '/pattern/d' file.txt          # Delete lines matching pattern
-
-# Extract lines
-sed -n '10,20p' file.txt           # Print lines 10-20
-sed -n '/start/,/end/p' file.txt   # Between patterns
+Prompt: "Rename old-name.txt to new-name.txt"
+Prompt: "Change the name of old-name.txt to new-name.txt"
+Prompt: "Move and rename old-name.txt to new-name.txt"
 ```
 
 ---
 
-## Scripting Basics {#scripting}
+## Process Management
 
-### Your First Script
+### Running and Controlling Processes
 
-Create a file called `hello.sh`:
+Instead of: `command &`
 
-```bash
-#!/bin/bash
-# This is a comment
-
-echo "Hello, World!"
-echo "Current directory: $(pwd)"
-echo "Current user: $USER"
+```
+Prompt: "Run this script in the background so I can keep using the terminal"
+Prompt: "Execute the build process in the background"
+Prompt: "Start this command in the background"
 ```
 
-Make it executable and run:
-```bash
-chmod +x hello.sh
-./hello.sh
+Instead of: `ps aux`
+
+```
+Prompt: "Show me all currently running processes on the system"
+Prompt: "List all processes with their IDs and resource usage"
+Prompt: "Display all active processes"
 ```
 
-### Variables
+Instead of: `top`
 
-```bash
-#!/bin/bash
-
-# Define variables (no spaces around =)
-name="Alice"
-age=30
-PROJECT_DIR="/home/user/projects"
-
-# Use variables with $
-echo "Name: $name"
-echo "Age: $age"
-
-# Command substitution
-current_date=$(date +%Y-%m-%d)
-file_count=$(ls | wc -l)
-
-echo "Date: $current_date"
-echo "Files: $file_count"
-
-# Environment variables
-echo "Home: $HOME"
-echo "Path: $PATH"
-echo "User: $USER"
+```
+Prompt: "Open an interactive process monitor"
+Prompt: "Show me real-time system resource usage and processes"
+Prompt: "Start the process viewer"
 ```
 
-### User Input
+Instead of: `kill 12345`
 
-```bash
-#!/bin/bash
-
-# Simple input
-echo "What is your name?"
-read name
-echo "Hello, $name!"
-
-# Input with prompt
-read -p "Enter your age: " age
-echo "You are $age years old"
-
-# Silent input (for passwords)
-read -sp "Enter password: " password
-echo  # New line after password
+```
+Prompt: "Kill the process with ID 12345"
+Prompt: "Terminate process 9876"
+Prompt: "Stop the process with PID 12345"
 ```
 
-### Command Line Arguments
+Instead of: `killall process-name`
 
-```bash
-#!/bin/bash
-
-# $0 = script name
-# $1, $2, etc. = arguments
-# $# = number of arguments
-# $@ = all arguments
-
-echo "Script name: $0"
-echo "First argument: $1"
-echo "Second argument: $2"
-echo "Number of arguments: $#"
-echo "All arguments: $@"
-
-# Example usage: ./script.sh arg1 arg2 arg3
 ```
-
-### Conditionals
-
-```bash
-#!/bin/bash
-
-# If statement
-if [ "$1" == "hello" ]; then
-    echo "You said hello!"
-elif [ "$1" == "goodbye" ]; then
-    echo "You said goodbye!"
-else
-    echo "Unknown greeting"
-fi
-
-# File tests
-if [ -f "file.txt" ]; then
-    echo "file.txt exists"
-fi
-
-if [ -d "directory" ]; then
-    echo "directory exists"
-fi
-
-if [ -r "file.txt" ]; then
-    echo "file.txt is readable"
-fi
-
-# Numeric comparisons
-if [ $age -gt 18 ]; then
-    echo "Adult"
-elif [ $age -eq 18 ]; then
-    echo "Just turned adult"
-else
-    echo "Minor"
-fi
-
-# String comparisons
-if [ -z "$var" ]; then      # Empty string
-    echo "Variable is empty"
-fi
-
-if [ -n "$var" ]; then      # Non-empty string
-    echo "Variable has content"
-fi
-```
-
-### Loops
-
-**For Loop:**
-```bash
-#!/bin/bash
-
-# Iterate over list
-for color in red green blue; do
-    echo "Color: $color"
-done
-
-# Iterate over files
-for file in *.txt; do
-    echo "Processing: $file"
-    wc -l "$file"
-done
-
-# C-style loop
-for ((i=1; i<=5; i++)); do
-    echo "Number: $i"
-done
-
-# Iterate over command output
-for user in $(cat users.txt); do
-    echo "Creating account for $user"
-done
-```
-
-**While Loop:**
-```bash
-#!/bin/bash
-
-# Basic while loop
-counter=1
-while [ $counter -le 5 ]; do
-    echo "Count: $counter"
-    ((counter++))
-done
-
-# Read file line by line
-while read line; do
-    echo "Line: $line"
-done < file.txt
-
-# Infinite loop
-while true; do
-    echo "Press Ctrl+C to stop"
-    sleep 1
-done
-```
-
-### Functions
-
-```bash
-#!/bin/bash
-
-# Define function
-greet() {
-    local name=$1  # Local variable
-    echo "Hello, $name!"
-}
-
-# Function with return value
-add() {
-    local sum=$(($1 + $2))
-    echo $sum
-}
-
-# Function with multiple returns
-check_file() {
-    if [ -f "$1" ]; then
-        return 0  # Success
-    else
-        return 1  # Failure
-    fi
-}
-
-# Call functions
-greet "Alice"
-
-result=$(add 5 3)
-echo "Sum: $result"
-
-if check_file "test.txt"; then
-    echo "File exists"
-else
-    echo "File not found"
-fi
+Prompt: "Stop all processes named node"
+Prompt: "Kill all python processes running on the system"
+Prompt: "Terminate all instances of process-name"
 ```
 
 ---
 
-## Advanced Techniques {#advanced}
+## Environment Variables
+
+### Setting and Viewing Variables
+
+Instead of: `export API_KEY="abc123"`
+
+```
+Prompt: "Set an environment variable called API_KEY with value abc123 for this session"
+Prompt: "Create a temporary environment variable DATABASE_URL set to localhost:5432"
+Prompt: "Export API_KEY as abc123"
+```
+
+Instead of: `echo $API_KEY`
+
+```
+Prompt: "Show me the value of the API_KEY variable"
+Prompt: "Display what's stored in the PATH variable"
+Prompt: "Print the value of API_KEY"
+```
+
+Instead of: `env`
+
+```
+Prompt: "List all environment variables currently set"
+Prompt: "Show me all the environment variables in my current session"
+Prompt: "Display all exported variables"
+```
+
+### Making Variables Permanent
+
+Instead of: Edit `~/.bashrc` and add `export ANTHROPIC_API_KEY="your-key"`
+
+```
+Prompt: "Add ANTHROPIC_API_KEY to my bash config so it persists across sessions"
+Prompt: "Make NODE_ENV=production permanent in my shell configuration"
+Prompt: "Configure my bashrc to export API_KEY on startup"
+```
+
+Instead of: `source ~/.bashrc`
+
+```
+Prompt: "Reload my bash configuration file to apply new changes"
+Prompt: "Refresh my zsh settings after editing the config"
+Prompt: "Apply the changes I made to my bashrc"
+```
+
+---
+
+## Command History
+
+Instead of: `history`
+
+```
+Prompt: "Show me my command history"
+Prompt: "Display all the commands I've run recently"
+Prompt: "List my previous commands"
+```
+
+Instead of: `!123`
+
+```
+Prompt: "Run command number 123 from my history"
+Prompt: "Execute history entry 123"
+Prompt: "Rerun the command at position 123"
+```
+
+Instead of: `!!`
+
+```
+Prompt: "Execute the last command I ran again"
+Prompt: "Repeat my previous command"
+Prompt: "Run the last command again"
+```
+
+Instead of: `sudo !!`
+
+```
+Prompt: "Run the last command again but with sudo this time"
+Prompt: "Execute the previous command with administrator privileges"
+Prompt: "Rerun the last command as root"
+```
+
+---
+
+## Pipes & Redirection
+
+### Combining Commands
+
+Instead of: `cat file.txt | grep "error"`
+
+```
+Prompt: "Search for the word 'error' in file.txt"
+Prompt: "Find all lines containing 'error' in file.txt"
+Prompt: "Filter file.txt to show only lines with 'error'"
+```
+
+Instead of: `ls | wc -l`
+
+```
+Prompt: "Count how many files are in this directory"
+Prompt: "Tell me the total number of items in the current folder"
+Prompt: "How many files and folders are here?"
+```
+
+### Saving Output
+
+Instead of: `command > output.txt`
+
+```
+Prompt: "Save the output of this command to output.txt, overwriting if it exists"
+Prompt: "Write the directory listing to files.txt"
+Prompt: "Redirect the output to output.txt"
+```
+
+Instead of: `command >> output.txt`
+
+```
+Prompt: "Append the command output to log.txt without deleting existing content"
+Prompt: "Add the current date to the end of timeline.txt"
+Prompt: "Append output to log.txt"
+```
+
+Instead of: `command 2> errors.txt`
+
+```
+Prompt: "Save any error messages to errors.txt"
+Prompt: "Redirect errors to error-log.txt while showing normal output"
+Prompt: "Capture error output to errors.txt"
+```
+
+---
+
+## Package Management
+
+### macOS (Homebrew)
+
+Instead of: `brew install package-name`
+
+```
+Prompt: "Install wget using Homebrew"
+Prompt: "Use brew to install package-name"
+Prompt: "Add package-name via Homebrew"
+```
+
+Instead of: `brew update`
+
+```
+Prompt: "Update Homebrew's package list"
+Prompt: "Refresh the Homebrew package database"
+Prompt: "Update brew"
+```
+
+Instead of: `brew upgrade`
+
+```
+Prompt: "Upgrade all installed Homebrew packages"
+Prompt: "Update all brew packages to latest versions"
+Prompt: "Upgrade everything installed with Homebrew"
+```
+
+### Ubuntu/Debian
+
+Instead of: `sudo apt update`
+
+```
+Prompt: "Update the package database on Ubuntu"
+Prompt: "Refresh apt package lists"
+Prompt: "Update available package information"
+```
+
+Instead of: `sudo apt install package-name`
+
+```
+Prompt: "Install curl on Debian/Ubuntu"
+Prompt: "Install the latest version of git using apt"
+Prompt: "Add package-name using apt"
+```
+
+### Python Packages
+
+Instead of: `pip install package-name`
+
+```
+Prompt: "Install the requests Python package"
+Prompt: "Install pandas using pip"
+Prompt: "Add package-name via pip"
+```
+
+Instead of: `pip install -r requirements.txt`
+
+```
+Prompt: "Install all Python packages listed in requirements.txt"
+Prompt: "Install dependencies from requirements.txt"
+Prompt: "Use pip to install everything in requirements.txt"
+```
+
+### Node Packages
+
+Instead of: `npm install package-name`
+
+```
+Prompt: "Install express using npm"
+Prompt: "Add react to my Node.js project"
+Prompt: "Install package-name with npm"
+```
+
+Instead of: `npm install`
+
+```
+Prompt: "Install all dependencies from package.json"
+Prompt: "Install project dependencies"
+Prompt: "Set up all npm packages for this project"
+```
+
+---
+
+## Finding Things
+
+### Searching for Files
+
+Instead of: `find . -name "*.py"`
+
+```
+Prompt: "Find all Python files in the current directory and subdirectories"
+Prompt: "Search for all JavaScript files starting from here"
+Prompt: "Locate all JSON files in this project"
+```
+
+### Searching Within Files
+
+Instead of: `grep "search-term" file.txt`
+
+```
+Prompt: "Search for 'TODO' in app.py"
+Prompt: "Find lines containing 'search-term' in file.txt"
+Prompt: "Look for 'error' in the log file"
+```
+
+Instead of: `grep -r "search-term" .`
+
+```
+Prompt: "Search for 'function main' in all files recursively"
+Prompt: "Find which files contain the text 'API_KEY' in this directory tree"
+Prompt: "Search the entire project for 'search-term'"
+```
+
+### Finding Programs
+
+Instead of: `which command-name`
+
+```
+Prompt: "Where is the python executable located?"
+Prompt: "Show me the path to the node binary"
+Prompt: "Find where git is installed"
+Prompt: "Check if docker is installed and show its location"
+```
+
+---
+
+## Permissions
+
+Instead of: `chmod +x script.sh`
+
+```
+Prompt: "Make script.sh executable"
+Prompt: "Give execute permissions to deploy.sh"
+Prompt: "Allow script.sh to be run as a program"
+```
+
+Instead of: `sudo command`
+
+```
+Prompt: "Run this command with administrator privileges"
+Prompt: "Install this package with root permissions"
+Prompt: "Execute this command as superuser"
+```
+
+---
+
+## Common Patterns for AI CLI Work
+
+### Checking Installations
+
+Instead of: `which claude`
+
+```
+Prompt: "Check if Claude CLI is installed"
+Prompt: "Verify that claude is available"
+Prompt: "Is the claude command installed?"
+```
+
+Instead of: `python --version`
+
+```
+Prompt: "What version of Python do I have?"
+Prompt: "Show me my Node.js version"
+Prompt: "Display the npm version installed"
+```
+
+### Creating Project Structure
+
+Instead of: `mkdir -p project/{src,tests,docs}`
+
+```
+Prompt: "Create a project folder with src, tests, and docs subdirectories"
+Prompt: "Set up a new project directory with standard folders"
+Prompt: "Make a project structure with multiple subdirectories"
+```
+
+Instead of: `touch README.md .gitignore`
+
+```
+Prompt: "Create README.md and .gitignore files"
+Prompt: "Make empty README and gitignore files"
+Prompt: "Set up basic project files"
+```
+
+### Monitoring Output
+
+Instead of: `command | tee output.log`
+
+```
+Prompt: "Run the Claude analysis and save output to a log while showing it on screen"
+Prompt: "Execute this command and both display and log the results"
+Prompt: "Show output and save to file simultaneously"
+```
+
+### Chaining Commands
+
+Instead of: `command1 && command2`
+
+```
+Prompt: "Analyze the code and then display the results if successful"
+Prompt: "Build the project and if successful, run the tests"
+Prompt: "Install dependencies, then start the development server"
+```
+
+---
+
+## Troubleshooting Scenarios
+
+### Command Not Found
+
+Instead of: `which command-name`
+
+```
+Prompt: "Check if the 'aws' command is installed on my system"
+Prompt: "Verify that python3 is available"
+Prompt: "Is command-name installed?"
+```
+
+Instead of: `echo $PATH`
+
+```
+Prompt: "Show me what's in my PATH variable"
+Prompt: "Display my PATH environment variable"
+Prompt: "What directories are in my PATH?"
+```
+
+### Permission Issues
+
+Instead of: `chmod +x script.sh`
+
+```
+Prompt: "Make this script executable so I can run it"
+Prompt: "Fix permission denied error on script.sh"
+Prompt: "Add execute permission to this script"
+```
+
+Instead of: `ls -la filename`
+
+```
+Prompt: "Check the ownership and permissions of this file"
+Prompt: "Show me file permissions and owner"
+Prompt: "Display detailed info about this file"
+```
+
+### API Key Issues
+
+Instead of: `echo $ANTHROPIC_API_KEY`
+
+```
+Prompt: "Check if my ANTHROPIC_API_KEY environment variable is set"
+Prompt: "Verify that my API key environment variable exists"
+Prompt: "Show me the value of my API key"
+```
+
+Instead of: `env | grep API_KEY`
+
+```
+Prompt: "Find all environment variables containing API_KEY"
+Prompt: "Search my environment for API key variables"
+Prompt: "List all API key environment variables"
+```
+
+---
+
+## Advanced Prompt Patterns
+
+### Combining Multiple Operations
+
+Instead of: `mkdir backup && cp *.py backup/ && ls backup/`
+
+```
+Prompt: "Create a backup directory, copy all Python files to it, and list the results"
+Prompt: "Make a backup folder and copy all code files there"
+Prompt: "Set up a backup with all Python files"
+```
+
+Instead of: `find . -name "*.log" -mtime +7 -delete`
+
+```
+Prompt: "Find all log files older than 7 days and delete them"
+Prompt: "Clean up old log files from more than a week ago"
+Prompt: "Remove log files that haven't been modified in 7 days"
+```
+
+Instead of: `find src -name "*.py" -exec wc -l {} + | tail -1`
+
+```
+Prompt: "Count how many lines of Python code are in my src directory"
+Prompt: "Get total line count for all Python files in src"
+Prompt: "How many lines of code do I have in Python files?"
+```
 
 ### Process Management
 
-```bash
-# View running processes
-ps aux
-ps aux | grep python
+Instead of: `ps aux | grep node`
 
-# Interactive process viewer
-top
-htop  # More user-friendly (may need installation)
-
-# Kill processes
-kill PID
-kill -9 PID        # Force kill
-killall python     # Kill all processes named python
-
-# Background jobs
-long_command &     # Run in background
-jobs               # List background jobs
-fg                 # Bring to foreground
-bg                 # Resume in background
-Ctrl+Z            # Suspend current process
+```
+Prompt: "Show me all Python processes running"
+Prompt: "Find the process ID of the node server"
+Prompt: "List all node processes"
 ```
 
-### Environment Variables
+Instead of: `ps aux --sort=-%mem | head`
 
-```bash
-# View all environment variables
-env
-printenv
-
-# Set variable for session
-export API_KEY="your-key-here"
-export PATH="$PATH:/new/directory"
-
-# Permanent variables (add to ~/.bashrc or ~/.bash_profile)
-echo 'export API_KEY="your-key"' >> ~/.bashrc
-source ~/.bashrc   # Reload configuration
-
-# Use in scripts
-#!/bin/bash
-echo "API Key: $API_KEY"
+```
+Prompt: "List processes sorted by memory usage"
+Prompt: "Show me the top memory-consuming processes"
+Prompt: "Which processes are using the most RAM?"
 ```
 
-### Bash Configuration Files
+### File Operations
 
-```bash
-# ~/.bashrc - Runs for interactive non-login shells
-# Add aliases, functions, and customizations
+Instead of: `find . -type f -size +100M`
 
-# ~/.bash_profile or ~/.profile - Runs for login shells
-# Sets up environment variables
-
-# Example ~/.bashrc
-alias ll='ls -lah'
-alias gs='git status'
-alias python=python3
-
-export EDITOR=vim
-export PATH="$HOME/.local/bin:$PATH"
-
-# Custom prompt
-PS1='\[\e[32m\]\u@\h:\w\$\[\e[0m\] '
+```
+Prompt: "Find all files larger than 100MB in the current directory"
+Prompt: "Show me large files over 100 megabytes"
+Prompt: "List files bigger than 100MB"
 ```
 
-### Advanced Scripting
+Instead of: `find . -type f -mtime -1`
 
-**Error Handling:**
-```bash
-#!/bin/bash
-
-# Exit on error
-set -e
-
-# Exit on undefined variable
-set -u
-
-# Exit on pipe failure
-set -o pipefail
-
-# Custom error handling
-if ! command_that_might_fail; then
-    echo "Error: Command failed" >&2
-    exit 1
-fi
-
-# Trap errors
-trap 'echo "Error on line $LINENO"' ERR
+```
+Prompt: "Search for files modified in the last 24 hours"
+Prompt: "Find files changed today"
+Prompt: "Show recently modified files"
 ```
 
-**Arrays:**
-```bash
-#!/bin/bash
+Instead of: `du -ah . | sort -rh | head -10`
 
-# Define array
-fruits=("apple" "banana" "cherry")
-
-# Access elements
-echo ${fruits[0]}      # First element
-echo ${fruits[@]}      # All elements
-echo ${#fruits[@]}     # Array length
-
-# Iterate over array
-for fruit in "${fruits[@]}"; do
-    echo "Fruit: $fruit"
-done
-
-# Add to array
-fruits+=("date")
 ```
-
-**String Manipulation:**
-```bash
-#!/bin/bash
-
-text="Hello, World!"
-
-# Length
-echo ${#text}
-
-# Substring
-echo ${text:0:5}       # "Hello"
-echo ${text:7}         # "World!"
-
-# Replace
-echo ${text/World/Bash}    # "Hello, Bash!"
-echo ${text//l/L}          # "HeLLo, WorLd!"
-
-# Upper/lowercase
-echo ${text^^}         # "HELLO, WORLD!"
-echo ${text,,}         # "hello, world!"
-
-# Remove prefix/suffix
-filename="script.sh"
-echo ${filename%.sh}   # "script"
-echo ${filename#*.}    # "sh"
+Prompt: "Show me the 10 largest files in this directory tree"
+Prompt: "Find the biggest files and folders here"
+Prompt: "What's taking up the most space?"
 ```
 
 ---
 
-## Practical Examples for AI Development {#ai-examples}
+## End of Appendix
 
-### Setting Up Python Environments
-
-```bash
-#!/bin/bash
-
-# Create project structure
-mkdir -p my_ai_project/{data,models,scripts,notebooks}
-cd my_ai_project
-
-# Create virtual environment
-python3 -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate  # On WSL, Mac, Linux
-# Note: Windows cmd would use venv\Scripts\activate.bat
-
-# Install dependencies
-pip install --upgrade pip
-pip install torch transformers langchain openai
-
-# Save dependencies
-pip freeze > requirements.txt
-
-# Later: Install from requirements
-pip install -r requirements.txt
-```
-
-### Processing Training Data
-
-```bash
-#!/bin/bash
-
-# Count total lines in all CSV files
-find data/ -name "*.csv" -exec wc -l {} + | tail -1
-
-# Remove duplicates from dataset
-sort data/raw.csv | uniq > data/clean.csv
-
-# Split data into train/test
-total_lines=$(wc -l < data/clean.csv)
-train_lines=$((total_lines * 80 / 100))
-
-head -n $train_lines data/clean.csv > data/train.csv
-tail -n +$((train_lines + 1)) data/clean.csv > data/test.csv
-
-# Extract specific columns from CSV
-awk -F',' '{print $1","$3}' data/full.csv > data/subset.csv
-
-# Filter rows based on condition
-awk -F',' '$2 > 100' data/metrics.csv > data/filtered.csv
-```
-
-### Log Analysis
-
-```bash
-#!/bin/bash
-
-# Find all errors in logs
-grep -r "ERROR" logs/ > errors.txt
-
-# Count errors by type
-grep "ERROR" app.log | cut -d':' -f2 | sort | uniq -c | sort -nr
-
-# Extract API response times
-grep "Response time" app.log | awk '{print $NF}' | \
-    awk '{sum+=$1; count++} END {print "Average:", sum/count}'
-
-# Monitor log file in real-time
-tail -f app.log | grep --color=auto "ERROR\|WARNING"
-
-# Find slow requests (> 1000ms)
-awk '/Response time/ && $NF > 1000' app.log
-```
-
-### Model Management
-
-```bash
-#!/bin/bash
-
-# Download models
-download_model() {
-    local model_name=$1
-    local output_dir="models/${model_name}"
-    
-    mkdir -p "$output_dir"
-    echo "Downloading $model_name..."
-    
-    # Example with HuggingFace
-    python3 << EOF
-from transformers import AutoModel, AutoTokenizer
-model = AutoModel.from_pretrained("$model_name")
-tokenizer = AutoTokenizer.from_pretrained("$model_name")
-model.save_pretrained("$output_dir")
-tokenizer.save_pretrained("$output_dir")
-EOF
-    
-    echo "Downloaded to $output_dir"
-}
-
-# List all models
-list_models() {
-    echo "Available models:"
-    ls -lh models/
-}
-
-# Clean old models
-clean_old_models() {
-    find models/ -type d -mtime +30 -exec rm -rf {} +
-    echo "Cleaned models older than 30 days"
-}
-```
-
-### Experiment Tracking
-
-```bash
-#!/bin/bash
-
-# Create experiment directory
-run_experiment() {
-    local exp_name=$1
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local exp_dir="experiments/${exp_name}_${timestamp}"
-    
-    mkdir -p "$exp_dir"
-    
-    # Save configuration
-    cat > "$exp_dir/config.txt" << EOF
-Experiment: $exp_name
-Date: $(date)
-Model: $MODEL_NAME
-Learning Rate: $LEARNING_RATE
-Batch Size: $BATCH_SIZE
-EOF
-    
-    # Run training
-    python3 train.py \
-        --model "$MODEL_NAME" \
-        --lr "$LEARNING_RATE" \
-        --batch-size "$BATCH_SIZE" \
-        --output "$exp_dir" \
-        2>&1 | tee "$exp_dir/training.log"
-    
-    echo "Experiment saved to $exp_dir"
-}
-
-# Compare experiments
-compare_experiments() {
-    echo "Experiment Results:"
-    for dir in experiments/*/; do
-        echo "---"
-        echo "Experiment: $(basename $dir)"
-        grep "Final accuracy" "$dir/training.log" || echo "Not completed"
-    done
-}
-```
-
-### Deployment Automation
-
-```bash
-#!/bin/bash
-
-# Deploy AI model to server
-deploy_model() {
-    local model_path=$1
-    local server=$2
-    
-    # Create deployment package
-    tar -czf model_package.tar.gz "$model_path" requirements.txt
-
-    # Upload to server
-    scp model_package.tar.gz "$server:/opt/models/"
-    
-    # SSH and deploy
-    ssh "$server" << 'EOF'
-cd /opt/models
-tar -xzf model_package.tar.gz
-pip install -r requirements.txt
-systemctl restart ai-service
-EOF
-    
-    echo "Deployment complete"
-}
-
-# Health check
-check_service() {
-    local endpoint=$1
-    
-    response=$(curl -s -o /dev/null -w "%{http_code}" "$endpoint/health")
-    
-    if [ "$response" == "200" ]; then
-        echo "Service is healthy"
-        return 0
-    else
-        echo "Service is down (HTTP $response)"
-        return 1
-    fi
-}
-```
-
-### Batch Processing
-
-```bash
-#!/bin/bash
-
-# Process multiple files with AI model
-batch_process() {
-    local input_dir=$1
-    local output_dir=$2
-    
-    mkdir -p "$output_dir"
-    
-    # Count total files
-    total=$(find "$input_dir" -name "*.txt" | wc -l)
-    current=0
-    
-    # Process each file
-    find "$input_dir" -name "*.txt" | while read -r file; do
-        ((current++))
-        filename=$(basename "$file")
-        
-        echo "Processing $current/$total: $filename"
-        
-        python3 process.py \
-            --input "$file" \
-            --output "$output_dir/$filename" \
-            --model gpt-4
-        
-        # Rate limiting
-        sleep 1
-    done
-    
-    echo "Batch processing complete: $total files processed"
-}
-
-# Parallel processing
-parallel_process() {
-    local input_dir=$1
-    local output_dir=$2
-    local max_jobs=4
-    
-    mkdir -p "$output_dir"
-    
-    find "$input_dir" -name "*.txt" | \
-    parallel -j $max_jobs \
-    python3 process.py --input {} --output "$output_dir/{/}"
-}
-```
-
-### Git and Version Control
-
-```bash
-#!/bin/bash
-
-# Initialize project with Git
-setup_git_project() {
-    git init
-    
-    # Create .gitignore
-    cat > .gitignore << 'EOF'
-__pycache__/
-*.pyc
-.env
-venv/
-.vscode/
-*.log
-models/*.bin
-data/raw/
-experiments/
-EOF
-    
-    git add .
-    git commit -m "Initial commit"
-}
-
-# Common Git aliases in ~/.bashrc
-alias ga='git add'
-alias gc='git commit -m'
-alias gp='git push'
-alias gs='git status'
-alias gl='git log --oneline --graph'
-alias gd='git diff'
-```
-
----
-
-## Practice Exercises
-
-### Exercise 1: File Organization
-Create a script that organizes files by extension:
-```bash
-#!/bin/bash
-# Sort files into directories by extension
-
-for file in *.*; do
-    ext="${file##*.}"
-    mkdir -p "$ext"
-    mv "$file" "$ext/"
-done
-```
-
-### Exercise 2: Log Analyzer
-Create a script to analyze web server logs:
-```bash
-#!/bin/bash
-# Analyze Apache/Nginx logs
-
-log_file=$1
-
-echo "Top 10 IP addresses:"
-awk '{print $1}' "$log_file" | sort | uniq -c | sort -nr | head -10
-
-echo -e "\nTop 10 requested URLs:"
-awk '{print $7}' "$log_file" | sort | uniq -c | sort -nr | head -10
-
-echo -e "\nHTTP status code distribution:"
-awk '{print $9}' "$log_file" | sort | uniq -c | sort -nr
-```
-
-### Exercise 3: Backup Script
-Create an automated backup script:
-```bash
-#!/bin/bash
-# Backup important directories
-
-BACKUP_DIR="/backup"
-DATE=$(date +%Y%m%d_%H%M%S)
-DIRS_TO_BACKUP=("$HOME/projects" "$HOME/documents")
-
-for dir in "${DIRS_TO_BACKUP[@]}"; do
-    dir_name=$(basename "$dir")
-    tar -czf "$BACKUP_DIR/${dir_name}_${DATE}.tar.gz" "$dir"
-    echo "Backed up $dir"
-done
-
-# Keep only last 7 days of backups
-find "$BACKUP_DIR" -name "*.tar.gz" -mtime +7 -delete
-```
-
----
-
-## Tips for Mastery
-
-### 1. **Use Tab Completion**
-Press Tab to autocomplete filenames, commands, and paths. Press Tab twice to see all options.
-
-### 2. **Learn Keyboard Shortcuts**
-- `Ctrl + C`: Cancel current command
-- `Ctrl + D`: Exit shell/end input
-- `Ctrl + L`: Clear screen
-- `Ctrl + A`: Move to beginning of line
-- `Ctrl + E`: Move to end of line
-- `Ctrl + U`: Delete to beginning of line
-- `Ctrl + K`: Delete to end of line
-- `Ctrl + R`: Search command history
-
-### 3. **Read the Manual**
-Before asking how to use a command, try `man command_name`.
-
-### 4. **Practice Regular Expressions**
-Regex makes text processing powerful. Start simple and build up.
-
-### 5. **Version Control Everything**
-Put scripts in Git repositories. Your future self will thank you.
-
-### 6. **Write Reusable Scripts**
-Create a personal scripts directory in your PATH for frequently used tools.
-
-### 7. **Learn from Others**
-Read shell scripts in open source projects. See how experts write maintainable code.
-
-### 8. **Test Safely**
-Use `echo` before destructive operations:
-```bash
-# Test first
-find . -name "*.tmp" -type f -exec echo rm {} \;
-
-# Then execute
-find . -name "*.tmp" -type f -exec rm {} \;
-```
-
----
-
-## Conclusion
-
-Bash is a powerful tool that becomes more valuable as you master it. Start with basic commands, gradually incorporate scripting, and soon you'll be automating complex workflows effortlessly.
-
-For AI development specifically, Bash skills enable you to:
-- Automate data preprocessing pipelines
-- Manage experiments efficiently
-- Deploy models reliably
-- Monitor systems in production
-- Process logs and debug issues quickly
-
-The investment in learning Bash pays compound returns throughout your career. Every minute spent mastering these skills saves hours of manual work later.
-
-**Next Steps:**
-1. Work through the exercises
-2. Create your own utility scripts for daily tasks
-3. Contribute scripts to your team's repositories
-4. Explore advanced topics: process substitution, co-processes, network programming
-
-Happy scripting!
+Use these natural language prompts as a reference when working with AI CLI tools. The AI will understand your intent and execute the appropriate bash commands. Feel free to adapt these prompts to your natural speaking style - AI assistants are designed to understand variations in phrasing.
