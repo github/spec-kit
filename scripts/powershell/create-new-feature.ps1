@@ -4,6 +4,8 @@
 param(
     [switch]$Json,
     [string]$ShortName,
+    [string]$BranchPrefix,
+    [string]$SpecNumber,
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -12,16 +14,21 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-BranchPrefix <prefix>] [-SpecNumber <number>] <feature description>"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  -Json               Output in JSON format"
-    Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
-    Write-Host "  -Help               Show this help message"
+    Write-Host "  -Json                   Output in JSON format"
+    Write-Host "  -ShortName <name>       Provide a custom short name (2-4 words) for the branch"
+    Write-Host "  -BranchPrefix <prefix>  Override branch prefix (e.g., 'feature/', 'bugfix/')"
+    Write-Host "  -SpecNumber <number>    Specify a custom spec number (e.g., to match issue tracker)"
+    Write-Host "  -Help                   Show this help message"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth'"
     Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API'"
+    Write-Host "  ./create-new-feature.ps1 'Fix login bug' -BranchPrefix 'bugfix/'"
+    Write-Host "  ./create-new-feature.ps1 'Add payment processing' -SpecNumber 42"
+    Write-Host "  ./create-new-feature.ps1 'Implement search feature' -SpecNumber 1234 -BranchPrefix 'feature/'"
     exit 0
 }
 
@@ -79,17 +86,93 @@ Set-Location $repoRoot
 $specsDir = Join-Path $repoRoot 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
-$highest = 0
+# Function to get spec number from various sources
+function Get-SpecNumber {
+    # Priority: 1. Command-line argument, 2. Environment variable, 3. Auto-increment
+    if ($SpecNumber) {
+        # Validate it's a positive integer
+        $num = 0
+        if (-not [int]::TryParse($SpecNumber, [ref]$num) -or $num -lt 0) {
+            Write-Error "Error: -SpecNumber must be a positive integer"
+            exit 1
+        }
+        
+        # Pad to at least 3 digits
+        if ($num -lt 100) {
+            return ('{0:000}' -f $num)
+        } else {
+            return $SpecNumber
+        }
+    }
+    
+    if ($env:SPECIFY_SPEC_NUMBER) {
+        # Validate it's a positive integer
+        $num = 0
+        if (-not [int]::TryParse($env:SPECIFY_SPEC_NUMBER, [ref]$num) -or $num -lt 0) {
+            Write-Error "Error: SPECIFY_SPEC_NUMBER must be a positive integer"
+            exit 1
+        }
+        
+        # Pad to at least 3 digits
+        if ($num -lt 100) {
+            return ('{0:000}' -f $num)
+        } else {
+            return $env:SPECIFY_SPEC_NUMBER
+        }
+    }
+    
+    # Auto-increment: find highest existing number
+    $highest = 0
+    if (Test-Path $specsDir) {
+        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+            if ($_.Name -match '^(\d+)') {
+                $num = [int]$matches[1]
+                if ($num -gt $highest) { $highest = $num }
+            }
+        }
+    }
+    $next = $highest + 1
+    return ('{0:000}' -f $next)
+}
+
+$featureNum = Get-SpecNumber
+
+# Check for conflicts with existing spec numbers
 if (Test-Path $specsDir) {
     Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-        if ($_.Name -match '^(\d{3})') {
-            $num = [int]$matches[1]
-            if ($num -gt $highest) { $highest = $num }
+        if ($_.Name -match "^$featureNum-") {
+            Write-Error "Error: Spec number $featureNum already exists in directory: $($_.Name)"
+            Write-Error "Please choose a different spec number or remove the existing spec."
+            exit 1
         }
     }
 }
-$next = $highest + 1
-$featureNum = ('{0:000}' -f $next)
+
+# Function to get branch prefix from config or environment variable
+function Get-BranchPrefix {
+    # Priority: 1. Command-line argument, 2. Environment variable, 3. Config file, 4. Default (empty)
+    if ($BranchPrefix) {
+        return $BranchPrefix
+    }
+    
+    if ($env:SPECIFY_BRANCH_PREFIX) {
+        return $env:SPECIFY_BRANCH_PREFIX
+    }
+    
+    $configFile = Join-Path $repoRoot '.specify/config.json'
+    if (Test-Path $configFile) {
+        try {
+            $config = Get-Content $configFile -Raw | ConvertFrom-Json
+            if ($config.branch -and $config.branch.prefix) {
+                return $config.branch.prefix
+            }
+        } catch {
+            # If JSON parsing fails, silently continue with default
+        }
+    }
+    
+    return ""
+}
 
 # Function to generate branch name with stop word filtering and length filtering
 function Get-BranchName {
@@ -145,7 +228,15 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
-$branchName = "$featureNum-$branchSuffix"
+# Get branch prefix from config or environment
+$branchPrefix = Get-BranchPrefix
+
+# Construct full branch name with optional prefix
+if ($branchPrefix) {
+    $branchName = "$branchPrefix$featureNum-$branchSuffix"
+} else {
+    $branchName = "$featureNum-$branchSuffix"
+}
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary

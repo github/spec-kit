@@ -4,6 +4,8 @@ set -e
 
 JSON_MODE=false
 SHORT_NAME=""
+BRANCH_PREFIX_ARG=""
+SPEC_NUM_ARG=""
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -26,17 +28,50 @@ while [ $i -le $# ]; do
             fi
             SHORT_NAME="$next_arg"
             ;;
+        --branch-prefix)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --branch-prefix requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            # Check if the next argument is another option (starts with --)
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --branch-prefix requires a value' >&2
+                exit 1
+            fi
+            BRANCH_PREFIX_ARG="$next_arg"
+            ;;
+        --spec-number)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --spec-number requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            # Check if the next argument is another option (starts with --)
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --spec-number requires a value' >&2
+                exit 1
+            fi
+            SPEC_NUM_ARG="$next_arg"
+            ;;
         --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--branch-prefix <prefix>] [--spec-number <number>] <feature_description>"
             echo ""
             echo "Options:"
-            echo "  --json              Output in JSON format"
-            echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --help, -h          Show this help message"
+            echo "  --json                  Output in JSON format"
+            echo "  --short-name <name>     Provide a custom short name (2-4 words) for the branch"
+            echo "  --branch-prefix <prefix> Override branch prefix (e.g., 'feature/', 'bugfix/')"
+            echo "  --spec-number <number>  Specify a custom spec number (e.g., to match issue tracker)"
+            echo "  --help, -h              Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API'"
+            echo "  $0 'Fix login bug' --branch-prefix 'bugfix/'"
+            echo "  $0 'Add payment processing' --spec-number 42"
+            echo "  $0 'Implement search feature' --spec-number 1234 --branch-prefix 'feature/'"
             exit 0
             ;;
         *) 
@@ -87,19 +122,96 @@ cd "$REPO_ROOT"
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
-HIGHEST=0
-if [ -d "$SPECS_DIR" ]; then
-    for dir in "$SPECS_DIR"/*; do
-        [ -d "$dir" ] || continue
-        dirname=$(basename "$dir")
-        number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
-        number=$((10#$number))
-        if [ "$number" -gt "$HIGHEST" ]; then HIGHEST=$number; fi
-    done
-fi
+# Function to get spec number from various sources
+get_spec_number() {
+    # Priority: 1. Command-line argument, 2. Environment variable, 3. Auto-increment
+    if [ -n "$SPEC_NUM_ARG" ]; then
+        # Validate it's a positive integer
+        if ! [[ "$SPEC_NUM_ARG" =~ ^[0-9]+$ ]]; then
+            echo "Error: --spec-number must be a positive integer" >&2
+            exit 1
+        fi
+        
+        # Pad to at least 3 digits
+        if [ "$SPEC_NUM_ARG" -lt 100 ]; then
+            printf "%03d" "$SPEC_NUM_ARG"
+        else
+            echo "$SPEC_NUM_ARG"
+        fi
+        return
+    fi
+    
+    if [ -n "$SPECIFY_SPEC_NUMBER" ]; then
+        # Validate it's a positive integer
+        if ! [[ "$SPECIFY_SPEC_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "Error: SPECIFY_SPEC_NUMBER must be a positive integer" >&2
+            exit 1
+        fi
+        
+        # Pad to at least 3 digits
+        if [ "$SPECIFY_SPEC_NUMBER" -lt 100 ]; then
+            printf "%03d" "$SPECIFY_SPEC_NUMBER"
+        else
+            echo "$SPECIFY_SPEC_NUMBER"
+        fi
+        return
+    fi
+    
+    # Auto-increment: find highest existing number
+    local highest=0
+    if [ -d "$SPECS_DIR" ]; then
+        for dir in "$SPECS_DIR"/*; do
+            [ -d "$dir" ] || continue
+            local dirname=$(basename "$dir")
+            local number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
+            number=$((10#$number))
+            if [ "$number" -gt "$highest" ]; then highest=$number; fi
+        done
+    fi
+    
+    local next=$((highest + 1))
+    printf "%03d" "$next"
+}
 
-NEXT=$((HIGHEST + 1))
-FEATURE_NUM=$(printf "%03d" "$NEXT")
+FEATURE_NUM=$(get_spec_number)
+
+# Check for conflicts with existing spec numbers
+for dir in "$SPECS_DIR"/*; do
+    [ -d "$dir" ] || continue
+    dirname=$(basename "$dir")
+    if [[ "$dirname" =~ ^${FEATURE_NUM}- ]]; then
+        echo "Error: Spec number $FEATURE_NUM already exists in directory: $dirname" >&2
+        echo "Please choose a different spec number or remove the existing spec." >&2
+        exit 1
+    fi
+done
+
+# Function to get branch prefix from config or environment variable
+get_branch_prefix() {
+    # Priority: 1. Command-line argument, 2. Environment variable, 3. Config file, 4. Default (empty)
+    if [ -n "$BRANCH_PREFIX_ARG" ]; then
+        echo "$BRANCH_PREFIX_ARG"
+        return
+    fi
+    
+    if [ -n "$SPECIFY_BRANCH_PREFIX" ]; then
+        echo "$SPECIFY_BRANCH_PREFIX"
+        return
+    fi
+    
+    local config_file="$REPO_ROOT/.specify/config.json"
+    if [ -f "$config_file" ]; then
+        # Use grep and sed to extract the prefix value from JSON
+        # This avoids requiring jq to be installed
+        local prefix=$(grep -o '"prefix"[[:space:]]*:[[:space:]]*"[^"]*"' "$config_file" | sed 's/.*"prefix"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        if [ -n "$prefix" ]; then
+            echo "$prefix"
+            return
+        fi
+    fi
+    
+    echo ""
+}
 
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
@@ -157,7 +269,15 @@ else
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
 fi
 
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+# Get branch prefix from config or environment
+BRANCH_PREFIX=$(get_branch_prefix)
+
+# Construct full branch name with optional prefix
+if [ -n "$BRANCH_PREFIX" ]; then
+    BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${BRANCH_SUFFIX}"
+else
+    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+fi
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary

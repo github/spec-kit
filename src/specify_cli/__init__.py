@@ -818,6 +818,23 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def setup_config_file(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Copy config.json from templates to .specify root if it doesn't already exist."""
+    config_template = project_path / ".specify" / "templates" / "config.json"
+    config_dest = project_path / ".specify" / "config.json"
+    
+    # Only copy if template exists and destination doesn't exist (preserve user config)
+    if config_template.exists() and not config_dest.exists():
+        try:
+            shutil.copy2(config_template, config_dest)
+            if tracker:
+                tracker.add("config", "Setup configuration file")
+                tracker.complete("config", "created")
+        except Exception as e:
+            if tracker:
+                tracker.add("config", "Setup configuration file")
+                tracker.error("config", str(e))
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -1046,6 +1063,7 @@ def init(
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
+            setup_config_file(project_path, tracker=tracker)
             ensure_executable_scripts(project_path, tracker=tracker)
 
             if not no_git:

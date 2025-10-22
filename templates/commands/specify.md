@@ -13,6 +13,106 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Spec Number Option
+
+Users can optionally specify a custom spec number when creating a feature by including it in their command. This is particularly useful for matching issue tracker numbers (GitHub issues, Jira tickets, etc.).
+
+**How to recognize spec number in user input:**
+
+- `--spec-number <number>` or `-SpecNumber <number>` format
+- Keywords like "issue #42", "ticket 123", "for issue 1234"
+- Direct number references: "spec 42", "number 99"
+- **Natural language patterns combining prefix and number:**
+  - "feature 303" → extract prefix `feature/` and number `303`
+  - "bugfix 666" → extract prefix `bugfix/` and number `666`
+  - "hotfix 42" → extract prefix `hotfix/` and number `42`
+  - "fix 123" → extract prefix `bugfix/` and number `123` (normalize "fix" to "bugfix")
+  - "chore 999" → extract prefix `chore/` and number `999`
+
+**Examples of user input with spec number:**
+
+- "Add user authentication --spec-number 42"
+- "Fix login timeout for issue #123" (extract `123`)
+- "Implement payment API as spec 1234" (use `1234`)
+- "Add search feature --spec-number 99 --branch-prefix feature/"
+- "feature 303 add shopping cart" (extract prefix `feature/` and number `303`)
+- "bugfix 666 fix payment timeout" (extract prefix `bugfix/` and number `666`)
+
+**If spec number is specified:**
+
+1. Extract the number from the user input
+2. **If using natural language pattern** (e.g., "feature 303"):
+   - Extract the prefix type (feature, bugfix, hotfix, fix, chore, etc.)
+   - Normalize "fix" to "bugfix/" for consistency
+   - Add trailing slash to create proper prefix (e.g., "feature" → "feature/")
+   - Extract the number following the prefix type
+   - Remove the entire pattern from the feature description before processing
+3. Validate the number is a positive integer
+4. Remove the spec number specification from the feature description before processing
+5. Pass the number to the script using the appropriate parameter:
+   - Bash: `--spec-number 42`
+   - PowerShell: `-SpecNumber 42`
+6. If a prefix was also extracted from the natural language pattern, pass it too:
+   - Bash: `--spec-number 303 --branch-prefix "feature/"`
+   - PowerShell: `-SpecNumber 303 -BranchPrefix "feature/"`
+
+**If no spec number is specified:** The script will auto-increment from the highest existing spec number (default behavior).
+
+**Priority order:**
+1. `--spec-number` CLI parameter (highest priority)
+2. `SPECIFY_SPEC_NUMBER` environment variable
+3. Auto-increment (default)
+
+**Recognized prefix types for natural language patterns:**
+- `feature` → `feature/`
+- `bugfix` → `bugfix/`
+- `fix` → `bugfix/` (normalized)
+- `hotfix` → `hotfix/`
+- `chore` → `chore/`
+- `refactor` → `refactor/`
+
+## Branch Prefix Option
+
+Users can optionally specify a branch prefix when creating a feature by including it in their command. Look for these patterns in the user input:
+
+- `--branch-prefix <prefix>` or `-BranchPrefix <prefix>` format
+- Keywords like "use prefix", "with prefix", "as a feature branch", "as a bugfix", etc.
+- **Natural language patterns** (also extracts spec number if present):
+  - "feature 303" → prefix `feature/` and number `303`
+  - "bugfix 666" → prefix `bugfix/` and number `666`
+  - "hotfix 42" → prefix `hotfix/` and number `42`
+
+  The reference to prefix and number may come anywhere in the prompt.
+
+**Common prefix patterns:**
+
+- `feature/` - For feature branches
+- `bugfix/` or `fix/` - For bug fixes
+- `hotfix/` - For urgent production fixes
+- `refactor/` - For refactoring work
+- `chore/` - For maintenance tasks
+
+**Examples of user input with branch prefix:**
+
+- "Add user authentication --branch-prefix feature/"
+- "Fix login timeout as a bugfix" (infer `bugfix/` prefix)
+- "Update payment API with prefix hotfix/" (use `hotfix/` prefix)
+- "feature 303 implement shopping cart" (extract both prefix `feature/` and number `303`)
+- "bugfix 666 resolve payment issue" (extract both prefix `bugfix/` and number `666`)
+
+**If branch prefix is specified:**
+
+1. Extract the prefix from the user input
+2. **If using natural language pattern** (e.g., "feature 303"):
+   - The spec number will also be extracted (see "Spec Number Option" above)
+   - Both prefix and number are removed from the feature description before processing
+3. Remove the prefix specification from the feature description before processing
+4. Pass the prefix to the script using the appropriate parameter:
+   - Bash: `--branch-prefix "prefix-value"`
+   - PowerShell: `-BranchPrefix "prefix-value"`
+
+**If no prefix is specified:** The script will use the default from configuration (`.specify/config.json`) or environment variable.
+
 ## Outline
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
@@ -36,8 +136,23 @@ Given that feature description, do this:
    **IMPORTANT**:
 
    - Append the short-name argument to the `{SCRIPT}` command with the 2-4 word short name you created in step 1. Keep the feature description as the final argument.
-   - Bash example: `--short-name "your-generated-short-name" "Feature description here"`
-   - PowerShell example: `-ShortName "your-generated-short-name" "Feature description here"`
+   - If a spec number was specified (see "Spec Number Option" above), include it as a parameter
+   - If a branch prefix was specified (see "Branch Prefix Option" above), include it as a parameter
+   - **Note:** Natural language patterns like "feature 303" or "bugfix 666" provide BOTH prefix and number - extract and pass both parameters
+   - Bash examples: 
+     - `--short-name "your-generated-short-name" "Feature description here"`
+     - `--short-name "user-auth" "Add user authentication"`
+     - `--spec-number 42 --short-name "payment-api" "Add payment processing"`
+     - `--spec-number 1234 --short-name "user-auth" --branch-prefix "feature/" "Add user authentication"`
+     - `--spec-number 303 --branch-prefix "feature/" --short-name "shopping-cart" "Add shopping cart"` (from "feature 303 add shopping cart")
+     - `--spec-number 666 --branch-prefix "bugfix/" --short-name "payment-timeout" "Fix payment timeout"` (from "bugfix 666 fix payment timeout")
+   - PowerShell examples:
+     - `-ShortName "your-generated-short-name" "Feature description here"`
+     - `-ShortName "user-auth" "Add user authentication"`
+     - `-SpecNumber 42 -ShortName "payment-api" "Add payment processing"`
+     - `-SpecNumber 1234 -ShortName "user-auth" -BranchPrefix "feature/" "Add user authentication"`
+     - `-SpecNumber 303 -BranchPrefix "feature/" -ShortName "shopping-cart" "Add shopping cart"` (from "feature 303 add shopping cart")
+     - `-SpecNumber 666 -BranchPrefix "bugfix/" -ShortName "payment-timeout" "Fix payment timeout"` (from "bugfix 666 fix payment timeout")
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
    - You must only ever run this script once
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
