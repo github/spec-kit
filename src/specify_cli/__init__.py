@@ -1307,7 +1307,7 @@ def version():
             release_data = response.json()
             template_version = release_data.get("tag_name", "unknown")
             # Remove 'v' prefix if present
-            if template_version != "unknown" and template_version.startswith("v"):
+            if template_version.startswith("v"):
                 template_version = template_version[1:]
             release_date = release_data.get("published_at", "unknown")
             if release_date != "unknown":
