@@ -1,0 +1,203 @@
+name: Bicep Generator Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/specify_cli/bicep/**'
+      - 'tests/bicep/**'
+      - 'pytest.ini'
+      - '.github/workflows/test-bicep-generator.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/specify_cli/bicep/**'
+      - 'tests/bicep/**'
+      - 'pytest.ini'
+      - '.github/workflows/test-bicep-generator.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} with Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,test]"
+      
+      - name: Install Azure CLI
+        uses: azure/CLI@v2
+      
+      - name: Install Bicep CLI
+        run: |
+          az bicep install
+      
+      - name: Run unit tests
+        run: |
+          pytest tests/bicep -m unit --cov=src/specify_cli/bicep --cov-report=xml --cov-report=term-missing
+      
+      - name: Run integration tests
+        run: |
+          pytest tests/bicep -m integration --cov=src/specify_cli/bicep --cov-append --cov-report=xml --cov-report=term-missing
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: bicep-generator
+          name: bicep-generator-${{ matrix.os }}-${{ matrix.python-version }}
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  
+  e2e-test:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,test]"
+      
+      - name: Install Azure CLI
+        uses: azure/CLI@v2
+      
+      - name: Install Bicep CLI
+        run: |
+          az bicep install
+      
+      - name: Run E2E tests
+        run: |
+          pytest tests/bicep -m e2e --cov=src/specify_cli/bicep --cov-report=xml
+      
+      - name: Upload E2E coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: e2e
+          name: bicep-generator-e2e
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  
+  azure-integration-test:
+    name: Azure Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,test]"
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Install Azure CLI
+        uses: azure/CLI@v2
+      
+      - name: Install Bicep CLI
+        run: |
+          az bicep install
+      
+      - name: Run Azure integration tests
+        run: |
+          pytest tests/bicep -m azure --cov=src/specify_cli/bicep --cov-report=xml
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      
+      - name: Upload Azure integration coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: azure-integration
+          name: bicep-generator-azure
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  
+  coverage-check:
+    name: Coverage Requirements Check
+    runs-on: ubuntu-latest
+    needs: [test, e2e-test]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,test]"
+      
+      - name: Install Azure CLI
+        uses: azure/CLI@v2
+      
+      - name: Install Bicep CLI
+        run: |
+          az bicep install
+      
+      - name: Run all tests with coverage
+        run: |
+          pytest tests/bicep -m "not azure" --cov=src/specify_cli/bicep --cov-report=term-missing --cov-report=html --cov-fail-under=80
+      
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+      
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          MINIMUM_GREEN: 80
+          MINIMUM_ORANGE: 60

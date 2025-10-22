@@ -1,0 +1,1 @@
+"""Bicep template generation module for Specify CLI."""

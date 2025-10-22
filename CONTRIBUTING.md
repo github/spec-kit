@@ -44,6 +44,34 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 1. Push to your fork and submit a pull request
 1. Wait for your pull request to be reviewed and merged.
 
+### Quick Development Setup
+
+For testing changes locally in another project, use the automated installation scripts:
+
+**PowerShell (Windows):**
+```powershell
+# From your test project directory
+C:\path\to\spec-kit-4applens\scripts\powershell\install-local-dev.ps1
+```
+
+**Bash (Linux/macOS):**
+```bash
+# From your test project directory
+/path/to/spec-kit-4applens/scripts/bash/install-local-dev.sh
+```
+
+These scripts will:
+- Install the CLI in editable mode (`pip install -e ".[bicep]"`)
+- Copy GitHub Copilot prompt files to your test project
+- Verify the installation
+- Show next steps
+
+Changes to the source code will be immediately reflected without reinstalling.
+
+See [`scripts/README.md`](scripts/README.md) for more details.
+
+---
+
 Here are a few things you can do that will increase the likelihood of your pull request being accepted:
 
 - Follow the project's coding conventions.
