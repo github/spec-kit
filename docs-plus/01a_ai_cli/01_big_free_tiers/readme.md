@@ -14,11 +14,4 @@
 
 [Advanced Gemini CLI: Part 2— Decoding the Context](https://medium.com/google-cloud/advanced-gemini-cli-part-2-decoding-the-context-edc9e815b548)
 
-Subagent feature is coming soon to Gemini CLI:
-
-[How I Turned Gemini CLI into a Multi-Agent System with Just Prompts](https://aipositive.substack.com/p/how-i-turned-gemini-cli-into-a-multi)
-
-https://docs.claude.com/en/docs/claude-code/sub-agents
-
-https://github.com/google-gemini/gemini-cli/issues/3132
 
