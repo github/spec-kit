@@ -32,6 +32,7 @@ import tempfile
 import shutil
 import shlex
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -155,6 +156,145 @@ AGENT_CONFIG = {
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
+
+UPDATE_ALLOWLIST = [
+    Path(".specify") / "templates",
+    Path(".specify") / "scripts",
+    Path(".specify") / "commands",
+    Path("scripts"),
+    Path("templates"),
+]
+
+PROTECTED_PATHS = [
+    Path(".specify") / "memory",
+    Path(".specify") / "history",
+]
+
+DEFAULT_AI_ASSISTANT = "copilot"
+
+
+@dataclass
+class UpdateContext:
+    project_root: Path
+    ai_assistant: str
+    script_type: str
+    dry_run: bool
+    assume_yes: bool
+    skip_tls: bool
+    debug: bool
+    github_token: str | None
+
+
+def find_specify_root(start: Path | None = None) -> Path | None:
+    """Locate the root directory of a Specify project by searching for the .specify folder."""
+
+    start = start or Path.cwd()
+    start = start.resolve()
+
+    for candidate in [start, *start.parents]:
+        if (candidate / ".specify").is_dir():
+            return candidate
+    return None
+
+
+def infer_ai_assistant(project_root: Path) -> str | None:
+    """Attempt to infer the configured AI assistant by checking known agent folders."""
+
+    matches: list[str] = []
+    for key, config in AGENT_CONFIG.items():
+        folder = config.get("folder")
+        if not folder:
+            continue
+        if (project_root / folder).exists():
+            matches.append(key)
+
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def infer_script_type(project_root: Path) -> str | None:
+    """Infer script type based on contents of .specify/scripts."""
+
+    scripts_root = project_root / ".specify" / "scripts"
+    if not scripts_root.exists():
+        return None
+
+    if (scripts_root / "powershell").exists() or any(scripts_root.rglob("*.ps1")):
+        return "ps"
+    if (scripts_root / "bash").exists() or any(scripts_root.rglob("*.sh")):
+        return "sh"
+    return None
+
+
+def resolve_update_context(
+    project_root: Path,
+    *,
+    ai_assistant: str | None,
+    script_type: str | None,
+    dry_run: bool,
+    assume_yes: bool,
+    skip_tls: bool,
+    debug: bool,
+    github_token: str | None,
+) -> UpdateContext:
+    """Resolve command options and inferred defaults into a concrete update context."""
+
+    resolved_ai: str | None = None
+    if ai_assistant:
+        if ai_assistant not in AGENT_CONFIG:
+            raise typer.BadParameter(
+                f"Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}",
+                param_hint="--ai",
+            )
+        resolved_ai = ai_assistant
+    else:
+        resolved_ai = infer_ai_assistant(project_root)
+        if not resolved_ai:
+            if sys.stdin.isatty():
+                ai_choices = {key: cfg["name"] for key, cfg in AGENT_CONFIG.items()}
+                resolved_ai = select_with_arrows(
+                    ai_choices,
+                    "Select AI assistant for template updates",
+                    DEFAULT_AI_ASSISTANT,
+                )
+            else:
+                raise typer.BadParameter(
+                    "Unable to infer AI assistant automatically. Re-run with --ai <assistant>.",
+                    param_hint="--ai",
+                )
+
+    resolved_script: str | None = None
+    if script_type:
+        if script_type not in SCRIPT_TYPE_CHOICES:
+            raise typer.BadParameter(
+                f"Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}",
+                param_hint="--script",
+            )
+        resolved_script = script_type
+    else:
+        resolved_script = infer_script_type(project_root)
+        if not resolved_script:
+            default_script = "ps" if os.name == "nt" else "sh"
+            if sys.stdin.isatty():
+                resolved_script = select_with_arrows(
+                    SCRIPT_TYPE_CHOICES,
+                    "Select script type for updates (or press Enter)",
+                    default_script,
+                )
+            else:
+                resolved_script = default_script
+
+    return UpdateContext(
+        project_root=project_root,
+        ai_assistant=resolved_ai,
+        script_type=resolved_script,
+        dry_run=dry_run,
+        assume_yes=assume_yes,
+        skip_tls=skip_tls,
+        debug=debug,
+        github_token=github_token,
+    )
 
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -1160,6 +1300,98 @@ def init(
     console.print()
     console.print(enhancements_panel)
 
+
+@app.command()
+def update(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview updates without applying changes."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Apply updates without confirmation prompts."),
+    ai_assistant: str | None = typer.Option(None, "--ai", help="AI assistant bundle to use when updating templates."),
+    script_type: str | None = typer.Option(None, "--script", help="Script bundle to use (sh or ps)."),
+    skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)."),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for failures."),
+    github_token: str | None = typer.Option(None, "--github-token", help="GitHub token for authenticated release downloads."),
+):
+    """Update Specify templates and scripts without touching project artifacts."""
+
+    show_banner()
+
+    tracker = StepTracker("Update Specify Assets")
+
+    sys._specify_tracker_active = True
+
+    for key, label in [
+        ("precheck", "Validate project"),
+        ("context", "Resolve update configuration"),
+        ("fetch", "Fetch latest release"),
+        ("stage", "Stage update files"),
+        ("diff", "Analyze differences"),
+        ("apply", "Apply selective sync"),
+        ("chmod", "Normalize script permissions"),
+        ("cleanup", "Cleanup temporary files"),
+    ]:
+        tracker.add(key, label)
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+        try:
+            tracker.start("precheck")
+            project_root = find_specify_root()
+            if not project_root:
+                tracker.error("precheck", "missing .specify")
+                console.print(
+                    Panel(
+                        "Run `specify init` first or ensure you're inside a Specify project.",
+                        title="Specify project not found",
+                        border_style="red",
+                    )
+                )
+                raise typer.Exit(1)
+
+            tracker.complete("precheck", project_root.name)
+
+            tracker.start("context")
+            try:
+                context = resolve_update_context(
+                    project_root,
+                    ai_assistant=ai_assistant,
+                    script_type=script_type,
+                    dry_run=dry_run,
+                    assume_yes=yes,
+                    skip_tls=skip_tls,
+                    debug=debug,
+                    github_token=github_token,
+                )
+            except typer.BadParameter as exc:
+                tracker.error("context", str(exc))
+                console.print(Panel(str(exc), title="Invalid option", border_style="red"))
+                raise typer.Exit(2)
+
+            tracker.complete("context", f"{context.ai_assistant}/{context.script_type}")
+
+            tracker.skip("fetch", "implementation pending")
+            tracker.skip("stage", "implementation pending")
+            tracker.skip("diff", "implementation pending")
+            tracker.skip("apply", "implementation pending")
+            tracker.skip("chmod", "implementation pending")
+            tracker.skip("cleanup", "implementation pending")
+
+        except typer.Exit:
+            raise
+        except Exception as exc:
+            tracker.error("cleanup", str(exc))
+            console.print(Panel(str(exc), title="Update failed", border_style="red"))
+            raise typer.Exit(1) from exc
+
+    console.print(tracker.render())
+    console.print(
+        Panel(
+            "Update scaffolding ready. No changes applied yet – implementation continues in subsequent steps.",
+            title="Status",
+            border_style="yellow",
+        )
+    )
+
+
 @app.command()
 def check():
     """Check that all required tools are installed."""
@@ -1207,4 +1439,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
