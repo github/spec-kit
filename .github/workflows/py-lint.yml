@@ -1,4 +1,4 @@
-name: Lint
+name: Python Lint
 
 on:
   push:
@@ -6,13 +6,13 @@ on:
   pull_request:
 
 jobs:
-  markdownlint:
+  ruff:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run markdownlint-cli2
-        uses: DavidAnson/markdownlint-cli2-action@v19
+      - name: Run ruff lint
+        uses: astral-sh/ruff-action@v3
         with:
-          globs: '**/*.md'
+          args: "check"

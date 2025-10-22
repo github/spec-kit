@@ -19,11 +19,6 @@ specify = "specify_cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[project.optional-dependencies]
-dev = [
-    "ruff",
-]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
 

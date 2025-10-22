@@ -1,0 +1,18 @@
+name: Python Format
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ruff format
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check --diff"
