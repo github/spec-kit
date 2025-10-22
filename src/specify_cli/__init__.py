@@ -671,7 +671,7 @@ def download_template_from_github(
                 f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}"
             )
     except Exception as e:
-        console.print(f"[red]Error fetching release information[/red]")
+        console.print("[red]Error fetching release information[/red]")
         console.print(Panel(str(e), title="Fetch Error", border_style="red"))
         raise typer.Exit(1)
 
@@ -710,7 +710,7 @@ def download_template_from_github(
 
     zip_path = download_dir / filename
     if verbose:
-        console.print(f"[cyan]Downloading template...[/cyan]")
+        console.print("[cyan]Downloading template...[/cyan]")
 
     try:
         with client.stream(
@@ -748,7 +748,7 @@ def download_template_from_github(
                         for chunk in response.iter_bytes(chunk_size=8192):
                             f.write(chunk)
     except Exception as e:
-        console.print(f"[red]Error downloading template[/red]")
+        console.print("[red]Error downloading template[/red]")
         detail = str(e)
         if zip_path.exists():
             zip_path.unlink()
@@ -851,7 +851,7 @@ def download_and_extract_template(
                             tracker.complete("flatten")
                         elif verbose:
                             console.print(
-                                f"[cyan]Found nested directory structure[/cyan]"
+                                "[cyan]Found nested directory structure[/cyan]"
                             )
 
                     for item in source_dir.iterdir():
@@ -893,7 +893,7 @@ def download_and_extract_template(
                             shutil.copy2(item, dest_path)
                     if verbose and not tracker:
                         console.print(
-                            f"[cyan]Template files merged into current directory[/cyan]"
+                            "[cyan]Template files merged into current directory[/cyan]"
                         )
             else:
                 zip_ref.extractall(project_path)
@@ -927,7 +927,7 @@ def download_and_extract_template(
                         tracker.complete("flatten")
                     elif verbose:
                         console.print(
-                            f"[cyan]Flattened nested directory structure[/cyan]"
+                            "[cyan]Flattened nested directory structure[/cyan]"
                         )
 
     except Exception as e:
@@ -1392,9 +1392,9 @@ def init(
     enhancement_lines = [
         "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
         "",
-        f"○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
-        f"○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
-        f"○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])",
+        "○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
+        "○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
+        "○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])",
     ]
     enhancements_panel = Panel(
         "\n".join(enhancement_lines),
@@ -1433,10 +1433,10 @@ def check():
 
     # Check VS Code variants (not in agent config)
     tracker.add("code", "Visual Studio Code")
-    code_ok = check_tool("code", tracker=tracker)
+    check_tool("code", tracker=tracker)
 
     tracker.add("code-insiders", "Visual Studio Code Insiders")
-    code_insiders_ok = check_tool("code-insiders", tracker=tracker)
+    check_tool("code-insiders", tracker=tracker)
 
     console.print(tracker.render())
 
