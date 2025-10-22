@@ -160,6 +160,7 @@ The `specify` command supports the following options:
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
+| `update`    | Refresh templates and scripts in an existing project without touching generated artifacts |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`) |
 
 ### `specify init` Arguments & Options
@@ -219,6 +220,28 @@ specify init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
 specify check
+```
+
+### `specify update` Workflow
+
+Keep your project templates current without overwriting specs, plans, or constitution files.
+
+- Downloads the latest release bundle that matches your assistant (`--ai`) and script preference (`--script`).
+- Applies changes only to the allowlisted directories (`.specify/templates`, `.specify/scripts`, `.specify/commands`, top-level `templates/` and `scripts/`).
+- Skips `.specify/memory`, existing specs, tasks, and other generated artifacts so historical work stays intact.
+- Supports `--dry-run` to preview changes and `--yes` for non-interactive automation.
+
+Run the command from inside an initialized project:
+
+```bash
+# Preview updates without touching the filesystem
+specify update --dry-run
+
+# Apply the curated updates with a single confirmation prompt
+specify update
+
+# Fully non-interactive apply (useful in CI)
+specify update --yes
 ```
 
 ### Available Slash Commands

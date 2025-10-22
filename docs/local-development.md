@@ -98,6 +98,18 @@ ls -l scripts | grep .sh
 
 On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
+## 5a. Refresh Template Assets Safely
+
+When testing template changes, run the update flow inside a generated project rather than re-running `init` every time:
+
+```bash
+cd /path/to/generated/project
+specify update --dry-run   # inspect changes sourced from your dev build
+specify update --yes       # apply the curated template/scripts diff
+```
+
+Only the allowlisted template directories are touched; `.specify/memory` and previously generated specs remain untouched so you can validate migrations without losing test data.
+
 ## 6. Run Lint / Basic Checks (Add Your Own)
 
 Currently no enforced lint config is bundled, but you can quickly sanity check importability:
