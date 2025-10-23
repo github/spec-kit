@@ -87,12 +87,21 @@ check_existing_branches() {
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
     git fetch --all --prune 2>/dev/null || true
     
-    # Find all branches matching the pattern (local and remote)
-    local branches=$(git branch -a 2>/dev/null | grep -E "feature/[0-9]+-${short_name}$" | sed 's/.*feature\///' | sed "s/-${short_name}$//" | sort -n)
+    # Find all branches matching the pattern using git ls-remote (more reliable)
+    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-${short_name}$" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
     
-    # Get the highest number
+    # Also check local branches
+    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
+    
+    # Check specs directory as well
+    local spec_dirs=""
+    if [ -d "$SPECS_DIR" ]; then
+        spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9]*-${short_name}" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
+    fi
+    
+    # Combine all sources and get the highest number
     local max_num=0
-    for num in $branches; do
+    for num in $remote_branches $local_branches $spec_dirs; do
         if [ "$num" -gt "$max_num" ]; then
             max_num=$num
         fi

@@ -46,14 +46,14 @@ Given that feature description, do this:
       git fetch --all --prune
       ```
    
-   b. List all branches (local and remote) that match the short-name pattern:
-      ```bash
-      git branch -a | grep -E "feature/[0-9]+-<short-name>$"
-      ```
+   b. Find the highest feature number across all sources for the short-name:
+      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
+      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
+      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
    
    c. Determine the next available number:
-      - Extract all numbers from existing branches (both local and remote)
-      - Find the highest number N from branches that exist
+      - Extract all numbers from all three sources
+      - Find the highest number N
       - Use N+1 for the new branch number
    
    d. Run the script `{SCRIPT}` with the calculated number and short-name:
@@ -62,8 +62,9 @@ Given that feature description, do this:
       - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
    
    **IMPORTANT**:
-   - Only consider branches that still exist (local or remote)
-   - If no existing branches found with this short-name, start with number 1
+   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
+   - Only match branches/directories with the exact short-name pattern
+   - If no existing branches/directories found with this short-name, start with number 1
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
    - You must only ever run this script once per feature
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
