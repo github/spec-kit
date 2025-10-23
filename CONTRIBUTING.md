@@ -1,4 +1,4 @@
-## Contributing to Spec Kit
+# Contributing to Spec Kit
 
 Hi there! We're thrilled that you'd like to contribute to Spec Kit. Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](LICENSE).
 
@@ -12,6 +12,23 @@ These are one time installations required to be able to test your changes locall
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
 1. Have an [AI coding agent available](README.md#-supported-ai-agents)
+
+<details>
+<summary><b>💡 Hint if you are using <code>VSCode</code> or <code>GitHub Codespaces</code> as your IDE</b></summary>
+
+<br>
+
+Provided you have [Docker](https://docker.com) installed on your machine, you can leverage [Dev Containers](https://containers.dev) through this [VSCode extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), to easily set up your development environment, with aforementioned tools already installed and configured, thanks to the `.devcontainer/devcontainer.json` file (located at the root of the project).
+
+To do so, simply:
+
+- Checkout the repo
+- Open it with VSCode
+- Open the [Command Palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette) and select "Dev Containers: Open Folder in Container..."
+
+On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler, as it leverages the `.devcontainer/devcontainer.json` automatically upon opening the codespace.
+
+</details>
 
 ## Submitting a pull request
 
@@ -44,6 +61,28 @@ When working on spec-kit:
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+
+### Testing template and command changes locally
+
+Running `uv run specify init` pulls released packages, which won’t include your local changes.  
+To test your templates, commands, and other changes locally, follow these steps:
+
+1. **Create release packages**
+
+   Run the following command to generate the local packages:
+   ```
+   ./.github/workflows/scripts/create-release-packages.sh v1.0.0
+   ```
+
+2. **Copy the relevant package to your test project**
+
+   ```
+   cp -r .genreleases/sdd-copilot-package-sh/. <path-to-test-project>/
+   ```
+
+3. **Open and test the agent**
+
+   Navigate to your test project folder and open the agent to verify your implementation.
 
 ## AI contributions in Spec Kit
 

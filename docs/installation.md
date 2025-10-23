@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli) or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -34,6 +34,7 @@ You can proactively specify your AI agent during initialization:
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai gemini
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai codebuddy
 ```
 
 ### Specify Script Type (Shell vs PowerShell)
@@ -41,11 +42,13 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
 
 Auto behavior:
+
 - Windows default: `ps`
 - Other OS default: `sh`
 - Interactive mode: you'll be prompted unless you pass `--script`
 
 Force a specific script type:
+
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script sh
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
@@ -62,6 +65,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 ## Verification
 
 After initialization, you should see the following commands available in your AI agent:
+
 - `/speckit.specify` - Create specifications
 - `/speckit.plan` - Generate implementation plans  
 - `/speckit.tasks` - Break down into actionable tasks

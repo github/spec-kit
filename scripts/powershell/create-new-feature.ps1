@@ -3,20 +3,39 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [string]$ShortName,
+    [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
 )
 $ErrorActionPreference = 'Stop'
 
+# Show help if requested
+if ($Help) {
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] <feature description>"
+    Write-Host ""
+    Write-Host "Options:"
+    Write-Host "  -Json               Output in JSON format"
+    Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
+    Write-Host "  -Help               Show this help message"
+    Write-Host ""
+    Write-Host "Examples:"
+    Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth'"
+    Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API'"
+    exit 0
+}
+
+# Check if feature description provided
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature.ps1 [-Json] <feature description>"
+    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] <feature description>"
     exit 1
 }
+
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
 # Resolve repository root. Prefer git information when available, but fall back
 # to searching for repository markers so the workflow still functions in repositories that
-# were initialised with --no-git.
+# were initialized with --no-git.
 function Find-RepositoryRoot {
     param(
         [string]$StartDir,
@@ -72,9 +91,82 @@ if (Test-Path $specsDir) {
 $next = $highest + 1
 $featureNum = ('{0:000}' -f $next)
 
-$branchName = $featureDesc.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
-$words = ($branchName -split '-') | Where-Object { $_ } | Select-Object -First 3
-$branchName = "$featureNum-$([string]::Join('-', $words))"
+# Function to generate branch name with stop word filtering and length filtering
+function Get-BranchName {
+    param([string]$Description)
+    
+    # Common stop words to filter out
+    $stopWords = @(
+        'i', 'a', 'an', 'the', 'to', 'for', 'of', 'in', 'on', 'at', 'by', 'with', 'from',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+        'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might', 'must', 'shall',
+        'this', 'that', 'these', 'those', 'my', 'your', 'our', 'their',
+        'want', 'need', 'add', 'get', 'set'
+    )
+    
+    # Convert to lowercase and extract words (alphanumeric only)
+    $cleanName = $Description.ToLower() -replace '[^a-z0-9\s]', ' '
+    $words = $cleanName -split '\s+' | Where-Object { $_ }
+    
+    # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
+    $meaningfulWords = @()
+    foreach ($word in $words) {
+        # Skip stop words
+        if ($stopWords -contains $word) { continue }
+        
+        # Keep words that are length >= 3 OR appear as uppercase in original (likely acronyms)
+        if ($word.Length -ge 3) {
+            $meaningfulWords += $word
+        } elseif ($Description -match "\b$($word.ToUpper())\b") {
+            # Keep short words if they appear as uppercase in original (likely acronyms)
+            $meaningfulWords += $word
+        }
+    }
+    
+    # If we have meaningful words, use first 3-4 of them
+    if ($meaningfulWords.Count -gt 0) {
+        $maxWords = if ($meaningfulWords.Count -eq 4) { 4 } else { 3 }
+        $result = ($meaningfulWords | Select-Object -First $maxWords) -join '-'
+        return $result
+    } else {
+        # Fallback to original logic if no meaningful words found
+        $result = $Description.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+        $fallbackWords = ($result -split '-') | Where-Object { $_ } | Select-Object -First 3
+        return [string]::Join('-', $fallbackWords)
+    }
+}
+
+# Generate branch name
+if ($ShortName) {
+    # Use provided short name, just clean it up
+    $branchSuffix = $ShortName.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+} else {
+    # Generate from description with smart filtering
+    $branchSuffix = Get-BranchName -Description $featureDesc
+}
+
+$branchName = "$featureNum-$branchSuffix"
+
+# GitHub enforces a 244-byte limit on branch names
+# Validate and truncate if necessary
+$maxBranchLength = 244
+if ($branchName.Length -gt $maxBranchLength) {
+    # Calculate how much we need to trim from suffix
+    # Account for: feature number (3) + hyphen (1) = 4 chars
+    $maxSuffixLength = $maxBranchLength - 4
+    
+    # Truncate suffix
+    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
+    # Remove trailing hyphen if truncation created one
+    $truncatedSuffix = $truncatedSuffix -replace '-$', ''
+    
+    $originalBranchName = $branchName
+    $branchName = "$featureNum-$truncatedSuffix"
+    
+    Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
+    Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
+    Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
+}
 
 if ($hasGit) {
     try {
@@ -115,3 +207,4 @@ if ($Json) {
     Write-Output "HAS_GIT: $hasGit"
     Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
 }
+

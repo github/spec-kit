@@ -7,11 +7,13 @@ This folder contains the documentation source files for Spec Kit, built using [D
 To build the documentation locally:
 
 1. Install DocFX:
+
    ```bash
    dotnet tool install -g docfx
    ```
 
 2. Build the documentation:
+
    ```bash
    cd docs
    docfx docfx.json --serve

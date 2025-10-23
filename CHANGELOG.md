@@ -7,6 +7,29 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.20] - 2025-10-14
+
+### Added
+
+- **Intelligent Branch Naming**: `create-new-feature` scripts now support `--short-name` parameter for custom branch names
+  - When `--short-name` provided: Uses the custom name directly (cleaned and formatted)
+  - When omitted: Automatically generates meaningful names using stop word filtering and length-based filtering
+  - Filters out common stop words (I, want, to, the, for, etc.)
+  - Removes words shorter than 3 characters (unless they're uppercase acronyms)
+  - Takes 3-4 most meaningful words from the description
+  - **Enforces GitHub's 244-byte branch name limit** with automatic truncation and warnings
+  - Examples:
+    - "I want to create user authentication" → `001-create-user-authentication`
+    - "Implement OAuth2 integration for API" → `001-implement-oauth2-integration-api`
+    - "Fix payment processing bug" → `001-fix-payment-processing`
+    - Very long descriptions are automatically truncated at word boundaries to stay within limits
+  - Designed for AI agents to provide semantic short names while maintaining standalone usability
+
+### Changed
+
+- Enhanced help documentation for `create-new-feature.sh` and `create-new-feature.ps1` scripts with examples
+- Branch names now validated against GitHub's 244-byte limit with automatic truncation if needed
+
 ## [0.0.19] - 2025-10-10
 
 ### Added
@@ -40,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New `/clarify` command template to surface up to 5 targeted clarification questions for an existing spec and persist answers into a Clarifications section in the spec.
 - New `/analyze` command template providing a non-destructive cross-artifact discrepancy and alignment report (spec, clarifications, plan, tasks, constitution) inserted after `/tasks` and before `/implement`.
-	- Note: Constitution rules are explicitly treated as non-negotiable; any conflict is a CRITICAL finding requiring artifact remediation, not weakening of principles.
+  - Note: Constitution rules are explicitly treated as non-negotiable; any conflict is a CRITICAL finding requiring artifact remediation, not weakening of principles.
 
 ## [0.0.16] - 2025-09-22
 
@@ -116,7 +139,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated command instructions in the CLI.
 - Cleaned up the code to not render agent-specific information when it's generic.
-
 
 ## [0.0.6] - 2025-09-17
 
