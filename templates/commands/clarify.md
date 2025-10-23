@@ -46,6 +46,14 @@ Execution steps:
    - Error/empty/loading states
    - Accessibility or localization notes
 
+   Communication Patterns & Real-time Requirements:
+   - Request/response vs event-driven patterns
+   - Synchronous vs asynchronous operations
+   - Real-time update mechanisms (polling, WebSocket, SSE, webhooks)
+   - Message delivery guarantees (at-least-once, exactly-once)
+   - Bidirectional communication needs
+   - Event notification requirements
+
    Non-Functional Quality Attributes:
    - Performance (latency, throughput targets)
    - Scalability (horizontal/vertical, limits)
