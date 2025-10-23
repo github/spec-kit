@@ -38,7 +38,7 @@ Anthropic claims that approximately 90% of Claude Code itself was written by the
 
 Claude Code didn't just introduce a new tool; it validated an entirely new paradigm for software development. Launched initially as a command-line interface and now available via web interface and mobile apps, Claude Code enables developers to delegate multiple coding tasks that run on cloud infrastructure. You can kick off several parallel tasks, each in its own isolated environment, and the agent handles implementation while you track progress in real-time.
 
-![](/claude_code.png)
+![](claude_code.png)
 
 The magic? You stay in control with approval modes ranging from full manual review to autonomous execution. Claude Code now features **checkpoints** for autonomous operation, **subagents** that delegate specialized tasks for parallel workflows, **Skills** to improve how it performs specific tasks, and **hooks** that automatically trigger actions at specific points like running test suites after code changes.
 
