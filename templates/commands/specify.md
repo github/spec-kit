@@ -39,16 +39,34 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. Run the script `{SCRIPT}` from repo root **with the short-name argument** and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
-
+2. **Check for existing branches before creating new one**:
+   
+   a. First, fetch all remote branches to ensure we have the latest information:
+      ```bash
+      git fetch --all --prune
+      ```
+   
+   b. List all branches (local and remote) that match the short-name pattern:
+      ```bash
+      git branch -a | grep -E "feature/[0-9]+-<short-name>$"
+      ```
+   
+   c. Determine the next available number:
+      - Extract all numbers from existing branches (both local and remote)
+      - Find the highest number N from branches that exist
+      - Use N+1 for the new branch number
+   
+   d. Run the script `{SCRIPT}` with the calculated number and short-name:
+      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
+      - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
+      - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+   
    **IMPORTANT**:
-
-   - Append the short-name argument to the `{SCRIPT}` command with the 2-4 word short name you created in step 1. Keep the feature description as the final argument.
-   - Bash example: `--short-name "your-generated-short-name" "Feature description here"`
-   - PowerShell example: `-ShortName "your-generated-short-name" "Feature description here"`
+   - Only consider branches that still exist (local or remote)
+   - If no existing branches found with this short-name, start with number 1
+   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
+   - You must only ever run this script once per feature
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
-   - You must only ever run this script once
-   - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
 
 3. Load `templates/spec-template.md` to understand required sections.
 
