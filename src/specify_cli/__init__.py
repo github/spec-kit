@@ -32,6 +32,7 @@ import tempfile
 import shutil
 import shlex
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -155,6 +156,280 @@ AGENT_CONFIG = {
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
+
+UPDATE_ALLOWLIST = [
+    Path(".specify") / "templates",
+    Path(".specify") / "scripts",
+    Path(".specify") / "commands",
+    Path("scripts"),
+    Path("templates"),
+]
+
+PROTECTED_PATHS = [
+    Path(".specify") / "memory",
+    Path(".specify") / "history",
+]
+
+DEFAULT_AI_ASSISTANT = "copilot"
+
+
+@dataclass
+class UpdateContext:
+    project_root: Path
+    ai_assistant: str
+    script_type: str
+    dry_run: bool
+    assume_yes: bool
+    skip_tls: bool
+    debug: bool
+    github_token: str | None
+
+
+@dataclass
+class PlannedFileChange:
+    relative_path: Path
+    source_path: Path | None
+    destination_path: Path
+    change_type: str  # "create", "update", or "delete"
+    size: int
+
+
+def find_specify_root(start: Path | None = None) -> Path | None:
+    """Locate the root directory of a Specify project by searching for the .specify folder."""
+
+    start = start or Path.cwd()
+    start = start.resolve()
+
+    for candidate in [start, *start.parents]:
+        if (candidate / ".specify").is_dir():
+            return candidate
+    return None
+
+
+def infer_ai_assistant(project_root: Path) -> str | None:
+    """Attempt to infer the configured AI assistant by checking known agent folders."""
+
+    matches: list[str] = []
+    for key, config in AGENT_CONFIG.items():
+        folder = config.get("folder")
+        if not folder:
+            continue
+        if (project_root / folder).exists():
+            matches.append(key)
+
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def infer_script_type(project_root: Path) -> str | None:
+    """Infer script type based on contents of .specify/scripts."""
+
+    scripts_root = project_root / ".specify" / "scripts"
+    if not scripts_root.exists():
+        return None
+
+    if (scripts_root / "powershell").exists() or any(scripts_root.rglob("*.ps1")):
+        return "ps"
+    if (scripts_root / "bash").exists() or any(scripts_root.rglob("*.sh")):
+        return "sh"
+    return None
+
+
+def resolve_update_context(
+    project_root: Path,
+    *,
+    ai_assistant: str | None,
+    script_type: str | None,
+    dry_run: bool,
+    assume_yes: bool,
+    skip_tls: bool,
+    debug: bool,
+    github_token: str | None,
+) -> UpdateContext:
+    """Resolve command options and inferred defaults into a concrete update context."""
+
+    resolved_ai: str | None = None
+    if ai_assistant:
+        if ai_assistant not in AGENT_CONFIG:
+            raise typer.BadParameter(
+                f"Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}",
+                param_hint="--ai",
+            )
+        resolved_ai = ai_assistant
+    else:
+        resolved_ai = infer_ai_assistant(project_root)
+        if not resolved_ai:
+            if sys.stdin.isatty():
+                ai_choices = {key: cfg["name"] for key, cfg in AGENT_CONFIG.items()}
+                resolved_ai = select_with_arrows(
+                    ai_choices,
+                    "Select AI assistant for template updates",
+                    DEFAULT_AI_ASSISTANT,
+                )
+            else:
+                raise typer.BadParameter(
+                    "Unable to infer AI assistant automatically. Re-run with --ai <assistant>.",
+                    param_hint="--ai",
+                )
+
+    resolved_script: str | None = None
+    if script_type:
+        if script_type not in SCRIPT_TYPE_CHOICES:
+            raise typer.BadParameter(
+                f"Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}",
+                param_hint="--script",
+            )
+        resolved_script = script_type
+    else:
+        resolved_script = infer_script_type(project_root)
+        if not resolved_script:
+            default_script = "ps" if os.name == "nt" else "sh"
+            if sys.stdin.isatty():
+                resolved_script = select_with_arrows(
+                    SCRIPT_TYPE_CHOICES,
+                    "Select script type for updates (or press Enter)",
+                    default_script,
+                )
+            else:
+                resolved_script = default_script
+
+    return UpdateContext(
+        project_root=project_root,
+        ai_assistant=resolved_ai,
+        script_type=resolved_script,
+        dry_run=dry_run,
+        assume_yes=assume_yes,
+        skip_tls=skip_tls,
+        debug=debug,
+        github_token=github_token,
+    )
+
+
+def is_protected_path(relative_path: Path) -> bool:
+    parts = relative_path.parts
+    for protected in PROTECTED_PATHS:
+        protected_parts = protected.parts
+        if len(parts) >= len(protected_parts) and tuple(parts[: len(protected_parts)]) == protected_parts:
+            return True
+    return False
+
+
+
+def files_are_identical(source: Path, destination: Path) -> bool:
+    if not destination.exists() or not destination.is_file():
+        return False
+
+    try:
+        if source.stat().st_size != destination.stat().st_size:
+            return False
+        with source.open("rb") as src_file, destination.open("rb") as dst_file:
+            while True:
+                src_chunk = src_file.read(8192)
+                dst_chunk = dst_file.read(8192)
+                if not src_chunk and not dst_chunk:
+                    return True
+                if src_chunk != dst_chunk:
+                    return False
+    except OSError:
+        return False
+
+
+
+def collect_allowlisted_files(base_root: Path) -> dict[Path, Path]:
+    files: dict[Path, Path] = {}
+    for relative_root in UPDATE_ALLOWLIST:
+        candidate_root = base_root / relative_root
+        if not candidate_root.exists():
+            continue
+        for path in candidate_root.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                relative_path = path.relative_to(base_root)
+            except ValueError:
+                continue
+            if is_protected_path(relative_path):
+                continue
+            files[relative_path] = path
+    return files
+
+
+def format_size(num_bytes: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    value = float(num_bytes)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
+
+
+def build_update_plan(project_root: Path, staging_root: Path) -> list[PlannedFileChange]:
+    changes: list[PlannedFileChange] = []
+
+    staged_files = collect_allowlisted_files(staging_root)
+    project_files = collect_allowlisted_files(project_root)
+
+    for relative_path, source_path in staged_files.items():
+        destination_path = project_root / relative_path
+        if destination_path.exists() and destination_path.is_dir():
+            raise RuntimeError(f"Cannot replace directory with file: {relative_path}")
+
+        if destination_path.exists() and files_are_identical(source_path, destination_path):
+            continue
+
+        change_type = "update" if destination_path.exists() else "create"
+        try:
+            size = source_path.stat().st_size
+        except OSError:
+            size = 0
+
+        changes.append(
+            PlannedFileChange(
+                relative_path=relative_path,
+                source_path=source_path,
+                destination_path=destination_path,
+                change_type=change_type,
+                size=size,
+            )
+        )
+
+    for relative_path, destination_path in project_files.items():
+        if relative_path in staged_files:
+            continue
+        if not destination_path.exists() or not destination_path.is_file():
+            continue
+        try:
+            size = destination_path.stat().st_size
+        except OSError:
+            size = 0
+
+        changes.append(
+            PlannedFileChange(
+                relative_path=relative_path,
+                source_path=None,
+                destination_path=destination_path,
+                change_type="delete",
+                size=size,
+            )
+        )
+
+    changes.sort(key=lambda change: change.relative_path.as_posix())
+    return changes
+
+
+def prune_allowlisted_empty_dirs(start_dir: Path, *, project_root: Path, stop_path: Path) -> None:
+    current = start_dir
+    try:
+        while current != project_root and current != stop_path:
+            if stop_path not in current.parents and current != stop_path:
+                break
+            current.rmdir()
+            current = current.parent
+    except OSError:
+        pass
+
 
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -1160,6 +1435,235 @@ def init(
     console.print()
     console.print(enhancements_panel)
 
+
+@app.command()
+def update(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview updates without applying changes."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Apply updates without confirmation prompts."),
+    ai_assistant: str | None = typer.Option(None, "--ai", help="AI assistant bundle to use when updating templates."),
+    script_type: str | None = typer.Option(None, "--script", help="Script bundle to use (sh or ps)."),
+    skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)."),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for failures."),
+    github_token: str | None = typer.Option(None, "--github-token", help="GitHub token for authenticated release downloads."),
+):
+    """Update Specify templates and scripts without touching project artifacts."""
+
+    show_banner()
+
+    tracker = StepTracker("Update Specify Assets")
+
+    sys._specify_tracker_active = True
+
+    for key, label in [
+        ("precheck", "Validate project"),
+        ("context", "Resolve update configuration"),
+        ("fetch", "Fetch latest release"),
+        ("stage", "Stage update files"),
+        ("diff", "Analyze differences"),
+        ("apply", "Apply selective sync"),
+        ("chmod", "Normalize script permissions"),
+        ("cleanup", "Cleanup temporary files"),
+    ]:
+        tracker.add(key, label)
+
+    project_root: Path | None = None
+    context: UpdateContext | None = None
+    changes: list[PlannedFileChange] = []
+    staging_root: Path | None = None
+    temp_dir: tempfile.TemporaryDirectory | None = None
+    has_shell_changes = False
+    release_client: httpx.Client | None = None
+
+    try:
+        with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
+            try:
+                tracker.start("precheck")
+                project_root = find_specify_root()
+                if not project_root:
+                    tracker.error("precheck", "missing .specify")
+                    console.print(
+                        Panel(
+                            "Run `specify init` first or ensure you're inside a Specify project.",
+                            title="Specify project not found",
+                            border_style="red",
+                        )
+                    )
+                    raise typer.Exit(1)
+
+                tracker.complete("precheck", project_root.name)
+
+                tracker.start("context")
+                try:
+                    context = resolve_update_context(
+                        project_root,
+                        ai_assistant=ai_assistant,
+                        script_type=script_type,
+                        dry_run=dry_run,
+                        assume_yes=yes,
+                        skip_tls=skip_tls,
+                        debug=debug,
+                        github_token=github_token,
+                    )
+                except typer.BadParameter as exc:
+                    tracker.error("context", str(exc))
+                    console.print(Panel(str(exc), title="Invalid option", border_style="red"))
+                    raise typer.Exit(2)
+
+                tracker.complete("context", f"{context.ai_assistant}/{context.script_type}")
+
+                verify = not context.skip_tls
+                release_client = httpx.Client(verify=ssl_context if verify else False)
+
+                temp_dir = tempfile.TemporaryDirectory()
+                staging_root = Path(temp_dir.name) / "template"
+
+                tracker.start("stage", "prepare staging directory")
+                download_and_extract_template(
+                    staging_root,
+                    context.ai_assistant,
+                    context.script_type,
+                    is_current_dir=False,
+                    verbose=False,
+                    tracker=tracker,
+                    client=release_client,
+                    debug=context.debug,
+                    github_token=context.github_token,
+                )
+                tracker.complete("stage", staging_root.name)
+
+                tracker.start("diff", "compare templates")
+                try:
+                    changes = build_update_plan(project_root, staging_root)
+                except RuntimeError as exc:
+                    tracker.error("diff", str(exc))
+                    console.print(Panel(str(exc), title="Update failed", border_style="red"))
+                    raise typer.Exit(1)
+
+                has_shell_changes = any(
+                    change.relative_path.suffix == ".sh" and change.change_type != "delete"
+                    for change in changes
+                )
+
+                if changes:
+                    tracker.complete("diff", f"{len(changes)} file(s)")
+                else:
+                    tracker.complete("diff", "up to date")
+
+            except typer.Exit:
+                raise
+            except Exception as exc:
+                tracker.error("cleanup", str(exc))
+                console.print(Panel(str(exc), title="Update failed", border_style="red"))
+                raise typer.Exit(1) from exc
+    finally:
+        if release_client is not None:
+            release_client.close()
+
+    if context is None or project_root is None:
+        if temp_dir is not None:
+            temp_dir.cleanup()
+        console.print(tracker.render())
+        return
+
+    console.print()
+    if changes:
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Change")
+        table.add_column("Path")
+        table.add_column("Size", justify="right")
+        for change in changes:
+            table.add_row(
+                change.change_type,
+                change.relative_path.as_posix(),
+                format_size(change.size),
+            )
+        console.print(table)
+    else:
+        console.print(Panel("Templates already up to date.", title="Diff", border_style="green"))
+
+    applied_files = 0
+    apply_failed = False
+    result_message = ""
+    result_style = "green"
+
+    if dry_run:
+        tracker.skip("apply", "dry run")
+        tracker.skip("chmod", "dry run")
+        result_message = "Dry run complete. No files were modified."
+    elif not changes:
+        tracker.skip("apply", "already up to date")
+        tracker.skip("chmod", "no script updates")
+        result_message = "Project already matches latest templates."
+    else:
+        proceed = True if yes else typer.confirm(f"Apply {len(changes)} update(s)?")
+        if not proceed:
+            tracker.skip("apply", "cancelled")
+            tracker.skip("chmod", "cancelled")
+            result_message = "Update cancelled. No changes applied."
+            result_style = "yellow"
+        else:
+            tracker.start("apply", f"{len(changes)} change(s)")
+            failures: list[str] = []
+            for change in changes:
+                try:
+                    if change.change_type == "delete":
+                        if change.destination_path.exists():
+                            change.destination_path.unlink()
+                            if change.relative_path.parts:
+                                stop_path = project_root / change.relative_path.parts[0]
+                            else:
+                                stop_path = project_root
+                            prune_allowlisted_empty_dirs(
+                                change.destination_path.parent,
+                                project_root=project_root,
+                                stop_path=stop_path,
+                            )
+                            applied_files += 1
+                    else:
+                        if change.source_path is None:
+                            raise RuntimeError("Missing source for copy operation")
+                        change.destination_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(change.source_path, change.destination_path)
+                        applied_files += 1
+                except Exception as exc:
+                    failures.append(f"{change.relative_path.as_posix()}: {exc}")
+            if failures:
+                tracker.error("apply", f"{len(failures)} failed")
+                tracker.skip("chmod", "skipped due to copy failure")
+                apply_failed = True
+                result_style = "red"
+                result_message = "Update failed while copying files."
+                console.print(Panel(
+                    "\n".join(failures),
+                    title="Copy failures",
+                    border_style="red",
+                ))
+            else:
+                tracker.complete("apply", f"{applied_files} file(s)")
+                if has_shell_changes:
+                    if os.name == "nt":
+                        tracker.skip("chmod", "Windows does not require chmod")
+                    else:
+                        tracker.start("chmod", "normalize POSIX scripts")
+                        ensure_executable_scripts(project_root, tracker=tracker)
+                else:
+                    tracker.skip("chmod", "no script updates")
+                result_message = f"Applied {applied_files} change(s). Review git diff for detail."
+
+    if temp_dir is not None:
+        temp_dir.cleanup()
+        tracker.complete("cleanup", "staging cleared")
+
+    console.print(tracker.render())
+    console.print(Panel(result_message or "No changes detected.", title="Update Summary", border_style=result_style))
+
+    if apply_failed:
+        raise typer.Exit(1)
+
+
+
+
 @app.command()
 def check():
     """Check that all required tools are installed."""
@@ -1207,4 +1711,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

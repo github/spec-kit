@@ -121,3 +121,4 @@ implement specs/002-create-taskify/plan.md
 - Read the complete methodology for in-depth guidance
 - Check out more examples in the repository
 - Explore the source code on GitHub
+- When a new Spec Kit release drops, run `specify update --dry-run` inside your project to preview template changes before applying them
