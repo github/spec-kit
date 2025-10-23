@@ -39,6 +39,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
 | **Codex CLI** | `.codex/commands/` | Markdown | `codex` | Codex CLI |
 | **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows |
+| **iFlow CLI** | `.iflow/commands/` | TOML/Markdown | `iflow` | Alibaba's iFlow CLI |
 | **Kilo Code** | `.kilocode/rules/` | Markdown | N/A (IDE-based) | Kilo Code IDE |
 | **Auggie CLI** | `.augment/rules/` | Markdown | `auggie` | Auggie CLI |
 | **Roo Code** | `.roo/rules/` | Markdown | N/A (IDE-based) | Roo Code IDE |
@@ -108,7 +109,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 ##### Add to ALL_AGENTS array
 
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf iflow codebuddy q)
 ```
 
 ##### Add case statement for directory structure

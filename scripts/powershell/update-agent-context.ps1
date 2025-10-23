@@ -9,7 +9,7 @@ Mirrors the behavior of scripts/bash/update-agent-context.sh:
  2. Plan Data Extraction
  3. Agent File Management (create from template or update existing)
  4. Content Generation (technology stack, recent changes, timestamp)
- 5. Multi-Agent Support (claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, roo, amp, q)
+ 5. Multi-Agent Support (claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, iflow, kilocode, auggie, roo, codebuddy, amp, q)
 
 .PARAMETER AgentType
 Optional agent key to update a single agent. If omitted, updates all existing agent files (creating a default Claude file if none exist).
@@ -25,7 +25,7 @@ Relies on common helper functions in common.ps1
 #>
 param(
     [Parameter(Position=0)]
-    [ValidateSet('claude','gemini','copilot','cursor-agent','qwen','opencode','codex','windsurf','kilocode','auggie','roo','codebuddy','amp','q')]
+    [ValidateSet('claude','gemini','copilot','cursor-agent','qwen','opencode','codex','windsurf','iflow','kilocode','auggie','roo','codebuddy','amp','q')]
     [string]$AgentType
 )
 
@@ -49,6 +49,7 @@ $GEMINI_FILE   = Join-Path $REPO_ROOT 'GEMINI.md'
 $COPILOT_FILE  = Join-Path $REPO_ROOT '.github/copilot-instructions.md'
 $CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/specify-rules.mdc'
 $QWEN_FILE     = Join-Path $REPO_ROOT 'QWEN.md'
+$IFLOW_FILE     = Join-Path $REPO_ROOT 'IFLOW.md'
 $AGENTS_FILE   = Join-Path $REPO_ROOT 'AGENTS.md'
 $WINDSURF_FILE = Join-Path $REPO_ROOT '.windsurf/rules/specify-rules.md'
 $KILOCODE_FILE = Join-Path $REPO_ROOT '.kilocode/rules/specify-rules.md'
@@ -373,6 +374,7 @@ function Update-SpecificAgent {
         'copilot'  { Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot' }
         'cursor-agent' { Update-AgentFile -TargetFile $CURSOR_FILE   -AgentName 'Cursor IDE' }
         'qwen'     { Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code' }
+        'iflow'     { Update-AgentFile -TargetFile $IFLOW_FILE     -AgentName 'iFlow CLI' }
         'opencode' { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'opencode' }
         'codex'    { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex CLI' }
         'windsurf' { Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf' }
@@ -382,7 +384,7 @@ function Update-SpecificAgent {
         'codebuddy' { Update-AgentFile -TargetFile $CODEBUDDY_FILE -AgentName 'CodeBuddy CLI' }
         'amp'      { Update-AgentFile -TargetFile $AMP_FILE      -AgentName 'Amp' }
         'q'        { Update-AgentFile -TargetFile $Q_FILE        -AgentName 'Amazon Q Developer CLI' }
-        default { Write-Err "Unknown agent type '$Type'"; Write-Err 'Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|q'; return $false }
+        default { Write-Err "Unknown agent type '$Type'"; Write-Err 'Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|iflow|kilocode|auggie|roo|codebuddy|amp|q'; return $false }
     }
 }
 
@@ -394,6 +396,7 @@ function Update-AllExistingAgents {
     if (Test-Path $COPILOT_FILE)  { if (-not (Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot')) { $ok = $false }; $found = $true }
     if (Test-Path $CURSOR_FILE)   { if (-not (Update-AgentFile -TargetFile $CURSOR_FILE   -AgentName 'Cursor IDE')) { $ok = $false }; $found = $true }
     if (Test-Path $QWEN_FILE)     { if (-not (Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code')) { $ok = $false }; $found = $true }
+    if (Test-Path $IFLOW_FILE)     { if (-not (Update-AgentFile -TargetFile $IFLOW_FILE     -AgentName 'iFlow CLI')) { $ok = $false }; $found = $true }
     if (Test-Path $AGENTS_FILE)   { if (-not (Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex/opencode')) { $ok = $false }; $found = $true }
     if (Test-Path $WINDSURF_FILE) { if (-not (Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf')) { $ok = $false }; $found = $true }
     if (Test-Path $KILOCODE_FILE) { if (-not (Update-AgentFile -TargetFile $KILOCODE_FILE -AgentName 'Kilo Code')) { $ok = $false }; $found = $true }

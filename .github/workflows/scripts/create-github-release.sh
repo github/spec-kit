@@ -38,6 +38,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-auggie-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-roo-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-roo-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-iflow-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-iflow-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-codebuddy-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-codebuddy-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-amp-sh-"$VERSION".zip \

@@ -177,6 +177,10 @@ build_variant() {
     roo)
       mkdir -p "$base_dir/.roo/commands"
       generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script" ;;
+    iflow)
+      mkdir -p "$base_dir/.iflow/commands"
+      generate_commands IFLOW md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script"
+      [[ -f agent_templates/iflow/IFLOW.md ]] && cp agent_templates/iflow/IFLOW.md "$base_dir/IFLOW.md" ;;
     codebuddy)
       mkdir -p "$base_dir/.codebuddy/commands"
       generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script" ;;
@@ -192,7 +196,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo iflow codebuddy amp q)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
