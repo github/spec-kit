@@ -3,9 +3,9 @@
 
 [Overview Video in English](https://youtu.be/9wY2BSvonUI)
 
-[Overview Video in Urdu/Hindi](https://youtu.be/9wY2BSvonUI)
+[Overview Video in Urdu/Hindi](https://youtu.be/rIbPbtLa9aE)
 
-<img src="coding_agents.png" alt="drawing" width="250"/>
+<img src="coding_agents.png" alt="drawing" width="450"/>
 
 In the past year, a radical shift has swept through software development. A new class of AI tools – often called AI coding agents or “agentic” CLI assistants – has burst onto the scene, turning our command-line terminals and editors into collaborative partners. Professional developers are discovering that coding is no longer just about typing out every line by hand, but about orchestrating work with a powerful AI sidekick. As Boris Cherny, creator of Anthropic’s Claude Code, put it: “Now when you code, you use an agent. You don’t directly manipulate text in an IDE anymore… it’s about the model writing code for you.”
 
