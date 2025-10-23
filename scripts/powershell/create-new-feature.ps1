@@ -232,15 +232,15 @@ $maxBranchLength = 244
 if ($branchName.Length -gt $maxBranchLength) {
     # Calculate how much we need to trim from suffix
     # Account for: feature number (3) + hyphen (1) = 4 chars
-    $maxSuffixLength = $maxBranchLength - 4;
+    $maxSuffixLength = $maxBranchLength - 4
     
     # Truncate suffix
     $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
     # Remove trailing hyphen if truncation created one
     $truncatedSuffix = $truncatedSuffix -replace '-$', ''
     
-    $originalBranchName = $branchName;
-    $branchName = "$featureNum-$truncatedSuffix";
+    $originalBranchName = $branchName
+    $branchName = "$featureNum-$truncatedSuffix"
     
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
     Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
