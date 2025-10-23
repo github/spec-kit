@@ -1,5 +1,9 @@
 # Best Paid AI CLI: Claude Code
 
+[Claude Code Creator: We Didn't Mean to Build It, But It's Changed Everything](https://www.pcmag.com/news/claude-code-creator-we-didnt-mean-to-build-it-but-its-changed-everything)
+
+[Terminal-Bench Leaderboard]()
+
 [Overview](https://docs.claude.com/en/docs/claude-code/overview)
 
 [Quick Start](https://docs.claude.com/en/docs/claude-code/quickstart)
