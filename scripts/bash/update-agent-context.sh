@@ -72,6 +72,7 @@ ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
+CONTINUE_FILE="$REPO_ROOT/.continue/rules/specify-rules.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -621,9 +622,12 @@ update_specific_agent() {
         q)
             update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
             ;;
+        continue)
+            update_agent_file "$CONTINUE_FILE" "Continue"
+            ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|q"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|q|continue"
             exit 1
             ;;
     esac
@@ -690,6 +694,11 @@ update_all_existing_agents() {
 
     if [[ -f "$Q_FILE" ]]; then
         update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
+        found_agent=true
+    fi
+
+    if [[ -f "$CONTINUE_FILE" ]]; then
+        update_agent_file "$CONTINUE_FILE" "Continue"
         found_agent=true
     fi
     

@@ -44,5 +44,7 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-amp-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-q-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-q-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-continue-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-continue-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \
   --notes-file release_notes.md
