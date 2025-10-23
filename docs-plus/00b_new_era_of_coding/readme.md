@@ -50,7 +50,8 @@ https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_composable_a
 
 ### Google Gemini CLI: Open Source and Everywhere
 
-![](./gemini.png)
+<img src="gemini.png" alt="drawing" width="550"/>
+
 
 Google didn't just follow—they went big. Gemini CLI is fully open source under Apache 2.0 license, bringing the power of Gemini directly into developers' terminals with built-in tools for Google Search grounding, file operations, shell commands, and web fetching.
 
