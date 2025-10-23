@@ -1,9 +1,9 @@
 # The New Wave of AI Coding Agents Has Changed Everything for Developers
 **The AI Coding Revolution: From Typist To Architect**
 
-[Overview Video in English](https://youtu.be/9wY2BSvonUI)
+**[Overview Video in English](https://youtu.be/9wY2BSvonUI)**
 
-[Overview Video in Urdu/Hindi](https://youtu.be/rIbPbtLa9aE)
+**[Overview Video in Urdu/Hindi](https://youtu.be/rIbPbtLa9aE)**
 
 <img src="coding_agents.png" alt="drawing" width="450"/>
 
