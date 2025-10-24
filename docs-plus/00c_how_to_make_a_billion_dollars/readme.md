@@ -1,4 +1,4 @@
-# How to Make a Billion Dollars?
+# How to Make a Billion Dollars in the AI Era?
 ## AI's Game of Snakes and Ladders: A Solo Entrepreneur's Blueprint
 
 ![](./snakes_ladders.jpg)
@@ -12,7 +12,7 @@
 
 ## Executive Summary
 
-This chapter outlines a strategy for solo entrepreneurs to achieve significant success, potentially reaching billion-dollar valuations, by exploiting niches within the rapidly consolidating AI industry through the development of vertical agentic solutions. This "Snakes and Ladders" framework posits that success lies in moving beyond the consumer layer to build deep integrations and specialised AI agents for specific fields like finance or education, often using tools like subagents, skills, MCP and Spec-Kit. A validation report confirms the blueprint's high accuracy (95%) and practicality, noting that while the market is dominated by hyperscalers like OpenAI and Google, the strategy is currently feasible for skilled individuals, with proof-of-concept examples already achieving high annual recurring revenue (ARR). The recommended approach, including the Piggyback Protocol Pivot (PPP), advises entrepreneurs to initially partner with incumbents before competing with them using highly efficient, AI-driven operations.
+This paper outlines a strategy for solo entrepreneurs to achieve significant success, potentially reaching billion-dollar valuations, by exploiting niches within the rapidly consolidating AI industry through the development of vertical agentic solutions. This "Snakes and Ladders" framework posits that success lies in moving beyond the consumer layer to build deep integrations and specialised AI agents for specific fields like finance or education, often using tools like subagents, skills, MCP and Spec-Kit. A validation report confirms the blueprint's high accuracy (95%) and practicality, noting that while the market is dominated by hyperscalers like OpenAI and Google, the strategy is currently feasible for skilled individuals, with proof-of-concept examples already achieving high annual recurring revenue (ARR). The recommended approach, including the Piggyback Protocol Pivot (PPP), advises entrepreneurs to initially partner with incumbents before competing with them using highly efficient, AI-driven operations.
 
 ## Introduction
 
