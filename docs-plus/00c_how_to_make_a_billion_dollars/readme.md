@@ -115,5 +115,11 @@ You should emphasise innovation in your studies because our main goal is innovat
 
 [Agentic AI Startup Founder: The Comprehensive Crash Course](https://docs.google.com/document/d/15SZH6TiPD2yY3zcqx7lhGV7DlnAY6gl1TYAZgdrPupY/edit?usp=sharing)
 
+[The New Wave of AI Coding Agents Has Changed Everything for Developers](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/00b_new_era_of_coding/readme.md)
+
+[Best AI CLI: Claude Code](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/01a_ai_cli/02_paid_professional/readme.md)
+
+[Composable and Reusable Vertical Intelligence](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/02_composable_agent_architectures/readme.md)
+
 
 
