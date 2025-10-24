@@ -71,7 +71,7 @@ Building world-class technology is only half the battle. How can solo entreprene
 **Strategy One: The Niche Market Approach**
 This tried-and-tested method focuses on serving underserved segments too small or specialized to attract major players' attention. It offers sustainability but limited scale.
 
-**Strategy Two: The Piggyback Protocol Pivot (PPP)**
+**Strategy Two: [The Piggyback Protocol Pivot (PPP)](https://docs.google.com/document/d/1aFuB7VMgD4JjUVj0h-pVPubZowA2weNLan-w58TXIsk/edit?usp=sharing)**
 This innovative approach offers a more ambitious path:
 
 1. **Create a Standardized Protocol**: Unify disparate vendor APIs in your target industry into a single, elegant protocol
