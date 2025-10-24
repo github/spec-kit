@@ -25,7 +25,7 @@ the **main reusable abstraction** for composable and reusable vertical intellige
 
 That combination makes subagents both **self-contained units of capability** and **composable modules** for agentic architectures.
 
-In the era of AI Driven Development the code is disposable and will be generated again and again. Therefore code components and reuse will become irrelevant. The main reusabily focus will shift towards reusable reusable vertical intelligence.  These subagents — equipped with composable *skills* and connected via *MCP* — will become the **main abstraction and unit of reuse** across all serious AI operating systems and CLIs.
+In the era of AI Driven Development the code is disposable and will be generated again and again. Therefore code components and reuse will become irrelevant. The main reusability focus will shift towards reusable reusable vertical intelligence.  These subagents — equipped with composable *skills* and connected via *MCP* — will become the **main abstraction and unit of reuse** across all serious AI operating systems and CLIs.
 
 Here’s how the layering shakes out:
 
