@@ -17,6 +17,10 @@ the **main reusable abstraction** for composable and reusable vertical intellige
 
 * its **own system prompt** (defining persona, scope, domain boundaries),
 * a **bundle of skills** (Docker, Kubernetes, Dapr, A2A, etc.),
+* a **bundle of horizontal skills** (Docker, Kubernetes, Dapr, A2A, etc.),
+* a **bundle of vertical skills** (accounting, finance, education, healthcare, etc.)
+* registered MCP horizontal connections (e.g., Docker MCP, K8s MCP, GitHub MCP)
+* and registered MCP vertical connections (e.g., domain and legacy vendor API and Databases)
 * and **registered MCP connections** (e.g., Docker MCP, K8s MCP, GitHub MCP).
 
 That combination makes subagents both **self-contained units of capability** and **composable modules** for agentic architectures.
