@@ -55,7 +55,7 @@ This isn't speculative—it's already happening at the foundational LLM layer. S
 
 In the era of AI-driven development, code itself becomes disposable—generated and regenerated on demand. The focus shifts from code reuse to **reusable vertical intelligence**. The fundamental unit of this new paradigm is the **subagent**.
 
-Each subagent combines:
+Each Claude Code subagent combines:
 - A custom system prompt defining its persona, scope, and domain boundaries
 - Horizontal skills (Docker, Kubernetes, infrastructure capabilities)
 - Vertical skills (domain expertise in accounting, finance, education, healthcare)
