@@ -4,7 +4,7 @@
 This article is **95% accurate** based on real-time data as of October 24, 2025. All major factual claims (user stats, revenues, product launches) are verified via official sources, news, and X discussions. Minor discrepancies: Claude Code's revenue is part of Anthropic's broader $7B ARR (not isolated), and Gemini CLI hit 1M users in **3 months** (not 2).  
 
 **Practicality: Yes, it will work—for skilled solo entrepreneurs.**  
-The strategies are feasible today using open tools (MCP, Spec-Kit, subagents). Success rate: ~20-30% for solos (based on bootstrapped AI startup data), but hyperscalers' entry risks are real. **Timeline**: Billion-dollar solos by 2026-2028 is plausible per industry leaders (e.g., Anthropic CEO Dario Amodei).  
+The strategies are feasible today using open tools (MCP, Spec-Kit Plus, subagents). Success rate: ~20-30% for solos (based on bootstrapped AI startup data), but hyperscalers' entry risks are real. **Timeline**: Billion-dollar solos by 2026-2028 is plausible per industry leaders (e.g., Anthropic CEO Dario Amodei).  
 
 **Key Risks**: Execution speed, integration complexity, marketing. **Opportunities**: 80% of verticals (finance, education) lack deep agentic integrations.  
 
@@ -18,7 +18,7 @@ Below: Detailed breakdown with evidence.
 | **Claude Code: $500M ARR in 2 months** | Yes | Fastest-growing AI product; part of Anthropic's $7B total ARR. | 100%   |
 | **Gemini CLI: 1M users, 1K free requests** | Yes | 1M devs in 3 months; open-sourced with free tier. | 95% (3 vs. 2 months)  |
 | **MCP (Model Context Protocol)** | Yes | Anthropic's open standard (Nov 2024); enables agent integrations. Used by Claude/Gemini. | 100%    |
-| **Microsoft/GitHub Spec-Kit** | Yes | Open toolkit for spec-driven dev; compatible with all agents. | 100%   |
+| **Spec-Kit Plus** | Yes | Open toolkit for spec-driven dev; compatible with all agents. | 100%   |
 | **OpenAI Finance: 100 analysts** | Yes | Hired 100+ ex-bankers ($150/hr) for "Project Mercury." | 100%    |
 | **OpenAI Study Mode** | Yes | Launched Jul 29, 2025; interactive learning tool. | 100%    |
 | **Formula (Models + Integrations + Agents)** | Yes | Industry standard; e.g., 70% of AI value from integrations. | 100% |
@@ -34,14 +34,14 @@ Below: Detailed breakdown with evidence.
 - **Tech Stack Readiness**:
   | Component | Tools | Cost | Time to Build |
   |-----------|--------|------|---------------|
-  | **Subagents** | MCP + LangChain | Free | 1-2 weeks |
-  | **Integrations** | Spec-Kit + APIs | $0-500/mo | 2-4 weeks |
-  | **Vertical Agents** | Claude/Gemini fine-tune | $100-1K | 1 week |
-  | **Orchestration** | n8n/AutoGen | Free | 3 days |
+  | **Subagents** | MCP + Skills + Subagents + Claude Code | $20/months | 1-2 weeks |
+  | **Integrations** | Spec-Kit Plus + APIs | $0-500/mo | 2-4 weeks |
+  | **Vertical Agents** | Tinker fine-tune | $100-1K | 1 week |
+  | **Orchestration** | OpenAI AgentKit/Agent SDK | Free | 3 days |
 
 - **Success Roadmap** (Step-by-Step):
   1. **Pick Vertical**: Finance/Education (low competition).
-  2. **Build MVP**: Use Claude Code + MCP (e.g., integrate QuickBooks API).
+  2. **Build MVP**: Use Claude Code + Subagents + Skills + MCP (e.g., integrate QuickBooks API).
   3. **Test**: 100 beta users via X/Reddit.
   4. **Scale**: PPP for incumbents → Pivot.
   5. **Monetize**: $10-50/user/mo; aim $1M ARR in 6 months.
@@ -71,7 +71,7 @@ Below: Detailed breakdown with evidence.
 - **Start Here**: Clone Claude Code for your vertical (e.g., "Finance Code").
 - **Tools Kit**:
   1. Code: Claude Code/Gemini CLI.
-  2. Integrate: MCP/Spec-Kit.
+  2. Integrate: MCP/Subagents/Skills/Spec-Kit Plus.
   3. Market: X threads + ConvertKit.
 - **Validation Experiment**: Build a subagent in 48 hours → Post on X for feedback.
 - **Watch For**: AGI waves (2026); pivot to superintelligence niches.
