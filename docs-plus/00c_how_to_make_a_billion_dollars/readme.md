@@ -1,9 +1,14 @@
 # How to Make a Billion Dollars?
-**AI's Game of Snakes and Ladders: A Solo Entrepreneur's Blueprint**
+## AI's Game of Snakes and Ladders: A Solo Entrepreneur's Blueprint
+
+![](./snakes_ladders.jpg)
 
 **[Video Overview in English](https://youtu.be/axivzX3cu9o)**
 
 **[Video Overview in Urdu/Hindi](https://youtu.be/u-7uAfDZeFc)**
+
+**[Grok LLM Validation Report: Accuracy and Practicality of "The AI Industry's Game of Snakes and Ladders"](AI_Snakes_and_Ladders_Validation_Report.md)**
+
 
 ## Executive Summary
 
@@ -92,5 +97,5 @@ The game board is set. The dice are rolling. Which ladder will you climb?
 
 ---
 
-##  [Grok Validation Report: Accuracy and Practicality of "The AI Industry's Game of Snakes and Ladders"](AI_Snakes_and_Ladders_Validation_Report.md)
+##  [Grok LLM Validation Report: Accuracy and Practicality of "The AI Industry's Game of Snakes and Ladders"](AI_Snakes_and_Ladders_Validation_Report.md)
 
