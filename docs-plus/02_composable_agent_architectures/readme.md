@@ -1,4 +1,4 @@
-# The Main Reusable Abstraction are Subagent
+# Composable and Reusable Vertical Intelligence  
 
 **[Detailed Technical Whitepaper on Composable Agents](./composable_agents_paper.md)**
 
@@ -13,7 +13,7 @@
 We will discuss how Anthropic’s *Skills* concept, *subagents*, and the *Model Context Protocol (MCP)* fit together.
 
 In a **Claude Code / Gemini CLI / OpenAI Agents SDK**–style ecosystem,
-the **main reusable abstraction** is going to become the **“subagent”** — and each subagent will have:
+the **main reusable abstraction** for composable and reusable vertical intelligence is going to become the **“subagent”** — and each subagent will have:
 
 * its **own system prompt** (defining persona, scope, domain boundaries),
 * a **bundle of skills** (Docker, Kubernetes, Dapr, A2A, etc.),
