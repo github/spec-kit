@@ -43,3 +43,7 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# ResearchKit - User research projects (keep private)
+projects/
+.researchkit
