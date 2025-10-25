@@ -9,19 +9,27 @@ source "$SCRIPT_DIR/common.sh"
 JSON_MODE=false
 CAPABILITY_ID=""
 TARGET_REPO=""
+MODE=""
 ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --json) JSON_MODE=true ;;
         --capability=*) CAPABILITY_ID="${arg#*=}" ;;
         --repo=*) TARGET_REPO="${arg#*=}" ;;
+        --mode=*) MODE="${arg#*=}" ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--capability=cap-XXX] [--repo=repo-name] [jira-key] <hyphenated-feature-name>"
+            echo "Usage: $0 [--json] [--capability=cap-XXX] [--repo=repo-name] [--mode=MODE] [jira-key] <hyphenated-feature-name>"
             echo ""
             echo "Options:"
             echo "  --capability=cap-XXX  Create capability within parent feature (e.g., cap-001)"
             echo "  --repo=repo-name      Target repository (workspace mode only)"
+            echo "  --mode=MODE           Spec depth: quick|lightweight|full (default: full)"
             echo "  --json                Output in JSON format"
+            echo ""
+            echo "Modes:"
+            echo "  quick               Minimal spec for <200 LOC (bug fixes, small changes)"
+            echo "  lightweight         Compact spec for 200-800 LOC (simple features)"
+            echo "  full                Complete spec for 800+ LOC (complex features, default)"
             echo ""
             echo "Note: Feature name must be provided as hyphenated-words (e.g., my-feature-name)"
             echo "      JIRA key is required for user 'hnimitanakit' or github.marqeta.com hosts"
@@ -265,15 +273,32 @@ else
         # Create branch in target repo
         git_exec "$REPO_PATH" checkout -b "$BRANCH_NAME"
 
+        # Determine template filename based on mode
+        TEMPLATE_NAME="spec-template.md"
+        if [[ "$MODE" == "quick" ]]; then
+            TEMPLATE_NAME="spec-template-quick.md"
+        elif [[ "$MODE" == "lightweight" ]]; then
+            TEMPLATE_NAME="spec-template-lightweight.md"
+        fi
+
         # Find template (try workspace first, then target repo)
-        TEMPLATE="$WORKSPACE_ROOT/.specify/templates/spec-template.md"
+        TEMPLATE="$WORKSPACE_ROOT/.specify/templates/$TEMPLATE_NAME"
         if [[ ! -f "$TEMPLATE" ]]; then
-            TEMPLATE="$REPO_PATH/.specify/templates/spec-template.md"
+            TEMPLATE="$REPO_PATH/.specify/templates/$TEMPLATE_NAME"
         fi
     else
         # Single-repo mode: create branch in current repo
         git checkout -b "$BRANCH_NAME"
-        TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
+
+        # Determine template filename based on mode
+        TEMPLATE_NAME="spec-template.md"
+        if [[ "$MODE" == "quick" ]]; then
+            TEMPLATE_NAME="spec-template-quick.md"
+        elif [[ "$MODE" == "lightweight" ]]; then
+            TEMPLATE_NAME="spec-template-lightweight.md"
+        fi
+
+        TEMPLATE="$REPO_ROOT/.specify/templates/$TEMPLATE_NAME"
         REPO_PATH="$REPO_ROOT"
     fi
 
