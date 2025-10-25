@@ -1,4 +1,4 @@
-# AI-Driven Development (AIDD) using Spec-Kit-Plus
+# AI-Driven Development (AIDD) using Spec-Kit-Plus: Architecting Billion-Dollar AI Agentic Solutions
 
 **Version 3.0 - October 25, 2025**
 
