@@ -4,6 +4,10 @@
 
 **Author:** Panaversity Team
 
+**[Video Overview in English](https://www.youtube.com/watch?v=mvJJNuj2c74)**
+
+**[Video Overview in Urdu/Hindi](https://www.youtube.com/watch?v=MP2iyiEflRs)**
+
 This toolkit transforms you the developers into billion-dollar solo entrepreneurs. It enables Spec-driven Vibe-coding by combining rapid, conversational generation with architectural coherence—empowering you to build vertical agentic solutions that compete with tech giants. This enhanced Spec-Driven Development toolkit provides patterns & templates for building scalable multi-agent AI systems. A practical fork of github/spec-kit, it supports the OpenAI Agents SDK, MCP, A2A, and cloud-native stacks (Docker, Kubernetes, Dapr, Ray) to help you define specs, orchestrate agents, and ship production-ready systems faster.
 
 ---
