@@ -28,6 +28,8 @@ The mechanical act of writing syntax is over. The era of strategic problem-solvi
 
 ### AI's Game of Snakes and Ladders: Your Path to Billions
 
+[How to Make a Billion Dollars in the AI Era?](https://github.com/panaversity/spec-kit-plus/blob/main/docs-plus/00c_how_to_make_a_billion_dollars/readme.md)
+
 The AI industry is consolidating around hyperscalers (OpenAI, Google, Anthropic, Microsoft), but the game is far from over. Success lies in **climbing to the right layer**:
 
 **Layer 1: Consumer AI** → Two winners (OpenAI with 800M users, Google with Gemini)  
