@@ -5,10 +5,6 @@
 **Status**: Draft
 **Input**: User description: "$ARGUMENTS"
 
-<!-- Workspace Metadata (auto-populated in multi-repo workspaces) -->
-**Workspace**: [WORKSPACE_NAME] (if workspace mode)
-**Target Repository**: [REPO_NAME] (if workspace mode)
-
 **Product Context**: docs/product-vision.md (if exists)
 **System Architecture**: docs/system-architecture.md (if exists)
 

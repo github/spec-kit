@@ -2,14 +2,10 @@
 
 **Parent Feature:** [../spec.md](../spec.md)
 **Capability ID:** Cap-XXX
-**Estimated LOC:** Implementation XXX + Tests XXX = Total XXX (ideal: 1000 total, range: 800-1200)
+**Estimated LOC:** Implementation XXX + Tests XXX = Total XXX (target: 400-1000 total)
 **Dependencies:** [Cap-XXX, Cap-YYY | None]
 **Created**: [DATE]
 **Status**: Draft
-
-<!-- Workspace Metadata (auto-populated in multi-repo workspaces) -->
-**Workspace**: [WORKSPACE_NAME] (if workspace mode)
-**Target Repository**: [REPO_NAME] (required for capabilities in multi-repo workspace)
 
 ## Execution Flow (main)
 ```
@@ -25,12 +21,12 @@
 5. Define acceptance criteria
    → Testable conditions for capability completion
 6. Estimate component breakdown
-   → Validate Implementation 400-600 LOC + Tests 400-600 LOC = Total ~1000 LOC (800-1200 acceptable)
+   → Validate Implementation 200-500 LOC + Tests 200-500 LOC = Total 400-1000 LOC
 7. Fill Context Engineering for this capability
    → Research codebase patterns specific to this scope
    → Document libraries/gotchas relevant to this capability
 8. Run Review Checklist
-   → If Total <800 OR Total >1200 OR Test ratio <0.8: WARN "Outside ideal range, add justification"
+   → If Impl >500 OR Tests >500 OR Total >1000: WARN "Exceeds budget, add justification"
 9. Return: SUCCESS (ready for /plan --capability)
 ```
 
@@ -40,8 +36,7 @@
 
 - ✅ Focus on single bounded context (e.g., "User Auth", not "Entire User System")
 - ✅ Independently testable and deployable
-- ✅ Target 1000 total LOC (implementation + tests): 400-600 impl + 400-600 tests = 800-1200 total
-- ✅ Maintain ≥1:1 test-to-implementation ratio (0.8:1 minimum)
+- ✅ Implementation 200-500 LOC + Tests 200-500 LOC = Total 400-1000 LOC (justification required if any limit exceeded)
 - ❌ Avoid dependencies on uncompleted capabilities
 - ❌ No cross-capability concerns (handle in separate capability)
 
@@ -150,11 +145,10 @@ Research findings specific to this capability's scope:
 | API/CLI | XX | XX | [e.g., 3 endpoints × 30 LOC + contract tests] |
 | Integration | XX | XX | [e.g., E2E scenarios] |
 | **Subtotals** | **XXX** | **XXX** | **Total: XXX LOC** |
-| **Status** | [✓ 400-600 \| ⚠️ outside] | [✓ 400-600 \| ⚠️ outside] | [✓ 800-1200 \| ⚠️ outside] |
-| **Test Ratio** | | **X.X:1** | [✓ ≥1:1 \| ⚠️ <0.8:1] |
+| **Status** | [✓ <500 \| ⚠️ >500] | [✓ <500 \| ⚠️ >500] | [✓ <1000 \| ⚠️ >1000] |
 
-**Justification (if outside ideal range):**
-[If Total <800 OR Total >1200 OR Test ratio <0.8:1: Explain why this size is appropriate, what keeps it cohesive, why tests are proportioned this way]
+**Justification (if any limit exceeded):**
+[If Implementation >500 OR Tests >500 OR Total >1000: Explain why this capability cannot be split further, what keeps it cohesive, why tests require more LOC than typical]
 
 ---
 
@@ -191,7 +185,7 @@ Research findings specific to this capability's scope:
 - [ ] Capability-specific requirements (CFR-XXX) defined
 - [ ] Requirements are testable within this capability
 - [ ] Success criteria measurable for THIS capability
-- [ ] LOC estimate: Total 800-1200 (ideal 1000), Test ratio ≥0.8:1 (or justified if outside range)
+- [ ] LOC estimate: Implementation ≤500, Tests ≤500, Total ≤1000 (or justified if any exceeded)
 
 ### Capability Independence
 - [ ] Can be implemented independently (given dependencies are met)
@@ -210,7 +204,7 @@ Research findings specific to this capability's scope:
 - [ ] Functional requirements scoped
 - [ ] User scenarios extracted
 - [ ] Component breakdown estimated (impl + test LOC)
-- [ ] LOC budget validated (total 800-1200, test ratio ≥0.8:1)
+- [ ] LOC budget validated (impl ≤500, tests ≤500, total ≤1000)
 - [ ] Dependencies identified
 - [ ] Review checklist passed
 
