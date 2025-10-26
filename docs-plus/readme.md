@@ -8,7 +8,11 @@
 
 **[Video Overview in Urdu/Hindi](https://www.youtube.com/watch?v=MP2iyiEflRs)**
 
-[Watch: The $3 Trillion AI Coding Opportunity](https://www.youtube.com/watch?v=VlOAWvvjThU)
+**[Watch: The $3 Trillion AI Coding Opportunity](https://www.youtube.com/watch?v=VlOAWvvjThU)**
+
+The paper is based on the above video:
+
+**[The AI Development Revolution: Disrupting the $3 Trillion Software Economy](ai_coding_revolution_paper.md)**
 
 ---
 
