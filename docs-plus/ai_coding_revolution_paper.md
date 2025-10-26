@@ -12,6 +12,9 @@ a16z Infra Partners Yoko Li and Guido Appenzeller break down how “agents with 
 
 They also cover token economics for engineering teams, the emerging agent toolbox, and founder opportunities when you treat agents as users, not just tools.
 
+The companion blog to the video:
+
+**[The Trillion Dollar AI Software Development Stack](https://a16z.com/the-trillion-dollar-ai-software-development-stack/)**
 
 ---
 

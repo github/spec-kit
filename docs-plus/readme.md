@@ -14,6 +14,10 @@ The paper is based on the above video:
 
 **[The AI Development Revolution: Disrupting the $3 Trillion Software Economy](ai_coding_revolution_paper.md)**
 
+The companion blog to the video:
+
+**[The Trillion Dollar AI Software Development Stack](https://a16z.com/the-trillion-dollar-ai-software-development-stack/)**
+
 ---
 
 ## Table of Contents
