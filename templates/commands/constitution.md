@@ -2,6 +2,23 @@
 description: Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync
 ---
 
+## Strict Contract
+
+- **Required Inputs**
+  - `$ARGUMENTS` may contain principle updates or governance directives.
+  - Must read the existing `/memory/constitution.md` template before editing.
+- **Allowed Tools**
+  - File read/write operations confined to `/memory/constitution.md` and dependent templates.
+  - No external scripts or network calls.
+- **Outputs**
+  - Overwrite `/memory/constitution.md` with the updated content.
+  - Update related templates (`templates/plan-template.md`, etc.) when governance changes require it.
+  - Provide a final Markdown summary listing version change, affected sections, and follow-up tasks.
+- **Idempotency**
+  - Re-running without new inputs should not change the constitution; detect and report when no updates are required.
+- **Stop Conditions**
+  - Abort with instructions if placeholders cannot be resolved or if mandatory governance details are missing.
+
 ## User Input
 
 ```text

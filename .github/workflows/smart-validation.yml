@@ -1,0 +1,25 @@
+name: Smart Workflow Validation
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Validate templates
+        run: python scripts/ci/validate_templates.py
+
+      - name: Run PowerShell helper tests
+        shell: pwsh
+        run: Invoke-Pester -CI scripts/powershell/tests

@@ -235,6 +235,7 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.specify`       | Define what you want to build (requirements and user stories)        |
 | `/speckit.plan`          | Create technical implementation plans with your chosen tech stack     |
 | `/speckit.tasks`         | Generate actionable task lists for implementation                     |
+| `/speckit.feature`       | Orchestrate the full spec → clarify → plan → tasks → analyze workflow |
 | `/speckit.implement`     | Execute all tasks to build the feature according to the plan         |
 
 #### Optional Commands
@@ -245,7 +246,18 @@ Additional commands for enhanced quality and validation:
 |----------------------|-----------------------------------------------------------------------|
 | `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
+| `/speckit.resume`    | Reload existing artifacts, surface remaining tasks, and recommend the next implementation steps |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+
+### Smart Workflow Automation
+
+Use `/speckit.feature` when you want a single command to drive the entire specification lifecycle. The orchestrator:
+
+- Runs the same scripts used by `/speckit.specify`, `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` in sequence.
+- Enforces the strict JSON contracts so every phase reports success/failure alongside generated artifact paths.
+- Emits a consolidated status summary suitable for issue trackers and pull requests.
+
+When resuming work in a new IDE session, `/speckit.resume` reads the stored spec, plan, tasks, research, and quickstart files, highlights the next unblocked tasks, and suggests validation checks. It never mutates files—use it as a dashboard to get back up to speed quickly.
 
 ### Environment Variables
 

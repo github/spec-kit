@@ -25,6 +25,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Write-JsonOutput {
+    param($Payload)
+    $Payload | ConvertTo-Json -Compress
+}
+
 # Show help if requested
 if ($Help) {
     Write-Output @"
@@ -59,8 +64,8 @@ EXAMPLES:
 # Get feature paths and validate branch
 $paths = Get-FeaturePathsEnv
 
-if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT)) { 
-    exit 1 
+if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT -Quiet:$Json)) {
+    exit 1
 }
 
 # If paths-only mode, output paths and exit (support combined -Json -PathsOnly)
@@ -87,21 +92,36 @@ if ($PathsOnly) {
 
 # Validate required directories and files
 if (-not (Test-Path $paths.FEATURE_DIR -PathType Container)) {
-    Write-Output "ERROR: Feature directory not found: $($paths.FEATURE_DIR)"
-    Write-Output "Run /speckit.specify first to create the feature structure."
+    $msg = "Feature directory not found: $($paths.FEATURE_DIR)"
+    if ($Json) {
+        Write-JsonOutput @{ status = 'error'; message = $msg; hint = 'Run /speckit.specify first to create the feature structure.' }
+    } else {
+        Write-Output "ERROR: $msg"
+        Write-Output "Run /speckit.specify first to create the feature structure."
+    }
     exit 1
 }
 
 if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
-    Write-Output "ERROR: plan.md not found in $($paths.FEATURE_DIR)"
-    Write-Output "Run /speckit.plan first to create the implementation plan."
+    $msg = "plan.md not found in $($paths.FEATURE_DIR)"
+    if ($Json) {
+        Write-JsonOutput @{ status = 'error'; message = $msg; hint = 'Run /speckit.plan first to create the implementation plan.' }
+    } else {
+        Write-Output "ERROR: $msg"
+        Write-Output "Run /speckit.plan first to create the implementation plan."
+    }
     exit 1
 }
 
 # Check for tasks.md if required
 if ($RequireTasks -and -not (Test-Path $paths.TASKS -PathType Leaf)) {
-    Write-Output "ERROR: tasks.md not found in $($paths.FEATURE_DIR)"
-    Write-Output "Run /speckit.tasks first to create the task list."
+    $msg = "tasks.md not found in $($paths.FEATURE_DIR)"
+    if ($Json) {
+        Write-JsonOutput @{ status = 'error'; message = $msg; hint = 'Run /speckit.tasks first to create the task list.' }
+    } else {
+        Write-Output "ERROR: $msg"
+        Write-Output "Run /speckit.tasks first to create the task list."
+    }
     exit 1
 }
 

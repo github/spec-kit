@@ -26,10 +26,33 @@ Relies on common helper functions in common.ps1
 param(
     [Parameter(Position=0)]
     [ValidateSet('claude','gemini','copilot','cursor-agent','qwen','opencode','codex','windsurf','kilocode','auggie','roo','codebuddy','amp','q')]
-    [string]$AgentType
+    [string]$AgentType,
+    [switch]$Json
 )
 
 $ErrorActionPreference = 'Stop'
+
+$script:LogBuffer = New-Object System.Collections.Generic.List[hashtable]
+$script:UpdatedAgents = New-Object System.Collections.Generic.HashSet[string]
+
+function Emit-Json {
+    param($Payload)
+    $Payload | ConvertTo-Json -Compress
+}
+
+function Fail-Agent {
+    param(
+        [string]$Message,
+        [int]$Code = 1
+    )
+
+    if ($Json) {
+        Emit-Json @{ status = 'error'; message = $Message; logs = $script:LogBuffer }
+    } else {
+        Write-Error $Message
+    }
+    exit $Code
+}
 
 # Import common helpers
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -49,14 +72,15 @@ $GEMINI_FILE   = Join-Path $REPO_ROOT 'GEMINI.md'
 $COPILOT_FILE  = Join-Path $REPO_ROOT '.github/copilot-instructions.md'
 $CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/specify-rules.mdc'
 $QWEN_FILE     = Join-Path $REPO_ROOT 'QWEN.md'
-$AGENTS_FILE   = Join-Path $REPO_ROOT 'AGENTS.md'
+$OPENCODE_FILE = Join-Path $REPO_ROOT '.opencode/context.md'
+$CODEX_FILE    = Join-Path $REPO_ROOT '.codex/context.md'
 $WINDSURF_FILE = Join-Path $REPO_ROOT '.windsurf/rules/specify-rules.md'
 $KILOCODE_FILE = Join-Path $REPO_ROOT '.kilocode/rules/specify-rules.md'
 $AUGGIE_FILE   = Join-Path $REPO_ROOT '.augment/rules/specify-rules.md'
 $ROO_FILE      = Join-Path $REPO_ROOT '.roo/rules/specify-rules.md'
 $CODEBUDDY_FILE = Join-Path $REPO_ROOT 'CODEBUDDY.md'
-$AMP_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
-$Q_FILE        = Join-Path $REPO_ROOT 'AGENTS.md'
+$AMP_FILE      = Join-Path $REPO_ROOT '.agents/amp/context.md'
+$Q_FILE        = Join-Path $REPO_ROOT '.agents/q/context.md'
 
 $TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
 
@@ -66,54 +90,46 @@ $script:NEW_FRAMEWORK = ''
 $script:NEW_DB = ''
 $script:NEW_PROJECT_TYPE = ''
 
-function Write-Info { 
+function Write-Log {
     param(
-        [Parameter(Mandatory=$true)]
+        [string]$Level,
         [string]$Message
     )
-    Write-Host "INFO: $Message" 
+    if ($Json) {
+        $script:LogBuffer.Add(@{ level = $Level; message = $Message }) | Out-Null
+    } else {
+        switch ($Level) {
+            'warning' { Write-Warning $Message }
+            'error'   { Write-Error $Message }
+            default   { Write-Verbose $Message }
+        }
+    }
 }
 
-function Write-Success { 
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Message
-    )
-    Write-Host "$([char]0x2713) $Message" 
-}
-
-function Write-WarningMsg { 
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Message
-    )
-    Write-Warning $Message 
-}
-
-function Write-Err { 
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Message
-    )
-    Write-Host "ERROR: $Message" -ForegroundColor Red 
+function Write-Info { param([string]$Message) Write-Log -Level 'info' -Message $Message }
+function Write-Success { param([string]$Message) Write-Log -Level 'info' -Message $Message }
+function Write-WarningMsg { param([string]$Message) Write-Log -Level 'warning' -Message $Message }
+function Write-Err {
+    param([string]$Message)
+    Write-Log -Level 'error' -Message $Message
 }
 
 function Validate-Environment {
     if (-not $CURRENT_BRANCH) {
         Write-Err 'Unable to determine current feature'
         if ($HAS_GIT) { Write-Info "Make sure you're on a feature branch" } else { Write-Info 'Set SPECIFY_FEATURE environment variable or create a feature first' }
-        exit 1
+        Fail-Agent 'Unable to determine current feature'
     }
     if (-not (Test-Path $NEW_PLAN)) {
         Write-Err "No plan.md found at $NEW_PLAN"
         Write-Info 'Ensure you are working on a feature with a corresponding spec directory'
         if (-not $HAS_GIT) { Write-Info 'Use: $env:SPECIFY_FEATURE=your-feature-name or create a new feature first' }
-        exit 1
+        Fail-Agent "No plan.md found at $NEW_PLAN"
     }
     if (-not (Test-Path $TEMPLATE_FILE)) {
         Write-Err "Template file not found at $TEMPLATE_FILE"
         Write-Info 'Run specify init to scaffold .specify/templates, or add agent-file-template.md there.'
-        exit 1
+        Fail-Agent "Template file not found at $TEMPLATE_FILE"
     }
 }
 
@@ -255,7 +271,7 @@ function New-AgentFile {
     $content = $content -replace '\\n',[Environment]::NewLine
 
     $parent = Split-Path -Parent $TargetFile
-    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
     Set-Content -LiteralPath $TargetFile -Value $content -NoNewline -Encoding utf8
     Remove-Item $temp -Force
     return $true
@@ -347,7 +363,7 @@ function Update-AgentFile {
     $date = Get-Date
 
     $dir = Split-Path -Parent $TargetFile
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
     if (-not (Test-Path $TargetFile)) {
         if (New-AgentFile -TargetFile $TargetFile -ProjectName $projectName -Date $date) { Write-Success "Created new $AgentName context file" } else { Write-Err 'Failed to create new agent file'; return $false }
@@ -359,6 +375,7 @@ function Update-AgentFile {
             return $false
         }
     }
+    [void]$script:UpdatedAgents.Add($AgentName)
     return $true
 }
 
@@ -373,8 +390,8 @@ function Update-SpecificAgent {
         'copilot'  { Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot' }
         'cursor-agent' { Update-AgentFile -TargetFile $CURSOR_FILE   -AgentName 'Cursor IDE' }
         'qwen'     { Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code' }
-        'opencode' { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'opencode' }
-        'codex'    { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex CLI' }
+        'opencode' { Update-AgentFile -TargetFile $OPENCODE_FILE -AgentName 'opencode' }
+        'codex'    { Update-AgentFile -TargetFile $CODEX_FILE    -AgentName 'Codex CLI' }
         'windsurf' { Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf' }
         'kilocode' { Update-AgentFile -TargetFile $KILOCODE_FILE -AgentName 'Kilo Code' }
         'auggie'   { Update-AgentFile -TargetFile $AUGGIE_FILE   -AgentName 'Auggie CLI' }
@@ -394,12 +411,14 @@ function Update-AllExistingAgents {
     if (Test-Path $COPILOT_FILE)  { if (-not (Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot')) { $ok = $false }; $found = $true }
     if (Test-Path $CURSOR_FILE)   { if (-not (Update-AgentFile -TargetFile $CURSOR_FILE   -AgentName 'Cursor IDE')) { $ok = $false }; $found = $true }
     if (Test-Path $QWEN_FILE)     { if (-not (Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code')) { $ok = $false }; $found = $true }
-    if (Test-Path $AGENTS_FILE)   { if (-not (Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex/opencode')) { $ok = $false }; $found = $true }
+    if (Test-Path $OPENCODE_FILE) { if (-not (Update-AgentFile -TargetFile $OPENCODE_FILE -AgentName 'opencode')) { $ok = $false }; $found = $true }
+    if (Test-Path $CODEX_FILE)    { if (-not (Update-AgentFile -TargetFile $CODEX_FILE    -AgentName 'Codex CLI')) { $ok = $false }; $found = $true }
     if (Test-Path $WINDSURF_FILE) { if (-not (Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf')) { $ok = $false }; $found = $true }
     if (Test-Path $KILOCODE_FILE) { if (-not (Update-AgentFile -TargetFile $KILOCODE_FILE -AgentName 'Kilo Code')) { $ok = $false }; $found = $true }
     if (Test-Path $AUGGIE_FILE)   { if (-not (Update-AgentFile -TargetFile $AUGGIE_FILE   -AgentName 'Auggie CLI')) { $ok = $false }; $found = $true }
     if (Test-Path $ROO_FILE)      { if (-not (Update-AgentFile -TargetFile $ROO_FILE      -AgentName 'Roo Code')) { $ok = $false }; $found = $true }
     if (Test-Path $CODEBUDDY_FILE) { if (-not (Update-AgentFile -TargetFile $CODEBUDDY_FILE -AgentName 'CodeBuddy CLI')) { $ok = $false }; $found = $true }
+    if (Test-Path $AMP_FILE)      { if (-not (Update-AgentFile -TargetFile $AMP_FILE      -AgentName 'Amp')) { $ok = $false }; $found = $true }
     if (Test-Path $Q_FILE)        { if (-not (Update-AgentFile -TargetFile $Q_FILE        -AgentName 'Amazon Q Developer CLI')) { $ok = $false }; $found = $true }
     if (-not $found) {
         Write-Info 'No existing agent files found, creating default Claude file...'
@@ -409,19 +428,15 @@ function Update-AllExistingAgents {
 }
 
 function Print-Summary {
-    Write-Host ''
-    Write-Info 'Summary of changes:'
-    if ($NEW_LANG) { Write-Host "  - Added language: $NEW_LANG" }
-    if ($NEW_FRAMEWORK) { Write-Host "  - Added framework: $NEW_FRAMEWORK" }
-    if ($NEW_DB -and $NEW_DB -ne 'N/A') { Write-Host "  - Added database: $NEW_DB" }
-    Write-Host ''
-    Write-Info 'Usage: ./update-agent-context.ps1 [-AgentType claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|q]'
+    if ($NEW_LANG) { Write-Info "Added language: $NEW_LANG" }
+    if ($NEW_FRAMEWORK) { Write-Info "Added framework: $NEW_FRAMEWORK" }
+    if ($NEW_DB -and $NEW_DB -ne 'N/A') { Write-Info "Added database: $NEW_DB" }
 }
 
 function Main {
     Validate-Environment
     Write-Info "=== Updating agent context files for feature $CURRENT_BRANCH ==="
-    if (-not (Parse-PlanData -PlanFile $NEW_PLAN)) { Write-Err 'Failed to parse plan data'; exit 1 }
+    if (-not (Parse-PlanData -PlanFile $NEW_PLAN)) { Fail-Agent 'Failed to parse plan data' }
     $success = $true
     if ($AgentType) {
         Write-Info "Updating specific agent: $AgentType"
@@ -432,8 +447,23 @@ function Main {
         if (-not (Update-AllExistingAgents)) { $success = $false }
     }
     Print-Summary
-    if ($success) { Write-Success 'Agent context update completed successfully'; exit 0 } else { Write-Err 'Agent context update completed with errors'; exit 1 }
+    return $success
 }
 
-Main
+try {
+    $result = Main
+    $status = if ($result) { 'success' } else { 'error' }
+    if ($Json) {
+        Emit-Json @{ status = $status; updated = [string[]]$script:UpdatedAgents; logs = $script:LogBuffer }
+    } else {
+        if ($result) {
+            Write-Info 'Agent context update completed successfully'
+        } else {
+            Write-Err 'Agent context update completed with errors'
+        }
+    }
+    if (-not $result) { exit 1 }
+} catch {
+    Fail-Agent $_.Exception.Message
+}
 

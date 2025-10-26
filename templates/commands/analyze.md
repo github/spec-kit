@@ -5,6 +5,35 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
+## Strict Contract
+
+- **Required Inputs**
+  - Feature context provided by `{SCRIPT}` and optional `$ARGUMENTS` specifying focus areas.
+- **Allowed Tools**
+  - Run `{SCRIPT}` exactly once to gather artifact paths.
+  - Read-only access to `spec.md`, `plan.md`, `tasks.md`, and `/memory/constitution.md`.
+  - No file writes, git commands, or additional scripts.
+- **Outputs**
+  - Emit a single JSON code block summarizing findings:
+
+    ```json
+    {
+      "status": "success" | "error",
+      "branch": "<branch-name>",
+      "findings": [
+        {"id": "F001", "severity": "critical|major|minor|info", "summary": "<text>", "evidence": "<file#line>", "recommendation": "<action>"}
+      ],
+      "metrics": {"requirements_without_tasks": <int>, "tasks_without_requirements": <int>},
+      "next_steps": ["<command suggestion>", "..."]
+    }
+    ```
+
+- **Idempotency**
+  - Re-running must produce consistent findings for unchanged artifacts.
+- **Stop Conditions**
+  - Abort (set `status` to `error`) if required artifacts are missing; do not attempt repairs.
+  - Conclude after emitting JSON; do not request follow-up responses.
+
 ## User Input
 
 ```text
@@ -34,7 +63,10 @@ Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_
 - TASKS = FEATURE_DIR/tasks.md
 
 Abort with an error message if any required file is missing (instruct the user to run missing prerequisite command).
-For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+Shell guidance for `{SCRIPT}`:
+
+- **Bash**: Wrap arguments in double quotes (e.g., `"I'm Groot"`); escape embedded quotes as `\"` if necessary.
+- **PowerShell**: Use double quotes and escape embedded quotes by doubling them (e.g., `""I'm Groot""`).
 
 ### 2. Load Artifacts (Progressive Disclosure)
 
@@ -123,47 +155,22 @@ Use this heuristic to prioritize findings:
 - **MEDIUM**: Terminology drift, missing non-functional task coverage, underspecified edge case
 - **LOW**: Style/wording improvements, minor redundancy not affecting execution order
 
-### 6. Produce Compact Analysis Report
+### 6. Assemble Findings Payload
 
-Output a Markdown report (no file writes) with the following structure:
+- Derive stable IDs per finding (category initial + increment).
+- Capture category, severity, evidence (file and line range), and recommendation for each finding.
+- Summarize coverage metrics: total requirements, total tasks, matched counts.
 
-## Specification Analysis Report
+### 7. Determine Next Steps
 
-| ID | Category | Severity | Location(s) | Summary | Recommendation |
-|----|----------|----------|-------------|---------|----------------|
-| A1 | Duplication | HIGH | spec.md:L120-134 | Two similar requirements ... | Merge phrasing; keep clearer version |
+- Recommend up to three follow-up commands or manual edits prioritized by severity.
+- Highlight blocking items requiring resolution before `/speckit.implement`.
 
-(Add one row per finding; generate stable IDs prefixed by category initial.)
+### 8. Emit JSON Summary
 
-**Coverage Summary Table:**
-
-| Requirement Key | Has Task? | Task IDs | Notes |
-|-----------------|-----------|----------|-------|
-
-**Constitution Alignment Issues:** (if any)
-
-**Unmapped Tasks:** (if any)
-
-**Metrics:**
-
-- Total Requirements
-- Total Tasks
-- Coverage % (requirements with >=1 task)
-- Ambiguity Count
-- Duplication Count
-- Critical Issues Count
-
-### 7. Provide Next Actions
-
-At end of report, output a concise Next Actions block:
-
-- If CRITICAL issues exist: Recommend resolving before `/speckit.implement`
-- If only LOW/MEDIUM: User may proceed, but provide improvement suggestions
-- Provide explicit command suggestions: e.g., "Run /speckit.specify with refinement", "Run /speckit.plan to adjust architecture", "Manually edit tasks.md to add coverage for 'performance-metrics'"
-
-### 8. Offer Remediation
-
-Ask the user: "Would you like me to suggest concrete remediation edits for the top N issues?" (Do NOT apply them automatically.)
+- Populate the schema defined in the Strict Contract section.
+- Store findings array, computed metrics, and next steps.
+- If no findings exist, return an empty array with `status` = `success` and metrics showing full coverage.
 
 ## Operating Principles
 
