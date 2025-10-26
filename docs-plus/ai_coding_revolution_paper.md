@@ -6,6 +6,13 @@ The paper is based on this video:
 
 **[Watch: The $3 Trillion AI Coding Opportunity](https://www.youtube.com/watch?v=VlOAWvvjThU)**
 
+This video covers how AI coding is already actively changing how software gets built.
+
+a16z Infra Partners Yoko Li and Guido Appenzeller break down how “agents with environments” are changing the dev loop; why repos and PRs may need new abstractions; and where ROI is showing up first.
+
+They also cover token economics for engineering teams, the emerging agent toolbox, and founder opportunities when you treat agents as users, not just tools.
+
+
 ---
 
 ## Abstract
