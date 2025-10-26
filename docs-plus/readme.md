@@ -8,6 +8,8 @@
 
 **[Video Overview in Urdu/Hindi](https://www.youtube.com/watch?v=MP2iyiEflRs)**
 
+[Watch: The $3 Trillion AI Coding Opportunity](https://www.youtube.com/watch?v=VlOAWvvjThU)
+
 ---
 
 ## Table of Contents
