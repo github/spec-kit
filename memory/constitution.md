@@ -218,6 +218,15 @@ This constitution is **NON-NEGOTIABLE** within initiative planning scope.
 - No Accountable stakeholder → BLOCK execution
 - High-risk with no mitigation → BLOCK execution
 
+**Organizational Context Integration**:
+- The constitution defines **governance rules** (what must be done)
+- The `/memory/organization-context.md` file provides **environmental context** (how to apply rules effectively)
+- **All commands** should reference organization-context.md to tailor recommendations
+- Examples:
+  - Constitution requires RACI matrix → Organization Context tells you who the actual stakeholders are
+  - Constitution requires change management for Moderate/Transformational initiatives → Organization Context tells you the org's change readiness level and preferred communication channels
+  - Constitution requires baseline measurement → Organization Context tells you what data sources and systems are available
+
 **Amendment Process:**
 - Constitution changes require explicit documentation of rationale
 - Amendments must be approved at Director+ level

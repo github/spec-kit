@@ -1,155 +1,185 @@
-<div align="center">
-    <img src="./media/logo_small.webp" alt="Spec Kit Logo"/>
-    <h1>🌱 Spec Kit</h1>
-    <h3><em>Build high-quality software faster.</em></h3>
+<div align="cent## Table of Contents
+
+- [🤔 What is Spec-Driven Operations?](#-what-is-spec-driven-operations)
+- [⚡ Get Started](#-get-started)
+- [🤖 Supported AI Agents](#-supported-ai-agents)
+- [🔧 Specify CLI Reference](#-specify-cli-reference)
+- [🔑 Key Differences from Original Spec Kit](#-key-differences-from-original-spec-kit)
+- [📚 Core Philosophy](#-core-philosophy)
+- [🌟 Use Cases](#-use-cases)
+- [🎯 Key Features](#-key-features)
+- [🔧 Prerequisites](#-prerequisites)
+- [📋 Detailed Workflow](#-detailed-workflow)
+- [💡 Example Initiatives](#-example-initiatives)
+- [🔍 Troubleshooting](#-troubleshooting)
+- [🤝 Contributing](#-contributing)
+- [👥 Maintainers](#-maintainers)
+- [💬 Support](#-support)
+- [🙏 Acknowledgments](#-acknowledgments)
+- [📄 License](#-license)
+src="./media/logo_small.webp" alt="Spec Kit Operations Logo"/>
+    <h1>� Spec Kit Operations</h1>
+    <h3><em>Plan and execute business initiatives with confidence.</em></h3>
 </div>
 
 <p align="center">
-    <strong>An open source toolkit that allows you to focus on product scenarios and predictable outcomes instead of vibe coding every piece from scratch.</strong>
+    <strong>An adaptation of GitHub's Spec Kit for business operations teams conducting OKR-driven planning and execution.</strong>
 </p>
 
 <p align="center">
-    <a href="https://github.com/github/spec-kit/actions/workflows/release.yml"><img src="https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
-    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
+    <a href="https://github.com/beliaev-maksim/spec-kit-operations/blob/new-templates/LICENSE"><img src="https://img.shields.io/github/license/beliaev-maksim/spec-kit-operations" alt="License"/></a>
 </p>
 
 ---
 
 ## Table of Contents
 
-- [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
+- [🤔 What is Spec-Driven Operations?](#-what-is-spec-driven-operations)
 - [⚡ Get Started](#-get-started)
-- [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [📚 Core Philosophy](#-core-philosophy)
-- [🌟 Development Phases](#-development-phases)
-- [🎯 Experimental Goals](#-experimental-goals)
+- [🌟 Use Cases](#-use-cases)
+- [🎯 Key Features](#-key-features)
 - [🔧 Prerequisites](#-prerequisites)
-- [📖 Learn More](#-learn-more)
-- [📋 Detailed Process](#-detailed-process)
-- [🔍 Troubleshooting](#-troubleshooting)
+- [ Detailed Workflow](#-detailed-workflow)
+- [� Example Initiatives](#-example-initiatives)
 - [👥 Maintainers](#-maintainers)
-- [💬 Support](#-support)
-- [🙏 Acknowledgements](#-acknowledgements)
-- [📄 License](#-license)
+- [ License](#-license)
 
-## 🤔 What is Spec-Driven Development?
+## 🤔 What is Spec-Driven Operations?
 
-Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+**Spec-Driven Operations** adapts the principles of Spec-Driven Development for business operations teams. Instead of generating code, it helps teams:
+
+- **Plan strategic initiatives** using OKR (Objectives & Key Results) frameworks
+- **Design execution strategies** with stakeholder analysis, communication plans, and change management
+- **Break down work** into actionable tasks organized by business scenarios
+- **Track progress** against measurable Key Results with clear success criteria
+- **Apply governance** through constitutional principles that ensure quality and consistency
+
+This approach is designed for **business functions** like Legal, HR, Sales Operations, Marketing, Finance, and Operations teams who need structured planning without software development complexity.
 
 ## ⚡ Get Started
 
-### 1. Install Specify CLI
+### 1. Install Specify CLI (Local Development)
 
-Choose your preferred installation method:
-
-#### Option 1: Persistent Installation (Recommended)
-
-Install once and use everywhere:
+**Important**: This is a fork of the official Spec Kit. Install it locally to avoid conflicts:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+# Clone this repository
+git clone https://github.com/beliaev-maksim/spec-kit-operations.git
+cd spec-kit-operations
+
+# Install in development mode with uv
+uv pip install -e .
+
+# Verify installation
+specify --help
 ```
 
-Then use the tool directly:
+**For development work on the CLI itself**:
+```bash
+# Install with development dependencies
+uv pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Build package
+uv build
+```
+
+### 2. Initialize Your Initiative Planning Workspace
 
 ```bash
-specify init <PROJECT_NAME>
-specify check
+# Create a new initiative planning workspace
+specify init my-organization-okrs --ai copilot
+
+# Or initialize in current directory
+specify init . --ai claude
+# or
+specify init --here --ai claude
 ```
 
-To upgrade specify run:
+### 3. Set Up Organization Context
+
+### 3. Set Up Organization Context
+
+**Critical First Step**: Populate your organization's context before planning initiatives.
+
+Edit `.specify/memory/organization-context.md` with your organization's information:
+- Strategic priorities and executive leadership
+- Organizational structure and culture
+- Budget processes and approval thresholds  
+- Change readiness and stakeholder landscape
+- Regulatory environment and governance requirements
+
+See [memory/README.md](memory/README.md) for detailed guidance on populating this file.
+
+### 4. Define Governance Principles
+
+Launch your AI assistant in the project directory and establish your organization's governance principles:
 
 ```bash
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
+/speckit.constitution Create business governance principles focused on quarter-based delivery, OKR quality standards, stakeholder engagement requirements, change management gates, and risk mitigation planning
 ```
 
-#### Option 2: One-time Usage
+This creates `.specify/memory/constitution.md` with the governance rules that guide all initiative planning.
 
-Run directly without installing:
+### 5. Plan Your First Initiative
+
+Use the `/speckit.specify` command to describe your business initiative:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+/speckit.specify Design an employee onboarding process improvement initiative. Currently, new hires take 90 days to reach full productivity. We want to reduce this to 60 days by improving the first-week experience, providing better documentation, implementing a buddy system, and creating structured 30/60/90 day check-ins. Target: 100% of new hires complete orientation within first 3 days, 80% report feeling "well-prepared" in week-1 survey.
 ```
 
-**Benefits of persistent installation:**
+### 6. Create Execution Plan
 
-- Tool stays installed and available in PATH
-- No need to create shell aliases
-- Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
-- Cleaner shell configuration
-
-### 2. Establish project principles
-
-Launch your AI assistant in the project directory. The `/speckit.*` commands are available in the assistant.
-
-Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
+Use the `/speckit.plan` command to design your execution strategy:
 
 ```bash
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
+/speckit.plan Focus on stakeholder engagement with HR, hiring managers, and new hires. Use surveys for baseline measurement. Communication plan should include manager training, new hire orientation materials, and feedback loops. Training needed for hiring managers on buddy system. Pilot with 2 departments before full rollout.
 ```
 
-### 3. Create the spec
+### 7. Break Down into Tasks
 
-Use the **`/speckit.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
-
-```bash
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
-```
-
-### 4. Create a technical implementation plan
-
-Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.
-
-```bash
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
-```
-
-### 5. Break down into tasks
-
-Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
+Use `/speckit.tasks` to create an actionable task list:
 
 ```bash
 /speckit.tasks
 ```
 
-### 6. Execute implementation
+### 8. Execute Initiative
 
-Use **`/speckit.implement`** to execute all tasks and build your feature according to the plan.
+Use `/speckit.implement` to track execution of all tasks according to the plan:
 
 ```bash
 /speckit.implement
 ```
 
-For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
-
-## 📽️ Video Overview
-
-Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
-
-[![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
+For detailed step-by-step instructions, see [Detailed Workflow](#-detailed-workflow) below.
 
 ## 🤖 Supported AI Agents
 
+All AI agents supported by the original Spec Kit work with Spec Kit Operations:
+
 | Agent                                                     | Support | Notes                                             |
 |-----------------------------------------------------------|---------|---------------------------------------------------|
-| [Claude Code](https://www.anthropic.com/claude-code)      | ✅ |                                                   |
-| [GitHub Copilot](https://code.visualstudio.com/)          | ✅ |                                                   |
+| [GitHub Copilot](https://code.visualstudio.com/)          | ✅ | Recommended for VS Code users                    |
+| [Claude Code](https://www.anthropic.com/claude-code)      | ✅ | Excellent for complex business analysis          |
+| [Cursor](https://cursor.sh/)                              | ✅ | Good IDE integration                             |
+| [Windsurf](https://windsurf.com/)                         | ✅ | Built-in workflow support                        |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | ✅ |                                                   |
-| [Cursor](https://cursor.sh/)                              | ✅ |                                                   |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)          | ✅ |                                                   |
 | [opencode](https://opencode.ai/)                          | ✅ |                                                   |
-| [Windsurf](https://windsurf.com/)                         | ✅ |                                                   |
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
 | [CodeBuddy CLI](https://www.codebuddy.ai/cli)             | ✅ |                                                   |
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
 | [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
+| [Amp](https://ampcode.com/)                               | ✅ |                                                   |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
-| [Amp](https://ampcode.com/) | ✅ | |
 
 ## 🔧 Specify CLI Reference
 
@@ -159,63 +189,38 @@ The `specify` command supports the following options:
 
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
-| `init`      | Initialize a new Specify project from the latest template      |
-| `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`) |
+| `init`      | Initialize a new initiative planning workspace from templates  |
+| `check`     | Check for installed tools (git and supported AI agents)        |
 
 ### `specify init` Arguments & Options
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
+| `<project-name>`       | Argument | Name for your initiative workspace directory (optional if using `--here`, or use `.` for current directory) |
 | `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, or `q` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
-| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
+| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools                                               |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
-| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
+| `--here`               | Flag     | Initialize in the current directory instead of creating a new one           |
 | `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation) |
-| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
-| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
 
 ### Examples
 
 ```bash
-# Basic project initialization
-specify init my-project
-
-# Initialize with specific AI assistant
-specify init my-project --ai claude
-
-# Initialize with Cursor support
-specify init my-project --ai cursor-agent
-
-# Initialize with Windsurf support
-specify init my-project --ai windsurf
-
-# Initialize with Amp support
-specify init my-project --ai amp
-
-# Initialize with PowerShell scripts (Windows/cross-platform)
-specify init my-project --ai copilot --script ps
+# Initialize new workspace
+specify init my-org-planning --ai copilot
 
 # Initialize in current directory
-specify init . --ai copilot
-# or use the --here flag
-specify init --here --ai copilot
+specify init . --ai claude
+# or
+specify init --here --ai claude
 
-# Force merge into current (non-empty) directory without confirmation
+# Force merge into non-empty directory
 specify init . --force --ai copilot
-# or 
-specify init --here --force --ai copilot
 
 # Skip git initialization
-specify init my-project --ai gemini --no-git
-
-# Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
-
-# Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
+specify init my-org --ai gemini --no-git
 
 # Check system requirements
 specify check
@@ -223,411 +228,443 @@ specify check
 
 ### Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+After running `specify init`, your AI coding agent will have access to these slash commands:
 
-#### Core Commands
-
-Essential commands for the Spec-Driven Development workflow:
+#### Core Workflow Commands
 
 | Command                  | Description                                                           |
 |--------------------------|-----------------------------------------------------------------------|
-| `/speckit.constitution`  | Create or update project governing principles and development guidelines |
-| `/speckit.specify`       | Define what you want to build (requirements and user stories)        |
-| `/speckit.plan`          | Create technical implementation plans with your chosen tech stack     |
-| `/speckit.tasks`         | Generate actionable task lists for implementation                     |
-| `/speckit.implement`     | Execute all tasks to build the feature according to the plan         |
+| `/speckit.constitution`  | Create or update business governance principles                       |
+| `/speckit.specify`       | Define business initiative with OKRs and business scenarios           |
+| `/speckit.plan`          | Create execution strategy with stakeholder analysis and change management |
+| `/speckit.tasks`         | Generate actionable task lists organized by business scenarios        |
+| `/speckit.implement`     | Track execution of all tasks according to the plan                    |
 
-#### Optional Commands
-
-Additional commands for enhanced quality and validation:
+#### Quality & Validation Commands
 
 | Command              | Description                                                           |
 |----------------------|-----------------------------------------------------------------------|
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/speckit.clarify`   | Clarify underspecified areas (run before `/speckit.plan`)           |
+| `/speckit.analyze`   | OKR quality analysis, stakeholder coverage, resource feasibility validation (run after `/speckit.tasks`) |
+| `/speckit.checklist` | Generate validation checklists (OKR quality, stakeholder alignment, resource planning, risk assessment, initiative readiness) |
 
-### Environment Variables
+### Key Differences from Original Spec Kit
 
-| Variable         | Description                                                                                    |
-|------------------|------------------------------------------------------------------------------------------------|
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+**Business Focus**:
+- Initiatives (not features)
+- Business Scenarios (not User Stories)  
+- Execution Plans (not Implementation Plans)
+- Deliverables: policies, training, approvals (not code)
+
+**AI Consultant Role**:
+- Positioned as senior business consultant (McKinsey/BCG/Bain caliber)
+- Expertise in OKRs, change management, stakeholder engagement
+- Applies SMART criteria, RACI matrices, change management frameworks
+
+**Governance**:
+- Quarter-based initiative sizing (≤13 weeks)
+- SMART Key Results (non-negotiable)
+- Stakeholder engagement planning (RACI required)
+- Change management integration for Moderate/Transformational initiatives
 
 ## 📚 Core Philosophy
 
-Spec-Driven Development is a structured process that emphasizes:
+Spec-Driven Operations applies structured planning to business initiatives:
 
-- **Intent-driven development** where specifications define the "*what*" before the "*how*"
-- **Rich specification creation** using guardrails and organizational principles
-- **Multi-step refinement** rather than one-shot code generation from prompts
-- **Heavy reliance** on advanced AI model capabilities for specification interpretation
+- **OKR-driven planning** where Objectives and Key Results define success before execution
+- **Rich specification** using SMART criteria, RACI matrices, and change management frameworks
+- **Multi-phase refinement** (specify → plan → tasks → implement) rather than ad-hoc execution
+- **AI-assisted guidance** with consultant-level expertise in strategic planning and change management
+- **Governance through constitution** ensuring quarter-based sizing, stakeholder engagement, and quality standards
 
-## 🌟 Development Phases
+## 🌟 Use Cases
 
-| Phase | Focus | Key Activities |
-|-------|-------|----------------|
-| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+Spec Kit Operations is designed for business operations teams across functions:
 
-## 🎯 Experimental Goals
+| Function | Example Initiatives |
+|----------|-------------------|
+| **HR** | Employee onboarding redesign, Performance review process improvement, Benefits enrollment optimization, Diversity & inclusion programs |
+| **Legal** | Contract management system rollout, Compliance policy updates, Data privacy program implementation, Legal ops automation |
+| **Sales Operations** | Sales commission structure redesign, CRM process improvements, Sales territory redesign, Quote-to-cash optimization |
+| **Marketing** | Campaign management process, Brand guidelines rollout, Marketing automation implementation, Content workflow optimization |
+| **Finance** | Budget planning process improvement, Month-end close optimization, Expense policy updates, Financial reporting automation |
+| **Operations** | Process standardization initiatives, Quality improvement programs, Vendor management optimization, Operational excellence projects |
 
-Our research and experimentation focus on:
+## 🎯 Key Features
 
-### Technology independence
+### OKR Quality Framework
+- **SMART Criteria Validation**: Ensures all Key Results are Specific, Measurable, Achievable, Relevant, Time-bound
+- **Baseline Measurement**: Requires baseline data before execution
+- **Leading vs Lagging Indicators**: Balances predictive and outcome measures
 
-- Create applications using diverse technology stacks
-- Validate the hypothesis that Spec-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
+### Initiative Sizing & Breakdown
+- **Quarter-Based Delivery**: Constitutional requirement for ≤13 week initiatives
+- **Atomicity Assessment**: Flags initiatives needing breakdown (>5 scenarios, >20 tasks per scenario)
+- **MVP Approach**: P1 scenario must deliver independent value
 
-### Enterprise constraints
+### Stakeholder Management
+- **RACI Matrix**: Complete Responsible, Accountable, Consulted, Informed mapping
+- **Power/Interest Classification**: High-power stakeholders get explicit engagement tasks
+- **Engagement Strategy**: Communication touchpoints mapped to stakeholder groups
 
-- Demonstrate mission-critical application development
-- Incorporate organizational constraints (cloud providers, tech stacks, engineering practices)
-- Support enterprise design systems and compliance requirements
+### Change Management Integration
+- **Change Magnitude Assessment**: Minor / Moderate / Transformational classification
+- **Organizational Readiness**: 6-dimension assessment (change fatigue, capacity, capability, culture, change history, leadership support)
+- **Adoption Planning**: Training, communication, and validation activities for Moderate/Transformational changes
 
-### User-centric development
-
-- Build applications for different user cohorts and preferences
-- Support various development approaches (from vibe-coding to AI-native development)
-
-### Creative & iterative processes
-
-- Validate the concept of parallel implementation exploration
-- Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks
+### Governance & Compliance
+- **Constitutional Principles**: 7 non-negotiable rules (Quarter-Based Sizing, SMART KRs, Stakeholder Engagement, Baseline Measurement, Change Management, Independent Validation, Risk Mitigation)
+- **Approval Gates**: Budget thresholds, policy approvals, readiness checklists
+- **Quality Validation**: OKR quality, stakeholder coverage, resource feasibility checks
 
 ## 🔧 Prerequisites
 
 - **Linux/macOS/Windows**
-- [Supported](#-supported-ai-agents) AI coding agent.
+- [Supported AI coding agent](#-supported-ai-agents)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
-If you encounter issues with an agent, please open an issue so we can refine the integration.
-
-## 📖 Learn More
-
-- **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
-- **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
-
 ---
 
-## 📋 Detailed Process
+## 📋 Detailed Workflow
 
 <details>
-<summary>Click to expand the detailed step-by-step walkthrough</summary>
+<summary>Click to expand the complete step-by-step workflow</summary>
 
-You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
-
-```bash
-specify init <project_name>
-```
-
-Or initialize in the current directory:
+### Step 1: Initialize Workspace
 
 ```bash
-specify init .
-# or use the --here flag
-specify init --here
-# Skip confirmation when the directory already has files
-specify init . --force
-# or
-specify init --here --force
+# Clone and install
+git clone https://github.com/beliaev-maksim/spec-kit-operations.git
+cd spec-kit-operations
+uv pip install -e .
+
+# Create workspace
+specify init my-org-okrs --ai copilot
+cd my-org-okrs
 ```
 
-![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
+### Step 2: Populate Organization Context
 
-You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
+**Critical**: Edit `.specify/memory/organization-context.md` with your organization's actual information:
 
-```bash
-specify init <project_name> --ai claude
-specify init <project_name> --ai gemini
-specify init <project_name> --ai copilot
+- **Strategic Direction**: Mission, vision, current strategic priorities
+- **Organizational Structure**: Executive team, functional leaders, reporting structure
+- **Cultural Characteristics**: Change readiness, communication preferences, decision-making style
+- **Capacity & Resources**: Headcount, budget processes, approval thresholds
+- **Governance**: Regulatory environment, approval processes, risk management
+- **Historical Context**: Recent initiatives, lessons learned, success patterns
 
-# Or in current directory:
-specify init . --ai claude
-specify init . --ai codex
+See [memory/README.md](memory/README.md) for detailed guidance.
 
-# or use --here flag
-specify init --here --ai claude
-specify init --here --ai codex
+### Step 3: Establish Governance (Constitution)
 
-# Force merge into a non-empty current directory
-specify init . --force --ai claude
-
-# or
-specify init --here --force --ai claude
-```
-
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, or Amazon Q Developer CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
-
-```bash
-specify init <project_name> --ai claude --ignore-agent-tools
-```
-
-### **STEP 1:** Establish project principles
-
-Go to the project folder and run your AI agent. In our example, we're using `claude`.
-
-![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
-
-You will know that things are configured correctly if you see the `/speckit.constitution`, `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement` commands available.
-
-The first step should be establishing your project's governing principles using the `/speckit.constitution` command. This helps ensure consistent decision-making throughout all subsequent development phases:
+Launch your AI agent in the workspace and create governance principles:
 
 ```text
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
+/speckit.constitution Create business governance principles that enforce quarter-based initiative sizing, SMART Key Results, mandatory stakeholder RACI matrices, change management integration for moderate/transformational initiatives, baseline measurement requirements, and risk mitigation planning for high-severity risks.
 ```
 
-This step creates or updates the `.specify/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
+This creates `.specify/memory/constitution.md` with 7 core principles that guide all planning.
 
-### **STEP 2:** Create project specifications
+### Step 4: Create Initiative Specification
 
-With your project principles established, you can now create the functional specifications. Use the `/speckit.specify` command and then provide the concrete requirements for the project you want to develop.
-
->[!IMPORTANT]
->Be as explicit as possible about *what* you are trying to build and *why*. **Do not focus on the tech stack at this point**.
-
-An example prompt:
+Use `/speckit.specify` to describe your business initiative. Focus on **what** you want to achieve and **why**, using OKR language:
 
 ```text
-Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
-assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
-let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
-I want five users in two different categories, one product manager and four engineers. Let's create three
-different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
-"In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
-first testing thing to ensure that our basic features are set up. For each task in the UI for a task card,
-you should be able to change the current status of the task between the different columns in the Kanban work board.
-You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task
-card, assign one of the valid users. When you first launch Taskify, it's going to give you a list of the five users to pick
-from. There will be no password required. When you click on a user, you go into the main view, which displays the list of
-projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns.
-You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are
-assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly
-see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can
-delete any comments that you made, but you can't delete comments anybody else made.
+/speckit.specify Design an employee onboarding improvement initiative for HR function. 
+
+**Problem**: New hires currently take 90 days to reach full productivity. Exit interviews show 40% cite poor onboarding as a concern. First-week experience is inconsistent across departments.
+
+**Objective**: Transform the employee onboarding experience to accelerate time-to-productivity and improve retention.
+
+**Key Results**:
+1. Reduce average time-to-full-productivity from 90 days to 60 days (measured by manager assessment)
+2. Increase new hire "well-prepared" rating from 55% to 85% in week-1 survey
+3. Achieve 95% completion of orientation checklist within first 3 days (currently 70%)
+4. Reduce 90-day voluntary turnover from 12% to <8%
+
+**Scope**:
+- Redesign first-week orientation experience
+- Create comprehensive onboarding documentation and resources
+- Implement buddy/mentor system
+- Establish structured 30/60/90-day check-in process
+- Update manager training on onboarding responsibilities
+
+**Out of Scope**: Compensation changes, benefits plan modifications, IT hardware procurement process
+
+**Timeline**: Complete by end of Q2 2025
+**Budget**: $50K-$75K (orientation materials, training development, system updates)
+**Stakeholders**: HR team (lead), hiring managers (all departments), new hires (300/year), IT (systems support)
 ```
 
-After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
+The AI will generate `spec.md` with:
+- Strategic Context (linkage to org OKRs)
+- Objective & Key Results (SMART validation)
+- Business Scenarios (prioritized P1/P2/P3)
+- Stakeholders (RACI matrix)
+- Resources (budget, FTE, vendors)
+- Risks & Dependencies
+- Timeline & Milestones
+- Change Management & Adoption strategy
+- Success Metrics & Measurement approach
 
-Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
+### Step 5: Clarify Specification (Optional but Recommended)
 
-The produced specification should contain a set of user stories and functional requirements, as defined in the template.
-
-At this stage, your project folder contents should resemble the following:
+Use `/speckit.clarify` to resolve ambiguities before planning:
 
 ```text
-└── .specify
-    ├── memory
-    │  └── constitution.md
-    ├── scripts
-    │  ├── check-prerequisites.sh
-    │  ├── common.sh
-    │  ├── create-new-feature.sh
-    │  ├── setup-plan.sh
-    │  └── update-claude-md.sh
-    ├── specs
-    │  └── 001-create-taskify
-    │      └── spec.md
-    └── templates
-        ├── plan-template.md
-        ├── spec-template.md
-        └── tasks-template.md
+/speckit.clarify
 ```
 
-### **STEP 3:** Functional specification clarification (required before planning)
+The AI will ask structured questions about:
+- Strategic alignment gaps
+- OKR quality issues (missing baselines, unmeasurable KRs)
+- Stakeholder identification
+- Resource availability
+- Timeline constraints
+- Risk mitigation needs
 
-With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt.
+Answer questions to refine the spec. The AI records answers in a Clarifications section and integrates them into appropriate spec sections.
 
-You should run the structured clarification workflow **before** creating a technical plan to reduce rework downstream.
+### Step 6: Create Execution Plan
 
-Preferred order:
-
-1. Use `/speckit.clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
-2. Optionally follow up with ad-hoc free-form refinement if something still feels vague.
-
-If you intentionally want to skip clarification (e.g., spike or exploratory prototype), explicitly state that so the agent doesn't block on missing clarifications.
-
-Example free-form refinement prompt (after `/speckit.clarify` if still needed):
+Use `/speckit.plan` to design your execution strategy. Focus on stakeholder engagement, change management, and execution approach:
 
 ```text
-For each sample project or project that you create there should be a variable number of tasks between 5 and 15
-tasks for each one randomly distributed into different states of completion. Make sure that there's at least
-one task in each stage of completion.
+/speckit.plan 
+
+**Execution Strategy**:
+- Phased rollout: Pilot with 2 departments (Sales, Engineering) in Q1, full rollout Q2
+- Stakeholder engagement: Monthly steering committee (CHRO, Dept VPs), weekly working group (HR BPs, hiring managers)
+- Change management: Moderate magnitude - requires training, communication plan, adoption validation
+
+**Stakeholder Analysis**:
+- Executive sponsor: CHRO (Accountable)
+- Pilot departments: Sales VP and Engineering VP (Consulted, early adopters)
+- All hiring managers: Responsible for execution, need training (200 managers)
+- HR Business Partners: Responsible for rollout support
+- New hires: Informed, provide feedback
+
+**Baseline Measurement**:
+- Current time-to-productivity: Survey managers for last 6 months of hires
+- Current "well-prepared" rating: Review existing week-1 survey data  
+- Current orientation completion: Audit last quarter's HR records
+- Current 90-day turnover: Pull from HRIS
+
+**Communication Plan**:
+- Kickoff: All-hands announcement from CHRO (week 1)
+- Manager training: 2-hour sessions, 4 cohorts over 2 weeks
+- New hire communication: Updated welcome email, orientation deck
+- Progress updates: Monthly email to all hiring managers
+- Pilot feedback: Weekly check-ins with pilot departments
+
+**Training Required**:
+- Manager training: Buddy system, 30/60/90 check-ins, new orientation process (2 hours)
+- HR BP training: Process changes, system updates (4 hours)
+- Buddy training: Self-serve guide + 30-min webinar
+
+**Success Validation**:
+- Pilot assessment: 8-week pilot with 20 new hires, measure all 4 KRs
+- User feedback: Manager and new hire surveys after pilot
+- Go/no-go decision: Steering committee review before full rollout
 ```
 
-You should also ask Claude Code to validate the **Review & Acceptance Checklist**, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
+The AI generates:
+- `plan.md` - Execution strategy, timeline, resource allocation
+- `stakeholder-analysis.md` - Power/Interest matrix, engagement strategies, readiness assessment
+- `communication-plan.md` - Touchpoints, messages, feedback mechanisms
+- `process-maps.md` - Current state, future state, SOPs (if process redesign)
+- `execution-guide.md` - Phased rollout, quality gates, RACI
+- `training-materials/` - Training needs analysis, curriculum outline
 
-```text
-Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
-```
+### Step 7: Generate Task Breakdown
 
-It's important to use the interaction with Claude Code as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
-
-### **STEP 4:** Generate a plan
-
-You can now be specific about the tech stack and other technical requirements. You can use the `/speckit.plan` command that is built into the project template with a prompt like this:
-
-```text
-We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use
-Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API,
-tasks API, and a notifications API.
-```
-
-The output of this step will include a number of implementation detail documents, with your directory tree resembling this:
-
-```text
-.
-├── CLAUDE.md
-├── memory
-│  └── constitution.md
-├── scripts
-│  ├── check-prerequisites.sh
-│  ├── common.sh
-│  ├── create-new-feature.sh
-│  ├── setup-plan.sh
-│  └── update-claude-md.sh
-├── specs
-│  └── 001-create-taskify
-│      ├── contracts
-│      │  ├── api-spec.json
-│      │  └── signalr-spec.md
-│      ├── data-model.md
-│      ├── plan.md
-│      ├── quickstart.md
-│      ├── research.md
-│      └── spec.md
-└── templates
-    ├── CLAUDE-template.md
-    ├── plan-template.md
-    ├── spec-template.md
-    └── tasks-template.md
-```
-
-Check the `research.md` document to ensure that the right tech stack is used, based on your instructions. You can ask Claude Code to refine it if any of the components stand out, or even have it check the locally-installed version of the platform/framework you want to use (e.g., .NET).
-
-Additionally, you might want to ask Claude Code to research details about the chosen tech stack if it's something that is rapidly changing (e.g., .NET Aspire, JS frameworks), with a prompt like this:
-
-```text
-I want you to go through the implementation plan and implementation details, looking for areas that could
-benefit from additional research as .NET Aspire is a rapidly changing library. For those areas that you identify that
-require further research, I want you to update the research document with additional details about the specific
-versions that we are going to be using in this Taskify application and spawn parallel research tasks to clarify
-any details using research from the web.
-```
-
-During this process, you might find that Claude Code gets stuck researching the wrong thing - you can help nudge it in the right direction with a prompt like this:
-
-```text
-I think we need to break this down into a series of steps. First, identify a list of tasks
-that you would need to do during implementation that you're not sure of or would benefit
-from further research. Write down a list of those tasks. And then for each one of these tasks,
-I want you to spin up a separate research task so that the net results is we are researching
-all of those very specific tasks in parallel. What I saw you doing was it looks like you were
-researching .NET Aspire in general and I don't think that's gonna do much for us in this case.
-That's way too untargeted research. The research needs to help you solve a specific targeted question.
-```
-
->[!NOTE]
->Claude Code might be over-eager and add components that you did not ask for. Ask it to clarify the rationale and the source of the change.
-
-### **STEP 5:** Have Claude Code validate the plan
-
-With the plan in place, you should have Claude Code run through it to make sure that there are no missing pieces. You can use a prompt like this:
-
-```text
-Now I want you to go and audit the implementation plan and the implementation detail files.
-Read through it with an eye on determining whether or not there is a sequence of tasks that you need
-to be doing that are obvious from reading this. Because I don't know if there's enough here. For example,
-when I look at the core implementation, it would be useful to reference the appropriate places in the implementation
-details where it can find the information as it walks through each step in the core implementation or in the refinement.
-```
-
-This helps refine the implementation plan and helps you avoid potential blind spots that Claude Code missed in its planning cycle. Once the initial refinement pass is complete, ask Claude Code to go through the checklist once more before you can get to the implementation.
-
-You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.com/en/github-cli/github-cli) installed) to go ahead and create a pull request from your current branch to `main` with a detailed description, to make sure that the effort is properly tracked.
-
->[!NOTE]
->Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
-
-### **STEP 6:** Generate task breakdown with /speckit.tasks
-
-With the implementation plan validated, you can now break down the plan into specific, actionable tasks that can be executed in the correct order. Use the `/speckit.tasks` command to automatically generate a detailed task breakdown from your implementation plan:
+Use `/speckit.tasks` to create actionable tasks organized by business scenarios:
 
 ```text
 /speckit.tasks
 ```
 
-This step creates a `tasks.md` file in your feature specification directory that contains:
+The AI generates `tasks.md` with:
+- **Phase 1: Initiative Setup** - Governance, kickoff, tracking setup
+- **Phase 2: Foundational** - Baseline measurement, stakeholder workshops, approvals
+- **Phase 3: Scenario 1 (P1)** - First-week orientation redesign tasks
+- **Phase 4: Scenario 2 (P2)** - Buddy system implementation tasks  
+- **Phase 5: Scenario 3 (P3)** - 30/60/90 check-in process tasks
+- **Phase 6: Closure & Sustainment** - Knowledge transfer, continuous improvement
 
-- **Task breakdown organized by user story** - Each user story becomes a separate implementation phase with its own set of tasks
-- **Dependency management** - Tasks are ordered to respect dependencies between components (e.g., models before services, services before endpoints)
-- **Parallel execution markers** - Tasks that can run in parallel are marked with `[P]` to optimize development workflow
-- **File path specifications** - Each task includes the exact file paths where implementation should occur
-- **Test-driven development structure** - If tests are requested, test tasks are included and ordered to be written before implementation
-- **Checkpoint validation** - Each user story phase includes checkpoints to validate independent functionality
+Each task follows strict format:
+```
+- [ ] T001 [P] [S1] Conduct manager workshops to identify first-week pain points → workshops/manager-feedback.md
+- [ ] T015 [S1] Draft new orientation checklist v1 → deliverables/orientation-checklist-v1.md
+- [ ] T023 [S1] Obtain CHRO approval for orientation changes → approvals/chro-orientation-approval.pdf
+- [ ] T031 [S1] Deliver manager training on new orientation (Cohort 1) → training-completed/cohort1-attendance.csv
+- [ ] T040 [S1] Validate: Pilot new hire survey ≥80% "well-prepared" → metrics/pilot-survey-results.md
+```
 
-The generated tasks.md provides a clear roadmap for the `/speckit.implement` command, ensuring systematic implementation that maintains code quality and allows for incremental delivery of user stories.
+### Step 8: Validate Quality (Optional but Recommended)
 
-### **STEP 7:** Implementation
+Use `/speckit.analyze` to validate initiative quality before execution:
 
-Once ready, use the `/speckit.implement` command to execute your implementation plan:
+```text
+/speckit.analyze
+```
+
+The AI checks:
+- **OKR Quality**: All KRs SMART-compliant, baselines present, measurable
+- **Initiative Sizing**: Within quarter boundary, <5 scenarios, <20 tasks per scenario
+- **Stakeholder Coverage**: RACI complete, high-power stakeholders have engagement tasks
+- **Resource Feasibility**: Budget reasonable, capacity <80%, timeline realistic
+- **Change Management**: Moderate/Transformational have readiness assessment, training, communication plan
+- **Scenario Validation**: Each scenario has validation tasks, approval tasks, deliverables
+
+Produces report with findings (CRITICAL/HIGH/MEDIUM/LOW severity) and remediation recommendations.
+
+### Step 9: Execute Initiative
+
+Use `/speckit.implement` to track execution:
 
 ```text
 /speckit.implement
 ```
 
-The `/speckit.implement` command will:
+The AI:
+- Verifies readiness checklists complete (if present)
+- Loads execution context (spec, plan, stakeholder analysis, communication plan)
+- Guides task execution phase-by-phase
+- Tracks deliverables (documents, approvals, trained users, validated processes)
+- Marks completed tasks as [X] in tasks.md
+- Monitors stakeholder engagement, approval deadlines, validation tasks
+- Alerts to risks materializing or timeline issues
 
-- Validate that all prerequisites are in place (constitution, spec, plan, and tasks)
-- Parse the task breakdown from `tasks.md`
-- Execute tasks in the correct order, respecting dependencies and parallel execution markers
-- Follow the TDD approach defined in your task plan
-- Provide progress updates and handle errors appropriately
+**Note**: The AI provides execution guidance and tracking, but does not automatically "do" the work (e.g., it won't draft policy documents or schedule workshops). It helps you stay on track, marks progress, and reminds you of upcoming milestones.
 
->[!IMPORTANT]
->The AI agent will execute local CLI commands (such as `dotnet`, `npm`, etc.) - make sure you have the required tools installed on your machine.
+### Step 10: Monitor & Measure
 
-Once the implementation is complete, test the application and resolve any runtime errors that may not be visible in CLI logs (e.g., browser console errors). You can copy and paste such errors back to your AI agent for resolution.
+Throughout execution:
+- Track KPI progress in `.specify/metrics/` directory
+- Document decisions and changes in spec.md
+- Update risks in spec.md Risks section
+- Collect stakeholder feedback
+- Adjust communication/training as needed
+
+Post-execution:
+- Measure final KR results
+- Document lessons learned
+- Update organization-context.md with initiative outcomes
+- Archive initiative artifacts
 
 </details>
 
 ---
 
-## 🔍 Troubleshooting
+## 💡 Example Initiatives
 
-### Git Credential Manager on Linux
+<details>
+<summary>Click to see example initiatives across functions</summary>
 
-If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
+### HR: Employee Engagement Program
 
-```bash
-#!/usr/bin/env bash
-set -e
-echo "Downloading Git Credential Manager v2.6.1..."
-wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
-echo "Installing Git Credential Manager..."
-sudo dpkg -i gcm-linux_amd64.2.6.1.deb
-echo "Configuring Git to use GCM..."
-git config --global credential.helper manager
-echo "Cleaning up..."
-rm gcm-linux_amd64.2.6.1.deb
-```
+**Objective**: Increase employee engagement and reduce voluntary turnover
+
+**Key Results**:
+1. Increase engagement score from 68% to 80% (annual survey)
+2. Reduce voluntary turnover from 18% to <12%
+3. Achieve 90% manager participation in monthly 1-on-1s (currently 45%)
+
+**Business Scenarios**:
+- S1 (P1): Launch manager effectiveness training program
+- S2 (P2): Implement recognition and rewards platform
+- S3 (P3): Establish career development framework
+
+---
+
+### Legal: Contract Management Process Improvement
+
+**Objective**: Accelerate contract cycle time and reduce legal bottlenecks
+
+**Key Results**:
+1. Reduce average contract turnaround from 14 days to 7 days
+2. Achieve 95% of standard contracts using approved templates
+3. Reduce legal review volume by 40% through self-service portal
+
+**Business Scenarios**:
+- S1 (P1): Create and deploy 10 standard contract templates
+- S2 (P2): Launch self-service contract initiation portal  
+- S3 (P3): Implement contract playbook and negotiation guides
+
+---
+
+### Sales Operations: Commission Structure Redesign
+
+**Objective**: Align sales compensation with strategic priorities and improve transparency
+
+**Key Results**:
+1. Increase rep satisfaction with commission plan from 3.2/5 to 4.0/5
+2. Achieve <5% commission disputes (currently 18%)
+3. Reduce commission calculation time from 5 days to 2 days
+
+**Business Scenarios**:
+- S1 (P1): Design new commission structure with rep input
+- S2 (P2): Update systems and build commission calculator
+- S3 (P3): Train reps and managers on new plan
+
+---
+
+### Marketing: Content Operations Workflow
+
+**Objective**: Streamline content creation and improve quality consistency
+
+**Key Results**:
+1. Reduce average content production time from 6 weeks to 3 weeks
+2. Achieve 100% content adherence to brand guidelines (currently 70%)
+3. Increase content reuse rate from 15% to 40%
+
+**Business Scenarios**:
+- S1 (P1): Implement content workflow and approval tool
+- S2 (P2): Create content templates and brand guideline library
+- S3 (P3): Establish content governance and measurement framework
+
+</details>
+
+---
+
+## 🤝 Contributing
+
+This is a fork of GitHub's Spec Kit adapted for business operations use cases. Contributions that enhance OKR planning, stakeholder management, change management integration, or business operations workflows are welcome.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
 
 ## 👥 Maintainers
 
+- Maksim Beliaev ([@beliaev-maksim](https://github.com/beliaev-maksim))
 - Den Delimarsky ([@localden](https://github.com/localden))
 - John Lam ([@jflam](https://github.com/jflam))
 
+---
+
 ## 💬 Support
 
-For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
+For support, please open a [GitHub issue](https://github.com/beliaev-maksim/spec-kit-operations/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Operations for business initiatives.
 
-## 🙏 Acknowledgements
+---
 
-This project is heavily influenced by and based on the work and research of [John Lam](https://github.com/jflam).
+## 🙏 Acknowledgments
+
+This project is built on [GitHub's Spec Kit](https://github.com/github/spec-kit) - an excellent foundation for specification-driven workflows. We've adapted it specifically for business operations teams conducting OKR-driven initiative planning.
+
+Special thanks to:
+- John Lam ([@jflam](https://github.com/jflam)) for the original Spec-Driven Development methodology and research
+- The GitHub Spec Kit team for creating the toolkit that inspired this adaptation
+- The business operations community for feedback and real-world validation
+
+---
 
 ## 📄 License
 
 This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
+
