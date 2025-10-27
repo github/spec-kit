@@ -93,8 +93,10 @@ check_existing_branches() {
     # Also check local branches
     local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
     
-    # Check specs directory as well
+    # Check spec directory as well
     local spec_dirs=""
+    local spec_dir_name=$(get_spec_dir)
+    local SPECS_DIR="$REPO_ROOT/$spec_dir_name"
     if [ -d "$SPECS_DIR" ]; then
         spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9]*-${short_name}" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
     fi
@@ -130,7 +132,8 @@ fi
 
 cd "$REPO_ROOT"
 
-SPECS_DIR="$REPO_ROOT/specs"
+SPEC_DIR_NAME=$(get_spec_dir)
+SPECS_DIR="$REPO_ROOT/$SPEC_DIR_NAME"
 mkdir -p "$SPECS_DIR"
 
 # Function to generate branch name with stop word filtering and length filtering
