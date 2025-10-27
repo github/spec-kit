@@ -389,6 +389,29 @@ When adding new agents:
 - Update this guide with lessons learned
 - Verify the actual CLI tool name before adding to AGENT_CONFIG
 
+## Custom Spec Directory Support
+
+The Specify CLI supports custom specification directories through the `--spec-dir` parameter:
+
+### Usage
+```bash
+specify init my-project --spec-dir docs/specs
+specify init my-project --ai claude --spec-dir requirements
+specify init --here --ai copilot --spec-dir documentation/feature-specs
+```
+
+### Behavior
+- **Default**: `specs/` (maintains backward compatibility)
+- **Validation**: Ensures relative paths, no parent traversal, valid characters
+- **Template Updates**: Automatically updates all references in extracted templates
+- **Script Integration**: Bash and PowerShell scripts respect `SPECIFY_SPEC_DIR` environment variable
+
+### Implementation Details
+- Templates use `{SPEC_DIR}` placeholders that get replaced during initialization
+- Scripts call `get_spec_dir()` function (bash) or `Get-SpecDir()` (PowerShell)
+- All hardcoded `specs/` references are dynamically updated to custom directory
+- Environment variable `SPECIFY_SPEC_DIR` is set for runtime script access
+
 ---
 
 *This documentation should be updated whenever new agents are added to maintain accuracy and completeness.*

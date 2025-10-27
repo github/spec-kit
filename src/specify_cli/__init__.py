@@ -64,6 +64,57 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     token = _github_token(cli_token)
     return {"Authorization": f"Bearer {token}"} if token else {}
 
+def validate_spec_dir(spec_dir: str) -> str:
+    """Validate and return a sanitized spec directory path.
+    
+    Args:
+        spec_dir: User-provided spec directory path
+        
+    Returns:
+        Sanitized spec directory path
+        
+    Raises:
+        typer.Exit: If validation fails
+    """
+    if not spec_dir or not spec_dir.strip():
+        console.print("[red]Error:[/red] Spec directory cannot be empty")
+        raise typer.Exit(1)
+    
+    spec_dir = spec_dir.strip()
+    
+    # Check for absolute paths
+    if os.path.isabs(spec_dir):
+        console.print("[red]Error:[/red] Spec directory must be relative to project root, not an absolute path")
+        raise typer.Exit(1)
+    
+    # Check for parent directory traversal
+    if ".." in spec_dir:
+        console.print("[red]Error:[/red] Spec directory cannot contain parent directory traversal (..)")
+        raise typer.Exit(1)
+    
+    # Check for invalid characters
+    invalid_chars = ['<', '>', ':', '"', '|', '?', '*', '\0']
+    if any(char in spec_dir for char in invalid_chars):
+        console.print(f"[red]Error:[/red] Spec directory contains invalid characters: {', '.join(invalid_chars)}")
+        raise typer.Exit(1)
+    
+    # Check for trailing slashes/backslashes
+    if spec_dir.endswith(('/', '\\')):
+        console.print("[red]Error:[/red] Spec directory cannot end with a slash or backslash")
+        raise typer.Exit(1)
+    
+    # Check length (filesystem limit)
+    if len(spec_dir) > 255:
+        console.print("[red]Error:[/red] Spec directory path is too long (max 255 characters)")
+        raise typer.Exit(1)
+    
+    # Check if starts with alphanumeric
+    if not spec_dir[0].isalnum():
+        console.print("[red]Error:[/red] Spec directory must start with an alphanumeric character")
+        raise typer.Exit(1)
+    
+    return spec_dir
+
 # Agent configuration with name, folder, install URL, and CLI tool requirement
 AGENT_CONFIG = {
     "copilot": {
@@ -668,7 +719,97 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def update_spec_directory_references(project_path: Path, spec_dir: str, verbose: bool = True, tracker: StepTracker | None = None) -> None:
+    """Update hardcoded 'specs' references to use custom spec directory."""
+    import re
+    
+    # Files that commonly contain specs/ references
+    patterns_to_update = [
+        # Script files
+        "**/*.sh",
+        "**/*.ps1",
+        # Template files  
+        "**/*.md",
+        # Configuration files
+        "**/*.json",
+        "**/*.yaml",
+        "**/*.yml",
+        "**/*.toml",
+    ]
+    
+    updated_files = 0
+    total_replacements = 0
+    
+    for pattern in patterns_to_update:
+        for file_path in project_path.glob(pattern):
+            if file_path.is_file():
+                try:
+                    # Read file content
+                    content = file_path.read_text(encoding='utf-8')
+                    original_content = content
+                    
+                    # Replace various specs/ patterns
+                    replacements = [
+                        # Basic specs/ references
+                        (r'\bspecs/', f'{spec_dir}/'),
+                        (r'"specs/"', f'"{spec_dir}/"'),
+                        (r"'specs/'", f"'{spec_dir}/'"),
+                        
+                        # Path references with quotes
+                        (r'\bspecs\b', spec_dir),
+                        
+                        # Git and command references
+                        (r'specs/\[', f'{spec_dir}/['),
+                        (r'specs/([0-9]+)', f'{spec_dir}/\\1'),
+                        
+                        # Documentation references
+                        (r'`specs/', f'`{spec_dir}/'),
+                        (r'/specs/', f'/{spec_dir}/'),
+                        
+                        # Template placeholders
+                        (r'\{SPEC_DIR\}', spec_dir),
+                        (r'/{SPEC_DIR}/', f'/{spec_dir}/'),
+                    ]
+                    
+                    for pattern, replacement in replacements:
+                        content = re.sub(pattern, replacement, content)
+                    
+                    # Write back if changed
+                    if content != original_content:
+                        file_path.write_text(content, encoding='utf-8')
+                        updated_files += 1
+                        total_replacements += len(re.findall(r'specs/', original_content))
+                        
+                        if verbose and not tracker:
+                            console.print(f"  Updated: {file_path.relative_to(project_path)}")
+                
+                except Exception as e:
+                    if verbose:
+                        console.print(f"[yellow]Warning:[/yellow] Could not update {file_path}: {e}")
+    
+    # Rename the actual specs directory if it exists
+    specs_dir = project_path / "specs"
+    if specs_dir.exists() and specs_dir.is_dir():
+        new_specs_dir = project_path / spec_dir
+        try:
+            if not new_specs_dir.exists():
+                specs_dir.rename(new_specs_dir)
+                if verbose and not tracker:
+                    console.print(f"  Renamed directory: specs/ -> {spec_dir}/")
+            else:
+                if verbose:
+                    console.print(f"[yellow]Warning:[/yellow] Target directory '{spec_dir}/' already exists, keeping specs/")
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Warning:[/yellow] Could not rename specs/ directory: {e}")
+    
+    if tracker:
+        tracker.complete("update-spec-dir", f"updated {updated_files} files, {total_replacements} replacements")
+    elif verbose and updated_files > 0:
+        console.print(f"[green]Updated {updated_files} files with {total_replacements} spec directory references[/green]")
+
+
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, spec_dir: str = "specs") -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -815,6 +956,19 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             elif verbose:
                 console.print(f"Cleaned up: {zip_path.name}")
 
+    # Update spec directory references if custom directory specified
+    if spec_dir != "specs":
+        if tracker:
+            tracker.add("update-spec-dir", f"Update spec directory references to '{spec_dir}'")
+            tracker.start("update-spec-dir")
+        
+        update_spec_directory_references(project_path, spec_dir, verbose, tracker)
+        
+        if tracker:
+            tracker.complete("update-spec-dir")
+        elif verbose:
+            console.print(f"[cyan]Updated spec directory references to '{spec_dir}'[/cyan]")
+
     return project_path
 
 
@@ -874,6 +1028,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    spec_dir: str = typer.Option("specs", "--spec-dir", help="Custom directory path for specifications (default: specs, relative to project root)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -898,6 +1053,9 @@ def init(
         specify init --here --ai codebuddy
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+        specify init my-project --spec-dir docs/specs  # Custom spec directory
+        specify init my-project --ai claude --spec-dir requirements  # Custom spec directory with AI
+        specify init --here --spec-dir documentation/feature-specs  # Custom spec directory in current dir
     """
 
     show_banner()
@@ -913,6 +1071,9 @@ def init(
     if not here and not project_name:
         console.print("[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag")
         raise typer.Exit(1)
+
+    # Validate spec directory
+    validated_spec_dir = validate_spec_dir(spec_dir)
 
     if here:
         project_name = Path.cwd().name
@@ -1044,7 +1205,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, spec_dir=validated_spec_dir)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
