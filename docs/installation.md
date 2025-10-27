@@ -42,11 +42,13 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
 
 Auto behavior:
+
 - Windows default: `ps`
 - Other OS default: `sh`
 - Interactive mode: you'll be prompted unless you pass `--script`
 
 Force a specific script type:
+
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script sh
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
@@ -63,8 +65,9 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 ## Verification
 
 After initialization, you should see the following commands available in your AI agent:
+
 - `/sp.specify` - Create specifications
-- `/sp.plan` - Generate implementation plans  
+- `/sp.plan` - Generate implementation plans
 - `/sp.tasks` - Break down into actionable tasks
 
 The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
@@ -87,4 +90,3 @@ git config --global credential.helper manager
 echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
-

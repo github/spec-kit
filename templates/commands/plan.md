@@ -43,7 +43,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - For each integration → patterns task
 
 2. **Generate and dispatch research agents**:
-   ```
+
+   ```text
    For each unknown in Technical Context:
      Task: "Research {unknown} for {feature context}"
    For each technology choice:
@@ -84,4 +85,3 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 - Use absolute paths
 - ERROR on gate failures or unresolved clarifications
-
