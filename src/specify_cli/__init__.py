@@ -32,6 +32,7 @@ import shutil
 import json
 from pathlib import Path
 from typing import Optional, Tuple
+from importlib.resources import files
 
 import typer
 import httpx
@@ -1066,13 +1067,15 @@ def generate_ai_commands(project_path: Path, ai_assistant: str, script_type: str
 
 @app.command()
 def init(
-    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
+    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here or --workspace)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, or cursor"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
-    force: bool = typer.Option(False, "--force", help="Force overwrite existing files when using --here"),
+    workspace: bool = typer.Option(False, "--workspace", help="Initialize a multi-repo workspace (discovers git repos and creates workspace config)"),
+    auto_init: bool = typer.Option(False, "--auto-init", help="Automatically initialize .specify/ in all discovered repos (workspace mode only)"),
+    force: bool = typer.Option(False, "--force", help="Force overwrite existing files when using --here or --workspace"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     repo_owner: str = typer.Option(None, "--repo-owner", help="GitHub repository owner (default: 'github')"),
@@ -1081,7 +1084,7 @@ def init(
 ):
     """
     Initialize a new Specify project from the latest template.
-    
+
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, or Cursor)
@@ -1089,22 +1092,59 @@ def init(
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
-    
+
+    Workspace mode (--workspace):
+    1. Discover all git repositories in the workspace directory
+    2. Generate .specify/workspace.yml with auto-detected configuration
+    3. Create workspace-level specs/ directory
+    4. Optionally initialize .specify/ in each repo (with --auto-init)
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
-        specify init my-project --ai gemini
-        specify init my-project --ai copilot --no-git
-        specify init my-project --ai cursor
-        specify init --ignore-agent-tools my-project
         specify init --here --ai claude
-        specify init --here
-        specify init --here --force --ai claude  # Force overwrite existing template files
+        specify init --workspace --auto-init  # Initialize multi-repo workspace
+        specify init --workspace ~/git/my-workspace --force
     """
     # Show banner first
     show_banner()
-    
-    # Validate arguments
+
+    # Workspace mode: delegate to init-workspace.sh
+    if workspace:
+        workspace_dir = project_name if project_name else str(Path.cwd())
+        workspace_path = Path(workspace_dir).resolve()
+
+        console.print(Panel.fit(
+            "[bold cyan]Multi-Repo Workspace Initialization[/bold cyan]\n"
+            f"Workspace directory: [green]{workspace_path}[/green]",
+            border_style="cyan"
+        ))
+
+        # Find init-workspace.sh script from package resources
+        script_resource = files("specify_cli").joinpath("scripts", "bash", "init-workspace.sh")
+        if not script_resource.is_file():
+            console.print(f"[red]Error:[/red] init-workspace.sh not found in package resources")
+            raise typer.Exit(1)
+        script_path = Path(str(script_resource))
+
+        # Build command
+        cmd = ["bash", str(script_path), str(workspace_path)]
+        if force:
+            cmd.append("--force")
+        if auto_init:
+            cmd.append("--auto-init")
+
+        # Execute workspace initialization
+        try:
+            result = subprocess.run(cmd, check=True)
+            if result.returncode == 0:
+                console.print("\n[green]✅ Workspace initialization complete![/green]")
+            raise typer.Exit(result.returncode)
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Error:[/red] Workspace initialization failed: {e}")
+            raise typer.Exit(1)
+
+    # Validate arguments for single-repo mode
     if here and project_name:
         console.print("[red]Error:[/red] Cannot specify both project name and --here flag")
         raise typer.Exit(1)
@@ -1115,6 +1155,10 @@ def init(
 
     if force and not here:
         console.print("[red]Error:[/red] --force can only be used with --here flag")
+        raise typer.Exit(1)
+
+    if auto_init and not workspace:
+        console.print("[red]Error:[/red] --auto-init can only be used with --workspace flag")
         raise typer.Exit(1)
     
     # Determine project directory
