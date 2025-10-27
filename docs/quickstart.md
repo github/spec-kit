@@ -2,6 +2,8 @@
 
 This guide will help you get started with Spec-Driven Development using Spec Kit.
 
+> **Important**: Commands like `/specify` should be run in your terminal, not in the Copilot Chat window. See [VS Code Usage Guide](vscode-usage.md) for detailed instructions on where to run commands.
+
 > NEW: All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
 
 ## The 4-Step Process
@@ -23,29 +25,36 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 ### 2. Create the Spec
 
-Use the `/speckit.specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Run the specify command in your terminal to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+specify "Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface."
 ```
 
 ### 3. Create a Technical Implementation Plan
 
-Use the `/speckit.plan` command to provide your tech stack and architecture choices.
+Use the plan command to provide your tech stack and architecture choices.
 
 ```bash
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+specify plan "The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database."
 ```
 
 ### 4. Break Down and Implement
 
-Use `/speckit.tasks` to create an actionable task list, then ask your agent to implement the feature.
+Use the tasks command to create an actionable task list, then ask your agent to implement the feature.
+
+## Running Commands
+
+> **Note**: All commands should be run in your terminal, not in the Copilot Chat window. See our [VS Code Usage Guide](vscode-usage.md) for:
+> - Where to run CLI commands
+> - How to set up GitHub Copilot Chat
+> - Troubleshooting common issues
 
 ## Detailed Example: Building Taskify
 
 Here's a complete example of building a team productivity platform:
 
-### Step 1: Define Requirements with `/speckit.specify`
+### Step 1: Define Requirements with the specify command
 
 ```text
 Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
