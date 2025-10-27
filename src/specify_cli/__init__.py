@@ -64,22 +64,6 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     token = _github_token(cli_token)
     return {"Authorization": f"Bearer {token}"} if token else {}
 
-AI_CHOICES = {
-    "copilot": "GitHub Copilot",
-    "claude": "Claude Code",
-    "gemini": "Gemini CLI",
-    "cursor-agent": "Cursor",
-    "qwen": "Qwen Code",
-    "opencode": "opencode",
-    "codex": "Codex CLI",
-    "windsurf": "Windsurf",
-    "kilocode": "Kilo Code",
-    "auggie": "Auggie CLI",
-    "roo": "Roo Code",
-    "q": "Amazon Q Developer CLI",
-    "amp": "Amp",
-    "trae": "Trae AI"
-}
 # Agent configuration with name, folder, install URL, and CLI tool requirement
 AGENT_CONFIG = {
     "copilot": {
@@ -165,6 +149,12 @@ AGENT_CONFIG = {
         "folder": ".agents/",
         "install_url": "https://ampcode.com/manual#install",
         "requires_cli": True,
+    },
+    "trae-agent": {
+        "name": "Trae",
+        "folder": ".trae/",
+        "install_url": None,  # IDE-based, no CLI check needed
+        "requires_cli": False,
     },
 }
 
@@ -834,6 +824,59 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def extract_local_template(zip_path: Path, project_path: Path, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> Path:
+    """Extract a local template zip into project_path.
+
+    This mirrors the minimal behavior of download_and_extract_template but
+    uses a locally-provided zip file instead of downloading from GitHub.
+    """
+    if tracker:
+        tracker.start("extract", "Extract local template")
+    elif verbose:
+        console.print("Extracting local template...")
+
+    try:
+        if not is_current_dir:
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_contents = zip_ref.namelist()
+            if tracker:
+                tracker.start("zip-list")
+                tracker.complete("zip-list", f"{len(zip_contents)} entries")
+            elif verbose:
+                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
+
+            if is_current_dir:
+                # Extract into a temp dir first then merge to cwd to avoid
+                # accidental overwrites of working dir metadata.
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    zip_ref.extractall(temp_dir)
+                    for item in Path(temp_dir).iterdir():
+                        dest = Path.cwd() / item.name
+                        if item.is_dir():
+                            shutil.copytree(item, dest, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(item, dest)
+            else:
+                zip_ref.extractall(project_path)
+
+    except Exception as e:
+        if tracker:
+            tracker.error("extract", str(e))
+        else:
+            if verbose:
+                console.print(f"[red]Error extracting local template:[/red] {e}")
+        # Clean up partially created folder on error
+        if not is_current_dir and project_path.exists():
+            shutil.rmtree(project_path)
+        raise
+    else:
+        if tracker:
+            tracker.complete("extract")
+    return project_path
+
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -883,6 +926,7 @@ def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, trae, codebuddy, amp, or q"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+    template_file: str = typer.Option(None, "--template-file", help="Path to local template zip to use instead of downloading from GitHub"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -1060,7 +1104,16 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            if template_file:
+                zip_path = Path(template_file).expanduser()
+                if not zip_path.exists():
+                    tracker.error("fetch", f"Local template not found: {zip_path}")
+                    console.print(Panel(f"Local template file not found: [cyan]{zip_path}[/cyan]", title="Template Error", border_style="red"))
+                    raise typer.Exit(1)
+                # Use local template zip
+                extract_local_template(zip_path, project_path, here, verbose=False, tracker=tracker)
+            else:
+                download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1119,25 +1172,6 @@ def init(
         )
         console.print(git_error_panel)
 
-    # Agent folder security notice
-    agent_folder_map = {
-        "claude": ".claude/",
-        "gemini": ".gemini/",
-        "cursor": ".cursor/",
-        "qwen": ".qwen/",
-        "opencode": ".opencode/",
-        "codex": ".codex/",
-        "windsurf": ".windsurf/",
-        "kilocode": ".kilocode/",
-        "auggie": ".augment/",
-        "copilot": ".github/",
-        "roo": ".roo/",
-        "q": ".amazonq/",
-        "trae": ".trae/"
-    }
-
-    if selected_ai in agent_folder_map:
-        agent_folder = agent_folder_map[selected_ai]
     agent_config = AGENT_CONFIG.get(selected_ai)
     if agent_config:
         agent_folder = agent_config["folder"]
@@ -1224,30 +1258,6 @@ def check():
     code_ok = check_tool("code", tracker=tracker)
 
     tracker.add("code-insiders", "Visual Studio Code Insiders")
-    tracker.add("cursor-agent", "Cursor IDE agent")
-    tracker.add("windsurf", "Windsurf IDE")
-    tracker.add("kilocode", "Kilo Code IDE")
-    tracker.add("opencode", "opencode")
-    tracker.add("codex", "Codex CLI")
-    tracker.add("auggie", "Auggie CLI")
-    tracker.add("q", "Amazon Q Developer CLI")
-    tracker.add("trae", "Trae AI")
-    
-
-    git_ok = check_tool_for_tracker("git", tracker)
-    claude_ok = check_tool_for_tracker("claude", tracker)  
-    gemini_ok = check_tool_for_tracker("gemini", tracker)
-    qwen_ok = check_tool_for_tracker("qwen", tracker)
-    code_ok = check_tool_for_tracker("code", tracker)
-    code_insiders_ok = check_tool_for_tracker("code-insiders", tracker)
-    cursor_ok = check_tool_for_tracker("cursor-agent", tracker)
-    windsurf_ok = check_tool_for_tracker("windsurf", tracker)
-    kilocode_ok = check_tool_for_tracker("kilocode", tracker)
-    opencode_ok = check_tool_for_tracker("opencode", tracker)
-    codex_ok = check_tool_for_tracker("codex", tracker)
-    auggie_ok = check_tool_for_tracker("auggie", tracker)
-    q_ok = check_tool_for_tracker("q", tracker)
-    trae_ok = check_tool_for_tracker("trae", tracker)
     code_insiders_ok = check_tool("code-insiders", tracker=tracker)
 
     console.print(tracker.render())
@@ -1256,7 +1266,6 @@ def check():
 
     if not git_ok:
         console.print("[dim]Tip: Install git for repository management[/dim]")
-    if not (claude_ok or gemini_ok or cursor_ok or qwen_ok or windsurf_ok or kilocode_ok or opencode_ok or codex_ok or auggie_ok or q_ok or trae_ok):
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")

@@ -149,7 +149,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
 | [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
-| [Trae AI](https://trae.ai/)                               | ✅ |                                                   |
+| [Trae](https://trae.ai/)                               | ✅ |                                                   |
 | [Amp](https://ampcode.com/) | ✅ | |
 
 ## 🔧 Specify CLI Reference

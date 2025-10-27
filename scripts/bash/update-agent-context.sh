@@ -613,7 +613,6 @@ update_specific_agent() {
         roo)
             update_agent_file "$ROO_FILE" "Roo Code"
             ;;
-        q)            
         codebuddy)
             update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
             ;;
@@ -624,7 +623,7 @@ update_specific_agent() {
             update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
             ;;
         trae)
-            update_agent_file "$TRAE_FILE" "Trae AI"
+            update_agent_file "$TRAE_FILE" "Trae IDE"
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
@@ -699,7 +698,7 @@ update_all_existing_agents() {
     fi
     
     if [[ -f "$TRAE_FILE" ]]; then
-        update_agent_file "$TRAE_FILE" "Trae AI"
+        update_agent_file "$TRAE_FILE" "Trae IDE"
         found_agent=true
     fi
     
