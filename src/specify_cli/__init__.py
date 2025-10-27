@@ -74,44 +74,64 @@ def validate_spec_dir(spec_dir: str) -> str:
         Sanitized spec directory path
         
     Raises:
-        typer.Exit: If validation fails
+        SystemExit: If validation fails
     """
-    if not spec_dir or not spec_dir.strip():
-        console.print("[red]Error:[/red] Spec directory cannot be empty")
-        raise typer.Exit(1)
+    # Store original for error messages
+    original_spec_dir = spec_dir
     
+    # Check for empty input first
+    if not spec_dir:
+        console.print("[red]Error:[/red] Spec directory cannot be empty")
+        raise SystemExit(1)
+    
+    # Strip whitespace for validation
     spec_dir = spec_dir.strip()
     
-    # Check for absolute paths
-    if os.path.isabs(spec_dir):
+    # Check if result is empty after stripping
+    if not spec_dir:
+        console.print("[red]Error:[/red] Spec directory cannot be empty")
+        raise SystemExit(1)
+    
+    # Check for leading/trailing whitespace in original
+    if original_spec_dir != spec_dir:
+        console.print("[red]Error:[/red] Spec directory cannot start or end with whitespace")
+        raise SystemExit(1)
+    
+    # Check for absolute paths (including Windows paths and backslash paths)
+    if os.path.isabs(spec_dir) or (len(spec_dir) >= 2 and spec_dir[1] == ':') or spec_dir.startswith('\\'):
         console.print("[red]Error:[/red] Spec directory must be relative to project root, not an absolute path")
-        raise typer.Exit(1)
+        raise SystemExit(1)
     
     # Check for parent directory traversal
     if ".." in spec_dir:
         console.print("[red]Error:[/red] Spec directory cannot contain parent directory traversal (..)")
-        raise typer.Exit(1)
+        raise SystemExit(1)
     
-    # Check for invalid characters
-    invalid_chars = ['<', '>', ':', '"', '|', '?', '*', '\0']
+    # Check for invalid characters (including : but not for Windows drive letters)
+    invalid_chars = ['<', '>', '"', '|', '?', '*', '\0']
     if any(char in spec_dir for char in invalid_chars):
         console.print(f"[red]Error:[/red] Spec directory contains invalid characters: {', '.join(invalid_chars)}")
-        raise typer.Exit(1)
+        raise SystemExit(1)
+    
+    # Check for colon not in Windows drive letter position
+    if ':' in spec_dir and not (len(spec_dir) >= 2 and spec_dir[1] == ':'):
+        console.print("[red]Error:[/red] Spec directory contains invalid characters: :")
+        raise SystemExit(1)
     
     # Check for trailing slashes/backslashes
     if spec_dir.endswith(('/', '\\')):
         console.print("[red]Error:[/red] Spec directory cannot end with a slash or backslash")
-        raise typer.Exit(1)
+        raise SystemExit(1)
     
     # Check length (filesystem limit)
     if len(spec_dir) > 255:
         console.print("[red]Error:[/red] Spec directory path is too long (max 255 characters)")
-        raise typer.Exit(1)
+        raise SystemExit(1)
     
     # Check if starts with alphanumeric
     if not spec_dir[0].isalnum():
         console.print("[red]Error:[/red] Spec directory must start with an alphanumeric character")
-        raise typer.Exit(1)
+        raise SystemExit(1)
     
     return spec_dir
 
@@ -740,39 +760,68 @@ def update_spec_directory_references(project_path: Path, spec_dir: str, verbose:
     updated_files = 0
     total_replacements = 0
     
+    # Check if we will rename specs/ directory (target doesn't exist)
+    specs_dir = project_path / "specs"
+    will_rename_specs = specs_dir.exists() and specs_dir.is_dir() and not (project_path / spec_dir).exists()
+    
     for pattern in patterns_to_update:
         for file_path in project_path.glob(pattern):
             if file_path.is_file():
+                # Skip files inside specs/ directory if we're not renaming it
+                if not will_rename_specs and specs_dir in file_path.parents:
+                    continue
+                    
                 try:
                     # Read file content
                     content = file_path.read_text(encoding='utf-8')
                     original_content = content
                     
-                    # Replace various specs/ patterns
-                    replacements = [
-                        # Basic specs/ references
-                        (r'\bspecs/', f'{spec_dir}/'),
-                        (r'"specs/"', f'"{spec_dir}/"'),
-                        (r"'specs/'", f"'{spec_dir}/'"),
-                        
-                        # Path references with quotes
-                        (r'\bspecs\b', spec_dir),
-                        
-                        # Git and command references
-                        (r'specs/\[', f'{spec_dir}/['),
-                        (r'specs/([0-9]+)', f'{spec_dir}/\\1'),
-                        
-                        # Documentation references
-                        (r'`specs/', f'`{spec_dir}/'),
-                        (r'/specs/', f'/{spec_dir}/'),
-                        
-                        # Template placeholders
-                        (r'\{SPEC_DIR\}', spec_dir),
-                        (r'/{SPEC_DIR}/', f'/{spec_dir}/'),
+                    # Replace various specs/ patterns - use temporary placeholder to avoid cascading
+                    import uuid
+                    
+                    # Use a unique temporary placeholder that won't conflict with content
+                    temp_placeholder = f"__SPECS_TEMP_{uuid.uuid4().hex}__"
+                    
+                    # First, replace all specs/ patterns with temporary placeholder
+                    specs_patterns = [
+                        # Quoted and specific patterns first (most specific)
+                        ('"specs/"', f'"{temp_placeholder}/"'),
+                        ("'specs/'", f"'{temp_placeholder}/'"),
+                        ('`specs/', f'`{temp_placeholder}/'),
+                        ('/specs/', f'/{temp_placeholder}/'),
+                        ('specs/[', f'{temp_placeholder}/['),
+                        (' specs/', f' {temp_placeholder}/'),
+                        (' specs ', f' {temp_placeholder} '),
+                        (' specs\n', f' {temp_placeholder}\n'),
+                        # Assignment patterns (no space)
+                        ('=specs/', f'={temp_placeholder}/'),
+                        ('=specs ', f'={temp_placeholder} '),
+                        ('=specs\n', f'={temp_placeholder}\n'),
+                        # specs followed by dash (like specs-test)
+                        ('specs-', f'{temp_placeholder}-'),
+                        # Replace specs/ only at word boundaries or specific contexts
+                        (r'(?<![a-zA-Z0-9_-])specs/(?![a-zA-Z0-9_-])', f'{temp_placeholder}/'),
+                        # Replace standalone specs only at word boundaries (start/end of string or surrounded by non-word chars)
+                        (r'(?<![a-zA-Z0-9_-])specs(?![a-zA-Z0-9_-])', temp_placeholder),
+                        # Handle start of string case
+                        (r'^specs/(?![a-zA-Z0-9_-])', f'{temp_placeholder}/'),
+                        (r'^specs(?![a-zA-Z0-9_-])', temp_placeholder),
                     ]
                     
-                    for pattern, replacement in replacements:
-                        content = re.sub(pattern, replacement, content)
+                    for old, new in specs_patterns:
+                        if old.startswith(r'\b') or '(?<!' in old or old.startswith('^'):
+                            # Use regex for word boundaries
+                            content = re.sub(old, new, content, flags=re.MULTILINE)
+                        else:
+                            # Use regular string replacement
+                            content = content.replace(old, new)
+                    
+                    # Then replace template placeholders with actual spec_dir
+                    content = content.replace('{SPEC_DIR}', spec_dir)
+                    content = content.replace('/{SPEC_DIR}/', f'/{spec_dir}/')
+                    
+                    # Finally, replace temporary placeholder with actual spec_dir
+                    content = content.replace(temp_placeholder, spec_dir)
                     
                     # Write back if changed
                     if content != original_content:
@@ -787,21 +836,19 @@ def update_spec_directory_references(project_path: Path, spec_dir: str, verbose:
                     if verbose:
                         console.print(f"[yellow]Warning:[/yellow] Could not update {file_path}: {e}")
     
-    # Rename the actual specs directory if it exists
-    specs_dir = project_path / "specs"
-    if specs_dir.exists() and specs_dir.is_dir():
+    # Rename the actual specs directory if it exists (using the check from above)
+    if will_rename_specs:
         new_specs_dir = project_path / spec_dir
         try:
-            if not new_specs_dir.exists():
-                specs_dir.rename(new_specs_dir)
-                if verbose and not tracker:
-                    console.print(f"  Renamed directory: specs/ -> {spec_dir}/")
-            else:
-                if verbose:
-                    console.print(f"[yellow]Warning:[/yellow] Target directory '{spec_dir}/' already exists, keeping specs/")
+            specs_dir.rename(new_specs_dir)
+            if verbose and not tracker:
+                console.print(f"  Renamed directory: specs/ -> {spec_dir}/")
         except Exception as e:
             if verbose:
                 console.print(f"[yellow]Warning:[/yellow] Could not rename specs/ directory: {e}")
+    elif specs_dir.exists() and verbose:
+        # Target exists, so we're not renaming
+        console.print(f"[yellow]Warning:[/yellow] Target directory '{spec_dir}/' already exists, keeping specs/")
     
     if tracker:
         tracker.complete("update-spec-dir", f"updated {updated_files} files, {total_replacements} replacements")

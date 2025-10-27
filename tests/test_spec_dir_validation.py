@@ -81,7 +81,8 @@ class TestSpecDirValidation:
 
     def test_invalid_characters_spec_dir(self):
         """Test invalid characters raise error."""
-        invalid_chars = ['<', '>', ':', '"', '|', '?', '*', '\0']
+        # Test each invalid character individually
+        invalid_chars = ['<', '>', '"', '|', '?', '*', '\0']
         
         for char in invalid_chars:
             with patch('specify_cli.console') as mock_console:
@@ -89,6 +90,13 @@ class TestSpecDirValidation:
                     validate_spec_dir(f"specs{char}test")
                 assert exc_info.value.code == 1
                 mock_console.print.assert_called_with(f"[red]Error:[/red] Spec directory contains invalid characters: {', '.join(invalid_chars)}")
+        
+        # Test colon separately since it's handled differently
+        with patch('specify_cli.console') as mock_console:
+            with pytest.raises(SystemExit) as exc_info:
+                validate_spec_dir("specs:test")
+            assert exc_info.value.code == 1
+            mock_console.print.assert_called_with("[red]Error:[/red] Spec directory contains invalid characters: :")
 
     def test_trailing_slash_spec_dir(self):
         """Test trailing slash raises error."""
@@ -121,19 +129,22 @@ class TestSpecDirValidation:
         invalid_starts = [
             "-specs",
             "_specs",
-            ".specs",
-            "1specs",  # This should actually be valid
-            " specs"
+            ".specs"
         ]
         
         for path in invalid_starts:
-            if path == "1specs":  # Skip valid case
-                continue
             with patch('specify_cli.console') as mock_console:
                 with pytest.raises(SystemExit) as exc_info:
                     validate_spec_dir(path)
                 assert exc_info.value.code == 1
                 mock_console.print.assert_called_with("[red]Error:[/red] Spec directory must start with an alphanumeric character")
+        
+        # Test leading space separately
+        with patch('specify_cli.console') as mock_console:
+            with pytest.raises(SystemExit) as exc_info:
+                validate_spec_dir(" specs")
+            assert exc_info.value.code == 1
+            mock_console.print.assert_called_with("[red]Error:[/red] Spec directory cannot start or end with whitespace")
 
     def test_numeric_start_spec_dir(self):
         """Test numeric start is valid."""
