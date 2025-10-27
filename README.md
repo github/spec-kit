@@ -41,7 +41,7 @@ The developers who build the next generation of transformative software might no
 Use `specifyplus` or `sp` commands instead of `specify`.
 
 <div align="center">
-    <img src="./media/logo_small.webp"/>
+    <img src="./media/logo_small.webp" alt="Spec Kit Logo"/>
     <h1>🌱 Spec Ki+t</h1>
     <h3><em>Build high-quality software faster.</em></h3>
 </div>
@@ -214,6 +214,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
 | [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
+| [Amp](https://ampcode.com/) | ✅ | |
 
 ## 🔧 Specify CLI Reference
 
@@ -235,18 +236,18 @@ The `specify` command supports the following options:
 
 ### `specifyplus init` Arguments & Options
 
-| Argument/Option        | Type     | Description                                                                                                                                |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                         |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, or `q` |
-| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                |
-| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                            |
-| `--no-git`             | Flag     | Skip git repository initialization                                                                                                         |
-| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                  |
-| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                           |
-| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                |
-| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                           |
-| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                  |
+| Argument/Option        | Type     | Description                                                                |
+|------------------------|----------|------------------------------------------------------------------------------|
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, or `q` |
+| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
+| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
+| `--no-git`             | Flag     | Skip git repository initialization                                          |
+| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
+| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation) |
+| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
+| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
+| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
 
 ### Examples
 
@@ -262,6 +263,9 @@ specifyplus init my-project --ai cursor
 
 # Initialize with Windsurf support
 specifyplus init my-project --ai windsurf
+
+# Initialize with Amp support
+specify init my-project --ai amp
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specifyplus init my-project --ai copilot --script ps
@@ -325,7 +329,7 @@ Additional commands for enhanced quality and validation:
 
 Spec-Driven Development is a structured process that emphasizes:
 
-- **Intent-driven development** where specifications define the "_what_" before the "_how_"
+- **Intent-driven development** where specifications define the "*what*" before the "*how*"
 - **Rich specification creation** using guardrails and organizational principles
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
@@ -508,16 +512,16 @@ At this stage, your project folder contents should resemble the following:
 ```text
 └── .specify
     ├── memory
-    │	 └── constitution.md
+    │  └── constitution.md
     ├── scripts
-    │	 ├── check-prerequisites.sh
-    │	 ├── common.sh
-    │	 ├── create-new-feature.sh
-    │	 ├── setup-plan.sh
-    │	 └── update-claude-md.sh
+    │  ├── check-prerequisites.sh
+    │  ├── common.sh
+    │  ├── create-new-feature.sh
+    │  ├── setup-plan.sh
+    │  └── update-claude-md.sh
     ├── specs
-    │	 └── 001-create-taskify
-    │	     └── spec.md
+    │  └── 001-create-taskify
+    │      └── spec.md
     └── templates
         ├── plan-template.md
         ├── spec-template.md
@@ -569,23 +573,23 @@ The output of this step will include a number of implementation detail documents
 .
 ├── CLAUDE.md
 ├── memory
-│	 └── constitution.md
+│  └── constitution.md
 ├── scripts
-│	 ├── check-prerequisites.sh
-│	 ├── common.sh
-│	 ├── create-new-feature.sh
-│	 ├── setup-plan.sh
-│	 └── update-claude-md.sh
+│  ├── check-prerequisites.sh
+│  ├── common.sh
+│  ├── create-new-feature.sh
+│  ├── setup-plan.sh
+│  └── update-claude-md.sh
 ├── specs
-│	 └── 001-create-taskify
-│	     ├── contracts
-│	     │	 ├── api-spec.json
-│	     │	 └── signalr-spec.md
-│	     ├── data-model.md
-│	     ├── plan.md
-│	     ├── quickstart.md
-│	     ├── research.md
-│	     └── spec.md
+│  └── 001-create-taskify
+│      ├── contracts
+│      │  ├── api-spec.json
+│      │  └── signalr-spec.md
+│      ├── data-model.md
+│      ├── plan.md
+│      ├── quickstart.md
+│      ├── research.md
+│      └── spec.md
 └── templates
     ├── CLAUDE-template.md
     ├── plan-template.md
@@ -648,7 +652,24 @@ Once ready, use the `/sp.implement` command to execute your implementation plan:
 ```
 
 The `/sp.implement` command will:
+- **Task breakdown organized by user story** - Each user story becomes a separate implementation phase with its own set of tasks
+- **Dependency management** - Tasks are ordered to respect dependencies between components (e.g., models before services, services before endpoints)
+- **Parallel execution markers** - Tasks that can run in parallel are marked with `[P]` to optimize development workflow
+- **File path specifications** - Each task includes the exact file paths where implementation should occur
+- **Test-driven development structure** - If tests are requested, test tasks are included and ordered to be written before implementation
+- **Checkpoint validation** - Each user story phase includes checkpoints to validate independent functionality
 
+The generated tasks.md provides a clear roadmap for the `/sp.implement` command, ensuring systematic implementation that maintains code quality and allows for incremental delivery of user stories.
+
+### **STEP 7:** Implementation
+
+Once ready, use the `/sp.implement` command to execute your implementation plan:
+
+```text
+/sp.implement
+```
+
+The `/sp.implement` command will:
 - Validate that all prerequisites are in place (constitution, spec, plan, and tasks)
 - Parse the task breakdown from `tasks.md`
 - Execute tasks in the correct order, respecting dependencies and parallel execution markers
@@ -699,4 +720,3 @@ This project is heavily influenced by and based on the work and research of [Joh
 ## 📄 License
 
 This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
-

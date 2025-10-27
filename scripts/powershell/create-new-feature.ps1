@@ -4,6 +4,7 @@
 param(
     [switch]$Json,
     [string]$ShortName,
+    [int]$Number = 0,
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -12,11 +13,12 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
+    Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
@@ -56,6 +58,75 @@ function Find-RepositoryRoot {
         $current = $parent
     }
 }
+
+function Get-NextBranchNumber {
+    param(
+        [string]$ShortName,
+        [string]$SpecsDir
+    )
+    
+    # Fetch all remotes to get latest branch info (suppress errors if no remotes)
+    try {
+        git fetch --all --prune 2>$null | Out-Null
+    } catch {
+        # Ignore fetch errors
+    }
+    
+    # Find remote branches matching the pattern using git ls-remote
+    $remoteBranches = @()
+    try {
+        $remoteRefs = git ls-remote --heads origin 2>$null
+        if ($remoteRefs) {
+            $remoteBranches = $remoteRefs | Where-Object { $_ -match "refs/heads/(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
+                if ($_ -match "refs/heads/(\d+)-") {
+                    [int]$matches[1]
+                }
+            }
+        }
+    } catch {
+        # Ignore errors
+    }
+    
+    # Check local branches
+    $localBranches = @()
+    try {
+        $allBranches = git branch 2>$null
+        if ($allBranches) {
+            $localBranches = $allBranches | Where-Object { $_ -match "^\*?\s*(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
+                if ($_ -match "(\d+)-") {
+                    [int]$matches[1]
+                }
+            }
+        }
+    } catch {
+        # Ignore errors
+    }
+    
+    # Check specs directory
+    $specDirs = @()
+    if (Test-Path $SpecsDir) {
+        try {
+            $specDirs = Get-ChildItem -Path $SpecsDir -Directory | Where-Object { $_.Name -match "^(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
+                if ($_.Name -match "^(\d+)-") {
+                    [int]$matches[1]
+                }
+            }
+        } catch {
+            # Ignore errors
+        }
+    }
+    
+    # Combine all sources and get the highest number
+    $maxNum = 0
+    foreach ($num in ($remoteBranches + $localBranches + $specDirs)) {
+        if ($num -gt $maxNum) {
+            $maxNum = $num
+        }
+    }
+    
+    # Return next number
+    return $maxNum + 1
+}
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 if (-not $fallbackRoot) {
     Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
@@ -78,18 +149,6 @@ Set-Location $repoRoot
 
 $specsDir = Join-Path $repoRoot 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
-
-$highest = 0
-if (Test-Path $specsDir) {
-    Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-        if ($_.Name -match '^(\d{3})') {
-            $num = [int]$matches[1]
-            if ($num -gt $highest) { $highest = $num }
-        }
-    }
-}
-$next = $highest + 1
-$featureNum = ('{0:000}' -f $next)
 
 # Function to generate branch name with stop word filtering and length filtering
 function Get-BranchName {
@@ -145,6 +204,27 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
+# Determine branch number
+if ($Number -eq 0) {
+    if ($hasGit) {
+        # Check existing branches on remotes
+        $Number = Get-NextBranchNumber -ShortName $branchSuffix -SpecsDir $specsDir
+    } else {
+        # Fall back to local directory check
+        $highest = 0
+        if (Test-Path $specsDir) {
+            Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+                if ($_.Name -match '^(\d{3})') {
+                    $num = [int]$matches[1]
+                    if ($num -gt $highest) { $highest = $num }
+                }
+            }
+        }
+        $Number = $highest + 1
+    }
+}
+
+$featureNum = ('{0:000}' -f $Number)
 $branchName = "$featureNum-$branchSuffix"
 
 # GitHub enforces a 244-byte limit on branch names
