@@ -19,11 +19,52 @@ The text the user typed after `/speckit.specify` in the triggering message **is*
 
 Given that feature description, do this:
 
-1. Run the script `{SCRIPT}` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
-  **IMPORTANT** You must only ever run this script once. The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
-2. Load `templates/spec-template.md` to understand required sections.
+1. **Generate a concise short name** (2-4 words) for the branch:
+   - Analyze the feature description and extract the most meaningful keywords
+   - Create a 2-4 word short name that captures the essence of the feature
+   - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
+   - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
+   - Keep it concise but descriptive enough to understand the feature at a glance
+   - Examples:
+     - "I want to add user authentication" → "user-auth"
+     - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
+     - "Create a dashboard for analytics" → "analytics-dashboard"
+     - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-3. Follow this execution flow:
+2. **Check for existing branches before creating new one**:
+   
+   a. First, fetch all remote branches to ensure we have the latest information:
+      ```bash
+      git fetch --all --prune
+      ```
+   
+   b. Find the highest feature number across all sources for the short-name:
+      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
+      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
+      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
+   
+   c. Determine the next available number:
+      - Extract all numbers from all three sources
+      - Find the highest number N
+      - Use N+1 for the new branch number
+   
+   d. Run the script `{SCRIPT}` with the calculated number and short-name:
+      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
+      - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
+      - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+   
+   **IMPORTANT**:
+   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
+   - Only match branches/directories with the exact short-name pattern
+   - If no existing branches/directories found with this short-name, start with number 1
+   - You must only ever run this script once per feature
+   - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
+   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
+   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
+
+3. Load `templates/spec-template.md` to understand required sections.
+
+4. Follow this execution flow:
 
     1. Parse user description from Input
        If empty: ERROR "No feature description provided"
@@ -49,12 +90,12 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-4. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 
-5. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
+6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
    a. **Create Spec Quality Checklist**: Generate a checklist file at `FEATURE_DIR/checklists/requirements.md` using the checklist template structure with these validation items:
-   
+
       ```markdown
       # Specification Quality Checklist: [FEATURE NAME]
       
@@ -91,26 +132,26 @@ Given that feature description, do this:
       
       - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`
       ```
-   
+
    b. **Run Validation Check**: Review the spec against each checklist item:
       - For each item, determine if it passes or fails
       - Document specific issues found (quote relevant spec sections)
-   
+
    c. **Handle Validation Results**:
-      
+
       - **If all items pass**: Mark checklist complete and proceed to step 6
-      
+
       - **If items fail (excluding [NEEDS CLARIFICATION])**:
         1. List the failing items and specific issues
         2. Update the spec to address each issue
         3. Re-run validation until all items pass (max 3 iterations)
         4. If still failing after 3 iterations, document remaining issues in checklist notes and warn user
-      
+
       - **If [NEEDS CLARIFICATION] markers remain**:
         1. Extract all [NEEDS CLARIFICATION: ...] markers from the spec
         2. **LIMIT CHECK**: If more than 3 markers exist, keep only the 3 most critical (by scope/security/UX impact) and make informed guesses for the rest
         3. For each clarification needed (max 3), present options to user in this format:
-        
+
            ```markdown
            ## Question [N]: [Topic]
            
@@ -129,7 +170,7 @@ Given that feature description, do this:
            
            **Your choice**: _[Wait for user response]_
            ```
-        
+
         4. **CRITICAL - Table Formatting**: Ensure markdown tables are properly formatted:
            - Use consistent spacing with pipes aligned
            - Each cell should have spaces around content: `| Content |` not `|Content|`
@@ -140,10 +181,10 @@ Given that feature description, do this:
         7. Wait for user to respond with their choices for all questions (e.g., "Q1: A, Q2: Custom - [details], Q3: B")
         8. Update the spec by replacing each [NEEDS CLARIFICATION] marker with the user's selected or provided answer
         9. Re-run validation after all clarifications are resolved
-   
+
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
-6. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
+7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
 **NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
 
@@ -178,7 +219,7 @@ When creating this spec from a user prompt:
    - Feature scope and boundaries (include/exclude specific use cases)
    - User types and permissions (if multiple conflicting interpretations possible)
    - Security/compliance requirements (when legally/financially significant)
-   
+
 **Examples of reasonable defaults** (don't ask about these):
 
 - Data retention: Industry-standard practices for the domain
