@@ -7,6 +7,65 @@ scripts:
 
 Given the feature description provided as an argument, do this:
 
+## Mode Detection & Adaptive Workflow
+
+**Before creating specification, determine appropriate depth level:**
+
+### Quick Assessment Questions
+
+Ask the user to clarify (if not obvious from description):
+
+1. **Is this a new feature from scratch or modifying existing code?**
+   - New feature → Continue to complexity assessment
+   - Modification → Consider lightweight or quick mode
+
+2. **Estimated total LOC (implementation + tests)?**
+   - <200 LOC → **QUICK mode** (minimal spec, proposal + tasks only)
+   - 200-800 LOC → **LIGHTWEIGHT mode** (compact spec, essential plan + tasks)
+   - 800-1000 LOC → **FULL mode** (comprehensive spec, detailed plan - current default)
+   - >1000 LOC → **FULL mode** + recommend `/decompose` after spec complete
+
+### Mode Behaviors
+
+**QUICK Mode (<200 LOC total):**
+- Skip: research phase, product-vision check, system-architecture check
+- Use: `templates/spec-template-quick.md`
+- Generate: Minimal spec (purpose, requirements, acceptance criteria only)
+- Use case: Bug fixes, small tweaks, config changes
+- Next step: `/tasks` directly (no `/plan` needed)
+
+**LIGHTWEIGHT Mode (200-800 LOC total):**
+- Skip: research phase (codebase + external)
+- Simplify: product-vision and system-architecture checks (reference only, don't analyze deeply)
+- Use: `templates/spec-template-lightweight.md`
+- Generate: Compact spec (essential sections, less detail)
+- Use case: Simple features, brownfield modifications
+- Next step: `/plan` with `templates/plan-template-lightweight.md`
+
+**FULL Mode (800+ LOC total - DEFAULT):**
+- Include: All research phases, comprehensive context gathering
+- Use: `templates/spec-template.md` (current comprehensive template)
+- Generate: Complete spec with context engineering, research, full detail
+- Use case: Complex features, greenfield development
+- Next step: `/plan` with full `templates/plan-template.md`
+
+### Mode Selection Logic
+
+**User can explicitly specify mode:**
+```bash
+/specify "description" --mode quick
+/specify "description" --mode lightweight
+/specify "description" --mode full
+```
+
+**If no mode specified, AI determines from description:**
+- Keywords like "fix", "bug", "tweak", "adjust" → Suggest quick
+- Keywords like "add feature", "modify", "enhance" → Suggest lightweight
+- Keywords like "build", "create system", "implement" → Use full
+- When uncertain → Ask user clarifying questions above
+
+**Override safety:** If estimated LOC significantly differs from selected mode, warn user and suggest mode change.
+
 ## Enhanced Specification Process
 
 ### Phase 0: Context Loading

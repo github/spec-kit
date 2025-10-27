@@ -86,6 +86,145 @@ Unlike traditional development that jumps straight to coding, Spec Kit follows a
 
 ---
 
+## Adaptive Workflow: Choosing the Right Depth 🎚️
+
+**NEW:** Spec Kit now automatically adapts to your task complexity, giving you just the right amount of process for each situation.
+
+### Why Adaptive?
+
+Not all features are created equal. A small bug fix doesn't need the same comprehensive planning as a new authentication system. The adaptive workflow lets you choose (or the AI will suggest) the appropriate level of detail based on your task.
+
+### Four Depth Levels
+
+#### Quick Mode (<200 LOC total)
+**When to use**: Bug fixes, small tweaks, configuration changes
+
+**What you get**:
+- Minimal spec (purpose, requirements, acceptance criteria)
+- Tasks list
+- **Skip**: Research, planning, architecture analysis
+
+**Time investment**: 5-10 minutes
+
+**Command**:
+```bash
+/specify "fix login timeout issue" --mode quick
+# AI generates minimal spec → /tasks directly
+```
+
+---
+
+#### Lightweight Mode (200-800 LOC total)
+**When to use**: Simple features, brownfield modifications, straightforward additions
+
+**What you get**:
+- Compact spec (essential sections, less detail)
+- Minimal implementation plan (tech stack, components, LOC budget)
+- Tasks list
+- **Skip**: Deep research, extensive context engineering
+
+**Time investment**: 15-30 minutes
+
+**Command**:
+```bash
+/specify "add password reset feature" --mode lightweight
+# AI generates compact spec → /plan with lightweight template → /tasks
+```
+
+---
+
+#### Full Mode (800-1000 LOC total) - **DEFAULT**
+**When to use**: Complex features, greenfield development, new systems
+
+**What you get**:
+- Complete specification with research
+- Detailed implementation plan
+- Context engineering for AI agents
+- Data models, API contracts, quickstart guides
+- All artifacts
+
+**Time investment**: 30-60 minutes
+
+**Command**:
+```bash
+/specify "build user authentication system"
+# No flag needed - this is the default comprehensive workflow
+# → /plan with full template → /tasks
+```
+
+---
+
+#### Decomposed Mode (>1000 LOC total)
+**When to use**: Very large features that need atomic PRs
+
+**What you get**:
+- Parent specification (full mode)
+- Capability breakdown (400-1000 LOC each)
+- Separate branches per capability
+- Atomic PRs for fast reviews
+
+**Time investment**: 1-2 hours for complete feature planning
+
+**Command**:
+```bash
+/specify "complete user management system"
+# AI suggests decomposition →
+/decompose
+# Creates cap-001/, cap-002/, etc. →
+/plan --capability cap-001
+# Generates atomic PR plan per capability
+```
+
+---
+
+### How to Choose?
+
+**Don't know which mode to use?** Just run `/specify "your description"` without a flag. The AI will:
+1. Analyze your description for complexity signals
+2. Ask clarifying questions (LOC estimate, new vs modification)
+3. Recommend the appropriate mode
+4. Proceed with that mode
+
+**Example conversation**:
+```
+You: /specify "update login error messages"
+
+AI: I'll help create a specification. A few quick questions:
+    1. Is this a new feature or modifying existing code?
+    2. Estimated total LOC (implementation + tests)?
+
+You: Modification, probably 50 LOC total
+
+AI: Thanks! Based on your answers, I recommend QUICK mode
+    (minimal spec for <200 LOC). Proceeding with quick template...
+```
+
+### Mode Comparison Matrix
+
+| Aspect | Quick | Lightweight | Full | Decomposed |
+|--------|-------|-------------|------|------------|
+| **LOC Range** | <200 | 200-800 | 800-1000 | >1000 |
+| **Time** | 5-10 min | 15-30 min | 30-60 min | 1-2 hours |
+| **Research Phase** | ❌ | ❌ | ✅ | ✅ |
+| **Context Engineering** | ❌ | Optional | ✅ | ✅ |
+| **Detailed Plan** | ❌ | Minimal | ✅ | ✅ per cap |
+| **Data Models** | ❌ | If needed | ✅ | ✅ |
+| **API Contracts** | ❌ | If needed | ✅ | ✅ |
+| **Atomic PRs** | N/A | N/A | Single PR | Multiple PRs |
+| **Use Case** | Fixes | Simple features | Complex features | Large systems |
+
+### Best Practices
+
+**Start light, scale up**: If you're unsure, start with lightweight mode. You can always add more detail later if needed.
+
+**LOC estimates don't need to be perfect**: Rough ballpark is fine. The AI will warn you if your estimate seems off for the selected mode.
+
+**Mode flags are optional**: The AI can infer mode from your description in most cases. Use flags when you want to explicitly control the depth.
+
+**Archive completed work**: Use the new `/archive` command to move finished features to archive/, keeping your specs/ directory clean and focused on active work.
+
+---
+
 ## The Enhanced Three-Phase Workflow 📋
 
 ### **Phase 1: Specification - Creating the Blueprint**

@@ -4,17 +4,25 @@ set -e
 
 JSON_MODE=false
 CAPABILITY_ID=""
+MODE=""
 ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --json) JSON_MODE=true ;;
         --capability=*) CAPABILITY_ID="${arg#*=}" ;;
+        --mode=*) MODE="${arg#*=}" ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--capability=cap-XXX] [jira-key] <hyphenated-feature-name>"
+            echo "Usage: $0 [--json] [--capability=cap-XXX] [--mode=MODE] [jira-key] <hyphenated-feature-name>"
             echo ""
             echo "Options:"
             echo "  --capability=cap-XXX  Create capability within parent feature (e.g., cap-001)"
+            echo "  --mode=MODE           Spec depth: quick|lightweight|full (default: full)"
             echo "  --json                Output in JSON format"
+            echo ""
+            echo "Modes:"
+            echo "  quick               Minimal spec for <200 LOC (bug fixes, small changes)"
+            echo "  lightweight         Compact spec for 200-800 LOC (simple features)"
+            echo "  full                Complete spec for 800+ LOC (complex features, default)"
             echo ""
             echo "Note: Feature name must be provided as hyphenated-words (e.g., my-feature-name)"
             echo "      JIRA key is required for user 'hnimitanakit' or github.marqeta.com hosts"
@@ -28,6 +36,9 @@ for arg in "$@"; do
             echo ""
             echo "  # Capability mode:"
             echo "  $0 --capability=cap-001 login-flow    # Create capability in current feature"
+            echo ""
+            echo "  # With mode selection:"
+            echo "  $0 --mode=quick proj-123 bug-fix      # Use quick template for small changes"
             exit 0
             ;;
         *) ARGS+=("$arg") ;;
@@ -173,13 +184,22 @@ else
 
     FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
 
+    # Create branch in current repo
     git checkout -b "$BRANCH_NAME"
 
     # Create feature directory
     mkdir -p "$FEATURE_DIR"
 
+    # Determine template filename based on mode
+    TEMPLATE_NAME="spec-template.md"
+    if [[ "$MODE" == "quick" ]]; then
+        TEMPLATE_NAME="spec-template-quick.md"
+    elif [[ "$MODE" == "lightweight" ]]; then
+        TEMPLATE_NAME="spec-template-lightweight.md"
+    fi
+
     # Create spec file in feature directory
-    TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
+    TEMPLATE="$REPO_ROOT/.specify/templates/$TEMPLATE_NAME"
     SPEC_FILE="$FEATURE_DIR/spec.md"
 
     if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
