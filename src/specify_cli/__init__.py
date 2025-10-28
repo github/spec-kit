@@ -383,6 +383,7 @@ def show_banner():
 def get_version() -> str:
     """Get the current version of specify-cli."""
     try:
+        # Try specify-cli first (PyPI package name)
         return version("specify-cli")
     except PackageNotFoundError:
         return "unknown (not installed as package)"

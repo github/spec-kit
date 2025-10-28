@@ -381,17 +381,22 @@ def show_banner():
     console.print()
 
 def get_version() -> str:
-    """Get the current version of specify-cli."""
+    """Get the current version of specifyplus."""
     try:
-        return version("specify-cli")
+        # Try specifyplus first (PyPI package name)
+        return version("specifyplus")
     except PackageNotFoundError:
-        return "unknown (not installed as package)"
+        try:
+            # Fallback to specify-cli for local development
+            return version("specify-cli")
+        except PackageNotFoundError:
+            return "unknown (not installed as package)"
 
 def version_callback(value: bool):
     """Callback for --version flag."""
     if value:
         pkg_version = get_version()
-        console.print(f"Specify CLI v{pkg_version}")
+        console.print(f"SpecifyPlus CLI v{pkg_version}")
         raise typer.Exit()
 
 @app.callback()
@@ -1222,14 +1227,14 @@ def check():
 
 @app.command(name="version")
 def version_cmd():
-    """Show the version of Specify CLI."""
+    """Show the version of SpecifyPlus CLI."""
     show_banner()
     pkg_version = get_version()
     
     version_panel = Panel(
-        f"[bold cyan]Specify CLI[/bold cyan]\n"
+        f"[bold cyan]SpecifyPlus CLI[/bold cyan]\n"
         f"Version: [green]{pkg_version}[/green]\n\n"
-        f"[dim]Part of GitHub Spec Kit - Spec-Driven Development Toolkit[/dim]",
+        f"[dim]Panaversity SpecKit Plus - Spec-Driven Development Toolkit[/dim]",
         title="[bold]Version Information[/bold]",
         border_style="cyan",
         padding=(1, 2)
