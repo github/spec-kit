@@ -88,7 +88,6 @@ function Test-FeatureBranch {
     return $true
 }
 
-# Get spec directory from environment variable or default to "specs"
 function Get-SpecDir {
     if ($env:SPECIFY_SPEC_DIR) {
         return $env:SPECIFY_SPEC_DIR

@@ -24,7 +24,7 @@ packages = ["src/specify_cli"]
 
 [project.optional-dependencies]
 test = [
-    "pytest",
-    "pytest-cov",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
 ]
 

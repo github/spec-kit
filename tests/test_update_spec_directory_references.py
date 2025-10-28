@@ -66,6 +66,10 @@ echo `specs/`
             assert '"specs/"' not in updated_content
             assert "'specs/'" not in updated_content
             assert '`specs/' not in updated_content
+            # Verify the correct quoted replacements occurred
+            assert '"requirements/"' in updated_content
+            assert "'requirements/'" in updated_content
+            assert '`requirements/`' in updated_content
 
     def test_template_placeholder_replacement(self):
         """Test template placeholder updates."""

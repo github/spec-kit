@@ -24,33 +24,33 @@ Or install globally:
     specify init --here
 """
 
+import json
 import os
-import subprocess
-import sys
-import zipfile
-import tempfile
+import re
 import shutil
 import shlex
-import json
+import ssl
+import subprocess
+import sys
+import tempfile
+import uuid
+import zipfile
 from pathlib import Path
 from typing import Optional, Tuple
 
-import typer
 import httpx
+import readchar
+import truststore
+import typer
+from rich.align import Align
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.text import Text
-from rich.live import Live
-from rich.align import Align
 from rich.table import Table
+from rich.text import Text
 from rich.tree import Tree
 from typer.core import TyperGroup
-
-# For cross-platform keyboard input
-import readchar
-import ssl
-import truststore
 
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
@@ -64,75 +64,125 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
     token = _github_token(cli_token)
     return {"Authorization": f"Bearer {token}"} if token else {}
 
+INVALID_CHARS = ['<', '>', '"', '|', '?', '*', '\0']
+
 def validate_spec_dir(spec_dir: str) -> str:
     """Validate and return a sanitized spec directory path.
-    
+
     Args:
         spec_dir: User-provided spec directory path
-        
+
     Returns:
         Sanitized spec directory path
-        
+
     Raises:
         SystemExit: If validation fails
     """
-    # Store original for error messages
-    original_spec_dir = spec_dir
-    
-    # Check for empty input first
-    if not spec_dir:
-        console.print("[red]Error:[/red] Spec directory cannot be empty")
+    # Check for leading/trailing whitespace in original (before stripping)
+    if spec_dir.strip() != spec_dir:
+        console.print("[red]Error:[/red] Spec directory cannot start or end with whitespace")
         raise SystemExit(1)
-    
+
     # Strip whitespace for validation
     spec_dir = spec_dir.strip()
-    
+
     # Check if result is empty after stripping
     if not spec_dir:
         console.print("[red]Error:[/red] Spec directory cannot be empty")
         raise SystemExit(1)
-    
-    # Check for leading/trailing whitespace in original
-    if original_spec_dir != spec_dir:
-        console.print("[red]Error:[/red] Spec directory cannot start or end with whitespace")
+
+    # Enhanced path validation: check for absolute paths and parent traversal
+    drive, _ = os.path.splitdrive(spec_dir)
+    is_absolute = os.path.isabs(spec_dir) or bool(drive)
+
+    # More robust parent traversal detection - only catch actual directory traversal
+    has_parent_traversal = (
+        spec_dir.startswith("../") or
+        "/.." in spec_dir or
+        "\\.." in spec_dir or
+        spec_dir.endswith("/..") or
+        spec_dir.endswith("\\..") or
+        "/../" in spec_dir or
+        "\\..\\" in spec_dir
+    )
+
+    if is_absolute or has_parent_traversal:
+        if is_absolute:
+            if drive:
+                console.print(f"[red]Error:[/red] Spec directory must be relative to project root, not an absolute path or Windows drive (found: '{drive}')")
+            else:
+                console.print("[red]Error:[/red] Spec directory must be relative to project root, not an absolute path")
+        else:
+            console.print("[red]Error:[/red] Spec directory cannot contain parent directory traversal (..)")
         raise SystemExit(1)
-    
-    # Check for absolute paths (including Windows paths and backslash paths)
-    if os.path.isabs(spec_dir) or (len(spec_dir) >= 2 and spec_dir[1] == ':') or spec_dir.startswith('\\'):
-        console.print("[red]Error:[/red] Spec directory must be relative to project root, not an absolute path")
+
+    # Enhanced character validation: handle Unicode and invalid characters efficiently
+    invalid_chars = set(INVALID_CHARS)
+    # Colon is always invalid since absolute paths are already caught above
+    if ':' in spec_dir:
+        invalid_chars.add(':')
+
+    # Check for control characters (including null)
+    for char in spec_dir:
+        if ord(char) < 32 and char not in ('\t', '\n', '\r'):
+            console.print(f"[red]Error:[/red] Spec directory contains invalid control character at position {spec_dir.index(char)}")
+            console.print("[dim]Tip: Control characters cannot be used in directory names[/dim]")
+            raise SystemExit(1)
+
+    found_invalid_chars = {char for char in spec_dir if char in invalid_chars}
+    if found_invalid_chars:
+        # Provide helpful error message with character descriptions (only when needed)
+        char_descriptions = {
+            '<': 'less-than (<)',
+            '>': 'greater-than (>)',
+            '"': 'double quote (")',
+            '|': 'pipe (|)',
+            '?': 'question mark (?)',
+            '*': 'asterisk (*)',
+            '\0': 'null character',
+            ':': 'colon (:)'
+        }
+
+        described_chars = [char_descriptions.get(char, f"'{char}'") for char in sorted(found_invalid_chars)]
+        console.print(f"[red]Error:[/red] Spec directory contains invalid characters: {', '.join(described_chars)}")
+        console.print("[dim]Tip: These characters are not allowed in directory names on most filesystems[/dim]")
         raise SystemExit(1)
-    
-    # Check for parent directory traversal
-    if ".." in spec_dir:
-        console.print("[red]Error:[/red] Spec directory cannot contain parent directory traversal (..)")
-        raise SystemExit(1)
-    
-    # Check for invalid characters (including : but not for Windows drive letters)
-    invalid_chars = ['<', '>', '"', '|', '?', '*', '\0']
-    if any(char in spec_dir for char in invalid_chars):
-        console.print(f"[red]Error:[/red] Spec directory contains invalid characters: {', '.join(invalid_chars)}")
-        raise SystemExit(1)
-    
-    # Check for colon not in Windows drive letter position
-    if ':' in spec_dir and not (len(spec_dir) >= 2 and spec_dir[1] == ':'):
-        console.print("[red]Error:[/red] Spec directory contains invalid characters: :")
-        raise SystemExit(1)
-    
+
     # Check for trailing slashes/backslashes
     if spec_dir.endswith(('/', '\\')):
         console.print("[red]Error:[/red] Spec directory cannot end with a slash or backslash")
         raise SystemExit(1)
-    
-    # Check length (filesystem limit)
+
+    # Check length (filesystem limit with helpful message)
     if len(spec_dir) > 255:
-        console.print("[red]Error:[/red] Spec directory path is too long (max 255 characters)")
+        console.print(f"[red]Error:[/red] Spec directory path is too long ({len(spec_dir)} characters, max 255)")
+        console.print("[dim]Tip: Consider using a shorter directory name[/dim]")
         raise SystemExit(1)
-    
-    # Check if starts with alphanumeric
+
+    # Enhanced alphanumeric check with better error message
     if not spec_dir[0].isalnum():
-        console.print("[red]Error:[/red] Spec directory must start with an alphanumeric character")
+        # Provide specific guidance based on what was found
+        if spec_dir[0] in '-_.':
+            console.print(f"[red]Error:[/red] Spec directory cannot start with '{spec_dir[0]}' - it must start with a letter or number")
+        else:
+            console.print(f"[red]Error:[/red] Spec directory must start with an alphanumeric character (found: '{spec_dir[0]}')")
+        console.print("[dim]Tip: Start directory names with a letter (a-z, A-Z) or number (0-9)[/dim]")
         raise SystemExit(1)
-    
+
+    # Check for reserved names (Windows compatibility) - lightweight check
+    reserved_names = {
+        'CON', 'PRN', 'AUX', 'NUL',
+        'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+        'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+    }
+
+    # Check if the directory name (first component) is a reserved name
+    first_component = spec_dir.replace('\\', '/').split('/')[0].upper()
+    if first_component in reserved_names:
+        console.print(f"[red]Error:[/red] '{first_component}' is a reserved system name and cannot be used as a directory")
+        console.print("[dim]Tip: Windows reserves these names for system devices[/dim]")
+        raise SystemExit(1)
+
     return spec_dir
 
 # Agent configuration with name, folder, install URL, and CLI tool requirement
@@ -741,16 +791,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
 
 def update_spec_directory_references(project_path: Path, spec_dir: str, verbose: bool = True, tracker: StepTracker | None = None) -> None:
     """Update hardcoded 'specs' references to use custom spec directory."""
-    import re
-    
+
     # Files that commonly contain specs/ references
     patterns_to_update = [
-        # Script files
         "**/*.sh",
         "**/*.ps1",
-        # Template files  
         "**/*.md",
-        # Configuration files
         "**/*.json",
         "**/*.yaml",
         "**/*.yml",
@@ -776,50 +822,26 @@ def update_spec_directory_references(project_path: Path, spec_dir: str, verbose:
                     content = file_path.read_text(encoding='utf-8')
                     original_content = content
                     
-                    # Replace various specs/ patterns - use temporary placeholder to avoid cascading
-                    import uuid
-                    
+                    # Replace various specs/ patterns using safer, more precise regex approach
+
                     # Use a unique temporary placeholder that won't conflict with content
                     temp_placeholder = f"__SPECS_TEMP_{uuid.uuid4().hex}__"
-                    
-                    # First, replace all specs/ patterns with temporary placeholder
-                    specs_patterns = [
-                        # Quoted and specific patterns first (most specific)
-                        ('"specs/"', f'"{temp_placeholder}/"'),
-                        ("'specs/'", f"'{temp_placeholder}/'"),
-                        ('`specs/', f'`{temp_placeholder}/'),
-                        ('/specs/', f'/{temp_placeholder}/'),
-                        ('specs/[', f'{temp_placeholder}/['),
-                        (' specs/', f' {temp_placeholder}/'),
-                        (' specs ', f' {temp_placeholder} '),
-                        (' specs\n', f' {temp_placeholder}\n'),
-                        # Assignment patterns (no space)
-                        ('=specs/', f'={temp_placeholder}/'),
-                        ('=specs ', f'={temp_placeholder} '),
-                        ('=specs\n', f'={temp_placeholder}\n'),
-                        # specs followed by dash (like specs-test)
-                        ('specs-', f'{temp_placeholder}-'),
-                        # Replace specs/ only at word boundaries or specific contexts
-                        (r'(?<![a-zA-Z0-9_-])specs/(?![a-zA-Z0-9_-])', f'{temp_placeholder}/'),
-                        # Replace standalone specs only at word boundaries (start/end of string or surrounded by non-word chars)
-                        (r'(?<![a-zA-Z0-9_-])specs(?![a-zA-Z0-9_-])', temp_placeholder),
-                        # Handle start of string case
-                        (r'^specs/(?![a-zA-Z0-9_-])', f'{temp_placeholder}/'),
-                        (r'^specs(?![a-zA-Z0-9_-])', temp_placeholder),
-                    ]
-                    
-                    for old, new in specs_patterns:
-                        if old.startswith(r'\b') or '(?<!' in old or old.startswith('^'):
-                            # Use regex for word boundaries
-                            content = re.sub(old, new, content, flags=re.MULTILINE)
-                        else:
-                            # Use regular string replacement
-                            content = content.replace(old, new)
-                    
+
+                    # More precise regex patterns to avoid data corruption
+                    # Handle patterns in order of specificity to avoid conflicts
+
+                    # First handle specs- followed by various characters (specs-word, specs-[123], etc.)
+                    content = re.sub(r'(?<![a-zA-Z0-9_-])specs(?=-[a-zA-Z0-9_\-\[\]])', temp_placeholder, content)
+
+                    # Handle specs/ patterns (more permissive about what follows)
+                    content = re.sub(r'(?<![a-zA-Z0-9_-])specs/', f'{temp_placeholder}/', content)
+
+                    # Handle standalone "specs" word (not followed by / or - or other word char)
+                    content = re.sub(r'(?<![a-zA-Z0-9_-])specs(?![a-zA-Z0-9_/-])', temp_placeholder, content)
+
                     # Then replace template placeholders with actual spec_dir
                     content = content.replace('{SPEC_DIR}', spec_dir)
-                    content = content.replace('/{SPEC_DIR}/', f'/{spec_dir}/')
-                    
+
                     # Finally, replace temporary placeholder with actual spec_dir
                     content = content.replace(temp_placeholder, spec_dir)
                     
@@ -827,7 +849,8 @@ def update_spec_directory_references(project_path: Path, spec_dir: str, verbose:
                     if content != original_content:
                         file_path.write_text(content, encoding='utf-8')
                         updated_files += 1
-                        total_replacements += len(re.findall(r'specs/', original_content))
+                        # Count actual replacements more accurately
+                        total_replacements += len(re.findall(r'(?<![a-zA-Z0-9_-])specs(?=[/ -]|$)', original_content))
                         
                         if verbose and not tracker:
                             console.print(f"  Updated: {file_path.relative_to(project_path)}")
@@ -854,6 +877,7 @@ def update_spec_directory_references(project_path: Path, spec_dir: str, verbose:
         tracker.complete("update-spec-dir", f"updated {updated_files} files, {total_replacements} replacements")
     elif verbose and updated_files > 0:
         console.print(f"[green]Updated {updated_files} files with {total_replacements} spec directory references[/green]")
+        console.print(f"[dim]Tip: Set SPECIFY_SPEC_DIR environment variable to '{spec_dir}' for shell scripts to use the custom directory[/dim]")
 
 
 def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, spec_dir: str = "specs") -> Path:

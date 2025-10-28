@@ -82,7 +82,6 @@ check_feature_branch() {
     return 0
 }
 
-# Get spec directory from environment variable or default to "specs"
 get_spec_dir() { echo "${SPECIFY_SPEC_DIR:-specs}"; }
 
 get_feature_dir() { echo "$1/$(get_spec_dir)/$2"; }
@@ -104,7 +103,6 @@ find_feature_dir_by_prefix() {
 
     local prefix="${BASH_REMATCH[1]}"
 
-    # Search for directories in spec directory that start with this prefix
     local matches=()
     if [[ -d "$specs_dir" ]]; then
         for dir in "$specs_dir"/"$prefix"-*; do

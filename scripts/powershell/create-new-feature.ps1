@@ -127,6 +127,10 @@ function Get-NextBranchNumber {
     # Return next number
     return $maxNum + 1
 }
+
+# Import helper functions
+. "$PSScriptRoot/common.ps1"
+
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 if (-not $fallbackRoot) {
     Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
