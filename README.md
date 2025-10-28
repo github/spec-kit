@@ -176,6 +176,7 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
+| `--spec-dir`           | Option   | Custom directory path for specifications (default: specs, relative to project root) |
 
 ### Examples
 
@@ -207,6 +208,11 @@ specify init --here --ai copilot
 specify init . --force --ai copilot
 # or 
 specify init --here --force --ai copilot
+
+# Initialize with custom spec directory
+specify init my-project --spec-dir docs/specs
+specify init my-project --ai claude --spec-dir requirements
+specify init --here --ai copilot --spec-dir documentation/feature-specs
 
 # Skip git initialization
 specify init my-project --ai gemini --no-git
@@ -252,6 +258,7 @@ Additional commands for enhanced quality and validation:
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+| `SPECIFY_SPEC_DIR`  | Override the default specification directory name. Set to a custom directory (e.g., `docs/specs`) to use a different directory path for specifications instead of the default `specs/`. |
 
 ## 📚 Core Philosophy
 

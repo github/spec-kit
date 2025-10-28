@@ -127,6 +127,10 @@ function Get-NextBranchNumber {
     # Return next number
     return $maxNum + 1
 }
+
+# Import helper functions
+. "$PSScriptRoot/common.ps1"
+
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 if (-not $fallbackRoot) {
     Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
@@ -147,7 +151,8 @@ try {
 
 Set-Location $repoRoot
 
-$specsDir = Join-Path $repoRoot 'specs'
+$specDirName = Get-SpecDir
+$specsDir = Join-Path $repoRoot $specDirName
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 # Function to generate branch name with stop word filtering and length filtering
