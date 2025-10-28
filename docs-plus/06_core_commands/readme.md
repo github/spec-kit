@@ -52,7 +52,7 @@ After planning completes, you get a suggestion to review for architectural decis
     ↓
 (You run /adr when ready)
     ↓
-ADRs created in docs/adr/ (if decisions are significant)
+ADRs created in history/adr/ (if decisions are significant)
 ```
 
 **Why explicit?** Architectural decisions require careful judgment, team discussion, and review of existing patterns. You control when this happens.

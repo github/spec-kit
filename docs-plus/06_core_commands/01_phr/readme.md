@@ -48,8 +48,8 @@ You automatically get:
 PHRs are created **automatically** after:
 
 ```bash
-/sp.constitution Define quality standards     → PHR created in docs/prompts/
-/sp.specify Create authentication feature     → PHR created in docs/prompts/
+/sp.constitution Define quality standards     → PHR created in history/prompts/
+/sp.specify Create authentication feature     → PHR created in history/prompts/
 /sp.plan Design JWT system                    → PHR created in specs/001-auth/prompts/
 /sp.tasks Break down implementation           → PHR created in specs/001-auth/prompts/
 /sp.implement Write JWT token generation      → PHR created in specs/001-auth/prompts/
@@ -74,7 +74,7 @@ PHRs use a **simple, deterministic rule** for where they're stored:
 
 ### Before Feature Exists (Pre-Feature Work)
 
-**Location:** `docs/prompts/`  
+**Location:** `history/prompts/`  
 **Stages:** `constitution`, `spec`  
 **Naming:** `0001-title.constitution.prompt.md`
 
@@ -92,7 +92,7 @@ docs/
     └── 0002-create-auth-spec.spec.prompt.md
 ```
 
-**Note:** The `general` stage can also fall back to `docs/prompts/` if no `specs/` directory exists, but will show a warning suggesting to use `constitution` or `spec` stages instead, or create a feature first.
+**Note:** The `general` stage can also fall back to `history/prompts/` if no `specs/` directory exists, but will show a warning suggesting to use `constitution` or `spec` stages instead, or create a feature first.
 
 ### After Feature Exists (Feature Work)
 
@@ -132,9 +132,9 @@ specs/
 - **Stage-based extensions**: Files show their type (`.architect.prompt.md`, `.red.prompt.md`)
 - **Auto-detection**: Script finds the right feature from branch name or latest numbered feature
 - **Clear location rules**:
-  - `constitution`, `spec` → always `docs/prompts/`
+  - `constitution`, `spec` → always `history/prompts/`
   - Feature stages → `specs/<feature>/prompts/`
-  - `general` → feature context if available, else `docs/prompts/` with warning
+  - `general` → feature context if available, else `history/prompts/` with warning
 
 ---
 
@@ -162,7 +162,7 @@ specs/
 **Note:** `general` stage behavior:
 
 - If `specs/` exists: goes to `specs/<feature>/prompts/`
-- If no `specs/`: falls back to `docs/prompts/` with warning
+- If no `specs/`: falls back to `history/prompts/` with warning
 
 ---
 
@@ -190,9 +190,9 @@ When you run any significant command:
 ### Integrated SDD Workflow
 
 ```
-/constitution → PHR created (docs/prompts/)
+/constitution → PHR created (history/prompts/)
      ↓
-/specify → PHR created (docs/prompts/)
+/specify → PHR created (history/prompts/)
      ↓
 /plan → PHR created (specs/<feature>/prompts/) + ADR suggestion
      ↓
@@ -233,7 +233,7 @@ But 95% of the time, you won't need to—PHRs just happen!
 ls specs/*/prompts/*.prompt.md | tail -5 | xargs cat
 
 # Or for pre-feature work
-ls docs/prompts/*.prompt.md | tail -5 | xargs cat
+ls history/prompts/*.prompt.md | tail -5 | xargs cat
 ```
 
 ### During Work: Just Work (PHRs Happen Automatically)
@@ -292,7 +292,7 @@ labels: ["auth", "security", "jwt"]
 links:
   spec: specs/001-authentication/spec.md
   ticket: null
-  adr: docs/adr/0003-jwt-choice.md
+  adr: history/adr/0003-jwt-choice.md
   pr: null
 files:
   - src/auth/jwt.py
@@ -423,7 +423,7 @@ grep -r "Next prompts:" specs/*/prompts/ | grep -v "none"
 ```yaml
 links:
   spec: specs/001-auth/spec.md # Feature spec
-  adr: docs/adr/0003-jwt-choice.md # Architectural decision
+  adr: history/adr/0003-jwt-choice.md # Architectural decision
   ticket: JIRA-123 # Issue tracker
   pr: https://github.com/org/repo/pull/45 # Pull request
 ```
@@ -431,8 +431,8 @@ links:
 ### Workflow Integration
 
 ```
-1. /constitution   → docs/prompts/0001-quality-standards.constitution.prompt.md
-2. /specify        → docs/prompts/0002-auth-requirements.spec.prompt.md
+1. /constitution   → history/prompts/0001-quality-standards.constitution.prompt.md
+2. /specify        → history/prompts/0002-auth-requirements.spec.prompt.md
 3. /plan           → specs/001-auth/prompts/0001-design-system.architect.prompt.md
 4. /adr            → (ADR references the PHR for context)
 5. /tasks          → specs/001-auth/prompts/0002-break-down-tasks.architect.prompt.md
@@ -510,10 +510,10 @@ After 1 month:
 - **Cause**: Specified feature doesn't exist in `specs/`
 - **Solution**: Check available features with `ls specs/` or create the feature with `/specify`
 
-**"Warning: No specs/ directory found. Using docs/prompts/ for general stage."**
+**"Warning: No specs/ directory found. Using history/prompts/ for general stage."**
 
 - **Cause**: Using `general` stage when no specs/ directory exists
-- **Not an error**: PHR will be created in `docs/prompts/` as fallback
+- **Not an error**: PHR will be created in `history/prompts/` as fallback
 - **Suggestion**: Consider using `constitution` or `spec` stages for pre-feature work, or create a feature first
 
 ### Manual PHR Creation
@@ -534,7 +534,7 @@ scripts/bash/create-phr.sh \
   --feature "001-auth" \
   --json
 
-# General stage (falls back to docs/prompts/ if no specs/)
+# General stage (falls back to history/prompts/ if no specs/)
 scripts/bash/create-phr.sh \
   --title "Setup CI pipeline" \
   --stage general \
@@ -566,7 +566,7 @@ PHRs are **built into Spec Kit** with automatic creation:
 ✅ **Completely automatic**: Created after every significant command—no extra work  
 ✅ **Deterministic location**:
 
-- Pre-feature (`constitution`, `spec`) → `docs/prompts/`
+- Pre-feature (`constitution`, `spec`) → `history/prompts/`
 - Feature work → `specs/<feature>/prompts/`
 - Clear file naming with stage extensions
 

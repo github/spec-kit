@@ -54,7 +54,7 @@ body:
       placeholder: |
         - PHR creation rate: ≥95% (target), currently unknown
         - Context completeness: 100% (no truncation)
-        - Correct location: 100% (docs/prompts/)
+        - Correct location: 100% (history/prompts/)
         - Correct stage detection: ≥90%
     validations:
       required: true
@@ -85,7 +85,7 @@ body:
           - name: "General architecture discussion"
             input: "Should we use GraphQL or REST API?"
             expect_phr: true
-            expect_location: "docs/prompts/general/"
+            expect_location: "history/prompts/general/"
         ```
 
   - type: dropdown

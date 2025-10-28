@@ -39,7 +39,7 @@ After completing ANY work, automatically create a PHR:
 2. **Generate title**: 3-7 word descriptive title summarizing the work
 3. **Capture context**: COMPLETE conversation (never truncate to summaries)
 4. **Route correctly**:
-   - Pre-feature work → `docs/prompts/`
+   - Pre-feature work → `history/prompts/`
    - Feature-specific work → `specs/<feature>/prompts/`
 5. **Confirm**: Show "📝 PHR-NNNN recorded"
 
@@ -63,9 +63,9 @@ If you already completed work and user just wants to record it:
 
 Select ONE stage that best describes the work:
 
-**Pre-feature stages** (→ `docs/prompts/`):
+**Pre-feature stages** (→ `history/prompts/`):
 
-- `constitution` - Defining quality standards, project principles (ALWAYS docs/prompts/)
+- `constitution` - Defining quality standards, project principles (ALWAYS history/prompts/)
 
 **Feature stages** (→ `specs/<feature>/prompts/` - requires feature context):
 
@@ -77,7 +77,7 @@ Select ONE stage that best describes the work:
 - `refactor` - Code cleanup, optimization
 - `explainer` - Code explanations, documentation
 - `misc` - Other feature work
-- `general` - General work within feature (falls back to docs/prompts/ if no specs/ exist)
+- `general` - General work within feature (falls back to history/prompts/ if no specs/ exist)
 
 ## Step 3: Create PHR File
 

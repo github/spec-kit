@@ -57,7 +57,7 @@ body:
     attributes:
       label: Expected Behavior
       description: What did you expect to happen?
-      placeholder: "PHR should be created in docs/prompts/[stage]/..."
+      placeholder: "PHR should be created in history/prompts/[stage]/..."
     validations:
       required: true
 

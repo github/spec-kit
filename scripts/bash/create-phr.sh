@@ -5,7 +5,7 @@ set -euo pipefail
 # 
 # Deterministic PHR location strategy:
 # 1. Pre-feature stages (constitution, spec):
-#    → docs/prompts/
+#    → history/prompts/
 #    → stages: constitution, spec
 #    → naming: 0001-title.constitution.prompt.md
 #
@@ -16,7 +16,7 @@ set -euo pipefail
 #
 # 3. Special case - 'general' stage:
 #    → If specs/ exists: goes to specs/<feature>/prompts/
-#    → If no specs/: falls back to docs/prompts/ with warning
+#    → If no specs/: falls back to history/prompts/ with warning
 #
 # This script ONLY:
 #   1. Creates the correct directory structure
@@ -62,9 +62,9 @@ Stage Extensions:
   Feature stages: .architect.prompt.md, .plan.prompt.md, .tasks.prompt.md, .red.prompt.md, .green.prompt.md, .general.prompt.md, etc.
   
 Location Rules:
-  - constitution, spec → always docs/prompts/
+  - constitution, spec → always history/prompts/
   - architect, plan, tasks, red, green, refactor, explainer, misc → requires specs/<feature>/prompts/
-  - general → specs/<feature>/prompts/ if exists, else docs/prompts/ with warning
+  - general → specs/<feature>/prompts/ if exists, else history/prompts/ with warning
 
 Output:
   Creates PHR file with template placeholders ({{ID}}, {{TITLE}}, etc.)
@@ -123,8 +123,8 @@ for pf_stage in "${PRE_FEATURE_STAGES[@]}"; do
 done
 
 if [[ "$IS_PRE_FEATURE" == "true" ]]; then
-  # Pre-feature stage: always use docs/prompts/ (constitution, spec only)
-  PROMPTS_DIR="$REPO_ROOT/docs/prompts"
+  # Pre-feature stage: always use history/prompts/ (constitution, spec only)
+  PROMPTS_DIR="$REPO_ROOT/history/prompts"
   VALID_STAGES=("${PRE_FEATURE_STAGES[@]}")
   CONTEXT="pre-feature"
 else
@@ -132,11 +132,11 @@ else
   # These require specs/ directory and feature context
   
   if [[ ! -d "$SPECS_DIR" ]]; then
-    # Special case: 'general' can fall back to docs/prompts/ if no specs exist
+    # Special case: 'general' can fall back to history/prompts/ if no specs exist
     if [[ "$STAGE" == "general" ]]; then
-      echo "Warning: No specs/ directory found. Using docs/prompts/ for general stage." >&2
+      echo "Warning: No specs/ directory found. Using history/prompts/ for general stage." >&2
       echo "Consider using 'constitution' or 'spec' stages, or create a feature first with /specify" >&2
-      PROMPTS_DIR="$REPO_ROOT/docs/prompts"
+      PROMPTS_DIR="$REPO_ROOT/history/prompts"
       VALID_STAGES=("general")
       CONTEXT="pre-feature-fallback"
     else

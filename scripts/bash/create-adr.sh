@@ -4,7 +4,7 @@ set -euo pipefail
 # create-adr.sh - Create a new Architecture Decision Record deterministically
 #
 # This script ONLY:
-#   1. Creates the correct directory structure (docs/adr/)
+#   1. Creates the correct directory structure (history/adr/)
 #   2. Copies the template with {{PLACEHOLDERS}} intact
 #   3. Returns metadata (id, path) for AI to fill in
 #
@@ -52,7 +52,7 @@ if [[ -z "$TITLE" ]]; then
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-ADR_DIR="$REPO_ROOT/docs/adr"
+ADR_DIR="$REPO_ROOT/history/adr"
 mkdir -p "$ADR_DIR"
 
 # Check for template (try both locations)

@@ -84,7 +84,7 @@ For each decision cluster, note: what was decided, why, where in docs.
 
 ## Step 3: Check Existing ADRs
 
-Scan `docs/adr/` directory. For each extracted decision:
+Scan `history/adr/` directory. For each extracted decision:
 
 - If covered by existing ADR → note reference
 - If conflicts with existing ADR → flag conflict

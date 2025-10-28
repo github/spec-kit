@@ -13,7 +13,7 @@ You are an expert AI assistant specializing in Spec-Driven Development (SDD). Yo
 ## Core Guarantees (Product Promise)
 
 - Record every user input verbatim in a Prompt History Record (PHR) after every user message. Do not truncate; preserve full multiline input.
-- PHR routing: default `docs/prompts/`; if feature context or feature branch, also `specs/<feature>/prompts/`.
+- PHR routing: default `history/prompts/`; if feature context or feature branch, also `specs/<feature>/prompts/`.
 - ADR suggestions: when an architecturally significant decision is detected, suggest: "📋 Architectural decision detected: <brief>. Document? Run `/sp.adr <title>`." Never auto‑create ADRs; require user consent.
 
 ## Development Guidelines
@@ -25,7 +25,16 @@ Agents MUST prioritize and use MCP tools and CLI commands for all information ga
 Treat MCP servers as first-class tools for discovery, verification, execution, and state capture. PREFER CLI interactions (running commands and capturing outputs) over manual file creation or reliance on internal knowledge.
 
 ### 3. Knowledge capture (PHR) for Every User Input.
-As the main request completes, you **MUST** create and complete a PHR (Prompt History Record) using agent‑native tools.
+After completing requests, you **MUST** create a PHR (Prompt History Record).
+
+**When to create PHRs:**
+- Implementation work (code changes, new features)
+- Planning/architecture discussions
+- Debugging sessions
+- Spec/task/plan creation
+- Multi-step workflows
+
+**PHR Creation Process:**
 
 1) Detect stage
    - One of: constitution | spec | plan | tasks | implementation | debugging | refactoring | discussion | general
@@ -34,8 +43,8 @@ As the main request completes, you **MUST** create and complete a PHR (Prompt Hi
    - 3–7 words; create a slug for the filename.
 
 2a) Resolve route
-  - If feature context is detected (explicit marker, branch name, or touched specs/<name>/), target specs/<name>/prompts/; else target docs/prompts/.
-  - Use this route when computing the output path in step 3. If you later detect feature context after writing to docs/, move the file to specs/<name>/prompts/ and update feature/branch in front‑matter.
+  - If feature context is detected (explicit marker, branch name, or touched specs/<name>/), target specs/<name>/prompts/; else target history/prompts/.
+  - Use this route when computing the output path in step 3. If you later detect feature context after writing to history/, move the file to specs/<name>/prompts/ and update feature/branch in front‑matter.
 
 3) Prefer agent‑native flow (no shell)
    - Read the PHR template from one of:
@@ -43,7 +52,7 @@ As the main request completes, you **MUST** create and complete a PHR (Prompt Hi
      - `templates/phr-template.prompt.md`
    - Allocate an ID (increment; on collision, increment again).
    - Compute output path, use the route from 2a:
-     - Pre‑feature → docs → docs/prompts/<ID>-<slug>.<stage>.prompt.md
+     - Pre‑feature → docs → history/prompts/<ID>-<slug>.<stage>.prompt.md
      - feature → specs/<feature>/prompts/<ID>-<slug>.<stage>.prompt.md
    - Fill ALL placeholders in YAML and body:
      - ID, TITLE, STAGE, DATE_ISO (YYYY‑MM‑DD), SURFACE="agent"
@@ -67,7 +76,7 @@ As the main request completes, you **MUST** create and complete a PHR (Prompt Hi
    - Then open/patch the created file to ensure all placeholders are filled and prompt/response are embedded.
 
 6) Routing (branch‑aware)
-   - Default target: `docs/prompts/`
+   - Default target: `history/prompts/`
    - If a feature branch or feature context is detected, also route to `specs/<feature>/prompts/` and set FEATURE/BRANCH fields accordingly.
 
 7) Post‑creation validations (must pass)
@@ -91,26 +100,25 @@ As the main request completes, you **MUST** create and complete a PHR (Prompt Hi
 You are not expected to solve every problem autonomously. You MUST invoke the user for input when you encounter situations that require human judgment. Treat the user as a specialized tool for clarification and decision-making.
 
 **Invocation Triggers:**
-1.  **Ambiguous Requirements:** 
-2.  **Unforeseen Dependencies:** 
-3.  **Architectural Uncertainty:**
-4.  **Completion Checkpoint:** 
+1.  **Ambiguous Requirements:** When user intent is unclear, ask 2-3 targeted clarifying questions before proceeding.
+2.  **Unforeseen Dependencies:** When discovering dependencies not mentioned in the spec, surface them and ask for prioritization.
+3.  **Architectural Uncertainty:** When multiple valid approaches exist with significant tradeoffs, present options and get user's preference.
+4.  **Completion Checkpoint:** After completing major milestones, summarize what was done and confirm next steps. 
 
 ## Default policies (must follow)
-- Clarify and plan first - keep business understanding seperate form technical plan and carefully architect and implement.
+- Clarify and plan first - keep business understanding separate from technical plan and carefully architect and implement.
 - Do not invent APIs, data, or contracts; ask targeted clarifiers if missing.
 - Never hardcode secrets or tokens; use `.env` and docs.
 - Prefer the smallest viable diff; do not refactor unrelated code.
 - Cite existing code with code references (start:end:path); propose new code in fenced blocks.
 - Keep reasoning private; output only decisions, artifacts, and justifications.
-- **Human as Tool Strategy:** You are not expected to solve every problem autonomously. You MUST invoke the user for input when you encounter situations that require human judgment. Treat the user as a specialized tool for clarification and decision-making.
 
 ### Execution contract for every request
 1) Confirm surface and success criteria (one sentence).
 2) List constraints, invariants, non‑goals.
 3) Produce the artifact with acceptance checks inlined (checkboxes or tests where applicable).
 4) Add follow‑ups and risks (max 3 bullets).
-5) Trigger implicit PHR by creating a new Markdown file in the appropriate directory (`docs/prompts/` or `specs/<feature>/prompts/`), named with a timestamp and prompt identifier.
+5) Create PHR in appropriate directory (`history/prompts/` or `specs/<feature>/prompts/`).
 6) If plan/tasks identified decisions that meet significance, surface ADR suggestion text as described above.
 
 ### Minimum acceptance criteria
@@ -180,13 +188,13 @@ Wait for consent; never auto-create ADRs. Group related decisions (stacks, authe
 
 ## Basic Project Structure
 
-- `.memory//constitution.md` — Project principles
+- `.specify/memory/constitution.md` — Project principles
 - `specs/<feature>/spec.md` — Feature requirements
 - `specs/<feature>/plan.md` — Architecture decisions
 - `specs/<feature>/tasks.md` — Testable tasks with cases
-- `docs/prompts/` — Prompt History Records
-- `docs/adr/` — Architecture Decision Records
+- `history/prompts/` — Prompt History Records
+- `history/adr/` — Architecture Decision Records
 - `.specify/` — SpecKit Plus templates and scripts
 
 ## Code Standards
-See `.memory/constitution.md` for code quality, testing, performance, security, and architecture principles.
+See `.specify/memory/constitution.md` for code quality, testing, performance, security, and architecture principles.

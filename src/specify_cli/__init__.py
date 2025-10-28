@@ -34,6 +34,7 @@ import shlex
 import json
 from pathlib import Path
 from typing import Optional, Tuple
+from importlib.metadata import version, PackageNotFoundError
 
 import typer
 import httpx
@@ -379,8 +380,25 @@ def show_banner():
     console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
     console.print()
 
+def get_version() -> str:
+    """Get the current version of specify-cli."""
+    try:
+        return version("specify-cli")
+    except PackageNotFoundError:
+        return "unknown (not installed as package)"
+
+def version_callback(value: bool):
+    """Callback for --version flag."""
+    if value:
+        pkg_version = get_version()
+        console.print(f"Specify CLI v{pkg_version}")
+        raise typer.Exit()
+
 @app.callback()
-def callback(ctx: typer.Context):
+def callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True, help="Show version and exit"),
+):
     """Show banner when no subcommand is provided."""
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
@@ -1201,6 +1219,25 @@ def check():
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+
+@app.command(name="version")
+def version_cmd():
+    """Show the version of Specify CLI."""
+    show_banner()
+    pkg_version = get_version()
+    
+    version_panel = Panel(
+        f"[bold cyan]Specify CLI[/bold cyan]\n"
+        f"Version: [green]{pkg_version}[/green]\n\n"
+        f"[dim]Part of GitHub Spec Kit - Spec-Driven Development Toolkit[/dim]",
+        title="[bold]Version Information[/bold]",
+        border_style="cyan",
+        padding=(1, 2)
+    )
+    
+    console.print()
+    console.print(version_panel)
+    console.print()
 
 def main():
     app()

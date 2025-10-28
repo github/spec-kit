@@ -24,7 +24,7 @@ ADRs (Architecture Decision Records) capture **why** technical decisions were ma
                               ↓
                          (You run /adr)
                               ↓
-                   ADRs created in docs/adr/
+                   ADRs created in history/adr/
                               ↓
                          /tasks → /implement
 ```
@@ -227,7 +227,7 @@ The `/adr` command:
 
 3. **Checks existing ADRs**
 
-   - Reads docs/adr/ to find related decisions
+   - Reads history/adr/ to find related decisions
    - Avoids duplicates or superseded decisions
 
 4. **Applies significance test**
@@ -237,7 +237,7 @@ The `/adr` command:
 
 5. **Creates ADR files**
 
-   - Generates docs/adr/NNNN-decision-title.md
+   - Generates history/adr/NNNN-decision-title.md
    - Sequential numbering (0001, 0002, 0003, etc.)
    - Complete ADR template with context, decision, consequences
 
@@ -260,7 +260,7 @@ Ready for `/tasks` to break down implementation!
 
 ## What Each ADR Contains
 
-ADRs are created in `docs/adr/` with sequential numbering:
+ADRs are created in `history/adr/` with sequential numbering:
 
 ```
 docs/
@@ -330,7 +330,7 @@ We will use JWT (JSON Web Tokens) for authentication...
    └─→ 📋 "Review for architectural decisions? Run /adr"
 
 4. /sp.adr  ← YOU RUN THIS
-   └─→ ADRs created in docs/adr/
+   └─→ ADRs created in history/adr/
    └─→ Shows report
 
 5. /sp.tasks
@@ -344,7 +344,7 @@ We will use JWT (JSON Web Tokens) for authentication...
 
 - **Spec** (specs/001-auth/spec.md) - WHAT we're building
 - **Plan** (specs/001-auth/plan.md) - HOW we'll build it
-- **ADR** (docs/adr/0002-jwt-auth.md) - WHY we made key decisions
+- **ADR** (history/adr/0002-jwt-auth.md) - WHY we made key decisions
 - **Tasks** (specs/001-auth/tasks.md) - Work breakdown
 - **Implementation** - Actual code
 
@@ -374,9 +374,9 @@ ADRs provide the critical **WHY** context that specs and plans don't fully captu
 
 /adr  # Analyzes planning artifacts
 # → Creates:
-#    - docs/adr/0005-use-event-sourcing.md
-#    - docs/adr/0006-kafka-message-broker.md
-#    - docs/adr/0007-graphql-api.md
+#    - history/adr/0005-use-event-sourcing.md
+#    - history/adr/0006-kafka-message-broker.md
+#    - history/adr/0007-graphql-api.md
 # → "3 ADRs created. Proceed to /tasks."
 ```
 
@@ -390,8 +390,8 @@ ADRs provide the critical **WHY** context that specs and plans don't fully captu
 
 /adr  # Analyzes planning artifacts
 # → "Referenced existing ADRs:
-#    - docs/adr/0002-jwt-authentication.md
-#    - docs/adr/0003-rest-api-pattern.md
+#    - history/adr/0002-jwt-authentication.md
+#    - history/adr/0003-rest-api-pattern.md
 #    No new ADRs needed. Proceed to /tasks."
 ```
 
@@ -419,7 +419,7 @@ ADRs provide the critical **WHY** context that specs and plans don't fully captu
 ### ADR Duplicates Existing ADR
 
 **Cause:** Didn't reference existing patterns  
-**Solution:** Review docs/adr/ before planning new features
+**Solution:** Review history/adr/ before planning new features
 
 ---
 
@@ -460,7 +460,7 @@ ADRs capture the **why** behind architectural decisions:
 ✅ **Explicit execution** via `/adr` - You control timing  
 ✅ **Significance test** - Only creates ADRs for important decisions  
 ✅ **Sequential numbering** - Consistent IDs (0001, 0002, 0003, etc.)  
-✅ **Location** - All ADRs in docs/adr/ (centralized)  
+✅ **Location** - All ADRs in history/adr/ (centralized)  
 ✅ **Full context** - Links to specs, plans, alternatives, consequences  
 ✅ **Team alignment** - Documented decisions reduce debate
 

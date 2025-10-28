@@ -5,7 +5,7 @@ As the main request completes, you MUST create and complete a PHR (Prompt Histor
 
 2) Generate Title and Decide Prompt Path:
    - Generate Title: 3–7 words (slug for filename)
-   - If feature context is detected (explicit marker, branch name, or touched `specs/<name>/`), target `specs/<name>/prompts/`; else target `docs/prompts/`.
+   - If feature context is detected (explicit marker, branch name, or touched `specs/<name>/`), target `specs/<name>/prompts/`; else target `history/prompts/`.
 
 3) Create and Fill PHR (Shell first; fallback agent‑native)
    - Use the route from step 2 (docs vs specs) as the target directory.
