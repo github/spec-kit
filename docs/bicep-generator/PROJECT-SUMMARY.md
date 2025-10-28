@@ -2,15 +2,15 @@
 
 **Project**: Azure Bicep Template Generator for Specify CLI  
 **Version**: 0.0.21  
-**Status**: ✅ COMPLETE (All Phases 1-6, including CLI, GitHub Copilot integration, and local dev tools)  
+**Status**: ✅ COMPLETE (All Phases 1-6, including CLI, GitHub Copilot integration, local dev tools, and Ev2 integration)  
 **Completion Date**: October 22, 2025  
-**Total Implementation**: 28,030+ lines of code, tests, and documentation
+**Total Implementation**: 31,980+ lines of code, tests, and documentation
 
 ---
 
 ## 🎯 Project Overview
 
-Successfully implemented a comprehensive Bicep template generator that automatically analyzes projects and generates production-ready Azure infrastructure-as-code. The feature enables developers to quickly bootstrap Azure deployments with best practices, security hardening, and multi-environment support.
+Successfully implemented a comprehensive Bicep template generator that automatically analyzes projects and generates production-ready Azure infrastructure-as-code. The feature enables developers to quickly bootstrap Azure deployments with best practices, security hardening, multi-environment support, and seamless integration with Microsoft's Ev2 (Express V2) safe deployment orchestration.
 
 ---
 
@@ -23,11 +23,11 @@ Successfully implemented a comprehensive Bicep template generator that automatic
 | **Phase 1-2: Foundation** | 5,200 | 8 | Project analysis, dependency detection, MCP integration |
 | **Phase 3-4: Generation & Validation** | 8,500 | 12 | Template generation, validation, deployment |
 | **Phase 5: Integration** | 2,000 | 4 | GitHub Copilot commands, PowerShell scripts |
-| **Phase 6: Polish** | 8,530 | 19 | Error handling, security, performance, CLI, Copilot, dev tools |
-| **Documentation** | 3,100 | 5 | User guides, API reference, architecture, troubleshooting |
+| **Phase 6: Polish** | 9,380 | 22 | Error handling, security, performance, CLI, Copilot, dev tools, Ev2 integration |
+| **Documentation** | 3,950 | 6 | User guides, API reference, architecture, troubleshooting, Ev2 integration |
 | **Testing** | 2,600 | 6 | Unit, integration, E2E tests with CI/CD |
 | **Release Infrastructure** | 1,200 | 7 | Version management, deployment, release workflows |
-| **TOTAL** | **31,130+** | **61** | Complete production-ready system |
+| **TOTAL** | **32,830+** | **65** | Complete production-ready system |
 
 ### Feature Coverage
 
@@ -38,6 +38,7 @@ Successfully implemented a comprehensive Bicep template generator that automatic
 - ✅ **Multi-platform Support** (Windows, Linux, macOS)
 - ✅ **Multi-language Detection** (.NET, Python, Node.js, Java, containers)
 - ✅ **3 Environment Configurations** (dev, staging, production)
+- ✅ **Ev2 Integration** - Safe deployment orchestration with automatic detection and context-aware guidance
 
 ---
 
@@ -248,6 +249,30 @@ Successfully implemented a comprehensive Bicep template generator that automatic
 - Beautiful colored output and error handling
 - Verification and next steps guidance
 
+#### T064: Ev2 (Express V2) Integration (850 lines)
+- `.github/prompts/speckit.bicep.prompt.md` - Updated with Ev2 detection and analysis
+- `templates/commands/speckit.bicep.md` - Synchronized Ev2 integration
+- `EV2-INTEGRATION-SUMMARY.md` - Comprehensive Ev2 integration documentation
+- **Enhanced Discovery Capabilities**:
+  - Case-insensitive file search (handles ServiceModel.json and *.servicemodel.json)
+  - Thorough subdirectory exploration (DiagnosticDataProviders, Proxy, nested components)
+  - No focus bias - analyzes all service layers equally
+  - Multiple deployment support - identifies parent project for each ServiceModel
+- **Multi-Deployment Support**:
+  - Separate summaries for each ServiceModel with project/component identification
+  - Deployment strategy details for each service (progressive, ring-based, blue-green)
+  - Regional scope and resource distribution per deployment
+- **Infrastructure Report Generation**:
+  - Auto-generates `infrastructure-analysis-report.md` after analysis
+  - Complete documentation with all findings, recommendations, and action items
+  - Persistent, shareable, version-controllable output
+- Automatic detection of Ev2 configuration files (RolloutSpec, ServiceModel, Parameters, ScopeBindings)
+- Context-aware smart questions based on Ev2 presence
+- Ev2-compatible Bicep template structure with ev2-integration/ folder
+- ServiceModel and RolloutSpec integration templates
+- Separate guidance for existing Ev2 vs new Ev2 setup
+- Integration with Microsoft's safe deployment orchestration
+
 **Key Files**:
 - `src/specify_cli/bicep/error_handler.py`
 - `src/specify_cli/bicep/performance.py`
@@ -256,6 +281,7 @@ Successfully implemented a comprehensive Bicep template generator that automatic
 - `src/specify_cli/bicep/cli_simple.py`
 - `.github/prompts/speckit.bicep.prompt.md`
 - `templates/commands/speckit.bicep.md`
+- `EV2-INTEGRATION-SUMMARY.md`
 - `scripts/powershell/install-local-dev.ps1`
 - `scripts/bash/install-local-dev.sh`
 - `scripts/README.md`

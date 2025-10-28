@@ -100,6 +100,20 @@ Use the **`/speckit.specify`** command to describe what you want to build. Focus
 /speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
+4. **🏗️ Generate Azure Infrastructure** (NEW in v0.0.21)
+   - Automatic Azure resource detection from your codebase
+   - Generate Bicep templates for infrastructure as code
+   - Ev2 (Express V2) safe deployment integration:
+     - Detects existing ServiceModel, RolloutSpec, Parameters, and ScopeBindings files
+     - **Multiple deployment support**: Identifies each ServiceModel with parent project/component
+     - Shows separate summaries for each deployment with strategy and resource details
+     - Asks context-aware questions based on current Ev2 configuration
+     - Generates Ev2-compatible Bicep templates with integration guidance
+   - **Infrastructure analysis report**: Auto-generates `infrastructure-analysis-report.md`
+   - Multi-environment support (dev/staging/production)
+   - Azure MCP Server integration for latest schemas
+   - Validation and deployment automation
+
 ### 4. Create a technical implementation plan
 
 Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.

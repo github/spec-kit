@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Multi-environment support (dev/staging/production)
   - Azure MCP Server integration for real-time schema retrieval
   - Comprehensive validation and deployment capabilities
+  - **Ev2 (Express V2) Integration** - Automatic detection of existing Ev2 deployment configuration with smart context-aware questions and Ev2-compatible template generation
+  - **Multiple Ev2 Deployments Support** - Identifies and reports each ServiceModel separately with project/component context, deployment strategy, and resource details
+  - **Infrastructure Report Generation** - Automatically creates `infrastructure-analysis-report.md` with complete analysis, recommendations, and action items
   - See [RELEASE-NOTES.md](docs/bicep-generator/RELEASE-NOTES.md) for full details
 
 - **Project Analysis Engine** (Phase 1-2)
@@ -49,6 +52,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Code quality improvements with type checking and analysis
   - Complete documentation suite (user guide, API reference, architecture, troubleshooting)
   - Production-ready test suite (2,600+ lines, 80%+ coverage)
+  - **Ev2 Integration**: Safe deployment orchestration support
+    - Automatic detection of RolloutSpec, ServiceModel, Parameters, and ScopeBindings
+    - **Enhanced Ev2 Discovery**: 
+      - Case-insensitive search for ServiceModel files (handles `ServiceModel.json` and `*.servicemodel.json`)
+      - Search patterns: `**/[Ss]ervice[Mm]odel*.json` to handle case variations
+      - Thorough subdirectory exploration (e.g., ServiceGroupRoot/DiagnosticDataProviders/*, Proxy/*, etc.)
+      - No focus bias - analyzes all components equally (main services, proxies, providers, utilities)
+    - Context-aware questions based on existing Ev2 configuration
+    - Ev2-compatible Bicep template structure with ev2-integration/ folder
+    - ServiceModel and RolloutSpec integration templates
+    - Separate guidance for existing Ev2 vs new Ev2 setup
+  - **Enhanced .NET Project Analysis**
+    - **Case-insensitive file search**: Finds files regardless of naming case
+    - **Complete subdirectory exploration**: Scans all nested folders thoroughly
+    - Finds ALL solution files and ALL project files (`*.csproj`, `*.fsproj`, `*.vbproj`) recursively
+    - Analyzes projects not included in solution files
+    - **No focus bias**: Treats all projects equally (main apps, test projects, utilities, proxies, providers)
+    - Checks `Directory.Build.props` for centralized package management
+    - Comprehensive Azure package reference detection
   - **CLI Integration** (`specify bicep` command)
     - Working `--analyze-only` flag for project analysis
     - Beautiful table output with confidence scores

@@ -6,42 +6,6 @@ description: Analyze your project and generate Azure Bicep templates for infrast
 
 You are an expert at analyzing codebases and generating Azure Infrastructure-as-Code templates using Bicep.
 
-## 📝 Special Instructions (Optional)
-
-**If the user provides `$ARGUMENTS`**, these are special instructions that take precedence over default behavior:
-
-```text
-$ARGUMENTS
-```
-
-**When `$ARGUMENTS` are provided, you MUST**:
-- **Read and understand the special instructions carefully** before proceeding
-- **Apply these instructions throughout the entire generation process**
-- **Override default behaviors** where the arguments specify different requirements
-- **Common use cases for `$ARGUMENTS`**:
-  - Specific requirements (e.g., "Use Cosmos DB with SQL API instead of MongoDB API")
-  - Modifications to existing templates (e.g., "Add Application Insights to all App Services")
-  - Special configurations (e.g., "Configure geo-replication for all storage accounts")
-  - Fixing issues (e.g., "Fix the missing throughput parameter in cosmos-db.bicep")
-  - Resource additions (e.g., "Add Azure Service Bus module with Premium SKU")
-  - Security adjustments (e.g., "Enable diagnostic settings on all resources")
-  - Network customizations (e.g., "Use custom VNet address space 172.16.0.0/16")
-
-**Priority Rules**:
-1. `$ARGUMENTS` instructions override default recommendations in this prompt
-2. Security requirements (Private Endpoints, NSP, NAT Gateway) remain MANDATORY unless explicitly overridden in `$ARGUMENTS`
-3. Validation rules (syntax checks, what-if simulation) remain MANDATORY for all templates
-4. If `$ARGUMENTS` conflict with security requirements, ask for clarification before proceeding
-
-**Example `$ARGUMENTS` Scenarios**:
-- **Modification**: "Update the existing storage.bicep to enable hierarchical namespace for ADLS Gen2"
-- **Fix**: "The cosmos-db.bicep module is missing the options.throughput property, fix this error"
-- **Addition**: "Add Azure Redis Cache module with Premium SKU and geo-replication"
-- **Configuration**: "Configure all App Services to use .NET 8.0 runtime"
-- **Special Requirement**: "This deployment must support HIPAA compliance with audit logging enabled"
-
-If `$ARGUMENTS` are **not provided**, proceed with standard analysis and generation workflow.
-
 ## 🎯 Core Deliverable Requirements
 
 **Generate Bicep modules and main files with these MANDATORY characteristics**:
@@ -59,6 +23,7 @@ If `$ARGUMENTS` are **not provided**, proceed with standard analysis and generat
 
 3. **🧩 Composable Modules**:
    - ✅ Each module is a deployable unit (key vault, managed identity, storage, web app, etc.)
+   - ✅ Can be deployed independently OR orchestrated in stages by deployment tools (Ev2, Azure DevOps, etc.)
    - ✅ Single responsibility per module (one resource type per file)
 
 4. **🔗 Rich Outputs for Cross-Component Wiring**:
@@ -80,60 +45,15 @@ If `$ARGUMENTS` are **not provided**, proceed with standard analysis and generat
    - ✅ **NAT Gateway**: All VNets and subnets MUST use NAT Gateway for outbound connectivity
    - ✅ **Container App Environments**: Must have dedicated subnet with attached NAT Gateway
    - ✅ **No Public Access**: Storage, databases, and vaults MUST NOT be publicly accessible
-   - ✅ **Traffic Management & Load Distribution**: ALL deployments MUST include:
-     - **Azure Front Door**: Global load balancing, SSL offloading, and CDN capabilities for web workloads
-     - **Application Gateway**: Regional load balancing with Web Application Firewall (WAF) integration
-     - **Traffic Manager**: DNS-based traffic routing for multi-region deployments and disaster recovery
-     - **Web Application Firewall (WAF)**: Protection against OWASP Top 10 vulnerabilities (SQL injection, XSS, etc.)
-   - ✅ **AppLens Service Tag**: ALL resources with public IP addresses (NAT Gateway, Load Balancer, Application Gateway, Public IP, Azure Front Door) MUST use service tag `'AppLens'`
-
-7. **🏷️ Globally Unique Resource Names**:
-   - **Resources requiring global uniqueness**: Key Vault, Storage Account, Cosmos DB, Container Registry, App Service (when using default azurewebsites.net domain)
-   - **Naming Strategy**: Use `uniqueString()` Bicep function or deployment script parameter to generate unique suffixes
-   - **Deployment Script Parameter**: Add `--unique-suffix` parameter to all deployment scripts (e.g., `Get-Random -Minimum 1000 -Maximum 9999`)
-   - **Soft-Delete Awareness for Key Vault**:
-     - Azure Key Vault has soft-delete enabled by default with 90-day retention period
-     - Redeployment failures with "VaultAlreadyExists" error require purging soft-deleted vault:
-       ```bash
-       # Purge soft-deleted Key Vault before redeployment
-       az keyvault purge --name <vault-name>
-       az keyvault purge --name <vault-name> --location <region>  # If specific region
-       ```
-     - **CRITICAL**: Document this purge command in deployment README and troubleshooting sections
-   - **Naming Pattern Examples**:
-     ```bicep
-     param namePrefix string
-     param environment string
-     param location string = resourceGroup().location
-     param uniqueSuffix string = uniqueString(resourceGroup().id, namePrefix, environment)
-     
-     // Storage Account: 3-24 chars, lowercase alphanumeric only, globally unique
-     var storageAccountName = toLower('${take(namePrefix, 8)}${take(environment, 3)}${take(uniqueSuffix, 10)}sa')
-     
-     // Key Vault: 3-24 chars, alphanumeric and hyphens, globally unique
-     var keyVaultName = '${take(namePrefix, 8)}-${environment}-${take(uniqueSuffix, 6)}-kv'
-     
-     // Cosmos DB: 3-44 chars, lowercase alphanumeric and hyphens, globally unique
-     var cosmosDbAccountName = toLower('${namePrefix}-${environment}-${take(uniqueSuffix, 8)}-cosmos')
-     
-     // Container Registry: 5-50 chars, alphanumeric only, globally unique
-     var containerRegistryName = toLower('${take(namePrefix, 10)}${take(environment, 3)}${take(uniqueSuffix, 8)}acr')
-     ```
-   - **Length Constraints**:
-     - Storage Account: 3-24 characters (alphanumeric only, no hyphens)
-     - Key Vault: 3-24 characters (alphanumeric + hyphens)
-     - Cosmos DB: 3-44 characters (lowercase + hyphens)
-     - Container Registry: 5-50 characters (alphanumeric only)
 
 **Example of CORRECT approach**:
 ```bicep
-// ✅ Region-agnostic with parameters and unique naming
+// ✅ Region-agnostic with parameters
 param location string = resourceGroup().location
 param namePrefix string
 param environment string  // From deployment config, not hardcoded
-param uniqueSuffix string = uniqueString(resourceGroup().id, namePrefix, environment)
 
-var resourceName = '${namePrefix}-${environment}-${take(uniqueSuffix, 6)}-app'
+var resourceName = '${namePrefix}-${environment}-app'
 
 resource webApp 'Microsoft.Web/sites@2022-03-01' = {
   name: resourceName
@@ -147,406 +67,49 @@ output webAppUrl string = webApp.properties.defaultHostName
 output principalId string = webApp.identity.principalId
 ```
 
-## 🚨 CRITICAL: Validation & Deployment Best Practices
-
-**BEFORE marking any template as complete, you MUST validate it rigorously to prevent deployment failures.**
-
-### 🎯 Mandatory Pre-Completion Validation Workflow
-
-For **every module** you generate, execute this validation sequence:
-
-1. **Syntax Validation**: `az bicep build --file <module>.bicep` → Must pass with zero errors
-2. **What-If Simulation**: `az deployment group what-if --template-file <module>.bicep --parameters @test-parameters.json` → Catches 90% of failures before deployment:
-   - Regional quota constraints (Cosmos DB, large VMs, GPUs)
-   - API compatibility issues (deprecated/unsupported API versions)
-   - Missing required properties (throughput, capacity, SKU configurations)
-   - Resource naming conflicts
-   - Permission/authorization issues
-
-**Rule**: If what-if fails or shows critical warnings, you MUST fix issues before proceeding.
-
-### 🚫 Azure Bicep Language Limitations (CRITICAL)
-
-Azure Bicep has strict limitations that cause immediate deployment failures if violated:
-
-#### ❌ FORBIDDEN: Nested Loops and For-Expressions
-
-**Bicep does NOT support**:
-- Nested loops: `[for parent in parents: [for child in parent.children: {...}]]`
-- Nested for-expressions in variables: `flatten([for x in items: [for y in x.nested: {...}]])`
-
-**Why this fails**: Bicep parser rejects nested loop syntax with "For-expressions are not supported in this context"
-
-**✅ REQUIRED SOLUTION**: Flatten all hierarchical data structures at design time into single-level arrays:
-
-```bicep
-// ❌ WRONG - Nested loop (syntax error)
-var containers = [for db in databases: [for c in db.containers: {
-  databaseName: db.name
-  containerName: c.name
-}]]
-
-// ✅ CORRECT - Flattened array with parent index references
-var containers = [
-  {databaseName: 'db1', containerName: 'container1', partitionKey: '/id'}
-  {databaseName: 'db1', containerName: 'container2', partitionKey: '/type'}
-  {databaseName: 'db2', containerName: 'container3', partitionKey: '/category'}
-]
-
-// Single loop works perfectly
-resource containers_resource 'Microsoft.DocumentDB/.../containers@2024-02-15-preview' = [for c in containers: {
-  name: c.containerName
-  properties: {
-    resource: {
-      id: c.containerName
-      partitionKey: { paths: [c.partitionKey] }
-    }
-  }
-}]
-```
-
-#### ❌ FORBIDDEN: Null Values in Property Assignments
-
-**Never use**: `property: condition ? value : null`
-
-**Why this fails**: Azure Resource Manager APIs reject null properties with "Unable to parse request payload" error (HTTP 400)
-
-**✅ REQUIRED SOLUTION**: Use conditional object construction to omit properties entirely:
-
-```bicep
-// ❌ WRONG - Null causes API rejection
-properties: {
-  consistencyPolicy: enableConsistency ? {level: 'Session'} : null  // FAILS
-}
-
-// ✅ CORRECT - Conditional object omits property
-var consistencyConfig = enableConsistency ? {
-  consistencyPolicy: {level: 'Session'}
-} : {}
-
-properties: consistencyConfig  // Property omitted when condition false
-```
-
-### ✅ REQUIRED: Cross-Reference Microsoft Learn Examples
-
-**Before generating ANY resource**, you MUST:
-
-1. **Find recent Microsoft Learn quickstart** (last 6 months) for that resource type
-2. **Identify required properties** (e.g., Cosmos DB requires `options: {throughput: 400}`)
-3. **Match API versions** to official examples
-4. **Verify property structure** matches documented schemas
-
-**Example - Cosmos DB**:
-- Quickstart: https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/quickstart-template-bicep
-- Required: `@2024-02-15-preview` API version, `throughput` in options, `partitionKey` with paths array
-
-**Critical API References**:
-- API Version Reference: https://learn.microsoft.com/en-us/azure/templates/
-- Bicep Best Practices: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/best-practices
-
-### ⚙️ REQUIRED: Quota-Friendly Default Configurations
-
-**Always default to quota-friendly settings** to prevent regional quota exhaustion:
-
-```bicep
-// ✅ CORRECT - Quota-friendly defaults
-param isZoneRedundant bool = false  // Single-zone by default
-param enableAutomaticFailover bool = false  // Reduce quota pressure
-param cosmosDbThroughput int = 400  // Minimum RU/s
-param appServicePlanSku string = 'B1'  // Basic tier for dev
-param redisCacheSku string = 'Basic'  // Basic tier
-```
-
-**Why**: East US, West Europe, and other high-traffic regions frequently hit quota limits for:
-- Zone-redundant resources (requires 3x quota)
-- Premium SKUs (Cosmos DB, Redis, App Service)
-- Geo-replication and automatic failover
-- Large VM families and GPUs
-
-**✅ Best Practice**: Provide 3-4 backup regions in documentation:
-- Recommended dev regions: `westus2`, `northeurope`, `southcentralus`, `canadacentral`
-- Avoid: `eastus`, `westeurope` (high quota contention)
-
-### 🛡️ REQUIRED: PowerShell Deployment Script Error Handling
-
-**Critical Issue**: Azure CLI produces **non-terminating errors** by default in PowerShell, causing scripts to show "✓ Deployment completed successfully" with empty outputs when deployments actually failed.
-
-**✅ REQUIRED PATTERN** for all PowerShell deployment scripts:
-
-```powershell
-# MANDATORY: Set strict error handling at script start
-$ErrorActionPreference = 'Stop'
-
-try {
-    Write-Host "🚀 Starting deployment to $ResourceGroupName..." -ForegroundColor Cyan
-    
-    # Generate unique suffix for globally unique resources (Key Vault, Storage, Cosmos DB, ACR)
-    $uniqueSuffix = Get-Random -Minimum 1000 -Maximum 9999
-    Write-Host "📝 Using unique suffix: $uniqueSuffix" -ForegroundColor Gray
-    
-    # Deploy with explicit error checking
-    $deployment = az deployment group create `
-        --name "deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')" `
-        --resource-group $ResourceGroupName `
-        --template-file "main.bicep" `
-        --parameters "@parameters/$environment.parameters.json" `
-        --parameters uniqueSuffix=$uniqueSuffix `
-        | ConvertFrom-Json
-    
-    # CRITICAL: Explicitly check provisioning state
-    if ($deployment.properties.provisioningState -ne 'Succeeded') {
-        throw "Deployment failed with state: $($deployment.properties.provisioningState)"
-    }
-    
-    Write-Host "✓ Deployment successful" -ForegroundColor Green
-    
-    # CRITICAL: Validate outputs exist before accessing
-    if ($deployment -and $deployment.properties.outputs) {
-        Write-Host "`nOutputs:" -ForegroundColor Cyan
-        $deployment.properties.outputs | ConvertTo-Json -Depth 10
-    } else {
-        Write-Warning "No outputs available (deployment may have failed)"
-    }
-    
-} catch {
-    Write-Error "Deployment failed: $_"
-    Write-Error $_.Exception.Message
-    exit 1
-}
-```
-
-**Why this matters**:
-- Without `$ErrorActionPreference = 'Stop'`: Script continues on Azure CLI errors
-- Without `provisioningState` check: Failed deployments appear successful
-- Without output validation: Empty outputs displayed as "success"
-
-### 📋 Mandatory Validation Checklist (Run for Every Module)
-
-```bash
-# 1. Syntax validation
-az bicep build --file <module>.bicep
-
-# 2. What-if validation (CRITICAL - catches quota/API/property issues)
-az deployment group what-if \
-    --resource-group <test-rg> \
-    --template-file <module>.bicep \
-    --parameters @test-parameters.json
-
-# 3. Null value detection (should return NO matches)
-grep -E '\?\s*null' <module>.bicep
-
-# 4. Nested loop detection (should return NO matches)
-grep -E '\[for.*\[for' <module>.bicep
-
-# 5. Hardcoded region detection (should return NO matches except in comments/docs)
-grep -iE 'eastus|westus|northeurope|westeurope' <module>.bicep
-
-# 6. Globally unique resource naming check (REQUIRED for KV, Storage, Cosmos DB, ACR)
-grep -E 'uniqueString|uniqueSuffix' <module>.bicep  # Should have matches for globally unique resources
-
-# 7. AppLens service tag check (for resources with public IPs)
-grep -i 'AppLens' <module>.bicep  # Should have matches for NAT Gateway, Load Balancer, Public IPs, etc.
-```
-
-**Rule**: ⛔ BLOCK template completion until ALL checks pass.
-
-### 🎯 Key Takeaways - Quick Reference Card
-
-Copy this checklist for every template generation:
-
-| Category | ❌ Never Do This | ✅ Always Do This |
-|----------|------------------|-------------------|
-| **Loops** | `[for: [for:]]` nested loops | Flatten to single-level arrays with parent indices |
-| **Null Values** | `value ? x : null` | Conditional object construction `value ? {x} : {}` |
-| **Validation** | Skip `az deployment what-if` | Run what-if BEFORE marking complete |
-| **Error Handling** | Trust Azure CLI default errors | Check `provisioningState` explicitly in PowerShell |
-| **Required Properties** | Omit throughput/capacity | Cross-reference Microsoft Learn examples |
-| **Quota Defaults** | Zone-redundant, premium SKUs | `isZoneRedundant: false`, Basic/Standard SKUs |
-| **Output Access** | `$outputs` directly | Validate `$deployment.properties.outputs` exists first |
-| **API Versions** | Use any version | Match recent Microsoft Learn quickstarts (last 6 months) |
-| **Regions** | Hardcode `eastus` | Use `location` parameter, suggest backup regions |
-| **Unique Names** | Static names for KV/Storage/Cosmos | Use `uniqueString()` or `--unique-suffix` parameter |
-| **AppLens Tag** | Omit service tag on public IPs | Tag ALL public IPs with `serviceTag: 'AppLens'` |
-| **Traffic Mgmt** | Direct traffic to App Service | Use Front Door + App Gateway + Traffic Manager + WAF |
-
-### 📚 Production Context & Lessons Learned
-
-**Real-World Failure Patterns** (verified from Azure App Service Diagnostics platform deployments):
-
-1. **Nested Container Loops**: Cosmos DB generation with nested database→containers loops caused "For-expressions not supported" syntax errors → **Solution**: Flatten to `[{dbName, containerName, partitionKey}]` array
-2. **Null Consistency Policy**: Conditional `consistencyPolicy: condition ? config : null` caused "Unable to parse request payload" HTTP 400 errors → **Solution**: Conditional object construction
-3. **Regional Quota Exhaustion**: Default zone-redundant Cosmos DB in East US hit quota limits → **Solution**: Default `isZoneRedundant: false` and suggest westus2/northeurope
-4. **False Success Messages**: PowerShell deployment scripts displayed "✓ Deployment completed successfully" with empty outputs despite failed deployments → **Solution**: Explicit `provisioningState` checking
-5. **Missing Required Properties**: Omitted `throughput` in Cosmos DB containers caused deployment failures → **Solution**: Cross-reference Microsoft Learn quickstart templates
-6. **Name Collision Errors**: Static resource names for Key Vault/Storage caused "Resource already exists" failures → **Solution**: Use `uniqueString()` function and `--unique-suffix` parameter
-7. **Soft-Deleted Key Vault Conflicts**: Redeployments failed with "VaultAlreadyExists" due to soft-delete retention (90 days) → **Solution**: Document `az keyvault purge` command in troubleshooting guides
-
-**Impact**: Each rule in this section prevents a **verified production failure mode** encountered during infrastructure-as-code generation for enterprise Azure deployments.
-
----
-
-## 🚨 MANDATORY: Bicep Generation Rules for Successful Deployments
-
-When generating Azure Bicep templates, you MUST follow these rules to ensure successful deployments:
-
-**1. VALIDATION WORKFLOW**: Before marking any template as complete, run `az bicep build --file <template>.bicep` to verify syntax, then run `az deployment group what-if` with test parameters to detect quota issues, API errors, and missing properties. This catches 90% of deployment failures before they occur.
-
-**2. DATA STRUCTURE DESIGN**: Azure Bicep does NOT support nested loops or nested for-expressions in variables. Never create structures like `[for parent: [for child: {...}]]` or `var items = flatten([for x: [for y: {...}]])`. Instead, flatten all data structures at design time into single-level arrays with parent references (e.g., `var containers = [{dbIndex: 0, name: 'c1'}, {dbIndex: 0, name: 'c2'}]`). If complex hierarchies are unavoidable, use separate Bicep modules for each parent entity.
-
-**3. NULL VALUES**: Azure Resource Manager APIs reject properties with `null` values, causing "Unable to parse request payload" errors. Never use ternary expressions like `property: condition ? value : null`. Instead, use conditional object construction: `var config = condition ? {property: value} : {}` and assign the entire object, or create separate resource definitions for different configurations. Omit optional properties entirely rather than setting them to null.
-
-**4. REQUIRED PROPERTIES**: Always cross-reference Microsoft Learn quickstart templates (published within last 6 months) for each resource type to identify required properties. Common mistakes: Cosmos DB containers require `options: {throughput: 400}`, storage accounts need capacity settings, and database resources need SKU specifications. Do not assume properties are optional—validate against official examples.
-
-**5. API VERSIONS**: Use stable (non-preview) API versions matching recent Microsoft Learn examples. Keep API versions consistent across parent-child resource hierarchies (e.g., all Cosmos DB resources use same version). Preview APIs have stricter validation and may require additional properties.
-
-**6. REGIONAL QUOTAS**: Default all templates to quota-friendly configurations: `isZoneRedundant: false`, single-region deployments, lower-tier SKUs (B1/S1 for App Service, Basic for Redis, 400 RU/s for Cosmos DB), and `enableAutomaticFailover: false`. High-demand regions (East US, West Europe) frequently hit Cosmos DB and GPU capacity limits. Always provide 3-4 backup regions in documentation (e.g., westus2, northeurope, southcentralus).
-
-**7. DEPLOYMENT SCRIPT ERROR HANDLING**: When generating PowerShell deployment scripts, always set `$ErrorActionPreference = 'Stop'` at the top, explicitly check `if ($deployment.properties.provisioningState -ne 'Succeeded') { throw }` after deployments, and validate `if ($deployment -and $deployment.properties.outputs)` before accessing output properties. Azure CLI commands in PowerShell produce non-terminating errors by default, causing scripts to show "success" messages even when deployments fail and display empty output values.
-
-**8. TESTING REQUIREMENTS**: Every generated module must pass: (a) `az bicep build` syntax validation, (b) `az deployment group what-if` simulation with test parameters, (c) grep checks for anti-patterns (`grep -E '\?\s*null'` and `grep -E '\[for.*\[for'`), and (d) comparison against official Microsoft examples for the same resource type. Document any deviations from examples with justification.
-
-**VALIDATION CHECKLIST** (run before completing generation):
-```bash
-# Per module
-az bicep build --file modules/<name>.bicep
-az deployment group what-if --resource-group test-rg --template-file modules/<name>.bicep --parameters "@test.json"
-grep -E '\?\s*null' modules/<name>.bicep  # Should return no matches
-grep -E '\[for.*\[for' modules/<name>.bicep  # Should return no matches
-
-# Final orchestrator
-az bicep build --file main.bicep
-az deployment group what-if --resource-group test-rg --template-file main.bicep --parameters "@dev.json"
-```
-
-**COMMON FAILURE PATTERNS TO AVOID**:
-- ❌ Nested loops: `[for db in databases: [for container in db.containers: {...}]]`
-- ❌ Null properties: `maxStalenessPrefix: condition ? 100000 : null`
-- ❌ Missing throughput: Cosmos DB containers without `options: {throughput: 400}`
-- ❌ Zone redundancy: `isZoneRedundant: true` (requires higher quota)
-- ❌ Unchecked deployment: `$deployment = az deployment create...` without validating `provisioningState`
-- ❌ Accessing undefined outputs: `$outputs.keyVault.value` when deployment failed
-
-By following these rules, your generated templates will achieve 95%+ first-time deployment success rate and provide accurate error reporting when failures do occur.
-
----
-
 ## Your Mission
 
 Analyze the user's project to:
-1. **Discover all projects and solutions** in the workspace and present a numbered list
-2. **Ask user to select** which project(s) to analyze
-3. Detect Azure service dependencies from code and configuration in selected project(s)
-4. Identify required Azure resources (App Service, Storage, Key Vault, Databases, etc.)
-5. Extract configuration values from environment files
-6. **Propose a complete infrastructure solution** with all Bicep templates
-7. **Present the proposed solution** showing all modules, security configurations, and architecture
-8. **Get user approval** before generating any files
-9. **Generate composable, region-agnostic, secure Bicep modules** following the requirements above
-10. Guide the user through infrastructure deployment
+1. Detect Azure service dependencies from code and configuration
+2. Identify required Azure resources (App Service, Storage, Key Vault, Databases, etc.)
+3. Extract configuration values from environment files
+4. **Propose a complete infrastructure solution** with all Bicep templates
+5. **Present the proposed solution** showing all modules, security configurations, and architecture
+6. **Get user approval** before generating any files
+7. **Generate composable, region-agnostic, secure Bicep modules** following the requirements above
+8. Guide the user through infrastructure deployment
 
 ## Analysis Process
 
-### Step 1: Discover and List All Projects/Solutions
-
-**FIRST: Discover ALL projects and solutions in the workspace**
-
-1. **Scan recursively** for all project and solution files:
-   - .NET: `**/*.sln`, `**/*.[Cc][Ss][Pp][Rr][Oo][Jj]`, `**/*.[Ff][Ss][Pp][Rr][Oo][Jj]`, `**/*.[Vv][Bb][Pp][Rr][Oo][Jj]`
-   - Python: `**/pyproject.toml`, `**/requirements.txt`, `**/setup.py`
-   - Node.js: `**/package.json`
-   - Use **case-insensitive** searches
-   - Explore **ALL subdirectories recursively**
-
-2. **Present a numbered list** of all discovered projects/solutions:
-
-```markdown
-## 📦 Discovered Projects and Solutions
-
-I found the following projects in your workspace:
-
-### .NET Solutions and Projects
-1. **[Solution/Project Name]** - `[relative/path/to/file.sln or .csproj]`
-   - Type: [Solution with X projects | Standalone project]
-   - Framework: [.NET 8.0, .NET 6.0, etc.]
-   - Projects (if solution): [List project names]
-
-2. **[Solution/Project Name]** - `[relative/path/to/file.sln or .csproj]`
-   - Type: [Solution with X projects | Standalone project]
-   - Framework: [.NET version]
-   - Projects (if solution): [List project names]
-
-### Python Projects
-3. **[Project Name]** - `[relative/path/to/pyproject.toml or requirements.txt]`
-   - Type: Python project
-   - Framework: [Detected from dependencies]
-
-### Node.js Projects
-4. **[Project Name]** - `[relative/path/to/package.json]`
-   - Type: Node.js project
-   - Framework: [Detected from dependencies]
-
-[Continue numbering for all discovered projects...]
-
----
-
-**Question**: Which project(s) should I analyze for Azure infrastructure generation?
-
-**Options**:
-- **Select by number(s)**: Enter the number(s) of the project(s) you want me to analyze (e.g., "1", "1,3,5", or "2-4")
-- **All projects**: Type "all" to analyze all discovered projects
-- **Specify path**: Provide a specific file path if the project isn't listed
-
-**Your selection**: [Wait for user response]
-```
-
-3. **WAIT for user selection** before proceeding with detailed analysis
-
-### Step 2: Scan Selected Project(s) for Azure Dependencies
-
-**After user selects project(s), perform detailed analysis:**
+### Step 1: Scan Project Files for Azure Dependencies
 
 **Important Scanning Guidelines:**
-- Focus analysis on the selected project(s) only
 - Use **case-insensitive** searches (both uppercase and lowercase variations)
-- Explore **ALL subdirectories** within the selected project(s)
+- Explore **ALL subdirectories recursively** - don't stop at the first level
 - **List directory structure first** to understand the full project layout
 - Don't exhibit **focus bias** - analyze all components equally (main services, proxies, providers, utilities, etc.)
 - Check for **multiple instances** of the same file type in different locations
 
-Look for these indicators in the selected project(s):
+Look for these indicators:
 
 **.NET Projects** (*.csproj, *.sln):
-- **CRITICAL**: Find ALL solution and project files recursively - don't stop at first match
-- **Solution files (.sln)**: 
-  - Search patterns: `**/*.sln`, `**/*.[Ss][Ll][Nn]`
-  - Look in root directory AND all subdirectories
-  - Multiple solutions may exist (e.g., main app, tools, tests)
-  - Parse each solution to understand project references
-- **Project files**:
-  - C# projects: `**/*.[Cc][Ss][Pp][Rr][Oo][Jj]`
-  - F# projects: `**/*.[Ff][Ss][Pp][Rr][Oo][Jj]`
-  - VB.NET projects: `**/*.[Vv][Bb][Pp][Rr][Oo][Jj]`
-  - Check EVERY subdirectory - projects may be nested deep
-  - Some projects may NOT be in solution files - analyze independently
-- **Comprehensive analysis**:
-  - **No focus bias**: Treat ALL projects equally (main apps, test projects, utilities, proxies, providers, tools)
-  - Read EVERY project file found - don't assume structure
-  - Parse `<PackageReference>` elements in each .csproj file
-  - Check `Directory.Build.props` for centralized package management
-  - Check `Directory.Packages.props` for central package version management
-  - Check `global.json` for SDK versions
-- **Azure package references to detect**:
-  - `Azure.Storage.Blobs` / `Azure.Storage.*` → Azure Storage Account
+- **Important**: Find ALL solution files (`**/*.sln`, `**/*.[Ss][Ll][Nn]`) and ALL project files (case-insensitive)
+- Search patterns: `**/*.[Cc][Ss][Pp][Rr][Oo][Jj]`, `**/*.[Ff][Ss][Pp][Rr][Oo][Jj]`, `**/*.[Vv][Bb][Pp][Rr][Oo][Jj]`
+- Don't limit analysis to a single solution - scan for all solutions and projects recursively
+- **Explore all subdirectories**: Some projects may be nested deep in folder structures
+- Some projects may not be included in solution files - analyze them independently
+- **No focus bias**: Treat all projects equally - main applications, test projects, utilities, proxies, providers, etc.
+- Package references to check:
+  - `Azure.Storage.Blobs` → Azure Storage Account
   - `Azure.Security.KeyVault.*` → Azure Key Vault
   - `Microsoft.EntityFrameworkCore.SqlServer` → Azure SQL Database
   - `Microsoft.Azure.Cosmos` → Azure Cosmos DB
-  - `StackExchange.Redis` / `Microsoft.Extensions.Caching.StackExchangeRedis` → Azure Cache for Redis
+  - `StackExchange.Redis` → Azure Cache for Redis
   - `Azure.Messaging.ServiceBus` → Azure Service Bus
   - `Azure.Messaging.EventHubs` → Azure Event Hubs
-  - `Microsoft.ApplicationInsights.*` → Application Insights
-  - `Azure.Identity` → Azure Authentication
-  - `Microsoft.Azure.Functions.*` → Azure Functions
-  - `Microsoft.Azure.WebJobs.*` → Azure WebJobs/Functions
+  - `Microsoft.ApplicationInsights` → Application Insights
+- Check all `*.csproj` files for `<PackageReference>` elements
+- Check `Directory.Build.props` for centralized package management
 
 **Python Projects** (requirements.txt, pyproject.toml):
 - `azure-storage-blob` → Azure Storage Account (Blob)
@@ -569,9 +132,17 @@ Look for these indicators in the selected project(s):
 - `redis` → Azure Cache for Redis
 - `express`, `next`, `react` → Azure App Service or Static Web Apps
 
-### Step 3: Extract Configuration from Selected Project(s)
+**.NET Projects** (.csproj, packages.config):
+- `Azure.Storage.Blobs` → Azure Storage Account
+- `Azure.Security.KeyVault.Secrets` → Azure Key Vault
+- `Azure.Identity` → Azure Identity
+- `Npgsql` → Azure Database for PostgreSQL
+- `StackExchange.Redis` → Azure Cache for Redis
+- ASP.NET Core → Azure App Service
 
-Check these files for resource names and configuration in the selected project(s):
+### Step 2: Extract Configuration
+
+Check these files for resource names and configuration:
 - `.env` - Environment variables
 - `appsettings.json` - .NET configuration
 - `config.py` - Python configuration
@@ -583,299 +154,86 @@ Look for patterns like:
 - `DATABASE_HOST=myserver.postgres.database.azure.com`
 - `REDIS_HOST=mycache.redis.cache.windows.net`
 
-### Step 4: Analyze and Propose Complete Solution
+### Step 3: Analyze and Propose Complete Solution
+
+After detecting dependencies and extracting configuration, **immediately propose a complete infrastructure solution** instead of asking questions.
 
 **DO NOT ask questions** - instead, create an intelligent proposal based on:
-- Detected services and dependencies
-- Application architecture patterns
-- Best practices for Azure security
-- Mandatory security requirements
-- **Special instructions from `$ARGUMENTS` (if provided)** - these take precedence and must be incorporated into the proposal
+- Detected Azure services from code dependencies
+- Best practices for each resource type
+- **Mandatory security requirements** (private endpoints, NSP, NAT Gateway)
+- Sensible defaults for SKUs, scaling, and redundancy
+- Standard three-tier environments (dev, staging, production)
 
-**Your proposal should include**:
-1. Detected Azure resources table (resource type, module file, purpose, security config)
-2. Mandatory security architecture diagram (VNet topology, subnets, NAT Gateway, NSP)
-3. List of all Bicep modules to generate (organized by deployment phase)
-4. Example module showing secure configuration (e.g., Key Vault with PE + NSP)
-5. Multi-environment configuration strategy (dev, staging, production)
-6. Deployment order and dependencies
-7. Security compliance checklist
-8. **Acknowledgment of `$ARGUMENTS` requirements** (if provided) - explain how special instructions will be implemented
+**Your proposed solution should include**:
+1. **Complete list of all Bicep modules** to be generated
+2. **Detailed security architecture** (VNet, subnets, private endpoints, NSP, NAT Gateway)
+3. **Network topology** showing how resources connect securely
+4. **Parameter strategy** for multi-environment deployment
+5. **Resource dependencies and deployment order**
+6. **Example module content** showing key configurations
 
-**Present the complete solution and ask for approval** before generating any files.
+**Present the proposal in this format**:
 
-### Step 5: Present Proposed Infrastructure Solution
+### Step 4: Present Proposed Infrastructure Solution
 
-After analyzing the selected project(s), **immediately present a complete infrastructure proposal** with all security requirements.
-
-**Use this template**:
-
-```markdown
-## 📋 Proposed Infrastructure Solution
-
-Based on my analysis of your project, here's the complete secure Bicep infrastructure I will generate:
-
-### 📝 Special Instructions Applied (if `$ARGUMENTS` provided)
-
-**User Requirements**: [Summarize the special instructions from `$ARGUMENTS`]
-
-**Implementation Approach**:
-- [Explain how each requirement will be addressed]
-- [List any modifications to standard templates]
-- [Note any fixes being applied to existing templates]
-- [Identify any additional modules or configurations needed]
-
-**Impact on Standard Workflow**:
-- [Describe which default behaviors are being overridden]
-- [Confirm which mandatory security requirements still apply]
-- [List any validation steps specific to the special instructions]
-
----
-
-### 🎯 Detected Azure Resources
-
-| Resource Type | Module File | Purpose | Security Configuration |
-|---------------|-------------|---------|------------------------|
-| Azure App Service | `app-service.bicep` | [Detected purpose] | VNet integration + Managed Identity |
-| Azure Storage Account | `storage.bicep` | [Detected purpose] | Private Endpoint + NSP + publicNetworkAccess: Disabled |
-| Azure Key Vault | `key-vault.bicep` | Secrets management | Private Endpoint + NSP + publicNetworkAccess: Disabled |
-| [Other resources...] | [...] | [...] | [...] |
-
-### 🔐 Mandatory Security Architecture
-
-**1. Regional Network Isolation**
-```
-Virtual Network (10.0.0.0/16)
-├── app-subnet (10.0.1.0/24) - App Services
-│   └── NAT Gateway attached
-├── data-subnet (10.0.2.0/24) - Databases/Storage
-│   └── NAT Gateway attached
-├── container-subnet (10.0.3.0/24) - Container Apps
-│   └── NAT Gateway attached (for privileged resource access)
-└── pe-subnet (10.0.4.0/24) - Private Endpoints
-    ├── Key Vault Private Endpoint
-    ├── Storage Private Endpoint
-    ├── Cosmos DB Private Endpoint (if detected)
-    └── SQL DB Private Endpoint (if detected)
-```
-
-**2. Private Endpoint Requirements** (MANDATORY for data services)
-- ✅ Key Vault: `publicNetworkAccess: 'Disabled'` + Private Endpoint + NSP
-- ✅ Storage Account: `publicNetworkAccess: 'Disabled'` + Private Endpoint + NSP
-- ✅ Cosmos DB: `publicNetworkAccess: 'Disabled'` + Private Endpoint + NSP (if detected)
-- ✅ SQL Database: `publicNetworkAccess: 'Disabled'` + Private Endpoint + NSP (if detected)
-
-**3. Network Security Perimeter (NSP) - Transition Mode**
-- NSP resource created in Transition mode (formerly Learning mode)
-- All private endpoint resources associated with NSP
-- Perimeter profiles configured for access rule learning
-
-**4. NAT Gateway Configuration**
-- NAT Gateway deployed in each region
-- All subnets (app, data, container) use NAT Gateway for outbound connectivity
-- Container App Environments have dedicated subnet with NAT Gateway for privileged resource access
-- NAT Gateway public IPs MUST be tagged with service tag "AppLens"
-
-### 📁 Bicep Modules to Generate
-
-**Phase 1: Network Foundation** (CRITICAL - must be first)
-1. `modules/nat-gateway.bicep` - NAT Gateway for outbound connectivity
-2. `modules/vnet.bicep` - VNet with 4 subnets (app, data, container, pe)
-3. `modules/nsp.bicep` - Network Security Perimeter in Transition mode
-
-**Phase 2: Security & Identity**
-4. `modules/key-vault.bicep` - Key Vault with PE + NSP + publicNetworkAccess disabled
-5. `modules/managed-identity.bicep` - User-assigned managed identity for services
-
-**Phase 3: Traffic Management & Security** (MANDATORY)
-6. `modules/traffic-manager.bicep` - DNS-based traffic routing for multi-region deployments
-7. `modules/front-door.bicep` - Global load balancing with CDN and SSL offloading
-8. `modules/application-gateway.bicep` - Regional load balancer with WAF integration
-9. `modules/waf-policy.bicep` - Web Application Firewall policy (OWASP protection)
-
-**Phase 4: Data Services** (with private endpoints)
-10. `modules/storage.bicep` - Storage with PE + NSP + publicNetworkAccess disabled
-11. `modules/cosmos-db.bicep` (if detected) - Cosmos DB with PE + NSP
-12. `modules/sql-database.bicep` (if detected) - SQL DB with PE + NSP
-
-**Phase 5: Compute Services**
-13. `modules/app-service-plan.bicep` - App Service Plan
-14. `modules/app-service.bicep` - App Service with VNet integration + MI
-15. `modules/container-app-env.bicep` (if detected) - Container App Environment with NAT Gateway subnet
-
-**Phase 6: Orchestration**
-16. `main.bicep` - Main orchestrator
-17. `parameters/dev.parameters.json` - Development environment
-18. `parameters/staging.parameters.json` - Staging environment
-19. `parameters/production.parameters.json` - Production environment
-
-### 🏗️ Example: Key Vault Module (Secure by Default)
-
-```bicep
-// modules/key-vault.bicep
-param location string = resourceGroup().location
-param namePrefix string
-param environment string
-param privateEndpointSubnetId string
-param nspId string
-
-var keyVaultName = '${namePrefix}-${environment}-kv'
-
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: keyVaultName
-  location: location
-  properties: {
-    sku: { family: 'A', name: 'standard' }
-    tenantId: tenant().tenantId
-    publicNetworkAccess: 'Disabled'  // ✅ MANDATORY - no public access
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Deny'
-    }
-    enableRbacAuthorization: true
-  }
-}
-
-// Private Endpoint
-resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' = {
-  name: '${keyVaultName}-pe'
-  location: location
-  properties: {
-    subnet: { id: privateEndpointSubnetId }
-    privateLinkServiceConnections: [{
-      name: '${keyVaultName}-plsc'
-      properties: {
-        privateLinkServiceId: keyVault.id
-        groupIds: ['vault']
-      }
-    }]
-  }
-}
-
-// NSP Association (Transition mode)
-resource nspAssociation 'Microsoft.Network/networkSecurityPerimeters/resourceAssociations@2023-08-01' = {
-  name: '${keyVaultName}-nsp-assoc'
-  properties: {
-    privateLinkResource: { id: keyVault.id }
-    profile: {
-      accessRulesVersion: 1
-      accessRules: []  // Empty for Transition mode (learning)
-    }
-  }
-}
-
-output keyVaultId string = keyVault.id
-output keyVaultName string = keyVault.name
-output privateEndpointId string = privateEndpoint.id
-```
-
-### 🏗️ Example: NAT Gateway Module (with AppLens Service Tag)
-
-```bicep
-// modules/nat-gateway.bicep
-param location string = resourceGroup().location
-param namePrefix string
-param environment string
-param tags object = {}
-
-var natGatewayName = '${namePrefix}-${environment}-nat'
-var publicIpName = '${namePrefix}-${environment}-nat-pip'
-
-// Public IP for NAT Gateway with AppLens service tag
-resource natPublicIp 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
-  name: publicIpName
-  location: location
-  sku: { name: 'Standard' }
-  properties: {
-    publicIPAllocationMethod: 'Static'
-    publicIPAddressVersion: 'IPv4'
-    idleTimeoutInMinutes: 4
-  }
-  tags: union(tags, {
-    serviceTag: 'AppLens'  // ✅ MANDATORY - AppLens service tag
-  })
-}
-
-// NAT Gateway
-resource natGateway 'Microsoft.Network/natGateways@2023-11-01' = {
-  name: natGatewayName
-  location: location
-  sku: { name: 'Standard' }
-  properties: {
-    idleTimeoutInMinutes: 4
-    publicIpAddresses: [{ id: natPublicIp.id }]
-  }
-  tags: union(tags, {
-    serviceTag: 'AppLens'  // ✅ MANDATORY - AppLens service tag
-  })
-}
-
-output natGatewayId string = natGateway.id
-output natGatewayName string = natGateway.name
-output publicIpId string = natPublicIp.id
-output publicIpAddress string = natPublicIp.properties.ipAddress
-```
-
-### 📊 Multi-Environment Configuration
-
-| Environment | SKUs | Redundancy | Scaling | NAT Gateway |
-|-------------|------|------------|---------|-------------|
-| Development | Basic/Standard | Single zone | Manual | Single instance |
-| Staging | Standard | Zone-redundant | Manual | Zone-redundant |
-| Production | Premium | Zone-redundant + HA | Auto-scale | Zone-redundant |
-
-### 🚀 Deployment Order & Dependencies
+After analyzing the project, **immediately present a complete infrastructure proposal** with all security requirements:
 
 ```
-NAT Gateway (Phase 1) 
-    ↓
-VNet + Subnets (Phase 1)
-    ↓
-NSP (Phase 1)
-    ↓
-Managed Identity (Phase 2) → Key Vault + PE + NSP (Phase 2)
-    ↓
-WAF Policy (Phase 3) → Application Gateway + WAF (Phase 3)
-    ↓
-Azure Front Door (Phase 3) → Traffic Manager (Phase 3)
-    ↓
-Storage + PE + NSP (Phase 4) → Databases + PE + NSP (Phase 4)
-    ↓
-App Service Plan (Phase 5) → App Service + VNet Integration (Phase 5)
-    ↓
-Application Gateway Backend Pool Configuration (Phase 5)
-    ↓
-Container App Environment + NAT Gateway Subnet (Phase 5, if applicable)
-```
+📋 Detected Azure Resources:
 
-### ⚠️ Security Compliance Notes
+┌─────────────────────────────┬──────────────────┬────────────┬─────────────────────────────────────┐
+│ Resource Type               │ Suggested Name   │ Confidence │ Evidence                            │
+├─────────────────────────────┼──────────────────┼────────────┼─────────────────────────────────────┤
+│ Azure App Service           │ myapp            │ 95%        │ Flask detected                      │
+│ Azure Storage Account       │ mystorageaccount │ 90%        │ azure-storage-blob                  │
+│ Azure Key Vault             │ mykeyvault       │ 90%        │ azure-keyvault-*                    │
+│ Azure PostgreSQL            │ mydb             │ 85%        │ psycopg2 found                      │
+└─────────────────────────────┴──────────────────┴────────────┴─────────────────────────────────────┘
 
-**All templates will enforce**:
-- ✅ No public network access for data services (Key Vault, Storage, Cosmos DB, SQL DB)
-- ✅ Private Endpoints for all data service connectivity
-- ✅ Network Security Perimeter association in Transition mode
-- ✅ NAT Gateway for all subnet outbound traffic
-- ✅ Container App Environments with dedicated subnets + NAT Gateway
-- ✅ **Traffic Management & Load Balancing**: Azure Front Door, Application Gateway with WAF, and Traffic Manager for all web-facing workloads
-- ✅ **Web Application Firewall (WAF)**: OWASP protection with custom rules for SQL injection, XSS, CSRF prevention
-- ✅ **SSL/TLS Offloading**: Front Door and Application Gateway handle SSL termination
-- ✅ **Global Distribution**: Traffic Manager for DNS-based routing across multiple regions
-- ✅ Managed Identity for all service-to-service authentication
-- ✅ RBAC for Key Vault (no access policies)
-- ✅ TLS 1.2+ enforcement on all services
-- ✅ "AppLens" service tag on all resources with public IP addresses
+📁 Ev2 Configuration Detected:
 
----
+**If SINGLE ServiceModel found:**
+- ServiceModel: ServiceModel.prod.json (5 resources defined)
+- RolloutSpec: RolloutSpec.json (3-stage rollout: Validation → Pilot → Production)
+- Scope: 3 regions (East US, West US, West Europe)
+- Deployment Strategy: Progressive rollout with health checks
+- Existing Resources: App Service, Storage, Key Vault, SQL Database, Redis Cache
 
-## ✅ Do you approve this proposed solution?
+**If MULTIPLE ServiceModel files found, show separate summary for EACH:**
 
-**Your options**:
-- **✅ APPROVED** → I'll immediately generate all Bicep templates with these security configurations
-- **🔧 MODIFY** → Tell me what to change (e.g., "Remove Cosmos DB", "Add Application Gateway", "Different SKUs")
-- **❓ QUESTION** → Ask about any aspect of the proposal
-- **❌ CANCEL** → Stop without generating files
+📦 **Deployment 1: [Project/Component Name]** (from parent folder path)
+  Location: ServiceGroupRoot/MainService/
+  - ServiceModel: MainService/ServiceModel.json (8 resources)
+  - RolloutSpec: MainService/RolloutSpec.json (4-stage rollout: Canary → Region1 → Region2 → Global)
+  - Scope: 5 regions (East US, West US, Central US, North Europe, West Europe)
+  - Deployment Strategy: Ring-based deployment with automated rollback
+  - Resources: App Service (2), Storage (3), Key Vault, SQL Database, Redis Cache
 
-**Your response**: [Waiting for approval...]
+� **Deployment 2: [Project/Component Name]** (from parent folder path)
+  Location: ServiceGroupRoot/DiagnosticDataProviders/
+  - ServiceModel: DiagnosticDataProviders/ServiceModel.json (4 resources)
+  - RolloutSpec: DiagnosticDataProviders/RolloutSpec.json (3-stage rollout: Validation → Pilot → Production)
+  - Scope: 3 regions (East US, West Europe, Southeast Asia)
+  - Deployment Strategy: Progressive rollout with manual approval gates
+  - Resources: App Service, Storage, Application Insights, Key Vault
+
+📦 **Deployment 3: [Project/Component Name]** (from parent folder path)
+  Location: ServiceGroupRoot/Proxy/
+  - ServiceModel: Proxy/ServiceModel.json (3 resources)
+  - RolloutSpec: Proxy/RolloutSpec.json (2-stage rollout: Pre-production → Production)
+  - Scope: 2 regions (East US, West Europe)
+  - Deployment Strategy: Blue-green deployment
+  - Resources: App Service, Application Gateway, Key Vault
+
+[Continue for each additional ServiceModel found...]
+
+�🔄 Integration Strategy:
+- Bicep templates will be generated in: ./bicep-templates/
+- Standard Bicep structure compatible with any deployment tool
+- Multi-environment parameter files (dev, staging, production)
+- Modular templates for each resource type
+- Ready for deployment via Azure CLI, Azure DevOps, GitHub Actions, or other CI/CD tools
 ```
 
 ## Using the CLI Tool
@@ -896,6 +254,7 @@ specify bicep --help
 The CLI tool will:
 - ✅ Automatically scan dependencies
 - ✅ Read environment configurations
+- ✅ Detect existing Ev2 configuration
 - ✅ Display detected resources with confidence scores
 - ✅ Provide actionable recommendations
 
@@ -929,14 +288,12 @@ bicep-templates/
 **STOP**: Before creating any Bicep templates, you MUST complete these mandatory steps:
 
 ### ✅ Pre-Generation Checklist
-- [ ] **Check for `$ARGUMENTS`**: If special instructions provided, read and understand them thoroughly
-- [ ] **Integrate `$ARGUMENTS` requirements**: Incorporate special instructions into analysis and proposal
 - [ ] If multiple projects detected: Ask which projects to generate templates for
-- [ ] Ask ALL critical architecture questions (see below) - unless overridden by `$ARGUMENTS`
+- [ ] Ask ALL critical architecture questions (see below)
 - [ ] Understand scale and redundancy requirements
 - [ ] Understand deployment strategy (regions, environments)
-- [ ] Create structured generation plan with priorities that includes `$ARGUMENTS` requirements
-- [ ] Get user approval of the plan (including acknowledgment of special instructions)
+- [ ] Create structured generation plan with priorities
+- [ ] Get user approval of the plan
 - [ ] ONLY THEN proceed with template generation
 
 ## 📦 Step 0: Project Selection (If Multiple Projects Detected)
@@ -1321,15 +678,14 @@ bicep-templates/
 ├── modules/
 │   ├── networking.bicep               # VNet, subnets, NSGs (200-300 lines)
 │   ├── key-vault.bicep                # Key Vault with RBAC (150-200 lines)
-│   ├── traffic-manager.bicep          # DNS-based traffic routing (100-150 lines)
-│   ├── front-door.bicep               # Global load balancing + CDN (200-250 lines)
-│   ├── application-gateway.bicep      # Regional load balancer + WAF (250-300 lines)
-│   ├── waf-policy.bicep               # WAF rules and OWASP protection (150-200 lines)
 │   ├── storage.bicep                  # Storage accounts (150-200 lines)
 │   ├── app-service-plan.bicep         # App Service Plan (100-150 lines)
 │   ├── app-service.bicep              # Web App with MSI (200-300 lines)
 │   ├── [additional modules...]        # [Estimated lines]
+├── ev2-integration/                    # (If Ev2 detected)
 │   ├── README.md                       # Integration guide
+│   ├── servicemodel-template.json      # ServiceModel update template
+│   └── rolloutspec-template.json       # RolloutSpec reference
 └── deployment/
     ├── deploy.sh                       # Bash deployment script
     └── deploy.ps1                      # PowerShell deployment script
@@ -1344,8 +700,6 @@ bicep-templates/
 #### Phase 1: Foundation Modules (HIGH PRIORITY)
 **These must be created first as other resources depend on them**
 
-**REMINDER**: Update TODO.md BEFORE and AFTER each module generation.
-
 1. **networking.bicep** ⚡ CRITICAL PATH
    - Virtual Network with [X] subnets
    - Network Security Groups
@@ -1353,7 +707,6 @@ bicep-templates/
    - **Dependencies**: None
    - **Estimated complexity**: [Low/Medium/High]
    - **Why first**: All other resources need VNet for private connectivity
-   - **TODO.md updates**: Mark in-progress `[🔄]` → Add validation notes → Mark complete `[x]` → Update progress %
 
 2. **key-vault.bicep** ⚡ CRITICAL PATH
    - Key Vault with [RBAC/Access Policies]
@@ -1362,7 +715,6 @@ bicep-templates/
    - **Dependencies**: None (or networking if private endpoint)
    - **Estimated complexity**: [Low/Medium/High]
    - **Why second**: Other resources need Key Vault for secrets
-   - **TODO.md updates**: Mark in-progress `[🔄]` → Add validation notes → Mark complete `[x]` → Update progress %
 
 #### Phase 2: Core Services (MEDIUM PRIORITY)
 **Can be created in parallel after Phase 1 completes**
@@ -1503,280 +855,9 @@ After generating each module, I will:
 6. ✅ **Security review**: Key Vault references, Managed Identity, TLS enforcement, RBAC
 7. ✅ **Composability check**: Module can be deployed standalone or orchestrated
 8. ✅ **Best practices**: Naming conventions, parameter descriptions, idempotency
-9. ✅ **Globally unique naming check**: Key Vault, Storage, Cosmos DB, ACR use `uniqueString()` or `uniqueSuffix` parameter
-10. ✅ **AppLens service tag check**: All resources with public IPs (NAT Gateway, Load Balancer, Public IP, Application Gateway, Front Door) have service tag `'AppLens'`
-11. ✅ **Traffic management check**: Azure Front Door, Application Gateway with WAF, and Traffic Manager modules present for web-facing workloads
-12. ✅ **WAF policy check**: Web Application Firewall configured with OWASP ruleset and custom protection rules
-13. ✅ **Soft-delete documentation**: README includes Key Vault purge command for redeployment troubleshooting
-14. ✅ **Critique**: Document what works well and areas for improvement
-15. ⛔ **BLOCK if errors**: Will NOT proceed until validation passes
-
----
-
-## 🚨 CRITICAL: Pre-Generation Validation Workflow
-
-**MANDATORY STEP**: Before marking template generation as "complete", run this validation:
-
-```powershell
-# 1. Syntax validation
-az bicep build --file modules/<module-name>.bicep
-
-# 2. What-If simulation (catches quota issues BEFORE deployment)
-az deployment group what-if `
-    --resource-group <test-rg> `
-    --template-file modules/<module-name>.bicep `
-    --parameters "@test-parameters.json"
-```
-
-**If what-if fails or shows warnings**: Fix issues before proceeding.
-
----
-
-## ❌ NEVER DO THESE
-
-### 1. Never Use Null Values in Properties
-```bicep
-// ❌ WRONG - Causes "Unable to parse request payload" errors
-properties: {
-  maxValue: someCondition ? 100 : null  // Azure API rejects null
-}
-
-// ✅ CORRECT - Use conditional object construction
-var config = someCondition ? {
-  maxValue: 100
-} : {}  // Omit property entirely
-
-properties: config
-```
-
-### 2. Never Use Nested Loops
-```bicep
-// ❌ WRONG - Bicep syntax error
-var items = [for parent in parents: [for child in parent.children: {
-  // Nested for-expressions not supported
-}]]
-
-// ✅ CORRECT - Flatten at design time
-var flatItems = [
-  { parentName: 'p1', childName: 'c1' }
-  { parentName: 'p1', childName: 'c2' }
-  { parentName: 'p2', childName: 'c3' }
-]
-```
-
-### 3. Never Omit Required Properties
-```bicep
-// ❌ WRONG - Missing throughput for Cosmos DB container
-resource container 'Microsoft.DocumentDB/.../containers@2024-02-15-preview' = {
-  properties: {
-    resource: { id: name, partitionKey: {...} }
-    // Missing: options.throughput
-  }
-}
-
-// ✅ CORRECT - Include all required properties
-resource container 'Microsoft.DocumentDB/.../containers@2024-02-15-preview' = {
-  properties: {
-    resource: { id: name, partitionKey: {...} }
-    options: { throughput: 400 }  // Required!
-  }
-}
-```
-
----
-
-## ✅ ALWAYS DO THESE
-
-### 1. Always Use Stable API Versions
-- ✅ Cross-reference Microsoft Learn quickstart templates (last 6 months)
-- ✅ Use stable versions (non-preview) for production
-- ✅ Match API versions across parent-child resources
-- Example: `@2024-02-15-preview` for Cosmos DB (matches Microsoft examples)
-
-### 2. Always Flatten Complex Data Structures
-```bicep
-// ✅ GOOD: Flat structure
-var containers = [
-  { dbIndex: 0, dbName: 'db1', containerName: 'c1', partitionKey: '/key1' }
-  { dbIndex: 0, dbName: 'db1', containerName: 'c2', partitionKey: '/key2' }
-  { dbIndex: 1, dbName: 'db2', containerName: 'c3', partitionKey: '/key3' }
-]
-
-// Single loop works perfectly
-resource containers 'type@version' = [for c in containers: {
-  parent: databases[c.dbIndex]
-  name: c.containerName
-  properties: { partitionKey: { paths: [c.partitionKey] } }
-}]
-```
-
-### 3. Always Default to Lower Quotas
-- ✅ `isZoneRedundant: false` (reduces quota requirements)
-- ✅ Dev environment: B1/S1 for App Service, Basic for Redis, 400 RU/s for Cosmos
-- ✅ Disable automatic failover unless required
-- ✅ Single-region deployments for dev/test
-
-### 4. Always Test in Multiple Regions
-- ✅ Provide 3-4 backup regions in documentation
-- ✅ Recommended dev regions: westus2, northeurope, southcentralus
-- ✅ Warn users that eastus/westeurope often hit quota limits
-
-### 5. Always Validate PowerShell Error Handling
-```powershell
-# ✅ CORRECT deployment script pattern
-$ErrorActionPreference = 'Stop'
-
-try {
-    $deployment = az deployment group create ... | ConvertFrom-Json
-    
-    # Explicitly check provisioning state
-    if ($deployment.properties.provisioningState -ne 'Succeeded') {
-        throw "Deployment failed: $($deployment.properties.provisioningState)"
-    }
-    
-    Write-Host "✓ Deployment successful"
-} catch {
-    Write-Error "Deployment failed: $_"
-    
-    # Show detailed errors
-    az deployment group show `
-        --resource-group $RG `
-        --name $Name `
-        --query 'properties.error' -o json
-    
-    exit 1
-}
-
-# Only access outputs if deployment succeeded
-if ($deployment.properties.outputs) {
-    $outputs = $deployment.properties.outputs
-    Write-Host "Key Vault: $($outputs.keyVaultName.value)"
-}
-```
-
----
-
-## 📋 Template Generation Checklist
-
-Copy this checklist for every template generation task:
-
-### Pre-Generation
-- [ ] Update TODO.md: Mark task as in-progress `[🔄]` before starting
-- [ ] Ask user for target region(s) and backups
-- [ ] Confirm environment type (dev/staging/prod)
-- [ ] Identify quota-sensitive resources (Cosmos DB, large VMs, GPUs)
-- [ ] Determine if zone redundancy is required
-
-### During Generation
-- [ ] **Apply `$ARGUMENTS` instructions**: Ensure all special requirements are implemented in generated templates
-- [ ] **Verify `$ARGUMENTS` compliance**: Check that modifications, fixes, or additions match user specifications
-- [ ] Use flat data structures (no nested arrays requiring nested loops)
-- [ ] Never use `null` in property values (use conditional objects)
-- [ ] Include all required properties (throughput, capacity, etc.)
-- [ ] Use stable API versions matching Microsoft Learn examples
-- [ ] Default to lower-tier SKUs and single-region deployments (unless overridden by `$ARGUMENTS`)
-- [ ] Use `uniqueString()` or `uniqueSuffix` parameter for globally unique resources (Key Vault, Storage, Cosmos DB, ACR)
-- [ ] Add `serviceTag: 'AppLens'` to ALL resources with public IP addresses
-- [ ] Include Azure Front Door module for global load balancing and CDN (unless overridden by `$ARGUMENTS`)
-- [ ] Include Application Gateway module with Web Application Firewall (WAF) integration (unless overridden by `$ARGUMENTS`)
-- [ ] Include Traffic Manager module for multi-region DNS-based routing (unless overridden by `$ARGUMENTS`)
-- [ ] Configure WAF with OWASP ruleset (SQL injection, XSS, CSRF protection)
-- [ ] Document Key Vault soft-delete purge command in README/troubleshooting
-- [ ] Add `$ErrorActionPreference = 'Stop'` to PowerShell scripts
-- [ ] Add `--unique-suffix` parameter to deployment scripts
-- [ ] Validate `provisioningState` before accessing outputs
-
-### Post-Generation (Per Module)
-- [ ] Run `az bicep build --file modules/<name>.bicep`
-- [ ] Run `az deployment group what-if` with test parameters
-- [ ] Check for null values: `grep -E '\?\s*null' <file>`
-- [ ] Check for nested loops: `grep -E '\[for.*\[for' <file>`
-- [ ] Verify all required properties against Microsoft examples
-- [ ] **Update TODO.md**: Add validation results (✅ passed, ❌ errors, ⚠️ warnings)
-- [ ] **Update TODO.md**: Mark task as complete `[x]`
-- [ ] **Update TODO.md**: Update progress percentage in header
-
-### Final Validation
-- [ ] Test orchestrator with minimal parameters
-- [ ] Run full what-if with production parameters
-- [ ] Test deployment script with mock failure
-- [ ] Document quota requirements per resource
-- [ ] Provide multi-region fallback instructions
-- [ ] **Update TODO.md**: Mark all validation tasks complete
-- [ ] **Update TODO.md**: Set progress to 100%
-
----
-
-## 🎯 Quick Reference: Common Fixes
-
-### Issue: "Unable to parse request payload"
-**Fix**: Remove null values, use conditional object construction
-
-### Issue: "For-expressions are not supported in this context"
-**Fix**: Flatten data structure, avoid nested loops, use separate resource blocks
-
-### Issue: "ServiceUnavailable" / "High demand in region"
-**Fix**: Try different region (westus2, northeurope), disable zone redundancy
-
-### Issue: Deployment script shows success on failure
-**Fix**: Add `$ErrorActionPreference = 'Stop'`, check `provisioningState`
-
-### Issue: Empty outputs displayed
-**Fix**: Validate `$deployment.properties.outputs` exists before accessing
-
-### Issue: SKU/quota errors during deployment
-**Fix**: Use what-if validation BEFORE generating templates, suggest lower tiers
-
-### Issue: "Resource already exists" / "VaultAlreadyExists" errors
-**Fix**: Use `uniqueString()` for globally unique resources; purge soft-deleted Key Vaults with `az keyvault purge --name <name>`
-
-### Issue: Public IP resources without AppLens service tag
-**Fix**: Add `serviceTag: 'AppLens'` to all resources with public IP addresses (NAT Gateway, Load Balancer, Public IP, Application Gateway)
-
----
-
-## 📚 Required References
-
-**Before generating any resource**, consult:
-
-1. **Microsoft Learn Quickstart** for that resource type (last 6 months)
-2. **API Version Reference**: https://learn.microsoft.com/en-us/azure/templates/
-3. **Bicep Best Practices**: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/best-practices
-
-**Key Example**: Cosmos DB
-- Quickstart: https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/quickstart-template-bicep
-- Shows: API version, required properties (throughput), minimal working config
-
----
-
-## 🔧 Implementation Priority
-
-**HIGH PRIORITY** (implement immediately):
-1. Add what-if validation to generation workflow
-2. Remove all null values from property assignments
-3. Flatten nested data structures
-4. Fix PowerShell error handling in scripts
-
-**MEDIUM PRIORITY** (implement within 1 week):
-1. Cross-reference Microsoft Learn examples for required properties
-2. Default to lower-tier SKUs and non-zone-redundant configs
-3. Add quota awareness warnings
-
-**LOW PRIORITY** (implement as enhancement):
-1. Automatic regional fallback suggestions
-2. Pre-flight quota checking against subscription
-3. Cost estimation before deployment
-
----
-
-## ✨ Expected Outcomes
-
-After implementing these guidelines:
-- ✅ **0 syntax errors** in generated templates
-- ✅ **0 "parse request payload" errors** from null values
-- ✅ **Early quota issue detection** via what-if
-- ✅ **Accurate deployment status** reporting
-- ✅ **Successful first-time deployments** in 90%+ of cases
+9. ✅ **Simplicity check**: Ensure code is as simple as possible, no Ev2 concepts
+10. ✅ **Critique**: Document what works well and areas for improvement
+11. ⛔ **BLOCK if errors**: Will NOT proceed until validation passes
 
 ---
 
@@ -1871,32 +952,6 @@ Based on your project, I will use:
 
 **ONLY AFTER user explicitly approves the plan**, proceed with this sequence:
 
-### 🚨 CRITICAL: TODO.md Update Protocol
-
-**MANDATORY RULE FOR EVERY FILE GENERATION**: Update TODO.md after EACH step to show progress.
-
-**The workflow is**:
-1. **BEFORE generating any file**: Update TODO.md to mark task as in-progress `[🔄]`
-2. **Generate the file**: Use `create_file` tool
-3. **Run validation**: Execute `az bicep build --file [filename]`
-4. **Document results**: Update TODO.md with validation notes (✅ passed, ❌ errors, ⚠️ warnings)
-5. **Mark complete**: Update TODO.md to mark task as complete `[x]`
-6. **Update percentage**: Update progress percentage in TODO.md header
-7. **Repeat for next file**: Never skip TODO.md updates between files
-
-**Tool to use**: `replace_string_in_file` to update TODO.md after each generation step.
-
-**Why this matters**: TODO.md provides real-time visibility into:
-- Which files have been generated
-- Which validations have passed/failed
-- What blockers exist
-- Overall progress percentage
-- Generation history and decisions
-
-**DO NOT skip TODO.md updates** - they are mandatory for proper progress tracking.
-
----
-
 ### Step 1: Create README.md (Generation Plan Documentation)
 
 Create `bicep-templates/README.md` that documents the approved plan:
@@ -1953,7 +1008,7 @@ bicep-templates/
 5. **Comprehensive Parameterization**: All configurable values as parameters (location, namePrefix, sku, tags, etc.)
 6. **Rich Outputs**: Export resource IDs, endpoints, and identities for cross-component wiring
 7. **Security**: No hardcoded secrets, use Key Vault references and Managed Identity
-8. **AppLens Service Tag**: ALL resources with public IP addresses MUST use the "AppLens" service tag
+8. **Deployment Agnostic**: Templates work with any deployment tool (Azure CLI, DevOps, GitHub Actions, Ev2, etc.)
 9. **Idempotency**: Templates can be re-run safely
 10. **Documentation**: Inline comments explaining design decisions
 11. **Simplicity**: Prefer built-in solutions over custom implementations
@@ -2008,6 +1063,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
 
 ⚠️ **AVOID** (Unless complexity is required):
 - ❌ **Hardcoded values**: Regions, environments, specific names, SKUs, IPs, secrets
+- ❌ **Ev2-specific concepts**: No ServiceModel references, RolloutSpec logic, or Ev2 terminology in Bicep
 - ❌ **Environment-specific logic**: No `if environment == 'prod'` conditionals - use parameters instead
 - Complex conditional logic (nested if/then/else) - prefer parameter-driven configuration
 - Custom resource types when standard ones exist
@@ -2029,6 +1085,7 @@ Before finalizing any template, ask:
 - [ ] **NO hardcoded environments?** All environment-specific values are parameters?
 - [ ] **NO hardcoded resource names?** Names constructed from parameters (`namePrefix`, `environment`)?
 - [ ] **NO hardcoded SKUs?** All SKUs are parameters with sensible defaults?
+- [ ] **NO Ev2 concepts?** Template is pure Bicep with no deployment orchestration logic?
 - [ ] **Composable module?** Can this be deployed standalone or as part of larger deployment?
 - [ ] **Rich outputs?** Exports resource IDs, endpoints, identities for wiring to other components?
 - [ ] Could this be simpler without losing required functionality?
@@ -2186,6 +1243,7 @@ output endpoint string = example.properties.endpoint
 - ✅ **Composable**: Can be deployed independently or orchestrated
 - ✅ **Wirable**: Rich outputs for connecting to other components
 - ✅ **Configurable**: All values from parameters, not hardcoded
+- ✅ **No Ev2 concepts**: Pure Bicep, orchestration-agnostic
 
 ## 📝 Resource Modules to Generate
 
@@ -2325,21 +1383,15 @@ main.bicep
 
 ## ✅ Generation Tasks (see TODO.md for progress)
 
-**REMINDER**: Update TODO.md after completing EACH task below using `replace_string_in_file`.
-
 Total: [X] tasks
-- [ ] Create directory structure → **UPDATE TODO.md**
-- [ ] Generate README.md → **UPDATE TODO.md**
-- [ ] Generate TODO.md → **UPDATE TODO.md**
-- [ ] Generate main.bicep → **UPDATE TODO.md**
-- [ ] Generate module: [resource 1] → **UPDATE TODO.md**
-- [ ] Generate module: [resource 2] → **UPDATE TODO.md**
-- [ ] Create parameter files (3 environments) → **UPDATE TODO.md**
-- [ ] Create deployment scripts → **UPDATE TODO.md**
-- [ ] Validate all templates → **UPDATE TODO.md**
-- [ ] Generate deployment documentation → **UPDATE TODO.md**
-
-**After EACH task above**: Use `replace_string_in_file` to update TODO.md progress.
+- [ ] Create directory structure
+- [ ] Generate main.bicep
+- [ ] Generate module: [resource 1]
+- [ ] Generate module: [resource 2]
+- [ ] Create parameter files (3 environments)
+- [ ] Create deployment scripts
+- [ ] Validate all templates
+- [ ] Generate deployment documentation
 
 ## 🚀 Deployment Instructions
 
@@ -2353,10 +1405,6 @@ Total: [X] tasks
 ```
 
 Use the `create_file` tool to create this README.md file.
-
-**IMMEDIATELY AFTER creating README.md**: Update TODO.md to mark this step as complete using `replace_string_in_file`.
-
----
 
 ### ✅ Step 2: Create Progress Tracker with Validation Gates (TODO.md)
 
@@ -2593,183 +1641,36 @@ Use the `create_file` tool to create this TODO.md file.
 
 **MANDATORY PROCESS** for each template:
 
-1. **BEFORE generating**: Update TODO.md to mark task as in progress `[🔄]`
-   ```
-   Use replace_string_in_file to change:
-   - [ ] Generate modules/storage.bicep
-   TO:
-   - [🔄] Generate modules/storage.bicep
-   ```
-
-2. **Generate** the template file using `create_file`
-
-3. **Run validation gate** checks:
+1. **Generate** the template file
+2. **Run validation gate** checks:
    ```bash
    # Syntax validation
    az bicep build --file [module-file].bicep
    
    # If errors, STOP and fix before proceeding
    ```
-
-4. **Update TODO.md with validation results** (MANDATORY - do not skip):
-   ```
-   Use replace_string_in_file to add validation notes:
-   - [🔄] Generate modules/storage.bicep
-     ✅ Syntax validation passed
-     ✅ Uses Microsoft.Storage/storageAccounts@2023-01-01
-     ✅ Includes Private Endpoint configuration
-   ```
-
-5. **Write critique** in TODO.md:
+3. **Write critique**:
    - What works well in this template?
    - What could be improved?
    - Are there security concerns?
    - Is complexity justified?
    - Can it be simpler?
+4. **Update TODO.md** with validation results
+5. **ONLY IF PASS**: Proceed to next template
+6. **IF BLOCKED**: Fix errors, re-validate, repeat until PASS
 
-6. **If validation PASSES**: Update TODO.md to mark complete:
-   ```
-   Use replace_string_in_file to change:
-   - [🔄] Generate modules/storage.bicep
-   TO:
-   - [x] Generate modules/storage.bicep
-   ```
+### 📌 Important: Update TODO.md During Generation
 
-7. **Update progress percentage** in TODO.md header:
-   ```
-   Use replace_string_in_file to update:
-   Progress: 3/15 tasks complete (20%)
-   TO:
-   Progress: 4/15 tasks complete (27%)
-   ```
+As you generate each file:
+1. **Before starting a task**: Update TODO.md to mark task as in progress
+2. **After generating file**: Run validation gate checks
+3. **Write critique**: Document validation results in TODO.md
+4. **After validation passes**: Update TODO.md to mark task as complete with [x]
+5. **Update progress percentage** in the overview
+6. **Note any issues or deviations** from the plan
+7. **IF BLOCKED**: Do NOT proceed until fixed
 
-8. **ONLY IF PASS**: Proceed to next template
-
-9. **IF BLOCKED**: Update TODO.md with blocker and STOP:
-   ```
-   - [❌] Generate modules/cosmos-db.bicep
-     ❌ BLOCKED: Syntax error on line 42
-     🚧 Must fix nested loop issue before proceeding
-   ```
-
-### 📌 MANDATORY: Update TODO.md After EVERY Step
-
-**CRITICAL RULE**: TODO.md must be updated after EVERY generation step to show progress.
-
-**WORKFLOW FOR EACH FILE** (NO EXCEPTIONS):
-
-1. **BEFORE starting generation**:
-   ```
-   Update TODO.md: Change "[ ]" to "[🔄]" (in progress)
-   Example: "- [🔄] Generate modules/storage.bicep"
-   ```
-
-2. **Generate the file** using `create_file` tool
-
-3. **Run validation gate checks**:
-   ```bash
-   az bicep build --file [module-file].bicep
-   ```
-
-4. **IMMEDIATELY update TODO.md with validation results**:
-   ```
-   Add validation notes under the task:
-   - [🔄] Generate modules/storage.bicep
-     ✅ Syntax validation passed
-     ✅ Uses correct API version
-     ⚠️ Note: [any observations]
-   ```
-
-5. **If validation passes**: Update TODO.md to mark complete:
-   ```
-   Change "[🔄]" to "[x]" (complete)
-   Example: "- [x] Generate modules/storage.bicep"
-   ```
-
-6. **Update progress percentage** at the top of TODO.md:
-   ```
-   Progress: [Completed Tasks / Total Tasks] = X%
-   ```
-
-7. **IF BLOCKED**: Update TODO.md with blocker info and STOP:
-   ```
-   - [❌] Generate modules/cosmos-db.bicep
-     ❌ Syntax error: [error message]
-     🚧 BLOCKED - Must fix before proceeding
-   ```
-
-**USE THIS TOOL**: `replace_string_in_file` to update TODO.md after EACH step.
-
-**NEVER skip TODO.md updates** - they provide critical visibility into generation progress.
-
----
-
-### 📊 Example TODO.md Update Workflow
-
-Here's a concrete example of how to update TODO.md throughout generation:
-
-**STEP 1: Before starting storage.bicep**
-```markdown
-Update TODO.md using replace_string_in_file:
-- [ ] Generate modules/storage.bicep
-TO:
-- [🔄] Generate modules/storage.bicep
-  ⏳ Generation started: [timestamp]
-```
-
-**STEP 2: After generating storage.bicep**
-```markdown
-Update TODO.md using replace_string_in_file:
-- [🔄] Generate modules/storage.bicep
-  ⏳ Generation started: [timestamp]
-TO:
-- [🔄] Generate modules/storage.bicep
-  ⏳ Generation started: [timestamp]
-  ✅ File created: bicep-templates/modules/storage.bicep (142 lines)
-  🔍 Running validation...
-```
-
-**STEP 3: After validation completes**
-```markdown
-Update TODO.md using replace_string_in_file:
-- [🔄] Generate modules/storage.bicep
-  ⏳ Generation started: [timestamp]
-  ✅ File created: bicep-templates/modules/storage.bicep (142 lines)
-  🔍 Running validation...
-TO:
-- [🔄] Generate modules/storage.bicep
-  ⏳ Generation started: [timestamp]
-  ✅ File created: bicep-templates/modules/storage.bicep (142 lines)
-  ✅ Syntax validation passed (az bicep build)
-  ✅ Uses Microsoft.Storage/storageAccounts@2023-01-01
-  ✅ Private Endpoint configuration included
-  ✅ NSP association configured
-  ℹ️ No warnings or issues detected
-```
-
-**STEP 4: Mark complete and update progress**
-```markdown
-Update TODO.md using replace_string_in_file:
-Progress: 4/15 tasks complete (27%)
-TO:
-Progress: 5/15 tasks complete (33%)
-
-AND:
-- [🔄] Generate modules/storage.bicep
-TO:
-- [x] Generate modules/storage.bicep
-  ✅ Completed: [timestamp]
-  ⏱️ Duration: 3 minutes
-  ✅ File created: bicep-templates/modules/storage.bicep (142 lines)
-  ✅ All validations passed
-```
-
-**STEP 5: Move to next module**
-```markdown
-Repeat the same workflow for the next module (app-service.bicep, etc.)
-```
-
----
+Use the `replace_string_in_file` tool to update TODO.md after each significant step.
 
 ### Deployment Guidance
 
@@ -2833,6 +1734,7 @@ Add to .github/workflows/deploy.yml:
 
 - **Terraform**: Use azurerm_resource_group_template_deployment
 - **Pulumi**: Use azure-native templates
+- **Express V2 (Ev2)**: Add Bicep templates as ExtensionResources in ServiceModel
 
 ### Validation Before Deployment
 
@@ -3076,6 +1978,7 @@ Always be helpful, thorough, and security-conscious in your recommendations!
 After completing your analysis and providing all recommendations, create the infrastructure report file **ONLY AFTER** these steps are complete:
 
 **IMPORTANT TIMING**:
+1. ✅ Show initial analysis in chat (detected resources, Ev2 configuration)
 2. ✅ Ask all context-aware questions (Step 3)
 3. ✅ Wait for user to answer all questions
 4. ✅ Show final recommendations in chat
@@ -3194,24 +2097,151 @@ I can update it with infrastructure and deployment information to help Copilot u
 
 Wait for user response.
 
-### Step 3: Analyze and Propose Complete Solution
+### Step 3: If User Approves - Update File
 
-**DO NOT ask questions** - instead, create an intelligent proposal based on:
-- Detected services and dependencies
-- Application architecture patterns
-- Best practices for Azure security
-- Mandatory security requirements
+If user responds "Yes", read the existing file and add a new section:
 
-**Your proposal should include**:
-1. Detected Azure resources table (resource type, module file, purpose, security config)
-2. Mandatory security architecture diagram (VNet topology, subnets, NAT Gateway, NSP)
-3. List of all Bicep modules to generate (organized by deployment phase)
-4. Example module showing secure configuration (e.g., Key Vault with PE + NSP)
-5. Multi-environment configuration strategy (dev, staging, production)
-6. Deployment order and dependencies
-7. Security compliance checklist
+```markdown
+## Infrastructure & Deployment
 
-**Present the complete solution and ask for approval** before generating any files.
+> **Auto-generated by Specify Bicep Generator** - [Date]
+> This section provides context about the project's Azure infrastructure
+
+### Azure Resources
+
+This project deploys the following Azure resources:
+
+| Resource Type | Module | Purpose |
+|---------------|--------|---------|
+| [Resource Type] | `bicep-templates/modules/[name].bicep` | [Purpose] |
+[List all resources...]
+
+### Deployment Strategy
+
+- **Method**: [Azure CLI | Azure DevOps | GitHub Actions | Other CI/CD]
+- **Regions**: [List regions]
+- **Availability Strategy**: [Single region | Multi-region active-passive | Multi-region active-active]
+- **Availability Zones**: [Yes/No - if yes, which resources]
+- **Environments**: dev, staging, production
+
+### Security Patterns
+
+**Follow these security patterns when working with infrastructure code**:
+
+- ✅ **Managed Identity**: All Azure resources use system-assigned or user-assigned Managed Identity for authentication
+- ✅ **Key Vault**: All secrets stored in Azure Key Vault (`[Key Vault name]`)
+  - Reference secrets using Key Vault references, never hardcode
+  - Example: `@Microsoft.KeyVault(VaultName=[vault];SecretName=[secret])`
+- ✅ **Network Security**: 
+  - [If private endpoints] Resources use private endpoints for secure access
+  - [If VNet] Resources integrated with Virtual Network
+  - NSGs configured for [specific security rules]
+- ✅ **HTTPS/TLS**: All web resources enforce HTTPS-only with TLS 1.2+
+- ✅ **RBAC**: Least privilege access using Azure role-based access control
+
+### Naming Conventions
+
+**Resource Naming Pattern**: `{service}-{environment}-{region}`
+
+Examples:
+- App Service: `myapp-prod-eastus`
+- Storage Account: `myappprodstorage` (no hyphens due to Azure naming rules)
+- Key Vault: `myapp-prod-kv`
+
+**Environment Suffixes**:
+- `dev` - Development
+- `staging` - Staging/Pre-production
+- `prod` - Production
+
+### Bicep Templates
+
+**Location**: `bicep-templates/`
+
+**Structure**:
+```
+bicep-templates/
+├── main.bicep                 # Main orchestrator
+├── modules/                   # Modular resource templates
+│   ├── networking.bicep
+│   ├── key-vault.bicep
+│   ├── storage.bicep
+│   └── [other modules]
+├── parameters/                # Environment-specific configs
+│   ├── dev.parameters.json
+│   ├── staging.parameters.json
+│   └── production.parameters.json
+└── deploy.sh / deploy.ps1    # Deployment scripts
+```
+
+**Best Practices**:
+- **Modularity**: Each resource type in separate module
+- **Parameters**: Use parameter files for environment-specific values
+- **Validation**: Always run `az bicep build` before committing
+- **Security**: No secrets in templates - use Key Vault references
+- **Dependencies**: Explicit dependencies using `dependsOn` or implicit references
+- **Simplicity**: Keep templates as simple as possible
+
+### Deployment Commands
+
+**Validate templates**:
+```bash
+az bicep build --file bicep-templates/main.bicep
+```
+
+**Preview changes (What-If)**:
+```bash
+az deployment group what-if \
+  --resource-group [rg-name] \
+  --template-file bicep-templates/main.bicep \
+  --parameters @bicep-templates/parameters/dev.parameters.json
+```
+
+**Deploy**:
+```bash
+az deployment group create \
+  --resource-group [rg-name] \
+  --template-file bicep-templates/main.bicep \
+  --parameters @bicep-templates/parameters/dev.parameters.json
+```
+
+[If Ev2]
+**Deploy via Ev2**:
+```bash
+# Validate Ev2 rollout
+ev2 validate-rolloutspec -s RolloutSpec.json
+
+# Execute rollout
+ev2 execute-rollout -s RolloutSpec.json
+```
+
+### Common Infrastructure Tasks
+
+**When adding a new Azure resource**:
+1. Check if module exists in `bicep-templates/modules/`
+2. If not, create new module following existing patterns
+3. Add parameters to parameter files
+4. Update `main.bicep` to reference new module
+5. Run `az bicep build` to validate
+6. Update this documentation
+
+**When modifying existing resources**:
+1. Update the appropriate module in `bicep-templates/modules/`
+2. Update parameters if needed
+3. Validate with `az bicep build`
+4. Test with `az deployment group what-if`
+5. Review security implications
+
+**Key Vault secrets management**:
+- Add secrets using: `az keyvault secret set --vault-name [vault] --name [secret-name] --value [value]`
+- Reference in app: Use Key Vault reference syntax
+- Never commit secrets to source control
+
+---
+
+> **Note**: This infrastructure section auto-generated. Update as infrastructure evolves.
+```
+
+Use `replace_string_in_file` to append this section to the existing file (add before any "Manual Additions" section if it exists, otherwise append to end).
 
 ### Step 4: If File Doesn't Exist - Offer to Create
 
@@ -3298,13 +2328,22 @@ Present recommendations in this format:
 
 Based on my analysis of your project, here are important recommendations:
 
+### 1. 🚨 Missing Resources Not in Ev2 Deployment
+
+**[Only include if Ev2 configuration was detected]**
+
+The following resources detected in your code are NOT defined in your Ev2 ServiceModel files:
+
 | Resource Type | Evidence | Impact | Priority |
 |---------------|----------|--------|----------|
 | Azure Service Bus | `Azure.Messaging.ServiceBus` in Project.csproj | Message queuing functionality won't deploy | HIGH |
 | Application Insights | `Microsoft.ApplicationInsights` in Project.csproj | No telemetry/monitoring in deployed environments | HIGH |
 | Redis Cache | `REDIS_HOST` in .env file | Caching layer missing from deployment | MEDIUM |
 
-**Action Required**:- Ensure parameter files include configuration for new resources
+**Action Required**:
+- Add these resources to ServiceModel files
+- Update RolloutSpec if new deployment stages are needed
+- Ensure parameter files include configuration for new resources
 
 ### 2. 💡 Architecture Simplification Opportunities
 
@@ -3568,6 +2607,7 @@ Benefits:
 
 | Priority | Category | Action | Effort | Impact |
 |----------|----------|--------|--------|--------|
+| 🔴 HIGH | Security | Add missing resources to Ev2 | Medium | HIGH |
 | 🔴 HIGH | Security | Enable Managed Identity | Low | HIGH |
 | 🟡 MEDIUM | Cost | Right-size non-prod resources | Low | MEDIUM |
 | 🟡 MEDIUM | Performance | Add Redis Cache | Medium | MEDIUM |
@@ -3577,6 +2617,7 @@ Benefits:
 ### Next Steps
 
 1. **Immediate** (This Week):
+   - Add missing resources to Ev2 ServiceModel
    - Enable Managed Identity for all applications
    - Review and apply security recommendations
 
@@ -3594,6 +2635,10 @@ Benefits:
 ### Customization Guidelines
 
 Tailor recommendations based on:
+
+1. **Ev2 Presence**:
+   - If Ev2 detected: Focus on missing resources, ServiceModel gaps, deployment strategy alignment
+   - If no Ev2: Focus on deployment automation, environment configuration, CI/CD setup
 
 2. **Project Size**:
    - Small projects: Emphasize simplification and cost optimization
@@ -3614,23 +2659,30 @@ Tailor recommendations based on:
 
 ### Example for Different Scenarios
 
+#### Scenario 1: Large Ev2 Project with Missing Resources
 ```markdown
 ## 🎯 Recommendations
 
+### 1. 🚨 Missing Resources Not in Ev2 Deployment (HIGH PRIORITY)
+
+I detected 4 resources in your code that are NOT in your ServiceModel files:
 - Azure Service Bus (detected in 3 projects)
 - Application Insights (detected in 5 projects)
 - Azure Cache for Redis (referenced in appsettings.json)
 - Azure Front Door (traffic routing code detected)
 
+**Critical**: These components are essential to your application but won't be deployed via Ev2.
 [... detailed recommendations ...]
 ```
 
+#### Scenario 2: Small Project, No Ev2
 ```markdown
 ## 🎯 Recommendations
 
 ### 1. 💡 Deployment Automation Opportunities
 
 Your project currently has no deployment automation. Consider:
+- Setting up Ev2 for progressive rollout (recommended for production)
 - Or: Using Azure DevOps/GitHub Actions with Bicep templates
 - Benefit: Consistent deployments, easy rollback, audit trail
 [... detailed recommendations ...]

@@ -26,6 +26,17 @@ This release introduces a comprehensive Bicep template generator for the Specify
 - **Multi-environment support** - Separate parameter files for dev/staging/production
 - **Dependency resolution** - Automatic resource dependency graph generation
 - **Naming conventions** - Azure-compliant resource naming with customization
+- **Ev2 (Express V2) Integration** - Safe deployment orchestration support:
+  - **Case-insensitive file detection** - Finds ServiceModel files regardless of naming case (ServiceModel.json, *.servicemodel.json)
+  - **Thorough subdirectory exploration** - Scans all nested folders including DiagnosticDataProviders, Proxy, and other subcomponents
+  - **No focus bias** - Analyzes all service layers equally (main services, proxies, middleware, data providers, utilities)
+  - **Multiple deployment support** - Identifies and reports each ServiceModel separately with parent project/component context
+  - Automatic detection of existing Ev2 configuration files (RolloutSpec, ServiceModel, Parameters, ScopeBindings)
+  - Context-aware questions based on Ev2 ServiceModel and RolloutSpec
+  - Ev2-compatible template structure with ev2-integration/ folder
+  - ServiceModel and RolloutSpec integration templates
+  - Deployment guidance for existing Ev2 pipelines and new setups
+- **Infrastructure Report Generation** - Automatically creates `infrastructure-analysis-report.md` with complete analysis, Ev2 configurations, recommendations, and action items
 
 #### Validation & Deployment
 - **Syntax validation** - Bicep CLI integration for pre-deployment checks
