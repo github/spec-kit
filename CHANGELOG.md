@@ -7,6 +7,33 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.16] - 2025-10-28
+
+### Changed
+
+- **Reorganized Prompt History Record (PHR) Directory Structure**
+  - All prompts now consolidated under `history/prompts/` with logical subdirectories:
+    - `history/prompts/constitution/` - Constitution stage prompts (project principles)
+    - `history/prompts/<feature-name>/` - Feature-specific prompts (spec, plan, tasks, red, green, refactor, explainer, misc)
+    - `history/prompts/general/` - General/catch-all prompts for non-feature work
+  - **Rationale:** Developers reported confusion with prompts split between `history/` and `specs/<feature>/prompts/`. Consolidating under `history/prompts/` provides a single, clear location for all prompt history.
+  - Automatic feature name extraction from numbered directories (e.g., `001-auth` → `auth`)
+  - Updated `scripts/bash/create-phr.sh` with new routing logic
+  - Updated `templates/commands/phr.md` with new directory mapping
+  - Updated `protocol-templates/AGENTS.md` with new routing documentation
+  - Updated `memory/command-rules.md` with new routing rules
+
+- **Fixed AGENTS.md Redundancy in Template Generation**
+  - Removed generic `AGENTS.md` from project root in release packages
+  - Agent-specific rule files (CLAUDE.md, GEMINI.md, QWEN.md, etc.) now contain all AGENTS.md content with agent-specific preface
+  - Eliminates duplicate files while preserving all protocol information
+  - Added missing AMP agent support to `generate_agent_rules()` function
+  - Updated `.github/workflows/scripts/create-release-packages.sh` to properly generate agent-specific rule files for all 14 supported agents
+
+### Fixed
+
+- `create-release-packages.sh` now properly generates rule files for AMP agent (previously missing from generate_agent_rules)
+
 ## [0.0.20] - 2025-10-14
 
 ### Added

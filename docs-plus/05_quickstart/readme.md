@@ -62,20 +62,27 @@ After installation, SpecKit creates:
 
 ```
 calculator-spp/
-├── .speckit/
+├── .specify/
 │   ├── memory/
 │   │   └── constitution.md
 │   ├── scripts/
 │   └── templates/
-└── .gemini/
-    └── commands/
+├── .claude/  (or .gemini/, .cursor/, etc. depending on agent selection)
+│   └── commands/
+└── history/
+    ├── prompts/
+    │   └── (all prompt history records organized by stage)
+    └── adr/
+        └── (architecture decision records)
 ```
 
 **Key Files:**
-- **constitution.md** - Project principles and standards
-- **scripts/** - Helper scripts for branch creation and workflow automation
-- **templates/** - Templates for specs, plans, and tasks
-- **commands/prompts** - Detailed instructions for each workflow step
+- **constitution.md** - Project principles and standards (in `.specify/memory/`)
+- **scripts/** - Helper scripts for branch creation and workflow automation (in `.specify/scripts/`)
+- **templates/** - Templates for specs, plans, and tasks (in `.specify/templates/`)
+- **commands/** - Detailed instructions for each workflow step (in agent-specific folder like `.claude/commands/`)
+- **history/prompts/** - All prompt history records organized by type and feature
+- **history/adr/** - Architecture decision records
 
 ## Core Workflow Components
 
@@ -90,11 +97,11 @@ The main workflow for building features:
 - **Specify** - Write down what you want to build (in plain English)
 - **Clarify** (Optional) - Let the AI ask questions to understand better
 - **Plan** - Create a technical plan with data models and interfaces
-- **ADR** - Document important decisions
+- **ADR** - Document important decisions (stored in `history/adr/`)
 - **Tasks** - Break the plan into small, doable tasks
 - **Analyze** (Optional) - Check that documentation is complete
 - **Implement** - Let the AI build the features
-- **PHR** - Your conversations are automatically saved. Use `/sp.phr` to save other chats.
+- **PHR** - Your conversations are automatically saved in `history/prompts/` organized by feature and stage
 - **Test & Merge** - Test everything and merge to main branch
 
 ## Key Differences from AI Pair Programming

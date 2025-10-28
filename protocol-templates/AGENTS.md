@@ -13,7 +13,10 @@ You are an expert AI assistant specializing in Spec-Driven Development (SDD). Yo
 ## Core Guarantees (Product Promise)
 
 - Record every user input verbatim in a Prompt History Record (PHR) after every user message. Do not truncate; preserve full multiline input.
-- PHR routing: default `history/prompts/`; if feature context or feature branch, also `specs/<feature>/prompts/`.
+- PHR routing (all under `history/prompts/`):
+  - Constitution → `history/prompts/constitution/`
+  - Feature-specific → `history/prompts/<feature-name>/`
+  - General → `history/prompts/general/`
 - ADR suggestions: when an architecturally significant decision is detected, suggest: "📋 Architectural decision detected: <brief>. Document? Run `/sp.adr <title>`." Never auto‑create ADRs; require user consent.
 
 ## Development Guidelines
@@ -37,23 +40,25 @@ After completing requests, you **MUST** create a PHR (Prompt History Record).
 **PHR Creation Process:**
 
 1) Detect stage
-   - One of: constitution | spec | plan | tasks | implementation | debugging | refactoring | discussion | general
+   - One of: constitution | spec | plan | tasks | red | green | refactor | explainer | misc | general
 
 2) Generate title
    - 3–7 words; create a slug for the filename.
 
-2a) Resolve route
-  - If feature context is detected (explicit marker, branch name, or touched specs/<name>/), target specs/<name>/prompts/; else target history/prompts/.
-  - Use this route when computing the output path in step 3. If you later detect feature context after writing to history/, move the file to specs/<name>/prompts/ and update feature/branch in front‑matter.
+2a) Resolve route (all under history/prompts/)
+  - `constitution` → `history/prompts/constitution/`
+  - Feature stages (spec, plan, tasks, red, green, refactor, explainer, misc) → `history/prompts/<feature-name>/` (requires feature context)
+  - `general` → `history/prompts/general/`
 
 3) Prefer agent‑native flow (no shell)
    - Read the PHR template from one of:
      - `.specify/templates/phr-template.prompt.md`
      - `templates/phr-template.prompt.md`
    - Allocate an ID (increment; on collision, increment again).
-   - Compute output path, use the route from 2a:
-     - Pre‑feature → docs → history/prompts/<ID>-<slug>.<stage>.prompt.md
-     - feature → specs/<feature>/prompts/<ID>-<slug>.<stage>.prompt.md
+   - Compute output path based on stage:
+     - Constitution → `history/prompts/constitution/<ID>-<slug>.constitution.prompt.md`
+     - Feature → `history/prompts/<feature-name>/<ID>-<slug>.<stage>.prompt.md`
+     - General → `history/prompts/general/<ID>-<slug>.general.prompt.md`
    - Fill ALL placeholders in YAML and body:
      - ID, TITLE, STAGE, DATE_ISO (YYYY‑MM‑DD), SURFACE="agent"
      - MODEL (best known), FEATURE (or "none"), BRANCH, USER
@@ -72,12 +77,13 @@ After completing requests, you **MUST** create a PHR (Prompt History Record).
    - If it references shell but Shell is unavailable, still perform step 3 with agent‑native tools.
 
 5) Shell fallback (only if step 3 is unavailable or fails, and Shell is permitted)
-   - Run: `.specify/scripts/bash/create-phr.sh --title "<title>" --stage <stage> --json`
+   - Run: `.specify/scripts/bash/create-phr.sh --title "<title>" --stage <stage> [--feature <name>] --json`
    - Then open/patch the created file to ensure all placeholders are filled and prompt/response are embedded.
 
-6) Routing (branch‑aware)
-   - Default target: `history/prompts/`
-   - If a feature branch or feature context is detected, also route to `specs/<feature>/prompts/` and set FEATURE/BRANCH fields accordingly.
+6) Routing (automatic, all under history/prompts/)
+   - Constitution → `history/prompts/constitution/`
+   - Feature stages → `history/prompts/<feature-name>/` (auto-detected from branch or explicit feature context)
+   - General → `history/prompts/general/`
 
 7) Post‑creation validations (must pass)
    - No unresolved placeholders (e.g., `{{THIS}}`, `[THAT]`).
@@ -118,7 +124,7 @@ You are not expected to solve every problem autonomously. You MUST invoke the us
 2) List constraints, invariants, non‑goals.
 3) Produce the artifact with acceptance checks inlined (checkboxes or tests where applicable).
 4) Add follow‑ups and risks (max 3 bullets).
-5) Create PHR in appropriate directory (`history/prompts/` or `specs/<feature>/prompts/`).
+5) Create PHR in appropriate subdirectory under `history/prompts/` (constitution, feature-name, or general).
 6) If plan/tasks identified decisions that meet significance, surface ADR suggestion text as described above.
 
 ### Minimum acceptance criteria

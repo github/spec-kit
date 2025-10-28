@@ -4,19 +4,20 @@ set -euo pipefail
 # create-phr.sh - Create Prompt History Record (PHR) - Spec Kit Native
 # 
 # Deterministic PHR location strategy:
-# 1. Pre-feature stages (constitution, spec):
-#    → history/prompts/
-#    → stages: constitution, spec
+# 1. Constitution stage:
+#    → history/prompts/constitution/
+#    → stage: constitution
 #    → naming: 0001-title.constitution.prompt.md
 #
-# 2. Feature stages (all other work):
-#    → specs/<feature>/prompts/
-#    → stages: architect, red, green, refactor, explainer, misc, general
-#    → naming: 0001-title.architect.prompt.md
+# 2. Feature stages (spec-specific work):
+#    → history/prompts/<spec-name>/
+#    → stages: spec, plan, tasks, red, green, refactor, explainer, misc
+#    → naming: 0001-title.spec.prompt.md
 #
-# 3. Special case - 'general' stage:
-#    → If specs/ exists: goes to specs/<feature>/prompts/
-#    → If no specs/: falls back to history/prompts/ with warning
+# 3. General stage (catch-all):
+#    → history/prompts/general/
+#    → stage: general
+#    → naming: 0001-title.general.prompt.md
 #
 # This script ONLY:
 #   1. Creates the correct directory structure
@@ -50,21 +51,16 @@ Usage: $0 --title <title> --stage <stage> [options]
 
 Required:
   --title <text>       Title for the PHR (used for filename)
-  --stage <stage>      Pre-feature: constitution|spec
-                       Feature work: architect|plan|tasks|red|green|refactor|explainer|misc|general
+  --stage <stage>      constitution|spec|plan|tasks|red|green|refactor|explainer|misc|general
 
 Optional:
   --feature <slug>     Feature slug (e.g., 001-auth). Auto-detected from branch if omitted.
   --json               Output JSON with id, path, and context
 
-Stage Extensions:
-  Pre-feature stages: .constitution.prompt.md, .spec.prompt.md
-  Feature stages: .architect.prompt.md, .plan.prompt.md, .tasks.prompt.md, .red.prompt.md, .green.prompt.md, .general.prompt.md, etc.
-  
-Location Rules:
-  - constitution, spec → always history/prompts/
-  - architect, plan, tasks, red, green, refactor, explainer, misc → requires specs/<feature>/prompts/
-  - general → specs/<feature>/prompts/ if exists, else history/prompts/ with warning
+Location Rules (all under history/prompts/):
+  - constitution → history/prompts/constitution/
+  - spec, plan, tasks, red, green, refactor, explainer, misc → history/prompts/<feature-name>/
+  - general → history/prompts/general/ (catch-all for non-feature work)
 
 Output:
   Creates PHR file with template placeholders ({{ID}}, {{TITLE}}, etc.)
@@ -110,98 +106,99 @@ else
 fi
 
 # Deterministic location logic based on STAGE
-PRE_FEATURE_STAGES=("constitution" "spec")
-FEATURE_STAGES=("architect" "plan" "tasks" "red" "green" "refactor" "explainer" "misc" "general")
+# New structure: all prompts go under history/prompts/ with subdirectories:
+# - constitution/ for constitution prompts
+# - <spec-name>/ for spec-specific prompts
+# - general/ for general/catch-all prompts
 
-# Check if this is a pre-feature stage (constitution or spec only)
-IS_PRE_FEATURE=false
-for pf_stage in "${PRE_FEATURE_STAGES[@]}"; do
-  if [[ "$STAGE" == "$pf_stage" ]]; then
-    IS_PRE_FEATURE=true
-    break
-  fi
-done
-
-if [[ "$IS_PRE_FEATURE" == "true" ]]; then
-  # Pre-feature stage: always use history/prompts/ (constitution, spec only)
-  PROMPTS_DIR="$REPO_ROOT/history/prompts"
-  VALID_STAGES=("${PRE_FEATURE_STAGES[@]}")
-  CONTEXT="pre-feature"
-else
-  # Feature stage: architect, plan, tasks, red, green, refactor, explainer, misc, general
-  # These require specs/ directory and feature context
-  
-  if [[ ! -d "$SPECS_DIR" ]]; then
-    # Special case: 'general' can fall back to history/prompts/ if no specs exist
-    if [[ "$STAGE" == "general" ]]; then
-      echo "Warning: No specs/ directory found. Using history/prompts/ for general stage." >&2
-      echo "Consider using 'constitution' or 'spec' stages, or create a feature first with /specify" >&2
-      PROMPTS_DIR="$REPO_ROOT/history/prompts"
-      VALID_STAGES=("general")
-      CONTEXT="pre-feature-fallback"
-    else
-      echo "Error: Feature stage '$STAGE' requires specs/ directory and feature context" >&2
-      echo "Use pre-feature stages (constitution, spec) or create a feature first with /specify" >&2
+case "$STAGE" in
+  constitution)
+    # Constitution prompts always go to history/prompts/constitution/
+    PROMPTS_DIR="$REPO_ROOT/history/prompts/constitution"
+    VALID_STAGES=("constitution")
+    CONTEXT="constitution"
+    ;;
+  spec|plan|tasks|red|green|refactor|explainer|misc)
+    # Feature-specific stages: require specs/ directory and feature context
+    if [[ ! -d "$SPECS_DIR" ]]; then
+      echo "Error: Feature stage '$STAGE' requires specs/ directory and a feature context" >&2
+      echo "Run /sp.feature first to create a feature, then try again" >&2
       exit 1
     fi
-  else
-    # specs/ exists - proceed with feature context
+
     # Auto-detect feature if not specified
-  if [[ -z "$FEATURE" ]]; then
-    # Try to get from SPECIFY_FEATURE environment variable
-    if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
-      FEATURE="$SPECIFY_FEATURE"
-    # Try to match current branch
-    elif git rev-parse --show-toplevel >/dev/null 2>&1; then
-      BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-      if [[ -n "$BRANCH" && "$BRANCH" != "main" && "$BRANCH" != "master" ]]; then
-        # Check if branch name matches a feature directory
-        if [[ -d "$SPECS_DIR/$BRANCH" ]]; then
-          FEATURE="$BRANCH"
-        fi
-      fi
-    fi
-    
-    # If still no feature, find the highest numbered feature
     if [[ -z "$FEATURE" ]]; then
-      max_num=0
-      latest_feature=""
-      for dir in "$SPECS_DIR"/*; do
-        if [[ -d "$dir" ]]; then
-          dirname=$(basename "$dir")
-          if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
-            num=$((10#${BASH_REMATCH[1]}))
-            if (( num > max_num )); then
-              max_num=$num
-              latest_feature="$dirname"
-            fi
+      # Try to get from SPECIFY_FEATURE environment variable
+      if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
+        FEATURE="$SPECIFY_FEATURE"
+      # Try to match current branch
+      elif git rev-parse --show-toplevel >/dev/null 2>&1; then
+        BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        if [[ -n "$BRANCH" && "$BRANCH" != "main" && "$BRANCH" != "master" ]]; then
+          # Check if branch name matches a feature directory
+          if [[ -d "$SPECS_DIR/$BRANCH" ]]; then
+            FEATURE="$BRANCH"
           fi
         fi
-      done
-      
-      if [[ -n "$latest_feature" ]]; then
-        FEATURE="$latest_feature"
-      else
-        echo "Error: No feature specified and no numbered features found in $SPECS_DIR" >&2
-        echo "Please specify --feature or create a feature directory first" >&2
-        exit 1
+      fi
+
+      # If still no feature, find the highest numbered feature
+      if [[ -z "$FEATURE" ]]; then
+        max_num=0
+        latest_feature=""
+        for dir in "$SPECS_DIR"/*; do
+          if [[ -d "$dir" ]]; then
+            dirname=$(basename "$dir")
+            if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
+              num=$((10#${BASH_REMATCH[1]}))
+              if (( num > max_num )); then
+                max_num=$num
+                latest_feature="$dirname"
+              fi
+            fi
+          fi
+        done
+
+        if [[ -n "$latest_feature" ]]; then
+          FEATURE="$latest_feature"
+        else
+          echo "Error: No feature specified and no numbered features found in $SPECS_DIR" >&2
+          echo "Please specify --feature or create a feature directory first" >&2
+          exit 1
+        fi
       fi
     fi
-  fi
-  
-  # Validate feature exists
-  if [[ ! -d "$SPECS_DIR/$FEATURE" ]]; then
-    echo "Error: Feature directory not found: $SPECS_DIR/$FEATURE" >&2
-    echo "Available features:" >&2
-    ls -1 "$SPECS_DIR" 2>/dev/null | head -5 | sed 's/^/  - /' >&2
-    exit 1
-  fi
-  
-    PROMPTS_DIR="$SPECS_DIR/$FEATURE/prompts"
-    VALID_STAGES=("architect" "plan" "tasks" "red" "green" "refactor" "explainer" "misc" "general")
+
+    # Validate feature exists
+    if [[ ! -d "$SPECS_DIR/$FEATURE" ]]; then
+      echo "Error: Feature directory not found: $SPECS_DIR/$FEATURE" >&2
+      echo "Available features:" >&2
+      ls -1 "$SPECS_DIR" 2>/dev/null | head -5 | sed 's/^/  - /' >&2
+      exit 1
+    fi
+
+    # Extract feature name (remove numbering prefix if present)
+    FEATURE_NAME="$FEATURE"
+    if [[ "$FEATURE_NAME" =~ ^([0-9]{3})-(.*)$ ]]; then
+      FEATURE_NAME="${BASH_REMATCH[2]}"
+    fi
+
+    # Feature prompts go to history/prompts/<feature-name>/
+    PROMPTS_DIR="$REPO_ROOT/history/prompts/$FEATURE_NAME"
+    VALID_STAGES=("spec" "plan" "tasks" "red" "green" "refactor" "explainer" "misc")
     CONTEXT="feature"
-  fi
-fi
+    ;;
+  general)
+    # General stage: catch-all that goes to history/prompts/general/
+    PROMPTS_DIR="$REPO_ROOT/history/prompts/general"
+    VALID_STAGES=("general")
+    CONTEXT="general"
+    ;;
+  *)
+    echo "Error: Unknown stage '$STAGE'" >&2
+    exit 1
+    ;;
+esac
 
 # Validate stage
 stage_valid=false

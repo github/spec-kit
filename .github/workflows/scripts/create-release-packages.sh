@@ -127,12 +127,12 @@ build_variant() {
   mkdir -p "$SPEC_DIR"
   
   [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
-  
-  # Copy AGENTS.md from protocol-templates to project root (not in .specify/memory)
-  if [[ -f protocol-templates/AGENTS.md ]]; then
-    cp protocol-templates/AGENTS.md "$base_dir/AGENTS.md"
-    echo "Copied AGENTS.md to project root (from protocol-templates)"
-  fi
+
+  # NOTE: AGENTS.md is NOT copied to project root.
+  # Instead, agent-specific rule files are generated (CLAUDE.md, GEMINI.md, etc.)
+  # by generate_agent_rules() below. These files already contain all AGENTS.md content
+  # with an agent-specific preface, eliminating redundancy.
+
   # If constitutionplus.md exists, overwrite constitution.md in release package
   if [[ -f memory/constitutionplus.md ]]; then
     mkdir -p "$SPEC_DIR/memory"
@@ -195,6 +195,7 @@ build_variant() {
       auggie) agent_name="Auggie CLI" ;;
       roo) agent_name="Roo Code" ;;
       codebuddy) agent_name="CodeBuddy" ;;
+      amp) agent_name="AWS Amplify AI" ;;
       q) agent_name="Amazon Q Developer CLI" ;;
       *) agent_name="$agent" ;;
     esac
@@ -266,6 +267,10 @@ This file is generated during init for the selected agent.
         echo "$full_content" > "$base_dir/.codebuddy/rules/guidelines.md"
         echo "Generated .codebuddy/rules/guidelines.md"
         ;;
+      amp)
+        echo "$full_content" > "$base_dir/AMP.md"
+        echo "Generated AMP.md"
+        ;;
     esac
   }
 
@@ -323,7 +328,8 @@ This file is generated during init for the selected agent.
       generate_agent_rules codebuddy "$base_dir" ;;
     amp)
       mkdir -p "$base_dir/.agents/commands"
-      generate_commands amp md "\$ARGUMENTS" "$base_dir/.agents/commands" "$script" ;;
+      generate_commands amp md "\$ARGUMENTS" "$base_dir/.agents/commands" "$script"
+      generate_agent_rules amp "$base_dir" ;;
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script"

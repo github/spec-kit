@@ -48,11 +48,11 @@ You automatically get:
 PHRs are created **automatically** after:
 
 ```bash
-/sp.constitution Define quality standards     → PHR created in history/prompts/
-/sp.specify Create authentication feature     → PHR created in history/prompts/
-/sp.plan Design JWT system                    → PHR created in specs/001-auth/prompts/
-/sp.tasks Break down implementation           → PHR created in specs/001-auth/prompts/
-/sp.implement Write JWT token generation      → PHR created in specs/001-auth/prompts/
+/sp.constitution Define quality standards     → PHR created in history/prompts/constitution/
+/sp.specify Create authentication feature     → PHR created in history/prompts/general/
+/sp.plan Design JWT system                    → PHR created in history/prompts/auth/
+/sp.tasks Break down implementation           → PHR created in history/prompts/auth/
+/sp.implement Write JWT token generation      → PHR created in history/prompts/auth/
 ```
 
 Also after general work:
@@ -70,99 +70,137 @@ Also after general work:
 
 ## Deterministic PHR Location Strategy
 
-PHRs use a **simple, deterministic rule** for where they're stored:
+All PHRs are consolidated under `history/prompts/` with logical subdirectories. This provides a single, clear location for all prompt history while keeping them organized by purpose and context.
 
-### Before Feature Exists (Pre-Feature Work)
+**Main Rule:** `history/prompts/` → `constitution/` | `<feature-name>/` | `general/`
 
-**Location:** `history/prompts/`  
-**Stages:** `constitution`, `spec`  
+### Constitution (Project Principles)
+
+**Location:** `history/prompts/constitution/`
+**Stages:** `constitution`
 **Naming:** `0001-title.constitution.prompt.md`
 
 **Use cases:**
-
-- Creating constitution.md
-- Writing initial specs
+- Defining project quality standards
+- Setting up governance rules
 
 **Example:**
 
 ```
-docs/
+history/
 └── prompts/
-    ├── 0001-define-quality-standards.constitution.prompt.md
-    └── 0002-create-auth-spec.spec.prompt.md
+    └── constitution/
+        ├── 0001-define-quality-standards.constitution.prompt.md
+        └── 0002-establish-testing-policy.constitution.prompt.md
 ```
 
-**Note:** The `general` stage can also fall back to `history/prompts/` if no `specs/` directory exists, but will show a warning suggesting to use `constitution` or `spec` stages instead, or create a feature first.
+### Feature-Specific (Feature Implementation Work)
 
-### After Feature Exists (Feature Work)
-
-**Location:** `specs/<feature>/prompts/`  
-**Stages:** `architect`, `red`, `green`, `refactor`, `explainer`, `misc`, `general`  
-**Naming:** `0001-title.architect.prompt.md`
+**Location:** `history/prompts/<feature-name>/`
+**Stages:** `spec`, `plan`, `tasks`, `red`, `green`, `refactor`, `explainer`, `misc`
+**Naming:** `0001-title.spec.prompt.md`
 
 **Use cases:**
+- Feature planning and design (spec, plan)
+- Implementation work (tasks, green)
+- Debugging and fixes (red)
+- Code refactoring (refactor)
+- Code explanations (explainer)
+- Other feature-specific work (misc)
 
-- Feature planning and design
-- Implementation work
-- Debugging and fixes
-- Code refactoring
-- General feature work
+**Feature name extraction:** Automatically extracted from numbered feature directories
+Example: `001-authentication` → `history/prompts/authentication/`
 
 **Example:**
 
 ```
-specs/
-├── 001-authentication/
-│   ├── spec.md
-│   ├── plan.md
-│   └── prompts/
-│       ├── 0001-design-jwt-system.architect.prompt.md
-│       ├── 0002-implement-jwt.green.prompt.md
-│       ├── 0003-fix-token-bug.red.prompt.md
-│       └── 0004-setup-docs.general.prompt.md
-└── 002-database/
-    └── prompts/
-        ├── 0001-design-schema.architect.prompt.md
-        └── 0002-optimize-queries.refactor.prompt.md
+history/
+└── prompts/
+    ├── constitution/
+    │   └── 0001-quality-standards.constitution.prompt.md
+    ├── authentication/
+    │   ├── 0001-design-jwt-system.spec.prompt.md
+    │   ├── 0002-design-jwt-system.architect.prompt.md
+    │   ├── 0003-implement-jwt.green.prompt.md
+    │   ├── 0004-fix-token-bug.red.prompt.md
+    │   └── 0005-extract-middleware.refactor.prompt.md
+    └── database/
+        ├── 0001-design-schema.spec.prompt.md
+        ├── 0002-design-schema.architect.prompt.md
+        └── 0003-optimize-queries.refactor.prompt.md
+```
+
+### General/Catch-All (Non-Feature Work)
+
+**Location:** `history/prompts/general/`
+**Stages:** `general`
+**Naming:** `0001-title.general.prompt.md`
+
+**Use cases:**
+- General work not tied to a specific feature
+- Setup and configuration
+- Documentation
+- Infrastructure work
+
+**Example:**
+
+```
+history/
+└── prompts/
+    └── general/
+        ├── 0001-setup-ci-pipeline.general.prompt.md
+        ├── 0002-configure-docker.general.prompt.md
+        └── 0003-setup-monitoring.general.prompt.md
 ```
 
 ### Key Features
 
 - **Local sequence numbering**: Each directory starts at 0001
-- **Stage-based extensions**: Files show their type (`.architect.prompt.md`, `.red.prompt.md`)
-- **Auto-detection**: Script finds the right feature from branch name or latest numbered feature
+- **Stage-based extensions**: Files show their type (`.spec.prompt.md`, `.red.prompt.md`, `.refactor.prompt.md`)
+- **Auto-detection**: Script automatically extracts feature name from numbered feature directories (`001-auth` → `auth`)
 - **Clear location rules**:
-  - `constitution`, `spec` → always `history/prompts/`
-  - Feature stages → `specs/<feature>/prompts/`
-  - `general` → feature context if available, else `history/prompts/` with warning
+  - `constitution` → always `history/prompts/constitution/`
+  - Feature stages → `history/prompts/<feature-name>/` (requires feature context)
+  - `general` → always `history/prompts/general/`
 
 ---
 
 ## PHR Stages
 
-### Pre-Feature Stages
+All stages are now organized under `history/prompts/` with clear routing:
 
-| Stage          | Extension                 | When to Use                                    | Example                  |
-| -------------- | ------------------------- | ---------------------------------------------- | ------------------------ |
-| `constitution` | `.constitution.prompt.md` | Defining quality standards, project principles | Creating constitution.md |
-| `spec`         | `.spec.prompt.md`         | Creating business requirements, feature specs  | Writing spec.md          |
+### Constitution Stage (Project Governance)
 
-### Feature-Specific Stages (TDD Cycle)
+| Stage          | Location                     | Extension                 | When to Use                                  |
+| -------------- | ---------------------------- | ------------------------- | -------------------------------------------- |
+| `constitution` | `history/prompts/constitution/` | `.constitution.prompt.md` | Defining quality standards, project principles |
 
-| Stage       | Extension              | TDD Phase      | When to Use                                 | Example                     |
-| ----------- | ---------------------- | -------------- | ------------------------------------------- | --------------------------- |
-| `architect` | `.architect.prompt.md` | **Plan**       | Design, planning, API contracts             | Designing JWT auth system   |
-| `red`       | `.red.prompt.md`       | **Red**        | Debugging, fixing errors, test failures     | Fixing token expiration bug |
-| `green`     | `.green.prompt.md`     | **Green**      | Implementation, new features, passing tests | Implementing login endpoint |
-| `refactor`  | `.refactor.prompt.md`  | **Refactor**   | Code cleanup, optimization                  | Extracting auth middleware  |
-| `explainer` | `.explainer.prompt.md` | **Understand** | Code explanations, documentation            | Understanding JWT flow      |
-| `misc`      | `.misc.prompt.md`      | **Other**      | Uncategorized feature work                  | General feature questions   |
-| `general`   | `.general.prompt.md`   | **Any**        | General work within feature context         | Setup, docs, general tasks  |
+**Example:** `history/prompts/constitution/0001-define-quality-standards.constitution.prompt.md`
 
-**Note:** `general` stage behavior:
+### Feature Stages (TDD Cycle)
 
-- If `specs/` exists: goes to `specs/<feature>/prompts/`
-- If no `specs/`: falls back to `history/prompts/` with warning
+| Stage       | Location                    | Extension              | TDD Phase      | When to Use                                 |
+| ----------- | --------------------------- | ---------------------- | -------------- | ------------------------------------------- |
+| `spec`      | `history/prompts/<feature>/` | `.spec.prompt.md`      | **Specify**    | Writing feature specifications               |
+| `plan`      | `history/prompts/<feature>/` | `.plan.prompt.md`      | **Plan**       | Design, planning, API contracts             |
+| `red`       | `history/prompts/<feature>/` | `.red.prompt.md`       | **Red**        | Debugging, fixing errors, test failures     |
+| `green`     | `history/prompts/<feature>/` | `.green.prompt.md`     | **Green**      | Implementation, new features, passing tests |
+| `refactor`  | `history/prompts/<feature>/` | `.refactor.prompt.md`  | **Refactor**   | Code cleanup, optimization                  |
+| `explainer` | `history/prompts/<feature>/` | `.explainer.prompt.md` | **Understand** | Code explanations, documentation            |
+| `misc`      | `history/prompts/<feature>/` | `.misc.prompt.md`      | **Other**      | Uncategorized feature-specific work         |
+
+**Examples:**
+- `history/prompts/authentication/0001-design-jwt-system.plan.prompt.md`
+- `history/prompts/authentication/0003-implement-jwt.green.prompt.md`
+- `history/prompts/authentication/0004-fix-token-bug.red.prompt.md`
+
+### General Stage (Non-Feature Work)
+
+| Stage     | Location                | Extension            | When to Use                                           |
+| --------- | ----------------------- | -------------------- | ----------------------------------------------------- |
+| `general` | `history/prompts/general/` | `.general.prompt.md` | General work not tied to a specific feature (setup, configuration, infrastructure) |
+
+**Example:** `history/prompts/general/0001-setup-ci-pipeline.general.prompt.md`
 
 ---
 
@@ -190,22 +228,22 @@ When you run any significant command:
 ### Integrated SDD Workflow
 
 ```
-/constitution → PHR created (history/prompts/)
+/constitution → PHR created (history/prompts/constitution/)
      ↓
-/specify → PHR created (history/prompts/)
+/specify → PHR created (history/prompts/general/)
      ↓
-/plan → PHR created (specs/<feature>/prompts/) + ADR suggestion
+/plan → PHR created (history/prompts/<feature>/) + ADR suggestion
      ↓
-/tasks → PHR created (specs/<feature>/prompts/)
+/tasks → PHR created (history/prompts/<feature>/)
      ↓
-/implement → PHR created (specs/<feature>/prompts/)
+/implement → PHR created (history/prompts/<feature>/)
      ↓
-Debug/fix → PHR created (specs/<feature>/prompts/)
+Debug/fix → PHR created (history/prompts/<feature>/)
      ↓
-Refactor → PHR created (specs/<feature>/prompts/)
+Refactor → PHR created (history/prompts/<feature>/)
 ```
 
-**PHRs compound throughout the entire workflow—automatically.**
+**PHRs compound throughout the entire workflow—automatically, all under `history/prompts/`.**
 
 ### Manual Override (Optional)
 
@@ -229,11 +267,11 @@ But 95% of the time, you won't need to—PHRs just happen!
 ### Morning: Context Loading (2 minutes)
 
 ```bash
-# Read yesterday's PHRs to rehydrate context
-ls specs/*/prompts/*.prompt.md | tail -5 | xargs cat
+# Read yesterday's PHRs to rehydrate context - all in one place!
+ls history/prompts/*/*.prompt.md | tail -5 | xargs cat
 
-# Or for pre-feature work
-ls history/prompts/*.prompt.md | tail -5 | xargs cat
+# Or filter by feature
+ls history/prompts/authentication/*.prompt.md | tail -5 | xargs cat
 ```
 
 ### During Work: Just Work (PHRs Happen Automatically)
@@ -242,18 +280,18 @@ ls history/prompts/*.prompt.md | tail -5 | xargs cat
 # You work normally:
 /plan Design JWT authentication system
 # → AI creates plan.md
-# → PHR automatically created: specs/001-auth/prompts/0001-design-jwt-system.architect.prompt.md
+# → PHR automatically created: history/prompts/authentication/0001-design-jwt-system.plan.prompt.md
 # → You see: 📝 PHR-0001 recorded
 
 /implement Create token generation function
 # → AI implements the code
-# → PHR automatically created: specs/001-auth/prompts/0002-implement-token-gen.green.prompt.md
+# → PHR automatically created: history/prompts/authentication/0002-implement-token-gen.green.prompt.md
 # → You see: 📝 PHR-0002 recorded
 
 # Debug something:
 Fix token expiration bug
 # → AI fixes the bug
-# → PHR automatically created: specs/001-auth/prompts/0003-fix-expiration-bug.red.prompt.md
+# → PHR automatically created: history/prompts/authentication/0003-fix-expiration-bug.red.prompt.md
 # → You see: 📝 PHR-0003 recorded
 ```
 
@@ -262,14 +300,14 @@ Fix token expiration bug
 ### Evening: Reflect & Learn (3 minutes)
 
 ```bash
-# Review today's PHRs
-grep -r "Reflection:" specs/*/prompts/ | tail -3
+# Review today's PHRs - all in history/prompts/
+grep -r "Reflection:" history/prompts/ | tail -3
 
 # Find patterns in successful prompts
-grep -r "✅ Impact:" specs/*/prompts/ | grep -v "recorded for traceability"
+grep -r "✅ Impact:" history/prompts/ | grep -v "recorded for traceability"
 
-# Count today's PHRs
-find specs -name "*.prompt.md" -mtime -1 | wc -l
+# Count today's PHRs by feature
+for dir in history/prompts/*/; do echo "$(basename "$dir"): $(ls "$dir"/*.prompt.md 2>/dev/null | wc -l)"; done
 ```
 
 ---
@@ -327,47 +365,49 @@ Created JWT auth system with:
 
 ## Searching Your PHR Knowledge Base
 
+All PHRs are now in one place: `history/prompts/`
+
 ### Find by Topic
 
 ```bash
 # Find all authentication-related prompts
-grep -r "auth" specs/*/prompts/
+grep -r "auth" history/prompts/
 
 # Find all prompts about databases
-grep -r "database\|sql\|postgres" specs/*/prompts/
+grep -r "database\|sql\|postgres" history/prompts/
 ```
 
 ### Find by Stage
 
 ```bash
 # Find all debugging sessions (red stage)
-find specs -name "*.red.prompt.md"
+find history/prompts -name "*.red.prompt.md"
 
-# Find all architecture planning (architect stage)
-find specs -name "*.architect.prompt.md"
+# Find all planning work (plan stage)
+find history/prompts -name "*.plan.prompt.md"
 
 # Find all implementations (green stage)
-find specs -name "*.green.prompt.md"
+find history/prompts -name "*.green.prompt.md"
 ```
 
 ### Find by File
 
 ```bash
 # Find prompts that touched specific files
-grep -r "auth.py" specs/*/prompts/
+grep -r "auth.py" history/prompts/
 
 # Find prompts that ran specific tests
-grep -r "test_login" specs/*/prompts/
+grep -r "test_login" history/prompts/
 ```
 
 ### Find by Feature
 
 ```bash
 # List all PHRs for a specific feature
-ls -la specs/001-authentication/prompts/
+ls -la history/prompts/authentication/
 
 # Count PHRs per feature
-for dir in specs/*/prompts; do echo "$dir: $(ls "$dir" | wc -l)"; done
+for dir in history/prompts/*/; do echo "$(basename "$dir"): $(ls "$dir"/*.prompt.md 2>/dev/null | wc -l)"; done
 ```
 
 ---
@@ -377,41 +417,41 @@ for dir in specs/*/prompts; do echo "$dir: $(ls "$dir" | wc -l)"; done
 ### Team Knowledge Sharing
 
 ```bash
-# Commit PHRs with your code
-git add specs/*/prompts/ && git commit -m "Add PHR: JWT authentication implementation"
+# Commit PHRs with your code (all in one place now!)
+git add history/prompts/ && git commit -m "Add PHR: JWT authentication implementation"
 
 # Review team's PHRs
 git log --all --grep="PHR:" --oneline
 
 # Create team prompt library
 mkdir .docs/team-prompts
-cp specs/*/prompts/*.architect.prompt.md .docs/team-prompts/
+cp history/prompts/*/*.plan.prompt.md .docs/team-prompts/
 ```
 
 ### Compliance & Auditing
 
 ```bash
 # Generate audit trail for security work
-find specs -name "*.prompt.md" -exec grep -l "security\|auth\|payment" {} \;
+find history/prompts -name "*.prompt.md" -exec grep -l "security\|auth\|payment" {} \;
 
 # Track when decisions were made
-grep -r "date:" specs/*/prompts/ | grep "2025-10"
+grep -r "date:" history/prompts/ | grep "2025-10"
 
 # Find who worked on what
-grep -r "user:" specs/*/prompts/ | sort | uniq
+grep -r "user:" history/prompts/ | sort | uniq
 ```
 
 ### Performance Optimization
 
 ```bash
 # Find your most effective prompts
-grep -r "✅ Impact:" specs/*/prompts/ | grep -v "recorded for traceability"
+grep -r "✅ Impact:" history/prompts/ | grep -v "recorded for traceability"
 
 # Identify patterns in failed attempts
-grep -r "❌" specs/*/prompts/
+grep -r "❌" history/prompts/
 
 # Track time-to-solution
-grep -r "Next prompts:" specs/*/prompts/ | grep -v "none"
+grep -r "Next prompts:" history/prompts/ | grep -v "none"
 ```
 
 ---
@@ -431,14 +471,14 @@ links:
 ### Workflow Integration
 
 ```
-1. /constitution   → history/prompts/0001-quality-standards.constitution.prompt.md
-2. /specify        → history/prompts/0002-auth-requirements.spec.prompt.md
-3. /plan           → specs/001-auth/prompts/0001-design-system.architect.prompt.md
+1. /constitution   → history/prompts/constitution/0001-quality-standards.constitution.prompt.md
+2. /specify        → history/prompts/general/0001-auth-requirements.spec.prompt.md
+3. /plan           → history/prompts/authentication/0001-design-system.plan.prompt.md
 4. /adr            → (ADR references the PHR for context)
-5. /tasks          → specs/001-auth/prompts/0002-break-down-tasks.architect.prompt.md
-6. /implement      → specs/001-auth/prompts/0003-implement-jwt.green.prompt.md
-7. Debug & fix     → specs/001-auth/prompts/0004-fix-token-bug.red.prompt.md
-8. Refactor        → specs/001-auth/prompts/0005-extract-middleware.refactor.prompt.md
+5. /tasks          → history/prompts/authentication/0002-break-down-tasks.plan.prompt.md
+6. /implement      → history/prompts/authentication/0003-implement-jwt.green.prompt.md
+7. Debug & fix     → history/prompts/authentication/0004-fix-token-bug.red.prompt.md
+8. Refactor        → history/prompts/authentication/0005-extract-middleware.refactor.prompt.md
 ```
 
 ---
@@ -521,20 +561,20 @@ After 1 month:
 If needed, you can create PHRs manually:
 
 ```bash
-# Pre-feature PHR (constitution or spec)
+# Constitution PHR
 scripts/bash/create-phr.sh \
   --title "Define API standards" \
   --stage constitution \
   --json
 
-# Feature-specific PHR (requires specs/ and feature context)
+# Feature-specific PHR (requires feature context or specs/ directory)
 scripts/bash/create-phr.sh \
   --title "Implement login" \
   --stage green \
   --feature "001-auth" \
   --json
 
-# General stage (falls back to history/prompts/ if no specs/)
+# General stage (non-feature work)
 scripts/bash/create-phr.sh \
   --title "Setup CI pipeline" \
   --stage general \
@@ -563,17 +603,19 @@ scripts/bash/create-phr.sh \
 
 PHRs are **built into Spec Kit** with automatic creation:
 
-✅ **Completely automatic**: Created after every significant command—no extra work  
-✅ **Deterministic location**:
+✅ **Completely automatic**: Created after every significant command—no extra work
+✅ **Deterministic location** (all under `history/prompts/`):
 
-- Pre-feature (`constitution`, `spec`) → `history/prompts/`
-- Feature work → `specs/<feature>/prompts/`
+- Constitution (`constitution`) → `history/prompts/constitution/`
+- Feature work (`spec`, `plan`, `tasks`, `red`, `green`, `refactor`, `explainer`, `misc`) → `history/prompts/<feature-name>/`
+- General work (`general`) → `history/prompts/general/`
 - Clear file naming with stage extensions
 
-✅ **Full metadata capture**: Prompts, responses, files, tests, timestamps  
-✅ **Stage-based organization**: architect, red, green, refactor, explainer, etc.  
-✅ **Learning-focused**: Based on spaced repetition and retrieval practice  
-✅ **Team-friendly**: Version-controlled, searchable, shareable  
+✅ **Single location**: All prompts organized in one place (`history/prompts/`) for easy discovery
+✅ **Full metadata capture**: Prompts, responses, files, tests, timestamps
+✅ **Stage-based organization**: spec, plan, red, green, refactor, explainer, misc, general, constitution
+✅ **Learning-focused**: Based on spaced repetition and retrieval practice
+✅ **Team-friendly**: Version-controlled, searchable, shareable
 ✅ **Compliance-ready**: Complete audit trail with no manual effort
 
 **Start using PHRs today** by running `specify init` and working normally. Every AI interaction is automatically captured, documented, and searchable. Your future self (and your team) will thank you! 🚀

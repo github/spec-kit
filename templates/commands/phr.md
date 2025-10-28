@@ -59,16 +59,14 @@ If you already completed work and user just wants to record it:
 
 - Skip to Step 2
 
-## Step 2: Determine Stage
+## Step 2: Determine Stage and Routing
 
 Select ONE stage that best describes the work:
 
-**Pre-feature stages** (→ `history/prompts/`):
+**Constitution** (→ `history/prompts/constitution/`):
+- `constitution` - Defining quality standards, project principles
 
-- `constitution` - Defining quality standards, project principles (ALWAYS history/prompts/)
-
-**Feature stages** (→ `specs/<feature>/prompts/` - requires feature context):
-
+**Feature-specific** (→ `history/prompts/<feature-name>/` - requires feature context):
 - `spec` - Creating feature specifications
 - `plan` - Architecture design and technical approach
 - `tasks` - Implementation breakdown with test cases
@@ -76,12 +74,12 @@ Select ONE stage that best describes the work:
 - `green` - Implementation, new features, passing tests
 - `refactor` - Code cleanup, optimization
 - `explainer` - Code explanations, documentation
-- `misc` - Other feature work
-- `general` - General work within feature (falls back to history/prompts/ if no specs/ exist)
+- `misc` - Other feature-specific work
+
+**General/Catch-all** (→ `history/prompts/general/`):
+- `general` - General work not tied to a specific feature
 
 ## Step 3: Create PHR File
-
-Run `{SCRIPT}` to get repository metadata (FEATURE_DIR, BRANCH, etc.).
 
 Generate a concise title (3-7 words) summarizing what was accomplished.
 
@@ -91,10 +89,16 @@ Call the PHR creation script with title and stage:
 scripts/bash/create-phr.sh \
   --title "<your-generated-title>" \
   --stage <selected-stage> \
+  [--feature <feature-slug>] \
   --json
 ```
 
 Parse the JSON output to get: `id`, `path`, `context`, `stage`, `feature`
+
+**Routing is determined automatically:**
+- `constitution` → `history/prompts/constitution/`
+- Feature stages → `history/prompts/<feature-name>/`
+- `general` → `history/prompts/general/`
 
 ## Step 4: Fill ALL Template Placeholders (Analyze→Measure)
 
