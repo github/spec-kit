@@ -2,7 +2,17 @@
 
 This guide will help you get started with Spec-Driven Development using Spec Kit.
 
-> **Important**: Commands like `/specify` should be run in your terminal, not in the Copilot Chat window. See [VS Code Usage Guide](vscode-usage.md) for detailed instructions on where to run commands.
+> **Important**: There are two ways to interact with Specify; pick the right one for your workflow:
+>
+> - CLI: run the `specify` command (no leading slash) in your terminal.
+> - Slash commands (AI assistant): use `/speckit.specify`, `/speckit.plan`, etc., inside an AI assistant or editor that supports slash commands (for example, GitHub Copilot Chat). Do not remove the leading slash — these commands rely on the slash prefix to trigger the assistant correctly.
+>
+> See the [VS Code Usage Guide](vscode-usage.md) for details on where to run each type of command.
+
+| Command Type | Where to Run | Example | Notes |
+|-------------|--------------|---------|--------|
+| CLI Commands | Terminal (Bash, PowerShell) | `specify init <PROJECT_NAME>` | No leading slash |
+| Slash Commands | AI Assistant (e.g., GitHub Copilot Chat) | `/speckit.specify ...` | Requires leading slash |
 
 > NEW: All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
 
@@ -10,7 +20,7 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 
 ### 1. Install Specify
 
-Initialize your project depending on the coding agent you're using:
+Initialize your project using the CLI:
 
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
@@ -25,54 +35,102 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 ### 2. Create the Spec
 
-Run the specify command in your terminal to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Use the `/speckit.specify` slash command (in an AI assistant or editor that supports slash commands) to describe what you want to build. Focus on the **what** and **why**, not the tech stack. The slash command is intended to be consumed by an AI assistant and is different from the CLI `specify` command (no slash) which you run in a terminal.
+
+If you use a coding agent, some agents may try to rewrite or "improve" your prompt. Make the difference from step 1 explicit in your slash prompt. For example, include an explicit instruction such as:
+
+```
+Do NOT change or implement this spec; only return the specification text focusing on requirements and acceptance criteria.
+```
+
+Keeping the `/speckit` prefix is important — removing it will break slash command behavior.
+
+Example (slash command used in the assistant/chat):
+
+```text
+/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+
+Note: Do NOT change or implement this spec; only return the spec text focusing on requirements and acceptance criteria.
+```
+
+If you prefer the terminal, you can still run the CLI version (no leading slash):
 
 ```bash
-specify "Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface."
+specify "Build an application that can help me organize my photos in separate photo albums..."
 ```
 
 ### 3. Create a Technical Implementation Plan
 
 Use the plan command to provide your tech stack and architecture choices.
 
-```bash
-specify plan "The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database."
+```text
+/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
 ### 4. Break Down and Implement
 
-Use the tasks command to create an actionable task list, then ask your agent to implement the feature.
+In **Copilot Chat**, run:
 
-## Running Commands
+```text
+/speckit.tasks
+```
+Then:
 
-> **Note**: All commands should be run in your terminal, not in the Copilot Chat window. See our [VS Code Usage Guide](vscode-usage.md) for:
-> - Where to run CLI commands
-> - How to set up GitHub Copilot Chat
-> - Troubleshooting common issues
+```text
+/speckit.implement
+```
+
+Let the AI generate tasks, write code, run tests, and fix bugs — all from your specs!
+
+## Running Commands and Troubleshooting
+
+> **Note**: Always run CLI commands in your terminal and slash commands in your AI assistant. See our [VS Code Usage Guide](vscode-usage.md) for setup instructions.
+
+### Common Issues and Solutions
+
+- **Command not found**: Ensure `uvx` is installed (`pip install uvx`)
+- **Wrong script type**: Use `--script ps` (PowerShell) or `--script sh` (Bash) to override auto-selection
+- **Slash commands not working**: Verify your AI assistant supports slash commands and the `/speckit` prefix is included
+- **Environment errors**: Check Python/Node.js installation and PATH settings
+- **Git access issues**: Verify your Git credentials and repository access
 
 ## Detailed Example: Building Taskify
 
 Here's a complete example of building a team productivity platform:
 
-### Step 1: Define Requirements with the specify command
+### Step 1: Define Requirements with `/speckit.specify`
 
 ```text
-Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
-assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
-let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
-I want five users in two different categories, one product manager and four engineers. Let's create three
-different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
-"In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
-first testing thing to ensure that our basic features are set up. For each task in the UI for a task card,
-you should be able to change the current status of the task between the different columns in the Kanban work board.
-You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task
-card, assign one of the valid users. When you first launch Taskify, it's going to give you a list of the five users to pick
-from. There will be no password required. When you click on a user, you go into the main view, which displays the list of
-projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns.
-You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are
-assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly
-see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can
-delete any comments that you made, but you can't delete comments anybody else made.
+/speckit.specify Develop Taskify, a team productivity platform. Predefine 5 users: 1 product manager, 4 engineers. Create 3 sample projects with Kanban columns: To Do, In Progress, In Review, Done. No login. Drag-and-drop tasks. Highlight user-assigned tasks. Allow editing/deleting own comments only.
+
+Note: Do NOT implement — only return the spec.
+```
+
+For more detailed requirements:
+
+```text
+/speckit.specify Build a team productivity platform with these core features:
+
+1. Users and Authentication:
+   - 5 predefined users (1 PM, 4 engineers)
+   - No login system (simplified first version)
+   - User selection from list on startup
+
+2. Project Structure:
+   - 3 sample projects
+   - Kanban board per project
+   - Columns: To Do, In Progress, In Review, Done
+   - 5-15 tasks per project
+   - At least one task per column
+
+3. Task Management:
+   - Drag-and-drop between columns
+   - Assign users to tasks
+   - Highlight tasks assigned to current user
+   - Unlimited comments per task
+   - Users can edit/delete their own comments only
+
+Note: Do NOT implement — only return the spec.
 ```
 
 ### Step 2: Refine the Specification
@@ -96,9 +154,11 @@ Read the review and acceptance checklist, and check off each item in the checkli
 Be specific about your tech stack and technical requirements:
 
 ```text
-We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use
-Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API,
-tasks API, and a notifications API.
+/speckit.plan Generate a plan using:
+- Backend: .NET Aspire with Postgres database
+- Frontend: Blazor server with drag-and-drop task boards
+- APIs: REST endpoints for projects, tasks, and notifications
+- Features: Real-time updates, drag-and-drop UI
 ```
 
 ### Step 4: Validate and Implement
@@ -111,10 +171,10 @@ Read through it with an eye on determining whether or not there is a sequence of
 to be doing that are obvious from reading this. Because I don't know if there's enough here.
 ```
 
-Finally, implement the solution:
+Generate the implementation:
 
 ```text
-implement specs/002-create-taskify/plan.md
+/speckit.implement specs/002-create-taskify/plan.md
 ```
 
 ## Key Principles
@@ -127,6 +187,10 @@ implement specs/002-create-taskify/plan.md
 
 ## Next Steps
 
-- Read the complete methodology for in-depth guidance
-- Check out more examples in the repository
-- Explore the source code on GitHub
+- Read the complete methodology in our 
+[documentation](docs/methodology.md)
+- Try the examples in the
+ [samples repository](docs/samples.md)
+- Join our 
+[community](CONTRIBUTING.md)
+for tips and support
