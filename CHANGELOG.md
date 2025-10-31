@@ -7,6 +7,27 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.0.21] - 2025-10-22
+
+### Added
+
+- **Configurable Branch Prefixes**: Branch names can now be prefixed with custom patterns (e.g., `feature/`, `bugfix/`)
+  - New `.specify/config.json` configuration file with `branch.prefix` setting
+  - Environment variable `SPECIFY_BRANCH_PREFIX` for per-session overrides
+  - **Per-feature override**: `--branch-prefix` / `-BranchPrefix` parameter for `create-new-feature` scripts
+  - Priority order: Command-line parameter > Environment variable > Config file > Default (no prefix)
+  - Automatically created during project initialization via `specify init`
+  - Examples:
+    - With `"prefix": "feature/"`: `001-user-auth` → `feature/001-user-auth`
+    - With `"prefix": "bugfix/"`: `001-fix-login` → `bugfix/001-fix-login`
+    - With `SPECIFY_BRANCH_PREFIX=dev/`: Overrides config file setting
+    - With `--branch-prefix "hotfix/"`: Overrides all other settings for that feature
+  - Supported in both bash and PowerShell variants of `create-new-feature` scripts
+  - AI agents can recognize and apply prefix from `/speckit.specify` command (e.g., `/speckit.specify Add login --branch-prefix feature/`)
+  - Python CLI includes `setup_config_file()` function to initialize configuration during project setup
+
 ## [0.0.20] - 2025-10-14
 
 ### Added
