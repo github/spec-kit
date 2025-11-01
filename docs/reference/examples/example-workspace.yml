@@ -1,0 +1,197 @@
+# Example Multi-Repo Workspace Configuration
+# This example demonstrates a workspace with mixed GitHub hosts and Jira requirements
+#
+# Usage:
+#   1. Copy this file to your workspace root as `.specify/workspace.yml`
+#   2. Update repository names, paths, and conventions to match your setup
+#   3. The `github_host` and `require_jira` fields will be auto-detected during initialization
+#   4. Customize conventions based on your team's naming patterns
+
+workspace:
+  name: attun-project                  # Workspace identifier (usually parent directory name)
+  root: /path/to/attun-project         # Absolute path to workspace root
+  version: 1.0.0                       # Workspace config schema version
+
+# Repository Configuration
+# Each repo entry includes:
+#   - name: Directory name of the repository
+#   - path: Relative path from workspace root
+#   - aliases: Alternative names for convention matching
+#   - github_host: Auto-detected GitHub host (github.com, github.marqeta.com, etc.)
+#   - require_jira: Whether Jira keys are required for this repo (auto-set based on host)
+
+repos:
+  # Internal backend service (enterprise GitHub, Jira required)
+  - name: attun-backend
+    path: ./attun-backend
+    aliases: [backend, api, service]
+    github_host: github.marqeta.com    # Enterprise GitHub host
+    require_jira: true                  # Jira keys required for this repo
+
+  # Public frontend (standard GitHub, Jira optional)
+  - name: attun-frontend
+    path: ./attun-frontend
+    aliases: [frontend, ui, web]
+    github_host: github.com            # Standard GitHub
+    require_jira: false                # Jira keys optional
+
+  # Internal admin service (enterprise GitHub, Jira required)
+  - name: attun-admin
+    path: ./attun-admin
+    aliases: [admin, console]
+    github_host: github.marqeta.com
+    require_jira: true
+
+  # Shared libraries (standard GitHub, Jira optional)
+  - name: attun-shared
+    path: ./attun-shared
+    aliases: [shared, libs, common]
+    github_host: github.com
+    require_jira: false
+
+# Convention-Based Routing Rules
+# These rules determine which repository a spec targets based on its name
+#
+# How it works:
+#   1. Jira keys are stripped before matching (proj-123.backend-api → backend-api)
+#   2. Prefix rules checked first (left-to-right)
+#   3. Suffix rules checked second (left-to-right)
+#   4. If multiple repos match, user is prompted to select
+#   5. Full spec ID (with Jira key) is preserved for directories and branches
+
+conventions:
+  # Prefix-based routing
+  # Format: "prefix-": [repo1, repo2]
+  # Example: "backend-auth" matches "backend-" → routes to attun-backend
+  prefix_rules:
+    backend-: [attun-backend]              # backend-* specs → backend repo
+    api-: [attun-backend]                  # api-* specs → backend repo
+    frontend-: [attun-frontend]            # frontend-* specs → frontend repo
+    web-: [attun-frontend]                 # web-* specs → frontend repo
+    admin-: [attun-admin]                  # admin-* specs → admin repo
+    shared-: [attun-shared]                # shared-* specs → shared repo
+
+    # Multi-repo specs (parent features spanning multiple repos)
+    fullstack-: [attun-backend, attun-frontend]  # fullstack-* → both repos
+    platform-: [attun-backend, attun-admin]      # platform-* → backend + admin
+
+  # Suffix-based routing
+  # Format: "-suffix": [repo1, repo2]
+  # Example: "user-auth-api" matches "-api" → routes to attun-backend
+  suffix_rules:
+    -api: [attun-backend]                  # *-api specs → backend repo
+    -service: [attun-backend]              # *-service specs → backend repo
+    -ui: [attun-frontend]                  # *-ui specs → frontend repo
+    -page: [attun-frontend]                # *-page specs → frontend repo
+    -component: [attun-frontend]           # *-component specs → frontend repo
+    -console: [attun-admin]                # *-console specs → admin repo
+    -lib: [attun-shared]                   # *-lib specs → shared repo
+    -util: [attun-shared]                  # *-util specs → shared repo
+
+  # Default behavior for unmatched specs
+  defaults:
+    ambiguous_prompt: true    # Prompt user when multiple repos match
+    default_repo: null        # No default repo (null = prompt user)
+                              # Set to repo name to use as default (e.g., "attun-backend")
+
+# Example Spec Routing Scenarios
+# ==============================
+#
+# With Jira Key (github.marqeta.com repos):
+#   /specify proj-123.backend-auth
+#   → Strips "proj-123." for matching
+#   → Matches "backend-" prefix rule
+#   → Routes to: attun-backend
+#   → Spec path: specs/proj-123.backend-auth/
+#   → Branch: username/proj-123.backend-auth
+#
+# Without Jira Key (github.com repos):
+#   /specify frontend-dashboard
+#   → Matches "frontend-" prefix rule
+#   → Routes to: attun-frontend
+#   → Spec path: specs/frontend-dashboard/
+#   → Branch: username/frontend-dashboard
+#
+# Multi-Repo Parent Spec:
+#   /specify proj-456.fullstack-admin-portal
+#   → Strips "proj-456." for matching
+#   → Matches "fullstack-" prefix rule
+#   → Routes to: attun-backend, attun-frontend
+#   → Parent spec for both repos
+#   → Capabilities target individual repos
+#
+# Suffix Matching:
+#   /specify proj-789.user-management-api
+#   → Strips "proj-789." for matching
+#   → Matches "-api" suffix rule
+#   → Routes to: attun-backend
+#   → Spec path: specs/proj-789.user-management-api/
+#
+# Automatic Jira Prompt:
+#   /specify backend-auth  (targeting github.marqeta.com repo without Jira key)
+#   → Detects attun-backend requires Jira
+#   → Prompts: "Target repo 'attun-backend' requires JIRA key. Enter JIRA issue key:"
+#   → User enters: proj-999
+#   → Spec path: specs/proj-999.backend-auth/
+#   → Branch: username/proj-999.backend-auth
+#
+# Ambiguous Match:
+#   /specify platform-metrics-api
+#   → Strips Jira key (if present)
+#   → Matches "platform-" (multi-repo) AND "-api" (backend only)
+#   → Prompts: "Multiple target repositories matched: 1) attun-backend 2) attun-admin"
+#   → User selects repository
+
+# Best Practices
+# ===============
+#
+# 1. Convention Naming:
+#    - Use clear, descriptive prefixes/suffixes
+#    - Align with team's existing naming patterns
+#    - Document conventions in team guidelines
+#
+# 2. Jira Keys:
+#    - Let workspace init auto-detect requirements
+#    - Only manually override require_jira for special cases
+#    - Include Jira project key in team documentation
+#
+# 3. Multi-Repo Features:
+#    - Use specific prefixes (e.g., "fullstack-", "platform-")
+#    - Parent spec describes overall feature
+#    - Capabilities target individual repos
+#
+# 4. Aliases:
+#    - Include common abbreviations and variations
+#    - Consider domain-specific terminology
+#    - Keep aliases consistent across repos
+#
+# 5. Testing:
+#    - Test convention matching with sample spec names
+#    - Verify Jira key requirements for each repo
+#    - Document examples in team wiki
+
+# Advanced Configuration
+# ======================
+#
+# Manual Override (force Jira requirement):
+#   repos:
+#     - name: special-repo
+#       github_host: github.com
+#       require_jira: true      # Override: require Jira even for github.com
+#
+# Multiple GitHub Hosts:
+#   repos:
+#     - name: repo-a
+#       github_host: github.marqeta.com
+#       require_jira: true
+#     - name: repo-b
+#       github_host: github.enterprise.com
+#       require_jira: true
+#     - name: repo-c
+#       github_host: github.com
+#       require_jira: false
+#
+# Custom Default Repo:
+#   defaults:
+#     default_repo: attun-backend  # Use as default when no convention matches
+#     ambiguous_prompt: false      # Skip prompt, use default
