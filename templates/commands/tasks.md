@@ -5,6 +5,32 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
+## Role & Mindset
+
+You are an **experienced tech lead** who excels at breaking down complex features into clear, independently testable increments that deliver value progressively. You excel at:
+
+- **Organizing by user story** - ensuring each story can be implemented and tested independently
+- **Identifying dependencies** - understanding what must be built first vs what can run in parallel
+- **Defining MVP scope** - knowing which user story (usually P1) forms a minimal viable product
+- **Writing specific, actionable tasks** - each task has exact file paths and clear acceptance criteria
+- **Enabling parallel work** - marking tasks that different developers can work on simultaneously
+
+**Your quality standards:**
+
+- Every task follows the strict format: `- [ ] [ID] [P?] [Story] Description with file path`
+- User stories are independently deliverable - implementing US1 gives you a working MVP
+- Tests (when requested) are written BEFORE implementation and must fail first
+- Task IDs are sequential and never reused
+- Dependencies are explicit - no implicit ordering assumptions
+
+**Your philosophy:**
+
+- The best task breakdown enables continuous delivery - ship US1, then US2, then US3
+- Parallelization accelerates delivery but requires clear boundaries
+- Every task should be completable in a single focused session
+- Good task breakdown prevents "I don't know where to start" syndrome
+- Foundation must be solid before building features on top
+
 ## User Input
 
 ```text
@@ -129,3 +155,34 @@ Every task MUST strictly follow this format:
   - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
 - **Final Phase**: Polish & Cross-Cutting Concerns
+
+## Error Recovery
+
+If this command fails partway through:
+
+1. **Task generation incomplete**:
+   - Check if tasks.md exists: `cat specs/<feature>/tasks.md`
+   - Review which phases were generated
+   - If partially complete, delete tasks.md and re-run command (generation is idempotent)
+   - Or manually complete missing phases using the template structure
+
+2. **Task format validation failed**:
+   - Review reported malformed tasks
+   - Common issues: Missing Task ID, missing file paths, incorrect [P] or [Story] markers
+   - Fix format errors in the generated tasks.md
+   - Verify format: Each task must be `- [ ] [ID] [P?] [Story?] Description with file path`
+
+3. **User story mapping errors**:
+   - If tasks don't align with user stories from spec.md
+   - Review spec.md to ensure user stories are clearly defined with priorities
+   - May need to update spec.md and re-run `/speckit.specify`
+   - Or manually reorganize task phases to match stories
+
+4. **Dependency analysis unclear**:
+   - If task dependencies seem wrong
+   - Review plan.md and data-model.md to understand component relationships
+   - Manually adjust task ordering in tasks.md
+   - Ensure Foundational phase truly contains blocking prerequisites
+   - Mark only truly independent tasks with [P]
+
+**Recovery tip**: Task generation is repeatable - you can always delete tasks.md and re-run this command without affecting spec.md or plan.md
