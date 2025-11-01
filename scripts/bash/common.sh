@@ -5,10 +5,20 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/workspace-discovery.sh"
 
-# Get repo root (workspace-aware)
-# Returns repo root in single-repo mode, or current repo in workspace mode
+# Get repo root (workspace-aware and worktree-aware)
+# Returns parent repo root if in worktree, else repo toplevel
+# Use this for convention matching - must use parent repo name, not worktree dir name
 get_repo_root() {
-    git rev-parse --show-toplevel 2>/dev/null || echo ""
+    local git_dir=$(git rev-parse --git-dir 2>/dev/null)
+    local git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+
+    if [[ -n "$git_dir" ]] && [[ "$git_dir" != "$git_common_dir" ]]; then
+        # In worktree, return parent repo root
+        dirname "$git_common_dir"
+    else
+        # In parent repo or not in git repo
+        git rev-parse --show-toplevel 2>/dev/null || echo ""
+    fi
 }
 
 # Get current branch for a specific repo

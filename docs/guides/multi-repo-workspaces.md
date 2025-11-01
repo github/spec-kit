@@ -1044,6 +1044,219 @@ conventions:
     -lib: [utils-library]
 ```
 
+## Working with Git Worktrees
+
+Spec-kit fully supports git worktrees, allowing you to work on multiple features in parallel without switching branches.
+
+### What are Git Worktrees?
+
+Git worktrees let you have multiple working directories from the same repository, each checked out to a different branch. This enables:
+- Working on multiple features simultaneously
+- Running tests on one branch while coding on another
+- Quick context switching without stashing changes
+
+### Creating Worktrees in Workspaces
+
+**Recommended Structure: Worktrees as Siblings**
+
+```bash
+workspace/
+  .specify/workspace.yml
+  specs/                  # Centralized specs
+  backend/                # Main working tree
+  frontend/               # Main working tree
+  backend-auth-feature/   # Worktree for backend
+  frontend-dashboard/     # Worktree for frontend
+```
+
+**Create a worktree:**
+```bash
+cd ~/workspace/backend
+git worktree add ../backend-auth-feature
+
+cd ../backend-auth-feature
+# Now you're in the worktree
+```
+
+### Using `/specify` from Worktrees
+
+You can run `/specify` from anywhere, including inside worktrees:
+
+```bash
+# From within a worktree
+cd ~/workspace/backend-auth-feature
+
+# Create new spec - operations execute HERE
+/specify backend-new-api
+
+# Result:
+# - Spec created: workspace/specs/backend-new-api/spec.md
+# - Branch created in THIS worktree (not the parent repo)
+# - Ready to code immediately
+```
+
+### How Worktree Routing Works
+
+**Key Principle: Local context wins when applicable**
+
+| Your Location | Create Spec For | Git Operations Execute In |
+|--------------|----------------|--------------------------|
+| Backend worktree | `backend-*` spec | Your worktree ✅ |
+| Backend worktree | `frontend-*` spec | Frontend parent repo |
+| Backend parent repo | Any spec | Backend parent repo |
+| Workspace root | Any spec | Target repo's parent |
+
+**Example - Matching Repo:**
+```bash
+# In backend worktree
+cd ~/workspace/backend-dashboard-worktree
+/specify backend-api
+
+# Operations execute in current worktree
+# Convention: "backend-api" routes to backend repo
+# Match: You're in backend worktree → executes here ✅
+```
+
+**Example - Different Repo:**
+```bash
+# In backend worktree, but creating frontend spec
+cd ~/workspace/backend-dashboard-worktree
+/specify frontend-ui
+
+# Operations execute in frontend parent repo
+# Convention: "frontend-ui" routes to frontend repo
+# No match: You're in backend worktree → executes in frontend parent
+```
+
+### Working with Existing Specs
+
+**For NEW specs:**
+```bash
+# 1. Create worktree
+cd ~/workspace/frontend
+git worktree add ../frontend-dashboard
+
+# 2. cd into worktree
+cd ../frontend-dashboard
+
+# 3. Create spec FROM the worktree
+/specify frontend-dashboard
+# ✓ Creates spec and branch in worktree
+```
+
+**For EXISTING specs:**
+```bash
+# Spec already exists at: workspace/specs/frontend-dashboard/spec.md
+# Branch already exists: username/frontend-dashboard
+
+# 1. Create worktree from existing branch
+cd ~/workspace/frontend
+git worktree add ../frontend-dashboard-wt username/frontend-dashboard
+
+# 2. cd into worktree
+cd ../frontend-dashboard-wt
+
+# 3. DON'T run /specify - it will prompt about overwriting!
+# Instead, just work with the existing spec
+vim ~/workspace/specs/frontend-dashboard/spec.md
+
+# 4. Use other commands
+/plan frontend-dashboard
+/tasks cap-001
+```
+
+### Directory Structure Options
+
+**Option 1: Worktrees as Siblings (Flat)**
+```bash
+workspace/
+  backend/
+  frontend/
+  backend-feature-1/      # Easy to see
+  backend-feature-2/
+  frontend-feature-1/
+```
+
+**Option 2: Worktrees in Subdirectory (Organized)**
+```bash
+workspace/
+  backend/
+  frontend/
+  .worktrees/             # All worktrees together
+    backend-feature-1/
+    backend-feature-2/
+    frontend-feature-1/
+```
+
+**Create with subdirectory:**
+```bash
+mkdir -p ~/workspace/.worktrees
+cd ~/workspace/backend
+git worktree add ../.worktrees/backend-auth
+```
+
+### Best Practices
+
+1. **Name worktrees descriptively:**
+   ```bash
+   git worktree add ../backend-auth-refactor    # Good
+   git worktree add ../wt1                       # Bad
+   ```
+
+2. **Run `/specify` from the worktree when possible:**
+   - More intuitive (operations happen where you are)
+   - No need to remember to cd around
+
+3. **Clean up worktrees when done:**
+   ```bash
+   cd ~/workspace/backend
+   git worktree remove ../backend-auth-feature
+   ```
+
+4. **List all worktrees:**
+   ```bash
+   cd ~/workspace/backend
+   git worktree list
+   ```
+
+### Limitations
+
+**Worktrees OUTSIDE the workspace:**
+- Workspace detection works via parent repo
+- Specs still go to centralized workspace location
+- All commands work normally
+
+**Same branch in multiple worktrees:**
+- Git prevents this automatically
+- Each worktree must be on a different branch
+
+### Troubleshooting
+
+**"Branch already checked out" error:**
+```bash
+# The branch is checked out in another worktree
+git worktree list  # See where it's checked out
+# Either remove that worktree or checkout a different branch
+```
+
+**Workspace not detected from worktree:**
+```bash
+# Verify parent repo is in workspace
+cd ~/workspace/backend  # parent repo
+ls ../.specify/workspace.yml  # should exist
+
+# Worktree detection walks up from parent repo location
+```
+
+**Operations executing in wrong location:**
+```bash
+# Check which repo you're in
+git rev-parse --show-toplevel  # Shows worktree path
+git rev-parse --git-common-dir  # Shows parent repo .git
+
+# Convention routing depends on parent repo name, not worktree dir name
+```
+
 ## Getting Help
 
 - Documentation: `docs/multi-repo-workspaces.md` (this file)

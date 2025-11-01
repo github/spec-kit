@@ -237,8 +237,10 @@ else
             fi
         fi
 
-        # Get repo path and create branch there
-        REPO_PATH=$(get_repo_path "$WORKSPACE_ROOT" "$TARGET_REPO")
+        # Get execution path (worktree-aware)
+        # If in worktree of target repo, operations execute in worktree
+        # Otherwise, operations execute in parent repo
+        REPO_PATH=$(get_execution_path "$WORKSPACE_ROOT" "$TARGET_REPO")
         if [[ -z "$REPO_PATH" ]]; then
             echo "ERROR: Repository not found: $TARGET_REPO" >&2
             exit 1
@@ -273,8 +275,25 @@ else
             fi
         fi
 
-        # Create branch in target repo
-        git_exec "$REPO_PATH" checkout -b "$BRANCH_NAME"
+        # Check if spec already exists
+        if [[ -f "$FEATURE_DIR/spec.md" ]]; then
+            echo "WARN: Spec already exists at $FEATURE_DIR/spec.md"
+            read -p "Continue with existing spec? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo "Aborted. Use --force to overwrite existing spec."
+                exit 1
+            fi
+        fi
+
+        # Check if branch already exists and checkout if so
+        if git_exec "$REPO_PATH" show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+            echo "Branch $BRANCH_NAME already exists. Checking out existing branch..."
+            git_exec "$REPO_PATH" checkout "$BRANCH_NAME"
+        else
+            # Create branch in target repo
+            git_exec "$REPO_PATH" checkout -b "$BRANCH_NAME"
+        fi
 
         # Find template (try workspace first, then target repo)
         TEMPLATE="$WORKSPACE_ROOT/.specify/templates/spec-template.md"
@@ -282,8 +301,27 @@ else
             TEMPLATE="$REPO_PATH/.specify/templates/spec-template.md"
         fi
     else
-        # Single-repo mode: create branch in current repo
-        git checkout -b "$BRANCH_NAME"
+        # Single-repo mode
+        # Check if spec already exists
+        if [[ -f "$FEATURE_DIR/spec.md" ]]; then
+            echo "WARN: Spec already exists at $FEATURE_DIR/spec.md"
+            read -p "Continue with existing spec? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo "Aborted. Use --force to overwrite existing spec."
+                exit 1
+            fi
+        fi
+
+        # Check if branch already exists and checkout if so
+        if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+            echo "Branch $BRANCH_NAME already exists. Checking out existing branch..."
+            git checkout "$BRANCH_NAME"
+        else
+            # Create branch in current repo
+            git checkout -b "$BRANCH_NAME"
+        fi
+
         TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
         REPO_PATH="$REPO_ROOT"
     fi

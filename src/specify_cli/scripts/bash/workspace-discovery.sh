@@ -6,6 +6,14 @@
 detect_workspace() {
     local current_dir="${1:-$(pwd)}"
 
+    # If in worktree, start search from parent repo
+    local git_dir=$(git rev-parse --git-dir 2>/dev/null)
+    local git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+    if [[ -n "$git_dir" ]] && [[ "$git_dir" != "$git_common_dir" ]]; then
+        # In a worktree, start from parent repo location
+        current_dir=$(dirname "$git_common_dir")
+    fi
+
     # Check if .specify/workspace.yml exists in current or parent directories
     local check_dir="$current_dir"
     while [[ "$check_dir" != "/" ]]; do
@@ -29,6 +37,77 @@ get_workspace_root() {
 is_workspace_mode() {
     local workspace_root=$(get_workspace_root)
     [[ -n "$workspace_root" ]]
+}
+
+# Detect if in a git worktree and get parent repo info
+# Returns: IS_WORKTREE, WORKTREE_PATH, PARENT_REPO_ROOT, PARENT_REPO_NAME
+# Usage: eval "$(detect_worktree_context)" to set variables in calling scope
+detect_worktree_context() {
+    local git_dir=$(git rev-parse --git-dir 2>/dev/null)
+    local git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+
+    if [[ -z "$git_dir" ]] || [[ -z "$git_common_dir" ]]; then
+        echo "IS_WORKTREE=false"
+        return 1
+    fi
+
+    if [[ "$git_dir" != "$git_common_dir" ]]; then
+        # In a worktree
+        echo "IS_WORKTREE=true"
+        echo "WORKTREE_PATH=$(git rev-parse --show-toplevel 2>/dev/null)"
+        echo "PARENT_REPO_ROOT=$(dirname "$git_common_dir")"
+        echo "PARENT_REPO_NAME=$(basename "$(dirname "$git_common_dir")")"
+        return 0
+    else
+        echo "IS_WORKTREE=false"
+        return 1
+    fi
+}
+
+# Get the logical repo root (parent repo if worktree, else toplevel)
+# Use this for convention matching and workspace detection
+get_logical_repo_root() {
+    local git_dir=$(git rev-parse --git-dir 2>/dev/null)
+    local git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+
+    if [[ -n "$git_dir" ]] && [[ "$git_dir" != "$git_common_dir" ]]; then
+        # In worktree, return parent repo root
+        dirname "$git_common_dir"
+    else
+        # In parent repo, return toplevel
+        git rev-parse --show-toplevel 2>/dev/null || echo ""
+    fi
+}
+
+# Get execution path for target repo (worktree-aware)
+# Returns: Path where git operations should execute
+# If in worktree of target repo → returns worktree path (local context wins)
+# Otherwise → returns target repo's parent path (convention routing)
+get_execution_path() {
+    local workspace_root="$1"
+    local target_repo_name="$2"
+
+    # Get configured parent repo path
+    local parent_repo_path=$(get_repo_path "$workspace_root" "$target_repo_name")
+
+    # Check if currently in a worktree
+    local git_dir=$(git rev-parse --git-dir 2>/dev/null)
+    local git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+
+    if [[ -n "$git_dir" ]] && [[ "$git_dir" != "$git_common_dir" ]]; then
+        # In a worktree - check if it's the target repo's worktree
+        local current_parent_root=$(dirname "$git_common_dir")
+
+        # Compare absolute paths
+        if [[ "$(cd "$current_parent_root" && pwd)" == "$(cd "$parent_repo_path" && pwd)" ]]; then
+            # We're in a worktree of the target repo
+            git rev-parse --show-toplevel 2>/dev/null
+            return 0
+        fi
+    fi
+
+    # Not in target repo's worktree, use parent path
+    echo "$parent_repo_path"
 }
 
 # Find all git repositories in a directory (non-recursive within repos)

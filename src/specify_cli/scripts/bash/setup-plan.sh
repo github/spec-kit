@@ -87,7 +87,7 @@ if [ -n "$CAPABILITY_ID" ]; then
 
     # Re-evaluate paths with target repo
     eval $(get_feature_paths_smart "$TARGET_REPO")
-    REPO_PATH=$(get_repo_path "$WORKSPACE_ROOT" "$TARGET_REPO")
+    REPO_PATH=$(get_execution_path "$WORKSPACE_ROOT" "$TARGET_REPO")
   fi
 
   # Determine specs directory based on mode

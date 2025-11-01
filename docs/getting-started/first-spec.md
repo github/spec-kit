@@ -200,6 +200,80 @@ Now that you've completed one project:
 - Share error messages with Claude Code
 - Ask it to debug and fix issues iteratively
 
+## Working with Existing Specs
+
+### Resuming Work on an Existing Spec
+
+If you've already created a spec and branch, **don't run `/specify` again** - it will prompt you about overwriting:
+
+```bash
+# DON'T: Run /specify again
+/specify user-authentication  # ⚠️ Will prompt about existing spec
+
+# DO: Just checkout the branch and continue
+git checkout username/user-authentication
+
+# Your spec is already at:
+ls specs/user-authentication/spec.md
+
+# Continue with other commands:
+/plan user-authentication
+/tasks cap-001
+```
+
+### Behavior with Existing Specs
+
+**If spec exists:**
+- `/specify` will warn and prompt: "Continue with existing spec? (y/N)"
+- Choose **N** to abort (recommended - avoid accidentally overwriting)
+- Choose **Y** to continue (keeps existing spec, but overwrites if you proceed)
+
+**If branch exists:**
+- `/specify` will automatically checkout the existing branch (no prompt)
+- No new branch is created
+- You can continue working immediately
+
+### Multi-Developer Scenarios
+
+**Multiple people working on same spec:**
+
+```bash
+# Person A:
+/specify shared-feature
+# Works on specs/shared-feature/spec.md
+git push origin username-a/shared-feature
+
+# Person B (later):
+git fetch origin
+git checkout username-a/shared-feature
+# Spec at specs/shared-feature/spec.md is already there
+/plan shared-feature  # Continue from here
+```
+
+### When to Create New Specs vs. Resume
+
+**Create new spec (`/specify`):**
+- Starting a completely new feature
+- No spec directory exists yet
+- No branch exists yet
+
+**Resume existing (`git checkout` + other commands):**
+- Spec already created
+- Branch already exists
+- Just want to continue work
+- Don't want to risk overwriting the spec
+
+**Safe practice:** Always check if spec/branch exists before running `/specify`:
+```bash
+# Check if spec exists
+ls specs/my-feature/spec.md
+
+# Check if branch exists
+git branch -a | grep my-feature
+
+# If both exist, just checkout the branch instead of using /specify
+```
+
 ## Common Questions
 
 **Q: Can I modify the spec after creating a plan?**

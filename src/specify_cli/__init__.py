@@ -618,6 +618,96 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 
+def handle_specify_extraction(source: Path, dest: Path, force: bool, verbose: bool = False, tracker: StepTracker | None = None) -> None:
+    """Extract .specify/ directory but preserve memory/ contents unless force=True"""
+    memory_backup_path = None
+    temp_dir_obj = None
+
+    try:
+        # Step 1: Backup existing memory/ if present and not force
+        if dest.exists() and not force:
+            memory_path = dest / "memory"
+            if memory_path.exists() and memory_path.is_dir():
+                # Create temp directory for backup
+                temp_dir_obj = tempfile.TemporaryDirectory()
+                memory_backup_path = Path(temp_dir_obj.name) / "memory_backup"
+                shutil.copytree(memory_path, memory_backup_path)
+                if verbose and not tracker:
+                    console.print(f"[cyan]Backed up .specify/memory/[/cyan]")
+
+        # Step 2: Remove old .specify/ if it exists
+        if dest.exists():
+            shutil.rmtree(dest)
+            if verbose and not tracker:
+                console.print(f"[cyan]Removed old .specify/[/cyan]")
+
+        # Step 3: Copy new .specify/
+        shutil.copytree(source, dest)
+        if verbose and not tracker:
+            console.print(f"[cyan]Copied new .specify/[/cyan]")
+
+        # Step 4: Restore old memory/ if we backed it up
+        if memory_backup_path and memory_backup_path.exists():
+            new_memory = dest / "memory"
+            if new_memory.exists():
+                shutil.rmtree(new_memory)
+            shutil.copytree(memory_backup_path, new_memory)
+            if verbose and not tracker:
+                console.print(f"[green]Restored .specify/memory/[/green]")
+
+    finally:
+        # Cleanup temp directory
+        if temp_dir_obj:
+            temp_dir_obj.cleanup()
+
+
+def merge_gitignore(project_path: Path, source_dir: Path, verbose: bool = False, tracker: StepTracker | None = None) -> None:
+    """Merge template .gitignore entries into project .gitignore"""
+    template_gitignore = source_dir / ".gitignore"
+
+    # If template has no .gitignore, nothing to merge
+    if not template_gitignore.exists():
+        return
+
+    template_content = template_gitignore.read_text(encoding='utf-8')
+    project_gitignore = project_path / ".gitignore"
+
+    # Parse template entries (ignore comments and empty lines)
+    template_lines = set(
+        line.strip()
+        for line in template_content.split('\n')
+        if line.strip() and not line.startswith('#')
+    )
+
+    # Read existing .gitignore if present
+    if project_gitignore.exists():
+        existing_content = project_gitignore.read_text(encoding='utf-8')
+        existing_lines = set(
+            line.strip()
+            for line in existing_content.split('\n')
+            if line.strip() and not line.startswith('#')
+        )
+    else:
+        existing_content = ""
+        existing_lines = set()
+
+    # Find new entries that aren't already present
+    new_entries = template_lines - existing_lines
+
+    if new_entries:
+        # Append new entries
+        with open(project_gitignore, 'a', encoding='utf-8') as f:
+            if existing_content and not existing_content.endswith('\n'):
+                f.write('\n')
+            f.write('\n# Added by spec-kit\n')
+            for entry in sorted(new_entries):
+                f.write(f'{entry}\n')
+        if verbose and not tracker:
+            console.print(f"[cyan]Merged {len(new_entries)} entries into .gitignore[/cyan]")
+    elif verbose and not tracker:
+        console.print(f"[dim].gitignore already up to date[/dim]")
+
+
 def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, repo_owner: str = None, repo_name: str = None, repo_branch: str = None, force: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
@@ -696,77 +786,89 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                         elif verbose:
                             console.print(f"[cyan]Found nested directory structure[/cyan]")
                     
-                    # Copy contents to current directory
+                    # Only extract spec-kit's user-facing assets
+                    ALLOWED_PATHS = {'.specify'}
+
+                    # Copy only allowed paths to current directory
                     for item in source_dir.iterdir():
+                        # Filter: only process spec-kit namespaces
+                        if item.name not in ALLOWED_PATHS:
+                            continue
+
                         dest_path = project_path / item.name
 
-                        # Skip specs folder if it already exists to preserve user documentation (unless force)
+                        # Special handling for .specify/
+                        if item.name == ".specify":
+                            handle_specify_extraction(item, dest_path, force, verbose=verbose, tracker=tracker)
+                            continue
+
+                        # specs/ folder: preserve if exists (unless force)
                         if item.name == "specs" and dest_path.exists() and not force:
                             if verbose and not tracker:
                                 console.print(f"[cyan]Preserving existing specs folder[/cyan]")
                             continue
 
-                        if item.is_dir():
-                            if dest_path.exists():
-                                if force:
-                                    if verbose and not tracker:
-                                        console.print(f"[yellow]Force overwriting directory:[/yellow] {item.name}")
-                                    shutil.rmtree(dest_path)
-                                    shutil.copytree(item, dest_path)
-                                else:
-                                    if verbose and not tracker:
-                                        console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
-                                    # Recursively copy directory contents
-                                    for sub_item in item.rglob('*'):
-                                        if sub_item.is_file():
-                                            rel_path = sub_item.relative_to(item)
-                                            dest_file = dest_path / rel_path
-                                            dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                            shutil.copy2(sub_item, dest_file)
-                            else:
-                                shutil.copytree(item, dest_path)
-                        else:
-                            if dest_path.exists():
-                                if force:
-                                    if verbose and not tracker:
-                                        console.print(f"[yellow]Force overwriting file:[/yellow] {item.name}")
-                                    shutil.copy2(item, dest_path)
-                                elif verbose and not tracker:
-                                    console.print(f"[dim]Skipping existing file:[/dim] {item.name}")
-                            else:
-                                shutil.copy2(item, dest_path)
+                        # Default: replace other allowed paths
+                        if dest_path.exists():
+                            shutil.rmtree(dest_path)
+                        shutil.copytree(item, dest_path)
+
+                    # Merge .gitignore from template
+                    merge_gitignore(project_path, source_dir, verbose=verbose, tracker=tracker)
                     if verbose and not tracker:
                         console.print(f"[cyan]Template files merged into current directory[/cyan]")
             else:
-                # Extract directly to project directory (original behavior)
-                zip_ref.extractall(project_path)
-                
-                # Check what was extracted
-                extracted_items = list(project_path.iterdir())
-                if tracker:
-                    tracker.start("extracted-summary")
-                    tracker.complete("extracted-summary", f"{len(extracted_items)} top-level items")
-                elif verbose:
-                    console.print(f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]")
-                    for item in extracted_items:
-                        console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
-                
-                # Handle GitHub-style ZIP with a single root directory
-                if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                    # Move contents up one level
-                    nested_dir = extracted_items[0]
-                    temp_move_dir = project_path.parent / f"{project_path.name}_temp"
-                    # Move the nested directory contents to temp location
-                    shutil.move(str(nested_dir), str(temp_move_dir))
-                    # Remove the now-empty project directory
-                    project_path.rmdir()
-                    # Rename temp directory to project directory
-                    shutil.move(str(temp_move_dir), str(project_path))
+                # Extract to temp location first, then filter
+                with tempfile.TemporaryDirectory() as temp_extract:
+                    temp_path = Path(temp_extract)
+                    zip_ref.extractall(temp_path)
+
+                    # Check what was extracted
+                    extracted_items = list(temp_path.iterdir())
                     if tracker:
-                        tracker.add("flatten", "Flatten nested directory")
-                        tracker.complete("flatten")
+                        tracker.start("extracted-summary")
+                        tracker.complete("extracted-summary", f"{len(extracted_items)} items")
                     elif verbose:
-                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
+                        console.print(f"[cyan]Extracted {len(extracted_items)} items[/cyan]")
+
+                    # Handle GitHub-style ZIP with a single root directory
+                    source_dir = temp_path
+                    if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                        source_dir = extracted_items[0]
+                        if tracker:
+                            tracker.add("flatten", "Flatten nested directory")
+                            tracker.complete("flatten")
+                        elif verbose:
+                            console.print(f"[cyan]Found nested directory structure[/cyan]")
+
+                    # Only copy spec-kit's user-facing assets
+                    ALLOWED_PATHS = {'.specify'}
+
+                    for item in source_dir.iterdir():
+                        # Filter: only process spec-kit namespaces
+                        if item.name not in ALLOWED_PATHS:
+                            continue
+
+                        dest_path = project_path / item.name
+
+                        # Special handling for .specify/
+                        if item.name == ".specify":
+                            handle_specify_extraction(item, dest_path, force, verbose=verbose, tracker=tracker)
+                            continue
+
+                        # specs/ folder: preserve if exists (unlikely for new project)
+                        if item.name == "specs" and dest_path.exists() and not force:
+                            if verbose and not tracker:
+                                console.print(f"[cyan]Preserving existing specs folder[/cyan]")
+                            continue
+
+                        # Default: copy other allowed paths
+                        if dest_path.exists():
+                            shutil.rmtree(dest_path)
+                        shutil.copytree(item, dest_path)
+
+                    # Merge .gitignore from template
+                    merge_gitignore(project_path, source_dir, verbose=verbose, tracker=tracker)
                     
     except Exception as e:
         if tracker:
@@ -1008,12 +1110,21 @@ def generate_ai_commands(project_path: Path, ai_assistant: str, script_type: str
     # Create appropriate directory structure for each AI assistant
     if ai_assistant == "claude":
         target_dir = project_path / ".claude" / "commands" / "spec-kit"
+        # Clear old spec-kit commands first to ensure clean state
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
         arg_format = "$ARGUMENTS"
         ext = "md"
     elif ai_assistant == "gemini":
         target_dir = project_path / ".gemini" / "commands"
-        target_dir.mkdir(parents=True, exist_ok=True)
+        # Clear old commands first
+        if target_dir.exists():
+            # For gemini, only remove spec-kit related files (*.toml)
+            for old_file in target_dir.glob("*.toml"):
+                old_file.unlink()
+        else:
+            target_dir.mkdir(parents=True, exist_ok=True)
         arg_format = "{{args}}"
         ext = "toml"
         # Copy GEMINI.md if it exists
@@ -1022,11 +1133,20 @@ def generate_ai_commands(project_path: Path, ai_assistant: str, script_type: str
             shutil.copy2(gemini_md, project_path / "GEMINI.md")
     elif ai_assistant == "copilot":
         target_dir = project_path / ".github" / "prompts"
-        target_dir.mkdir(parents=True, exist_ok=True)
+        # Clear old spec-kit prompts first
+        if target_dir.exists():
+            # For copilot, only remove spec-kit related files
+            for old_file in target_dir.glob("*.prompt.md"):
+                old_file.unlink()
+        else:
+            target_dir.mkdir(parents=True, exist_ok=True)
         arg_format = "$ARGUMENTS"
         ext = "prompt.md"
     elif ai_assistant == "cursor":
         target_dir = project_path / ".cursor" / "commands"
+        # Clear old spec-kit commands first
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
         arg_format = "$ARGUMENTS"
         ext = "md"
