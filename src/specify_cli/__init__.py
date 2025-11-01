@@ -558,7 +558,7 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
 
     return merged
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = None, verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
     repo_owner = "github"
     repo_name = "spec-kit"
     if client is None:
@@ -591,16 +591,33 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         raise typer.Exit(1)
 
     assets = release_data.get("assets", [])
-    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
-    matching_assets = [
-        asset for asset in assets
-        if pattern in asset["name"] and asset["name"].endswith(".zip")
-    ]
+
+    # For unified packages (script_type=None), look for packages without script suffix
+    # For legacy packages, look for script-specific packages (backward compatibility)
+    if script_type is None:
+        # Match: spec-kit-template-{agent}-v{version}.zip (unified package)
+        pattern = f"spec-kit-template-{ai_assistant}-v"
+        matching_assets = [
+            asset for asset in assets
+            if asset["name"].startswith(f"spec-kit-template-{ai_assistant}-")
+            and asset["name"].endswith(".zip")
+            and "-sh-" not in asset["name"]
+            and "-ps-" not in asset["name"]
+        ]
+    else:
+        # Match: spec-kit-template-{agent}-{script}-v{version}.zip (legacy)
+        pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
+        matching_assets = [
+            asset for asset in assets
+            if pattern in asset["name"] and asset["name"].endswith(".zip")
+        ]
 
     asset = matching_assets[0] if matching_assets else None
 
     if asset is None:
-        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
+        package_type = "unified" if script_type is None else f"{script_type} script"
+        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] ({package_type} package)")
+        console.print(f"[dim]Expected pattern: {pattern}[/dim]")
         asset_names = [a.get('name', '?') for a in assets]
         console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
@@ -1009,7 +1026,9 @@ def init(
             selected_script = default_script
 
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
-    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+    if script_type:
+        console.print(f"[yellow]Note:[/yellow] Script type selection is deprecated. Using unified package with automatic OS detection.")
+    console.print(f"[cyan]Package type:[/cyan] Unified (auto-detects OS: Windows→PowerShell, Unix/Linux/macOS→Bash)")
 
     tracker = StepTracker("Initialize Specify Project")
 
@@ -1019,8 +1038,8 @@ def init(
     tracker.complete("precheck", "ok")
     tracker.add("ai-select", "Select AI assistant")
     tracker.complete("ai-select", f"{selected_ai}")
-    tracker.add("script-select", "Select script type")
-    tracker.complete("script-select", selected_script)
+    tracker.add("package-type", "Package type")
+    tracker.complete("package-type", "unified (sh+ps)")
     for key, label in [
         ("fetch", "Fetch latest release"),
         ("download", "Download template"),
@@ -1044,7 +1063,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, None, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
