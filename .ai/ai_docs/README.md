@@ -44,4 +44,4 @@ Documentation & References:
   gotcha: Tokens expire after 15 minutes, not the standard 1 hour
 ```
 
-This ensures AI agents have the necessary context for successful implementation without needing to discover patterns through trial and error.
+This ensures AI agents have the necessary context for successful implementation without needing to discover patterns throdos ugh trial and error.
