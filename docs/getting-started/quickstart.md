@@ -19,6 +19,7 @@ Pick script type explicitly (optional):
 uvx --from git+https://github.com/hcnimi/spec-kit.git specify init <PROJECT_NAME> --script ps  # Force PowerShell
 uvx --from git+https://github.com/hcnimi/spec-kit.git specify init <PROJECT_NAME> --script sh  # Force POSIX shell
 ```
+Note: refer to installation.md for global install option.
 
 ### 2. Create the Spec
 

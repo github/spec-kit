@@ -287,6 +287,8 @@ init.sh --all-repos --search-path workspace-1 --max-depth 2
 init.sh --all-repos --search-path workspace-2 --max-depth 2
 ```
 
+## Migration FAQ
+
 ### Can I use specify CLI to update projects initialized with init.sh?
 
 **Yes!** This is the recommended migration path for existing projects.
@@ -324,6 +326,82 @@ cd ~/git
 Slash commands (`/specify`, `/plan`) use **local templates** from `.specify/templates/`, not the globally installed CLI. Installing `specify` globally does NOT automatically update existing projects.
 
 **See**: [Migration Guide](../../docs/guides/migration-init-to-cli.md) for comprehensive instructions.
+
+### Will global install break my existing projects?
+
+**No.** Existing projects continue using their local `.specify/` templates until you explicitly update them.
+
+Nothing changes automatically. Your slash commands (`/specify`, `/plan`, etc.) will continue to work exactly as they did before installing the global CLI.
+
+### Do I need to keep init.sh after installing globally?
+
+**Yes!** `init.sh` is still valuable for:
+- ✅ Bulk updates (`--all-repos` flag) - the CLI doesn't have this feature
+- ✅ Local development and testing
+- ✅ Offline scenarios (no network needed)
+- ✅ Multi-repo batch operations
+- ✅ Custom template testing
+
+Both tools serve different purposes and complement each other.
+
+### How often should I update my project templates?
+
+**Recommendation:**
+- **After major spec-kit releases**: Review release notes, update if valuable features
+- **Quarterly routine maintenance**: Keep projects in sync with latest patterns
+- **Before starting major features**: Ensure you have latest best practices and bug fixes
+
+**Quick check for updates:**
+
+```bash
+# Update local spec-kit clone
+cd ~/git/spec-kit
+git pull origin main
+
+# Review what changed
+git log --oneline -10
+
+# If valuable updates, apply to projects
+init.sh --all-repos --ai claude
+```
+
+### Can I mix workspace mode with batch updates?
+
+**Yes!** This is actually recommended:
+
+```bash
+# 1. Setup workspace for coordinated repos
+cd ~/git/my-workspace
+specify init --workspace --auto-init
+
+# 2. Later, when spec-kit releases updates, bulk update all repos
+init.sh --all-repos --search-path . --max-depth 2
+```
+
+This gives you the best of both worlds:
+- Workspace features for cross-repo specs and routing
+- Batch updates for template maintenance
+
+### What if I want to use different AI assistants per project?
+
+**Fully supported!** Each project maintains its own AI configuration:
+
+```bash
+# Project A with Claude
+cd ~/git/project-a
+specify init --here --ai claude
+
+# Project B with Gemini
+cd ~/git/project-b
+specify init --here --ai gemini
+```
+
+**Batch updates preserve AI choice:**
+
+```bash
+# Only updates Claude projects (ignores Gemini/Copilot projects)
+init.sh --all-repos --ai claude
+```
 
 ---
 
