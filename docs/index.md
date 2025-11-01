@@ -1,62 +1,91 @@
-# Spec Kit
+# Spec Kit Documentation
 
-*Build high-quality software faster.*
-
-**An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.**
+Welcome to the Spec Kit documentation! Spec Kit helps you build high-quality software faster through Spec-Driven Development.
 
 ## What is Spec-Driven Development?
 
-Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+Spec-Driven Development **flips the script** on traditional software development. Instead of jumping straight to code, you create executable specifications that drive implementation. The specification becomes your source of truth.
 
 ## Getting Started
 
-- [Installation Guide](installation.md)
-- [Quick Start Guide](quickstart.md)
-- [Local Development](local-development.md)
+New to Spec Kit? Start here:
 
-## Core Philosophy
+- **[Installation](getting-started/installation.md)** - Install the `specify` CLI
+- **[Quick Start](getting-started/quickstart.md)** - Create your first spec in 4 steps
+- **[Your First Spec](getting-started/first-spec.md)** - Complete walkthrough tutorial
 
-Spec-Driven Development is a structured process that emphasizes:
+## Documentation Sections
 
-- **Intent-driven development** where specifications define the "_what_" before the "_how_"
-- **Rich specification creation** using guardrails and organizational principles
-- **Multi-step refinement** rather than one-shot code generation from prompts
-- **Heavy reliance** on advanced AI model capabilities for specification interpretation
+### 🚀 [Getting Started](getting-started/)
+Step-by-step tutorials to get you up and running
+- Installation and setup
+- Your first project walkthrough
+- Quick reference guides
 
-## Development Phases
+### 📖 [Guides](guides/)
+Task-focused how-to guides for common scenarios
+- Simple features (<200 LOC)
+- Complex features (800-1000 LOC)
+- Atomic PRs for large features (>1000 LOC)
+- Multi-repository workspaces
+- Team workflows
 
-| Phase | Focus | Key Activities |
-|-------|-------|----------------|
-| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+### 💡 [Concepts](concepts/)
+Deep dives into the philosophy and principles
+- Spec-Driven Development philosophy
+- Three-tier hierarchy (vision, spec, plan)
+- Development workflow and phases
+- Architecture evolution
+- Team patterns
 
-## Experimental Goals
+### 📋 [Reference](reference/)
+Technical reference documentation
+- CLI commands
+- Slash commands (`/specify`, `/plan`, etc.)
+- Templates and configuration
+- Workspace configuration
+- API contracts
 
-Our research and experimentation focus on:
+### ✅ [Validation](validation/)
+Quality gates and review processes
+- Quality gates
+- Review checklists
+- Best practices
 
-### Technology Independence
-- Create applications using diverse technology stacks
-- Validate the hypothesis that Spec-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
+## Quick Links
 
-### Enterprise Constraints
-- Demonstrate mission-critical application development
-- Incorporate organizational constraints (cloud providers, tech stacks, engineering practices)
-- Support enterprise design systems and compliance requirements
+**Common Tasks:**
+- [Install Spec Kit](getting-started/installation.md)
+- [Create a specification](reference/slash-commands.md#specify)
+- [Set up multi-repo workspace](guides/multi-repo-workspaces.md)
+- [Break large feature into atomic PRs](guides/atomic-prs.md)
 
-### User-Centric Development
-- Build applications for different user cohorts and preferences
-- Support various development approaches (from vibe-coding to AI-native development)
+**Understanding the System:**
+- [Why Spec-Driven Development?](concepts/spec-driven-philosophy.md)
+- [How does the workflow work?](concepts/development-workflow.md)
+- [What's in each phase?](concepts/three-tier-hierarchy.md)
 
-### Creative & Iterative Processes
-- Validate the concept of parallel implementation exploration
-- Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks
+## Documentation Philosophy
+
+This documentation follows the [Divio documentation system](https://documentation.divio.com/):
+
+- **Tutorials** (Getting Started) - Learning by doing
+- **How-to Guides** (Guides) - Solving specific problems
+- **Explanations** (Concepts) - Understanding the system
+- **Reference** - Technical specifications
+
+Each section serves a different purpose, so you can find exactly what you need.
+
+## Need Help?
+
+- 💬 [Open an issue](https://github.com/hcnimi/spec-kit/issues/new)
+- 📖 Check the [FAQ](concepts/README.md#faq)
+- 🔍 Search the documentation
 
 ## Contributing
 
-Please see our [Contributing Guide](CONTRIBUTING.md) for information on how to contribute to this project.
+Want to contribute? See the [Contributing Guide](../contributing/) for developer documentation.
 
-## Support
+---
 
-For support, please check our [Support Guide](SUPPORT.md) or open an issue on GitHub.
+Ready to get started? **[Install Spec Kit →](getting-started/installation.md)**
