@@ -1,17 +1,73 @@
-# Home page
 - name: Home
   href: index.md
-
-# Getting started section
 - name: Getting Started
+  href: getting-started/
   items:
+    - name: Overview
+      href: getting-started/README.md
     - name: Installation
-      href: installation.md
+      href: getting-started/installation.md
     - name: Quick Start
-      href: quickstart.md
-
-# Development workflows
-- name: Development
+      href: getting-started/quickstart.md
+    - name: Your First Spec
+      href: getting-started/first-spec.md
+- name: Guides
+  href: guides/
   items:
-    - name: Local Development
-      href: local-development.md
+    - name: Overview
+      href: guides/README.md
+    - name: Simple Features
+      href: guides/simple-features.md
+    - name: Complex Features
+      href: guides/complex-features.md
+    - name: Atomic PRs
+      href: guides/atomic-prs.md
+    - name: Multi-Repo Workspaces
+      href: guides/multi-repo-workspaces.md
+- name: Concepts
+  href: concepts/
+  items:
+    - name: Overview
+      href: concepts/README.md
+    - name: Spec-Driven Philosophy
+      href: concepts/spec-driven-philosophy.md
+    - name: Three-Tier Hierarchy
+      href: concepts/three-tier-hierarchy.md
+    - name: Development Workflow
+      href: concepts/development-workflow.md
+    - name: Atomic Decomposition
+      href: concepts/atomic-decomposition.md
+    - name: Architecture Evolution
+      href: concepts/architecture-evolution.md
+    - name: Multi-Repo Architecture
+      href: concepts/multi-repo-architecture.md
+    - name: Brownfield Development
+      href: concepts/brownfield-development.md
+    - name: Team Patterns
+      href: concepts/team-patterns.md
+- name: Reference
+  href: reference/
+  items:
+    - name: Overview
+      href: reference/README.md
+    - name: CLI Commands
+      href: reference/cli-commands.md
+    - name: Slash Commands
+      href: reference/slash-commands.md
+    - name: Templates
+      href: reference/templates.md
+    - name: Configuration
+      href: reference/configuration.md
+    - name: Workspace Config
+      href: reference/workspace-config.md
+    - name: API Contracts
+      href: reference/api-contracts.md
+- name: Validation
+  href: validation/
+  items:
+    - name: Overview
+      href: validation/README.md
+    - name: Quality Gates
+      href: validation/quality-gates.md
+    - name: Review Checklist
+      href: validation/review-checklist.md
