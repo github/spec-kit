@@ -5,8 +5,10 @@
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [uv](https://docs.astral.sh/uv/) for package management
-- [Python 3.11+](https://www.python.org/downloads/)
+- [Python 3.11+](https://www.python.org/downloads())
 - [Git](https://git-scm.com/downloads)
+
+> **📝 Note**: If you plan to use [multi-repository workspaces](../guides/multi-repo-workspaces.md), the workspace directory must be initialized as a git repository to version control your specifications. This is a critical requirement for team collaboration and spec tracking.
 
 ## Installation
 

@@ -2,9 +2,104 @@
 
 Configuration for multi-repository workspaces.
 
+> **⚠️ PREREQUISITE**: The workspace directory must be a git repository. See [Version Control Requirements](#version-control-requirements) below.
+
 ## Workspace Configuration File
 
 **Location**: `<workspace-root>/.specify/workspace.yml`
+
+## Version Control Requirements
+
+### Mandatory Setup
+
+The workspace directory **must** be initialized as a git repository:
+
+```bash
+cd <workspace-root>
+git init
+git add .specify/ specs/
+git commit -m "Initialize spec-kit workspace"
+```
+
+### Why This is Required
+
+- **Spec tracking**: Specifications need version history
+- **Code review**: Specs should be reviewed via PRs
+- **Team collaboration**: Multiple developers work on specs
+- **CI/CD integration**: Automated tooling needs access to specs
+- **Traceability**: Link specs to code changes
+
+### What Gets Tracked
+
+The workspace git repository tracks:
+- ✅ `.specify/workspace.yml` - Workspace configuration
+- ✅ `specs/` - All specification directories
+- ✅ `.gitignore` - Workspace-level ignores
+- ❌ Sub-repo directories (e.g., `backend/`, `frontend/`) - These are separate repos
+
+### Recommended `.gitignore`
+
+```gitignore
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Build artifacts (if any)
+_site/
+dist/
+.cache/
+
+# Don't ignore sub-repos (they manage themselves)
+# backend/
+# frontend/
+```
+
+### Team Setup
+
+**Repository owner:**
+```bash
+# After workspace init and configuration
+git remote add origin git@github.com:company/workspace.git
+git push -u origin main
+```
+
+**Team members:**
+```bash
+# Clone workspace
+git clone git@github.com:company/workspace.git
+cd workspace
+
+# Sub-repos are NOT automatically cloned
+# Team members must clone them manually or use git submodules
+```
+
+### Git Submodules (Optional)
+
+For tighter integration, use submodules to track sub-repos:
+
+```bash
+cd <workspace-root>
+git submodule add git@github.com:company/backend.git backend
+git submodule add git@github.com:company/frontend.git frontend
+git commit -m "Add sub-repositories as submodules"
+```
+
+**Team setup with submodules:**
+```bash
+git clone --recursive git@github.com:company/workspace.git
+# All sub-repos automatically cloned
+```
 
 ## Structure
 
@@ -130,6 +225,79 @@ repos:
     github_host: github.com
     require_jira: false
 ```
+
+## Best Practices
+
+### Git Workflow
+
+1. **Commit specs frequently** - Don't wait until implementation is done
+2. **Use meaningful commit messages** - Explain why requirements changed
+3. **Tag major milestones** - Use git tags for spec versions
+4. **Branch for major changes** - Use feature branches for experimental specs
+5. **Review specs like code** - Create PRs for spec changes
+
+### Workspace Hygiene
+
+1. **Keep README updated** - Document workspace structure
+2. **Maintain .gitignore** - Exclude temporary files
+3. **Regular syncs** - Pull workspace changes frequently
+4. **Clear conventions** - Document routing rules in workspace README
+5. **Consistent naming** - Follow spec naming conventions
+
+### Team Collaboration
+
+1. **Onboard new members** - Provide workspace clone instructions
+2. **Document decisions** - Use spec comments to explain "why"
+3. **Link specs to code** - Reference spec files in PR descriptions
+4. **Review before implement** - Approve specs before starting code
+5. **Update after changes** - Keep specs in sync with implementation
+
+### CI/CD Integration
+
+```yaml
+# Example: GitHub Actions workflow for spec validation
+name: Validate Specs
+on: [pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check spec format
+        run: |
+          # Validate spec file structure
+          find specs/ -name "spec.md" | xargs grep -l "## Requirements"
+```
+
+## Alternative Patterns
+
+While the default pattern (workspace as git repo) is recommended, teams may choose alternatives:
+
+### Pattern Comparison
+
+| Pattern | Workspace Git Repo | Separate Specs Repo | Specs in Dominant Repo |
+|---------|-------------------|---------------------|------------------------|
+| **Setup** | Medium | Low | Trivial |
+| **Maintenance** | Medium | Medium | Low |
+| **Discoverability** | High | High | Medium |
+| **Team Coordination** | High | High | Low |
+| **Best For** | Multi-repo systems | Large orgs, RFC-style | Small teams |
+
+### When to Use Alternatives
+
+**Use separate specs repo when:**
+- Large organization with many teams
+- Need different access control for specs vs code
+- Following RFC/KEP-style process
+- Specs have independent lifecycle
+
+**Use specs in dominant repo when:**
+- Small team with overlapping responsibilities
+- Clear "primary" repo exists (e.g., backend-heavy system)
+- Want minimal overhead
+- Most specs are feature-specific, not cross-cutting
+
+See [Multi-Repo Architecture Concepts](../concepts/multi-repo-architecture.md#alternative-organizational-patterns) for detailed analysis.
 
 ## Related
 

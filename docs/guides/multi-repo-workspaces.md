@@ -11,6 +11,193 @@ In a multi-repo workspace:
 - **Convention-based routing** automatically determines which repo(s) a spec targets
 - **Capabilities are single-repo** while parent specs can span multiple repos
 
+## Version Controlling Your Workspace
+
+> **⚠️ CRITICAL REQUIREMENT**: The workspace directory must be a git repository to version control your specifications. Without this, specs will not be tracked, and you'll lose the benefits of version control, code review, and team collaboration.
+
+### Why This Matters
+
+Specifications are living documents that evolve with your product. They need:
+- **Version history** - Track why decisions were made and how requirements changed
+- **Code review** - Specs should be reviewed just like code
+- **Team collaboration** - Multiple developers need to work on specs
+- **CI/CD integration** - Automated tooling needs to access specs
+- **Traceability** - Link specs to commits, PRs, and deployments
+
+### Initial Workspace Setup
+
+When creating a multi-repo workspace, initialize it as a git repository:
+
+```bash
+# Navigate to your workspace directory
+cd ~/git/my-workspace
+
+# Initialize workspace-level configuration
+specify init --workspace --auto-init
+
+# Initialize git repository for the workspace
+git init
+git add .specify/ specs/
+git commit -m "Initialize spec-kit workspace"
+
+# Add remote and push (optional but recommended)
+git remote add origin git@github.com:company/my-workspace.git
+git push -u origin main
+```
+
+### Team Onboarding
+
+Team members clone the workspace repository:
+
+```bash
+# Clone the workspace repository
+git clone git@github.com:company/my-workspace.git
+cd my-workspace
+
+# Sub-repositories can be cloned as siblings (manual approach)
+# They are NOT tracked in the workspace git repo
+cd my-workspace
+# (Sub-repos like backend/ and frontend/ already exist from workspace init)
+```
+
+### Alternative: Git Submodules
+
+For tighter integration, use git submodules to track sub-repositories:
+
+```bash
+cd ~/git/my-workspace
+git init
+
+# Add sub-repositories as submodules
+git submodule add git@github.com:company/backend.git backend
+git submodule add git@github.com:company/frontend.git frontend
+
+# Initialize workspace
+specify init --workspace --auto-init
+
+# Commit everything
+git add .
+git commit -m "Initialize workspace with submodules"
+git push -u origin main
+```
+
+**Team setup with submodules:**
+```bash
+git clone --recursive git@github.com:company/my-workspace.git
+cd my-workspace
+# All sub-repos are automatically cloned
+```
+
+### Alternative Patterns
+
+Different teams may prefer different approaches to managing specs:
+
+#### Pattern A: Workspace as Git Repo (Recommended, Current Default)
+
+**Structure:**
+```
+~/git/my-workspace/          ← Git repository for workspace
+  .git/                      ← Version control for specs
+  .specify/workspace.yml
+  specs/                     ← Tracked by workspace repo
+  backend/                   ← Separate git repo
+  frontend/                  ← Separate git repo
+```
+
+**Pros:**
+- ✅ Centralized spec management
+- ✅ Cross-repo features easily documented
+- ✅ Single source of truth for all specs
+
+**Cons:**
+- ❌ Requires team standardization
+- ❌ Extra repo to manage
+
+**Best for:** Teams with tightly coupled frontend/backend, microservices architectures
+
+#### Pattern B: Separate Specs Repository
+
+**Structure:**
+```
+~/git/
+  company-specs/             ← Git repo for all specs
+    specs/
+  backend/                   ← Git repo
+  frontend/                  ← Git repo
+```
+
+**Pros:**
+- ✅ Clear separation of concerns
+- ✅ Independent lifecycle
+- ✅ Easier access control
+
+**Cons:**
+- ❌ Need to manage references between repos
+- ❌ Extra coordination required
+
+**Best for:** Large organizations, RFC/KEP-style processes (like Kubernetes, Rust)
+
+#### Pattern C: Specs in Dominant Repository
+
+**Structure:**
+```
+~/git/backend/              ← Git repo (primary)
+  specs/                    ← All specs here, including cross-repo
+  src/
+```
+
+**Pros:**
+- ✅ No extra repository
+- ✅ Simpler mental model
+- ✅ Works with existing workflows
+
+**Cons:**
+- ❌ Feels unbalanced (backend "owns" frontend specs)
+- ❌ Frontend team might miss updates
+
+**Best for:** Small teams, backend-heavy systems, early-stage products
+
+### Industry Precedent
+
+This workspace-as-repository pattern is well-established:
+
+- **Kubernetes** - Uses `kubernetes/enhancements` repo for KEPs spanning multiple component repos
+- **Rust Language** - Uses `rust-lang/rfcs` repo for RFCs affecting compiler, stdlib, and tools
+- **Android (AOSP)** - Uses repo manifest system with central coordination
+- **Many enterprises** - Separate "platform-docs" or "architecture" repos for cross-cutting concerns
+
+### Best Practices
+
+1. **Commit specs frequently** - Treat specs like code
+2. **Use PR reviews for specs** - Specs should be reviewed before implementation
+3. **Write meaningful commit messages** - Explain why requirements changed
+4. **Tag major versions** - Use git tags for major spec milestones
+5. **Document workspace structure** - Add README to workspace repo
+6. **Set up `.gitignore`** - Exclude temporary files, build artifacts
+7. **Automate checks** - Use pre-commit hooks or CI to validate spec format
+
+### Example `.gitignore` for Workspace
+
+```gitignore
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Don't ignore the sub-repos themselves
+# (They're managed separately)
+```
+
 ## Initialization Methods
 
 There are **two ways** to initialize a workspace:
@@ -185,7 +372,22 @@ This will:
 - ✅ Create `specs/` directory for centralized specifications
 - ✅ Initialize `.specify/` in each repo (with `--auto-init`)
 
-### 2. Customize Conventions
+### 2. Version Control the Workspace
+
+> **⚠️ IMPORTANT**: Don't skip this step!
+
+```bash
+cd ~/git/my-project
+git init
+git add .specify/ specs/
+git commit -m "Initialize spec-kit workspace"
+
+# Optional: Add remote repository
+git remote add origin git@github.com:company/my-project.git
+git push -u origin main
+```
+
+### 3. Customize Conventions
 
 Edit `.specify/workspace.yml` to define how spec names map to repositories:
 
@@ -247,10 +449,11 @@ You'll be prompted to select the target repo if not specified.
 ## Workspace Structure
 
 ```
-my-workspace/                    # Parent directory
+my-workspace/                    # Workspace git repository
+  .git/                          # ← Version control for workspace
   .specify/
     workspace.yml                # Workspace configuration
-  specs/                         # Centralized specifications
+  specs/                         # Centralized specifications (tracked by workspace)
     backend-user-auth/
       spec.md
       plan.md
@@ -266,15 +469,19 @@ my-workspace/                    # Parent directory
       cap-002-frontend-ui/       # Frontend capability
         spec.md
         plan.md
-  my-backend/                    # Git repository
+  my-backend/                    # Git repository (separate from workspace)
+    .git/                        # ← Independent git repo
     .specify/                    # Repo-specific config
     src/
     ...
-  my-frontend/                   # Git repository
+  my-frontend/                   # Git repository (separate from workspace)
+    .git/                        # ← Independent git repo
     .specify/
     src/
     ...
 ```
+
+**Note:** The workspace directory (`my-workspace/`) is its own git repository that tracks specs and configuration. Sub-repositories (`my-backend/`, `my-frontend/`) are separate git repositories that track code. They are NOT tracked by the workspace git repo (unless using git submodules).
 
 ## Convention-Based Targeting
 
@@ -620,17 +827,45 @@ cd ~/git/my-workspace
 specify init --workspace
 ```
 
-3. **Migrate existing specs (optional):**
+3. **Initialize git repository for workspace:**
+
+```bash
+cd ~/git/my-workspace
+git init
+git add .specify/ specs/
+git commit -m "Initialize spec-kit workspace"
+
+# Optional: Add remote
+git remote add origin git@github.com:company/my-workspace.git
+git push -u origin main
+```
+
+4. **Migrate existing specs (optional):**
 
 ```bash
 mkdir -p specs
 cp -r my-repo/specs/* specs/
-# Update specs to remove them from repo if desired
+
+# Commit migrated specs
+git add specs/
+git commit -m "Migrate specs from single-repo"
+
+# Optionally remove specs from original repo
+cd my-repo
+git rm -r specs/
+git commit -m "Move specs to workspace"
 ```
 
-4. **Update conventions:**
+5. **Update conventions:**
 
 Edit `.specify/workspace.yml` to configure routing rules.
+
+```bash
+cd ~/git/my-workspace
+# Edit .specify/workspace.yml
+git add .specify/workspace.yml
+git commit -m "Configure workspace routing conventions"
+```
 
 ## Troubleshooting
 
