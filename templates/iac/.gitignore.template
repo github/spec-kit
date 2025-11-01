@@ -1,0 +1,190 @@
+# Infrastructure as Code - Git Ignore Template
+# Copy this to your project's .gitignore
+
+# ===========================================
+# Credentials and Secrets
+# ===========================================
+.env
+.env.*
+.env.local
+.env.*.local
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+service-account*.json
+credentials.json
+secrets.yaml
+secrets.yml
+
+# ===========================================
+# MCP Configuration (may contain sensitive info)
+# ===========================================
+.mcp.json
+.claude/settings.local.json
+
+# ===========================================
+# Terraform
+# ===========================================
+# State files
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform directories
+.terraform/
+.terraform.lock.hcl
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Variable files that might contain secrets
+*.auto.tfvars
+**/secrets.tfvars
+terraform.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform plans
+*.tfplan
+plan.out
+
+# ===========================================
+# AWS
+# ===========================================
+# CloudFormation
+*.template.json.bak
+
+# SAM
+.aws-sam/
+samconfig.toml
+
+# CDK
+*.d.ts
+*.js
+!jest.config.js
+node_modules
+cdk.out/
+.cdk.staging/
+cdk.context.json
+
+# ===========================================
+# Azure
+# ===========================================
+# ARM Templates
+*.parameters.json
+*.parameters.*.json
+
+# Azure CLI
+.azure/
+
+# ===========================================
+# Google Cloud
+# ===========================================
+# GCP credentials
+*-credentials.json
+*-key.json
+gcp-key.json
+
+# Deployment Manager
+*.jinja.schema
+*.py.schema
+
+# ===========================================
+# IBM Cloud
+# ===========================================
+# IBM Cloud credentials
+ibmcloud_api_key.json
+iam_apikey.json
+
+# Schematics
+.schematics/
+
+# ===========================================
+# Ansible
+# ===========================================
+*.retry
+vault-password.txt
+group_vars/*/vault.yml
+host_vars/*/vault.yml
+
+# ===========================================
+# Pulumi
+# ===========================================
+Pulumi.*.yaml
+Pulumi.yaml
+
+# ===========================================
+# Kubernetes
+# ===========================================
+# kubeconfig files
+kubeconfig
+*.kubeconfig
+.kube/config
+
+# Helm
+.helm/
+*.tgz
+
+# ===========================================
+# General
+# ===========================================
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.code-workspace
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*.bak
+*.backup
+
+# Cache
+.cache/
+__pycache__/
+*.pyc
+
+# Node modules (for MCP servers)
+node_modules/
+package-lock.json
+yarn.lock
+
+# ===========================================
+# Cost Estimation
+# ===========================================
+.infracost/
+
+# ===========================================
+# Security Scanning
+# ===========================================
+tfsec-report.json
+checkov-report.json
+terrascan-report.json
+
+# ===========================================
+# CI/CD
+# ===========================================
+.github/workflows/*.local.yml
+
+# ===========================================
+# Custom - Add your project-specific ignores below
+# ===========================================
