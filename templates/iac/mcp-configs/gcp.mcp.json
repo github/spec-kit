@@ -1,0 +1,99 @@
+{
+  "mcpServers": {
+    "gcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gcp"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}",
+        "GCP_REGION": "${GCP_REGION:-us-central1}"
+      },
+      "description": "Google Cloud Platform MCP server for general GCP service access"
+    },
+    "gcp-cloud-functions": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gcp-cloud-functions"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}",
+        "GCP_REGION": "${GCP_REGION:-us-central1}"
+      },
+      "description": "Google Cloud Functions MCP server for serverless function management"
+    },
+    "gcp-cloud-run": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gcp-cloud-run"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}",
+        "GCP_REGION": "${GCP_REGION:-us-central1}"
+      },
+      "description": "Google Cloud Run MCP server for containerized application deployment"
+    },
+    "gcp-gke": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gcp-gke"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}",
+        "GCP_REGION": "${GCP_REGION:-us-central1}"
+      },
+      "description": "Google Kubernetes Engine (GKE) MCP server for Kubernetes management"
+    },
+    "gcp-storage": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gcp-storage"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}"
+      },
+      "description": "Google Cloud Storage MCP server for object storage management"
+    },
+    "gcp-deployment-manager": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gcp-deployment-manager"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}"
+      },
+      "description": "Google Cloud Deployment Manager MCP server for infrastructure as code"
+    },
+    "gcp-firestore": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gcp-firestore"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}"
+      },
+      "description": "Google Firestore MCP server for NoSQL database operations"
+    }
+  }
+}

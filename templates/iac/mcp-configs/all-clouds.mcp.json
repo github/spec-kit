@@ -1,0 +1,91 @@
+{
+  "mcpServers": {
+    "aws-api": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-aws-api"],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS API MCP server for general AWS service access"
+    },
+    "aws-cloudformation": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-aws-cloudformation"],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS CloudFormation MCP server for infrastructure as code"
+    },
+    "azure": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-azure"],
+      "env": {
+        "AZURE_TENANT_ID": "${AZURE_TENANT_ID}",
+        "AZURE_CLIENT_ID": "${AZURE_CLIENT_ID}",
+        "AZURE_CLIENT_SECRET": "${AZURE_CLIENT_SECRET}",
+        "AZURE_SUBSCRIPTION_ID": "${AZURE_SUBSCRIPTION_ID}"
+      },
+      "description": "Azure MCP server for accessing Azure services"
+    },
+    "azure-arm": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-azure-arm"],
+      "env": {
+        "AZURE_TENANT_ID": "${AZURE_TENANT_ID}",
+        "AZURE_CLIENT_ID": "${AZURE_CLIENT_ID}",
+        "AZURE_CLIENT_SECRET": "${AZURE_CLIENT_SECRET}",
+        "AZURE_SUBSCRIPTION_ID": "${AZURE_SUBSCRIPTION_ID}"
+      },
+      "description": "Azure Resource Manager (ARM) MCP server for infrastructure deployment"
+    },
+    "gcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gcp"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}",
+        "GCP_REGION": "${GCP_REGION:-us-central1}"
+      },
+      "description": "Google Cloud Platform MCP server for general GCP service access"
+    },
+    "gcp-deployment-manager": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gcp-deployment-manager"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}",
+        "GCP_PROJECT_ID": "${GCP_PROJECT_ID}"
+      },
+      "description": "Google Cloud Deployment Manager MCP server for infrastructure as code"
+    },
+    "ibm-cloud": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-ibm-cloud"],
+      "env": {
+        "IBM_CLOUD_API_KEY": "${IBM_CLOUD_API_KEY}",
+        "IBM_CLOUD_REGION": "${IBM_CLOUD_REGION:-us-south}"
+      },
+      "description": "IBM Cloud MCP server for general IBM Cloud service access"
+    },
+    "ibm-schematics": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-ibm-schematics"],
+      "env": {
+        "IBM_CLOUD_API_KEY": "${IBM_CLOUD_API_KEY}",
+        "IBM_CLOUD_REGION": "${IBM_CLOUD_REGION:-us-south}"
+      },
+      "description": "IBM Schematics MCP server for Terraform-based infrastructure as code"
+    }
+  }
+}

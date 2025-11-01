@@ -1,0 +1,94 @@
+{
+  "mcpServers": {
+    "ibm-cloud": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-ibm-cloud"
+      ],
+      "env": {
+        "IBM_CLOUD_API_KEY": "${IBM_CLOUD_API_KEY}",
+        "IBM_CLOUD_REGION": "${IBM_CLOUD_REGION:-us-south}"
+      },
+      "description": "IBM Cloud MCP server for general IBM Cloud service access"
+    },
+    "ibm-mcp-context-forge": {
+      "type": "http",
+      "url": "${IBM_MCP_CONTEXT_FORGE_URL}",
+      "headers": {
+        "Authorization": "Bearer ${IBM_CLOUD_API_KEY}"
+      },
+      "description": "IBM MCP Context Forge - gateway for tools, resources, and prompts"
+    },
+    "ibm-cloud-functions": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-ibm-cloud-functions"
+      ],
+      "env": {
+        "IBM_CLOUD_API_KEY": "${IBM_CLOUD_API_KEY}",
+        "IBM_CLOUD_REGION": "${IBM_CLOUD_REGION:-us-south}",
+        "IBM_CLOUD_NAMESPACE": "${IBM_CLOUD_NAMESPACE}"
+      },
+      "description": "IBM Cloud Functions MCP server for serverless function management"
+    },
+    "ibm-kubernetes": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-ibm-kubernetes"
+      ],
+      "env": {
+        "IBM_CLOUD_API_KEY": "${IBM_CLOUD_API_KEY}",
+        "IBM_CLOUD_REGION": "${IBM_CLOUD_REGION:-us-south}"
+      },
+      "description": "IBM Kubernetes Service MCP server for Kubernetes cluster management"
+    },
+    "ibm-cos": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-ibm-cos"
+      ],
+      "env": {
+        "IBM_CLOUD_API_KEY": "${IBM_CLOUD_API_KEY}",
+        "IBM_COS_ENDPOINT": "${IBM_COS_ENDPOINT}",
+        "IBM_COS_BUCKET": "${IBM_COS_BUCKET}"
+      },
+      "description": "IBM Cloud Object Storage (COS) MCP server for object storage management"
+    },
+    "ibm-watsonx": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-ibm-watsonx"
+      ],
+      "env": {
+        "WATSONX_URL": "${WATSONX_URL}",
+        "WATSONX_APIKEY": "${WATSONX_APIKEY}",
+        "WATSONX_PROJECT_ID": "${WATSONX_PROJECT_ID}",
+        "WATSONX_MODEL_ID": "${WATSONX_MODEL_ID:-ibm/granite-13b-chat-v2}"
+      },
+      "description": "IBM WatsonX AI MCP server for AI/ML operations"
+    },
+    "ibm-schematics": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-ibm-schematics"
+      ],
+      "env": {
+        "IBM_CLOUD_API_KEY": "${IBM_CLOUD_API_KEY}",
+        "IBM_CLOUD_REGION": "${IBM_CLOUD_REGION:-us-south}"
+      },
+      "description": "IBM Schematics MCP server for Terraform-based infrastructure as code"
+    }
+  }
+}

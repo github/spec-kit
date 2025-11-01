@@ -1,0 +1,100 @@
+{
+  "mcpServers": {
+    "aws-lambda": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws-lambda"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS Lambda MCP server for serverless function management"
+    },
+    "aws-ecs": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws-ecs"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS ECS MCP server for container orchestration"
+    },
+    "aws-eks": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws-eks"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS EKS MCP server for Kubernetes cluster management"
+    },
+    "aws-s3": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws-s3"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS S3 MCP server for object storage management"
+    },
+    "aws-cloudformation": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws-cloudformation"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS CloudFormation MCP server for infrastructure as code"
+    },
+    "aws-api": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws-api"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${AWS_SECRET_ACCESS_KEY}",
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS API MCP server for general AWS service access"
+    },
+    "aws-pricing": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws-pricing"
+      ],
+      "env": {
+        "AWS_REGION": "${AWS_REGION:-us-east-1}"
+      },
+      "description": "AWS Pricing MCP server for cost estimation and pricing queries"
+    }
+  }
+}

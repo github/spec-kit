@@ -1,0 +1,90 @@
+{
+  "mcpServers": {
+    "azure": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-azure"
+      ],
+      "env": {
+        "AZURE_TENANT_ID": "${AZURE_TENANT_ID}",
+        "AZURE_CLIENT_ID": "${AZURE_CLIENT_ID}",
+        "AZURE_CLIENT_SECRET": "${AZURE_CLIENT_SECRET}",
+        "AZURE_SUBSCRIPTION_ID": "${AZURE_SUBSCRIPTION_ID}"
+      },
+      "description": "Azure MCP server for accessing Azure services"
+    },
+    "azure-storage": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-azure-storage"
+      ],
+      "env": {
+        "AZURE_STORAGE_ACCOUNT": "${AZURE_STORAGE_ACCOUNT}",
+        "AZURE_STORAGE_KEY": "${AZURE_STORAGE_KEY}"
+      },
+      "description": "Azure Storage MCP server for blob and file storage management"
+    },
+    "azure-cosmos": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-azure-cosmos"
+      ],
+      "env": {
+        "AZURE_COSMOS_ENDPOINT": "${AZURE_COSMOS_ENDPOINT}",
+        "AZURE_COSMOS_KEY": "${AZURE_COSMOS_KEY}"
+      },
+      "description": "Azure Cosmos DB MCP server for NoSQL database operations"
+    },
+    "azure-functions": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-azure-functions"
+      ],
+      "env": {
+        "AZURE_TENANT_ID": "${AZURE_TENANT_ID}",
+        "AZURE_CLIENT_ID": "${AZURE_CLIENT_ID}",
+        "AZURE_CLIENT_SECRET": "${AZURE_CLIENT_SECRET}",
+        "AZURE_SUBSCRIPTION_ID": "${AZURE_SUBSCRIPTION_ID}"
+      },
+      "description": "Azure Functions MCP server for serverless function management"
+    },
+    "azure-aks": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-azure-aks"
+      ],
+      "env": {
+        "AZURE_TENANT_ID": "${AZURE_TENANT_ID}",
+        "AZURE_CLIENT_ID": "${AZURE_CLIENT_ID}",
+        "AZURE_CLIENT_SECRET": "${AZURE_CLIENT_SECRET}",
+        "AZURE_SUBSCRIPTION_ID": "${AZURE_SUBSCRIPTION_ID}"
+      },
+      "description": "Azure Kubernetes Service (AKS) MCP server for Kubernetes management"
+    },
+    "azure-arm": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-azure-arm"
+      ],
+      "env": {
+        "AZURE_TENANT_ID": "${AZURE_TENANT_ID}",
+        "AZURE_CLIENT_ID": "${AZURE_CLIENT_ID}",
+        "AZURE_CLIENT_SECRET": "${AZURE_CLIENT_SECRET}",
+        "AZURE_SUBSCRIPTION_ID": "${AZURE_SUBSCRIPTION_ID}"
+      },
+      "description": "Azure Resource Manager (ARM) MCP server for infrastructure deployment"
+    }
+  }
+}
