@@ -37,7 +37,7 @@ Follow this execution flow:
     - Read `templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
     - Read `templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
     - Read each command file in `templates/commands/*.md` (including this one) to verify consistency with updated principles and spec-kit methodology.
-    - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, `docs/README_AI.md`, `README-WORKFLOW-GUIDE.md`). Update references to principles changed.
+    - Read any runtime guidance docs (e.g., `README.md`, `docs/getting-started/quickstart.md`, `.ai/README.md`). Update references to principles changed.
     - Check validation documents (`validation/quality-gates.md`, `validation/review-checklist.md`) for alignment with constitution principles.
 
 5. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):

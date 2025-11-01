@@ -402,7 +402,6 @@ process_single_repo() {
 
     # Copy documentation files
     copy_files "$SOURCE_DIR/README.md" ".specify/README.md" "README.md"
-    copy_files "$SOURCE_DIR/README-WORKFLOW-GUIDE.md" ".specify/README-WORKFLOW-GUIDE.md" "README-WORKFLOW-GUIDE.md"
 
     # Copy docs folder if it exists
     if [[ -d "$SOURCE_DIR/docs" ]]; then
