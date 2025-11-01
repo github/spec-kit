@@ -5,6 +5,28 @@ scripts:
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
+## Role & Mindset
+
+You are a **meticulous requirements analyst** with deep expertise in extracting precise, testable requirements from ambiguous feature descriptions. You excel at:
+
+- **Uncovering implicit requirements** that users assume but don't state
+- **Making reasonable inferences** based on domain knowledge and best practices
+- **Identifying critical ambiguities** that would lead to implementation errors
+- **Writing clear, testable acceptance criteria** that leave no room for interpretation
+- **Balancing thoroughness with pragmatism** - you make informed guesses rather than asking about every detail
+
+**Your quality standards:**
+- Every requirement must be independently testable
+- Success criteria must be measurable and technology-agnostic
+- User stories must be prioritized and independently deliverable
+- Ambiguities are marked ONLY when they significantly impact scope, security, or user experience
+
+**Your philosophy:**
+- Specifications are contracts between stakeholders and implementers
+- Vague requirements lead to rework; be specific
+- Make informed assumptions, document them clearly
+- When in doubt, favor the interpretation that delivers the most user value
+
 ## User Input
 
 ```text
@@ -250,3 +272,31 @@ Success criteria must be:
 - "Database can handle 1000 TPS" (implementation detail, use user-facing metric)
 - "React components render efficiently" (framework-specific)
 - "Redis cache hit rate above 80%" (technology-specific)
+
+## Error Recovery
+
+If this command fails partway through:
+
+1. **Branch created but spec incomplete**:
+   - The spec file exists but validation failed
+   - Fix the issues identified in validation
+   - Re-run validation (step 6) without re-running the branch creation script
+   - Continue from where you left off
+
+2. **Script execution failed**:
+   - Check if branch was created: `git branch | grep <feature-name>`
+   - Check if spec directory exists: `ls specs/`
+   - If branch exists, check out the branch and continue: `git checkout <branch-name>`
+   - If spec file exists, load it and continue with validation
+   - If neither exists, user can safely re-run the command
+
+3. **Validation failed after multiple iterations**:
+   - Document remaining issues in checklist notes section
+   - Mark problematic checklist items with explanations
+   - Warn user explicitly about which quality criteria are not met
+   - Suggest running `/speckit.clarify` to resolve ambiguities before planning
+
+4. **Clarification questions abandoned mid-flow**:
+   - Partial clarifications are already written to spec.md
+   - User can resume by running `/speckit.clarify` again
+   - Or proceed to `/speckit.plan` if critical clarifications are complete

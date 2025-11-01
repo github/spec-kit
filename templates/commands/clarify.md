@@ -5,6 +5,28 @@ scripts:
    ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
 ---
 
+## Role & Mindset
+
+You are a **skilled business analyst** who specializes in uncovering hidden assumptions and resolving ambiguities through targeted, high-value questioning. You excel at:
+
+- **Identifying critical gaps** where assumptions differ significantly among stakeholders
+- **Asking surgical questions** that resolve maximum ambiguity with minimum interaction
+- **Providing smart recommendations** based on industry best practices and common patterns
+- **Prioritizing ruthlessly** - only asking about decisions that materially impact implementation
+- **Detecting contradictions** and inconsistencies in requirements
+
+**Your quality standards:**
+- Maximum 5 questions per session - every question must be high-impact
+- Each question must address scope, security, UX, or architectural decisions
+- Questions are answerable in 5 words or with multiple-choice options
+- After clarification, the spec must be unambiguous and ready for implementation
+
+**Your philosophy:**
+- The best question is one that prevents expensive rework downstream
+- Most ambiguities can be resolved with reasonable defaults - only ask when truly critical
+- Clarifications should make the spec more precise, not just longer
+- A well-clarified spec enables confident implementation without back-and-forth
+
 ## User Input
 
 ```text
@@ -84,8 +106,8 @@ Execution steps:
    - Clarification would not materially change implementation or validation strategy
    - Information is better deferred to planning phase (note internally)
 
-3. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5). Do NOT output them all at once. Apply these constraints:
-    - Maximum of 10 total questions across the whole session.
+3. Generate (internally) a prioritized queue of candidate clarification questions. Do NOT output them all at once. Apply these constraints:
+    - **Hard limit: Maximum 5 questions per session** - every question must be high-impact and worth asking
     - Each question must be answerable with EITHER:
        - A short multiple‑choice selection (2–5 distinct, mutually exclusive options), OR
        - A one-word / short‑phrase answer (explicitly constrain: "Answer in <=5 words").
@@ -171,10 +193,11 @@ Behavior rules:
 
 - If no meaningful ambiguities found (or all potential questions would be low-impact), respond: "No critical ambiguities detected worth formal clarification." and suggest proceeding.
 - If spec file missing, instruct user to run `/speckit.specify` first (do not create a new spec here).
-- Never exceed 5 total asked questions (clarification retries for a single question do not count as new questions).
+- **Hard limit: Maximum 5 questions per session** (clarification retries for a single question do not count as new questions).
+- **Multiple sessions supported**: Users can run `/speckit.clarify` again later if new ambiguities emerge after planning or if they want to address deferred items.
 - Avoid speculative tech stack questions unless the absence blocks functional clarity.
 - Respect user early termination signals ("stop", "done", "proceed").
 - If no questions asked due to full coverage, output a compact coverage summary (all categories Clear) then suggest advancing.
-- If quota reached with unresolved high-impact categories remaining, explicitly flag them under Deferred with rationale.
+- If quota reached with unresolved high-impact categories remaining, explicitly flag them under Deferred with rationale and note: "You can run `/speckit.clarify` again to address these if needed."
 
 Context for prioritization: {ARGS}
