@@ -507,9 +507,9 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     detected_owner, detected_name, detected_branch = detect_uvx_repo_info()
 
     # Get repo settings from parameters, environment variables, uvx detection, or defaults
-    repo_owner = repo_owner or os.getenv("SPECIFY_REPO_OWNER") or detected_owner or "github"
+    repo_owner = repo_owner or os.getenv("SPECIFY_REPO_OWNER") or detected_owner or "hcnimi"
     repo_name = repo_name or os.getenv("SPECIFY_REPO_NAME") or detected_name or "spec-kit"
-    repo_branch = repo_branch or os.getenv("SPECIFY_REPO_BRANCH") or detected_branch
+    repo_branch = repo_branch or os.getenv("SPECIFY_REPO_BRANCH") or detected_branch or "main"
 
     if verbose and (detected_owner or detected_name or detected_branch):
         console.print(f"[dim]Auto-detected from uvx: {detected_owner}/{detected_name}@{detected_branch or 'main'}[/dim]")
