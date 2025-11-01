@@ -292,6 +292,18 @@ Special thanks to:
 
 ---
 
+## 📜 Attribution
+
+This release builds upon [GitHub's original spec-kit](https://github.com/github/spec-kit) created by Den Delimarsky and John Lam. This fork (`hcnimi/spec-kit`) is maintained independently by Hubert Nimitanakit.
+
+**Inspirations for v0.4.0 features:**
+- **OpenSpec** (Fission-AI/OpenSpec): Adaptive workflow modes
+- **PRPs** (Wirasm/PRPs-agentic-eng): Agentic engineering patterns
+
+See [ATTRIBUTION.md](./ATTRIBUTION.md) for complete credits.
+
+---
+
 ## 📊 Release Statistics
 
 - **45 commits** since v0.2.2

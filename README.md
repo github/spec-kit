@@ -163,6 +163,8 @@ The script will:
 
 #### Multi-Repository Mode
 
+> **📝 Note**: This section describes the `--all-repos` flag for **bulk updates** across independent projects. For **multi-repo workspaces** (centralized specs spanning multiple repos), see [Multi-Repo Workspaces Guide](./docs/guides/multi-repo-workspaces.md). **Important**: Workspaces require the workspace directory to be a git repository.
+
 The `--all-repos` flag enables bulk initialization across multiple repositories containing `.specify` folders. This is useful for:
 - Updating spec-kit templates across your organization's microservices
 - Rolling out spec-kit updates to multiple projects simultaneously
@@ -489,7 +491,7 @@ Comprehensive documentation is organized into focused sections:
 
 - [Installation Guide](./docs/getting-started/installation.md)
 - [Your First Spec Tutorial](./docs/getting-started/first-spec.md)
-- [Multi-Repo Workspaces](./docs/guides/multi-repo-workspaces.md)
+- [Multi-Repo Workspaces](./docs/guides/multi-repo-workspaces.md) ⚠️ *Workspace must be a git repository*
 - [Atomic PRs for Large Features](./docs/guides/atomic-prs.md)
 - [Spec-Driven Philosophy](./docs/concepts/spec-driven-philosophy.md)
 
@@ -514,6 +516,10 @@ rm gcm-linux_amd64.2.6.1.deb
 
 ## 👥 Maintainers
 
+This fork is maintained by:
+- Hubert Nimitanakit ([@hcnimi](https://github.com/hcnimi))
+
+**Original Creators** (GitHub's spec-kit):
 - Den Delimarsky ([@localden](https://github.com/localden))
 - John Lam ([@jflam](https://github.com/jflam))
 
@@ -523,7 +529,13 @@ For support, please open a [GitHub issue](https://github.com/hcnimi/spec-kit/iss
 
 ## 🙏 Acknowledgements
 
-This project is heavily influenced by and based on the work and research of [John Lam](https://github.com/jflam).
+This project is a fork and evolution of [GitHub's spec-kit](https://github.com/github/spec-kit), originally created by [Den Delimarsky](https://github.com/localden) and [John Lam](https://github.com/jflam).
+
+**Additional Inspirations:**
+- **[PRPs (Prompt-Response Pairs)](https://github.com/Wirasm/PRPs-agentic-eng)** by Wirasm - Influenced our approach to agentic engineering workflows
+- **[OpenSpec](https://github.com/Fission-AI/OpenSpec)** by Fission-AI - Inspired the adaptive workflow modes (quick/lightweight/full) introduced in v0.4.0
+
+We're grateful to these projects for advancing spec-driven and AI-native development methodologies.
 
 ## 📄 License
 

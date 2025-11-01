@@ -12,8 +12,10 @@ For help or questions about using this project, please:
 
 ## Project Status
 
-**Spec Kit** is under active development and maintained by GitHub staff **AND THE COMMUNITY**. We will do our best to respond to support, feature requests, and community questions in a timely manner.
+This fork of **Spec Kit** is actively maintained by [Hubert Nimitanakit (@hcnimi)](https://github.com/hcnimi). Issues, feature requests, and community questions will be addressed on a best-effort basis.
 
-## GitHub Support Policy
+**Note:** This is an independent fork of [GitHub's original spec-kit](https://github.com/github/spec-kit). For support related to the original version, please refer to that repository.
+
+## Support Policy
 
 Support for this project is limited to the resources listed above.
