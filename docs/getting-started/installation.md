@@ -68,6 +68,96 @@ After initialization, you should see the following commands available in your AI
 
 The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
+## Updating Existing Projects
+
+> **⚠️ Critical**: After global install, existing projects continue using their local `.specify/` templates. You must explicitly update them.
+
+### Why Update?
+
+When you run `/specify` or `/plan`, these commands use:
+- **Scripts**: `.specify/scripts/bash/create-new-feature.sh` (local copy in your project)
+- **Templates**: `.specify/templates/spec-template.md` (local copy in your project)
+- **NOT**: The latest templates from GitHub or your global CLI installation
+
+Installing the `specify` CLI globally does NOT automatically update existing projects. Each project maintains its own `.specify/` directory with templates and scripts.
+
+### Update Methods
+
+#### Single Project
+
+Update one project with the latest templates:
+
+```bash
+cd my-existing-project
+specify init --here --ai claude
+# Preserves specs/ and (optionally) constitution.md
+```
+
+When prompted, choose whether to preserve your existing `constitution.md`.
+
+#### Multiple Projects (Recommended for Bulk Updates)
+
+If you have multiple projects to update, use `init.sh --all-repos`:
+
+```bash
+# Clone spec-kit if you haven't already
+git clone https://github.com/hcnimi/spec-kit.git ~/git/spec-kit
+
+# Bulk update all projects
+cd ~/git
+./spec-kit/init.sh --all-repos --ai claude --search-path . --max-depth 3
+```
+
+This will:
+1. Find all repositories with `.specify/` directories
+2. Show a preview of what will be updated
+3. Ask for confirmation
+4. Update each project's templates
+
+#### Force Clean Update
+
+If you want to completely replace all template files:
+
+```bash
+cd my-existing-project
+specify init --here --ai claude --force
+# Overwrites all template files, preserves specs/
+```
+
+### What Gets Updated vs Preserved
+
+**Updated:**
+- ✅ `.specify/templates/` → Latest spec/plan templates
+- ✅ `.specify/scripts/` → Latest automation scripts
+- ✅ `.specify/memory/` → Latest memory files (except constitution if preserved)
+- ✅ `.claude/commands/spec-kit/` (or `.gemini/`, etc.) → Latest slash commands
+- ✅ `.specify/docs/` → Latest documentation
+
+**Preserved:**
+- ✅ `specs/` → All your specifications
+- ✅ `constitution.md` → If you chose to preserve during update
+- ✅ Your project code → Never touched
+
+### Verification After Update
+
+Check that your project is using the latest templates:
+
+```bash
+# 1. Check template files were updated
+ls -la .specify/templates/
+git diff .specify/
+
+# 2. Test a slash command
+# Open project in your AI agent (Claude Code, etc.)
+# Type /specify and verify it works
+
+# 3. Check script permissions (Unix/macOS only)
+ls -la .specify/scripts/bash/*.sh
+# Should show executable permissions: -rwxr-xr-x
+```
+
+For comprehensive migration instructions, see the [Migration Guide](../guides/migration-init-to-cli.md).
+
 ## Troubleshooting
 
 ### Git Credential Manager on Linux

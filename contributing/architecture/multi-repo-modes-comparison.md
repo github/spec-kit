@@ -287,6 +287,44 @@ init.sh --all-repos --search-path workspace-1 --max-depth 2
 init.sh --all-repos --search-path workspace-2 --max-depth 2
 ```
 
+### Can I use specify CLI to update projects initialized with init.sh?
+
+**Yes!** This is the recommended migration path for existing projects.
+
+**Single project update:**
+
+```bash
+cd my-project
+specify init --here --ai claude
+
+# This updates:
+# - .specify/templates/ (latest spec/plan templates)
+# - .specify/scripts/ (latest automation scripts)
+# - .claude/commands/ (or .gemini/, etc.)
+#
+# This preserves:
+# - specs/ (all your specifications)
+# - constitution.md (optional, you'll be prompted)
+# - Your project code (never touched)
+```
+
+**Multiple projects - keep using init.sh!**
+
+```bash
+cd ~/git
+./spec-kit/init.sh --all-repos --ai claude --search-path . --max-depth 3
+```
+
+**Important**: Both tools are complementary, not replacements:
+- ✅ `specify init` → Better for new projects, single updates, cross-platform
+- ✅ `init.sh --all-repos` → Better for bulk updates, batch operations, development
+
+**Why update is needed:**
+
+Slash commands (`/specify`, `/plan`) use **local templates** from `.specify/templates/`, not the globally installed CLI. Installing `specify` globally does NOT automatically update existing projects.
+
+**See**: [Migration Guide](../../docs/guides/migration-init-to-cli.md) for comprehensive instructions.
+
 ---
 
 ## Decision Flowchart

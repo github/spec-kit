@@ -42,6 +42,59 @@ specify init my-project --ai copilot --script ps
 specify init my-project --ai claude --repo-owner myorg --repo-branch dev
 ```
 
+### Updating Existing Projects
+
+> **⚠️ Critical**: Use `--here` to update projects initialized with `init.sh` or older `specify` versions. Slash commands like `/specify` and `/plan` use local templates from `.specify/templates/`, not the global CLI.
+
+**Update single project:**
+
+```bash
+# Update existing project with latest templates
+cd existing-project
+specify init --here --ai claude
+
+# Preserves:
+# - specs/ directory (all your specifications)
+# - constitution.md (optional, you'll be prompted)
+# - Your project code (never touched)
+
+# Updates:
+# - .specify/templates/ (latest spec/plan templates)
+# - .specify/scripts/ (latest automation scripts)
+# - .claude/commands/ (or .gemini/, etc.)
+```
+
+**Force overwrite all templates:**
+
+```bash
+cd existing-project
+specify init --here --ai claude --force
+
+# Use --force when:
+# - Templates are corrupted
+# - You want to revert custom modifications
+# - Upgrading from very old version
+```
+
+**Update multiple projects (use init.sh):**
+
+```bash
+# For bulk updates, init.sh is more efficient
+cd ~/git
+./spec-kit/init.sh --all-repos --ai claude --search-path . --max-depth 3
+```
+
+**Why update is needed:**
+
+When you run `/specify` in a project, it executes:
+- Script: `.specify/scripts/bash/create-new-feature.sh` (local)
+- Template: `.specify/templates/spec-template.md` (local)
+- NOT: Latest templates from GitHub or global CLI
+
+Without updating, your project uses stale templates even after global install.
+
+**See also**: [Migration Guide](../guides/migration-init-to-cli.md) for comprehensive instructions.
+
 ## Check Command
 
 ```bash

@@ -74,6 +74,28 @@ uv tool uninstall specify-cli
 pip uninstall specify-cli
 ```
 
+### ⚠️ Important for Existing Projects
+
+If you have existing spec-kit projects initialized with `init.sh`, they will **not** automatically use the latest templates after global install. Slash commands like `/specify` and `/plan` use templates from your project's `.specify/` directory, not the globally installed CLI.
+
+**To update existing projects:**
+- **Single project**: `cd my-project && specify init --here --ai claude`
+- **Multiple projects**: `./init.sh --all-repos --ai claude`
+
+See [Migration Guide](./docs/guides/migration-init-to-cli.md) for detailed instructions.
+
+### When to Use Each Method
+
+| Scenario | Tool | Command |
+|----------|------|---------|
+| **New project** | specify CLI | `specify init my-project --ai claude` |
+| **Update single existing project** | specify CLI | `specify init --here --ai claude` |
+| **Update multiple projects** | init.sh | `./init.sh --all-repos --ai claude` |
+| **Local development/testing** | init.sh | `./init.sh . --ai claude` |
+| **Multi-repo workspace** | specify CLI | `specify init --workspace` |
+
+Both tools are complementary, not replacements. The `specify` CLI is recommended for new projects and cross-platform support, while `init.sh` excels at bulk operations and local development.
+
 ### Alternative: Direct Script Usage
 
 If you have this repository cloned locally, you can use the `init.sh` script directly:
