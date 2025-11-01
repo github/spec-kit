@@ -15,6 +15,11 @@ dependencies = [
 [project.scripts]
 specify = "specify_cli:main"
 
+[project.urls]
+Homepage = "https://github.com/hcnimi/spec-kit"
+Repository = "https://github.com/hcnimi/spec-kit"
+Issues = "https://github.com/hcnimi/spec-kit/issues"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
