@@ -5,23 +5,6 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
-## Strict Contract
-
-- **Required Inputs**
-  - Feature metadata from `{SCRIPT}` and the current task backlog (`tasks.md`).
-- **Allowed Tools**
-  - Run `{SCRIPT}` exactly once to gather paths.
-  - Read/write repository files necessary to complete tasks.
-  - Use git commands for status checks only when instructed by tasks.
-- **Outputs**
-  - Execute tasks sequentially or in allowed parallel batches, updating files as required.
-  - Provide a structured progress report after each batch and final JSON summary documenting completed and remaining tasks.
-- **Idempotency**
-  - Re-running should skip already completed tasks (those checked off in `tasks.md`) and resume remaining work.
-- **Stop Conditions**
-  - Halt immediately if prerequisites (`plan.md`, `tasks.md`) are missing or corrupted.
-  - Pause and await user confirmation when encountering incomplete checklists or blocking failures.
-
 ## User Input
 
 ```text
@@ -32,9 +15,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. Shell guidance:
-   - **Bash**: Use double quotes for arguments (e.g., `"I'm Groot"`) and escape embedded quotes with `\"` when necessary.
-   - **PowerShell**: Use double quotes and escape embedded quotes by doubling them (e.g., `""I'm Groot""`).
+1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Scan all checklist files in the checklists/ directory
@@ -154,3 +135,4 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Report final status with summary of completed work
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
+

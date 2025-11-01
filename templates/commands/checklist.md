@@ -5,22 +5,6 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
-## Strict Contract
-
-- **Required Inputs**
-  - Feature directory paths returned by `{SCRIPT}` and optional `$ARGUMENTS` describing checklist focus.
-- **Allowed Tools**
-  - Run `{SCRIPT}` exactly once from repo root.
-  - Read existing artifacts (spec.md, plan.md, tasks.md) as references.
-  - Write the generated checklist to `FEATURE_DIR/checklists/<name>.md`.
-- **Outputs**
-  - Produce a Markdown checklist aligned with the contract theme and include metadata (title, purpose, created date).
-  - Provide a summary paragraph describing scope, audience, and how to apply the checklist.
-- **Idempotency**
-  - If a checklist with the same purpose exists, update in place rather than duplicating.
-- **Stop Conditions**
-  - Abort with guidance if required artifacts are missing or if user declines necessary clarifications.
-
 ## Checklist Purpose: "Unit Tests for English"
 
 **CRITICAL CONCEPT**: Checklists are **UNIT TESTS FOR REQUIREMENTS WRITING** - they validate the quality, clarity, and completeness of requirements in a given domain.
@@ -54,9 +38,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS list.
    - All file paths must be absolute.
-   - Shell guidance:
-     - **Bash**: Wrap arguments with double quotes (e.g., `"I'm Groot"`) and escape embedded quotes using `\"` if necessary.
-     - **PowerShell**: Wrap arguments with double quotes and escape embedded quotes by doubling them (e.g., `""I'm Groot""`).
+   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Clarify intent (dynamic)**: Derive up to THREE initial contextual clarifying questions (no pre-baked catalog). They MUST:
    - Be generated from the user's phrasing + extracted signals from spec/plan/tasks

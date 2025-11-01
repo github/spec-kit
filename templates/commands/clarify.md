@@ -5,23 +5,6 @@ scripts:
    ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
 ---
 
-## Strict Contract
-
-- **Required Inputs**
-  - Feature file paths supplied by `{SCRIPT}` and the current specification content.
-- **Allowed Tools**
-  - Execute `{SCRIPT}` exactly once to retrieve paths.
-  - Read and write `spec.md` within the active feature directory.
-  - No other scripts, network calls, or git commands.
-- **Outputs**
-  - Interactive loop: each question response must be a Markdown block containing the recommended option, option table, and explicit instructions for user reply.
-  - Final confirmation message must summarize resolutions and indicate whether outstanding clarifications remain.
-- **Idempotency**
-  - Re-running must not duplicate existing clarifications; append new entries to the Clarifications History table only once per answer.
-- **Stop Conditions**
-  - End questioning once all high-impact ambiguities are resolved or when the maximum question budget is reached.
-  - Stop immediately if the spec file is missing or unreadable and return an error instruction.
-
 ## User Input
 
 ```text
@@ -43,9 +26,7 @@ Execution steps:
    - `FEATURE_SPEC`
    - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)
    - If JSON parsing fails, abort and instruct user to re-run `/speckit.specify` or verify feature branch environment.
-   - Shell guidance:
-     - **Bash**: Use double quotes around the arguments (e.g., `"I'm Groot"`) and escape embedded quotes with `\"` when needed.
-     - **PowerShell**: Use double quotes and escape embedded quotes by doubling them (e.g., `""I'm Groot""`).
+   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. Load the current spec file. Perform a structured ambiguity & coverage scan using this taxonomy. For each category, mark status: Clear / Partial / Missing. Produce an internal coverage map used for prioritization (do not output raw map unless no questions will be asked).
 

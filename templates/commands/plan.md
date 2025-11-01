@@ -8,87 +8,80 @@ agent_scripts:
   ps: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
-## Strict Contract
-
-- **Required Inputs**
-  - Feature directory and spec details provided by `{SCRIPT}`.
-  - Optional `$ARGUMENTS` for supplemental instructions.
-- **Allowed Tools**
-  - Run `{SCRIPT}` exactly once to stage plan artifacts.
-  - Read from `spec.md`, `/memory/constitution.md`, and template files.
-  - Write to `plan.md`, `research.md`, `data-model.md`, `quickstart.md`, and `contracts/`.
-  - Invoke `{AGENT_SCRIPT}` for each configured agent only after Phase 1 succeeds.
-- **Outputs**
-  - Persist updated Markdown/contract artifacts in the feature directory.
-  - Emit a single JSON code block:
-
-    ```json
-    {
-      "status": "success" | "error",
-      "branch": "<branch-name>",
-      "plan_path": "<absolute-path>",
-      "phase_status": {
-        "phase0": "pass" | "fail",
-        "phase1": "pass" | "fail",
-        "phase2": "pass" | "fail"
-      },
-      "gates": [
-        {"name": "<gate>", "status": "PASS|FAIL|WAIVED", "evidence": "<section reference>"}
-      ],
-      "next_actions": ["<follow-up>", "..."]
-    }
-    ```
-
-- **Idempotency**
-  - Re-running must update artifacts in place without duplicating sections or regenerating context unnecessarily.
-- **Stop Conditions**
-  - Abort (set `status` to `error`) if any constitution gate remains `FAIL`.
-  - Finish after agent context update and JSON response. No additional prompts or loops.
-
 ## User Input
 
 ```text
 $ARGUMENTS
 ```
 
-Consider user input for tailoring the plan when provided.
+You **MUST** consider the user input before proceeding (if not empty).
 
-## Execution Flow
+## Outline
 
-1. **Initialize**
-   - Execute `{SCRIPT}` once from repo root; parse JSON for `FEATURE_DIR`, `PLAN_FILE`, `SPEC_FILE`, `AGENTS`, and template paths.
-   - Shell guidance:
-     - **Bash**: Surround arguments with double quotes; escape embedded quotes as `\"`.
-     - **PowerShell**: Use double quotes and escape embedded quotes by doubling them.
+1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-2. **Load Context**
-   - Read `spec.md`, `/memory/constitution.md`, and `templates/plan-template.md`.
-   - Capture unresolved `[NEEDS CLARIFICATION]` markers; planning **fails** if any remain.
+2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
-3. **Phase 0 – Research**
-   - Derive research tasks from assumptions, risks, and open questions.
-   - Populate/refresh `research.md` summarizing findings and links to supporting evidence.
-   - Mark Phase 0 `fail` if outstanding questions remain unchecked.
+3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+   - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
+   - Fill Constitution Check section from constitution
+   - Evaluate gates (ERROR if violations unjustified)
+   - Phase 0: Generate research.md (resolve all NEEDS CLARIFICATION)
+   - Phase 1: Generate data-model.md, contracts/, quickstart.md
+   - Phase 1: Update agent context by running the agent script
+   - Re-evaluate Constitution Check post-design
 
-4. **Phase 1 – Architecture & Contracts**
-   - Draft `plan.md` using the template: fill Technical Context, gates, decision log, risk register, and exit criteria.
-   - Generate `data-model.md`, `contracts/` artifacts, and `quickstart.md` outlines aligned with spec requirements.
-   - Re-evaluate constitution gates and capture evidence references.
-   - If any gate fails, update `phase_status.phase1` to `fail` and stop further phases.
+4. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
 
-5. **Phase 1 Aftermath**
-   - For each configured agent, run `{AGENT_SCRIPT}` with appropriate agent name to refresh context (no output expected on success).
+## Phases
 
-6. **Phase 2 – Implementation Readiness**
-   - Confirm prerequisites for `/speckit.tasks`: enumerate completed artifacts, remaining risks, and blockers.
-   - Update plan exit criteria and next steps for task generation. Record status in `phase_status.phase2`.
+### Phase 0: Outline & Research
 
-7. **Respond**
-   - Compile gate results, outstanding actions, and phase status into the JSON response.
+1. **Extract unknowns from Technical Context** above:
+   - For each NEEDS CLARIFICATION → research task
+   - For each dependency → best practices task
+   - For each integration → patterns task
 
-## Planning Standards
+2. **Generate and dispatch research agents**:
 
-- Cite plan sections when referencing constitution evidence.
-- Keep decision log entries concise but actionable; mark status explicitly (Proposed/In Review/Accepted).
-- Risk register must include owner, mitigation, and trigger fields.
-- Ensure generated Markdown retains YAML front matter headers.
+   ```text
+   For each unknown in Technical Context:
+     Task: "Research {unknown} for {feature context}"
+   For each technology choice:
+     Task: "Find best practices for {tech} in {domain}"
+   ```
+
+3. **Consolidate findings** in `research.md` using format:
+   - Decision: [what was chosen]
+   - Rationale: [why chosen]
+   - Alternatives considered: [what else evaluated]
+
+**Output**: research.md with all NEEDS CLARIFICATION resolved
+
+### Phase 1: Design & Contracts
+
+**Prerequisites:** `research.md` complete
+
+1. **Extract entities from feature spec** → `data-model.md`:
+   - Entity name, fields, relationships
+   - Validation rules from requirements
+   - State transitions if applicable
+
+2. **Generate API contracts** from functional requirements:
+   - For each user action → endpoint
+   - Use standard REST/GraphQL patterns
+   - Output OpenAPI/GraphQL schema to `/contracts/`
+
+3. **Agent context update**:
+   - Run `{AGENT_SCRIPT}`
+   - These scripts detect which AI agent is in use
+   - Update the appropriate agent-specific context file
+   - Add only new technology from current plan
+   - Preserve manual additions between markers
+
+**Output**: data-model.md, /contracts/*, quickstart.md, agent-specific file
+
+## Key rules
+
+- Use absolute paths
+- ERROR on gate failures or unresolved clarifications

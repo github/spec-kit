@@ -6,40 +6,19 @@ param(
     [string]$ShortName,
     [int]$Number = 0,
     [switch]$Help,
-    [string]$EncodedArgs,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
 )
 $ErrorActionPreference = 'Stop'
 
-function Write-JsonOutput {
-    param($Payload)
-    $Payload | ConvertTo-Json -Compress
-}
-
-function Fail-Feature {
-    param(
-        [string]$Message,
-        [int]$Code = 1
-    )
-
-    if ($Json) {
-        Write-JsonOutput @{ status = 'error'; message = $Message }
-    } else {
-        Write-Error $Message
-    }
-    exit $Code
-}
-
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] [-EncodedArgs <base64>] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
-    Write-Host "  -EncodedArgs value  Base64-encoded feature description"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
@@ -48,23 +27,10 @@ if ($Help) {
     exit 0
 }
 
-# Decode base64 arguments if provided
-if ($EncodedArgs) {
-    try {
-        $decoded = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($EncodedArgs))
-        if ($FeatureDescription) {
-            $FeatureDescription += $decoded
-        } else {
-            $FeatureDescription = @($decoded)
-        }
-    } catch {
-        Fail-Feature "Failed to decode EncodedArgs. Ensure it is base64 encoded UTF-8 text."
-    }
-}
-
 # Check if feature description provided
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Fail-Feature "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] <feature description>"
+    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] <feature description>"
+    exit 1
 }
 
 $featureDesc = ($FeatureDescription -join ' ').Trim()
@@ -163,7 +129,8 @@ function Get-NextBranchNumber {
 }
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 if (-not $fallbackRoot) {
-    Fail-Feature "Error: Could not determine repository root. Please run this script from within the repository."
+    Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
+    exit 1
 }
 
 try {

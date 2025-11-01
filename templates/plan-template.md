@@ -1,114 +1,104 @@
----
-feature_id: [FEATURE DIRECTORY NAME]
-branch: [###-feature-name]
-created_at: [DATE]
-generator_version: [CLI VERSION]
-constitution_version: [CONSTITUTION VERSION OR UNKNOWN]
----
-
 # Implementation Plan: [FEATURE]
 
-**Spec Reference**: [link to spec.md]
-**Planning Status**: Draft
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+
+**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
 ## Summary
 
-[Extract key intent from spec and outline the proposed technical direction.]
-
-## Phase Exit Criteria
-
-| Phase | Exit Criteria | Gate Owner |
-|-------|---------------|------------|
-| Phase 0 – Research | [List measurable checkpoints that must be true to proceed.] | [Role] |
-| Phase 1 – Architecture & Contracts | [Document required artifacts (data-model, contracts, decisions).] | [Role] |
-| Phase 2 – Implementation Readiness | [Confirm tasks baseline, agent context updated, blockers cleared.] | [Role] |
-
-> Update exit criteria if the workflow introduces additional phases.
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-| Dimension | Decision | Confidence | Notes |
-|-----------|----------|------------|-------|
-| Language / Runtime | [e.g., Python 3.11 or NEEDS CLARIFICATION] | [High/Med/Low] | [Why chosen] |
-| Frameworks | [Primary frameworks/libraries] | | |
-| Storage | [Databases or persistence layers] | | |
-| Testing Strategy | [Unit/integration/contract tools] | | |
-| Deployment Target | [Platforms/environments] | | |
-| Constraints | [Performance, compliance, availability] | | |
+<!--
+  ACTION REQUIRED: Replace the content in this section with the technical details
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
+-->
+
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: [single/web/mobile - determines source structure]  
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
-### Pre-Phase 0 Gate
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Gate | Status (PASS/FAIL/WAIVED) | Evidence | Owner |
-|------|--------------------------|----------|-------|
-| [Gate name] | [Status] | [Link to section/evidence] | [Role] |
-
-### Post-Phase 1 Gate
-
-| Gate | Status (PASS/FAIL/WAIVED) | Evidence | Owner |
-|------|--------------------------|----------|-------|
-| [Gate name] | [Status] | [Link to section/evidence] | [Role] |
-
-> Fail the command if any gate remains `FAIL` without mitigation.
-
-## Decision Log (ADR Stubs)
-
-| ID | Decision | Context | Status | Follow-up |
-|----|----------|---------|--------|-----------|
-| ADR-001 | [Decision title] | [What problem this solves] | Proposed/In Review/Accepted | [Next action] |
-| ADR-002 | [Decision title] | [Context] | | |
-
-## Risk Register
-
-| ID | Description | Probability | Impact | Owner | Mitigation | Trigger |
-|----|-------------|-------------|--------|-------|------------|---------|
-| R1 | [e.g., Unvalidated integration dependency] | [High/Med/Low] | [High/Med/Low] | [Role] | [Mitigation plan] | [Signal to act] |
-| R2 | [Add more] | | | | | |
-
-## Research Backlog (Phase 0)
-
-- **Objective**: Resolve all `NEEDS CLARIFICATION` markers and knowledge gaps before design.
-- **Artifacts**: `research.md` summarizing answers, decisions, and references.
-- **Outstanding Items**:
-  - [ ] [Research task or question]
-  - [ ] [Research task or question]
-
-## Architecture & Contracts (Phase 1)
-
-- **Data Model**: Summarize entities that must be documented in `data-model.md`.
-- **Service / API Contracts**: Outline expected files in `contracts/` (OpenAPI, GraphQL, messaging schemas, etc.).
-- **Quickstart**: Note the workflow that `quickstart.md` must capture for functional validation.
-- **Agent Context Refresh**: Call out which agent(s) must be updated and what new guidance they require.
-
-## Implementation Readiness (Phase 2)
-
-- **Tasks Alignment**: Confirm prerequisites for `/speckit.tasks` (spec, plan, research, contracts) are complete.
-- **Environments**: Identify environment/setup scripts needed before implementation begins.
-- **Test Data**: Define datasets or fixtures that should exist prior to development.
+[Gates determined based on constitution file]
 
 ## Project Structure
 
+### Documentation (this feature)
+
 ```text
 specs/[###-feature]/
-├── plan.md              # This file (generated via /speckit.plan)
-├── research.md          # Phase 0 output
-├── data-model.md        # Phase 1 output
-├── quickstart.md        # Phase 1 output
-├── contracts/           # Phase 1 output
-└── tasks.md             # Phase 2 output (/speckit.tasks)
+├── plan.md              # This file (/speckit.plan command output)
+├── research.md          # Phase 0 output (/speckit.plan command)
+├── data-model.md        # Phase 1 output (/speckit.plan command)
+├── quickstart.md        # Phase 1 output (/speckit.plan command)
+├── contracts/           # Phase 1 output (/speckit.plan command)
+└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
 ```
+
+### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
-[src/ structure as defined by this plan. Replace with actual layout.]
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: [Document the selected structure and reference concrete directories.]
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 
-> Use this section when constitution violations are unavoidable. Remove if unused.
+> **Fill ONLY if Constitution Check has violations that must be justified**
 
-| Violation | Justification | Simpler Alternative Rejected Because |
-|-----------|---------------|---------------------------------------|
-| [e.g., 4th project] | [Why necessary] | [Why simpler option insufficient] |
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

@@ -24,8 +24,8 @@ if ($Help) {
 $paths = Get-FeaturePathsEnv
 
 # Check if we're on a proper feature branch (only for git repos)
-if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GIT -Quiet:$Json)) {
-    exit 1
+if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GIT)) { 
+    exit 1 
 }
 
 # Ensure the feature directory exists
@@ -33,15 +33,11 @@ New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
 # Copy plan template if it exists, otherwise note it or create empty file
 $template = Join-Path $paths.REPO_ROOT '.specify/templates/plan-template.md'
-if (Test-Path $template) {
+if (Test-Path $template) { 
     Copy-Item $template $paths.IMPL_PLAN -Force
-    if (-not $Json) {
-        Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
-    }
+    Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
 } else {
-    if (-not $Json) {
-        Write-Warning "Plan template not found at $template"
-    }
+    Write-Warning "Plan template not found at $template"
     # Create a basic plan file if template doesn't exist
     New-Item -ItemType File -Path $paths.IMPL_PLAN -Force | Out-Null
 }
