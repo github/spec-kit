@@ -117,19 +117,19 @@ generate_unified_commands() {
     # Determine launcher command based on template name
     case $name in
       plan)
-        launcher_command="scripts/launchers/setup-plan --json"
-        agent_launcher_command="scripts/launchers/update-agent-context"
+        launcher_command="scripts/launchers/setup-plan.sh --json"
+        agent_launcher_command="scripts/launchers/update-agent-context.sh"
         ;;
       specify)
-        launcher_command="scripts/launchers/create-new-feature --json"
+        launcher_command="scripts/launchers/create-new-feature.sh --json"
         agent_launcher_command=""
         ;;
       clarify|tasks|implement|analyze|checklist)
-        launcher_command="scripts/launchers/check-prerequisites --json"
+        launcher_command="scripts/launchers/check-prerequisites.sh --json"
         agent_launcher_command=""
         ;;
       *)
-        launcher_command="scripts/launchers/check-prerequisites --json"
+        launcher_command="scripts/launchers/check-prerequisites.sh --json"
         agent_launcher_command=""
         ;;
     esac
