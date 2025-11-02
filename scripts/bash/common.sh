@@ -261,7 +261,7 @@ check_and_fix_spec_directory_mismatch() {
         # No spec directory exists at all - might be a new branch
         echo "" >&2
         echo "WARNING: No spec directory found for branch '$current_branch'" >&2
-        echo "   Run /specify to create a new feature specification." >&2
+        echo "   Run scripts/bash/create-new-feature.sh to create a new feature specification." >&2
         echo "" >&2
         return 1
     fi
