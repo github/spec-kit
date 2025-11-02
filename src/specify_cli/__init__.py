@@ -1204,35 +1204,47 @@ def summarize():
     # Find script path (could be in installed location or development location)
     script_name = f"generate-project-summary.{script_ext}"
 
-    # Try to find script in various locations
-    possible_script_paths = [
-        repo_root / ".specify" / "scripts" / script_name,
-        repo_root / "scripts" / script_dir / script_name,
-        Path(__file__).parent.parent.parent / "scripts" / script_dir / script_name,
-    ]
+    # Try to find script in various locations, for both .ps1 and .sh
+    possible_script_names = [script_name, script_name.replace('.ps1', '.sh')]
+    possible_script_paths = []
+    for name in possible_script_names:
+        possible_script_paths.extend([
+            repo_root / ".specify" / "scripts" / name,
+            repo_root / "scripts" / script_dir / name,
+            Path(__file__).parent.parent.parent / "scripts" / script_dir / name,
+        ])
 
     script_path = None
+    script_type = None
     for path in possible_script_paths:
         if path.exists():
             script_path = path
+            if str(path).endswith('.ps1'):
+                script_type = 'ps1'
+            elif str(path).endswith('.sh'):
+                script_type = 'sh'
             break
 
     if not script_path:
-        tracker.error("find-script", f"Could not find {script_name}")
+        tracker.error("find-script", f"Could not find {script_name} (.ps1 or .sh)")
         console.print(tracker.render())
         console.print(f"\n[red]Error: Analysis script not found. Tried:[/red]")
         for path in possible_script_paths:
             console.print(f"  - {path}")
         raise typer.Exit(1)
 
-    tracker.add("run-script", f"Run analysis script ({script_name})")
+    tracker.add("run-script", f"Run analysis script ({script_path.name})")
 
     # Run the script with --json flag
     try:
-        if is_windows:
+        if script_type == 'ps1':
             cmd = ["pwsh", "-File", str(script_path), "-Json"]
-        else:
+        elif script_type == 'sh':
             cmd = ["/bin/bash", str(script_path), "--json"]
+        else:
+            tracker.error("run-script", f"Unknown script type for {script_path}")
+            console.print(tracker.render())
+            raise typer.Exit(1)
 
         result = subprocess.run(
             cmd,
