@@ -1333,8 +1333,12 @@ def summarize():
 {chr(10).join(f'- {lang}' for lang in languages) if languages else '- (none detected)'}
 
 ### Configuration Files
-{chr(10).join(f'- `{file}`' for file in tech_files[:20]) if tech_files else '- (none detected)'}
-{(chr(10) + f'- ... and {len(tech_files) - 20} more') if len(tech_files) > 20 else ''}
+{(
+    chr(10).join(
+        [f'- `{file}`' for file in tech_files[:20]] +
+        ([f'- ... and {len(tech_files) - 20} more'] if len(tech_files) > 20 else [])
+    ) if tech_files else '- (none detected)'
+)}
 
 ## Project Structure
 
