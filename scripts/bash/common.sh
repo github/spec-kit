@@ -205,7 +205,7 @@ check_and_fix_spec_directory_mismatch() {
 
     if [[ -d "$specs_dir" ]] && has_git; then
         # Get all existing branch names for efficient lookup (Bash 3.2 compatible)
-        local existing_branches=$(git branch --format='%(refname:short)' 2>/dev/null | tr '\n' '|')
+        local existing_branches=$(git for-each-ref refs/heads/ --format='%(refname:short)' 2>/dev/null | tr '\n' '|')
 
         # Enable nullglob to handle empty directories gracefully
         local original_nullglob=$(shopt -p nullglob)
