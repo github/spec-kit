@@ -73,12 +73,14 @@ uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --ai copilot --igno
 ```
 
 Set an environment variable for convenience:
+
 ```bash
 export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit
 uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai copilot --ignore-agent-tools --script ps
 ```
 
 (Optional) Define a shell function:
+
 ```bash
 specify-dev() { uvx --from /mnt/c/GitHub/spec-kit specify "$@"; }
 # Then
@@ -93,11 +95,13 @@ After running an `init`, check that shell scripts are executable on POSIX system
 ls -l scripts | grep .sh
 # Expect owner execute bit (e.g. -rwxr-xr-x)
 ```
+
 On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
 ## 6. Run Lint / Basic Checks (Add Your Own)
 
 Currently no enforced lint config is bundled, but you can quickly sanity check importability:
+
 ```bash
 python -c "import specify_cli; print('Import OK')"
 ```
@@ -110,6 +114,7 @@ Validate packaging before publishing:
 uv build
 ls dist/
 ```
+
 Install the built artifact into a fresh throwaway environment if needed.
 
 ## 8. Using a Temporary Workspace
@@ -120,6 +125,7 @@ When testing `init --here` in a dirty directory, create a temp workspace:
 mkdir /tmp/spec-test && cd /tmp/spec-test
 python -m src.specify_cli init --here --ai claude --ignore-agent-tools --script sh  # if repo copied here
 ```
+
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
 ## 9. Debug Network / TLS Skips
@@ -130,6 +136,7 @@ If you need to bypass TLS validation while experimenting:
 specify check --skip-tls
 specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 ```
+
 (Use only for local experimentation.)
 
 ## 10. Rapid Edit Loop Summary
@@ -146,6 +153,7 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 ## 11. Cleaning Up
 
 Remove build artifacts / virtual env quickly:
+
 ```bash
 rm -rf .venv dist build *.egg-info
 ```
@@ -165,4 +173,3 @@ rm -rf .venv dist build *.egg-info
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied
 - (Optional) Tag a release once changes land in `main`
-
