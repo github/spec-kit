@@ -2,7 +2,6 @@
 description: Generate a comprehensive summary of an existing project's technology stack, architecture, and code conventions
 scripts:
   sh: scripts/bash/generate-project-summary.sh --json
-  ps: scripts/powershell/generate-project-summary.ps1 -Json
 ---
 
 ## User Input
