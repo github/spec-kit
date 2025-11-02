@@ -1205,7 +1205,10 @@ def summarize():
     script_name = f"generate-project-summary.{script_ext}"
 
     # Try to find script in various locations, for both .ps1 and .sh
-    possible_script_names = [script_name, script_name.replace('.ps1', '.sh')]
+    if is_windows:
+        possible_script_names = ["generate-project-summary.ps1", "generate-project-summary.sh"]
+    else:
+        possible_script_names = ["generate-project-summary.sh"]
     possible_script_paths = []
     for name in possible_script_names:
         possible_script_paths.extend([
