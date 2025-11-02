@@ -68,7 +68,7 @@ detect_config_files() {
 	[[ -f "$root/composer.lock" ]] && TECH_FILES+=("composer.lock")
 
 	# C#/.NET
-	find "$root" -maxdepth 2 -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" | while read -r proj; do
+	find "$root" -maxdepth 2 \( -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" \) | while read -r proj; do
 		TECH_FILES+=("$(basename "$proj")")
 		LANGUAGES+=("C#/.NET")
 	done
