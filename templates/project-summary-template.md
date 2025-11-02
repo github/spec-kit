@@ -47,7 +47,7 @@
 - Constants: [CONSTANT_NAMING]
 
 ### Code Style
-- Indentation: [TABS_OR_SPACES] ([WIDTH] spaces)
+- Indentation: [TABS_OR_SPACES] ([WIDTH])
 - Line length: [MAX_LENGTH] characters
 - Style guide: [STYLE_GUIDE_IF_CONFIGURED]
 
