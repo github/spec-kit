@@ -42,13 +42,6 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ## ⚡ Get Started
 
-> **✨ Smart Cross-Platform Support**: Spec Kit Smart now features unified packages with automatic OS detection! Each package includes both Bash and PowerShell scripts, automatically selecting the right implementation for your operating system:
->
-> - **Windows**: Uses PowerShell scripts
-> - **Unix/Linux/macOS**: Uses Bash scripts
->
-> No need to choose script types during installation - it just works! 🎯
-
 ### 1. Install Specify CLI
 
 Choose your preferred installation method:
@@ -175,7 +168,7 @@ The `specify` command supports the following options:
 |------------------------|----------|------------------------------------------------------------------------------|
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
 | `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, or `q` |
-| `--script`             | Option   | ⚠️ **Deprecated**: Script variant (`sh`/`ps`) - unified packages now auto-detect OS |
+| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                 |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                             |
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
@@ -202,7 +195,10 @@ specify init my-project --ai windsurf
 # Initialize with Amp support
 specify init my-project --ai amp
 
-# Initialize in current directory (auto-detects OS)
+# Initialize with PowerShell scripts (Windows/cross-platform)
+specify init my-project --ai copilot --script ps
+
+# Initialize in current directory
 specify init . --ai copilot
 # or use the --here flag
 specify init --here --ai copilot
@@ -229,54 +225,7 @@ specify check
 
 After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
 
-#### Workflow Diagram
-
-```mermaid
-graph LR
-    %% Required Prompts (Blue)
-    A["/speckit.constitution<br/>Establish governing principles"]:::required
-    B["/speckit.specify<br/>Define requirements & user stories"]:::required
-    C["/speckit.plan<br/>Create technical implementation plan"]:::required
-    D["/speckit.tasks<br/>Generate actionable task breakdown"]:::required
-    E["/speckit.implement<br/>Execute tasks to build feature"]:::required
-
-    %% Optional Prompts (Green)
-    F["/speckit.clarify<br/>Clarify underspecified areas"]:::optional
-    G["/speckit.analyze<br/>Cross-artifact consistency check"]:::optional
-    H["/speckit.checklist<br/>Generate quality checklists"]:::optional
-
-    %% Required workflow
-    A --> B
-    B --> C
-    C --> D
-    D --> E
-
-    %% Optional enhancements
-    B -.-> F
-    F -.-> C
-    D -.-> G
-    G -.-> E
-    B -.-> H
-
-    %% Styling
-    classDef required fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
-    classDef optional fill:#50C878,stroke:#2E7D4E,stroke-width:2px,color:#fff,stroke-dasharray: 5 5
-
-    %% Legend
-    subgraph Legend
-        L1["Required Prompts"]:::required
-        L2["Optional Prompts"]:::optional
-    end
-```
-
-**Legend:**
-
-- **Blue boxes (solid)**: Required prompts for core Spec-Driven Development workflow
-- **Green boxes (dashed)**: Optional prompts for enhanced quality and validation
-- **Solid arrows**: Required flow
-- **Dotted arrows**: Optional enhancement points
-
-#### Core Commands (Required)
+#### Core Commands
 
 Essential commands for the Spec-Driven Development workflow:
 
@@ -288,7 +237,7 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.tasks`         | Generate actionable task lists for implementation                     |
 | `/speckit.implement`     | Execute all tasks to build the feature according to the plan         |
 
-#### Optional Commands (Quality & Validation)
+#### Optional Commands
 
 Additional commands for enhanced quality and validation:
 
