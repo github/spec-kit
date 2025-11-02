@@ -80,23 +80,112 @@ See "Capability PR Workflow (Atomic PRs)" section below for detailed workflow.
 - Which test failures will provide the most informative feedback during development?
 - What are the integration points that need the most comprehensive test coverage?
 
+### Testing Standards Reference
+
+**CRITICAL**: Follow `~/.claude/instructions/standards/python/testing.md` for all test code.
+
+**5-Layer Testing Standard**:
+- **Layer 1 (🔴 CI/CD)**: Pure pytest-style functions, 90% coverage, module mocking in conftest.py
+- **Layer 2 (🔴 TDD)**: This workflow enforces WHEN (outside-in order), standards define HOW (test patterns)
+- **Layer 3 (🟢 PRIMARY)**: pytest functions + fixtures + assert statements
+- **Layer 3 (🟡 LEGACY)**: unittest.TestCase allowed for existing tests
+- **Layer 4 (🔵)**: Organization (contract/, unit/, integration/, functional/), mocking patterns
+- **Layer 5 (🟠)**: Advanced techniques (hypothesis, snapshot, benchmarks)
+
+**Test Directory Structure** (from Layer 1):
+```
+tests/
+├── contract/       # Contract tests (write first)
+├── unit/           # Unit tests (write second)
+├── integration/    # Integration tests (write third)
+├── functional/     # Functional tests (write fourth)
+└── conftest.py     # Module-level mocking, session fixtures
+```
+
 **Test Creation Order**:
-1. **Contract Tests** [P] - One per API endpoint/contract
-   - Write contract test files from contracts/*.md
-   - Ensure tests import (non-existent) implementation
-   - Tests must fail with import/module errors
+1. **Contract Tests** [P] - One per API endpoint/contract → `tests/contract/`
+   - Write pytest-style contract tests from contracts/*.md
+   - Follow Layer 3 PRIMARY pattern (functions + fixtures + assert)
+   - Tests must fail with import/module errors (implementation doesn't exist)
+
+   **Example** (pytest-style):
+   ```python
+   # tests/contract/test_user_api.py
+   import pytest
+
+   @pytest.fixture
+   def api_client():
+       from src.app import app  # This import will FAIL initially
+       return app.test_client()
+
+   def test_create_user_contract(api_client):
+       """Contract: POST /users returns 201 with user object"""
+       response = api_client.post("/users", json={
+           "email": "test@example.com",
+           "name": "Test User"
+       })
+
+       assert response.status_code == 201
+       assert "id" in response.json
+   ```
+
    - Commit: `/smart-commit "test: add failing contract tests for [feature]"`
 
-2. **Entity/Model Tests** [P] - One per data model entity
-   - Write model validation tests
-   - Test business rules and constraints
+2. **Entity/Model Tests** [P] - One per data model entity → `tests/unit/test_models.py`
+   - Write pytest-style unit tests for models
+   - Test validation, business rules, constraints
    - Tests must fail (models don't exist yet)
+
+   **Example** (pytest-style):
+   ```python
+   # tests/unit/test_user_model.py
+   import pytest
+   from src.models import User  # This import will FAIL initially
+
+   def test_user_creation_with_valid_data():
+       """Test creating user with valid email"""
+       user = User(email="test@example.com", name="Test")
+
+       assert user.email == "test@example.com"
+       assert user.name == "Test"
+
+   def test_user_creation_with_invalid_email():
+       """Test user creation fails with invalid email"""
+       with pytest.raises(ValueError, match="Invalid email"):
+           User(email="invalid", name="Test")
+   ```
+
    - Commit: `/smart-commit "test: add failing model tests"`
 
-3. **Integration Tests** - Sequential by dependency
-   - Write end-to-end test scenarios
-   - Test user stories from spec.md
+3. **Integration Tests** - Sequential by dependency → `tests/integration/`
+   - Write pytest-style integration tests
+   - Test component interactions, workflows from spec.md
    - Include error scenarios
+
+   **Example** (pytest-style):
+   ```python
+   # tests/integration/test_user_workflow.py
+   import pytest
+
+   @pytest.fixture
+   def test_db():
+       """Test database with cleanup"""
+       from src.database import create_test_db  # Will FAIL initially
+       db = create_test_db()
+       yield db
+       db.cleanup()
+
+   def test_create_and_retrieve_user(test_db):
+       """Test complete user creation and retrieval flow"""
+       from src.services.user_service import UserService  # Will FAIL
+
+       service = UserService(db=test_db)
+       user = service.create(email="test@example.com", name="Test")
+       retrieved = service.get(user["id"])
+
+       assert retrieved["email"] == "test@example.com"
+   ```
+
    - Commit: `/smart-commit "test: add failing integration tests"`
 
 **Validation Gate**:
