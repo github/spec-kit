@@ -176,7 +176,7 @@ Scan for common patterns:
 
 ### 6. Generate Project Summary
 
-Create a structured summary document at `/memory/project-summary.md`:
+Create a structured summary document at `.specify/memory/project-summary.md`:
 
 ```markdown
 # Project Summary
