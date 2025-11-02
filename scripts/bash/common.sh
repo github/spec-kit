@@ -223,7 +223,7 @@ check_and_fix_spec_directory_mismatch() {
 
                 # Check if this spec dir has no matching branch
                 # Using grep for compatibility with older bash versions
-                if ! echo "|${existing_branches}" | grep -q "|${dirname}|"; then
+                if ! echo "|${existing_branches}" | grep -qF "|${dirname}|"; then
                     orphaned_dirs+=("$dirname")
                 fi
             fi
