@@ -129,9 +129,9 @@ function Detect-ConfigFiles {
 	if (Test-Path "$Root/composer.lock") { $script:techFiles += "composer.lock" }
 
 	# C#/.NET
-	$csprojFiles = Get-ChildItem -Path $Root -Filter "*.csproj" -File -ErrorAction SilentlyContinue
-	$fsprojFiles = Get-ChildItem -Path $Root -Filter "*.fsproj" -File -ErrorAction SilentlyContinue
-	$vbprojFiles = Get-ChildItem -Path $Root -Filter "*.vbproj" -File -ErrorAction SilentlyContinue
+	$csprojFiles = Get-ChildItem -Path $Root -Filter "*.csproj" -File -Depth 2 -ErrorAction SilentlyContinue
+	$fsprojFiles = Get-ChildItem -Path $Root -Filter "*.fsproj" -File -Depth 2 -ErrorAction SilentlyContinue
+	$vbprojFiles = Get-ChildItem -Path $Root -Filter "*.vbproj" -File -Depth 2 -ErrorAction SilentlyContinue
 
 	if ($csprojFiles -or $fsprojFiles -or $vbprojFiles) {
 		foreach ($proj in ($csprojFiles + $fsprojFiles + $vbprojFiles)) {
