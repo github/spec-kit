@@ -32,9 +32,7 @@
 ```
 
 ### Key Directories
-- `[DIRECTORY_1]`: [PURPOSE]
-- `[DIRECTORY_2]`: [PURPOSE]
-- `[DIRECTORY_3]`: [PURPOSE]
+- [DIRECTORY]/ ...
 
 ## Code Conventions
 
