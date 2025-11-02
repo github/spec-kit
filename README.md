@@ -355,20 +355,6 @@ Our research and experimentation focus on:
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
-### Windows-Specific Requirements
-
-For Windows users, you need **one** of the following to run the automation scripts:
-
-- **Git for Windows** (includes Git Bash) - **Recommended** for most users
-  - Download from: <https://git-scm.com/download/win>
-  - Automatically installed with Git
-  - Works in corporate environments (no WSL needed)
-- **PowerShell 5.1+** - Built into modern Windows
-  - Already available on Windows 10/11
-  - Corporate-friendly (no admin rights needed)
-
-**Note**: WSL (Windows Subsystem for Linux) is NOT required. Spec Kit Smart works with standard Windows tools.
-
 If you encounter issues with an agent, please open an issue so we can refine the integration.
 
 ## 📖 Learn More
