@@ -230,7 +230,7 @@ check_and_fix_spec_directory_mismatch() {
         done
 
         # Restore original nullglob setting
-        $original_nullglob
+        eval "$original_nullglob"
     fi
 
     # If we found exactly one orphaned directory, suggest renaming it
