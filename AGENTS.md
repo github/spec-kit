@@ -13,6 +13,15 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 ## General practices
 
 - Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
+- Environment variables that affect script behavior should be documented in both `README.md` and `CHANGELOG.md`.
+
+### Environment Variables
+
+The Spec Kit workflow recognizes the following environment variables:
+
+- **`SPECIFY_FEATURE`**: Override feature detection. Set to a specific feature directory name (e.g., `001-photo-albums`) to work on that feature regardless of git branch or directory scan results. This has the highest priority in feature detection.
+
+- **`SPECIFY_USE_CURRENT_BRANCH`**: Use the current git branch name as the feature identifier without creating a new branch. Useful when working on existing branches that don't follow the `###-name` convention. Works with any branch name. Priority: below `SPECIFY_FEATURE`, above default git detection.
 
 ## Adding New Agent Support
 

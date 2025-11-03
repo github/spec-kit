@@ -7,6 +7,21 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Git Branch Integration with `SPECIFY_USE_CURRENT_BRANCH`**: New environment variable to use the current git branch name as the feature identifier without creating a new branch
+  - Enables working on existing branches that don't follow the `###-name` convention
+  - Handles edge cases: detached HEAD state, non-git repositories, git command failures
+  - Maintains existing priority chain: `SPECIFY_FEATURE` > `SPECIFY_USE_CURRENT_BRANCH` > git branch > directory scan > "main"
+  - Single git command execution (no redundancy)
+  - Examples:
+    - `export SPECIFY_USE_CURRENT_BRANCH=1` (bash)
+    - `$env:SPECIFY_USE_CURRENT_BRANCH="1"` (PowerShell)
+  - Works with any branch naming pattern (feature/, bugfix/, hotfix/, main, master, develop, etc.)
+  - Available in both bash and PowerShell scripts
+
 ## [0.0.20] - 2025-10-14
 
 ### Added

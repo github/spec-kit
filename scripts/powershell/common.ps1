@@ -20,7 +20,22 @@ function Get-CurrentBranch {
     if ($env:SPECIFY_FEATURE) {
         return $env:SPECIFY_FEATURE
     }
-    
+
+    # Check if SPECIFY_USE_CURRENT_BRANCH is set to use current git branch
+    # without creating a new feature branch
+    if ($env:SPECIFY_USE_CURRENT_BRANCH) {
+        try {
+            $currentGitBranch = git rev-parse --abbrev-ref HEAD 2>&1
+            if ($LASTEXITCODE -eq 0 -and $currentGitBranch -ne 'HEAD') {
+                # Valid branch (not detached HEAD) - use it
+                return $currentGitBranch
+            }
+            # Detached HEAD - fall through to normal behavior
+        } catch {
+            # Git command failed, fall through
+        }
+    }
+
     # Then check git if available
     try {
         $result = git rev-parse --abbrev-ref HEAD 2>$null

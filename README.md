@@ -252,6 +252,7 @@ Additional commands for enhanced quality and validation:
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+| `SPECIFY_USE_CURRENT_BRANCH` | Use the current git branch name as the feature identifier without creating a new branch. Useful when working on existing branches that don't follow the `###-name` convention.<br/>**Example:** `export SPECIFY_USE_CURRENT_BRANCH=1` (bash) or `$env:SPECIFY_USE_CURRENT_BRANCH="1"` (PowerShell)<br/>**Note:** `SPECIFY_FEATURE` takes precedence if both are set. |
 
 ## 📚 Core Philosophy
 

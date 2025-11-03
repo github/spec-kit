@@ -20,6 +20,19 @@ get_current_branch() {
         return
     fi
 
+    # Check if SPECIFY_USE_CURRENT_BRANCH is set to use current git branch
+    # without creating a new feature branch
+    if [[ -n "${SPECIFY_USE_CURRENT_BRANCH:-}" ]]; then
+        local current_git_branch
+        current_git_branch=$(git rev-parse --abbrev-ref HEAD 2>&1)
+        if [[ $? -eq 0 && "$current_git_branch" != "HEAD" ]]; then
+            # Valid branch (not detached HEAD) - use it
+            echo "$current_git_branch"
+            return
+        fi
+        # Detached HEAD or git command failed - fall through to normal behavior
+    fi
+
     # Then check git if available
     if git rev-parse --abbrev-ref HEAD >/dev/null 2>&1; then
         git rev-parse --abbrev-ref HEAD
