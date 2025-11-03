@@ -4,33 +4,54 @@ set -e
 
 JSON_MODE=false
 SHORT_NAME=""
+BRANCH_NUMBER=""
 ARGS=()
-i=0
-while [ $i -lt $# ]; do
+i=1
+while [ $i -le $# ]; do
     arg="${!i}"
     case "$arg" in
         --json) 
             JSON_MODE=true 
             ;;
         --short-name)
-            if [ $((i + 1)) -ge $# ]; then
+            if [ $((i + 1)) -gt $# ]; then
                 echo 'Error: --short-name requires a value' >&2
                 exit 1
             fi
             i=$((i + 1))
-            SHORT_NAME="${!i}"
+            next_arg="${!i}"
+            # Check if the next argument is another option (starts with --)
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --short-name requires a value' >&2
+                exit 1
+            fi
+            SHORT_NAME="$next_arg"
+            ;;
+        --number)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --number requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --number requires a value' >&2
+                exit 1
+            fi
+            BRANCH_NUMBER="$next_arg"
             ;;
         --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
+            echo "  --number N          Specify branch number manually (overrides auto-detection)"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
-            echo "  $0 'Implement OAuth2 integration for API'"
+            echo "  $0 'Implement OAuth2 integration for API' --number 5"
             exit 0
             ;;
         *) 
@@ -42,7 +63,7 @@ done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [--short-name <name>] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>" >&2
     exit 1
 fi
 
@@ -57,6 +78,37 @@ find_repo_root() {
         dir="$(dirname "$dir")"
     done
     return 1
+}
+
+# Function to check existing branches (local and remote) and return next available number
+check_existing_branches() {
+    local short_name="$1"
+    
+    # Fetch all remotes to get latest branch info (suppress errors if no remotes)
+    git fetch --all --prune 2>/dev/null || true
+    
+    # Find all branches matching the pattern using git ls-remote (more reliable)
+    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-${short_name}$" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
+    
+    # Also check local branches
+    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
+    
+    # Check specs directory as well
+    local spec_dirs=""
+    if [ -d "$SPECS_DIR" ]; then
+        spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9]*-${short_name}" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
+    fi
+    
+    # Combine all sources and get the highest number
+    local max_num=0
+    for num in $remote_branches $local_branches $spec_dirs; do
+        if [ "$num" -gt "$max_num" ]; then
+            max_num=$num
+        fi
+    done
+    
+    # Return next number
+    echo $((max_num + 1))
 }
 
 # Resolve repository root. Prefer git information when available, but fall back
@@ -80,20 +132,6 @@ cd "$REPO_ROOT"
 
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
-
-HIGHEST=0
-if [ -d "$SPECS_DIR" ]; then
-    for dir in "$SPECS_DIR"/*; do
-        [ -d "$dir" ] || continue
-        dirname=$(basename "$dir")
-        number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
-        number=$((10#$number))
-        if [ "$number" -gt "$HIGHEST" ]; then HIGHEST=$number; fi
-    done
-fi
-
-NEXT=$((HIGHEST + 1))
-FEATURE_NUM=$(printf "%03d" "$NEXT")
 
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
@@ -151,6 +189,28 @@ else
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
 fi
 
+# Determine branch number
+if [ -z "$BRANCH_NUMBER" ]; then
+    if [ "$HAS_GIT" = true ]; then
+        # Check existing branches on remotes
+        BRANCH_NUMBER=$(check_existing_branches "$BRANCH_SUFFIX")
+    else
+        # Fall back to local directory check
+        HIGHEST=0
+        if [ -d "$SPECS_DIR" ]; then
+            for dir in "$SPECS_DIR"/*; do
+                [ -d "$dir" ] || continue
+                dirname=$(basename "$dir")
+                number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
+                number=$((10#$number))
+                if [ "$number" -gt "$HIGHEST" ]; then HIGHEST=$number; fi
+            done
+        fi
+        BRANCH_NUMBER=$((HIGHEST + 1))
+    fi
+fi
+
+FEATURE_NUM=$(printf "%03d" "$BRANCH_NUMBER")
 BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 
 # GitHub enforces a 244-byte limit on branch names
