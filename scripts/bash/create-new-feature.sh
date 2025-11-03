@@ -96,7 +96,7 @@ check_existing_branches() {
     # Check specs directory as well
     local spec_dirs=""
     if [ -d "$SPECS_DIR" ]; then
-        spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9]*-${short_name}" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
+        spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9]*-*" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
     fi
     
     # Combine all sources and get the highest number
