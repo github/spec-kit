@@ -88,10 +88,10 @@ check_existing_branches() {
     git fetch --all --prune 2>/dev/null || true
     
     # Find all branches matching the pattern using git ls-remote (more reliable)
-    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-${short_name}$" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
+    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
     
     # Also check local branches
-    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
+    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
     
     # Check specs directory as well
     local spec_dirs=""
