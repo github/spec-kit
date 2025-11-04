@@ -67,6 +67,29 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
+# Sanitize branch name for use as directory name
+# Replaces filesystem-forbidden and problematic characters with safe alternatives
+sanitize_branch_name() {
+    local branch="$1"
+
+    # Replace problematic characters:
+    # / → - (prevents nesting on all platforms, Windows forbidden)
+    # \ → - (Windows forbidden)
+    # : → - (Windows forbidden, macOS translated)
+    # * → - (Windows forbidden, shell wildcard)
+    # ? → - (Windows forbidden, shell wildcard)
+    # " → - (Windows forbidden)
+    # < → - (Windows forbidden, shell redirect)
+    # > → - (Windows forbidden, shell redirect)
+    # | → - (Windows forbidden, shell pipe)
+    echo "$branch" | sed \
+        -e 's/[\/\\:*?"<>|]/-/g' \
+        -e 's/  */-/g' \
+        -e 's/^[. -]*//' \
+        -e 's/[. -]*$//' \
+        -e 's/--*/-/g'
+}
+
 # Function to find the repository root by searching for existing project markers
 find_repo_root() {
     local dir="$1"
@@ -220,9 +243,15 @@ if [[ -n "${SPECIFY_USE_CURRENT_BRANCH:-}" ]]; then
             >&2 echo "[specify] Error: Cannot determine current branch name"
             exit 1
         fi
-        BRANCH_NAME="$branch_name_output"
+        # Sanitize branch name for filesystem compatibility
+        original_branch="$branch_name_output"
+        BRANCH_NAME=$(sanitize_branch_name "$branch_name_output")
         FEATURE_NUM="N/A"
-        >&2 echo "[specify] Using current branch: $BRANCH_NAME"
+        if [[ "$original_branch" != "$BRANCH_NAME" ]]; then
+            >&2 echo "[specify] Using current branch: $original_branch (sanitized to: $BRANCH_NAME)"
+        else
+            >&2 echo "[specify] Using current branch: $BRANCH_NAME"
+        fi
     else
         >&2 echo "[specify] Error: SPECIFY_USE_CURRENT_BRANCH requires a git repository"
         exit 1

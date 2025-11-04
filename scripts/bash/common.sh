@@ -12,6 +12,29 @@ get_repo_root() {
     fi
 }
 
+# Sanitize branch name for use as directory name
+# Replaces filesystem-forbidden and problematic characters with safe alternatives
+sanitize_branch_name() {
+    local branch="$1"
+
+    # Replace problematic characters:
+    # / → - (prevents nesting on all platforms, Windows forbidden)
+    # \ → - (Windows forbidden)
+    # : → - (Windows forbidden, macOS translated)
+    # * → - (Windows forbidden, shell wildcard)
+    # ? → - (Windows forbidden, shell wildcard)
+    # " → - (Windows forbidden)
+    # < → - (Windows forbidden, shell redirect)
+    # > → - (Windows forbidden, shell redirect)
+    # | → - (Windows forbidden, shell pipe)
+    echo "$branch" | sed \
+        -e 's/[\/\\:*?"<>|]/-/g' \
+        -e 's/  */-/g' \
+        -e 's/^[. -]*//' \
+        -e 's/[. -]*$//' \
+        -e 's/--*/-/g'
+}
+
 # Get current branch, with fallback for non-git repositories
 get_current_branch() {
     # First check if SPECIFY_FEATURE environment variable is set
@@ -108,6 +131,14 @@ find_feature_dir_by_prefix() {
     local repo_root="$1"
     local branch_name="$2"
     local specs_dir="$repo_root/specs"
+
+    # When using current branch, do exact match only (no prefix matching)
+    if [[ -n "${SPECIFY_USE_CURRENT_BRANCH:-}" ]]; then
+        # Sanitize branch name for filesystem compatibility
+        local sanitized_name=$(sanitize_branch_name "$branch_name")
+        echo "$specs_dir/$sanitized_name"
+        return
+    fi
 
     # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
     if [[ ! "$branch_name" =~ ^([0-9]{3})- ]]; then
