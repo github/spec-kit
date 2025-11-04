@@ -224,38 +224,60 @@ if ($Number -eq 0) {
     }
 }
 
-$featureNum = ('{0:000}' -f $Number)
-$branchName = "$featureNum-$branchSuffix"
-
-# GitHub enforces a 244-byte limit on branch names
-# Validate and truncate if necessary
-$maxBranchLength = 244
-if ($branchName.Length -gt $maxBranchLength) {
-    # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    $maxSuffixLength = $maxBranchLength - 4
-    
-    # Truncate suffix
-    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
-    # Remove trailing hyphen if truncation created one
-    $truncatedSuffix = $truncatedSuffix -replace '-$', ''
-    
-    $originalBranchName = $branchName
-    $branchName = "$featureNum-$truncatedSuffix"
-    
-    Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
-    Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
-    Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
-}
-
-if ($hasGit) {
-    try {
-        git checkout -b $branchName | Out-Null
-    } catch {
-        Write-Warning "Failed to create git branch: $branchName"
+# Check if SPECIFY_USE_CURRENT_BRANCH is set
+if ($env:SPECIFY_USE_CURRENT_BRANCH) {
+    if ($hasGit) {
+        # Use current branch name
+        try {
+            $branchName = git rev-parse --abbrev-ref HEAD 2>&1
+            if ($LASTEXITCODE -ne 0 -or $branchName -eq 'HEAD') {
+                Write-Error "[specify] Error: Cannot determine current branch name"
+                exit 1
+            }
+            Write-Warning "[specify] Using current branch: $branchName"
+        } catch {
+            Write-Error "[specify] Error: Cannot determine current branch name"
+            exit 1
+        }
+    } else {
+        Write-Error "[specify] Error: SPECIFY_USE_CURRENT_BRANCH requires a git repository"
+        exit 1
     }
 } else {
-    Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    # Normal mode: generate new branch name and create it
+    $featureNum = ('{0:000}' -f $Number)
+    $branchName = "$featureNum-$branchSuffix"
+
+    # GitHub enforces a 244-byte limit on branch names
+    # Validate and truncate if necessary
+    $maxBranchLength = 244
+    if ($branchName.Length -gt $maxBranchLength) {
+        # Calculate how much we need to trim from suffix
+        # Account for: feature number (3) + hyphen (1) = 4 chars
+        $maxSuffixLength = $maxBranchLength - 4
+
+        # Truncate suffix
+        $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
+        # Remove trailing hyphen if truncation created one
+        $truncatedSuffix = $truncatedSuffix -replace '-$', ''
+
+        $originalBranchName = $branchName
+        $branchName = "$featureNum-$truncatedSuffix"
+
+        Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
+        Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
+        Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
+    }
+
+    if ($hasGit) {
+        try {
+            git checkout -b $branchName | Out-Null
+        } catch {
+            Write-Warning "Failed to create git branch: $branchName"
+        }
+    } else {
+        Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    }
 }
 
 $featureDir = Join-Path $specsDir $branchName
