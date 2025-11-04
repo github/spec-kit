@@ -228,17 +228,12 @@ if ($Number -eq 0) {
 if ($env:SPECIFY_USE_CURRENT_BRANCH) {
     if ($hasGit) {
         # Use current branch name
-        try {
-            $branchName = git rev-parse --abbrev-ref HEAD 2>&1
-            if ($LASTEXITCODE -ne 0 -or $branchName -eq 'HEAD') {
-                Write-Error "[specify] Error: Cannot determine current branch name"
-                exit 1
-            }
-            Write-Warning "[specify] Using current branch: $branchName"
-        } catch {
+        $branchName = git rev-parse --abbrev-ref HEAD 2>&1
+        if ($LASTEXITCODE -ne 0 -or $branchName -eq 'HEAD') {
             Write-Error "[specify] Error: Cannot determine current branch name"
             exit 1
         }
+        Write-Warning "[specify] Using current branch: $branchName"
     } else {
         Write-Error "[specify] Error: SPECIFY_USE_CURRENT_BRANCH requires a git repository"
         exit 1

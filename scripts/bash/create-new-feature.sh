@@ -214,11 +214,13 @@ fi
 if [[ -n "${SPECIFY_USE_CURRENT_BRANCH:-}" ]]; then
     if [ "$HAS_GIT" = true ]; then
         # Use current branch name
-        BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD 2>&1)
-        if [[ $? -ne 0 || "$BRANCH_NAME" == "HEAD" ]]; then
+        branch_name_output=$(git rev-parse --abbrev-ref HEAD 2>&1)
+        branch_name_status=$?
+        if [[ $branch_name_status -ne 0 || "$branch_name_output" == "HEAD" ]]; then
             >&2 echo "[specify] Error: Cannot determine current branch name"
             exit 1
         fi
+        BRANCH_NAME="$branch_name_output"
         >&2 echo "[specify] Using current branch: $BRANCH_NAME"
     else
         >&2 echo "[specify] Error: SPECIFY_USE_CURRENT_BRANCH requires a git repository"
