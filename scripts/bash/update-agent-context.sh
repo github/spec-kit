@@ -71,6 +71,7 @@ AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
+WARP_FILE="$REPO_ROOT/.warp/rules/specify-rules.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
 
 # Template file
@@ -618,12 +619,15 @@ update_specific_agent() {
         amp)
             update_agent_file "$AMP_FILE" "Amp"
             ;;
+        warp)
+            update_agent_file "$WARP_FILE" "Warp"
+            ;;
         q)
             update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|q"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|warp|q"
             exit 1
             ;;
     esac
@@ -688,6 +692,11 @@ update_all_existing_agents() {
         found_agent=true
     fi
 
+    if [[ -f "$WARP_FILE" ]]; then
+        update_agent_file "$WARP_FILE" "Warp"
+        found_agent=true
+    fi
+
     if [[ -f "$Q_FILE" ]]; then
         update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
         found_agent=true
@@ -717,7 +726,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|q]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|warp|q]"
 }
 
 #==============================================================================

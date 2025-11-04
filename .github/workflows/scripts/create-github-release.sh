@@ -42,6 +42,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-codebuddy-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-amp-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-amp-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-warp-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-warp-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-q-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-q-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \
