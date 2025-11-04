@@ -7,6 +7,29 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **New `/speckit.innovate` Command**: Advanced brainstorming command that facilitates creative ideation using parallel subagent discussions
+  - 🎭 Dynamic multi-role system (2-4 experts) based on topic analysis using configurable role definitions
+  - 🌍 Cross-domain inspiration system that identifies analogies from unrelated fields before ideation
+  - ⚔️ Structured challenge-rebuttal debates where agents constructively critique each other's ideas
+  - 👥 User impact analysis evaluating solutions from multiple stakeholder perspectives
+  - 🎚️ Three brainstorming modes:
+    - **Quick Mode** ⚡ (15-20 min, 2 rounds): Rapid ideation for simple topics
+    - **Standard Mode** ⚖️ (30-45 min, 3 rounds): Balanced exploration (default)
+    - **Deep Mode** 🔬 (60+ min, 4-5 rounds): Comprehensive analysis with risk assessment and implementation roadmaps
+  - 💾 Session persistence and resumability:
+    - Auto-save after each round with structured directory layout
+    - Resume interrupted sessions with `--resume [session-id]`
+    - Session metadata tracking (status, roles, timestamps, rounds completed)
+    - Quick-access symbolic links to final reports
+  - 📊 Multi-agent evaluation matrix for consensus building
+  - 🎯 Hybrid idea formation by combining best elements from different perspectives
+- **Agent Roles Configuration Template** (`templates/agent-roles.yaml`): Comprehensive role definitions for 15+ categories including authentication, performance, architecture, data, API design, testing, DevOps, UI/UX, code quality, migration, documentation, and monitoring
+- **Brainstorms Directory Structure Template** (`templates/brainstorms-readme.md`): Documentation for session management, directory layout, and best practices
+
 ## [0.0.20] - 2025-10-14
 
 ### Added

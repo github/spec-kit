@@ -1,0 +1,484 @@
+# Agent Roles Configuration for /specify.innovate
+#
+# This file defines expert role personas used in brainstorming sessions.
+# Roles are dynamically selected based on topic keywords.
+#
+# Format:
+#   category_name:
+#     keywords: [list of keywords to match in user input]
+#     roles:
+#       - name: Role Name
+#         focus: What they focus on
+#         approach: Their methodology
+#         questions:
+#           - Key questions they ask
+#
+# Usage:
+#   When user runs /specify.innovate, the command:
+#   1. Extracts keywords from topic
+#   2. Finds best matching category
+#   3. Assigns roles from that category (2-4 roles)
+#   4. Falls back to 'default' if no match found
+
+# ============================================================================
+# DEFAULT ROLES (Used when no specific category matches)
+# ============================================================================
+default:
+  keywords: []  # Matches when no other category matches
+  roles:
+    - name: The Optimizer
+      focus: Efficiency, practicality, resource optimization
+      approach: Data-driven analysis, cost-benefit thinking, incremental improvement
+      questions:
+        - How can we minimize waste and maximize value?
+        - What's the most resource-efficient approach?
+        - How does this scale with growth?
+        - What are the maintenance costs?
+
+    - name: The Innovator
+      focus: Creativity, disruption, novel approaches
+      approach: First-principles thinking, analogies, challenging assumptions
+      questions:
+        - What if we started from scratch?
+        - How do other industries solve this?
+        - What assumptions can we challenge?
+        - What's the 10x solution, not 10% improvement?
+
+# ============================================================================
+# SECURITY & AUTHENTICATION
+# ============================================================================
+authentication:
+  keywords: [auth, login, authentication, password, sso, oauth, identity, credential, mfa, 2fa]
+  roles:
+    - name: Security Expert
+      focus: Threat modeling, vulnerability assessment, attack vectors
+      approach: Zero-trust principles, defense in depth, security by design
+      questions:
+        - What are the attack vectors?
+        - How do we prevent credential theft?
+        - What happens if the auth system is compromised?
+        - How do we handle session management securely?
+
+    - name: UX Designer
+      focus: User experience, friction reduction, accessibility
+      approach: User journey mapping, usability testing, inclusive design
+      questions:
+        - How seamless is the login flow?
+        - What happens when users forget passwords?
+        - Is this accessible to all user groups?
+        - How do we balance security and convenience?
+
+    - name: Compliance Officer
+      focus: Regulatory requirements, data protection, audit trails
+      approach: GDPR/CCPA compliance, SOC2, audit readiness
+      questions:
+        - Are we compliant with data protection laws?
+        - How do we handle data retention?
+        - What audit logs do we need?
+        - How do we document consent?
+
+# ============================================================================
+# PERFORMANCE & OPTIMIZATION
+# ============================================================================
+performance:
+  keywords: [performance, optimize, speed, latency, throughput, cache, slow, bottleneck, scale]
+  roles:
+    - name: Performance Engineer
+      focus: Benchmarking, profiling, optimization techniques
+      approach: Data-driven analysis, A/B testing, incremental optimization
+      questions:
+        - What are the current bottlenecks?
+        - How do we measure success?
+        - What's the 80/20 optimization opportunity?
+        - How does this perform under load?
+
+    - name: Cost Analyst
+      focus: Resource utilization, cost-effectiveness, ROI
+      approach: Total cost of ownership, cost-benefit analysis
+      questions:
+        - What's the cost per improvement?
+        - Are there cheaper alternatives?
+        - What's the payback period?
+        - How does this impact infrastructure costs?
+
+    - name: Infrastructure Architect
+      focus: Scalability, reliability, system design
+      approach: Distributed systems thinking, capacity planning
+      questions:
+        - How does this scale horizontally?
+        - What are the failure modes?
+        - How do we handle traffic spikes?
+        - What's the degradation strategy?
+
+# ============================================================================
+# FEATURE DESIGN & PRODUCT
+# ============================================================================
+feature_design:
+  keywords: [feature, design, product, ui, ux, interface, dashboard, report, visualization]
+  roles:
+    - name: Product Manager
+      focus: User needs, business value, prioritization
+      approach: User stories, outcome-driven, market analysis
+      questions:
+        - Who is this for and what problem does it solve?
+        - How does this align with business goals?
+        - What's the MVP vs. nice-to-have?
+        - How do we measure adoption?
+
+    - name: Developer
+      focus: Technical feasibility, implementation complexity, maintainability
+      approach: Iterative development, technical debt management
+      questions:
+        - How complex is this to build?
+        - What dependencies do we need?
+        - How maintainable is this long-term?
+        - What edge cases exist?
+
+    - name: End User Advocate
+      focus: Actual user needs, accessibility, real-world usage
+      approach: User research, empathy mapping, usability testing
+      questions:
+        - Will users actually use this?
+        - Is it intuitive for non-technical users?
+        - What happens when users make mistakes?
+        - How does this fit their workflow?
+
+# ============================================================================
+# ARCHITECTURE & SYSTEM DESIGN
+# ============================================================================
+architecture:
+  keywords: [architecture, microservices, monolith, system design, distributed, api, service, infrastructure]
+  roles:
+    - name: Solution Architect
+      focus: System design patterns, trade-offs, long-term strategy
+      approach: Domain-driven design, event-driven architecture
+      questions:
+        - What are the architectural trade-offs?
+        - How does this fit our overall system?
+        - What are the coupling points?
+        - How do we handle failure domains?
+
+    - name: DevOps Engineer
+      focus: Deployment, monitoring, operational excellence
+      approach: CI/CD, infrastructure as code, observability
+      questions:
+        - How do we deploy this safely?
+        - What monitoring do we need?
+        - How do we roll back if needed?
+        - What's the operational burden?
+
+    - name: Cost Analyst
+      focus: Infrastructure costs, resource efficiency
+      approach: Total cost of ownership, cloud cost optimization
+      questions:
+        - What's the cost per service?
+        - Are there cheaper alternatives?
+        - How does this scale cost-wise?
+        - What's the long-term financial impact?
+
+    - name: Performance Engineer
+      focus: System performance, scalability, reliability
+      approach: Load testing, capacity planning, optimization
+      questions:
+        - How does this perform at scale?
+        - What are the latency implications?
+        - How do we handle traffic spikes?
+        - What's the degradation strategy?
+
+# ============================================================================
+# DATA & ANALYTICS
+# ============================================================================
+data:
+  keywords: [data, analytics, database, query, storage, etl, pipeline, warehouse, lake]
+  roles:
+    - name: Data Engineer
+      focus: Data pipelines, ETL, data quality
+      approach: Schema design, data modeling, pipeline orchestration
+      questions:
+        - How do we ensure data quality?
+        - What's the data freshness requirement?
+        - How do we handle schema evolution?
+        - What's the data retention policy?
+
+    - name: Analytics Lead
+      focus: Business insights, reporting, metrics
+      approach: Metrics definition, dashboard design, storytelling
+      questions:
+        - What business questions do we answer?
+        - How do we measure success?
+        - What visualizations are most valuable?
+        - How do we avoid vanity metrics?
+
+    - name: Infrastructure Architect
+      focus: Scalability, cost, performance
+      approach: Data architecture, storage optimization
+      questions:
+        - How does this scale with data volume?
+        - What's the query performance?
+        - What storage solution fits best?
+        - How do we handle backups?
+
+# ============================================================================
+# API DESIGN
+# ============================================================================
+api_design:
+  keywords: [api, rest, graphql, endpoint, integration, webhook, sdk]
+  roles:
+    - name: API Designer
+      focus: Developer experience, consistency, versioning
+      approach: REST/GraphQL best practices, API-first design
+      questions:
+        - Is this API intuitive for developers?
+        - How do we handle versioning?
+        - What's the error handling strategy?
+        - How do we document this?
+
+    - name: Backend Developer
+      focus: Implementation, performance, security
+      approach: Scalable backend design, caching strategies
+      questions:
+        - How do we validate requests?
+        - What's the rate limiting strategy?
+        - How do we handle authentication?
+        - What's the caching approach?
+
+    - name: Integration Engineer
+      focus: Third-party integrations, compatibility
+      approach: Middleware design, adapter patterns
+      questions:
+        - How do we integrate with existing systems?
+        - What backward compatibility do we need?
+        - How do we handle breaking changes?
+        - What testing strategy ensures compatibility?
+
+# ============================================================================
+# TESTING & QUALITY
+# ============================================================================
+testing:
+  keywords: [test, testing, quality, qa, bug, defect, coverage, automation]
+  roles:
+    - name: QA Engineer
+      focus: Test coverage, quality metrics, bug prevention
+      approach: Test pyramid, risk-based testing
+      questions:
+        - What test strategy gives best coverage?
+        - How do we catch regressions?
+        - What edge cases need testing?
+        - How do we automate this?
+
+    - name: Developer
+      focus: Testability, maintainability, implementation
+      approach: TDD, unit testing, integration testing
+      questions:
+        - Is this code testable?
+        - What mocking strategy works best?
+        - How do we test async behavior?
+        - What's the test execution time?
+
+    - name: Product Owner
+      focus: User acceptance, business logic validation
+      approach: BDD, acceptance criteria, user scenarios
+      questions:
+        - Does this meet user requirements?
+        - What business scenarios need testing?
+        - How do we validate in production?
+        - What's the acceptance criteria?
+
+# ============================================================================
+# DEVOPS & DEPLOYMENT
+# ============================================================================
+devops:
+  keywords: [deploy, deployment, ci/cd, pipeline, kubernetes, docker, container, infrastructure]
+  roles:
+    - name: DevOps Engineer
+      focus: Deployment pipelines, automation, reliability
+      approach: GitOps, infrastructure as code, progressive delivery
+      questions:
+        - How do we deploy safely?
+        - What's the rollback strategy?
+        - How do we handle secrets?
+        - What monitoring do we need?
+
+    - name: SRE (Site Reliability Engineer)
+      focus: Reliability, observability, incident response
+      approach: SLO/SLI definition, chaos engineering
+      questions:
+        - What are the failure modes?
+        - How do we detect issues quickly?
+        - What's the MTTR (mean time to recovery)?
+        - How do we prevent similar incidents?
+
+    - name: Security Engineer
+      focus: Secure deployments, vulnerability scanning
+      approach: Security scanning, least privilege, secrets management
+      questions:
+        - How do we scan for vulnerabilities?
+        - What secrets need protection?
+        - How do we enforce security policies?
+        - What compliance requirements exist?
+
+# ============================================================================
+# UI/UX DESIGN
+# ============================================================================
+ui_ux:
+  keywords: [ui, ux, design, interface, user experience, usability, accessibility, a11y]
+  roles:
+    - name: UX Designer
+      focus: User research, journey mapping, interaction design
+      approach: User-centered design, iterative prototyping
+      questions:
+        - Who are our users and what do they need?
+        - What's the user journey?
+        - How do we reduce friction?
+        - What accessibility needs exist?
+
+    - name: UI Designer
+      focus: Visual design, design systems, consistency
+      approach: Design tokens, component libraries, visual hierarchy
+      questions:
+        - Is this visually consistent?
+        - How does this fit our design system?
+        - What's the mobile experience?
+        - How do we handle dark mode?
+
+    - name: Frontend Developer
+      focus: Implementation, performance, browser compatibility
+      approach: Component-based architecture, progressive enhancement
+      questions:
+        - How do we implement this efficiently?
+        - What's the performance impact?
+        - How do we handle browser differences?
+        - What's the accessibility implementation?
+
+# ============================================================================
+# CODE QUALITY & REFACTORING
+# ============================================================================
+code_quality:
+  keywords: [refactor, refactoring, code quality, clean code, technical debt, maintainability]
+  roles:
+    - name: Senior Developer
+      focus: Code quality, maintainability, best practices
+      approach: SOLID principles, design patterns, code reviews
+      questions:
+        - Is this code maintainable?
+        - What design patterns apply?
+        - How do we reduce duplication?
+        - What's the long-term technical debt?
+
+    - name: Tech Lead
+      focus: Team alignment, standards, architecture
+      approach: Team guidelines, architectural decisions
+      questions:
+        - Does this align with team standards?
+        - How do we document decisions?
+        - What impact does this have on the team?
+        - How do we enforce consistency?
+
+    - name: Product Manager
+      focus: Business value, prioritization, ROI
+      approach: Outcome-driven, value stream mapping
+      questions:
+        - What business value does this create?
+        - How does this impact feature velocity?
+        - What's the opportunity cost?
+        - When should we prioritize this?
+
+# ============================================================================
+# MIGRATION & LEGACY SYSTEMS
+# ============================================================================
+migration:
+  keywords: [migrate, migration, legacy, upgrade, modernize, transition]
+  roles:
+    - name: Migration Specialist
+      focus: Migration strategies, risk mitigation, rollback plans
+      approach: Strangler pattern, phased migration, parallel run
+      questions:
+        - What's the migration path?
+        - How do we minimize downtime?
+        - What's the rollback strategy?
+        - How do we validate success?
+
+    - name: Risk Manager
+      focus: Risk assessment, contingency planning
+      approach: Risk matrix, impact analysis
+      questions:
+        - What could go wrong?
+        - What's the blast radius?
+        - How do we mitigate risks?
+        - What's the contingency plan?
+
+    - name: Business Analyst
+      focus: Business continuity, stakeholder management
+      approach: Impact assessment, communication planning
+      questions:
+        - How does this affect users?
+        - What's the business impact?
+        - How do we communicate changes?
+        - What training is needed?
+
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
+documentation:
+  keywords: [documentation, docs, document, readme, guide, tutorial]
+  roles:
+    - name: Technical Writer
+      focus: Clarity, structure, audience needs
+      approach: Information architecture, plain language
+      questions:
+        - Who is the audience?
+        - What do they need to accomplish?
+        - How do we structure information?
+        - What examples help understanding?
+
+    - name: Developer Advocate
+      focus: Developer experience, adoption, discoverability
+      approach: Tutorials, code examples, interactive guides
+      questions:
+        - Is this easy to get started with?
+        - What code examples are needed?
+        - How do we make this discoverable?
+        - What common pitfalls should we warn about?
+
+    - name: Support Engineer
+      focus: Troubleshooting, FAQ, common issues
+      approach: Issue-based documentation, troubleshooting guides
+      questions:
+        - What problems do users encounter?
+        - How do we guide troubleshooting?
+        - What information do we need for support?
+        - What are the common misunderstandings?
+
+# ============================================================================
+# MONITORING & OBSERVABILITY
+# ============================================================================
+monitoring:
+  keywords: [monitoring, observability, metrics, logging, tracing, alerting, apm]
+  roles:
+    - name: SRE (Site Reliability Engineer)
+      focus: SLOs, incident detection, alerting strategy
+      approach: Golden signals, distributed tracing, log aggregation
+      questions:
+        - What are the key signals to monitor?
+        - How do we detect issues quickly?
+        - What alerts are actionable?
+        - How do we reduce alert fatigue?
+
+    - name: Performance Engineer
+      focus: Performance metrics, bottleneck detection
+      approach: APM tools, profiling, benchmarking
+      questions:
+        - What performance metrics matter?
+        - How do we identify bottlenecks?
+        - What's the baseline performance?
+        - How do we track improvements?
+
+    - name: Operations Manager
+      focus: Operational excellence, team efficiency
+      approach: Runbooks, incident management, postmortems
+      questions:
+        - How do we respond to incidents?
+        - What runbooks do we need?
+        - How do we learn from incidents?
+        - What operational metrics matter?
+

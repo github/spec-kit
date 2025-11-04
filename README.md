@@ -246,6 +246,7 @@ Additional commands for enhanced quality and validation:
 | `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/speckit.innovate`  | Brainstorm innovative ideas and solutions using parallel subagent discussions with dynamic multi-role system (Quick/Standard/Deep modes) |
 
 ### Environment Variables
 
