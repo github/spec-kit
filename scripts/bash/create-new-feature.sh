@@ -221,6 +221,7 @@ if [[ -n "${SPECIFY_USE_CURRENT_BRANCH:-}" ]]; then
             exit 1
         fi
         BRANCH_NAME="$branch_name_output"
+        FEATURE_NUM="N/A"
         >&2 echo "[specify] Using current branch: $BRANCH_NAME"
     else
         >&2 echo "[specify] Error: SPECIFY_USE_CURRENT_BRANCH requires a git repository"

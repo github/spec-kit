@@ -233,6 +233,7 @@ if ($env:SPECIFY_USE_CURRENT_BRANCH) {
             Write-Error "[specify] Error: Cannot determine current branch name"
             exit 1
         }
+        $featureNum = "N/A"
         Write-Warning "[specify] Using current branch: $branchName"
     } else {
         Write-Error "[specify] Error: SPECIFY_USE_CURRENT_BRANCH requires a git repository"
