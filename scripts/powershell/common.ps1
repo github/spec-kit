@@ -10,9 +10,32 @@ function Get-RepoRoot {
     } catch {
         # Git command failed
     }
-    
+
     # Fall back to script location for non-git repos
     return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
+}
+
+# Sanitize branch name for use as directory name
+# Replaces filesystem-forbidden and problematic characters with safe alternatives
+function Sanitize-BranchName {
+    param([string]$BranchName)
+
+    # Replace problematic characters:
+    # / → - (prevents nesting on all platforms, Windows forbidden)
+    # \ → - (Windows forbidden)
+    # : → - (Windows forbidden, macOS translated)
+    # * → - (Windows forbidden, shell wildcard)
+    # ? → - (Windows forbidden, shell wildcard)
+    # " → - (Windows forbidden)
+    # < → - (Windows forbidden, shell redirect)
+    # > → - (Windows forbidden, shell redirect)
+    # | → - (Windows forbidden, shell pipe)
+    $sanitized = $BranchName -replace '[/\\:*?"<>|]', '-'
+    $sanitized = $sanitized -replace '\s+', '-'
+    $sanitized = $sanitized -replace '^[. -]+', ''
+    $sanitized = $sanitized -replace '[. -]+$', ''
+    $sanitized = $sanitized -replace '-+', '-'
+    return $sanitized
 }
 
 function Get-CurrentBranch {
@@ -105,6 +128,12 @@ function Test-FeatureBranch {
 
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
+
+    # When using current branch, sanitize for filesystem compatibility
+    if ($env:SPECIFY_USE_CURRENT_BRANCH) {
+        $Branch = Sanitize-BranchName -BranchName $Branch
+    }
+
     Join-Path $RepoRoot "specs/$Branch"
 }
 
