@@ -87,13 +87,18 @@ function Test-FeatureBranch {
         [string]$Branch,
         [bool]$HasGit = $true
     )
-    
+
     # For non-git repos, we can't enforce branch naming but still provide output
     if (-not $HasGit) {
         Write-Warning "[specify] Warning: Git repository not detected; skipped branch validation"
         return $true
     }
-    
+
+    # If SPECIFY_USE_CURRENT_BRANCH is set, skip pattern validation
+    if ($env:SPECIFY_USE_CURRENT_BRANCH) {
+        return $true
+    }
+
     if ($Branch -notmatch '^[0-9]{3}-') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
         Write-Output "Feature branches should be named like: 001-feature-name"

@@ -85,6 +85,11 @@ check_feature_branch() {
         return 0
     fi
 
+    # If SPECIFY_USE_CURRENT_BRANCH is set, skip pattern validation
+    if [[ -n "${SPECIFY_USE_CURRENT_BRANCH:-}" ]]; then
+        return 0
+    fi
+
     if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
         echo "Feature branches should be named like: 001-feature-name" >&2
