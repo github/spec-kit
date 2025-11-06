@@ -9,8 +9,8 @@
       href: installation.md
     - name: Quick Start
       href: quickstart.md
-    - name: Upgrading Spec Kit
-      href: upgrading-spec-kit.md
+    - name: Upgrade
+      href: upgrade.md
 
 # Development workflows
 - name: Development

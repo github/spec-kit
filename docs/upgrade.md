@@ -1,4 +1,4 @@
-# Upgrading Spec Kit
+# Upgrade Guide
 
 > You have Spec Kit installed and want to upgrade to the latest version to get new features, bug fixes, or updated slash commands. This guide covers both upgrading the CLI tool and updating your project files.
 
@@ -14,7 +14,7 @@
 
 ---
 
-## Part 1: Upgrading the CLI Tool
+## Part 1: Upgrade the CLI Tool
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
 

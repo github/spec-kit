@@ -8,6 +8,13 @@
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
 
+## Getting Started
+
+- [Installation Guide](installation.md)
+- [Quick Start Guide](quickstart.md)
+- [Upgrade Guide](upgrade.md)
+- [Local Development](local-development.md)
+
 ## Core Philosophy
 
 Spec-Driven Development is a structured process that emphasizes:

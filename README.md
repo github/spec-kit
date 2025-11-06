@@ -61,7 +61,7 @@ specify init <PROJECT_NAME>
 specify check
 ```
 
-To upgrade Specify, see the [Upgrading Spec Kit guide](./docs/upgrading-spec-kit.md) for detailed instructions. Quick upgrade:
+To upgrade Specify, see the [Upgrade Guide](./docs/upgrade.md) for detailed instructions. Quick upgrade:
 
 ```bash
 uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
