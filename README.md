@@ -312,9 +312,6 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 ## 📖 Learn More
 
-- **[Installation Guide](./docs/installation.md)** - First-time installation instructions
-- **[Quick Start Guide](./docs/quickstart.md)** - Get started with a new project
-- **[Upgrading Spec Kit](./docs/upgrading-spec-kit.md)** - Update CLI and project files
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
