@@ -39,6 +39,14 @@ env/
 .env.local
 *.lock
 
+# Test coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+coverage.xml
+.tox/
+
 # Spec Kit-specific files
 .genreleases/
 *.zip
