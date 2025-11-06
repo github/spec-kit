@@ -133,52 +133,28 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 ```mermaid
 flowchart TD
     Start([Start New Feature]) --> Constitution
-
-    Constitution["🏛️ /speckit.constitution<br/><b>REQUIRED</b><br/>Establish project principles"]
-    Constitution --> Specify
-
-    Specify["📝 /speckit.specify<br/><b>REQUIRED</b><br/>Define requirements & user stories"]
-    Specify --> Clarify
-
-    Clarify["❓ /speckit.clarify<br/><i>OPTIONAL</i><br/>Resolve ambiguities & gaps"]
-    Clarify -->|Recommended| Plan
+    Constitution[🏛️ Constitution - REQUIRED] --> Specify
+    Specify[📝 Specify - REQUIRED] --> Clarify
+    Clarify[❓ Clarify - OPTIONAL] -->|Recommended| Plan
     Clarify -.->|Skip if clear| Plan
-
-    Plan["🏗️ /speckit.plan<br/><b>REQUIRED</b><br/>Create technical design"]
-    Plan --> Tasks
-
-    Tasks["📋 /speckit.tasks<br/><b>REQUIRED</b><br/>Generate task breakdown"]
-    Tasks --> Analyze
-
-    Analyze["🔍 /speckit.analyze<br/><i>OPTIONAL</i><br/>Validate consistency & coverage"]
-    Analyze -->|Recommended| Implement
+    Plan[🏗️ Plan - REQUIRED] --> Tasks
+    Tasks[📋 Tasks - REQUIRED] --> Analyze
+    Analyze[🔍 Analyze - OPTIONAL] -->|Recommended| Implement
     Analyze -.->|Skip if confident| Implement
-
-    Implement["⚙️ /speckit.implement<br/><b>REQUIRED</b><br/>Execute all tasks"]
-    Implement --> Checklist
-
-    Checklist["✅ /speckit.checklist<br/><i>OPTIONAL</i><br/>Quality validation"]
-    Checklist --> Done
-
+    Implement[⚙️ Implement - REQUIRED] --> Checklist
+    Checklist[✅ Checklist - OPTIONAL] --> Done
     Done([✅ Feature Complete])
 
-    subgraph Legend
-        Required["<b>REQUIRED</b><br/>Essential for workflow"]
-        Optional["<i>OPTIONAL</i><br/>Recommended but skippable"]
-    end
-
-    style Constitution fill:#ffcccc
-    style Specify fill:#ffcccc
-    style Plan fill:#ffcccc
-    style Tasks fill:#ffcccc
-    style Implement fill:#ffcccc
-    style Clarify fill:#ffffcc
-    style Analyze fill:#ffffcc
-    style Checklist fill:#ffffcc
-    style Start fill:#ccffcc
-    style Done fill:#ccffcc
-    style Required fill:#ffcccc
-    style Optional fill:#ffffcc
+    style Constitution fill:#ffcccc,stroke:#333,stroke-width:2px
+    style Specify fill:#ffcccc,stroke:#333,stroke-width:2px
+    style Plan fill:#ffcccc,stroke:#333,stroke-width:2px
+    style Tasks fill:#ffcccc,stroke:#333,stroke-width:2px
+    style Implement fill:#ffcccc,stroke:#333,stroke-width:2px
+    style Clarify fill:#ffffcc,stroke:#333,stroke-width:2px
+    style Analyze fill:#ffffcc,stroke:#333,stroke-width:2px
+    style Checklist fill:#ffffcc,stroke:#333,stroke-width:2px
+    style Start fill:#ccffcc,stroke:#333,stroke-width:2px
+    style Done fill:#ccffcc,stroke:#333,stroke-width:2px
 ```
 
 **Required Commands** (Red):
@@ -359,27 +335,9 @@ The **Orchestrator** workflow simplifies the entire spec-driven development proc
 
 ### Why Use the Orchestrator?
 
-**Before (Manual Workflow):**
+**Manual Workflow:** 7 separate commands, manual state tracking, context loss at chat limits.
 
-```bash
-/speckit.constitution <principles>
-/speckit.specify <feature-description>
-/speckit.clarify
-/speckit.plan <tech-stack>
-/speckit.tasks
-/speckit.analyze
-/speckit.implement
-```
-
-👎 **7 separate commands**, manual state tracking, context loss at chat limits
-
-**After (Orchestrator Workflow):**
-
-```bash
-/speckit.orchestrate <feature-description>
-```
-
-👍 **1 command**, automatic state management, seamless resumption
+**Orchestrator Workflow:** `/speckit.orchestrate <feature-description>` - 1 command, automatic state management, seamless resumption.
 
 ### Key Features
 
@@ -399,23 +357,23 @@ The orchestrator saves progress to `.speckit-state.json`, enabling:
 
 ```mermaid
 graph LR
-    subgraph Interactive["🤝 Interactive Mode (Recommended)"]
-        I1[Constitution] -->|"Ask user"| I2[Specify]
-        I2 -->|"Ask user"| I3[Clarify]
-        I3 -->|"Ask user"| I4[Plan]
-        I4 -->|"Ask user"| I5[Tasks]
-        I5 -->|"Ask user"| I6[Analyze]
-        I6 -->|"Ask user"| I7[Implement]
+    subgraph Interactive["Interactive Mode"]
+        I1[Constitution] -->|Ask| I2[Specify]
+        I2 -->|Ask| I3[Clarify]
+        I3 -->|Ask| I4[Plan]
+        I4 -->|Ask| I5[Tasks]
+        I5 -->|Ask| I6[Analyze]
+        I6 -->|Ask| I7[Implement]
     end
 
-    subgraph AutoSpec["⚡ Auto-Spec Mode"]
+    subgraph AutoSpec["Auto-Spec Mode"]
         A1[Constitution] --> A2[Specify]
         A2 --> A3[Plan]
         A3 --> A4[Tasks]
-        A4 -->|"⏸️ PAUSE<br/>Ask user"| A5[Implement]
+        A4 -->|PAUSE| A5[Implement]
     end
 
-    subgraph FullAuto["🚀 Full Auto Mode"]
+    subgraph FullAuto["Full Auto Mode"]
         F1[Constitution] --> F2[Specify]
         F2 --> F3[Plan]
         F3 --> F4[Tasks]
@@ -423,9 +381,9 @@ graph LR
         F5 --> F6[Done]
     end
 
-    style Interactive fill:#e3f2fd
-    style AutoSpec fill:#fff9c4
-    style FullAuto fill:#e8f5e9
+    style Interactive fill:#e3f2fd,stroke:#333,stroke-width:2px
+    style AutoSpec fill:#fff9c4,stroke:#333,stroke-width:2px
+    style FullAuto fill:#e8f5e9,stroke:#333,stroke-width:2px
 ```
 
 **Interactive Mode** (recommended):
@@ -446,65 +404,27 @@ graph LR
 
 #### 4. **Context Restoration with `/speckit.resume`**
 
-When your chat reaches token limit during any phase:
-
-```bash
-# In new chat session (zero history needed)
-/speckit.resume
-```
-
-The resume command:
-
-- ✅ Loads all artifacts (constitution, spec, plan, tasks, etc.)
-- ✅ Identifies exact stopping point from task checkboxes
-- ✅ Reconstructs full context automatically
-- ✅ Continues from where you left off with zero duplicate work
-- ✅ Works across different machines (if artifacts are committed)
+Restores context after chat limit: loads all artifacts, identifies stopping point, and continues with zero duplicate work.
 
 ### Usage Examples
 
-#### Example 1: Interactive Full Workflow
+**Interactive Mode:**
 
 ```bash
-/speckit.orchestrate Build a user authentication system with OAuth2 and JWT tokens
+/speckit.orchestrate Build a user authentication system with OAuth2 and JWT
 ```
 
-**What happens:**
+Prompts at each phase for user confirmation and review.
 
-1. Prompts for workflow preferences (interactive/auto-spec/full-auto)
-2. Asks to include optional phases (clarify, analyze)
-3. Checks constitution (creates if missing)
-4. Creates specification → asks to continue
-5. Runs clarification (if selected) → asks to continue
-6. Creates technical plan → asks to continue
-7. Generates task breakdown → asks to continue
-8. Runs analysis (if selected) → asks to continue
-9. Implements all tasks
-10. Cleans up state and shows completion summary
-
-#### Example 2: Auto-Spec Mode (Skip Confirmations Until Implementation)
+**Auto-Spec Mode:**
 
 ```bash
-/speckit.orchestrate --mode=auto-spec Create an analytics dashboard with real-time metrics
+/speckit.orchestrate --mode=auto-spec Create an analytics dashboard
 ```
 
-**What happens:**
+Runs constitution → specify → plan → tasks automatically, pauses before implementation for review.
 
-1. Automatically runs: constitution → specify → plan → tasks
-2. **Pauses before implementation** for review
-3. User reviews `tasks.md` and planning artifacts
-4. User runs `/speckit.resume` when ready to implement
-
-#### Example 3: Resume After Chat Limit
-
-**Original chat** (hit token limit during implementation):
-
-```bash
-/speckit.orchestrate Build a payment processing system with Stripe integration
-# ... chat reaches limit at task 28/47 ...
-```
-
-**New chat** (fresh session):
+**Resume After Chat Limit:**
 
 ```bash
 /speckit.resume
@@ -512,53 +432,34 @@ The resume command:
 
 ```mermaid
 flowchart TD
-    NewChat["🆕 New Chat Session<br/>(Zero History)"] --> Resume["/speckit.resume"]
-
-    Resume --> LoadState["📂 Load State<br/>.speckit-state.json"]
-    LoadState --> LoadArtifacts["📚 Load All Artifacts"]
-
-    LoadArtifacts --> Constitution["✓ Constitution"]
-    LoadArtifacts --> Spec["✓ Specification"]
-    LoadArtifacts --> Plan["✓ Plan, Research, Data Model"]
-    LoadArtifacts --> Tasks["✓ Tasks (28/47 completed)"]
-
+    NewChat[New Chat Session] --> Resume[/speckit.resume]
+    Resume --> LoadState[Load State]
+    LoadState --> LoadArtifacts[Load All Artifacts]
+    LoadArtifacts --> Constitution[Constitution]
+    LoadArtifacts --> Spec[Specification]
+    LoadArtifacts --> Plan[Plan & Research]
+    LoadArtifacts --> Tasks[Tasks 28/47]
     Constitution --> Identify
     Spec --> Identify
     Plan --> Identify
-    Tasks --> Identify["🎯 Identify Resume Point<br/>Next: [T029] Webhook verification"]
+    Tasks --> Identify[Identify Resume Point]
+    Identify --> Summary[Show Summary]
+    Summary --> Confirm{Resume?}
+    Confirm -->|Yes| Continue[Continue Implementation]
+    Confirm -->|No| Cancel[Cancel]
+    Continue --> Done[Complete Tasks]
 
-    Identify --> Summary["📊 Show Summary<br/>• Recently completed: 3 tasks<br/>• Next task: [T029]<br/>• Upcoming: 5 tasks"]
-
-    Summary --> Confirm{"❓ Resume at task T029?"}
-
-    Confirm -->|"Yes"| Continue["⚙️ Continue Implementation<br/>from exact stopping point"]
-    Confirm -->|"No"| Cancel["❌ Cancel<br/>(State preserved)"]
-
-    Continue --> Done["✅ Complete Remaining Tasks"]
-
-    style NewChat fill:#e8eaf6
-    style Resume fill:#e1f5e1
-    style LoadState fill:#fff9c4
-    style LoadArtifacts fill:#e3f2fd
-    style Identify fill:#fff4e6
-    style Summary fill:#e8f5e9
-    style Continue fill:#c8e6c9
-    style Done fill:#a5d6a7
+    style NewChat fill:#e8eaf6,stroke:#333,stroke-width:2px
+    style Resume fill:#e1f5e1,stroke:#333,stroke-width:2px
+    style LoadState fill:#fff9c4,stroke:#333,stroke-width:2px
+    style LoadArtifacts fill:#e3f2fd,stroke:#333,stroke-width:2px
+    style Identify fill:#fff4e6,stroke:#333,stroke-width:2px
+    style Summary fill:#e8f5e9,stroke:#333,stroke-width:2px
+    style Continue fill:#c8e6c9,stroke:#333,stroke-width:2px
+    style Done fill:#a5d6a7,stroke:#333,stroke-width:2px
 ```
 
-**What happens:**
-
-1. Loads `.speckit-state.json`
-2. Shows progress summary: 28/47 tasks completed
-3. Loads all artifacts:
-   - Constitution
-   - Specification
-   - Plan, research, data model
-   - Task list with [X] checkboxes
-4. Identifies next task: `[T029] Implement webhook signature verification`
-5. Shows recently completed and upcoming tasks
-6. Asks: "Resume at task T029? [Y/n]"
-7. **Continues implementation from exact stopping point**
+Loads state, shows progress (e.g., 28/47 tasks), identifies next task, and continues from exact stopping point.
 
 ### State Management
 
@@ -593,100 +494,32 @@ The orchestrator creates `.speckit-state.json` in your repository root:
 
 ### When to Use Orchestrator vs Individual Commands
 
-| Use Case | Recommendation |
-|----------|----------------|
-| **New feature (greenfield)** | Use `/speckit.orchestrate` for full automation |
-| **Multi-day workflows** | Use orchestrator + `/speckit.resume` for continuity |
-| **Learning the workflow** | Use individual commands to understand each phase |
-| **Re-running a single phase** | Use individual command (e.g., `/speckit.plan` to regenerate plan) |
-| **Non-linear workflows** | Use individual commands for manual control |
-| **Chat hit token limit** | Use `/speckit.resume` in new chat to continue |
+- **New features:** Use `/speckit.orchestrate`
+- **Multi-day workflows:** Use orchestrator + `/speckit.resume`
+- **Learning:** Use individual commands
+- **Re-running phases:** Use individual commands (e.g., `/speckit.plan`)
+- **Token limits:** Use `/speckit.resume`
 
 ### Best Practices
 
-1. **Commit frequently during long workflows:**
-
-   ```bash
-   git add .
-   git commit -m "Complete planning phase for user-auth feature"
-   ```
-
-2. **Review before implementation:**
-   - Use interactive mode or auto-spec mode
-   - Review `tasks.md` to understand scope
-   - Check estimated task count and time
-
-3. **Use `.speckit-state.json` as source of truth:**
-   - State file tracks exact progress
-   - Resume command reads from state
-   - Commit state for cross-machine work
-
-4. **Handle interruptions gracefully:**
-   - Token limit reached? Start new chat and run `/speckit.resume`
-   - Need to pause? State is auto-saved, resume anytime
-   - Errors during implementation? Fix issue, then `/speckit.resume` to retry
+- **Commit frequently** during long workflows
+- **Review before implementation** using interactive or auto-spec mode
+- **Commit `.speckit-state.json`** for cross-machine work
+- **Use `/speckit.resume`** after token limits or errors
 
 ### Progress Visualization
 
-Throughout orchestration, you'll see clear progress indicators:
-
-**Phase-Level Progress:**
-
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
-gantt
-    title Workflow Progress Example
-    dateFormat X
-    axisFormat %s
-
-    section Phases
-    Constitution ✓       :done,    p1, 0, 1
-    Specification ✓      :done,    p2, 1, 2
-    Clarification ⏭      :crit,    p3, 2, 2
-    Planning ⚙           :active,  p4, 2, 3
-    Tasks               :         p5, 3, 4
-    Analysis            :         p6, 4, 5
-    Implementation      :         p7, 5, 6
-```
-
-**Implementation Phase Progress:**
-
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'14px'}}}%%
-gantt
-    title Implementation Progress (28/47 tasks completed)
-    dateFormat X
-    axisFormat %s
-
-    section Phase 1: Setup
-    Setup Tasks ✓           :done, s1, 0, 3
-
-    section Phase 2: Foundational
-    Foundational Tasks ✓    :done, f1, 3, 11
-
-    section Phase 3: User Stories
-    US1 (P1) ✓             :done, u1, 11, 16
-    US2 (P1) ✓             :done, u2, 16, 20
-    US3 (P1) ⚙ Current     :active, u3, 20, 27
-    US4 (P2)               :u4, 27, 32
-    US5 (P2)               :u5, 32, 36
-    US6 (P3)               :u6, 36, 39
-
-    section Final: Polish
-    Polish & Cross-cutting :p1, 39, 42
-```
-
-**Task-Level Detail:**
+**Task-Level Progress:**
 
 ```mermaid
 graph TD
-    subgraph US3["User Story 3 (P1) - In Progress"]
-        T015["[T015] ✓ Create auth middleware"]
-        T016["[T016] ⚙ JWT validation<br/><b>CURRENT TASK</b>"]
-        T017["[T017] ⏳ Token refresh logic"]
-        T018["[T018] ⏳ Logout handler"]
-        T019["[T019] ⏳ Rate limiting"]
-        T020["[T020] ⏳ Integration tests"]
+    subgraph US3["User Story 3: In Progress"]
+        T015["T015: Auth middleware ✓"]
+        T016["T016: JWT validation ⚙"]
+        T017["T017: Token refresh ⏳"]
+        T018["T018: Logout handler ⏳"]
+        T019["T019: Rate limiting ⏳"]
+        T020["T020: Tests ⏳"]
 
         T015 --> T016
         T016 -.-> T017
@@ -695,12 +528,12 @@ graph TD
         T019 -.-> T020
     end
 
-    style T015 fill:#c8e6c9,stroke:#4caf50
-    style T016 fill:#fff9c4,stroke:#fbc02d
-    style T017 fill:#f5f5f5,stroke:#9e9e9e
-    style T018 fill:#f5f5f5,stroke:#9e9e9e
-    style T019 fill:#f5f5f5,stroke:#9e9e9e
-    style T020 fill:#f5f5f5,stroke:#9e9e9e
+    style T015 fill:#c8e6c9,stroke:#4caf50,stroke-width:2px
+    style T016 fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    style T017 fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px
+    style T018 fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px
+    style T019 fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px
+    style T020 fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px
 ```
 
 **Legend:**
@@ -735,47 +568,31 @@ Simply fix the issue (e.g., `npm install stripe`) and run `/speckit.resume` to c
 
 ```mermaid
 flowchart TD
-    Start(["/speckit.orchestrate &lt;description&gt;"]) --> Constitution
-
-    Constitution["🏛️ Constitution<br/>Check/Create Principles"]
-    Constitution -->|"✓ State saved"| Specify
-    Constitution -.->|"If missing"| CreateConst["Create constitution.md"]
+    Start([/speckit.orchestrate]) --> Constitution
+    Constitution[Constitution] -->|State saved| Specify
+    Constitution -.->|If missing| CreateConst[Create constitution]
     CreateConst --> Specify
+    Specify[Specify] -->|State saved| Clarify
+    Clarify[Clarify] -->|State saved| Plan
+    Clarify -.->|Optional| Plan
+    Plan[Plan] -->|State saved| Tasks
+    Tasks[Tasks] -->|State saved| Analyze
+    Analyze[Analyze] -->|State saved| Implement
+    Analyze -.->|Optional| Implement
+    Implement[Implement] -->|State saved| Done
+    Done([Done])
 
-    Specify["📝 Specify<br/>Create Specification"]
-    Specify -->|"✓ State saved<br/>Creates: spec.md, checklists/<br/>Branch: ###-feature-name"| Clarify
+    State[.speckit-state.json]
+    Constitution -.-> State
+    Specify -.-> State
+    Clarify -.-> State
+    Plan -.-> State
+    Tasks -.-> State
+    Analyze -.-> State
+    Implement -.-> State
 
-    Clarify["❓ Clarify<br/>Resolve Ambiguities"]
-    Clarify -->|"✓ State saved<br/>Updates spec with clarifications"| Plan
-    Clarify -.->|"Optional:<br/>Skip if no ambiguities"| Plan
-
-    Plan["🏗️ Plan<br/>Technical Design"]
-    Plan -->|"✓ State saved<br/>Creates: plan.md, research.md,<br/>data-model.md, contracts/,<br/>quickstart.md"| Tasks
-
-    Tasks["📋 Tasks<br/>Generate Task Breakdown"]
-    Tasks -->|"✓ State saved<br/>Creates: tasks.md with<br/>executable breakdown"| Analyze
-
-    Analyze["🔍 Analyze<br/>Validate Consistency"]
-    Analyze -->|"✓ State saved<br/>Validates consistency<br/>and coverage"| Implement
-    Analyze -.->|"Optional:<br/>Skip if confident"| Implement
-
-    Implement["⚙️ Implement<br/>Execute All Tasks"]
-    Implement -->|"State updated after EACH task<br/>Marks tasks [X] as complete"| Done
-
-    Done([✅ DONE])
-
-    State["💾 .speckit-state.json<br/><br/>State saved at every checkpoint<br/><br/>Resume with: /speckit.resume<br/>Works in NEW chat with ZERO history"]
-
-    Constitution -.->|"Checkpoint"| State
-    Specify -.->|"Checkpoint"| State
-    Clarify -.->|"Checkpoint"| State
-    Plan -.->|"Checkpoint"| State
-    Tasks -.->|"Checkpoint"| State
-    Analyze -.->|"Checkpoint"| State
-    Implement -.->|"Checkpoint"| State
-
-    State -.->|"Resume from any phase"| Resume
-    Resume["🔄 /speckit.resume<br/>Restore Context & Continue"]
+    State -.-> Resume
+    Resume[/speckit.resume]
     Resume -.-> Constitution
     Resume -.-> Specify
     Resume -.-> Clarify
@@ -784,32 +601,22 @@ flowchart TD
     Resume -.-> Analyze
     Resume -.-> Implement
 
-    style Start fill:#e1f5e1
-    style Done fill:#e1f5e1
-    style Constitution fill:#fff4e6
-    style Specify fill:#e3f2fd
-    style Clarify fill:#f3e5f5
-    style Plan fill:#e8f5e9
-    style Tasks fill:#fff9c4
-    style Analyze fill:#fce4ec
-    style Implement fill:#e0f2f1
-    style State fill:#fff3e0
-    style Resume fill:#e8eaf6
+    style Start fill:#e1f5e1,stroke:#333,stroke-width:2px
+    style Done fill:#e1f5e1,stroke:#333,stroke-width:2px
+    style Constitution fill:#fff4e6,stroke:#333,stroke-width:2px
+    style Specify fill:#e3f2fd,stroke:#333,stroke-width:2px
+    style Clarify fill:#f3e5f5,stroke:#333,stroke-width:2px
+    style Plan fill:#e8f5e9,stroke:#333,stroke-width:2px
+    style Tasks fill:#fff9c4,stroke:#333,stroke-width:2px
+    style Analyze fill:#fce4ec,stroke:#333,stroke-width:2px
+    style Implement fill:#e0f2f1,stroke:#333,stroke-width:2px
+    style State fill:#fff3e0,stroke:#333,stroke-width:2px
+    style Resume fill:#e8eaf6,stroke:#333,stroke-width:2px
 ```
 
 ### Summary
 
-The orchestrator workflow provides:
-
-- ✅ **One-command execution** - Full workflow from description to implementation
-- ✅ **Automatic state management** - Resume from any checkpoint
-- ✅ **Zero context loss** - `/speckit.resume` restores complete context
-- ✅ **Flexible control** - Interactive, auto-spec, or full-auto modes
-- ✅ **Cross-session continuity** - Works across chat sessions and machines
-- ✅ **Error recovery** - Graceful handling with clear recovery paths
-- ✅ **Progress transparency** - Real-time phase and task tracking
-
-**Get started:**
+One-command execution, automatic state management, zero context loss, flexible modes, cross-session continuity, error recovery, and progress transparency.
 
 ```bash
 /speckit.orchestrate <your-feature-description>
@@ -926,116 +733,44 @@ The Corporate Guidelines system was implemented in four phases:
 
 ### Using Guidelines Tools
 
-#### Check Compliance
+**Check Compliance:**
 
 ```bash
-# Run compliance check
-./scripts/bash/check-guidelines-compliance.sh
-
-# Generate JSON report
-./scripts/bash/check-guidelines-compliance.sh --output=json > report.json
-
-# Strict mode (fail on HIGH violations)
-./scripts/bash/check-guidelines-compliance.sh --strict
+./scripts/bash/check-guidelines-compliance.sh [--strict] [--output=json]
 ```
 
-**Example Output:**
-
-```text
-Guideline Compliance Report
-===========================
-Tech Stack: React + Java
-Guidelines: reactjs-guidelines.md, java-guidelines.md
-
-✅ PASS: Using @acmecorp/ui-components (17 imports)
-❌ FAIL: Found banned library @mui/material in src/components/Button.tsx
-⚠️  WARN: Missing corporate auth library @acmecorp/idm-client
-
-Summary: 1 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW
-Status: FAILED
-```
-
-#### Compare Guidelines
+**Compare Guidelines:**
 
 ```bash
-# Compare all guidelines
-./scripts/bash/diff-guidelines.sh
-
-# Compare specific stack
-./scripts/bash/diff-guidelines.sh --stack=reactjs
-
-# Show detailed line-by-line diff
-./scripts/bash/diff-guidelines.sh --all
+./scripts/bash/diff-guidelines.sh [--stack=reactjs] [--all]
 ```
 
-#### Auto-Fix Violations
+**Auto-Fix Violations:**
 
 ```bash
-# Preview fixes (dry-run)
-./scripts/bash/autofix-guidelines.sh --dry-run
-
-# Apply all fixes
-./scripts/bash/autofix-guidelines.sh
-
-# Apply only security fixes
-./scripts/bash/autofix-guidelines.sh --fixes=security
-
-# Apply only structure fixes
-./scripts/bash/autofix-guidelines.sh --fixes=structure
+./scripts/bash/autofix-guidelines.sh [--dry-run] [--fixes=security|structure|config]
 ```
 
-**Common Auto-Fixes:**
+Fixes: `.env` in `.gitignore`, `.env.example`, `.npmrc`, architecture folders, docs.
 
-- Add `.env` to `.gitignore`
-- Create `.env.example` template
-- Add `.npmrc` for corporate registry
-- Create standard architecture folders
-- Fix missing documentation
-
-#### Analytics Dashboard
+**Analytics Dashboard:**
 
 ```bash
-# View compliance dashboard
-./scripts/bash/guidelines-analytics.sh
-
-# Save metrics to history
-./scripts/bash/guidelines-analytics.sh --save-history
-
-# Export as JSON
-./scripts/bash/guidelines-analytics.sh --output=json
-
-# Export as CSV
-./scripts/bash/guidelines-analytics.sh --output=csv > report.csv
+./scripts/bash/guidelines-analytics.sh [--save-history] [--output=json|csv]
 ```
 
-**Dashboard Features:**
+Shows compliance score (0-100), violations, historical trends, and recommendations.
 
-- Compliance score (0-100)
-- Violations breakdown by severity
-- Historical trends (30-day sparkline)
-- ASCII progress bars
-- Actionable recommendations
-
-#### CI/CD Integration
+**CI/CD Integration:**
 
 ```bash
-# GitHub Actions
-cp .guidelines/examples/ci-cd/github-actions.yml .github/workflows/guidelines-compliance.yml
-
-# GitLab CI
+# Copy templates to your project
+cp .guidelines/examples/ci-cd/github-actions.yml .github/workflows/
 cp .guidelines/examples/ci-cd/gitlab-ci.yml .gitlab-ci.yml
-
-# Jenkins
 cp .guidelines/examples/ci-cd/Jenkinsfile Jenkinsfile
 ```
 
-**CI/CD Features:**
-
-- Automated compliance checks on PRs
-- Block merges on CRITICAL violations
-- Auto-fix with automated commits
-- Compliance score trending
-- Slack/email notifications
+Features: automated checks, merge blocking, auto-fix, trending, notifications.
 
 ### Guidelines Hierarchy
 
@@ -1043,61 +778,31 @@ When making decisions, AI prompts follow this priority order:
 
 ```mermaid
 graph TD
-    A[Constitution<br/>.specify/memory/constitution.md] -->|HIGHEST PRIORITY| B{Guidelines Exist?}
-    B -->|Yes| C[Corporate Guidelines<br/>.guidelines/*.md]
+    A[Constitution] -->|HIGHEST| B{Guidelines?}
+    B -->|Yes| C[Corporate Guidelines]
     B -->|No| D[Spec Kit Defaults]
-    C -->|MEDIUM PRIORITY| E[Final Decision]
-    D -->|LOWEST PRIORITY| E
+    C -->|MEDIUM| E[Final Decision]
+    D -->|LOWEST| E
 
-    style A fill:#ff9999
-    style C fill:#ffff99
-    style D fill:#99ff99
-    style E fill:#99ccff
+    style A fill:#ff9999,stroke:#333,stroke-width:2px
+    style C fill:#ffff99,stroke:#333,stroke-width:2px
+    style D fill:#99ff99,stroke:#333,stroke-width:2px
+    style E fill:#99ccff,stroke:#333,stroke-width:2px
 ```
 
 **Example:** If constitution says "MUST use PostgreSQL" but guidelines suggest MySQL, constitution wins.
 
 ### Quick Start
 
-1. **Customize guidelines** for your organization:
-
-   ```bash
-   # Edit tech stack guidelines
-   vi .guidelines/reactjs-guidelines.md
-   vi .guidelines/java-guidelines.md
-   ```
-
-2. **Configure branch naming** (optional):
-
-   ```bash
-   # Create branch configuration
-   vi .guidelines/branch-config.json
-   ```
-
-3. **Check compliance**:
-
-   ```bash
-   ./scripts/bash/check-guidelines-compliance.sh
-   ```
-
-4. **Auto-fix issues**:
-
-   ```bash
-   ./scripts/bash/autofix-guidelines.sh
-   ```
-
-5. **Set up CI/CD**:
-
-   ```bash
-   cp .guidelines/examples/ci-cd/github-actions.yml .github/workflows/
-   ```
+1. Customize guidelines: Edit `.guidelines/*.md` files
+2. Configure branch naming: Edit `.guidelines/branch-config.json` (optional)
+3. Check compliance: `./scripts/bash/check-guidelines-compliance.sh`
+4. Auto-fix issues: `./scripts/bash/autofix-guidelines.sh`
+5. Set up CI/CD: Copy templates from `.guidelines/examples/ci-cd/`
 
 ### Documentation
 
-- **Guidelines README:** `.guidelines/README.md` - Full documentation
-- **Implementation Plan:** `GUIDELINES-IMPLEMENTATION-PLAN.md` - Technical details
-- **Improvements:** `IMPROVEMENTS.md` - Future enhancements
-- **CI/CD Examples:** `.guidelines/examples/ci-cd/` - Integration guides
+See `.guidelines/README.md`, `GUIDELINES-IMPLEMENTATION-PLAN.md`, `IMPROVEMENTS.md`, and `.guidelines/examples/ci-cd/` for details.
 
 ---
 
