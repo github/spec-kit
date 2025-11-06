@@ -54,12 +54,6 @@ while [ $i -le $# ]; do
                 exit 1
             fi
             JIRA_NUMBER="$next_arg"
-            # Validate Jira number format (company convention: C12345-7890)
-            if ! [[ "$JIRA_NUMBER" =~ ^C[0-9]{5}-[0-9]{4}$ ]]; then
-                echo "Error: Jira number must match format C12345-7890 (e.g., C99999-1234)" >&2
-                echo "       Provided: $JIRA_NUMBER" >&2
-                exit 1
-            fi
             ;;
         --help|-h)
             echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--jira-number <jira>] <feature_description>"
@@ -87,6 +81,58 @@ FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
     echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>" >&2
     exit 1
+fi
+
+# Load branch configuration from .guidelines/branch-config.json
+# Function to load configuration with fallback to defaults
+load_branch_config() {
+    local config_file=".guidelines/branch-config.json"
+
+    # Check if jq is available and config file exists
+    if command -v jq >/dev/null 2>&1 && [ -f "$config_file" ]; then
+        # Parse JSON using jq
+        BRANCH_PREFIX=$(jq -r '.branch_prefix // "feature/"' "$config_file")
+        BRANCH_PATTERN=$(jq -r '.branch_pattern // "feature/<num>-<jira>-<shortname>"' "$config_file")
+        JIRA_REQUIRED=$(jq -r 'if .jira.required == false then "false" else "true" end' "$config_file")
+        JIRA_REGEX=$(jq -r '.jira.regex // "^C[0-9]{5}-[0-9]{4}$"' "$config_file")
+        JIRA_FORMAT=$(jq -r '.jira.format // "C12345-7890"' "$config_file")
+        NUMBER_DIGITS=$(jq -r '.number_format.digits // 3' "$config_file")
+        NUMBER_ZERO_PADDED=$(jq -r 'if .number_format.zero_padded == false then "false" else "true" end' "$config_file")
+        SEPARATOR=$(jq -r '.separator // "-"' "$config_file")
+        DIR_INCLUDES_PREFIX=$(jq -r 'if .directory.includes_prefix == true then "true" else "false" end' "$config_file")
+        DIR_BASE_PATH=$(jq -r '.directory.base_path // "specs"' "$config_file")
+    else
+        # Fallback to defaults (current behavior)
+        BRANCH_PREFIX="feature/"
+        BRANCH_PATTERN="feature/<num>-<jira>-<shortname>"
+        JIRA_REQUIRED="true"
+        JIRA_REGEX="^C[0-9]{5}-[0-9]{4}$"
+        JIRA_FORMAT="C12345-7890"
+        NUMBER_DIGITS=3
+        NUMBER_ZERO_PADDED="true"
+        SEPARATOR="-"
+        DIR_INCLUDES_PREFIX="false"
+        DIR_BASE_PATH="specs"
+    fi
+}
+
+# Load configuration
+load_branch_config
+
+# Validate Jira number if provided or required
+if [ "$JIRA_REQUIRED" = "true" ] && [ -z "$JIRA_NUMBER" ]; then
+    echo "Error: Jira number is required by configuration but not provided" >&2
+    echo "       Use --jira-number to specify (format: $JIRA_FORMAT)" >&2
+    exit 1
+fi
+
+if [ -n "$JIRA_NUMBER" ]; then
+    if ! [[ "$JIRA_NUMBER" =~ $JIRA_REGEX ]]; then
+        echo "Error: Jira number must match format $JIRA_FORMAT" >&2
+        echo "       Provided: $JIRA_NUMBER" >&2
+        echo "       Pattern: $JIRA_REGEX" >&2
+        exit 1
+    fi
 fi
 
 # Function to find the repository root by searching for existing project markers
@@ -157,7 +203,7 @@ fi
 
 cd "$REPO_ROOT"
 
-SPECS_DIR="$REPO_ROOT/specs"
+SPECS_DIR="$REPO_ROOT/$DIR_BASE_PATH"
 mkdir -p "$SPECS_DIR"
 
 # Function to generate branch name with stop word filtering and length filtering
@@ -237,15 +283,27 @@ if [ -z "$BRANCH_NUMBER" ]; then
     fi
 fi
 
-FEATURE_NUM=$(printf "%03d" "$BRANCH_NUMBER")
-
-# Build branch name with feature/ prefix and optional Jira number
-# Format: feature/001-C12345-7890-short-name (with Jira)
-#     or: feature/001-short-name (without Jira, backward compat)
-if [ -n "$JIRA_NUMBER" ]; then
-    BRANCH_NAME="feature/${FEATURE_NUM}-${JIRA_NUMBER}-${BRANCH_SUFFIX}"
+# Format branch number according to configuration
+if [ "$NUMBER_ZERO_PADDED" = "true" ]; then
+    FEATURE_NUM=$(printf "%0${NUMBER_DIGITS}d" "$BRANCH_NUMBER")
 else
-    BRANCH_NAME="feature/${FEATURE_NUM}-${BRANCH_SUFFIX}"
+    FEATURE_NUM="$BRANCH_NUMBER"
+fi
+
+# Build branch name based on configuration pattern
+# Pattern placeholders: <num>, <jira>, <shortname>
+BRANCH_NAME="$BRANCH_PATTERN"
+BRANCH_NAME="${BRANCH_NAME//<num>/$FEATURE_NUM}"
+BRANCH_NAME="${BRANCH_NAME//<shortname>/$BRANCH_SUFFIX}"
+
+if [ -n "$JIRA_NUMBER" ]; then
+    BRANCH_NAME="${BRANCH_NAME//<jira>/$JIRA_NUMBER}"
+else
+    # Remove jira placeholder and extra separators if jira not provided
+    BRANCH_NAME="${BRANCH_NAME//$SEPARATOR<jira>$SEPARATOR/$SEPARATOR}"
+    BRANCH_NAME="${BRANCH_NAME//$SEPARATOR<jira>/}"
+    BRANCH_NAME="${BRANCH_NAME//<jira>$SEPARATOR/}"
+    BRANCH_NAME="${BRANCH_NAME//<jira>/}"
 fi
 
 # GitHub enforces a 244-byte limit on branch names
@@ -283,9 +341,14 @@ else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
 
-# Feature directory doesn't include the feature/ prefix
-# Extract directory name from branch name (remove feature/ prefix if present)
-DIR_NAME="${BRANCH_NAME#feature/}"
+# Feature directory naming depends on configuration
+# Extract directory name from branch name (remove prefix if configured)
+if [ "$DIR_INCLUDES_PREFIX" = "true" ]; then
+    DIR_NAME="$BRANCH_NAME"
+else
+    # Remove the branch prefix if present
+    DIR_NAME="${BRANCH_NAME#$BRANCH_PREFIX}"
+fi
 FEATURE_DIR="$SPECS_DIR/$DIR_NAME"
 mkdir -p "$FEATURE_DIR"
 

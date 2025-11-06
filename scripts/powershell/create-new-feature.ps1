@@ -12,9 +12,56 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-# Validate Jira number format if provided
-if ($JiraNumber -and $JiraNumber -notmatch '^C[0-9]{5}-[0-9]{4}$') {
-    Write-Error "Error: Jira number must match format C12345-7890 (e.g., C99999-1234)`nProvided: $JiraNumber"
+# Load branch configuration from .guidelines/branch-config.json
+function Load-BranchConfig {
+    $configPath = ".guidelines/branch-config.json"
+
+    if (Test-Path $configPath) {
+        try {
+            $config = Get-Content $configPath -Raw | ConvertFrom-Json
+            return @{
+                BranchPrefix = if ($config.branch_prefix) { $config.branch_prefix } else { "feature/" }
+                BranchPattern = if ($config.branch_pattern) { $config.branch_pattern } else { "feature/<num>-<jira>-<shortname>" }
+                JiraRequired = if ($null -ne $config.jira.required) { $config.jira.required } else { $true }
+                JiraRegex = if ($config.jira.regex) { $config.jira.regex } else { "^C[0-9]{5}-[0-9]{4}$" }
+                JiraFormat = if ($config.jira.format) { $config.jira.format } else { "C12345-7890" }
+                NumberDigits = if ($config.number_format.digits) { $config.number_format.digits } else { 3 }
+                NumberZeroPadded = if ($null -ne $config.number_format.zero_padded) { $config.number_format.zero_padded } else { $true }
+                Separator = if ($config.separator) { $config.separator } else { "-" }
+                DirIncludesPrefix = if ($null -ne $config.directory.includes_prefix) { $config.directory.includes_prefix } else { $false }
+                DirBasePath = if ($config.directory.base_path) { $config.directory.base_path } else { "specs" }
+            }
+        } catch {
+            Write-Warning "Failed to parse branch config, using defaults: $_"
+        }
+    }
+
+    # Fallback to defaults (current behavior)
+    return @{
+        BranchPrefix = "feature/"
+        BranchPattern = "feature/<num>-<jira>-<shortname>"
+        JiraRequired = $true
+        JiraRegex = "^C[0-9]{5}-[0-9]{4}$"
+        JiraFormat = "C12345-7890"
+        NumberDigits = 3
+        NumberZeroPadded = $true
+        Separator = "-"
+        DirIncludesPrefix = $false
+        DirBasePath = "specs"
+    }
+}
+
+# Load configuration
+$branchConfig = Load-BranchConfig
+
+# Validate Jira number if provided or required
+if ($branchConfig.JiraRequired -and -not $JiraNumber) {
+    Write-Error "Error: Jira number is required by configuration but not provided`nUse -JiraNumber to specify (format: $($branchConfig.JiraFormat))"
+    exit 1
+}
+
+if ($JiraNumber -and $JiraNumber -notmatch $branchConfig.JiraRegex) {
+    Write-Error "Error: Jira number must match format $($branchConfig.JiraFormat)`nProvided: $JiraNumber`nPattern: $($branchConfig.JiraRegex)"
     exit 1
 }
 
@@ -160,7 +207,7 @@ try {
 
 Set-Location $repoRoot
 
-$specsDir = Join-Path $repoRoot 'specs'
+$specsDir = Join-Path $repoRoot $branchConfig.DirBasePath
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 # Function to generate branch name with stop word filtering and length filtering
@@ -237,15 +284,29 @@ if ($Number -eq 0) {
     }
 }
 
-$featureNum = ('{0:000}' -f $Number)
-
-# Build branch name with feature/ prefix and optional Jira number
-# Format: feature/001-C12345-7890-short-name (with Jira)
-#     or: feature/001-short-name (without Jira, backward compat)
-if ($JiraNumber) {
-    $branchName = "feature/$featureNum-$JiraNumber-$branchSuffix"
+# Format branch number according to configuration
+if ($branchConfig.NumberZeroPadded) {
+    $formatString = "{0:D$($branchConfig.NumberDigits)}"
+    $featureNum = $formatString -f $Number
 } else {
-    $branchName = "feature/$featureNum-$branchSuffix"
+    $featureNum = "$Number"
+}
+
+# Build branch name based on configuration pattern
+# Pattern placeholders: <num>, <jira>, <shortname>
+$branchName = $branchConfig.BranchPattern
+$branchName = $branchName -replace '<num>', $featureNum
+$branchName = $branchName -replace '<shortname>', $branchSuffix
+
+if ($JiraNumber) {
+    $branchName = $branchName -replace '<jira>', $JiraNumber
+} else {
+    # Remove jira placeholder and extra separators if jira not provided
+    $sep = [regex]::Escape($branchConfig.Separator)
+    $branchName = $branchName -replace "$sep<jira>$sep", $branchConfig.Separator
+    $branchName = $branchName -replace "$sep<jira>", ""
+    $branchName = $branchName -replace "<jira>$sep", ""
+    $branchName = $branchName -replace "<jira>", ""
 }
 
 # GitHub enforces a 244-byte limit on branch names
@@ -287,9 +348,15 @@ if ($hasGit) {
     Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
 }
 
-# Feature directory doesn't include the feature/ prefix
-# Extract directory name from branch name (remove feature/ prefix if present)
-$dirName = $branchName -replace '^feature/', ''
+# Feature directory naming depends on configuration
+# Extract directory name from branch name (remove prefix if configured)
+if ($branchConfig.DirIncludesPrefix) {
+    $dirName = $branchName
+} else {
+    # Remove the branch prefix if present
+    $prefixPattern = [regex]::Escape($branchConfig.BranchPrefix)
+    $dirName = $branchName -replace "^$prefixPattern", ""
+}
 $featureDir = Join-Path $specsDir $dirName
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 

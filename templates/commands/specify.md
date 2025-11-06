@@ -92,6 +92,97 @@ $ARGUMENTS
    Parse arguments (expecting Jira number and feature description).
    Continue with existing spec generation logic below.
 
+## Branch Configuration
+
+The branch naming pattern is configurable via `.guidelines/branch-config.json`. This allows teams to customize branch names, Jira formats, and directory structures to match their conventions.
+
+**Default configuration:**
+
+```json
+{
+  "version": "1.0",
+  "branch_pattern": "feature/<num>-<jira>-<shortname>",
+  "branch_prefix": "feature/",
+  "number_format": {
+    "digits": 3,
+    "zero_padded": true
+  },
+  "jira": {
+    "required": true,
+    "format": "C12345-7890",
+    "regex": "^C[0-9]{5}-[0-9]{4}$",
+    "placeholder": "<jira>"
+  },
+  "separator": "-",
+  "directory": {
+    "includes_prefix": false,
+    "base_path": "specs"
+  }
+}
+```
+
+**Configuration options:**
+
+- `branch_pattern`: Template for branch names using placeholders: `<num>`, `<jira>`, `<shortname>`
+- `branch_prefix`: Prefix for all branches (e.g., `feature/`, `feat/`, or empty string)
+- `number_format.digits`: Number of digits for branch numbers (default: 3)
+- `number_format.zero_padded`: Whether to pad numbers with zeros (default: true)
+- `jira.required`: Whether Jira number is mandatory (default: true)
+- `jira.format`: Example format for Jira numbers (for error messages)
+- `jira.regex`: Regular expression to validate Jira numbers
+- `separator`: Character used between branch components (default: `-`)
+- `directory.includes_prefix`: Whether spec directories include the branch prefix (default: false)
+- `directory.base_path`: Base directory for specs (default: `specs`)
+
+**Custom configuration examples:**
+
+Example 1: No Jira requirement, simple numbering
+
+```json
+{
+  "branch_pattern": "<num>-<shortname>",
+  "branch_prefix": "",
+  "jira": { "required": false }
+}
+```
+
+Result: `001-user-auth`
+
+Example 2: Different ticket format (e.g., GitHub issues)
+
+```json
+{
+  "branch_pattern": "feature/<num>-<jira>-<shortname>",
+  "jira": {
+    "required": true,
+    "format": "PROJ-1234",
+    "regex": "^PROJ-[0-9]{4}$"
+  }
+}
+```
+
+Result: `feature/001-PROJ-1234-user-auth`
+
+Example 3: Custom prefix without Jira
+
+```json
+{
+  "branch_pattern": "feat/<num>-<shortname>",
+  "branch_prefix": "feat/",
+  "jira": { "required": false }
+}
+```
+
+Result: `feat/001-user-auth`
+
+**Backward compatibility:**
+
+If no configuration file exists, the system uses defaults matching the original behavior:
+
+- Pattern: `feature/<num>-<jira>-<shortname>` or `feature/<num>-<shortname>` (when Jira not provided)
+- Jira format: `C12345-7890` (optional)
+- Three-digit zero-padded numbers: `001`, `002`, etc.
+
 ## Outline
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.

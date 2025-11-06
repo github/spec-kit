@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "branch_pattern": "feature/<num>-<jira>-<shortname>",
+  "branch_prefix": "feature/",
+  "number_format": {
+    "digits": 3,
+    "zero_padded": true
+  },
+  "jira": {
+    "required": true,
+    "format": "C12345-7890",
+    "regex": "^C[0-9]{5}-[0-9]{4}$",
+    "placeholder": "<jira>"
+  },
+  "separator": "-",
+  "directory": {
+    "includes_prefix": false,
+    "base_path": "specs"
+  }
+}
