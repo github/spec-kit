@@ -184,8 +184,11 @@ build_variant() {
       mkdir -p "$base_dir/.agents/commands"
       generate_commands amp md "\$ARGUMENTS" "$base_dir/.agents/commands" "$script" ;;
     warp)
-      mkdir -p "$base_dir/.warp/commands"
-      generate_commands warp md "\$ARGUMENTS" "$base_dir/.warp/commands" "$script" ;;
+      # Warp uses WARP.md for project rules, not custom slash commands
+      if [[ -f agent_templates/warp/WARP.md ]]; then
+        cat agent_templates/warp/WARP.md | rewrite_paths > "$base_dir/WARP.md"
+      fi
+      ;;
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
