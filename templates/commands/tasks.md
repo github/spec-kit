@@ -31,13 +31,117 @@ You are an **experienced tech lead** who excels at breaking down complex feature
 - Good task breakdown prevents "I don't know where to start" syndrome
 - Foundation must be solid before building features on top
 
-## User Input
+## User Input & Interactive Mode
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+
+   **Enter INTERACTIVE MODE:**
+
+   Any preferences for how tasks should be broken down?
+
+   **Format** (provide your preferences, or type "none" for standard task breakdown):
+
+   ```text
+   PREFERENCES:
+   - Break into smaller tasks (< 2 hours each)
+   - Prioritize backend before frontend
+   ```
+
+   **Examples of valid task generation preferences:**
+
+   - Task size: "Break into smaller tasks (< 2 hours each)", "Keep tasks larger (half-day chunks)"
+   - Grouping: "Group by feature area rather than technical layer", "Separate by user story strictly"
+   - Priority: "Prioritize backend before frontend", "Focus on P1 and P2 only"
+   - Scope: "Include database migration tasks separately", "Bundle setup tasks together"
+   - Detail level: "Include detailed sub-tasks", "Keep high-level only"
+
+   **Your preferences** (type your preferences above, or "none" to skip):
+
+**ELSE** (arguments provided):
+
+   Use the provided hints to guide task breakdown.
+   Continue with task generation logic below.
+
+## Corporate Guidelines
+
+**During task generation**, incorporate corporate guidelines:
+
+### 1. Load Guidelines
+
+Check for guideline files in `/.guidelines/` directory based on tech stack in `plan.md`:
+
+- `reactjs-guidelines.md`
+- `java-guidelines.md`
+- `dotnet-guidelines.md`
+- `nodejs-guidelines.md`
+- `python-guidelines.md`
+
+**IF** guideline files exist:
+
+1. **Read** applicable guidelines
+2. **Incorporate** guideline-specific tasks
+
+### 2. Guideline-Aware Task Generation
+
+When generating tasks, include:
+
+#### Setup Phase Tasks
+
+**IF** guidelines specify corporate scaffolding:
+
+```text
+- [ ] [T001] Initialize project using corporate scaffolding command from guidelines
+  Example: `npx @acmecorp/create-react-app` instead of `npx create-react-app`
+```
+
+#### Dependency Installation Tasks
+
+**Use** corporate package names from guidelines:
+
+```text
+- [ ] [T005] Install corporate UI library: @acmecorp/ui-components
+- [ ] [T006] Install corporate auth client: @acmecorp/idm-client
+- [ ] [T007] Configure corporate package registry (Artifactory)
+```
+
+**NOT** public packages if banned in guidelines.
+
+#### Configuration Tasks
+
+**Add** corporate-specific configuration tasks:
+
+```text
+- [ ] [T010] Configure corporate authentication (JWT issuer, audience per guidelines)
+- [ ] [T011] Set up corporate logging (structured JSON format per guidelines)
+```
+
+#### Coding Tasks
+
+**Reference** corporate libraries in task descriptions:
+
+```text
+- [ ] [T045] [US1] Implement login form using @acmecorp/ui-components (Form, Input, Button)
+- [ ] [T046] [US1] Add authentication logic using @acmecorp/idm-client
+```
+
+### 3. Guideline Compliance Tasks
+
+**Add** compliance verification tasks in Polish phase:
+
+```text
+- [ ] [T999] Verify all imports use corporate libraries (no banned libraries)
+- [ ] [T1000] Check coding standards compliance (naming, structure per guidelines)
+```
+
+### 4. No Guidelines
+
+**IF** guidelines do NOT exist:
+
+Generate tasks with standard best practices and public libraries.
 
 ## Outline
 

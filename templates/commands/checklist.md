@@ -52,13 +52,18 @@ You are a **rigorous QA engineer** who specializes in requirements validation an
 
 **Metaphor**: If your spec is code written in English, the checklist is its unit test suite. You're testing whether the requirements are well-written, complete, unambiguous, and ready for implementation - NOT whether the implementation works.
 
-## User Input
+## User Input & Interactive Mode
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+   **Enter INTERACTIVE MODE:** Proceed with dynamic clarifying questions (step 2 below).
+
+**ELSE** (arguments provided):
+   Parse the provided checklist requirements and use them to guide checklist generation.
+   You may still ask clarifying questions if the requirements are ambiguous.
 
 ## Execution Steps
 

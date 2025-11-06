@@ -34,17 +34,115 @@ You are a **senior software architect** who designs pragmatic, maintainable syst
 - Plan for testability and observability from the start
 - The best architecture is one that the team can actually build and maintain
 
-## User Input
+## User Input & Interactive Mode
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+
+   **Enter INTERACTIVE MODE:**
+
+   Do you have any additional architectural constraints or preferences for this feature?
+
+   **Format** (provide your constraints, or type "none" to proceed without additional constraints):
+
+   ```text
+   CONSTRAINTS:
+   - Must use PostgreSQL for database
+   - Performance requirement: < 200ms response time
+   ```
+
+   **Examples of valid constraints:**
+
+   - Technology requirements: "Must use PostgreSQL", "Prefer Redis for caching"
+   - Architecture preferences: "Prefer microservices over monolith", "Use event-driven architecture"
+   - Performance requirements: "< 200ms response time", "Support 10,000 concurrent users"
+   - Integration requirements: "Must integrate with existing auth system", "Use corporate API gateway"
+   - Compliance: "Must be GDPR compliant", "PII must be encrypted at rest"
+
+   **Your constraints** (type your constraints above, or "none" to skip):
+
+**ELSE** (arguments provided):
+
+   Use the provided context as additional planning constraints.
+   Continue with existing plan generation logic below.
+
+## Corporate Guidelines
+
+**BEFORE making any architecture decisions**, check for and load corporate guidelines:
+
+### 1. Detect Tech Stack
+
+Scan project files to detect tech stack:
+
+- **ReactJS**: `package.json` with `"react"` dependency
+- **Java**: `pom.xml`, `build.gradle`, or `*.java` files
+- **.NET**: `*.csproj`, `*.sln`, or `*.cs` files
+- **Node.js**: `package.json` with backend dependencies (express, fastify, koa)
+- **Python**: `requirements.txt`, `pyproject.toml`, `setup.py`, or `*.py` files
+
+### 2. Load Guidelines
+
+Check for guideline files in `/.guidelines/` directory:
+
+- `reactjs-guidelines.md` - React/frontend standards
+- `java-guidelines.md` - Java/Spring Boot standards
+- `dotnet-guidelines.md` - .NET/C# standards
+- `nodejs-guidelines.md` - Node.js/Express standards
+- `python-guidelines.md` - Python/Django/Flask standards
+
+**IF** guideline files exist for detected tech stack:
+
+1. **Read** the applicable guideline files in FULL
+2. **Apply** during all architecture decisions:
+   - Use corporate scaffolding commands (not public ones)
+   - Use mandatory corporate libraries (security, API clients, logging)
+   - Follow architecture patterns specified in guidelines
+   - Respect banned libraries restrictions
+   - Apply security and compliance requirements
+3. **Priority**: Constitution > Corporate Guidelines > Spec Kit Defaults
+
+**IF** guidelines do NOT exist:
+
+Proceed with Spec Kit defaults and best practices.
+
+### 3. Multi-Stack Projects
+
+**IF** multiple tech stacks detected (e.g., React frontend + Java backend):
+
+- Load ALL applicable guideline files
+- Apply guidelines contextually:
+  - Frontend decisions → Use `reactjs-guidelines.md`
+  - Backend decisions → Use `java-guidelines.md`
+
+### 4. Guideline Compliance
+
+When making technology choices:
+
+- **MUST** use corporate libraries specified in guidelines
+- **MUST NOT** use banned libraries
+- **SHOULD** prefer recommended patterns
+- **DOCUMENT** any guideline deviations with justification
+
+**Example guideline-aware decision**:
+
+```text
+❌ Without guidelines:
+"Use Material-UI for components"
+
+✅ With guidelines:
+"Use @acmecorp/ui-components v2.x (per reactjs-guidelines.md mandatory libraries)"
+```
 
 ## Outline
 
+**IMPORTANT**: This command does NOT create the specs directory - that was already created by `/specify` command. NEVER create or move directories.
+
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+
+   **Note**: SPECS_DIR is already set up by previous commands - use it as-is. Do NOT create new directories.
 
 2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
+# Create a new feature branch and spec directory
 
 set -e
 
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+JIRA_NUMBER=""
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -40,18 +42,38 @@ while [ $i -le $# ]; do
             fi
             BRANCH_NUMBER="$next_arg"
             ;;
-        --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
+        --jira-number)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --jira-number requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --jira-number requires a value' >&2
+                exit 1
+            fi
+            JIRA_NUMBER="$next_arg"
+            # Validate Jira number format (company convention: C12345-7890)
+            if ! [[ "$JIRA_NUMBER" =~ ^C[0-9]{5}-[0-9]{4}$ ]]; then
+                echo "Error: Jira number must match format C12345-7890 (e.g., C99999-1234)" >&2
+                echo "       Provided: $JIRA_NUMBER" >&2
+                exit 1
+            fi
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--jira-number <jira>] <feature_description>"
             echo ""
             echo "Options:"
-            echo "  --json              Output in JSON format"
-            echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --number N          Specify branch number manually (overrides auto-detection)"
-            echo "  --help, -h          Show this help message"
+            echo "  --json                  Output in JSON format"
+            echo "  --short-name <name>     Provide a custom short name (2-4 words) for the branch"
+            echo "  --number N              Specify branch number manually (overrides auto-detection)"
+            echo "  --jira-number <jira>    Jira ticket number (e.g., C12345-7890)"
+            echo "  --help, -h              Show this help message"
             echo ""
             echo "Examples:"
-            echo "  $0 'Add user authentication system' --short-name 'user-auth'"
-            echo "  $0 'Implement OAuth2 integration for API' --number 5"
+            echo "  $0 'Add user authentication system' --short-name 'user-auth' --jira-number 'C12345-7890'"
+            echo "  $0 'Implement OAuth2 integration for API' --number 5 --jira-number 'C12345-7890'"
             exit 0
             ;;
         *) 
@@ -83,22 +105,27 @@ find_repo_root() {
 # Function to check existing branches (local and remote) and return next available number
 check_existing_branches() {
     local short_name="$1"
-    
+
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
     git fetch --all --prune 2>/dev/null || true
-    
-    # Find all branches matching the pattern using git ls-remote (more reliable)
-    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-${short_name}$" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
-    
-    # Also check local branches
-    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
-    
-    # Check specs directory as well
+
+    # Find all branches matching both old and new patterns using git ls-remote
+    # Old pattern: refs/heads/001-short-name
+    # New pattern: refs/heads/feature/001-C12345-7890-short-name
+    # Match only 3-digit spec-kit branches (001-, 002-, etc.) to avoid false positives
+    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/(feature/)?[0-9]{3}-" | sed 's/.*refs\/heads\/\(feature\/\)\?\([0-9]\{3\}\).*/\2/' | sort -n)
+
+    # Also check local branches (both patterns)
+    # Match only 3-digit spec-kit branches to avoid matching unrelated numeric branches
+    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*(feature/)?[0-9]{3}-" | sed 's/^[* ]*//' | sed 's/^feature\///' | sed 's/^\([0-9]\{3\}\)-.*/\1/' | sort -n)
+
+    # Check specs directory as well (directory name doesn't have feature/ prefix)
+    # Match only 3-digit spec-kit directories (001-*, 002-*, etc.)
     local spec_dirs=""
     if [ -d "$SPECS_DIR" ]; then
-        spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9]*-${short_name}" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
+        spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9][0-9][0-9]-*" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/^\([0-9]\{3\}\)-.*/\1/' | sort -n)
     fi
-    
+
     # Combine all sources and get the highest number
     local max_num=0
     for num in $remote_branches $local_branches $spec_dirs; do
@@ -106,7 +133,7 @@ check_existing_branches() {
             max_num=$num
         fi
     done
-    
+
     # Return next number
     echo $((max_num + 1))
 }
@@ -211,24 +238,40 @@ if [ -z "$BRANCH_NUMBER" ]; then
 fi
 
 FEATURE_NUM=$(printf "%03d" "$BRANCH_NUMBER")
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+
+# Build branch name with feature/ prefix and optional Jira number
+# Format: feature/001-C12345-7890-short-name (with Jira)
+#     or: feature/001-short-name (without Jira, backward compat)
+if [ -n "$JIRA_NUMBER" ]; then
+    BRANCH_NAME="feature/${FEATURE_NUM}-${JIRA_NUMBER}-${BRANCH_SUFFIX}"
+else
+    BRANCH_NAME="feature/${FEATURE_NUM}-${BRANCH_SUFFIX}"
+fi
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 MAX_BRANCH_LENGTH=244
 if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
-    
+    # Account for: "feature/" (8) + feature number (3) + hyphens + optional Jira number
+    PREFIX_LENGTH=$((8 + 3 + 1))  # feature/ + 001 + hyphen
+    if [ -n "$JIRA_NUMBER" ]; then
+        PREFIX_LENGTH=$((PREFIX_LENGTH + ${#JIRA_NUMBER} + 1))  # + jira + hyphen
+    fi
+    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - PREFIX_LENGTH))
+
     # Truncate suffix at word boundary if possible
     TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
     # Remove trailing hyphen if truncation created one
     TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
-    
+
     ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
-    
+    if [ -n "$JIRA_NUMBER" ]; then
+        BRANCH_NAME="feature/${FEATURE_NUM}-${JIRA_NUMBER}-${TRUNCATED_SUFFIX}"
+    else
+        BRANCH_NAME="feature/${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+    fi
+
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
     >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
@@ -240,7 +283,10 @@ else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
 
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+# Feature directory doesn't include the feature/ prefix
+# Extract directory name from branch name (remove feature/ prefix if present)
+DIR_NAME="${BRANCH_NAME#feature/}"
+FEATURE_DIR="$SPECS_DIR/$DIR_NAME"
 mkdir -p "$FEATURE_DIR"
 
 TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"

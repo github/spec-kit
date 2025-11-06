@@ -32,13 +32,137 @@ You are a **careful senior engineer** who writes production-quality code with pr
 - When encountering errors, diagnose thoroughly before continuing
 - Incomplete checklists mean gaps in requirements - address or get approval before proceeding
 
-## User Input
+## User Input & Interactive Mode
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+
+   **Enter INTERACTIVE MODE:**
+
+   Any special instructions or considerations for implementation?
+
+   **Format** (provide your notes, or type "none" to proceed with standard implementation):
+
+   ```text
+   NOTES:
+   - Start with database migration first
+   - Focus on P1 user stories only
+   ```
+
+   **Examples of valid implementation notes:**
+
+   - Execution order: "Start with database migration first", "Implement backend before frontend"
+   - Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
+   - Testing: "Write tests first", "Skip tests for now (exploratory spike)"
+   - Priorities: "Prioritize error handling", "Focus on security validation"
+   - Constraints: "Use existing utility functions where possible", "Don't modify core files"
+
+   **Your notes** (type your notes above, or "none" to skip):
+
+**ELSE** (arguments provided):
+
+   Use the provided notes as implementation guidance.
+   Continue with implementation execution below.
+
+## Corporate Guidelines
+
+**BEFORE writing any code**, check for and load corporate guidelines:
+
+### 1. Detect Tech Stack
+
+Check `plan.md` for tech stack (or scan project files if plan.md doesn't exist):
+
+- **ReactJS**: React, TypeScript, frontend
+- **Java**: Spring Boot, Maven/Gradle
+- **.NET**: ASP.NET Core, C#
+- **Node.js**: Express, Fastify, backend JavaScript/TypeScript
+- **Python**: Django, Flask, FastAPI
+
+### 2. Load Guidelines
+
+Check for guideline files in `/.guidelines/` directory:
+
+- `reactjs-guidelines.md` - React coding standards
+- `java-guidelines.md` - Java coding standards
+- `dotnet-guidelines.md` - .NET coding standards
+- `nodejs-guidelines.md` - Node.js coding standards
+- `python-guidelines.md` - Python coding standards
+
+**IF** guideline files exist for detected tech stack:
+
+1. **Read** the applicable guideline files in FULL
+2. **Apply** during ALL code generation:
+   - Import ONLY corporate libraries (never banned libraries)
+   - Follow coding standards (naming, structure, patterns)
+   - Use correct corporate packages (@YOUR_ORG/package-name)
+   - Apply security requirements (input validation, secrets management)
+   - Follow testing standards
+3. **Priority**: Constitution > Corporate Guidelines > Spec Kit Defaults
+
+**IF** guidelines do NOT exist:
+
+Proceed with Spec Kit defaults and industry best practices.
+
+### 3. Multi-Stack Projects
+
+**IF** multiple tech stacks (e.g., React frontend + Java backend):
+
+- Load ALL applicable guideline files
+- Apply contextually based on which part of codebase you're working on
+
+### 4. Guideline Compliance During Implementation
+
+When writing code:
+
+- **MUST** import corporate libraries specified in guidelines
+- **MUST NOT** import banned libraries
+- **MUST** follow naming conventions
+- **MUST** apply security patterns (validation, error handling)
+- **SHOULD** follow architecture patterns
+
+**Example guideline-aware imports**:
+
+```typescript
+// ❌ Without guidelines:
+import { Button } from '@mui/material';
+
+// ✅ With guidelines:
+import { Button } from '@acmecorp/ui-components';
+```
+
+```java
+// ❌ Without guidelines:
+import org.apache.http.client.HttpClient;
+
+// ✅ With guidelines:
+import com.acmecorp.client.ApiClient;
+```
+
+### 5. Non-Compliance Handling
+
+**IF** a required corporate library is not available or causes errors:
+
+1. **Document** the issue in a TODO file: `.guidelines-todo.md` in feature directory
+2. **Add** specific violation to the TODO file with explanation
+3. **Continue** implementation (guidelines are recommendations, not blockers)
+
+**Example TODO file**:
+
+```markdown
+# Guideline Compliance TODOs
+
+## ⚠️ Violations
+
+- [ ] Replace axios with @acmecorp/api-client (package not found in registry)
+- [ ] Update authentication to use @acmecorp/idm-client (needs credentials)
+
+## Actions Needed
+
+Contact DevOps team for package access.
+```
 
 ## Outline
 

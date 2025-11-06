@@ -5,25 +5,33 @@ param(
     [switch]$Json,
     [string]$ShortName,
     [int]$Number = 0,
+    [string]$JiraNumber,
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
 )
 $ErrorActionPreference = 'Stop'
 
+# Validate Jira number format if provided
+if ($JiraNumber -and $JiraNumber -notmatch '^C[0-9]{5}-[0-9]{4}$') {
+    Write-Error "Error: Jira number must match format C12345-7890 (e.g., C99999-1234)`nProvided: $JiraNumber"
+    exit 1
+}
+
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] [-JiraNumber <jira>] <feature description>"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  -Json               Output in JSON format"
-    Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
-    Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
-    Write-Host "  -Help               Show this help message"
+    Write-Host "  -Json                 Output in JSON format"
+    Write-Host "  -ShortName <name>     Provide a custom short name (2-4 words) for the branch"
+    Write-Host "  -Number N             Specify branch number manually (overrides auto-detection)"
+    Write-Host "  -JiraNumber <jira>    Jira ticket number (e.g., C12345-7890)"
+    Write-Host "  -Help                 Show this help message"
     Write-Host ""
     Write-Host "Examples:"
-    Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth'"
-    Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API'"
+    Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth' -JiraNumber 'C12345-7890'"
+    Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API' -JiraNumber 'C12345-7890'"
     exit 0
 }
 
@@ -64,21 +72,24 @@ function Get-NextBranchNumber {
         [string]$ShortName,
         [string]$SpecsDir
     )
-    
+
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
     try {
         git fetch --all --prune 2>$null | Out-Null
     } catch {
         # Ignore fetch errors
     }
-    
-    # Find remote branches matching the pattern using git ls-remote
+
+    # Find remote branches matching both old and new patterns using git ls-remote
+    # Old pattern: refs/heads/001-short-name
+    # New pattern: refs/heads/feature/001-C12345-7890-short-name
+    # Match only 3-digit spec-kit branches (001-, 002-, etc.) to avoid false positives
     $remoteBranches = @()
     try {
         $remoteRefs = git ls-remote --heads origin 2>$null
         if ($remoteRefs) {
-            $remoteBranches = $remoteRefs | Where-Object { $_ -match "refs/heads/(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "refs/heads/(\d+)-") {
+            $remoteBranches = $remoteRefs | Where-Object { $_ -match "refs/heads/(feature/)?\d{3}-" } | ForEach-Object {
+                if ($_ -match "refs/heads/(?:feature/)?(\d{3})-") {
                     [int]$matches[1]
                 }
             }
@@ -86,14 +97,15 @@ function Get-NextBranchNumber {
     } catch {
         # Ignore errors
     }
-    
-    # Check local branches
+
+    # Check local branches (both patterns)
+    # Match only 3-digit spec-kit branches to avoid matching unrelated numeric branches
     $localBranches = @()
     try {
         $allBranches = git branch 2>$null
         if ($allBranches) {
-            $localBranches = $allBranches | Where-Object { $_ -match "^\*?\s*(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "(\d+)-") {
+            $localBranches = $allBranches | Where-Object { $_ -match "^\*?\s*(feature/)?\d{3}-" } | ForEach-Object {
+                if ($_ -match "(?:feature/)?(\d{3})-") {
                     [int]$matches[1]
                 }
             }
@@ -101,13 +113,14 @@ function Get-NextBranchNumber {
     } catch {
         # Ignore errors
     }
-    
-    # Check specs directory
+
+    # Check specs directory (directory name doesn't have feature/ prefix)
+    # Match only 3-digit spec-kit directories (001-*, 002-*, etc.)
     $specDirs = @()
     if (Test-Path $SpecsDir) {
         try {
-            $specDirs = Get-ChildItem -Path $SpecsDir -Directory | Where-Object { $_.Name -match "^(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_.Name -match "^(\d+)-") {
+            $specDirs = Get-ChildItem -Path $SpecsDir -Directory | Where-Object { $_.Name -match "^(\d{3})-" } | ForEach-Object {
+                if ($_.Name -match "^(\d{3})-") {
                     [int]$matches[1]
                 }
             }
@@ -115,7 +128,7 @@ function Get-NextBranchNumber {
             # Ignore errors
         }
     }
-    
+
     # Combine all sources and get the highest number
     $maxNum = 0
     foreach ($num in ($remoteBranches + $localBranches + $specDirs)) {
@@ -123,7 +136,7 @@ function Get-NextBranchNumber {
             $maxNum = $num
         }
     }
-    
+
     # Return next number
     return $maxNum + 1
 }
@@ -225,24 +238,40 @@ if ($Number -eq 0) {
 }
 
 $featureNum = ('{0:000}' -f $Number)
-$branchName = "$featureNum-$branchSuffix"
+
+# Build branch name with feature/ prefix and optional Jira number
+# Format: feature/001-C12345-7890-short-name (with Jira)
+#     or: feature/001-short-name (without Jira, backward compat)
+if ($JiraNumber) {
+    $branchName = "feature/$featureNum-$JiraNumber-$branchSuffix"
+} else {
+    $branchName = "feature/$featureNum-$branchSuffix"
+}
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 $maxBranchLength = 244
 if ($branchName.Length -gt $maxBranchLength) {
     # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    $maxSuffixLength = $maxBranchLength - 4
-    
+    # Account for: "feature/" (8) + feature number (3) + hyphens + optional Jira number
+    $prefixLength = 8 + 3 + 1  # feature/ + 001 + hyphen
+    if ($JiraNumber) {
+        $prefixLength = $prefixLength + $JiraNumber.Length + 1  # + jira + hyphen
+    }
+    $maxSuffixLength = $maxBranchLength - $prefixLength
+
     # Truncate suffix
     $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
     # Remove trailing hyphen if truncation created one
     $truncatedSuffix = $truncatedSuffix -replace '-$', ''
-    
+
     $originalBranchName = $branchName
-    $branchName = "$featureNum-$truncatedSuffix"
-    
+    if ($JiraNumber) {
+        $branchName = "feature/$featureNum-$JiraNumber-$truncatedSuffix"
+    } else {
+        $branchName = "feature/$featureNum-$truncatedSuffix"
+    }
+
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
     Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
@@ -258,7 +287,10 @@ if ($hasGit) {
     Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
 }
 
-$featureDir = Join-Path $specsDir $branchName
+# Feature directory doesn't include the feature/ prefix
+# Extract directory name from branch name (remove feature/ prefix if present)
+$dirName = $branchName -replace '^feature/', ''
+$featureDir = Join-Path $specsDir $dirName
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
 $template = Join-Path $repoRoot '.specify/templates/spec-template.md'

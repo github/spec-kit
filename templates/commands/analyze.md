@@ -31,13 +31,100 @@ You are a **technical auditor** who identifies inconsistencies, gaps, and qualit
 - Token-efficient analysis focuses on high-signal findings, not exhaustive documentation
 - Good analysis empowers decisions: proceed with confidence OR fix issues first
 
-## User Input
+## User Input & Interactive Mode
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+
+   **Enter INTERACTIVE MODE:**
+
+   What should the analysis prioritize or focus on?
+
+   **Format** (provide your focus areas, or type "none" for comprehensive analysis):
+
+   ```text
+   FOCUS:
+   - Security requirements coverage
+   - Constitution compliance
+   ```
+
+   **Examples of valid analysis focus areas:**
+
+   - Security: "Focus on security requirements coverage", "Check authentication/authorization"
+   - Compliance: "Check constitution compliance carefully", "Verify guideline adherence"
+   - Testing: "Verify all user stories have acceptance tests", "Check test coverage completeness"
+   - Performance: "Look for performance bottlenecks", "Check scalability concerns"
+   - Data: "Check data model consistency", "Verify API contract completeness"
+
+   **Your focus** (type your focus areas above, or "none" for comprehensive analysis):
+
+**ELSE** (arguments provided):
+
+   Use the provided focus areas to guide the analysis.
+   Continue with analysis execution below.
+
+## Corporate Guidelines
+
+**During analysis**, check for corporate guideline compliance:
+
+### 1. Load Guidelines
+
+Check for guideline files in `/.guidelines/` directory:
+
+- `reactjs-guidelines.md`
+- `java-guidelines.md`
+- `dotnet-guidelines.md`
+- `nodejs-guidelines.md`
+- `python-guidelines.md`
+
+**IF** guideline files exist:
+
+1. **Read** applicable guidelines based on tech stack in `plan.md`
+2. **Add** guideline compliance checking to analysis passes
+
+### 2. Guideline Compliance Checks
+
+During analysis, validate:
+
+- **Library usage**: Check if `plan.md` specifies corporate libraries (not banned ones)
+- **Architecture patterns**: Verify architecture follows guideline recommendations
+- **Security requirements**: Ensure security standards are addressed in spec/plan
+- **Naming conventions**: Check if file paths in `tasks.md` follow conventions
+
+**Report findings** as:
+
+- **CRITICAL**: Banned library specified in plan
+- **HIGH**: Mandatory corporate library not specified
+- **MEDIUM**: Architecture pattern deviates from guidelines without justification
+- **LOW**: Minor style/convention deviations
+
+**Example findings**:
+
+```text
+GUIDELINE-001 [HIGH]: Plan specifies @mui/material but reactjs-guidelines.md requires @acmecorp/ui-components
+Location: plan.md:45
+Recommendation: Update plan to use corporate UI library
+
+GUIDELINE-002 [CRITICAL]: Plan includes passport library which is banned per reactjs-guidelines.md
+Location: plan.md:67
+Recommendation: Replace with @acmecorp/idm-client for authentication
+```
+
+### 3. Non-Compliance Handling
+
+**IF** guideline violations found:
+
+- **Document** violations in analysis report
+- **Recommend** fixes
+- **DO NOT** block implementation (guidelines are recommendations)
+- **Suggest** creating `.guidelines-todo.md` for tracking
+
+**IF** no guidelines exist:
+
+Skip guideline compliance checking.
 
 ## Goal
 

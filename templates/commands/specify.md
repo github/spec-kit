@@ -5,6 +5,23 @@ scripts:
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
+## ⚠️ MANDATORY: Read Agent Instructions First
+
+**BEFORE PROCEEDING:**
+
+1. Check if `AGENTS.md` exists in repository root, `.specify/memory/`, or `templates/` directory
+2. **IF EXISTS:** Read it in FULL - instructions are NON-NEGOTIABLE and must be followed throughout this entire session
+3. Follow all AGENTS.md guidelines for the duration of this command execution
+4. These instructions override any conflicting default behaviors
+5. **DO NOT** forget or ignore these instructions as you work through tasks
+
+**Verification:** After reading AGENTS.md (if it exists), acknowledge with:
+   "✓ Read AGENTS.md v[X.X] - Following all guidelines"
+
+**If AGENTS.md does not exist:** Proceed with default behavior.
+
+---
+
 ## Role & Mindset
 
 You are a **meticulous requirements analyst** with deep expertise in extracting precise, testable requirements from ambiguous feature descriptions. You excel at:
@@ -29,13 +46,51 @@ You are a **meticulous requirements analyst** with deep expertise in extracting 
 - Make informed assumptions, document them clearly
 - When in doubt, favor the interpretation that delivers the most user value
 
-## User Input
+## User Input & Interactive Mode
 
 ```text
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+
+   **Enter INTERACTIVE MODE:**
+
+   Please provide the following information in this exact format (copy and fill in):
+
+   ```text
+   JIRA: C12345-7890
+   FEATURE: Add user authentication with email/password and OAuth2 (Google, GitHub)
+   ```
+
+   **Format rules:**
+
+- Line 1: `JIRA: C12345-7890` (exactly 5 digits, dash, 4 digits)
+- Line 2: `FEATURE: <your description>` (be specific, see examples below)
+
+   **Good feature descriptions:**
+   ✅ "Add user authentication with email/password and OAuth2 (Google, GitHub)"
+   ✅ "Create analytics dashboard showing user signups, revenue, and retention over time"
+   ✅ "Implement CSV export for transaction history with date range filters"
+   ✅ "Build REST API for managing customer orders with pagination and filtering"
+
+   **Bad feature descriptions (too vague):**
+   ❌ "Make it better"
+   ❌ "Add security"
+   ❌ "Improve UI"
+   ❌ "Optimize performance"
+
+   **What happens next:**
+
+- Branch created: `feature/[auto-number]-C12345-7890-[short-name]`
+- Example: `feature/001-C12345-7890-user-auth`
+- Spec directory: `specs/001-C12345-7890-user-auth/`
+
+   Once you provide the formatted input, I'll create the feature branch and specification.
+
+**ELSE** (arguments provided):
+   Parse arguments (expecting Jira number and feature description).
+   Continue with existing spec generation logic below.
 
 ## Outline
 
@@ -73,10 +128,10 @@ Given that feature description, do this:
       - Find the highest number N
       - Use N+1 for the new branch number
 
-   d. Run the script `{SCRIPT}` with the calculated number and short-name:
-      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+   d. Run the script `{SCRIPT}` with the calculated number, jira-number, and short-name:
+      - Pass `--number N+1`, `--jira-number "C12345-7890"`, and `--short-name "your-short-name"` along with the feature description
+      - Bash example: `{SCRIPT} --json --number 5 --jira-number "C12345-7890" --short-name "user-auth" "Add user authentication"`
+      - PowerShell example: `{SCRIPT} -Json -Number 5 -JiraNumber "C12345-7890" -ShortName "user-auth" "Add user authentication"`
 
    **IMPORTANT**:
    - Check all three sources (remote branches, local branches, specs directories) to find the highest number

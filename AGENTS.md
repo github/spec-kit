@@ -14,6 +14,307 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 - Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
 
+### ⚠️ CRITICAL: Never Use TODOs in Prompts or Templates
+
+**RULE:** Never add TODO comments to prompt files (`.md` files in `templates/commands/`) or template files. TODOs in prompts can confuse AI agents, causing them to misinterpret instructions or attempt to execute the TODO items instead of their primary task.
+
+**Why this matters:**
+
+- AI agents read prompts as instructions
+- TODO comments can be interpreted as tasks to perform
+- Scattered TODOs across files make tracking difficult
+- Can lead to unexpected agent behavior
+
+**Instead:**
+
+- **Always** add improvements to `/IMPROVEMENTS.md` (centralized tracking)
+- Use clear priority levels (High/Medium/Low)
+- Link to related issues/PRs
+- Group by category for easy review
+
+**Example - Wrong:**
+
+```markdown
+<!-- templates/commands/specify.md -->
+---
+description: Create feature specification
+# TODO: Add validation
+# TODO: Improve error messages
+---
+```
+
+**Example - Correct:**
+
+```markdown
+<!-- IMPROVEMENTS.md -->
+## 🔴 High Priority
+- [ ] Add validation of interactive input format
+- [ ] Improve error messages with examples
+```
+
+**Where to document improvements:**
+
+- `/IMPROVEMENTS.md` - All future enhancements and known limitations
+- GitHub Issues - For discussion and tracking
+- Pull Requests - When implementing improvements
+
+**Benefits of centralized tracking:**
+
+- ✅ All improvements visible in one place
+- ✅ Easy to prioritize and plan sprints
+- ✅ No risk of confusing AI agents
+- ✅ Clear completion tracking with checkboxes
+- ✅ Better collaboration and visibility
+
+### Pre-Commit Quality Checks
+
+**RULE:** Always run quality checks before committing to catch errors early.
+
+**Required checks before every commit:**
+
+1. **Markdownlint** - Check all markdown files for formatting issues
+
+   ```bash
+   # Install markdownlint-cli2 (first time only)
+   npm install -g markdownlint-cli2
+
+   # Run from repository root
+   markdownlint-cli2 "**/*.md"
+   ```
+
+   **Common markdownlint errors to fix:**
+
+   - **MD032** - Blank lines around lists: Add blank line before/after lists
+   - **MD031** - Blank lines around code fences: Add blank line before/after code blocks
+   - **MD036** - No emphasis as heading: Use proper headings (##) not emphasis (*text*)
+   - **MD007** - List indentation: Use 0-space indentation for lists at document root
+   - **MD040** - Code language: Specify language for fenced code blocks (bash, markdown, text, etc.)
+
+2. **Spell check** - Review for typos and grammar (manual or with tools)
+
+3. **Test scripts** - If modifying bash/PowerShell scripts, test them locally
+
+   ```bash
+   # Test bash scripts
+   bash scripts/bash/create-new-feature.sh --help
+
+   # Test PowerShell scripts (if on Windows/PowerShell)
+   pwsh scripts/powershell/create-new-feature.ps1 -Help
+   ```
+
+**Why this matters:**
+
+- ✅ Catches errors before CI fails
+- ✅ Keeps codebase clean and consistent
+- ✅ Saves time in code review
+- ✅ Prevents broken builds
+- ✅ Maintains professional quality
+
+**CI checks that will run automatically:**
+
+- Markdownlint on all `.md` files
+- (Add more as CI pipeline grows)
+
+**Quick pre-commit checklist:**
+
+- [ ] Ran markdownlint and fixed all errors
+- [ ] No TODOs added to prompt files
+- [ ] Updated IMPROVEMENTS.md if needed
+- [ ] Tested any script changes locally
+- [ ] Commit message is clear and descriptive
+
+### Corporate Guidelines System
+
+**FEATURE:** Spec Kit now supports corporate development guidelines to customize prompts for organizational standards.
+
+#### What Are Guidelines?
+
+Guidelines are markdown files in the `/.guidelines/` directory that specify:
+
+- Corporate scaffolding commands (e.g., `npx @acmecorp/create-react-app`)
+- Mandatory corporate libraries (e.g., `@acmecorp/ui-components`, `@acmecorp/idm-client`)
+- Internal package registries (Artifactory, Nexus, Azure Artifacts)
+- Banned public libraries (security/licensing requirements)
+- Architecture patterns and coding standards
+- Security and compliance requirements
+
+#### Directory Structure
+
+```text
+.guidelines/
+├── README.md                    # Guidelines overview and customization instructions
+├── branching-guidelines.md      # Branch naming conventions (configurable in Phase 2)
+├── reactjs-guidelines.md        # React/frontend standards
+├── java-guidelines.md           # Java/Spring Boot standards
+├── dotnet-guidelines.md         # .NET/C# standards
+├── nodejs-guidelines.md         # Node.js/Express standards
+└── python-guidelines.md         # Python/Django/Flask standards
+```
+
+#### How Guidelines Work
+
+1. **Auto-Detection**: Prompts detect tech stack from project files (`package.json`, `pom.xml`, `*.csproj`, etc.)
+2. **Loading**: Applicable guideline files are read based on detected tech stack
+3. **Application**: Guidelines are applied with priority: Constitution > Corporate Guidelines > Spec Kit Defaults
+4. **Multi-Stack**: For projects with multiple tech stacks (e.g., React + Java), both guideline files are loaded and applied contextually
+
+#### Which Prompts Use Guidelines
+
+- **`plan.md` (CRITICAL)**: Architecture decisions use corporate libraries and patterns
+- **`implement.md` (CRITICAL)**: Code generation uses corporate libraries and follows coding standards
+- **`analyze.md`**: Compliance checking validates guideline adherence
+- **`tasks.md`**: Task generation includes corporate setup commands and libraries
+
+#### Customization
+
+**For Specify Users:**
+
+1. Copy `.guidelines/` directory from Spec Kit release package to your project root
+2. Edit each `*-guidelines.md` file to match your organization:
+   - Replace `@YOUR_ORG` placeholders with your actual organization name
+   - Update package registry URLs (Artifactory, Nexus, etc.)
+   - Specify mandatory corporate libraries with versions
+   - List banned libraries
+   - Document corporate scaffolding commands
+3. Commit `.guidelines/` to your repository
+4. Prompts automatically detect and apply guidelines
+
+**For Spec Kit Contributors:**
+
+Guidelines are **templates with generic placeholders**. Never commit actual corporate-specific information to Spec Kit repository.
+
+**Example placeholder**:
+
+```markdown
+## Scaffolding
+
+Use corporate scaffolding command:
+
+```bash
+npx @YOUR_ORG/create-react-app my-app
+```
+
+**Example after customization** (in user's project):
+
+```markdown
+## Scaffolding
+
+Use corporate scaffolding command:
+
+```bash
+npx @acmecorp/create-react-app my-app
+```
+
+#### Priority Hierarchy
+
+When making decisions, prompts follow this order:
+
+1. **Constitution** (`/memory/constitution.md`) - Project-specific principles (HIGHEST)
+2. **Corporate Guidelines** (`/.guidelines/*.md`) - Organizational standards (MEDIUM)
+3. **Spec Kit Defaults** - Built-in best practices (LOWEST)
+
+**Example conflict resolution**:
+
+- Constitution: "MUST use PostgreSQL"
+- Guidelines: "Prefer MySQL"
+- **Result**: PostgreSQL wins (constitution has highest priority)
+
+#### Non-Compliance Handling
+
+Guidelines are **recommendations, not blockers**:
+
+- Prompts warn about violations
+- Create `.guidelines-todo.md` file in feature directory listing violations
+- Implementation continues (doesn't block workflow)
+- Team can address violations later or request exceptions
+
+#### Implementation Status
+
+**Phase 1** (Current - DONE):
+
+- ✅ Guideline template files created
+- ✅ prompt integration (plan, implement, analyze, tasks)
+- ✅ Auto-detection of tech stack
+- ✅ Multi-stack support
+- ✅ Non-compliance handling
+
+**Phase 2** (Planned):
+
+- Branch naming configuration (move hardcoded pattern to `branch-config.json`)
+- Script refactoring for configurable branch names
+- See `GUIDELINES-IMPLEMENTATION-PLAN.md` for details
+
+**Phase 3** (Future):
+
+- Advanced multi-stack coordination
+- Guideline version management
+- See `GUIDELINES-IMPLEMENTATION-PLAN.md` for details
+
+#### Example Use Cases
+
+**Use Case 1: Corporate React Library**
+
+```markdown
+# .guidelines/reactjs-guidelines.md
+
+## Mandatory Libraries
+
+MUST use @acmecorp/ui-components v2.x:
+
+```bash
+npm install @acmecorp/ui-components@^2.0.0
+```
+
+**Result**: When running `/specify implement`, agent generates:
+
+```typescript
+import { Button } from '@acmecorp/ui-components';  // ✅ Corporate library
+// NOT: import { Button } from '@mui/material';     // ❌ Banned
+```
+
+**Use Case 2: Java Corporate SDK**
+
+```markdown
+# .guidelines/java-guidelines.md
+
+## Mandatory Libraries
+
+MUST use corporate API client:
+
+```xml
+<dependency>
+    <groupId>com.acmecorp</groupId>
+    <artifactId>acmecorp-api-client</artifactId>
+    <version>1.8.0</version>
+</dependency>
+```
+
+**Result**: When running `/specify plan`, agent includes corporate SDK in architecture instead of building custom HTTP clients.
+
+#### Best Practices
+
+**For Spec Kit Contributors:**
+
+- Keep guidelines as generic templates
+- Use `@YOUR_ORG` placeholders
+- Provide clear examples of what to customize
+- Document all sections thoroughly
+- Never commit actual corporate information
+
+**For Specify Users:**
+
+- Customize guidelines for your organization
+- Update quarterly or when standards change
+- Version guidelines with your project
+- Document rationale for banned libraries
+- Provide code examples for corporate libraries
+
+#### See Also
+
+- `.guidelines/README.md` - Detailed guidelines customization guide
+- `GUIDELINES-IMPLEMENTATION-PLAN.md` - Full implementation roadmap
+- `IMPROVEMENTS.md` - Planned Phase 2 and 3 enhancements
+
 ## Adding New Agent Support
 
 This section explains how to add support for new AI agents/assistants to the Specify CLI. Use this guide as a reference when integrating new AI tools into the Spec-Driven Development workflow.
