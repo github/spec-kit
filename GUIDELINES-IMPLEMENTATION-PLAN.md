@@ -10,6 +10,7 @@
 ## 📋 Executive Summary
 
 **Goal:** Enable corporate customization of Spec Kit through configurable guidelines for:
+
 1. Tech stack standards (scaffolding, libraries, patterns, security)
 2. Branch naming conventions (prefix, Jira format, numbering)
 3. Multi-stack project support (React + Java, etc.)
@@ -17,6 +18,7 @@
 **Priority:** Constitution > Corporate Guidelines > Spec Kit Defaults
 
 **Phased Implementation:**
+
 - ✅ Phase 1: Foundation (guidelines templates + prompt integration) - **IN PROGRESS**
 - ⏳ Phase 2: Branch configuration migration (make branch naming configurable)
 - ⏳ Phase 3: Multi-stack support (load multiple guidelines contextually)
@@ -29,6 +31,7 @@
 ### The Problem
 
 **Current State:**
+
 - Jira format hardcoded: `C12345-7890`
 - Branch pattern hardcoded: `feature/001-C12345-7890-shortname`
 - Tech stack standards not documented or enforced
@@ -36,6 +39,7 @@
 - Teams can't customize to their corporate standards
 
 **Real-World Corporate Needs:**
+
 - Companies use internal package registries (Artifactory, Nexus)
 - Companies mandate corporate libraries (@acmecorp/ui-components, corporate SDKs)
 - Companies have unique branch naming conventions
@@ -43,15 +47,17 @@
 - Companies have scaffolding commands (`npx @company/create-react-app`)
 - Multi-stack projects are common (React frontend + Java backend)
 
-**Example: Enterprise React Project**
+#### Example: Enterprise React Project
 
 Traditional (won't work in corporate):
+
 ```bash
 npx create-react-app my-app  # ❌ Blocked by firewall
 npm install react-router-dom  # ❌ Can't reach public npm
 ```
 
 Corporate approach:
+
 ```bash
 npx @acmecorp/create-react-app my-app --template=enterprise
 npm config set registry https://artifactory.acmecorp.com/...
@@ -64,7 +70,7 @@ npm install @acmecorp/ui-components  # Mandatory corporate library
 
 ### Guidelines Hierarchy
 
-```
+```text
 Priority: Constitution > Corporate Guidelines > Spec Kit Defaults
 
 Constitution (.specify/memory/constitution.md):
@@ -84,7 +90,7 @@ Constitution (.specify/memory/constitution.md):
 
 ### File Structure
 
-```
+```text
 .guidelines/
 ├── README.md                          # How to customize guidelines
 ├── branching-guidelines.md            # Branch strategy documentation
@@ -118,6 +124,7 @@ Constitution (.specify/memory/constitution.md):
 ### Scope
 
 **What we're building:**
+
 1. ✅ Create guideline file templates (7 files)
 2. ✅ Add guideline reading to plan.md (CRITICAL)
 3. ✅ Add guideline reading to implement.md (CRITICAL)
@@ -128,6 +135,7 @@ Constitution (.specify/memory/constitution.md):
 8. ✅ Add to IMPROVEMENTS.md (track future work)
 
 **What we're NOT building yet:**
+
 - ❌ Branch configuration (Phase 2)
 - ❌ Multi-stack detection (Phase 3)
 - ❌ JSON parsing in scripts (Phase 2)
@@ -135,7 +143,8 @@ Constitution (.specify/memory/constitution.md):
 ### Deliverables
 
 **New Files:**
-```
+
+```text
 .guidelines/
 ├── README.md
 ├── branching-guidelines.md
@@ -147,7 +156,8 @@ Constitution (.specify/memory/constitution.md):
 ```
 
 **Modified Files:**
-```
+
+```text
 templates/commands/plan.md          # Add guideline reading section
 templates/commands/implement.md     # Add guideline reading section
 templates/commands/analyze.md       # Add compliance checking
@@ -221,7 +231,8 @@ Priority: After Constitution, before defaults
 **Priority order:**
 
 1. **Auto-detect from codebase files:**
-   ```
+
+   ```text
    package.json → Node.js/React (check dependencies for specifics)
    pom.xml → Java
    *.csproj → .NET
@@ -230,13 +241,15 @@ Priority: After Constitution, before defaults
    ```
 
 2. **Check constitution for declaration:**
+
    ```markdown
    TECH_STACK: java
    FRONTEND_STACK: reactjs
    ```
 
 3. **Ask user in plan.md if unclear:**
-   ```
+
+   ```text
    "I couldn't detect the tech stack. What are you using?
    - Java / .NET / React.js / Node.js / Python / Other"
    ```
@@ -281,20 +294,24 @@ Proceed with public/standard approaches (fallback behavior)
 ### Bug Fix: plan.md Specs Folder
 
 **Issue reported:**
+
 - Claude 4.5: Creates `specs/001-C12345-7890-shortname` ✅ Correct
 - Claude 4.0: Creates `specs/feature/001-C12345-7890-shortname` ❌ Wrong
 
 **Root cause:**
+
 - Plan.md might be creating folders manually instead of letting specify.md handle it
 - Different model versions interpret instructions differently
 
 **Fix strategy:**
+
 1. Search plan.md for: mkdir, specs/, feature/, directory creation
 2. Remove any manual directory creation logic
 3. Add clear instruction: "DO NOT create specs folders - handled by specify.md"
 4. Plan.md should only READ from existing specs folder
 
 **Verification:**
+
 - Test with Claude 4.0 and 4.5
 - Ensure folder created without feature/ prefix
 - Ensure consistent behavior across models
@@ -302,6 +319,7 @@ Proceed with public/standard approaches (fallback behavior)
 ### Success Criteria
 
 **Phase 1 is complete when:**
+
 - ✅ All 7 guideline templates created with examples
 - ✅ plan.md reads and applies guidelines
 - ✅ implement.md reads and applies guidelines
@@ -318,11 +336,13 @@ Proceed with public/standard approaches (fallback behavior)
 **85%** - High confidence for Phase 1
 
 **Risks:**
+
 - ⚠️ Model interpretation differences (4.0 vs 4.5)
 - ⚠️ Token usage increase with guideline loading
 - ⚠️ Guidelines might conflict with each other
 
 **Mitigation:**
+
 - Test with multiple models
 - Keep guidelines concise (summaries at top)
 - Clear priority: Constitution > Guidelines > Defaults
@@ -336,6 +356,7 @@ Proceed with public/standard approaches (fallback behavior)
 ### Scope
 
 **What we're building:**
+
 1. Create `branch-config.json` (machine-readable config)
 2. Refactor `create-new-feature.sh` to read JSON config
 3. Refactor `create-new-feature.ps1` to read JSON config
@@ -347,6 +368,7 @@ Proceed with public/standard approaches (fallback behavior)
 9. Extensive testing with various patterns
 
 **What we're NOT building yet:**
+
 - ❌ Multi-stack detection (Phase 3)
 - ❌ Dynamic regex validation (Phase 4)
 
@@ -380,6 +402,7 @@ Proceed with public/standard approaches (fallback behavior)
 **Custom Examples:**
 
 Example 1: No Jira, no prefix
+
 ```json
 {
   "branch_pattern": "<num>-<shortname>",
@@ -387,9 +410,11 @@ Example 1: No Jira, no prefix
   "jira": { "required": false }
 }
 ```
+
 Result: `001-user-auth`
 
 Example 2: Different ticket format
+
 ```json
 {
   "branch_pattern": "feature/<num>-<jira>-<shortname>",
@@ -399,20 +424,24 @@ Example 2: Different ticket format
   }
 }
 ```
+
 Result: `feature/001-PROJ-1234-user-auth`
 
 Example 3: Custom prefix
+
 ```json
 {
   "branch_pattern": "feat/<num>-<shortname>",
   "branch_prefix": "feat/"
 }
 ```
+
 Result: `feat/001-user-auth`
 
 ### Script Refactoring
 
 **Bash script changes:**
+
 ```bash
 # Load configuration
 if [ -f ".guidelines/branch-config.json" ]; then
@@ -437,6 +466,7 @@ fi
 ```
 
 **PowerShell script changes:**
+
 ```powershell
 # Load configuration
 $configPath = ".guidelines/branch-config.json"
@@ -463,17 +493,20 @@ if ($jiraRequired -and $JiraNumber) {
 
 ### JSON Parsing Options
 
-**Option 1: Require jq (RECOMMENDED)**
+#### Option 1: Require jq (RECOMMENDED)
+
 - Pros: Clean, reliable, well-tested
 - Cons: Adds dependency
 - Install: `sudo apt-get install jq` (Linux), `brew install jq` (Mac)
 
-**Option 2: Manual bash parsing**
+#### Option 2: Manual bash parsing
+
 - Pros: No dependencies
 - Cons: Error-prone, complex regex
 - Use: `grep`, `sed`, `awk` to extract values
 
-**Option 3: Python helper script**
+#### Option 3: Python helper script
+
 - Pros: Reliable JSON parsing
 - Cons: Adds Python dependency (usually available)
 
@@ -508,6 +541,7 @@ fi
 ### Testing Strategy
 
 **Test cases:**
+
 1. Default pattern (no config): `feature/001-C12345-7890-name`
 2. No Jira pattern: `feature/001-name`
 3. Custom Jira pattern: `feature/001-PROJ-1234-name`
@@ -516,6 +550,7 @@ fi
 6. Backward compat: Old projects without config still work
 
 **Test with:**
+
 - Claude 4.0
 - Claude 4.5
 - Bash script manually
@@ -524,6 +559,7 @@ fi
 ### Success Criteria
 
 **Phase 2 is complete when:**
+
 - ✅ branch-config.json schema defined
 - ✅ Bash script reads and applies config
 - ✅ PowerShell script reads and applies config
@@ -539,12 +575,14 @@ fi
 **70-75%** - Medium-high confidence
 
 **Risks:**
+
 - 🔴 JSON parsing complexity in bash
 - 🟡 Regex escaping issues
 - 🟡 Testing burden (many combinations)
 - 🟡 Backward compatibility edge cases
 
 **Mitigation:**
+
 - Document jq requirement clearly
 - Provide fallback for missing jq
 - Extensive testing with various patterns
@@ -559,6 +597,7 @@ fi
 ### Scope
 
 **What we're building:**
+
 1. Detect multiple tech stacks in same project
 2. Load multiple guideline files
 3. Apply guidelines contextually (frontend vs backend)
@@ -568,6 +607,7 @@ fi
 7. Update analyze.md for multi-stack compliance
 
 **Challenges:**
+
 - How to determine which guideline applies to which file?
 - Token usage (loading 2+ guideline files)
 - Contextual application logic is complex
@@ -575,8 +615,9 @@ fi
 
 ### Multi-Stack Detection
 
-**Scenario 1: React + Java (common monorepo)**
-```
+#### Scenario 1: React + Java (common monorepo)
+
+```text
 project/
 ├── frontend/          # React
 │   └── package.json
@@ -585,6 +626,7 @@ project/
 ```
 
 **Detection:**
+
 ```markdown
 Detected stacks:
 - reactjs (frontend/package.json)
@@ -596,6 +638,7 @@ Load guidelines:
 ```
 
 **Contextual Application:**
+
 ```markdown
 When planning frontend features:
   → Apply reactjs-guidelines.md
@@ -609,21 +652,24 @@ When planning full-stack features:
 
 ### File-to-Stack Mapping
 
-**Strategy 1: Path-based (RECOMMENDED)**
-```
+#### Strategy 1: Path-based (RECOMMENDED)
+
+```text
 frontend/* → React guidelines
 backend/* → Java guidelines
 shared/* → Both (or ask user)
 ```
 
-**Strategy 2: File extension**
-```
+#### Strategy 2: File extension
+
+```text
 *.tsx, *.jsx → React guidelines
 *.java → Java guidelines
 *.py → Python guidelines
 ```
 
-**Strategy 3: Declaration in plan.md**
+#### Strategy 3: Declaration in plan.md
+
 ```markdown
 Tech Stacks:
 - Frontend: React (guidelines: reactjs-guidelines.md)
@@ -646,6 +692,7 @@ Path mapping:
 4. **Selective loading:** Only load relevant sections per prompt
 
 **Example optimization:**
+
 ```markdown
 ## Summary (First 30 lines - always load)
 - Architecture: Spring Boot with Clean Architecture
@@ -659,6 +706,7 @@ Path mapping:
 ### Success Criteria
 
 **Phase 3 is complete when:**
+
 - ✅ Multi-stack detection working
 - ✅ Multiple guidelines load correctly
 - ✅ Contextual application logic clear
@@ -672,6 +720,7 @@ Path mapping:
 **55-60%** - Medium confidence (DEFER until proven need)
 
 **Risks:**
+
 - 🔴 Contextual application is very complex
 - 🔴 Ambiguous file-to-stack mapping
 - 🔴 High token usage
@@ -679,6 +728,7 @@ Path mapping:
 - 🟡 Testing complexity exponentially increases
 
 **Recommendation:**
+
 - Add to IMPROVEMENTS.md
 - Wait for real-world usage feedback from Phase 1 & 2
 - Consider simpler approaches first
@@ -720,7 +770,7 @@ Path mapping:
    - Trend tracking
    - Confidence: 45%
 
-**Add all to IMPROVEMENTS.md with rationale and effort estimates**
+Add all to IMPROVEMENTS.md with rationale and effort estimates.
 
 ---
 
@@ -738,9 +788,9 @@ Path mapping:
 
 ### Resume Prompts
 
-#### **Resume Prompt for Phase 2: Branch Configuration**
+#### Resume Prompt for Phase 2: Branch Configuration
 
-```
+```text
 I want to continue implementing the Corporate Guidelines feature for spec-kit.
 
 CONTEXT:
@@ -775,9 +825,9 @@ QUESTIONS:
 Please analyze Phase 2 requirements and start implementation.
 ```
 
-#### **Resume Prompt for Phase 3: Multi-Stack Support**
+#### Resume Prompt for Phase 3: Multi-Stack Support
 
-```
+```text
 I want to continue implementing the Corporate Guidelines feature for spec-kit.
 
 CONTEXT:
@@ -812,29 +862,35 @@ Please analyze Phase 3 requirements and provide recommendations before implement
 
 ### How to Use Resume Prompts
 
-**Step 1: Start new session**
+#### Step 1: Start new session
+
 - Open new Claude Code session or create new PR branch
 
-**Step 2: Provide context**
+#### Step 2: Provide context
+
 - Copy the appropriate resume prompt above
 - Paste it at the start of your conversation
 
-**Step 3: Reference this document**
+#### Step 3: Reference this document
+
 - Agent will read GUIDELINES-IMPLEMENTATION-PLAN.md
 - Agent will understand current state and requirements
 
-**Step 4: Clarify any changes**
+#### Step 4: Clarify any changes
+
 - If requirements changed since last session, mention them
 - If Phase 1/2 had issues, describe them
 - If user feedback suggests changes, share it
 
-**Step 5: Begin implementation**
+#### Step 5: Begin implementation
+
 - Agent will analyze requirements
 - Agent will ask clarifying questions
 - Agent will implement according to plan
 
 **Example full session start:**
-```
+
+```text
 [Paste Resume Prompt for Phase 2]
 
 Additional context:
@@ -852,18 +908,21 @@ Please review Phase 2 requirements and let me know if we should adjust scope.
 ### Phase 1 Success Metrics
 
 **Functional:**
+
 - ✅ Guideline templates created and documented
 - ✅ Prompts read guidelines when they exist
 - ✅ Prompts fall back gracefully when guidelines missing
 - ✅ Specs folder bug fixed (consistent across models)
 
 **Quality:**
+
 - ✅ All markdownlint checks passing
 - ✅ Documentation clear in AGENTS.md
 - ✅ Examples provided in guideline templates
 - ✅ Tested with Claude 4.0 and 4.5
 
 **User Experience:**
+
 - ✅ Teams can customize guidelines
 - ✅ Defaults work out-of-box (no config needed)
 - ✅ Clear priority: Constitution > Guidelines > Defaults
@@ -872,6 +931,7 @@ Please review Phase 2 requirements and let me know if we should adjust scope.
 ### Phase 2 Success Metrics
 
 **Functional:**
+
 - ✅ branch-config.json schema defined
 - ✅ Scripts read config and apply patterns
 - ✅ Jira format customizable
@@ -879,12 +939,14 @@ Please review Phase 2 requirements and let me know if we should adjust scope.
 - ✅ Backward compatibility maintained
 
 **Quality:**
+
 - ✅ All test cases pass
 - ✅ Works with and without jq
 - ✅ Clear error messages for config issues
 - ✅ Documentation updated
 
 **User Experience:**
+
 - ✅ Teams can use their branch patterns
 - ✅ Teams without Jira can disable it
 - ✅ Old projects still work without changes
@@ -892,17 +954,20 @@ Please review Phase 2 requirements and let me know if we should adjust scope.
 ### Phase 3 Success Metrics
 
 **Functional:**
+
 - ✅ Multi-stack detection working
 - ✅ Multiple guidelines load correctly
 - ✅ Contextual application clear
 - ✅ Token usage acceptable
 
 **Quality:**
+
 - ✅ File-to-stack mapping documented
 - ✅ Edge cases handled (shared code)
 - ✅ Tested with common combinations
 
 **User Experience:**
+
 - ✅ Full-stack projects well supported
 - ✅ Performance acceptable (no major slowdown)
 - ✅ Clear documentation for setup
@@ -913,13 +978,15 @@ Please review Phase 2 requirements and let me know if we should adjust scope.
 
 ### Current Issues (Phase 1)
 
-**Issue 1: Plan.md Specs Folder Bug**
+#### Issue 1: Plan.md Specs Folder Bug
+
 - Status: 🔴 BLOCKER - Must fix in Phase 1
 - Description: Claude 4.0 creates `specs/feature/001-...` (wrong), 4.5 creates `specs/001-...` (correct)
 - Impact: Inconsistent folder structure across model versions
 - Fix: Remove manual folder creation from plan.md, document that specify.md handles it
 
-**Issue 2: Model Interpretation Differences**
+#### Issue 2: Model Interpretation Differences
+
 - Status: 🟡 MONITOR
 - Description: Different Claude versions interpret same prompt differently
 - Impact: Need to test with multiple models
@@ -928,28 +995,33 @@ Please review Phase 2 requirements and let me know if we should adjust scope.
 ### Risks (All Phases)
 
 **Risk 1: Complexity Overload** 🔴
+
 - Constitution + AGENTS.md + Guidelines = 3 instruction layers
 - AI agents might get confused
 - Token usage increases significantly
 - Mitigation: Keep guidelines concise, clear priority order, summaries at top
 
 **Risk 2: Backward Compatibility** 🟡
+
 - Old projects must still work
 - Config changes might break workflows
 - Mitigation: Always check if file exists, default to current behavior
 
 **Risk 3: Maintenance Burden** 🟡
+
 - More files to keep in sync
 - Teams might customize incorrectly
 - Support complexity increases
 - Mitigation: Excellent docs, validation in analyze.md, community support
 
 **Risk 4: JSON Parsing in Bash** 🟡 (Phase 2)
+
 - Bash JSON parsing is tricky without jq
 - Regex escaping issues
 - Mitigation: Require jq, provide clear installation docs, fallback to defaults
 
 **Risk 5: Multi-Stack Complexity** 🔴 (Phase 3)
+
 - File-to-stack mapping ambiguous
 - Contextual application logic complex
 - High token usage
@@ -976,34 +1048,37 @@ Please review Phase 2 requirements and let me know if we should adjust scope.
 
 ### External Resources
 
-- Markdownlint docs: https://github.com/DavidAnson/markdownlint
-- jq documentation: https://stedolan.github.io/jq/
-- JSON schema: https://json-schema.org/
+- Markdownlint docs: <https://github.com/DavidAnson/markdownlint>
+- jq documentation: <https://stedolan.github.io/jq/>
+- JSON schema: <https://json-schema.org/>
 
 ---
 
 ## 🔄 Change Log
 
 ### 2025-01-06 - Initial Plan Created
+
 - Documented full 4-phase implementation plan
 - Created resume prompts for Phase 2 and 3
 - Defined success criteria and risks
 - Ready to begin Phase 1 implementation
 
 ### [Future Date] - Phase 1 Complete
+
 - [Add summary of what was implemented]
 - [Add link to PR]
 - [Add any deviations from plan]
 - [Add lessons learned]
 
 ### [Future Date] - Phase 2 Started
+
 - [Add context from Phase 1 completion]
 - [Add any scope changes]
 - [Add new risks discovered]
 
 ---
 
-**END OF IMPLEMENTATION PLAN**
+## END OF IMPLEMENTATION PLAN
 
 *This document is the single source of truth for the Corporate Guidelines implementation.*
 *Update this document as phases complete and new information is discovered.*

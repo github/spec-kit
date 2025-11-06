@@ -56,11 +56,11 @@ $ARGUMENTS
 
    **Examples of valid constraints:**
 
-   - Technology requirements: "Must use PostgreSQL", "Prefer Redis for caching"
-   - Architecture preferences: "Prefer microservices over monolith", "Use event-driven architecture"
-   - Performance requirements: "< 200ms response time", "Support 10,000 concurrent users"
-   - Integration requirements: "Must integrate with existing auth system", "Use corporate API gateway"
-   - Compliance: "Must be GDPR compliant", "PII must be encrypted at rest"
+- Technology requirements: "Must use PostgreSQL", "Prefer Redis for caching"
+- Architecture preferences: "Prefer microservices over monolith", "Use event-driven architecture"
+- Performance requirements: "< 200ms response time", "Support 10,000 concurrent users"
+- Integration requirements: "Must integrate with existing auth system", "Use corporate API gateway"
+- Compliance: "Must be GDPR compliant", "PII must be encrypted at rest"
 
    **Your constraints** (type your constraints above, or "none" to skip):
 

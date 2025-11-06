@@ -53,11 +53,11 @@ $ARGUMENTS
 
    **Examples of valid analysis focus areas:**
 
-   - Security: "Focus on security requirements coverage", "Check authentication/authorization"
-   - Compliance: "Check constitution compliance carefully", "Verify guideline adherence"
-   - Testing: "Verify all user stories have acceptance tests", "Check test coverage completeness"
-   - Performance: "Look for performance bottlenecks", "Check scalability concerns"
-   - Data: "Check data model consistency", "Verify API contract completeness"
+- Security: "Focus on security requirements coverage", "Check authentication/authorization"
+- Compliance: "Check constitution compliance carefully", "Verify guideline adherence"
+- Testing: "Verify all user stories have acceptance tests", "Check test coverage completeness"
+- Performance: "Look for performance bottlenecks", "Check scalability concerns"
+- Data: "Check data model consistency", "Verify API contract completeness"
 
    **Your focus** (type your focus areas above, or "none" for comprehensive analysis):
 
@@ -103,8 +103,8 @@ If multiple tech stacks detected:
 **Stack mapping precedence (for compliance checking):**
 
 1. **Explicit path mapping** (from stack-mapping.json) - HIGHEST
-2. **File path patterns** (frontend/* → React, backend/* → Java)
-3. **File extensions** (*.tsx → React, *.java → Java)
+2. **File path patterns** (frontend/\* → React, backend/\* → Java)
+3. **File extensions** (\*.tsx → React, \*.java → Java)
 4. **Auto-detection** (from plan.md tech stack) - LOWEST
 
 **Example multi-stack validation:**
@@ -208,8 +208,8 @@ Validate plan.md:
 - API contracts → Check against both
 
 Validate tasks.md:
-- Tasks in frontend/* → React guidelines
-- Tasks in backend/* → Java guidelines
+- Tasks in frontend/\* → React guidelines
+- Tasks in backend/\* → Java guidelines
 ```
 
 ### 4. Non-Compliance Handling

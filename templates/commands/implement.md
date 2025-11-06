@@ -54,11 +54,11 @@ $ARGUMENTS
 
    **Examples of valid implementation notes:**
 
-   - Execution order: "Start with database migration first", "Implement backend before frontend"
-   - Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
-   - Testing: "Write tests first", "Skip tests for now (exploratory spike)"
-   - Priorities: "Prioritize error handling", "Focus on security validation"
-   - Constraints: "Use existing utility functions where possible", "Don't modify core files"
+- Execution order: "Start with database migration first", "Implement backend before frontend"
+- Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
+- Testing: "Write tests first", "Skip tests for now (exploratory spike)"
+- Priorities: "Prioritize error handling", "Focus on security validation"
+- Constraints: "Use existing utility functions where possible", "Don't modify core files"
 
    **Your notes** (type your notes above, or "none" to skip):
 
