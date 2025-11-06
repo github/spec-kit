@@ -1,0 +1,173 @@
+# GitHub Actions - Guidelines Compliance Check
+# Place this file in: .github/workflows/guidelines-compliance.yml
+
+name: Guidelines Compliance
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+  push:
+    branches: [ main, master, develop ]
+  # Run weekly to track compliance trends
+  schedule:
+    - cron: '0 0 * * 0'  # Every Sunday at midnight
+
+jobs:
+  compliance-check:
+    name: Check Corporate Guidelines Compliance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          # Install dependencies if needed
+          # sudo apt-get update
+          # sudo apt-get install -y jq
+
+      - name: Run compliance checker
+        id: compliance
+        run: |
+          chmod +x ./scripts/bash/check-guidelines-compliance.sh
+          ./scripts/bash/check-guidelines-compliance.sh --output=json > compliance-report.json || echo "FAILED"
+
+      - name: Display compliance report
+        run: |
+          echo "## 📊 Guidelines Compliance Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Extract metrics
+          SCORE=$(jq -r '.compliance_score // 0' compliance-report.json)
+          STATUS=$(jq -r '.status // "UNKNOWN"' compliance-report.json)
+          CRITICAL=$(jq -r '.summary.critical // 0' compliance-report.json)
+          HIGH=$(jq -r '.summary.high // 0' compliance-report.json)
+          MEDIUM=$(jq -r '.summary.medium // 0' compliance-report.json)
+          LOW=$(jq -r '.summary.low // 0' compliance-report.json)
+
+          echo "**Overall Score:** $SCORE/100" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** $STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Violations" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔴 CRITICAL: $CRITICAL" >> $GITHUB_STEP_SUMMARY
+          echo "- 🟡 HIGH: $HIGH" >> $GITHUB_STEP_SUMMARY
+          echo "- 🟠 MEDIUM: $MEDIUM" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔵 LOW: $LOW" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload compliance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-report
+          path: compliance-report.json
+
+      - name: Fail on CRITICAL violations
+        run: |
+          CRITICAL=$(jq -r '.summary.critical // 0' compliance-report.json)
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::error::Found $CRITICAL CRITICAL violations"
+            exit 1
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('compliance-report.json', 'utf8'));
+
+            const statusEmoji = {
+              'PASSED': '✅',
+              'WARNING': '⚠️',
+              'FAILED': '❌'
+            };
+
+            const comment = `## ${statusEmoji[report.status]} Guidelines Compliance Check
+
+            **Overall Score:** ${report.compliance_score}/100
+            **Status:** ${report.status}
+
+            ### Violations
+            - 🔴 CRITICAL: ${report.summary.critical}
+            - 🟡 HIGH: ${report.summary.high}
+            - 🟠 MEDIUM: ${report.summary.medium}
+            - 🔵 LOW: ${report.summary.low}
+
+            ${report.summary.critical > 0 ? '⚠️ **Action required:** Fix CRITICAL violations before merging.' : ''}
+
+            <details>
+            <summary>View detailed report</summary>
+
+            \`\`\`json
+            ${JSON.stringify(report, null, 2)}
+            \`\`\`
+
+            </details>
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  auto-fix:
+    name: Auto-Fix Common Issues
+    runs-on: ubuntu-latest
+    # Only run on non-main branches
+    if: github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run auto-fix
+        run: |
+          chmod +x ./scripts/bash/autofix-guidelines.sh
+          ./scripts/bash/autofix-guidelines.sh
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if [[ -n $(git status -s) ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push fixes
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          git commit -m "chore: auto-fix guideline violations"
+          git push
+
+  analytics:
+    name: Update Compliance Analytics
+    runs-on: ubuntu-latest
+    # Only run on main branch
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Update analytics
+        run: |
+          chmod +x ./scripts/bash/guidelines-analytics.sh
+          ./scripts/bash/guidelines-analytics.sh --save-history
+
+      - name: Commit analytics
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .guidelines-analytics/
+          git commit -m "chore: update compliance analytics" || echo "No changes to commit"
+          git push || echo "Nothing to push"

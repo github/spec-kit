@@ -1,0 +1,218 @@
+// Jenkinsfile - Guidelines Compliance Check
+// Place this file in your repository root or include it in your Jenkins pipeline
+
+pipeline {
+    agent any
+
+    options {
+        // Keep last 30 builds
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        // Timeout after 10 minutes
+        timeout(time: 10, unit: 'MINUTES')
+    }
+
+    environment {
+        COMPLIANCE_THRESHOLD = '75'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Setup') {
+            steps {
+                sh '''
+                    # Install jq if not available
+                    if ! command -v jq &> /dev/null; then
+                        echo "Installing jq..."
+                        apt-get update && apt-get install -y jq || true
+                    fi
+
+                    # Make scripts executable
+                    chmod +x ./scripts/bash/*.sh
+                '''
+            }
+        }
+
+        stage('Compliance Check') {
+            steps {
+                script {
+                    // Run compliance checker
+                    sh '''
+                        ./scripts/bash/check-guidelines-compliance.sh --output=json > compliance-report.json || echo "Violations found"
+                    '''
+
+                    // Read and parse report
+                    def report = readJSON file: 'compliance-report.json'
+
+                    // Set build description
+                    currentBuild.description = "Score: ${report.compliance_score}/100 | Status: ${report.status}"
+
+                    // Display metrics
+                    echo "Compliance Score: ${report.compliance_score}/100"
+                    echo "Status: ${report.status}"
+                    echo "CRITICAL: ${report.summary.critical}"
+                    echo "HIGH: ${report.summary.high}"
+                    echo "MEDIUM: ${report.summary.medium}"
+                    echo "LOW: ${report.summary.low}"
+
+                    // Fail on CRITICAL violations
+                    if (report.summary.critical > 0) {
+                        error("Found ${report.summary.critical} CRITICAL violations")
+                    }
+
+                    // Warn on low score
+                    if (report.compliance_score < COMPLIANCE_THRESHOLD.toInteger()) {
+                        unstable("Compliance score (${report.compliance_score}) below threshold (${COMPLIANCE_THRESHOLD})")
+                    }
+
+                    // Set build status badge
+                    if (report.status == 'PASSED') {
+                        addBadge(icon: 'success.gif', text: "Compliance: ${report.compliance_score}/100")
+                    } else if (report.status == 'WARNING') {
+                        addBadge(icon: 'warning.gif', text: "Compliance: ${report.compliance_score}/100")
+                    } else {
+                        addBadge(icon: 'error.gif', text: "Compliance: ${report.compliance_score}/100")
+                    }
+                }
+            }
+        }
+
+        stage('Auto-Fix') {
+            when {
+                // Only run auto-fix on feature branches
+                not {
+                    anyOf {
+                        branch 'main'
+                        branch 'master'
+                        branch 'develop'
+                    }
+                }
+            }
+            steps {
+                script {
+                    sh './scripts/bash/autofix-guidelines.sh'
+
+                    // Check if fixes were applied
+                    def hasChanges = sh(
+                        script: 'git status -s',
+                        returnStdout: true
+                    ).trim()
+
+                    if (hasChanges) {
+                        echo "Auto-fixes applied"
+
+                        // Optionally commit and push changes
+                        // Uncomment if Jenkins has write access to repository
+                        /*
+                        sh '''
+                            git config user.email "jenkins@example.com"
+                            git config user.name "Jenkins CI"
+                            git add .
+                            git commit -m "chore: auto-fix guideline violations [skip ci]"
+                            git push origin HEAD:${BRANCH_NAME}
+                        '''
+                        */
+                    } else {
+                        echo "No auto-fixes needed"
+                    }
+                }
+            }
+        }
+
+        stage('Generate Report') {
+            steps {
+                sh '''
+                    # Generate analytics dashboard
+                    ./scripts/bash/guidelines-analytics.sh > compliance-dashboard.txt
+
+                    # Generate CSV for historical tracking
+                    ./scripts/bash/guidelines-analytics.sh --output=csv > compliance-history.csv
+                '''
+            }
+        }
+
+        stage('Update Analytics') {
+            when {
+                // Only update analytics on main branch
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                script {
+                    sh './scripts/bash/guidelines-analytics.sh --save-history'
+
+                    // Check if analytics were updated
+                    def hasChanges = sh(
+                        script: 'git status -s .guidelines-analytics/',
+                        returnStdout: true
+                    ).trim()
+
+                    if (hasChanges) {
+                        echo "Analytics updated"
+
+                        // Optionally commit and push analytics
+                        /*
+                        sh '''
+                            git config user.email "jenkins@example.com"
+                            git config user.name "Jenkins CI"
+                            git add .guidelines-analytics/
+                            git commit -m "chore: update compliance analytics [skip ci]"
+                            git push origin HEAD:${BRANCH_NAME}
+                        '''
+                        */
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Archive artifacts
+            archiveArtifacts artifacts: 'compliance-report.json,compliance-dashboard.txt,compliance-history.csv', allowEmptyArchive: true
+
+            // Publish HTML report (requires HTML Publisher Plugin)
+            publishHTML([
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: '.',
+                reportFiles: 'compliance-dashboard.txt',
+                reportName: 'Compliance Dashboard'
+            ])
+        }
+
+        success {
+            echo 'Compliance check passed!'
+        }
+
+        unstable {
+            echo 'Compliance score below threshold'
+            // Send notification (email, Slack, etc.)
+            // emailext(
+            //     subject: "Compliance Warning: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+            //     body: "Compliance score below threshold. Check ${env.BUILD_URL} for details.",
+            //     to: "team@example.com"
+            // )
+        }
+
+        failure {
+            echo 'Compliance check failed!'
+            // Send notification (email, Slack, etc.)
+            // emailext(
+            //     subject: "Compliance Failure: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+            //     body: "Critical violations found. Check ${env.BUILD_URL} for details.",
+            //     to: "team@example.com"
+            // )
+        }
+    }
+}
+
+// Scheduled job for weekly compliance reports
+// Configure in Jenkins: H 0 * * 0 (every Sunday at midnight)

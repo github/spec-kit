@@ -1,0 +1,170 @@
+# GitLab CI - Guidelines Compliance Check
+# Place this file in: .gitlab-ci.yml (or include it from your main CI file)
+
+stages:
+  - compliance
+  - report
+
+variables:
+  COMPLIANCE_THRESHOLD: "75"  # Minimum compliance score
+
+# Guidelines compliance check
+guidelines:compliance:
+  stage: compliance
+  image: ubuntu:latest
+  before_script:
+    - apt-get update && apt-get install -y jq
+  script:
+    - chmod +x ./scripts/bash/check-guidelines-compliance.sh
+    - ./scripts/bash/check-guidelines-compliance.sh --output=json > compliance-report.json || echo "Compliance check found violations"
+    - |
+      # Extract metrics
+      SCORE=$(jq -r '.compliance_score // 0' compliance-report.json)
+      STATUS=$(jq -r '.status // "UNKNOWN"' compliance-report.json)
+      CRITICAL=$(jq -r '.summary.critical // 0' compliance-report.json)
+      HIGH=$(jq -r '.summary.high // 0' compliance-report.json)
+
+      # Display report
+      echo "Compliance Score: $SCORE/100"
+      echo "Status: $STATUS"
+      echo "CRITICAL: $CRITICAL"
+      echo "HIGH: $HIGH"
+
+      # Fail on CRITICAL violations
+      if [ "$CRITICAL" -gt 0 ]; then
+        echo "ERROR: Found $CRITICAL CRITICAL violations"
+        exit 1
+      fi
+
+      # Warn on low score
+      if [ "$SCORE" -lt "$COMPLIANCE_THRESHOLD" ]; then
+        echo "WARNING: Compliance score ($SCORE) below threshold ($COMPLIANCE_THRESHOLD)"
+        exit 1
+      fi
+  artifacts:
+    reports:
+      junit: compliance-report.json
+    paths:
+      - compliance-report.json
+    expire_in: 30 days
+  only:
+    - merge_requests
+    - main
+    - master
+    - develop
+
+# Auto-fix common issues
+guidelines:autofix:
+  stage: compliance
+  image: ubuntu:latest
+  script:
+    - chmod +x ./scripts/bash/autofix-guidelines.sh
+    - ./scripts/bash/autofix-guidelines.sh
+    - |
+      # Check for changes
+      if [[ -n $(git status -s) ]]; then
+        echo "Auto-fixes applied"
+        git config --global user.email "gitlab-ci@example.com"
+        git config --global user.name "GitLab CI"
+        git add .
+        git commit -m "chore: auto-fix guideline violations [skip ci]"
+        # Note: Configure GitLab to allow CI to push to branches
+        # git push https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git HEAD:${CI_COMMIT_REF_NAME}
+      else
+        echo "No auto-fixes needed"
+      fi
+  only:
+    - merge_requests
+  except:
+    - main
+    - master
+
+# Generate compliance report
+guidelines:report:
+  stage: report
+  image: ubuntu:latest
+  before_script:
+    - apt-get update && apt-get install -y jq
+  script:
+    - chmod +x ./scripts/bash/guidelines-analytics.sh
+    - ./scripts/bash/guidelines-analytics.sh --output=json > analytics.json
+    - ./scripts/bash/guidelines-analytics.sh > analytics.txt
+  artifacts:
+    paths:
+      - analytics.json
+      - analytics.txt
+    expire_in: 90 days
+  only:
+    - schedules
+    - main
+    - master
+
+# Scheduled analytics update
+guidelines:analytics:
+  stage: report
+  image: ubuntu:latest
+  before_script:
+    - apt-get update && apt-get install -y jq
+  script:
+    - chmod +x ./scripts/bash/guidelines-analytics.sh
+    - ./scripts/bash/guidelines-analytics.sh --save-history
+    - |
+      # Commit analytics history
+      if [[ -n $(git status -s .guidelines-analytics/) ]]; then
+        git config --global user.email "gitlab-ci@example.com"
+        git config --global user.name "GitLab CI"
+        git add .guidelines-analytics/
+        git commit -m "chore: update compliance analytics [skip ci]"
+        # git push https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git HEAD:${CI_COMMIT_REF_NAME}
+      fi
+  only:
+    - schedules  # Configure a weekly schedule in GitLab
+
+# Merge request widget
+guidelines:mr-widget:
+  stage: compliance
+  image: ubuntu:latest
+  before_script:
+    - apt-get update && apt-get install -y jq curl
+  script:
+    - chmod +x ./scripts/bash/check-guidelines-compliance.sh
+    - ./scripts/bash/check-guidelines-compliance.sh --output=json > compliance-report.json || true
+    - |
+      # Post comment to merge request
+      SCORE=$(jq -r '.compliance_score // 0' compliance-report.json)
+      STATUS=$(jq -r '.status // "UNKNOWN"' compliance-report.json)
+      CRITICAL=$(jq -r '.summary.critical // 0' compliance-report.json)
+      HIGH=$(jq -r '.summary.high // 0' compliance-report.json)
+      MEDIUM=$(jq -r '.summary.medium // 0' compliance-report.json)
+      LOW=$(jq -r '.summary.low // 0' compliance-report.json)
+
+      STATUS_EMOJI="✅"
+      if [ "$STATUS" = "FAILED" ]; then
+        STATUS_EMOJI="❌"
+      elif [ "$STATUS" = "WARNING" ]; then
+        STATUS_EMOJI="⚠️"
+      fi
+
+      COMMENT="## $STATUS_EMOJI Guidelines Compliance Check
+
+      **Overall Score:** $SCORE/100
+      **Status:** $STATUS
+
+      ### Violations
+      - 🔴 CRITICAL: $CRITICAL
+      - 🟡 HIGH: $HIGH
+      - 🟠 MEDIUM: $MEDIUM
+      - 🔵 LOW: $LOW
+
+      $(if [ "$CRITICAL" -gt 0 ]; then echo "⚠️ **Action required:** Fix CRITICAL violations before merging."; fi)
+      "
+
+      # Use GitLab API to post comment (requires CI_JOB_TOKEN and MR IID)
+      # curl --request POST \
+      #   --header "PRIVATE-TOKEN: $CI_JOB_TOKEN" \
+      #   --data "body=$COMMENT" \
+      #   "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+
+      echo "$COMMENT"
+  only:
+    - merge_requests

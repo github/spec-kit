@@ -25,6 +25,7 @@
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🎭 Orchestrator Workflow](#-orchestrator-workflow)
+- [🏢 Corporate Guidelines System](#-corporate-guidelines-system)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
@@ -126,6 +127,81 @@ Use **`/speckit.implement`** to execute all tasks and build your feature accordi
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+### Workflow Diagram
+
+```mermaid
+flowchart TD
+    Start([Start New Feature]) --> Constitution
+
+    Constitution["🏛️ /speckit.constitution<br/><b>REQUIRED</b><br/>Establish project principles"]
+    Constitution --> Specify
+
+    Specify["📝 /speckit.specify<br/><b>REQUIRED</b><br/>Define requirements & user stories"]
+    Specify --> Clarify
+
+    Clarify["❓ /speckit.clarify<br/><i>OPTIONAL</i><br/>Resolve ambiguities & gaps"]
+    Clarify -->|Recommended| Plan
+    Clarify -.->|Skip if clear| Plan
+
+    Plan["🏗️ /speckit.plan<br/><b>REQUIRED</b><br/>Create technical design"]
+    Plan --> Tasks
+
+    Tasks["📋 /speckit.tasks<br/><b>REQUIRED</b><br/>Generate task breakdown"]
+    Tasks --> Analyze
+
+    Analyze["🔍 /speckit.analyze<br/><i>OPTIONAL</i><br/>Validate consistency & coverage"]
+    Analyze -->|Recommended| Implement
+    Analyze -.->|Skip if confident| Implement
+
+    Implement["⚙️ /speckit.implement<br/><b>REQUIRED</b><br/>Execute all tasks"]
+    Implement --> Checklist
+
+    Checklist["✅ /speckit.checklist<br/><i>OPTIONAL</i><br/>Quality validation"]
+    Checklist --> Done
+
+    Done([✅ Feature Complete])
+
+    subgraph Legend
+        Required["<b>REQUIRED</b><br/>Essential for workflow"]
+        Optional["<i>OPTIONAL</i><br/>Recommended but skippable"]
+    end
+
+    style Constitution fill:#ffcccc
+    style Specify fill:#ffcccc
+    style Plan fill:#ffcccc
+    style Tasks fill:#ffcccc
+    style Implement fill:#ffcccc
+    style Clarify fill:#ffffcc
+    style Analyze fill:#ffffcc
+    style Checklist fill:#ffffcc
+    style Start fill:#ccffcc
+    style Done fill:#ccffcc
+    style Required fill:#ffcccc
+    style Optional fill:#ffffcc
+```
+
+**Required Commands** (Red):
+
+- `/speckit.constitution` - Establish project principles
+- `/speckit.specify` - Define what to build
+- `/speckit.plan` - Create technical design
+- `/speckit.tasks` - Generate actionable tasks
+- `/speckit.implement` - Execute implementation
+
+**Optional Commands** (Yellow):
+
+- `/speckit.clarify` - Resolve ambiguities (recommended before planning)
+- `/speckit.analyze` - Validate consistency (recommended before implementation)
+- `/speckit.checklist` - Quality validation (recommended after implementation)
+
+**Alternative: Use Orchestrator** - Run the entire workflow with a single command:
+
+```bash
+/speckit.orchestrate <feature-description>
+```
+
+Then use `/speckit.resume` to continue after chat limits or interruptions.
 
 ## 📽️ Video Overview
 
@@ -738,6 +814,292 @@ The orchestrator workflow provides:
 ```bash
 /speckit.orchestrate <your-feature-description>
 ```
+
+## 🏢 Corporate Guidelines System
+
+Spec Kit includes a comprehensive Corporate Guidelines system that allows organizations to customize and enforce their development standards, tooling requirements, and compliance policies.
+
+### What are Corporate Guidelines?
+
+Corporate Guidelines enable you to specify:
+
+- **Corporate infrastructure** - Internal scaffolding commands, package registries (Artifactory, Nexus), corporate SDKs
+- **Mandatory libraries** - Required corporate packages for authentication, UI components, APIs
+- **Banned libraries** - Public packages that must not be used due to security/licensing concerns
+- **Security & compliance** - Authentication requirements, data classification, audit logging
+- **Architecture patterns** - Folder structure, design patterns, coding standards
+- **Branch naming** - Configurable branch naming conventions and Jira integration
+
+### Implementation Phases
+
+The Corporate Guidelines system was implemented in four phases:
+
+#### Phase 1: Foundation ✅
+
+**Completed Features:**
+
+- 7 tech stack guideline templates (React, Java, .NET, Node.js, Python, Go, branching)
+- Automatic tech stack detection from project files
+- Multi-stack project support (e.g., React frontend + Java backend)
+- Priority system: Constitution > Corporate Guidelines > Spec Kit Defaults
+- Integration into all core prompts (plan, implement, analyze, tasks)
+- Non-compliance handling with TODO generation
+
+**Files Created:**
+
+```text
+.guidelines/
+├── README.md                    # Guidelines documentation
+├── branching-guidelines.md      # Branch naming conventions
+├── reactjs-guidelines.md        # React/frontend standards
+├── java-guidelines.md           # Java/Spring Boot standards
+├── dotnet-guidelines.md         # .NET/C# standards
+├── nodejs-guidelines.md         # Node.js/Express standards
+└── python-guidelines.md         # Python/Django/Flask standards
+```
+
+#### Phase 2: Configurable Branch Naming ✅
+
+**Completed Features:**
+
+- JSON-based branch configuration (`branch-config.json`)
+- Customizable branch patterns and prefixes
+- Configurable Jira format with regex validation
+- Optional Jira support for teams without ticket systems
+- Backward compatibility with existing projects
+
+**Configuration Example:**
+
+```json
+{
+  "version": "1.0",
+  "branch_pattern": "feature/<num>-<jira>-<shortname>",
+  "branch_prefix": "feature/",
+  "jira": {
+    "required": true,
+    "format": "C12345-7890",
+    "regex": "^C[0-9]{5}-[0-9]{4}$"
+  }
+}
+```
+
+#### Phase 3: Multi-Stack Coordination ✅
+
+**Completed Features:**
+
+- Multiple tech stack detection and loading
+- Stack-to-file path mapping via `stack-mapping.json`
+- Contextual guideline application (frontend vs backend)
+- Precedence rules for overlapping guidelines
+- Token usage optimization
+
+**Path Mapping Example:**
+
+```json
+{
+  "stacks": [
+    {
+      "name": "reactjs",
+      "paths": ["frontend/**", "client/**"],
+      "extensions": [".tsx", ".jsx"]
+    },
+    {
+      "name": "java",
+      "paths": ["backend/**", "server/**"],
+      "extensions": [".java"]
+    }
+  ]
+}
+```
+
+#### Phase 4: Advanced Features ✅
+
+**New Tools:**
+
+| Tool | Script | Purpose |
+|------|--------|---------|
+| **Compliance Checker** | `check-guidelines-compliance.sh` | Validate project against guidelines with severity levels (CRITICAL/HIGH/MEDIUM/LOW) |
+| **Diff Tool** | `diff-guidelines.sh` | Compare project guidelines vs templates, identify outdated sections |
+| **Auto-Fix Tool** | `autofix-guidelines.sh` | Automatically fix common violations (security, structure, config) |
+| **Analytics Dashboard** | `guidelines-analytics.sh` | Track compliance metrics, generate trends, visualize scores |
+| **CI/CD Integration** | `.guidelines/examples/ci-cd/` | GitHub Actions, GitLab CI, Jenkins pipeline examples |
+
+### Using Guidelines Tools
+
+#### Check Compliance
+
+```bash
+# Run compliance check
+./scripts/bash/check-guidelines-compliance.sh
+
+# Generate JSON report
+./scripts/bash/check-guidelines-compliance.sh --output=json > report.json
+
+# Strict mode (fail on HIGH violations)
+./scripts/bash/check-guidelines-compliance.sh --strict
+```
+
+**Example Output:**
+
+```text
+Guideline Compliance Report
+===========================
+Tech Stack: React + Java
+Guidelines: reactjs-guidelines.md, java-guidelines.md
+
+✅ PASS: Using @acmecorp/ui-components (17 imports)
+❌ FAIL: Found banned library @mui/material in src/components/Button.tsx
+⚠️  WARN: Missing corporate auth library @acmecorp/idm-client
+
+Summary: 1 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW
+Status: FAILED
+```
+
+#### Compare Guidelines
+
+```bash
+# Compare all guidelines
+./scripts/bash/diff-guidelines.sh
+
+# Compare specific stack
+./scripts/bash/diff-guidelines.sh --stack=reactjs
+
+# Show detailed line-by-line diff
+./scripts/bash/diff-guidelines.sh --all
+```
+
+#### Auto-Fix Violations
+
+```bash
+# Preview fixes (dry-run)
+./scripts/bash/autofix-guidelines.sh --dry-run
+
+# Apply all fixes
+./scripts/bash/autofix-guidelines.sh
+
+# Apply only security fixes
+./scripts/bash/autofix-guidelines.sh --fixes=security
+
+# Apply only structure fixes
+./scripts/bash/autofix-guidelines.sh --fixes=structure
+```
+
+**Common Auto-Fixes:**
+
+- Add `.env` to `.gitignore`
+- Create `.env.example` template
+- Add `.npmrc` for corporate registry
+- Create standard architecture folders
+- Fix missing documentation
+
+#### Analytics Dashboard
+
+```bash
+# View compliance dashboard
+./scripts/bash/guidelines-analytics.sh
+
+# Save metrics to history
+./scripts/bash/guidelines-analytics.sh --save-history
+
+# Export as JSON
+./scripts/bash/guidelines-analytics.sh --output=json
+
+# Export as CSV
+./scripts/bash/guidelines-analytics.sh --output=csv > report.csv
+```
+
+**Dashboard Features:**
+
+- Compliance score (0-100)
+- Violations breakdown by severity
+- Historical trends (30-day sparkline)
+- ASCII progress bars
+- Actionable recommendations
+
+#### CI/CD Integration
+
+```bash
+# GitHub Actions
+cp .guidelines/examples/ci-cd/github-actions.yml .github/workflows/guidelines-compliance.yml
+
+# GitLab CI
+cp .guidelines/examples/ci-cd/gitlab-ci.yml .gitlab-ci.yml
+
+# Jenkins
+cp .guidelines/examples/ci-cd/Jenkinsfile Jenkinsfile
+```
+
+**CI/CD Features:**
+
+- Automated compliance checks on PRs
+- Block merges on CRITICAL violations
+- Auto-fix with automated commits
+- Compliance score trending
+- Slack/email notifications
+
+### Guidelines Hierarchy
+
+When making decisions, AI prompts follow this priority order:
+
+```mermaid
+graph TD
+    A[Constitution<br/>.specify/memory/constitution.md] -->|HIGHEST PRIORITY| B{Guidelines Exist?}
+    B -->|Yes| C[Corporate Guidelines<br/>.guidelines/*.md]
+    B -->|No| D[Spec Kit Defaults]
+    C -->|MEDIUM PRIORITY| E[Final Decision]
+    D -->|LOWEST PRIORITY| E
+
+    style A fill:#ff9999
+    style C fill:#ffff99
+    style D fill:#99ff99
+    style E fill:#99ccff
+```
+
+**Example:** If constitution says "MUST use PostgreSQL" but guidelines suggest MySQL, constitution wins.
+
+### Quick Start
+
+1. **Customize guidelines** for your organization:
+
+   ```bash
+   # Edit tech stack guidelines
+   vi .guidelines/reactjs-guidelines.md
+   vi .guidelines/java-guidelines.md
+   ```
+
+2. **Configure branch naming** (optional):
+
+   ```bash
+   # Create branch configuration
+   vi .guidelines/branch-config.json
+   ```
+
+3. **Check compliance**:
+
+   ```bash
+   ./scripts/bash/check-guidelines-compliance.sh
+   ```
+
+4. **Auto-fix issues**:
+
+   ```bash
+   ./scripts/bash/autofix-guidelines.sh
+   ```
+
+5. **Set up CI/CD**:
+
+   ```bash
+   cp .guidelines/examples/ci-cd/github-actions.yml .github/workflows/
+   ```
+
+### Documentation
+
+- **Guidelines README:** `.guidelines/README.md` - Full documentation
+- **Implementation Plan:** `GUIDELINES-IMPLEMENTATION-PLAN.md` - Technical details
+- **Improvements:** `IMPROVEMENTS.md` - Future enhancements
+- **CI/CD Examples:** `.guidelines/examples/ci-cd/` - Integration guides
+
+---
 
 ## 📚 Core Philosophy
 
