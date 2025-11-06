@@ -7,6 +7,31 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Corporate Guidelines Phase 3: Multi-Stack Coordination**
+  - Multi-stack project support for monorepos (e.g., React + Java)
+  - Stack mapping configuration (`stack-mapping.json`) with path-based guideline application
+  - Intelligent guideline precedence rules (explicit > extension > convention > auto-detect)
+  - Version management for guideline files and configurations
+  - Guideline validation tool (`scripts/validate-guidelines.py`)
+  - Token optimization for multi-stack projects (summary loading, on-demand details)
+  - Updated `/specify tasks` command to support multi-stack task generation
+  - Updated `/specify analyze` command to support multi-stack compliance checking
+  - Cross-stack integration validation
+  - Documentation: Multi-stack example guide (`docs/multi-stack-example.md`)
+  - Support for shared code paths with precedence resolution
+  - Constitution-first conflict resolution for overlapping guideline concerns
+
+### Changed
+
+- Enhanced `.guidelines/README.md` with multi-stack support documentation
+- Updated tasks.md prompt template with contextual guideline application
+- Updated analyze.md prompt template with stack-specific validation
+- Improved guideline structure documentation with version management
+
 ## [0.0.20] - 2025-10-14
 
 ### Added

@@ -70,29 +70,81 @@ $ARGUMENTS
 
 **During analysis**, check for corporate guideline compliance:
 
-### 1. Load Guidelines
+### 1. Multi-Stack Detection & Loading
 
 Check for guideline files in `/.guidelines/` directory:
 
-- `reactjs-guidelines.md`
-- `java-guidelines.md`
-- `dotnet-guidelines.md`
-- `nodejs-guidelines.md`
-- `python-guidelines.md`
+**Available guideline files:**
+
+- `reactjs-guidelines.md` - React/frontend standards
+- `java-guidelines.md` - Java/Spring Boot standards
+- `dotnet-guidelines.md` - .NET/C# standards
+- `nodejs-guidelines.md` - Node.js/Express standards
+- `python-guidelines.md` - Python/Django/Flask standards
+
+**Single Stack Project:**
+
+If only one tech stack detected in `plan.md`:
+
+1. **Load** the single applicable guideline file
+2. **Validate** all components against those guidelines
+
+**Multi-Stack Project (e.g., React + Java):**
+
+If multiple tech stacks detected:
+
+1. **Load** all applicable guideline files
+2. **Map** guidelines to project areas using `/.guidelines/stack-mapping.json` (if exists)
+3. **Validate contextually**:
+   - Frontend code → Check against React guidelines
+   - Backend code → Check against Java/Node/Python guidelines
+   - Shared code → Check against both or use precedence rules
+
+**Stack mapping precedence (for compliance checking):**
+
+1. **Explicit path mapping** (from stack-mapping.json) - HIGHEST
+2. **File path patterns** (frontend/* → React, backend/* → Java)
+3. **File extensions** (*.tsx → React, *.java → Java)
+4. **Auto-detection** (from plan.md tech stack) - LOWEST
+
+**Example multi-stack validation:**
+
+```text
+Project: React frontend + Java backend
+
+Detected stacks: React + Java
+Load: reactjs-guidelines.md, java-guidelines.md
+
+Validate:
+  - plan.md frontend libraries → React guidelines
+  - plan.md backend libraries → Java guidelines
+  - tasks.md frontend tasks → React guidelines
+  - tasks.md backend tasks → Java guidelines
+  - Cross-stack integration → Both guidelines + constitution
+```
 
 **IF** guideline files exist:
 
-1. **Read** applicable guidelines based on tech stack in `plan.md`
-2. **Add** guideline compliance checking to analysis passes
+1. **Read** applicable guidelines
+2. **Add** stack-specific guideline compliance checking to analysis passes
 
 ### 2. Guideline Compliance Checks
 
 During analysis, validate:
 
+**Single Stack:**
+
 - **Library usage**: Check if `plan.md` specifies corporate libraries (not banned ones)
 - **Architecture patterns**: Verify architecture follows guideline recommendations
 - **Security requirements**: Ensure security standards are addressed in spec/plan
 - **Naming conventions**: Check if file paths in `tasks.md` follow conventions
+
+**Multi-Stack:**
+
+- **Stack-specific libraries**: Validate frontend libraries against React guidelines, backend libraries against Java/Node guidelines
+- **Cross-stack integration**: Verify API contracts follow both guidelines
+- **Consistent patterns**: Ensure both stacks follow their respective architecture patterns
+- **Shared code compliance**: Validate shared utilities meet requirements from both guidelines
 
 **Report findings** as:
 
@@ -101,7 +153,7 @@ During analysis, validate:
 - **MEDIUM**: Architecture pattern deviates from guidelines without justification
 - **LOW**: Minor style/convention deviations
 
-**Example findings**:
+**Example findings (Single Stack)**:
 
 ```text
 GUIDELINE-001 [HIGH]: Plan specifies @mui/material but reactjs-guidelines.md requires @acmecorp/ui-components
@@ -113,14 +165,82 @@ Location: plan.md:67
 Recommendation: Replace with @acmecorp/idm-client for authentication
 ```
 
-### 3. Non-Compliance Handling
+**Example findings (Multi-Stack)**:
+
+```text
+GUIDELINE-001 [HIGH]: Frontend plan specifies @mui/material but reactjs-guidelines.md requires @acmecorp/ui-components
+Location: plan.md:45 (Frontend section)
+Stack: React
+Recommendation: Update frontend plan to use corporate UI library
+
+GUIDELINE-002 [CRITICAL]: Backend plan missing mandatory com.acmecorp:acme-api-client per java-guidelines.md
+Location: plan.md:78 (Backend dependencies)
+Stack: Java
+Recommendation: Add corporate API SDK to backend dependencies
+
+GUIDELINE-003 [MEDIUM]: API authentication strategy differs between frontend and backend guidelines
+Location: plan.md:92-105 (Authentication section)
+Stacks: React + Java
+Recommendation: Align OAuth2 implementation to follow both guidelines, with constitution as tiebreaker
+```
+
+### 3. Token Optimization
+
+**For multi-stack projects** (to manage context size during analysis):
+
+1. **Efficient loading**: Load only relevant sections of each guideline file
+2. **Focused validation**: Check specific violations rather than exhaustive comparison
+3. **Summary approach**: Focus on mandatory/banned libraries first, then architecture patterns
+4. **Contextual checking**: Only validate tasks against relevant stack guidelines
+
+**Example**:
+
+```text
+Analysis approach for React + Java project:
+
+Load summaries:
+- reactjs-guidelines.md: Mandatory libs (@acmecorp/ui-components, @acmecorp/idm-client)
+- java-guidelines.md: Mandatory libs (com.acmecorp:acme-api-client)
+
+Validate plan.md:
+- Frontend section → Check against React guidelines
+- Backend section → Check against Java guidelines
+- API contracts → Check against both
+
+Validate tasks.md:
+- Tasks in frontend/* → React guidelines
+- Tasks in backend/* → Java guidelines
+```
+
+### 4. Non-Compliance Handling
 
 **IF** guideline violations found:
 
-- **Document** violations in analysis report
-- **Recommend** fixes
+- **Document** violations in analysis report (with stack context for multi-stack)
+- **Recommend** fixes with specific guideline references
 - **DO NOT** block implementation (guidelines are recommendations)
 - **Suggest** creating `.guidelines-todo.md` for tracking
+
+**Multi-stack specific**:
+
+```markdown
+# Guideline Compliance TODOs
+
+## ⚠️ Frontend Violations (React)
+
+- [ ] Replace @mui/material with @acmecorp/ui-components (reactjs-guidelines.md)
+- [ ] Configure corporate package registry (reactjs-guidelines.md)
+
+## ⚠️ Backend Violations (Java)
+
+- [ ] Add com.acmecorp:acme-api-client dependency (java-guidelines.md)
+- [ ] Update authentication to use corporate OAuth2 config (java-guidelines.md)
+
+## Corporate Standards
+
+- Frontend: `.guidelines/reactjs-guidelines.md`
+- Backend: `.guidelines/java-guidelines.md`
+```
 
 **IF** no guidelines exist:
 

@@ -27,6 +27,8 @@ When making decisions, prompts follow this priority order:
 ```text
 .guidelines/
 ├── README.md                    # This file
+├── branch-config.json           # Branch naming configuration (Phase 2)
+├── stack-mapping.json           # Multi-stack path mapping (Phase 3)
 ├── branching-guidelines.md      # Branch naming conventions
 ├── reactjs-guidelines.md        # React/frontend standards
 ├── java-guidelines.md           # Java/Spring Boot standards
@@ -34,6 +36,42 @@ When making decisions, prompts follow this priority order:
 ├── nodejs-guidelines.md         # Node.js/Express standards
 └── python-guidelines.md         # Python/Django/Flask standards
 ```
+
+## Version Management
+
+All configuration files include version metadata for tracking changes and ensuring compatibility:
+
+**Configuration files** (`branch-config.json`, `stack-mapping.json`):
+
+```json
+{
+  "version": "1.0",
+  "last_updated": "2025-01-15",
+  "description": "..."
+}
+```
+
+**Guideline markdown files** (optional header):
+
+```markdown
+---
+version: 1.2.0
+last_updated: 2025-01-15
+maintainer: architecture-team@company.com
+---
+```
+
+### Version Compatibility
+
+- **Major version change** (1.x → 2.x): Breaking changes, may require prompt updates
+- **Minor version change** (1.2 → 1.3): New features, backward compatible
+- **Patch version change** (1.2.0 → 1.2.1): Bug fixes, clarifications
+
+**When to update versions:**
+
+1. **Configuration files**: Update version on schema changes
+2. **Guidelines**: Update version when mandatory requirements change
+3. **Version tracking**: Add `last_updated` date on every modification
 
 ## How It Works
 
@@ -47,14 +85,55 @@ Prompts automatically detect your tech stack from project files:
 - **Node.js**: `package.json` with `"express"` or backend-focused dependencies
 - **Python**: `requirements.txt`, `pyproject.toml`, or `setup.py`
 
-### Multi-Stack Support
+### Multi-Stack Support (Phase 3)
 
-If multiple tech stacks detected (e.g., React frontend + Java backend), prompts load and apply both guidelines contextually.
+If multiple tech stacks detected (e.g., React frontend + Java backend), prompts load and apply both guidelines contextually using intelligent path mapping.
 
-**Example**:
+**Configuration**: `stack-mapping.json` defines how guidelines map to project paths:
 
-- Frontend code → Apply `reactjs-guidelines.md`
-- Backend code → Apply `java-guidelines.md`
+```json
+{
+  "stacks": [
+    {
+      "name": "reactjs",
+      "guideline": "reactjs-guidelines.md",
+      "paths": ["frontend/**", "client/**"],
+      "extensions": [".tsx", ".jsx"],
+      "priority": 10
+    },
+    {
+      "name": "java",
+      "guideline": "java-guidelines.md",
+      "paths": ["backend/**", "server/**"],
+      "extensions": [".java"],
+      "priority": 10
+    }
+  ]
+}
+```
+
+**Precedence Rules**:
+
+1. **Explicit path mapping** (from `stack-mapping.json`) - HIGHEST
+2. **File extension** (`*.tsx` → React, `*.java` → Java)
+3. **Directory convention** (`frontend/` → React, `backend/` → Java)
+4. **Auto-detection** (from project markers) - LOWEST
+
+**Example Application**:
+
+```text
+Project structure:
+  frontend/src/components/Login.tsx  → React guidelines
+  backend/src/main/java/Auth.java    → Java guidelines
+  shared/utils/validation.ts         → Both guidelines or constitution priority
+```
+
+**Benefits**:
+
+- **Contextual validation**: Each stack validated against correct guidelines
+- **Clear organization**: Guidelines apply where they make sense
+- **Conflict resolution**: Precedence rules handle overlapping concerns
+- **Flexible mapping**: Customize paths per your project structure
 
 ## Customization
 

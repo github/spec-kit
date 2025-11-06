@@ -1,0 +1,116 @@
+{
+  "version": "1.0",
+  "description": "Maps project paths and file types to specific technology stack guidelines",
+  "stacks": [
+    {
+      "name": "reactjs",
+      "guideline": "reactjs-guidelines.md",
+      "paths": [
+        "frontend/**",
+        "client/**",
+        "ui/**",
+        "src/components/**",
+        "src/pages/**"
+      ],
+      "extensions": [
+        ".tsx",
+        ".jsx",
+        ".js",
+        ".ts"
+      ],
+      "markers": [
+        "package.json"
+      ],
+      "priority": 10
+    },
+    {
+      "name": "java",
+      "guideline": "java-guidelines.md",
+      "paths": [
+        "backend/**",
+        "server/**",
+        "api/**",
+        "src/main/java/**"
+      ],
+      "extensions": [
+        ".java"
+      ],
+      "markers": [
+        "pom.xml",
+        "build.gradle"
+      ],
+      "priority": 10
+    },
+    {
+      "name": "dotnet",
+      "guideline": "dotnet-guidelines.md",
+      "paths": [
+        "backend/**",
+        "server/**",
+        "api/**"
+      ],
+      "extensions": [
+        ".cs",
+        ".csproj"
+      ],
+      "markers": [
+        "*.csproj",
+        "*.sln"
+      ],
+      "priority": 10
+    },
+    {
+      "name": "nodejs",
+      "guideline": "nodejs-guidelines.md",
+      "paths": [
+        "backend/**",
+        "server/**",
+        "api/**"
+      ],
+      "extensions": [
+        ".js",
+        ".ts"
+      ],
+      "markers": [
+        "package.json"
+      ],
+      "priority": 5
+    },
+    {
+      "name": "python",
+      "guideline": "python-guidelines.md",
+      "paths": [
+        "backend/**",
+        "server/**",
+        "api/**"
+      ],
+      "extensions": [
+        ".py"
+      ],
+      "markers": [
+        "requirements.txt",
+        "pyproject.toml",
+        "setup.py"
+      ],
+      "priority": 10
+    }
+  ],
+  "shared_paths": [
+    "shared/**",
+    "common/**",
+    "lib/**",
+    "utils/**"
+  ],
+  "precedence_rules": {
+    "description": "Rules for resolving conflicts when multiple guidelines apply",
+    "path_beats_extension": true,
+    "explicit_beats_implicit": true,
+    "higher_priority_wins": true,
+    "constitution_beats_all": true
+  },
+  "fallback": {
+    "description": "Default behavior when no stack mapping found",
+    "load_all_detected": true,
+    "apply_context_sensitive": true
+  }
+}

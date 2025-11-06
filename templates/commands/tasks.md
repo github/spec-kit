@@ -70,20 +70,64 @@ $ARGUMENTS
 
 **During task generation**, incorporate corporate guidelines:
 
-### 1. Load Guidelines
+### 1. Multi-Stack Detection & Loading
 
 Check for guideline files in `/.guidelines/` directory based on tech stack in `plan.md`:
 
-- `reactjs-guidelines.md`
-- `java-guidelines.md`
-- `dotnet-guidelines.md`
-- `nodejs-guidelines.md`
-- `python-guidelines.md`
+**Available guideline files:**
+
+- `reactjs-guidelines.md` - React/frontend standards
+- `java-guidelines.md` - Java/Spring Boot standards
+- `dotnet-guidelines.md` - .NET/C# standards
+- `nodejs-guidelines.md` - Node.js/Express standards
+- `python-guidelines.md` - Python/Django/Flask standards
+
+**Single Stack Project:**
+
+If only one tech stack detected (e.g., React only):
+
+1. **Load** the single applicable guideline file
+2. **Apply** guidelines to all tasks
+
+**Multi-Stack Project (e.g., React + Java monorepo):**
+
+If multiple tech stacks detected:
+
+1. **Load** all applicable guideline files
+2. **Map** guidelines to project areas using `/.guidelines/stack-mapping.json` (if exists)
+3. **Apply contextually** based on file paths:
+   - Tasks in `frontend/*`, `client/*` → React guidelines
+   - Tasks in `backend/*`, `server/*` → Java/Node/Python guidelines
+   - Tasks in `shared/*` → Combine both or use precedence rules
+
+**Stack mapping precedence:**
+
+1. **Explicit path mapping** (from stack-mapping.json) - HIGHEST
+2. **File extension** (*.tsx → React, *.java → Java)
+3. **Directory convention** (frontend/ → React, backend/ → Java)
+4. **Auto-detection** (from package.json, pom.xml markers) - LOWEST
+
+**Example multi-stack scenario:**
+
+```text
+Project structure:
+  frontend/     # React app
+  backend/      # Java Spring Boot
+
+Detected stacks: React + Java
+Load: reactjs-guidelines.md, java-guidelines.md
+
+Apply:
+  - Tasks for frontend/* → React guidelines
+  - Tasks for backend/* → Java guidelines
+  - Shared infrastructure → Both guidelines (or constitution priority)
+```
 
 **IF** guideline files exist:
 
 1. **Read** applicable guidelines
-2. **Incorporate** guideline-specific tasks
+2. **Incorporate** stack-specific tasks
+3. **Label tasks** with stack context when useful (e.g., [Frontend], [Backend])
 
 ### 2. Guideline-Aware Task Generation
 
@@ -91,53 +135,107 @@ When generating tasks, include:
 
 #### Setup Phase Tasks
 
-**IF** guidelines specify corporate scaffolding:
+**Single Stack:**
 
 ```text
 - [ ] [T001] Initialize project using corporate scaffolding command from guidelines
   Example: `npx @acmecorp/create-react-app` instead of `npx create-react-app`
 ```
 
+**Multi-Stack:**
+
+```text
+- [ ] [T001] [Frontend] Initialize React app using corporate scaffolding from reactjs-guidelines.md
+  Example: `npx @acmecorp/create-react-app frontend --template typescript`
+- [ ] [T002] [Backend] Initialize Spring Boot project using corporate archetype from java-guidelines.md
+  Example: `mvn archetype:generate -DarchetypeGroupId=com.acmecorp ...`
+```
+
 #### Dependency Installation Tasks
 
-**Use** corporate package names from guidelines:
+**Single Stack:**
 
 ```text
 - [ ] [T005] Install corporate UI library: @acmecorp/ui-components
 - [ ] [T006] Install corporate auth client: @acmecorp/idm-client
-- [ ] [T007] Configure corporate package registry (Artifactory)
+```
+
+**Multi-Stack:**
+
+```text
+- [ ] [T005] [Frontend] Install corporate UI library: @acmecorp/ui-components (React guidelines)
+- [ ] [T006] [Backend] Add corporate API SDK dependency (Java guidelines): com.acmecorp:acme-api-client
+- [ ] [T007] [Backend] Configure corporate Maven repository (Java guidelines)
 ```
 
 **NOT** public packages if banned in guidelines.
 
 #### Configuration Tasks
 
-**Add** corporate-specific configuration tasks:
+**Add** corporate-specific configuration tasks for each stack:
 
 ```text
-- [ ] [T010] Configure corporate authentication (JWT issuer, audience per guidelines)
-- [ ] [T011] Set up corporate logging (structured JSON format per guidelines)
+- [ ] [T010] [Frontend] Configure corporate authentication (per React guidelines)
+- [ ] [T011] [Backend] Set up corporate logging framework (per Java guidelines)
 ```
 
 #### Coding Tasks
 
-**Reference** corporate libraries in task descriptions:
+**Reference** stack-appropriate corporate libraries:
+
+**Single Stack:**
 
 ```text
 - [ ] [T045] [US1] Implement login form using @acmecorp/ui-components (Form, Input, Button)
-- [ ] [T046] [US1] Add authentication logic using @acmecorp/idm-client
+```
+
+**Multi-Stack:**
+
+```text
+- [ ] [T045] [US1] [Frontend] Implement login form using @acmecorp/ui-components in frontend/src/components/Login.tsx
+- [ ] [T046] [US1] [Backend] Implement authentication endpoint using @acmecorp/idm-client in backend/src/main/java/controllers/AuthController.java
 ```
 
 ### 3. Guideline Compliance Tasks
 
 **Add** compliance verification tasks in Polish phase:
 
+**Single Stack:**
+
 ```text
 - [ ] [T999] Verify all imports use corporate libraries (no banned libraries)
 - [ ] [T1000] Check coding standards compliance (naming, structure per guidelines)
 ```
 
-### 4. No Guidelines
+**Multi-Stack:**
+
+```text
+- [ ] [T998] [Frontend] Verify React code uses corporate libraries from reactjs-guidelines.md
+- [ ] [T999] [Backend] Verify Java code uses corporate libraries from java-guidelines.md
+- [ ] [T1000] Check cross-stack integration follows architecture patterns from both guidelines
+```
+
+### 4. Token Optimization
+
+**For multi-stack projects** (to manage context size):
+
+1. **Summary loading**: Load only summary sections (first 30-50 lines) initially
+2. **On-demand details**: Reference full guidelines when needed for specific tasks
+3. **Contextual application**: Only load relevant guideline sections per phase
+4. **Caching**: Note loaded guidelines to avoid re-reading
+
+**Example**:
+
+```text
+Loaded guidelines (summaries):
+- reactjs-guidelines.md (React + TypeScript, @acmecorp/ui-components)
+- java-guidelines.md (Spring Boot + Clean Architecture, com.acmecorp:acme-api-client)
+
+For detailed scaffolding: Reference reactjs-guidelines.md section "Scaffolding"
+For authentication details: Reference both guidelines section "Security & Compliance"
+```
+
+### 5. No Guidelines
 
 **IF** guidelines do NOT exist:
 

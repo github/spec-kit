@@ -143,7 +143,9 @@ Guidelines are markdown files in the `/.guidelines/` directory that specify:
 ```text
 .guidelines/
 ├── README.md                    # Guidelines overview and customization instructions
-├── branching-guidelines.md      # Branch naming conventions (configurable in Phase 2)
+├── branch-config.json           # Branch naming configuration (Phase 2)
+├── stack-mapping.json           # Multi-stack path mapping (Phase 3)
+├── branching-guidelines.md      # Branch naming conventions
 ├── reactjs-guidelines.md        # React/frontend standards
 ├── java-guidelines.md           # Java/Spring Boot standards
 ├── dotnet-guidelines.md         # .NET/C# standards
@@ -230,29 +232,39 @@ Guidelines are **recommendations, not blockers**:
 
 #### Implementation Status
 
-**Phase 1** (Current - DONE):
+**Phase 1** (DONE):
 
 - ✅ Guideline template files created
-- ✅ prompt integration (plan, implement, analyze, tasks)
+- ✅ Prompt integration (plan, implement, analyze, tasks)
 - ✅ Auto-detection of tech stack
-- ✅ Multi-stack support
+- ✅ Basic multi-stack support
 - ✅ Non-compliance handling
 
-**Phase 2** (Planned):
+**Phase 2** (DONE):
 
-- Branch naming configuration (move hardcoded pattern to `branch-config.json`)
-- Script refactoring for configurable branch names
-- See `GUIDELINES-IMPLEMENTATION-PLAN.md` for details
+- ✅ Branch naming configuration (`branch-config.json`)
+- ✅ Configurable Jira patterns and validation
+- ✅ Optional Jira requirement
+- ✅ Custom branch prefixes and formats
+- ✅ Script integration with configuration
+- ✅ Backward compatibility for projects without config
 
-**Phase 3** (Future):
+**Phase 3** (DONE):
 
-- Advanced multi-stack coordination
-- Guideline version management
-- See `GUIDELINES-IMPLEMENTATION-PLAN.md` for details
+- ✅ Advanced multi-stack coordination with intelligent path mapping
+- ✅ Stack mapping configuration (`stack-mapping.json`)
+- ✅ Guideline precedence rules (explicit > extension > convention > auto-detect)
+- ✅ Version management for guidelines and configurations
+- ✅ Guideline validation tool (`scripts/validate-guidelines.py`)
+- ✅ Token optimization for multi-stack projects
+- ✅ Enhanced tasks.md prompt for multi-stack task generation
+- ✅ Enhanced analyze.md prompt for multi-stack compliance checking
+- ✅ Cross-stack integration validation
+- ✅ Documentation and examples
 
 #### Example Use Cases
 
-**Use Case 1: Corporate React Library**
+##### Use Case 1: Corporate React Library
 
 ```markdown
 # .guidelines/reactjs-guidelines.md
@@ -272,7 +284,7 @@ import { Button } from '@acmecorp/ui-components';  // ✅ Corporate library
 // NOT: import { Button } from '@mui/material';     // ❌ Banned
 ```
 
-**Use Case 2: Java Corporate SDK**
+##### Use Case 2: Java Corporate SDK
 
 ```markdown
 # .guidelines/java-guidelines.md
@@ -290,6 +302,49 @@ MUST use corporate API client:
 ```
 
 **Result**: When running `/specify plan`, agent includes corporate SDK in architecture instead of building custom HTTP clients.
+
+##### Use Case 3: Multi-Stack Project (React + Java)
+
+```json
+// .guidelines/stack-mapping.json
+
+{
+  "stacks": [
+    {
+      "name": "reactjs",
+      "guideline": "reactjs-guidelines.md",
+      "paths": ["frontend/**"],
+      "extensions": [".tsx", ".jsx"]
+    },
+    {
+      "name": "java",
+      "guideline": "java-guidelines.md",
+      "paths": ["backend/**"],
+      "extensions": [".java"]
+    }
+  ]
+}
+```
+
+**Result**: When running `/specify tasks`:
+
+- Frontend tasks (in `frontend/**`) → Apply React guidelines
+- Backend tasks (in `backend/**`) → Apply Java guidelines
+- Tasks labeled with `[Frontend]` and `[Backend]` for clarity
+- Cross-stack integration validated against both guidelines
+
+##### Use Case 4: Guideline Validation
+
+```bash
+# Run validation before committing changes
+python3 scripts/validate-guidelines.py
+
+# Output:
+✅ PASSED CHECKS: 21
+✓ All stack mappings valid
+✓ All referenced guideline files exist
+✓ Path patterns are valid
+```
 
 #### Best Practices
 
