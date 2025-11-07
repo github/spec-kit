@@ -7,6 +7,193 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2025-01-07
+
+### 🎉 Major Release: Shadow Mode
+
+This major release introduces **Shadow Mode**, a complete hidden installation option for corporate and client projects where Speckit presence should be invisible.
+
+### Added
+
+#### Shadow Mode Installation
+- **Shadow Mode**: New installation mode that hides Speckit branding and scripts
+  - All scripts moved to `.devtools/speckit/` (hidden/gitignored by default)
+  - Generic unbranded templates replacing Speckit-branded versions
+  - Customizable branding via `--brand` parameter (default: "Development Tools")
+  - All 32 scripts (16 bash + 16 PowerShell) copied to shadow directory
+  - Configuration stored in `.devtools/.config.json`
+  - Automatic .gitignore management
+  - Backward compatible - standard mode remains default
+
+#### New CLI Commands
+- **`specify convert`**: Convert between standard and shadow modes
+  - `specify convert --to shadow` - Convert to shadow mode
+  - `specify convert --to shadow --brand "Company Name"` - With custom branding
+  - `specify convert --to standard` - Convert back to standard mode
+  - `--no-backup` option to skip backup creation (not recommended)
+  - Automatic backup creation in `.devtools/backups/` with timestamps
+
+- **`specify info`**: Display current configuration and mode
+  - Shows current mode (standard or shadow)
+  - Displays version information
+  - Lists configuration details
+  - Shows available scripts and commands count
+  - Mode-specific tips and conversion instructions
+
+#### New CLI Parameters for `init`
+- `--mode [standard|shadow]`: Choose installation mode (default: standard)
+- `--brand "Name"`: Custom brand name for shadow mode (default: "Development Tools")
+- `--shadow-path "path"`: Custom shadow directory (default: ".devtools/speckit")
+- `--include-docs` / `--no-docs`: Include generic documentation (default: true)
+- `--gitignore-shadow` / `--no-gitignore`: Control .gitignore update (default: true)
+
+#### Shadow Mode Templates (9 files)
+All in `templates/shadow/`:
+- `spec-template.md` - Generic specification format
+- `plan-template.md` - Generic implementation plan
+- `tasks-template.md` - Generic task breakdown
+- `checklist-template.md` - Generic quality checklist
+- `ai-doc-template.md` - Generic AI documentation
+- `quick-ref-template.md` - Generic quick reference
+- `constitution-universal.md` - Generic project principles
+- `agent-file-template.md` - Generic agent configuration
+- `vscode-settings.json` - VS Code settings
+
+#### Shadow Mode Commands (22 files)
+All in `templates/shadow/commands/` (unbranded, no `/speckit.` prefix):
+- Core workflow: `specify.md`, `plan.md`, `tasks.md`, `implement.md`, `validate.md`
+- Quality: `analyze.md`, `checklist.md`, `clarify.md`, `clarify-history.md`
+- Utilities: `budget.md`, `prune.md`, `find.md`, `error-context.md`
+- Project: `discover.md`, `document.md`, `onboard.md`, `project-analysis.md`, `project-catalog.md`
+- Services: `service-catalog.md`, `validate-contracts.md`
+- Workflow: `resume.md`, `constitution.md`
+
+#### Documentation
+- **`docs/SHADOW_MODE.md`**: Comprehensive shadow mode guide
+  - What is shadow mode and when to use it
+  - Installation instructions
+  - Configuration options
+  - Feature comparison table
+  - Conversion guide
+  - Troubleshooting
+  - FAQ
+
+- **`docs/shadow/workflow.md`**: Generic development workflow
+  - Specification-driven development process
+  - Best practices
+  - Common patterns
+  - Tool integration
+
+- **`docs/shadow/CONVERSION.md`**: Detailed conversion guide
+  - Step-by-step conversion instructions
+  - Backup and recovery procedures
+  - Troubleshooting conversion issues
+  - Migration checklist
+
+- **`.devtools.config.json.example`**: Example shadow mode configuration
+
+#### Shadow Mode Module
+- **`src/specify_cli/shadow_mode.py`**: Complete shadow mode implementation (~500 lines)
+  - `setup_shadow_mode()` - Shadow mode setup
+  - `convert_standard_to_shadow()` - Conversion with backup
+  - `convert_shadow_to_standard()` - Reverse conversion
+  - `detect_current_mode()` - Mode detection
+  - `load_config()` - Configuration loading
+  - `create_backup()` - Timestamped backups
+  - All helper functions for directory management, script copying, template generation
+
+### Changed
+
+- **Version**: Bumped from `0.0.20` to `1.0.0` (major release)
+- **Configuration Location**: Shadow mode uses `.devtools/.config.json` (inside .devtools)
+- **Command Names**: Shadow mode removes `/speckit.` prefix (e.g., `/specify` instead of `/speckit.specify`)
+- **README**: Added comprehensive Installation Modes section with feature comparison
+- **Table of Contents**: Updated with Shadow Mode links
+
+### Features Comparison
+
+| Feature | Standard Mode | Shadow Mode |
+|---------|---------------|-------------|
+| Scripts Location | `scripts/` (visible) | `.devtools/speckit/` (hidden) |
+| Templates | Speckit-branded | Generic/unbranded |
+| Commands | `/speckit.*` prefix | No prefix |
+| Configuration | `.speckit.config.json` | `.devtools/.config.json` |
+| .gitignore | Not modified | `.devtools/` added |
+| Branding | Speckit | Customizable |
+| Scripts Included | All 32 | All 32 |
+| Commands Available | 22 | 22 |
+
+### Technical Details
+
+#### Scripts in Shadow Mode
+All 32 scripts copied to shadow directory:
+- **Bash (16)**: `validate-spec.sh`, `token-budget.sh`, `semantic-search.sh`, `session-prune.sh`, `error-analysis.sh`, `clarify-history.sh`, `project-analysis.sh`, `project-catalog.sh`, `onboard.sh`, `reverse-engineer.sh`, `create-new-feature.sh`, `setup-plan.sh`, `setup-ai-doc.sh`, `update-agent-context.sh`, `check-prerequisites.sh`, `common.sh`
+- **PowerShell (16)**: Equivalent .ps1 versions with full feature parity
+
+#### Backup System
+- Automatic timestamped backups during conversion
+- Backup location: `.devtools/backups/<mode>-<timestamp>/`
+- Includes all scripts, templates, and configuration
+- Can be disabled with `--no-backup` (not recommended)
+
+#### Command Placeholders
+Shadow mode commands use placeholders replaced during setup:
+- `{SHADOW_PATH}` → actual shadow path (e.g., `.devtools/speckit`)
+- `{SCRIPT_EXT}` → `.sh` or `.ps1` based on script type
+
+### Backward Compatibility
+
+- ✅ Standard mode remains default (no breaking changes)
+- ✅ Existing projects unaffected
+- ✅ All existing commands work as before
+- ✅ Existing workflows unchanged
+- ✅ Can convert between modes at any time
+
+### Migration Guide
+
+**For New Projects:**
+```bash
+# Shadow mode
+specify init my-project --mode shadow --brand "Company Name"
+
+# Standard mode (default)
+specify init my-project
+```
+
+**For Existing Projects:**
+```bash
+# Convert to shadow
+specify convert --to shadow --brand "Company Name"
+
+# Convert back to standard
+specify convert --to standard
+
+# Check current mode
+specify info
+```
+
+### Use Cases
+
+**Shadow Mode is ideal for:**
+- Corporate repositories requiring internal branding
+- Client projects where external tools should be invisible
+- Teams with established internal methodologies
+- Projects needing framework-agnostic development tools
+
+**Standard Mode is ideal for:**
+- Personal projects
+- Learning and experimentation
+- Open-source projects
+- Speckit contribution and development
+
+### Known Limitations
+
+- Shadow mode scripts must be manually updated (no automatic update mechanism yet)
+- Converting modes requires manual review of custom configurations
+- Shadow path should not be changed after installation
+
+---
+
 ## [Unreleased]
 
 ### Added

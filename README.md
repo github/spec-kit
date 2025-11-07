@@ -91,6 +91,9 @@
 - [🚀 Enhanced Version Features](#-enhanced-version-with-token-optimization--cross-platform-support)
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get Started](#-get-started)
+- [🎭 Installation Modes](#-installation-modes)
+  - [Standard Mode](#standard-mode-default)
+  - [Shadow Mode 🆕](#shadow-mode-)
 - [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [💻 Platform Support & Automation](#-platform-support--automation)
@@ -173,6 +176,84 @@ cd spec-kit
 - Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
 - Cleaner shell configuration
 - Automatic access to all enhanced features
+
+---
+
+## 🎭 Installation Modes
+
+Speckit supports two installation modes to fit different use cases:
+
+### Standard Mode (Default)
+
+Full Speckit installation with complete branding and documentation.
+
+```bash
+specify init my-project --ai claude
+```
+
+**Best for:**
+- Personal projects
+- Learning Speckit
+- Open-source projects where Speckit visibility is fine
+
+### Shadow Mode 🆕
+
+Hidden Speckit installation with customizable branding. Perfect for corporate repositories.
+
+```bash
+specify init my-project --mode shadow --brand "Your Company DevTools"
+```
+
+**Best for:**
+- Corporate repositories requiring internal branding
+- Client projects where Speckit should be invisible
+- Teams with established internal methodologies
+
+#### Shadow Mode Features
+
+| Feature | Standard Mode | Shadow Mode |
+|---------|---------------|-------------|
+| **Scripts** | ✅ Visible in `scripts/` | ✅ Hidden in `.devtools/speckit/` |
+| **Templates** | ✅ Speckit-branded | ✅ Generic/unbranded |
+| **Commands** | ✅ `/speckit.*` prefix | ✅ No prefix (`/specify`, `/plan`) |
+| **Configuration** | ✅ `.speckit.config.json` | ✅ `.devtools/.config.json` |
+| **Visibility** | Speckit visible | Speckit hidden |
+| **.gitignore** | Not modified | ✅ `.devtools/` added |
+
+#### Shadow Mode Options
+
+```bash
+# Full shadow setup
+specify init my-project \
+  --mode shadow \
+  --brand "Acme DevTools" \
+  --shadow-path .internal/tools \
+  --include-docs \
+  --gitignore-shadow \
+  --ai claude
+
+# Minimal shadow (no docs)
+specify init my-project --mode shadow --no-docs
+```
+
+#### Convert Between Modes
+
+Switch modes anytime:
+
+```bash
+# Convert to shadow mode
+specify convert --to shadow --brand "Your Company"
+
+# Convert back to standard
+specify convert --to standard
+
+# Check current mode
+specify info
+```
+
+**Learn more:** See [docs/SHADOW_MODE.md](docs/SHADOW_MODE.md) for complete shadow mode documentation.
+
+---
 
 ### 2. Establish project principles
 

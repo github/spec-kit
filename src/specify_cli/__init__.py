@@ -52,6 +52,9 @@ import readchar
 import ssl
 import truststore
 
+# Shadow mode support
+from specify_cli import shadow_mode
+
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
@@ -867,6 +870,11 @@ def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, or q"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+    mode: str = typer.Option("standard", "--mode", help="Installation mode: standard (full Speckit) or shadow (hidden, unbranded)"),
+    brand: str = typer.Option("Development Tools", "--brand", help="Brand name for shadow mode (only used with --mode shadow)"),
+    shadow_path: str = typer.Option(".devtools/speckit", "--shadow-path", help="Path for shadow installation (only used with --mode shadow)"),
+    include_docs: bool = typer.Option(True, "--include-docs/--no-docs", help="Include generic documentation in shadow mode"),
+    gitignore_shadow: bool = typer.Option(True, "--gitignore-shadow/--no-gitignore", help="Add shadow path to .gitignore"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -1011,6 +1019,13 @@ def init(
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
+    # Validate mode
+    if mode not in ["standard", "shadow"]:
+        console.print(f"[red]Error:[/red] Invalid mode '{mode}'. Choose 'standard' or 'shadow'.")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]Selected mode:[/cyan] {mode}")
+
     tracker = StepTracker("Initialize Specify Project")
 
     sys._specify_tracker_active = True
@@ -1040,11 +1055,31 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            verify = not skip_tls
-            local_ssl_context = ssl_context if verify else False
-            local_client = httpx.Client(verify=local_ssl_context)
+            if mode == "shadow":
+                # Shadow mode: Setup from source
+                tracker.add("shadow-setup", "Setup shadow mode")
+                tracker.start("shadow-setup")
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+                shadow_mode.setup_shadow_mode(
+                    project_path=project_path,
+                    brand=brand,
+                    shadow_path=shadow_path,
+                    include_docs=include_docs,
+                    gitignore_shadow=gitignore_shadow,
+                    agent=selected_ai,
+                    script_type=selected_script,
+                    tracker=tracker
+                )
+
+                tracker.complete("shadow-setup", "configured")
+
+            elif mode == "standard":
+                # Standard mode: Existing behavior (download from GitHub)
+                verify = not skip_tls
+                local_ssl_context = ssl_context if verify else False
+                local_client = httpx.Client(verify=local_ssl_context)
+
+                download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1139,23 +1174,43 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
 
-    steps_lines.append("   2.1 [cyan]/speckit.constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/speckit.specify[/] - Create baseline specification")
-    steps_lines.append("   2.3 [cyan]/speckit.plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/speckit.implement[/] - Execute implementation")
+    if mode == "shadow":
+        # Shadow mode commands (unbranded)
+        steps_lines.append("   2.1 [cyan]/constitution[/] - Establish project principles")
+        steps_lines.append("   2.2 [cyan]/specify[/] - Create baseline specification")
+        steps_lines.append("   2.3 [cyan]/plan[/] - Create implementation plan")
+        steps_lines.append("   2.4 [cyan]/tasks[/] - Generate actionable tasks")
+        steps_lines.append("   2.5 [cyan]/implement[/] - Execute implementation")
+    else:
+        # Standard mode commands (Speckit-branded)
+        steps_lines.append("   2.1 [cyan]/speckit.constitution[/] - Establish project principles")
+        steps_lines.append("   2.2 [cyan]/speckit.specify[/] - Create baseline specification")
+        steps_lines.append("   2.3 [cyan]/speckit.plan[/] - Create implementation plan")
+        steps_lines.append("   2.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
+        steps_lines.append("   2.5 [cyan]/speckit.implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
     console.print(steps_panel)
 
-    enhancement_lines = [
-        "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
-        "",
-        f"○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
-        f"○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
-        f"○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])"
-    ]
+    if mode == "shadow":
+        # Shadow mode enhancement commands
+        enhancement_lines = [
+            "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
+            "",
+            f"○ [cyan]/clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/plan[/] if used)",
+            f"○ [cyan]/analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/tasks[/], before [cyan]/implement[/])",
+            f"○ [cyan]/checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/plan[/])"
+        ]
+    else:
+        # Standard mode enhancement commands
+        enhancement_lines = [
+            "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
+            "",
+            f"○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
+            f"○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
+            f"○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])"
+        ]
     enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
     console.print()
     console.print(enhancements_panel)
@@ -1201,6 +1256,151 @@ def check():
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+
+@app.command()
+def convert(
+    to: str = typer.Option(..., "--to", help="Target mode: standard or shadow"),
+    brand: str = typer.Option("Development Tools", "--brand", help="Brand name for shadow mode"),
+    shadow_path: str = typer.Option(".devtools/speckit", "--shadow-path", help="Shadow installation path"),
+    no_backup: bool = typer.Option(False, "--no-backup", help="Skip backup creation (not recommended)"),
+):
+    """
+    Convert project between standard and shadow modes
+
+    Examples:
+        specify convert --to shadow
+        specify convert --to shadow --brand "Acme DevTools"
+        specify convert --to standard
+    """
+    show_banner()
+
+    current_mode = shadow_mode.detect_current_mode()
+
+    if current_mode == "unknown":
+        console.print("[red]Error:[/red] Cannot detect current mode. Is this a Speckit project?")
+        raise typer.Exit(1)
+
+    if current_mode == to:
+        console.print(f"[yellow]Project is already in {to} mode[/yellow]")
+        console.print(f"Run 'specify info' to see current configuration")
+        return
+
+    console.print(f"[cyan]Converting from {current_mode} to {to} mode...[/cyan]")
+
+    if not no_backup:
+        console.print("[dim]Creating backup before conversion...[/dim]")
+
+    tracker = StepTracker(f"Convert {current_mode} → {to}")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            if to == "shadow":
+                shadow_mode.convert_standard_to_shadow(
+                    project_path=Path.cwd(),
+                    brand=brand,
+                    shadow_path=shadow_path,
+                    backup=not no_backup,
+                    tracker=tracker
+                )
+            elif to == "standard":
+                shadow_mode.convert_shadow_to_standard(
+                    project_path=Path.cwd(),
+                    backup=not no_backup,
+                    tracker=tracker
+                )
+            else:
+                console.print(f"[red]Error:[/red] Invalid mode '{to}'. Choose 'standard' or 'shadow'.")
+                raise typer.Exit(1)
+        except Exception as e:
+            tracker.error("conversion", str(e))
+            console.print(f"[red]Conversion failed:[/red] {e}")
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+    console.print(f"\n[bold green]Successfully converted to {to} mode[/bold green]")
+
+    if not no_backup:
+        backup_dir = Path.cwd() / ".devtools" / "backups"
+        console.print(f"[dim]Backup saved to: {backup_dir}[/dim]")
+
+@app.command()
+def info():
+    """
+    Display current Speckit configuration and mode
+
+    Shows:
+    - Current mode (standard or shadow)
+    - Version information
+    - Configuration details
+    - Available commands
+    """
+    show_banner()
+
+    current_mode = shadow_mode.detect_current_mode()
+
+    if current_mode == "unknown":
+        console.print("[red]Error:[/red] Cannot detect Speckit configuration")
+        console.print("[dim]This doesn't appear to be a Speckit project[/dim]")
+        raise typer.Exit(1)
+
+    config = shadow_mode.load_config()
+
+    console.print("[bold]Speckit Configuration[/bold]\n")
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column(style="cyan", justify="right", width=20)
+    table.add_column(style="white")
+
+    table.add_row("Mode:", f"[bold]{current_mode.capitalize()}[/bold]")
+
+    if current_mode == "shadow":
+        table.add_row("Version:", config.get('speckit_version', 'unknown'))
+        table.add_row("Brand:", config.get('brand_name', 'Development Tools'))
+        table.add_row("Shadow Path:", config.get('shadow_path', '.devtools/speckit'))
+        table.add_row("Templates:", config.get('templates_path', 'templates'))
+        table.add_row("Agent:", config.get('agent', 'not set'))
+        table.add_row("Script Type:", config.get('script_type', 'not set'))
+
+        scripts_count = len(config.get('scripts', {}).get(config.get('script_type', 'sh'), {}))
+        commands_count = len(config.get('claude_commands', []))
+
+        table.add_row("Scripts:", f"{scripts_count} configured")
+        table.add_row("Commands:", f"{commands_count} available")
+
+    else:  # standard mode
+        table.add_row("Version:", config.get('version', 'unknown'))
+        table.add_row("Project:", config.get('project_name', 'not set'))
+        table.add_row("Agent:", config.get('default_agent', 'not set'))
+
+    console.print(table)
+    console.print()
+
+    # Mode-specific tips
+    if current_mode == "shadow":
+        tips_panel = Panel(
+            "[dim]Shadow mode: Speckit functionality with custom branding[/dim]\n"
+            "[dim]Scripts are hidden in .devtools/speckit/[/dim]\n\n"
+            f"To switch to standard mode:\n"
+            f"  [cyan]specify convert --to standard[/cyan]",
+            title="[cyan]Mode Information[/cyan]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+    else:
+        tips_panel = Panel(
+            "[dim]Standard mode: Full Speckit installation[/dim]\n"
+            "[dim]All scripts and templates are visible[/dim]\n\n"
+            f"To switch to shadow mode:\n"
+            f"  [cyan]specify convert --to shadow[/cyan]\n"
+            f"  [cyan]specify convert --to shadow --brand \"Your Company\"[/cyan]",
+            title="[cyan]Mode Information[/cyan]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+
+    console.print(tips_panel)
 
 def main():
     app()
