@@ -47,7 +47,6 @@ $NEW_PLAN = $IMPL_PLAN
 $CLAUDE_FILE   = Join-Path $REPO_ROOT 'CLAUDE.md'
 $GEMINI_FILE   = Join-Path $REPO_ROOT 'GEMINI.md'
 $COPILOT_FILE  = Join-Path $REPO_ROOT '.github/agents/copilot-instructions.md'
-$COPILOT_AGENTS_FILE = Join-Path $REPO_ROOT 'AGENTS.md'
 $CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/specify-rules.mdc'
 $QWEN_FILE     = Join-Path $REPO_ROOT 'QWEN.md'
 $AGENTS_FILE   = Join-Path $REPO_ROOT 'AGENTS.md'
@@ -371,10 +370,7 @@ function Update-SpecificAgent {
     switch ($Type) {
         'claude'   { Update-AgentFile -TargetFile $CLAUDE_FILE   -AgentName 'Claude Code' }
         'gemini'   { Update-AgentFile -TargetFile $GEMINI_FILE   -AgentName 'Gemini CLI' }
-        'copilot'  { 
-            Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot'
-            Update-AgentFile -TargetFile $COPILOT_AGENTS_FILE -AgentName 'GitHub Copilot (AGENTS.md)'
-        }
+        'copilot'  { Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot' }
         'cursor-agent' { Update-AgentFile -TargetFile $CURSOR_FILE   -AgentName 'Cursor IDE' }
         'qwen'     { Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code' }
         'opencode' { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'opencode' }
@@ -396,8 +392,6 @@ function Update-AllExistingAgents {
     if (Test-Path $CLAUDE_FILE)   { if (-not (Update-AgentFile -TargetFile $CLAUDE_FILE   -AgentName 'Claude Code')) { $ok = $false }; $found = $true }
     if (Test-Path $GEMINI_FILE)   { if (-not (Update-AgentFile -TargetFile $GEMINI_FILE   -AgentName 'Gemini CLI')) { $ok = $false }; $found = $true }
     if (Test-Path $COPILOT_FILE)  { if (-not (Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot')) { $ok = $false }; $found = $true }
-    # Also update AGENTS.md for Copilot if the Copilot directory exists
-    if (Test-Path (Join-Path $REPO_ROOT '.github/agents')) { if (-not (Update-AgentFile -TargetFile $COPILOT_AGENTS_FILE -AgentName 'GitHub Copilot (AGENTS.md)')) { $ok = $false }; $found = $true }
     if (Test-Path $CURSOR_FILE)   { if (-not (Update-AgentFile -TargetFile $CURSOR_FILE   -AgentName 'Cursor IDE')) { $ok = $false }; $found = $true }
     if (Test-Path $QWEN_FILE)     { if (-not (Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code')) { $ok = $false }; $found = $true }
     if (Test-Path $AGENTS_FILE)   { if (-not (Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex/opencode')) { $ok = $false }; $found = $true }

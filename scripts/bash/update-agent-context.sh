@@ -62,7 +62,6 @@ AGENT_TYPE="${1:-}"
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/agents/copilot-instructions.md"
-COPILOT_AGENTS_FILE="$REPO_ROOT/AGENTS.md"
 CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
 QWEN_FILE="$REPO_ROOT/QWEN.md"
 AGENTS_FILE="$REPO_ROOT/AGENTS.md"
@@ -588,7 +587,6 @@ update_specific_agent() {
             ;;
         copilot)
             update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-            update_agent_file "$COPILOT_AGENTS_FILE" "GitHub Copilot (AGENTS.md)"
             ;;
         cursor-agent)
             update_agent_file "$CURSOR_FILE" "Cursor IDE"
@@ -647,12 +645,6 @@ update_all_existing_agents() {
     
     if [[ -f "$COPILOT_FILE" ]]; then
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-        found_agent=true
-    fi
-    
-    # Also update AGENTS.md for Copilot if the Copilot directory exists
-    if [[ -d "$REPO_ROOT/.github/agents" ]]; then
-        update_agent_file "$COPILOT_AGENTS_FILE" "GitHub Copilot (AGENTS.md)"
         found_agent=true
     fi
     
