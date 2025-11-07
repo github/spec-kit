@@ -97,6 +97,9 @@ try {
     if ($LASTEXITCODE -eq 0) {
         foreach ($branch in $branches) {
             # Clean branch name: remove leading markers and remote prefixes
+            # The following regex removes:
+            #   - Git's current branch marker ('*') and leading whitespace (e.g., '* main')
+            #   - Remote prefixes (e.g., 'remotes/origin/')
             $cleanBranch = $branch.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
             
             # Extract feature number if branch matches pattern ###-*
