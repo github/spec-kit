@@ -44,9 +44,6 @@ if [ -z "$SOURCE_DIR" ]; then
         echo -e "${BLUE}Cloning improved spec-kit...${NC}"
         SOURCE_DIR="/tmp/spec-kit-improved-$$"
         git clone https://github.com/guisantossi/spec-kit.git "$SOURCE_DIR"
-        cd "$SOURCE_DIR"
-        git checkout claude/improve-s-feature-011CUtKowzjCGGTB49vfnCEm
-        cd - > /dev/null
         echo -e "${GREEN}✓ Cloned to $SOURCE_DIR${NC}"
     else
         read -p "Enter path to improved spec-kit: " SOURCE_DIR
