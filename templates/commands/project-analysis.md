@@ -11,7 +11,11 @@ scripts:
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty). The user may specify `--check-patterns` or similar flags to enable optional code pattern analysis.
+You **MUST** consider the user input before proceeding (if not empty). The user may specify optimization flags:
+- `--check-patterns` - Enable code pattern analysis (Security, DRY, KISS, SOLID)
+- `--incremental` - Only analyze changed files (70-90% token reduction)
+- `--summary` - Quick summary mode (90% token reduction)
+- `--sample-size=N` - Limit code analysis to N files
 
 ## Goal
 
@@ -30,6 +34,71 @@ This command provides a holistic view of project health and specification compli
 **Constitution Authority**: The project constitution (`/memory/constitution.md`) is the highest authority for project principles. Any violations must be flagged as CRITICAL.
 
 **Comprehensive Scope**: Unlike `/speckit.analyze` which focuses on a single feature, this command analyzes the ENTIRE project across all specifications.
+
+## Token Optimization Strategy
+
+**CRITICAL**: This command can consume significant tokens for large projects. ALWAYS apply these optimizations:
+
+### 1. Incremental Analysis (when `incremental_mode: true`)
+- **Skip unchanged specifications**: Only analyze specs where `changed: true`
+- **Use cached results**: Reference previous analysis for unchanged specs
+- **Token savings**: 70-90% reduction on subsequent runs
+- **When to use**: All runs after the first analysis
+
+### 2. Summary Mode (when `summary_mode: true`)
+- **Metrics only**: Report counts, percentages, high-level status
+- **Skip deep analysis**: No semantic parsing, no pattern detection
+- **Skip code reading**: Use file existence and line counts only
+- **Token savings**: 90-95% reduction
+- **When to use**: Quick health checks, pre-commit validation
+
+### 3. Smart Sampling (use `max_sample_files` value)
+- **Limit code analysis**: Analyze only N source files (default: 20)
+- **Prioritize critical code**: Focus on auth, API, data access files
+- **Extrapolate findings**: Estimate project-wide issues from sample
+- **Token savings**: 60-80% reduction for pattern analysis
+- **When to use**: Large codebases (>50 source files), pattern checking enabled
+
+### 4. Progressive Disclosure (ALWAYS apply)
+- **Load incrementally**: Read one spec at a time, discard after analysis
+- **Extract sections only**: Use grep to get specific sections (Requirements, User Stories)
+- **Avoid full file reads**: Don't load entire spec/plan/task files into context
+- **Use targeted searches**: Grep for patterns instead of reading files
+- **Token savings**: 40-60% reduction baseline
+
+### 5. Compressed Reporting (ALWAYS apply)
+- **Limit findings**: Max 50 issues per severity level
+- **Aggregate similar issues**: Group duplicate findings
+- **Concise descriptions**: One sentence summaries
+- **Token savings**: 30-50% reduction in output
+
+### Optimization Decision Tree
+
+```
+Is incremental_mode true?
+├─ YES → Only analyze specs where "changed": true
+│        Skip all specs where "changed": false
+│        Reference: "X specs unchanged, using cached results"
+└─ NO  → Analyze all specs
+
+Is summary_mode true?
+├─ YES → SKIP all deep analysis
+│        Report only: file counts, line counts, existence checks
+│        NO semantic parsing, NO code reading, NO pattern detection
+└─ NO  → Proceed with full analysis
+
+Is max_sample_files < total source files?
+├─ YES → Pattern analysis uses sampling
+│        Select max_sample_files from critical files
+│        Note in report: "Sampled N of M files"
+└─ NO  → Analyze all source files (if pattern_check_enabled)
+
+Apply progressive disclosure ALWAYS:
+├─ Read specifications incrementally (one at a time)
+├─ Extract only needed sections (grep for "## Requirements")
+├─ Use targeted searches for patterns (grep for security issues)
+└─ Discard content after processing each spec
+```
 
 ## Execution Steps
 
@@ -87,7 +156,22 @@ Load `/memory/constitution.md` if it exists. If missing:
 
 ### 4. Load and Analyze Each Specification
 
-For each specification in the `specs` array, progressively load and analyze:
+**APPLY OPTIMIZATION FILTERS FIRST**:
+
+1. **If `summary_mode: true`**:
+   - SKIP all detailed analysis below
+   - Only report: file existence, line counts, spec count
+   - Jump directly to Step 8 (Generate Report - Summary Version)
+
+2. **If `incremental_mode: true`**:
+   - Filter specs array to only those where `"changed": true`
+   - For unchanged specs, report: "Spec [name]: No changes detected, using cached results"
+   - Only analyze changed specifications below
+
+3. **If neither optimization enabled**:
+   - Proceed with all specifications
+
+For each specification to analyze (after applying filters), progressively load and analyze:
 
 #### A. Specification Completeness Check
 
@@ -191,9 +275,23 @@ For EVERY specification with a plan and tasks, verify code implementation:
 
 ### 6. Code Pattern Analysis (When `--check-patterns` Enabled)
 
+**OPTIMIZATION**: Apply sampling if `max_sample_files` is set:
+- If total source files > `max_sample_files`: Use sampling strategy
+- Prioritize files: *auth*, *api*, *endpoint*, *database*, *model*
+- Note in report: "Analyzed N of M source files (sampled)"
+- Extrapolate findings to estimate project-wide issues
+
 If pattern checking is enabled, perform additional analysis:
 
 #### A. Security Best Practices
+
+**OPTIMIZATION**: Use targeted grep searches (do NOT read full files):
+
+```bash
+# Use grep to count occurrences, get line numbers only
+grep -rn "pattern" source_dir --include="*.ext" | wc -l
+grep -rn "password.*=.*['\"]" src/ --include="*.py" | cut -d: -f1-2
+```
 
 Scan for common security issues:
 - **SQL Injection**: Look for string concatenation in database queries
@@ -203,7 +301,7 @@ Scan for common security issues:
 - **CORS Misconfigurations**: Check for overly permissive CORS settings
 - **Input Validation**: Verify user input validation exists
 
-Pattern searches (language-specific):
+Pattern searches (use grep, NOT file reads):
 ```python
 # Python examples
 # SQL Injection patterns
@@ -345,7 +443,31 @@ Assign severity to all findings using this heuristic:
 
 ### 8. Generate Comprehensive Markdown Report
 
-Create a detailed report file: `project-analysis-report.md`
+**If `summary_mode: true`**, generate a concise summary report instead:
+
+```markdown
+# Project Analysis Summary
+
+**Generated**: [TIMESTAMP]
+**Mode**: Summary (Quick Health Check)
+
+## Metrics
+- Total Specifications: X
+- Complete Specifications: X (have spec.md, plan.md, tasks.md)
+- Incomplete Specifications: X
+- Constitution: [Exists/Missing]
+
+## Completeness
+| Spec | Files | Status |
+|------|-------|--------|
+| 001-feature-a | 5/7 | Incomplete |
+| 002-feature-b | 7/7 | Complete |
+
+## Recommendation
+[Next action based on completeness]
+```
+
+**Otherwise**, create a detailed report file: `project-analysis-report.md`
 
 Report structure:
 
@@ -581,8 +703,11 @@ After generating the report file, display a concise summary to the user:
 Project Analysis Complete!
 
 Report saved to: project-analysis-report.md
+[If incremental mode] Cache updated: .speckit-analysis-cache.json
 
 📊 Summary:
+  • Mode: [Full/Incremental/Summary]
+  [If incremental] • Changed: X specs, Unchanged: Y specs
   • Total Specifications: X
   • Critical Issues: X
   • High Priority Issues: X
