@@ -44,6 +44,7 @@ You **MUST** consider the user input before proceeding (if not empty).
      - 需要有人工确认阶段，并且输出一份支持的 mock 的 api 文档，输入输出事例等
    - Phase 4: 组件/模块/hooks 的使用和封装部分（可以不止一个 phase）
      - 需要特别关注可以复用/独立的前端组件/模块
+     - 复用和实现组件/模块/hooks 时，需要优先使用/基于在工程内已经导入的三方组件/模块/hooks 进行封装。
      - 即使需要复用原有的组件/模块/hooks，也需要单独作为一个任务进行 check。
      - 如果有多个 user sotry 中的组件/模块/hooks，都需要前置专门先实现。
      - 如果其中有组件过于复杂，可以单独作为一个 phase 来拆分实现。

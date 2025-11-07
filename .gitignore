@@ -43,3 +43,4 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+/log
