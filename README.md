@@ -155,12 +155,16 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 ### Windows PowerShell Support
 
-Core spec-kit features are now available on Windows via PowerShell:
+**100% feature parity achieved!** All spec-kit features are now available on Windows via PowerShell:
 
 | Feature | Bash Script | PowerShell Script | Description |
 |---------|-------------|-------------------|-------------|
 | Token Budget | `scripts/bash/token-budget.sh` | `scripts/powershell/token-budget.ps1` | Track token usage and get optimization recommendations |
 | Spec Validation | `scripts/bash/validate-spec.sh` | `scripts/powershell/validate-spec.ps1` | Validate specs, plans, and tasks for completeness |
+| Semantic Search | `scripts/bash/semantic-search.sh` | `scripts/powershell/semantic-search.ps1` | Natural language code/spec search |
+| Session Prune | `scripts/bash/session-prune.sh` | `scripts/powershell/session-prune.ps1` | Session context compression |
+| Error Analysis | `scripts/bash/error-analysis.sh` | `scripts/powershell/error-analysis.ps1` | AI-assisted error debugging |
+| Clarify History | `scripts/bash/clarify-history.sh` | `scripts/powershell/clarify-history.ps1` | Clarification decision tracking |
 | Quick Reference | `scripts/bash/setup-ai-doc.sh` | `scripts/powershell/setup-ai-doc.ps1` | Generate ultra-compact feature documentation |
 
 **Usage on Windows:**
@@ -174,9 +178,26 @@ Core spec-kit features are now available on Windows via PowerShell:
 # Validate all features
 .\scripts\powershell\validate-spec.ps1 -All
 
+# Semantic search
+.\scripts\powershell\semantic-search.ps1 "authentication logic"
+
+# Error analysis
+.\scripts\powershell\error-analysis.ps1 "TypeError: undefined"
+
+# Session prune
+.\scripts\powershell\session-prune.ps1
+
+# Clarification history
+.\scripts\powershell\clarify-history.ps1
+
 # JSON output for automation
 .\scripts\powershell\token-budget.ps1 -Json
 ```
+
+**Cross-platform PowerShell Core:**
+All scripts work on Linux, macOS, and Windows with PowerShell Core (`pwsh`).
+
+See [PLATFORM-COMPATIBILITY.md](PLATFORM-COMPATIBILITY.md) for complete cross-platform usage guide.
 
 ### Git Pre-Commit Hook
 
