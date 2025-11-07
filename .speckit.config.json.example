@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "SpecKit configuration file - copy to .speckit.config.json to customize",
+  "cache": {
+    "enabled": true,
+    "retention_days": 30,
+    "location": ".speckit-cache"
+  },
+  "analysis": {
+    "default_mode": "incremental",
+    "sample_size": 20,
+    "auto_patterns": false
+  },
+  "agent": {
+    "type": "claude",
+    "context_file": "CLAUDE.md"
+  },
+  "validation": {
+    "strict": false,
+    "auto_validate": true
+  },
+  "documentation": {
+    "auto_generate_quick_ref": true,
+    "token_target": 200
+  },
+  "budget": {
+    "warn_threshold": 120000,
+    "critical_threshold": 160000
+  }
+}

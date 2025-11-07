@@ -245,6 +245,8 @@ Additional commands for enhanced quality and validation:
 |------------------------------|-----------------------------------------------------------------------|
 | `/speckit.validate [--all]`  | **NEW** Quick validation of specs, plans, and tasks for completeness. Use `--all` for project-wide checks, or `--spec`, `--plan`, `--tasks` for targeted validation. Catch issues early before planning or implementation. |
 | `/speckit.budget`            | **NEW** Display current token usage estimation and recommendations. Shows breakdown by specs, conversation, and code context. Provides optimization suggestions based on usage patterns. |
+| `/speckit.find "query"`      | **NEW** Semantic search across code, specs, and docs using natural language. Returns ranked results with file locations. Example: `/speckit.find "authentication logic"` finds auth-related code, docs, and tests. Fast alternative to manual grepping. |
+| `/speckit.prune`             | **NEW** Compress session context to save 40-60K tokens. Creates ultra-compact summary preserving decisions and state while removing redundant conversation. Use when token budget exceeds 80K. |
 | `/speckit.clarify`           | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`           | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist`         | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
