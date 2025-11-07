@@ -14,11 +14,13 @@
 **Upgrade Strategy**: [INLINE | PHASED | HYBRID]
 
 **Key Objectives**:
+
 - [Objective 1: e.g., Upgrade to LTS version for security]
 - [Objective 2: e.g., Remove vulnerable dependencies]
 - [Objective 3: e.g., Modernize tooling]
 
 **Success Criteria**:
+
 - [ ] All tests passing (current: [PERCENTAGE]% coverage maintained or improved)
 - [ ] No regressions in functionality
 - [ ] Application performance maintained or improved
@@ -74,7 +76,7 @@ pip install pylint
 npm install -g jest
 # or
 pip install pytest
-```
+```text
 
 ---
 
@@ -85,6 +87,7 @@ pip install pytest
 **Risk**: LOW
 
 **Objectives**:
+
 - Establish baseline metrics
 - Set up monitoring
 - Create safe rollback points
@@ -92,12 +95,14 @@ pip install pytest
 **Steps**:
 
 1. **Create feature branch**
+
    ```bash
    git checkout -b upgrade/[DESCRIPTION]
    git push -u origin upgrade/[DESCRIPTION]
    ```
 
-2. **Capture current metrics**
+1. **Capture current metrics**
+
    ```bash
    # Test coverage
    [COMMAND]
@@ -109,17 +114,18 @@ pip install pytest
    [COMMAND]
    ```
 
-3. **Document current behavior**
+1. **Document current behavior**
    - Run full test suite and save results
    - Capture screenshots of key workflows
    - Note any existing issues/quirks
 
-4. **Set up monitoring**
+1. **Set up monitoring**
    - Error tracking: [TOOL]
    - Performance monitoring: [TOOL]
    - Logs aggregation: [TOOL]
 
 **Validation**:
+
 - [ ] Baseline metrics captured
 - [ ] Monitoring dashboards ready
 - [ ] Feature branch created
@@ -131,6 +137,7 @@ pip install pytest
 **Risk**: [LOW | MEDIUM | HIGH]
 
 **Objectives**:
+
 - Upgrade [RUNTIME] from [OLD_VERSION] to [NEW_VERSION]
 - Resolve breaking changes
 - Maintain backward compatibility where possible
@@ -147,6 +154,7 @@ pip install pytest
 1. **Update runtime version**
 
    **For Node.js**:
+
    ```bash
    # Update .nvmrc or .node-version
    echo "[NEW_VERSION]" > .nvmrc
@@ -160,6 +168,7 @@ pip install pytest
    ```
 
    **For Python**:
+
    ```bash
    # Update runtime requirement
    # Edit runtime.txt or pyproject.toml
@@ -173,12 +182,14 @@ pip install pytest
    ```
 
    **For .NET**:
+
    ```xml
    <!-- Update *.csproj -->
    <TargetFramework>net[VERSION]</TargetFramework>
    ```
 
-2. **Update CI/CD configuration**
+1. **Update CI/CD configuration**
+
    ```yaml
    # .github/workflows/*.yml
    - uses: actions/setup-node@v3
@@ -186,7 +197,7 @@ pip install pytest
        node-version: '[NEW_VERSION]'
    ```
 
-3. **Address runtime-specific breaking changes**
+1. **Address runtime-specific breaking changes**
 
    **[Breaking Change 1]**:
    - **Files affected**: [LIST]
@@ -196,16 +207,18 @@ pip install pytest
    - **Files affected**: [LIST]
    - **Fix**: [CODE CHANGES]
 
-4. **Run tests**
+1. **Run tests**
+
    ```bash
    [TEST_COMMAND]
    ```
 
-5. **Fix failing tests**
+1. **Fix failing tests**
    - Expected failures: [LIST]
    - Fix each by: [APPROACH]
 
 **Validation**:
+
 - [ ] Runtime version updated in all config files
 - [ ] CI/CD using new runtime version
 - [ ] All tests passing
@@ -213,12 +226,13 @@ pip install pytest
 - [ ] No deprecation warnings in logs
 
 **Rollback**:
+
 ```bash
 # Revert to previous runtime
 nvm use [OLD_VERSION]
 # or
 git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
-```
+```text
 
 ---
 
@@ -227,6 +241,7 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
 **Risk**: [LOW | MEDIUM | HIGH]
 
 **Objectives**:
+
 - Upgrade core framework/library from [OLD_VERSION] to [NEW_VERSION]
 - Address breaking changes in primary dependencies
 
@@ -238,14 +253,13 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
 | [package-2] | [old] | [new] | [YES/NO] | [HOURS] |
 
 **Migration Guides**:
-- [Package 1]: [LINK_TO_MIGRATION_GUIDE]
-- [Package 2]: [LINK_TO_MIGRATION_GUIDE]
 
 **Steps**:
 
 1. **Upgrade core framework**
 
    **For React**:
+
    ```bash
    npm install react@[VERSION] react-dom@[VERSION]
 
@@ -254,6 +268,7 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
    ```
 
    **For Django**:
+
    ```bash
    pip install Django==[VERSION]
 
@@ -262,6 +277,7 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
    ```
 
    **For Spring Boot**:
+
    ```xml
    <!-- pom.xml -->
    <parent>
@@ -271,10 +287,11 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
    </parent>
    ```
 
-2. **Apply framework-specific migrations**
+1. **Apply framework-specific migrations**
 
    **React 16 → 18 Example**:
    - Update root rendering:
+
      ```javascript
      // Before
      import ReactDOM from 'react-dom';
@@ -288,6 +305,7 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
 
    **Django 3 → 4 Example**:
    - Update URL patterns:
+
      ```python
      # Before
      url(r'^articles/', include('articles.urls'))
@@ -296,7 +314,8 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
      path('articles/', include('articles.urls'))
      ```
 
-3. **Run automated codemods** (if available)
+1. **Run automated codemods** (if available)
+
    ```bash
    # React codemods
    npx react-codemod update-react-imports
@@ -305,26 +324,31 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
    [CODEMOD_COMMAND]
    ```
 
-4. **Manual code updates**
+1. **Manual code updates**
    - Search for deprecated API usage:
+
      ```bash
      grep -r "[DEPRECATED_API]" src/
      ```
+
    - Replace with new API:
      [REPLACEMENT_PATTERN]
 
-5. **Update TypeScript types** (if applicable)
+1. **Update TypeScript types** (if applicable)
+
    ```bash
    npm install --save-dev @types/[package]@[version]
    ```
 
-6. **Run tests after each dependency**
+1. **Run tests after each dependency**
+
    ```bash
    npm test
    # Fix any failures before proceeding to next dependency
    ```
 
 **Validation**:
+
 - [ ] All core dependencies updated in package.json/requirements.txt
 - [ ] Lock file regenerated (package-lock.json, yarn.lock, etc.)
 - [ ] No peer dependency warnings
@@ -333,10 +357,11 @@ git checkout main -- .nvmrc [OTHER_CONFIG_FILES]
 - [ ] No runtime errors in browser/logs
 
 **Rollback**:
+
 ```bash
 git checkout HEAD -- package.json package-lock.json
 npm install
-```
+```text
 
 ---
 
@@ -345,6 +370,7 @@ npm install
 **Risk**: LOW
 
 **Objectives**:
+
 - Update supporting libraries
 - Remove deprecated packages
 - Add new recommended packages
@@ -359,6 +385,7 @@ npm install
 **Steps**:
 
 1. **Batch update non-breaking changes**
+
    ```bash
    # Check what's outdated
    npm outdated
@@ -370,14 +397,16 @@ npm install
    npm install [package]@[version]
    ```
 
-2. **Address packages with breaking changes** (one at a time)
+1. **Address packages with breaking changes** (one at a time)
+
    ```bash
    npm install [package]@[version]
    npm test
    # Fix issues before proceeding to next
    ```
 
-3. **Remove deprecated packages**
+1. **Remove deprecated packages**
+
    ```bash
    npm uninstall [deprecated-package]
    # Replace with modern alternative: [NEW_PACKAGE]
@@ -385,6 +414,7 @@ npm install
    ```
 
 **Validation**:
+
 - [ ] All dependencies updated
 - [ ] No critical vulnerabilities (`npm audit`)
 - [ ] Tests passing
@@ -399,6 +429,7 @@ npm install
 **Risk**: MEDIUM
 
 **Objectives**:
+
 - Upgrade build tools (Webpack, Vite, Babel, etc.)
 - Optimize build configuration
 - Update CI/CD build steps
@@ -414,6 +445,7 @@ npm install
 1. **Upgrade build tool**
 
    **Webpack 4 → 5**:
+
    ```bash
    npm install --save-dev webpack@5 webpack-cli@5
 
@@ -423,6 +455,7 @@ npm install
    ```
 
    **Create React App → Vite**:
+
    ```bash
    npm install --save-dev vite @vitejs/plugin-react
 
@@ -431,11 +464,12 @@ npm install
    # Update package.json scripts
    ```
 
-2. **Update configuration files**
+1. **Update configuration files**
    - [Config file 1]: [Changes needed]
    - [Config file 2]: [Changes needed]
 
-3. **Test build**
+1. **Test build**
+
    ```bash
    npm run build
 
@@ -445,7 +479,8 @@ npm install
    # - Assets copied correctly
    ```
 
-4. **Test production build locally**
+1. **Test production build locally**
+
    ```bash
    npm run serve
    # or
@@ -455,6 +490,7 @@ npm install
    ```
 
 **Validation**:
+
 - [ ] Build completes without errors
 - [ ] Bundle size within acceptable range
 - [ ] Sourcemaps working
@@ -470,6 +506,7 @@ npm install
 **Risk**: LOW-MEDIUM
 
 **Objectives**:
+
 - Adopt new language features
 - Refactor deprecated patterns
 - Improve code quality
@@ -485,20 +522,22 @@ npm install
    - Use template literals
 
    **Codemod**:
+
    ```bash
    npx jscodeshift -t transforms/modern-js.js src/
    ```
 
-2. **Replace deprecated APIs**
+1. **Replace deprecated APIs**
    - [Old API] → [New API] in [FILES]
    - Use codemod or manual search/replace
 
-3. **Optional refactoring** (defer to later if time-constrained)
+1. **Optional refactoring** (defer to later if time-constrained)
    - Extract complex functions
    - Reduce nesting
    - Add types (TypeScript/JSDoc)
 
 **Validation**:
+
 - [ ] Code passes linting
 - [ ] Tests still passing
 - [ ] No deprecation warnings
@@ -510,6 +549,7 @@ npm install
 **Risk**: LOW
 
 **Objectives**:
+
 - Fix all known vulnerabilities
 - Update security-related dependencies
 - Apply security best practices
@@ -523,6 +563,7 @@ npm install
 **Steps**:
 
 1. **Run security audit**
+
    ```bash
    npm audit
    # or
@@ -531,7 +572,8 @@ npm install
    snyk test
    ```
 
-2. **Fix vulnerabilities**
+1. **Fix vulnerabilities**
+
    ```bash
    # Auto-fix where possible
    npm audit fix
@@ -541,22 +583,23 @@ npm install
    # Then test and fix issues
    ```
 
-3. **Address unfixable vulnerabilities**
+1. **Address unfixable vulnerabilities**
    - Check if vulnerability affects our usage
    - Document risk acceptance if not exploitable
    - Or find alternative package
 
-4. **Add security headers** (if web app)
+1. **Add security headers** (if web app)
    - Content-Security-Policy
    - X-Frame-Options
    - X-Content-Type-Options
 
-5. **Update authentication/authorization** (if needed)
+1. **Update authentication/authorization** (if needed)
    - Modern OAuth2 flows
    - Secure session management
    - CSRF protection
 
 **Validation**:
+
 - [ ] `npm audit` shows 0 high/critical vulnerabilities
 - [ ] Security headers configured
 - [ ] Authentication tested
@@ -568,6 +611,7 @@ npm install
 **Risk**: LOW
 
 **Objectives**:
+
 - Ensure comprehensive test coverage
 - Validate no regressions
 - Performance testing
@@ -575,16 +619,17 @@ npm install
 **Steps**:
 
 1. **Run full test suite**
+
    ```bash
    npm run test:all
    # or equivalent for your framework
    ```
 
-2. **Add missing tests** (if coverage dropped)
+1. **Add missing tests** (if coverage dropped)
    - Target: Maintain or improve current [X]% coverage
    - Focus on areas affected by upgrades
 
-3. **Manual QA testing**
+1. **Manual QA testing**
 
    **Critical User Flows**:
    - [ ] [Flow 1: e.g., User login]
@@ -603,7 +648,8 @@ npm install
    - [ ] Tablet (iPad)
    - [ ] Mobile (iPhone, Android)
 
-4. **Performance testing**
+1. **Performance testing**
+
    ```bash
    # Compare with baseline from Phase 0
    npm run perf:test
@@ -615,13 +661,15 @@ npm install
    - [ ] Bundle size: [CURRENT vs BASELINE]
    - [ ] API response times: [CURRENT vs BASELINE]
 
-5. **Accessibility testing** (if applicable)
+1. **Accessibility testing** (if applicable)
+
    ```bash
    npm run a11y:test
    # or use tools like Lighthouse, axe
    ```
 
 **Validation**:
+
 - [ ] All automated tests passing
 - [ ] Test coverage at or above baseline
 - [ ] Manual QA checklist complete
@@ -635,6 +683,7 @@ npm install
 **Risk**: LOW
 
 **Objectives**:
+
 - Update docs to reflect new versions
 - Document breaking changes for team
 - Update deployment guides
@@ -642,6 +691,7 @@ npm install
 **Steps**:
 
 1. **Update README**
+
    ```markdown
    ## Requirements
    - Node.js [NEW_VERSION] (previously [OLD_VERSION])
@@ -651,7 +701,8 @@ npm install
    [Updated installation steps if changed]
    ```
 
-2. **Update CHANGELOG**
+1. **Update CHANGELOG**
+
    ```markdown
    ## [NEW_VERSION] - [DATE]
 
@@ -666,17 +717,18 @@ npm install
    - [Description of any API changes]
    ```
 
-3. **Update team documentation**
+1. **Update team documentation**
    - Onboarding docs
    - Development setup guide
    - Deployment runbook
 
-4. **Create upgrade announcement**
+1. **Create upgrade announcement**
    - Email/Slack message for team
    - Highlight breaking changes
    - Note any new features available
 
 **Validation**:
+
 - [ ] README updated
 - [ ] CHANGELOG updated
 - [ ] Team documentation updated
@@ -689,6 +741,7 @@ npm install
 **Risk**: MEDIUM-HIGH
 
 **Objectives**:
+
 - Deploy to staging
 - Validate in staging environment
 - Deploy to production with rollback ready
@@ -703,22 +756,24 @@ npm install
    - [ ] Rollback plan ready
    - [ ] Monitoring alerts configured
 
-2. **Deploy to staging**
+1. **Deploy to staging**
+
    ```bash
    git push origin upgrade/[BRANCH]
    # Trigger staging deployment
    ```
 
-3. **Staging validation**
+1. **Staging validation**
    - [ ] Application starts successfully
    - [ ] Health checks passing
    - [ ] Critical flows working
    - [ ] Performance acceptable
    - [ ] No errors in logs
 
-4. **Deploy to production**
+1. **Deploy to production**
 
    **Blue-Green Deployment** (recommended):
+
    ```bash
    # Deploy new version alongside old
    # Gradually shift traffic
@@ -727,23 +782,25 @@ npm install
    ```
 
    **Rolling Deployment**:
+
    ```bash
    # Update instances incrementally
    # Monitor each batch
    ```
 
-5. **Post-deployment monitoring** (first 24-48 hours)
+1. **Post-deployment monitoring** (first 24-48 hours)
    - [ ] Error rates normal
    - [ ] Performance metrics normal
    - [ ] User feedback positive
    - [ ] No unusual traffic patterns
 
-6. **Gradual rollout** (if possible)
+1. **Gradual rollout** (if possible)
    - 10% traffic → Monitor
    - 50% traffic → Monitor
    - 100% traffic → Monitor
 
 **Validation**:
+
 - [ ] Staging deployment successful
 - [ ] Production deployment successful
 - [ ] No increase in error rates
@@ -755,6 +812,7 @@ npm install
 ## Rollback Plan
 
 **When to Rollback**:
+
 - Critical functionality broken
 - Unacceptable performance degradation
 - Security vulnerability introduced
@@ -765,7 +823,8 @@ npm install
 
 ### Quick Rollback (Production)
 
-**Option 1: Revert Deployment**
+### Option 1: Revert Deployment
+
 ```bash
 # If using containers
 kubectl rollout undo deployment/[NAME]
@@ -775,16 +834,17 @@ heroku rollback
 
 # If manual deployment
 # Redeploy previous version
-```
+```text
 
-**Option 2: Feature Flag**
+### Option 2: Feature Flag
+
 ```javascript
 if (featureFlags.useNewVersion) {
   // New code
 } else {
   // Old code (fallback)
 }
-```
+```text
 
 ### Full Rollback (Development)
 
@@ -800,9 +860,10 @@ npm ci
 # or
 git checkout HEAD~1 -- package-lock.json
 npm install
-```
+```text
 
 **Post-Rollback**:
+
 1. Investigate root cause
 2. Fix issues
 3. Re-plan upgrade with fixes
@@ -826,6 +887,7 @@ npm install
 ## Success Metrics
 
 **Technical Metrics**:
+
 - [ ] All tests passing (current: [X]% coverage)
 - [ ] Zero high/critical vulnerabilities
 - [ ] Build time ≤ [BASELINE]
@@ -833,6 +895,7 @@ npm install
 - [ ] Error rate ≤ [BASELINE]
 
 **Business Metrics**:
+
 - [ ] Zero downtime deployment
 - [ ] No user-reported issues
 - [ ] Performance maintained or improved
@@ -862,15 +925,18 @@ npm install
 ## Resources & References
 
 ### Official Documentation
+
 - [Runtime] upgrade guide: [LINK]
 - [Framework] migration guide: [LINK]
 
 ### Tools
+
 - Dependency checker: [npm-check-updates, etc.]
 - Security scanner: [npm audit, Snyk, etc.]
 - Codemods: [LINKS]
 
 ### Internal Resources
+
 - Team Slack channel: #[CHANNEL]
 - Previous upgrade retrospectives: [LINK]
 - Architecture decisions: [LINK]
@@ -882,14 +948,19 @@ npm install
 ### [Package Name] v[OLD] → v[NEW]
 
 **Breaking Change 1**: [Description]
+
 - **Before**:
+
   ```javascript
   // Old code
   ```
+
 - **After**:
+
   ```javascript
   // New code
   ```
+
 - **Files affected**: [LIST]
 
 **Breaking Change 2**: [Description]

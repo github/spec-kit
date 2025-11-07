@@ -24,7 +24,7 @@ This document outlines the implementation plan for the Reverse Engineering & Mod
 
 **Deliverables**:
 
-```
+```text
 scripts/bash/
 ├── analyze-project.sh          # Main orchestration script
 
@@ -36,7 +36,7 @@ scripts/python/analyzer/
 ├── security_scanner.py         # Vulnerability detection
 ├── scoring_engine.py           # Feasibility scoring logic
 └── report_generator.py         # Markdown report generation
-```
+```text
 
 **Technical Requirements**:
 
@@ -62,7 +62,7 @@ scripts/python/analyzer/
            """Calculate greenfield rewrite feasibility (0-100)"""
    ```
 
-2. **`scripts/python/analyzer/dependency_analyzer.py`**
+1. **`scripts/python/analyzer/dependency_analyzer.py`**
 
    ```python
    class DependencyAnalyzer:
@@ -73,7 +73,7 @@ scripts/python/analyzer/
            """Analyze Python dependencies"""
    ```
 
-3. **`scripts/bash/analyze-project.sh`**
+1. **`scripts/bash/analyze-project.sh`**
 
    ```bash
    #!/usr/bin/env bash
@@ -116,7 +116,7 @@ scripts/python/analyzer/
 
 **Deliverables**:
 
-```
+```text
 scripts/python/analyzer/languages/
 ├── __init__.py
 ├── javascript.py        # Node.js-specific analysis
@@ -125,7 +125,7 @@ scripts/python/analyzer/languages/
 ├── dotnet.py           # .NET-specific analysis
 ├── ruby.py             # Ruby-specific analysis
 └── php.py              # PHP-specific analysis
-```
+```text
 
 **Per-Language Features**:
 
@@ -203,18 +203,18 @@ class AnalysisCheckpoint:
 
     def resume_analysis(self, checkpoint_dir: str):
         """Resume from last checkpoint"""
-```
+```text
 
 **Checkpoint Files**:
 
-```
+```text
 .analysis/Project-2025-11-06/.checkpoints/
 ├── phase1-discovery-complete.json
 ├── phase2-dependencies-complete.json
 ├── phase3-code-metrics-complete.json
 ├── phase4-security-complete.json
 └── phase5-architecture-complete.json
-```
+```text
 
 **Acceptance Criteria**:
 
@@ -410,9 +410,9 @@ class AnalysisCheckpoint:
 **Getting Started**:
 
 1. Check [GitHub Issues](https://github.com/veerabhadra-ponna/spec-kit-smart/issues) with label `reverse-engineering`
-2. Read [docs/development/engineering-review.md](./engineering-review.md) for context
-3. See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines
-4. Join [GitHub Discussions](https://github.com/veerabhadra-ponna/spec-kit-smart/discussions) for questions
+1. Read [docs/development/engineering-review.md](./engineering-review.md) for context
+1. See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines
+1. Join [GitHub Discussions](https://github.com/veerabhadra-ponna/spec-kit-smart/discussions) for questions
 
 **Priority Tasks** (good first issues):
 

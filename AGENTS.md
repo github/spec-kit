@@ -16,359 +16,43 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ### ⚠️ CRITICAL: Never Use TODOs in Prompts or Templates
 
-**RULE:** Never add TODO comments to prompt files (`.md` files in `templates/commands/`) or template files. TODOs in prompts can confuse AI agents, causing them to misinterpret instructions or attempt to execute the TODO items instead of their primary task.
+**RULE:** Never add TODO comments to prompt/template files (`.md` files in `templates/`). TODOs confuse AI agents who interpret them as executable tasks.
 
-**Why this matters:**
+**Instead:** Use `/IMPROVEMENTS.md` for centralized tracking with priority levels (High/Medium/Low).
 
-- AI agents read prompts as instructions
-- TODO comments can be interpreted as tasks to perform
-- Scattered TODOs across files make tracking difficult
-- Can lead to unexpected agent behavior
-
-**Instead:**
-
-- **Always** add improvements to `/IMPROVEMENTS.md` (centralized tracking)
-- Use clear priority levels (High/Medium/Low)
-- Link to related issues/PRs
-- Group by category for easy review
-
-**Example - Wrong:**
-
-```markdown
-<!-- templates/commands/specify.md -->
----
-description: Create feature specification
-# TODO: Add validation
-# TODO: Improve error messages
----
-```
-
-**Example - Correct:**
-
-```markdown
-<!-- IMPROVEMENTS.md -->
-## 🔴 High Priority
-- [ ] Add validation of interactive input format
-- [ ] Improve error messages with examples
-```
-
-**Where to document improvements:**
-
-- `/IMPROVEMENTS.md` - All future enhancements and known limitations
-- GitHub Issues - For discussion and tracking
-- Pull Requests - When implementing improvements
-
-**Benefits of centralized tracking:**
-
-- ✅ All improvements visible in one place
-- ✅ Easy to prioritize and plan sprints
-- ✅ No risk of confusing AI agents
-- ✅ Clear completion tracking with checkboxes
-- ✅ Better collaboration and visibility
+**Why:** Prevents agent confusion, enables better tracking, improves collaboration.
 
 ### Pre-Commit Quality Checks
 
-**RULE:** Always run quality checks before committing to catch errors early.
+**Required checks:**
 
-**Required checks before every commit:**
+1. **Markdownlint**: `npx markdownlint-cli2 "**/*.md"` (configured via `.markdownlint-cli2.jsonc`)
+2. **Spell check**: Review for typos/grammar
+3. **Test scripts**: If modifying bash/PowerShell, test locally with `--help`
 
-1. **Markdownlint** - Check all markdown files for formatting issues
+**Checklist:**
 
-   ```bash
-   # Install markdownlint-cli2 (first time only)
-   npm install -g markdownlint-cli2
-
-   # Run from repository root
-   markdownlint-cli2 "**/*.md"
-   ```
-
-   **Common markdownlint errors to fix:**
-
-   - **MD032** - Blank lines around lists: Add blank line before/after lists
-   - **MD031** - Blank lines around code fences: Add blank line before/after code blocks
-   - **MD036** - No emphasis as heading: Use proper headings (##) not emphasis (*text*)
-   - **MD007** - List indentation: Use 0-space indentation for lists at document root
-   - **MD040** - Code language: Specify language for fenced code blocks (bash, markdown, text, etc.)
-
-2. **Spell check** - Review for typos and grammar (manual or with tools)
-
-3. **Test scripts** - If modifying bash/PowerShell scripts, test them locally
-
-   ```bash
-   # Test bash scripts
-   bash scripts/bash/create-new-feature.sh --help
-
-   # Test PowerShell scripts (if on Windows/PowerShell)
-   pwsh scripts/powershell/create-new-feature.ps1 -Help
-   ```
-
-**Why this matters:**
-
-- ✅ Catches errors before CI fails
-- ✅ Keeps codebase clean and consistent
-- ✅ Saves time in code review
-- ✅ Prevents broken builds
-- ✅ Maintains professional quality
-
-**CI checks that will run automatically:**
-
-- Markdownlint on all `.md` files
-- (Add more as CI pipeline grows)
-
-**Quick pre-commit checklist:**
-
-- [ ] Ran markdownlint and fixed all errors
-- [ ] No TODOs added to prompt files
-- [ ] Updated IMPROVEMENTS.md if needed
-- [ ] Tested any script changes locally
-- [ ] Commit message is clear and descriptive
+- [ ] Ran markdownlint and fixed errors
+- [ ] No TODOs in prompt files (use IMPROVEMENTS.md)
+- [ ] Tested script changes
+- [ ] Clear commit message
 
 ### Corporate Guidelines System
 
-**FEATURE:** Spec Kit now supports corporate development guidelines to customize prompts for organizational standards.
+Spec Kit supports corporate development guidelines via `/.guidelines/` directory.
 
-#### What Are Guidelines?
+**Key concepts:**
 
-Guidelines are markdown files in the `/.guidelines/` directory that specify:
+- **Auto-detection**: Prompts detect tech stack and load applicable guidelines
+- **Priority**: Constitution > Corporate Guidelines > Spec Kit Defaults
+- **Multi-stack**: Supports multiple tech stacks (e.g., React + Java) via `stack-mapping.json`
+- **Non-blocking**: Violations create `.guidelines-todo.md` but don't block workflow
 
-- Corporate scaffolding commands (e.g., `npx @acmecorp/create-react-app`)
-- Mandatory corporate libraries (e.g., `@acmecorp/ui-components`, `@acmecorp/idm-client`)
-- Internal package registries (Artifactory, Nexus, Azure Artifacts)
-- Banned public libraries (security/licensing requirements)
-- Architecture patterns and coding standards
-- Security and compliance requirements
+**For contributors:** Guidelines are templates with `@YOUR_ORG` placeholders. Never commit actual corporate info.
 
-#### Directory Structure
+**Implementation:** All phases complete (Phases 1-3). Validation: `python3 scripts/validate-guidelines.py`
 
-```text
-.guidelines/
-├── README.md                    # Guidelines overview and customization instructions
-├── branch-config.json           # Branch naming configuration (Phase 2)
-├── stack-mapping.json           # Multi-stack path mapping (Phase 3)
-├── branching-guidelines.md      # Branch naming conventions
-├── reactjs-guidelines.md        # React/frontend standards
-├── java-guidelines.md           # Java/Spring Boot standards
-├── dotnet-guidelines.md         # .NET/C# standards
-├── nodejs-guidelines.md         # Node.js/Express standards
-└── python-guidelines.md         # Python/Django/Flask standards
-```
-
-#### How Guidelines Work
-
-1. **Auto-Detection**: Prompts detect tech stack from project files (`package.json`, `pom.xml`, `*.csproj`, etc.)
-2. **Loading**: Applicable guideline files are read based on detected tech stack
-3. **Application**: Guidelines are applied with priority: Constitution > Corporate Guidelines > Spec Kit Defaults
-4. **Multi-Stack**: For projects with multiple tech stacks (e.g., React + Java), both guideline files are loaded and applied contextually
-
-#### Which Prompts Use Guidelines
-
-- **`plan.md` (CRITICAL)**: Architecture decisions use corporate libraries and patterns
-- **`implement.md` (CRITICAL)**: Code generation uses corporate libraries and follows coding standards
-- **`analyze.md`**: Compliance checking validates guideline adherence
-- **`tasks.md`**: Task generation includes corporate setup commands and libraries
-
-#### Customization
-
-**For Specify Users:**
-
-1. Copy `.guidelines/` directory from Spec Kit release package to your project root
-2. Edit each `*-guidelines.md` file to match your organization:
-   - Replace `@YOUR_ORG` placeholders with your actual organization name
-   - Update package registry URLs (Artifactory, Nexus, etc.)
-   - Specify mandatory corporate libraries with versions
-   - List banned libraries
-   - Document corporate scaffolding commands
-3. Commit `.guidelines/` to your repository
-4. Prompts automatically detect and apply guidelines
-
-**For Spec Kit Contributors:**
-
-Guidelines are **templates with generic placeholders**. Never commit actual corporate-specific information to Spec Kit repository.
-
-**Example placeholder**:
-
-```markdown
-## Scaffolding
-
-Use corporate scaffolding command:
-
-```bash
-npx @YOUR_ORG/create-react-app my-app
-```
-
-**Example after customization** (in user's project):
-
-```markdown
-## Scaffolding
-
-Use corporate scaffolding command:
-
-```bash
-npx @acmecorp/create-react-app my-app
-```
-
-#### Priority Hierarchy
-
-When making decisions, prompts follow this order:
-
-1. **Constitution** (`/memory/constitution.md`) - Project-specific principles (HIGHEST)
-2. **Corporate Guidelines** (`/.guidelines/*.md`) - Organizational standards (MEDIUM)
-3. **Spec Kit Defaults** - Built-in best practices (LOWEST)
-
-**Example conflict resolution**:
-
-- Constitution: "MUST use PostgreSQL"
-- Guidelines: "Prefer MySQL"
-- **Result**: PostgreSQL wins (constitution has highest priority)
-
-#### Non-Compliance Handling
-
-Guidelines are **recommendations, not blockers**:
-
-- Prompts warn about violations
-- Create `.guidelines-todo.md` file in feature directory listing violations
-- Implementation continues (doesn't block workflow)
-- Team can address violations later or request exceptions
-
-#### Implementation Status
-
-**Phase 1** (DONE):
-
-- ✅ Guideline template files created
-- ✅ Prompt integration (plan, implement, analyze, tasks)
-- ✅ Auto-detection of tech stack
-- ✅ Basic multi-stack support
-- ✅ Non-compliance handling
-
-**Phase 2** (DONE):
-
-- ✅ Branch naming configuration (`branch-config.json`)
-- ✅ Configurable Jira patterns and validation
-- ✅ Optional Jira requirement
-- ✅ Custom branch prefixes and formats
-- ✅ Script integration with configuration
-- ✅ Backward compatibility for projects without config
-
-**Phase 3** (DONE):
-
-- ✅ Advanced multi-stack coordination with intelligent path mapping
-- ✅ Stack mapping configuration (`stack-mapping.json`)
-- ✅ Guideline precedence rules (explicit > extension > convention > auto-detect)
-- ✅ Version management for guidelines and configurations
-- ✅ Guideline validation tool (`scripts/validate-guidelines.py`)
-- ✅ Token optimization for multi-stack projects
-- ✅ Enhanced tasks.md prompt for multi-stack task generation
-- ✅ Enhanced analyze.md prompt for multi-stack compliance checking
-- ✅ Cross-stack integration validation
-- ✅ Documentation and examples
-
-#### Example Use Cases
-
-##### Use Case 1: Corporate React Library
-
-```markdown
-# .guidelines/reactjs-guidelines.md
-
-## Mandatory Libraries
-
-MUST use @acmecorp/ui-components v2.x:
-
-```bash
-npm install @acmecorp/ui-components@^2.0.0
-```
-
-**Result**: When running `/specify implement`, agent generates:
-
-```typescript
-import { Button } from '@acmecorp/ui-components';  // ✅ Corporate library
-// NOT: import { Button } from '@mui/material';     // ❌ Banned
-```
-
-##### Use Case 2: Java Corporate SDK
-
-```markdown
-# .guidelines/java-guidelines.md
-
-## Mandatory Libraries
-
-MUST use corporate API client:
-
-```xml
-<dependency>
-    <groupId>com.acmecorp</groupId>
-    <artifactId>acmecorp-api-client</artifactId>
-    <version>1.8.0</version>
-</dependency>
-```
-
-**Result**: When running `/specify plan`, agent includes corporate SDK in architecture instead of building custom HTTP clients.
-
-##### Use Case 3: Multi-Stack Project (React + Java)
-
-```json
-// .guidelines/stack-mapping.json
-
-{
-  "stacks": [
-    {
-      "name": "reactjs",
-      "guideline": "reactjs-guidelines.md",
-      "paths": ["frontend/**"],
-      "extensions": [".tsx", ".jsx"]
-    },
-    {
-      "name": "java",
-      "guideline": "java-guidelines.md",
-      "paths": ["backend/**"],
-      "extensions": [".java"]
-    }
-  ]
-}
-```
-
-**Result**: When running `/specify tasks`:
-
-- Frontend tasks (in `frontend/**`) → Apply React guidelines
-- Backend tasks (in `backend/**`) → Apply Java guidelines
-- Tasks labeled with `[Frontend]` and `[Backend]` for clarity
-- Cross-stack integration validated against both guidelines
-
-##### Use Case 4: Guideline Validation
-
-```bash
-# Run validation before committing changes
-python3 scripts/validate-guidelines.py
-
-# Output:
-✅ PASSED CHECKS: 21
-✓ All stack mappings valid
-✓ All referenced guideline files exist
-✓ Path patterns are valid
-```
-
-#### Best Practices
-
-**For Spec Kit Contributors:**
-
-- Keep guidelines as generic templates
-- Use `@YOUR_ORG` placeholders
-- Provide clear examples of what to customize
-- Document all sections thoroughly
-- Never commit actual corporate information
-
-**For Specify Users:**
-
-- Customize guidelines for your organization
-- Update quarterly or when standards change
-- Version guidelines with your project
-- Document rationale for banned libraries
-- Provide code examples for corporate libraries
-
-#### See Also
-
-- `.guidelines/README.md` - Detailed guidelines customization guide
-- `GUIDELINES-IMPLEMENTATION-PLAN.md` - Full implementation roadmap
-- `IMPROVEMENTS.md` - Planned Phase 2 and 3 enhancements
+**See:** `.guidelines/README.md` for complete documentation and customization guide.
 
 ## Adding New Agent Support
 
@@ -753,217 +437,39 @@ When adding new agents:
 
 ## Markdown Style Guide
 
-This section defines the markdown style conventions for all documentation and templates in this repository.
+We use markdownlint-cli2 for consistent markdown formatting across all documentation and templates.
 
-### Markdownlint Configuration
+### Configuration
 
-We use `.markdownlintrc` that balances strictness with practicality for technical documentation.
+- **Config file**: `.markdownlint-cli2.jsonc`
+- **Rules reference**: [Markdownlint Rules Documentation](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md)
 
-### Enabled Rules (Enforced)
+**Key rules enforced**:
 
-**MD003**: Header style - ATX style (`#` prefix)
+- ATX-style headers (`## Heading`)
+- Asterisk-style emphasis (`*italic*`, `**bold**`)
+- 2-space indent for nested lists
 
-- ✅ Correct: `## Heading`
-- ❌ Incorrect: `Heading\n-------`
+**Rules disabled**: MD013 (line length), MD033 (HTML), MD041 (first line header), MD051 (link fragments) - see `.markdownlint-cli2.jsonc` for complete configuration.
 
-**MD004**: Unordered list style - Dash style
+### Quick Reference
 
-- ✅ Correct: `- List item`
-- ❌ Incorrect: `* List item` or `+ List item`
+```bash
+# Check all markdown files
+npx markdownlint-cli2 "**/*.md"
 
-**MD024**: Multiple headers with same content (siblings_only)
-
-- Same headers allowed in different sections
-- Helps with FAQ sections and repeated patterns
-
-**MD046**: Code block style - Fenced (` ``` `)
-
-- ✅ Correct: ` ```language\ncode\n``` `
-- ❌ Incorrect: Indented code blocks
-
-### Disabled Rules (With Rationale)
-
-**MD013 (Line length)**: Disabled
-
-- **Why**: Documentation often requires long lines for:
-  - Example commands
-  - URLs
-  - Code snippets
-  - Table content
-- **Best practice**: Still try to keep prose under 100 characters when possible
-
-**MD026 (Trailing punctuation in headers)**: Disabled
-
-- **Why**: Allows headers like:
-  - `## What's Good ✅`
-  - `## What's Bad ❌`
-  - `## Prerequisites?`
-- Emojis and question marks can improve readability
-
-**MD033 (Inline HTML)**: Disabled with limits
-
-- **Why**: Allows specific HTML elements for styling:
-  - `<div align="center">` for centering content
-  - `<img>` for logo/images with specific attributes
-  - `<h1>`, `<h3>`, `<p>`, `<strong>`, `<a>` for README styling
-- **Guideline**: Still discouraged outside README and landing pages
-
-**MD040 (Code block language)**: Disabled
-
-- **Why**: Many examples use plain text or outputs:
-  - Command outputs
-  - Generic text examples
-  - Multi-language snippets
-- **Best practice**: Add language when known (bash, python, json, etc.)
-
-**MD041 (First line should be header)**: Disabled
-
-- **Why**: Allows YAML front matter in templates:
-
-```yaml
----
-description: Command description
-status: stable
----
+# Auto-fix issues
+npx markdownlint-cli2 --fix "**/*.md"
 ```
 
 ### Best Practices
 
-#### 1. Headers
+- Use blank lines before/after headers, lists, and code blocks
+- Specify language for code blocks (bash, python, json, text, etc.)
+- Use dashes for unordered lists
+- Keep prose under 100 characters when possible (long commands/URLs excepted)
 
-Use ATX style with blank lines before and after:
-
-```markdown
-Paragraph text.
-
-## New Section
-
-More text here.
-```
-
-#### 2. Lists
-
-Use dashes for unordered lists, blank lines before/after:
-
-```markdown
-Paragraph.
-
-- Item 1
-- Item 2
-- Item 3
-
-Next paragraph.
-```
-
-#### 3. Code Blocks
-
-Use fenced style with language when possible:
-
-````markdown
-Command example:
-
-```bash
-npm install
-```
-
-Output:
-
-```text
-✓ Installation complete
-```
-````
-
-#### 4. Links
-
-Use reference-style for repeated links:
-
-```markdown
-See [GitHub Issues][issues] for details.
-Check [GitHub Issues][issues] again.
-
-[issues]: https://github.com/user/repo/issues
-```
-
-#### 5. Tables
-
-Align pipes for readability:
-
-```markdown
-| Column 1 | Column 2 | Column 3 |
-|----------|----------|----------|
-| Data 1   | Data 2   | Data 3   |
-```
-
-#### 6. Emphasis
-
-- **Bold**: `**important**` for important terms
-- *Italic*: `*emphasis*` for emphasis
-- `Code`: `` `code` `` for inline code, commands, file names
-
-#### 7. Line Breaks
-
-- Use single blank line between paragraphs
-- No trailing whitespace
-- Consistent spacing around sections
-
-### File-Specific Guidelines
-
-**README.md**:
-
-- Keep concise (link to detailed docs)
-- Use HTML sparingly for styling
-- Include badges at top
-- Table of contents for long docs
-
-**Documentation (docs/)**:
-
-- Comprehensive is okay
-- Use examples liberally
-- Include troubleshooting sections
-- Cross-reference related docs
-
-**Templates (templates/)**:
-
-- Include YAML front matter
-- Clear section markers
-- Placeholder syntax: `[PLACEHOLDER]`
-- Comments for AI agents are okay
-
-### Validation
-
-To check markdown (if markdownlint-cli installed):
-
-```bash
-npx markdownlint-cli2 "**/*.md" "#node_modules"
-```
-
-To fix auto-fixable issues:
-
-```bash
-npx markdownlint-cli2-fix "**/*.md" "#node_modules"
-```
-
-### When to Break Rules
-
-Rules can be broken when:
-
-1. **Readability improves**: Tables with long lines
-2. **Examples require it**: Long command outputs
-3. **External constraints**: Generated content
-4. **Accessibility**: Screen reader-friendly formatting
-
-Always prioritize:
-
-1. Clarity
-2. Consistency
-3. Maintainability
-4. Strict compliance (last)
-
-### References
-
-- [Markdownlint Rules](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md)
-- [CommonMark Spec](https://commonmark.org/)
-- [GitHub Flavored Markdown](https://github.github.com/gfm/)
+See `.markdownlint-cli2.jsonc` for complete rule configuration and [CommonMark Spec](https://commonmark.org/) for markdown syntax.
 
 ---
 

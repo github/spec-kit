@@ -17,16 +17,19 @@ This constitution establishes the guiding principles, standards, and governance 
 ## Derived Insights
 
 **Good Patterns Observed** (to preserve):
+
 - [Pattern 1: e.g., "Consistent error handling using custom error classes"]
 - [Pattern 2: e.g., "Strong separation between API routes and business logic"]
 - [Pattern 3: e.g., "Comprehensive unit tests for utility functions"]
 
 **Anti-Patterns Found** (to eliminate):
+
 - [Anti-pattern 1: e.g., "Direct database access in route handlers"]
 - [Anti-pattern 2: e.g., "Inconsistent logging formats"]
 - [Anti-pattern 3: e.g., "Missing input validation in public endpoints"]
 
 **Critical Gaps** (to address):
+
 - [Gap 1: e.g., "No formal error handling strategy"]
 - [Gap 2: e.g., "Inconsistent authentication patterns"]
 - [Gap 3: e.g., "Missing integration tests"]
@@ -47,6 +50,7 @@ This constitution establishes the guiding principles, standards, and governance 
 **Example**: "Analysis revealed 37 functions exceeding 100 lines with multiple responsibilities, making maintenance difficult. This principle addresses that technical debt."
 
 **Implementation**:
+
 - [How to apply: e.g., "Functions should not exceed 50 lines"]
 - [How to enforce: e.g., "Linter rule: max-lines-per-function: 50"]
 - [How to measure: e.g., "Code review checklist includes SRP check"]
@@ -54,6 +58,7 @@ This constitution establishes the guiding principles, standards, and governance 
 **Examples from Codebase**:
 
 **✅ Good example** (preserve this pattern):
+
 ```javascript
 // File: src/utils/validation.js:45
 function validateEmail(email) {
@@ -63,6 +68,7 @@ function validateEmail(email) {
 ```
 
 **❌ Bad example** (refactor to match principle):
+
 ```javascript
 // File: src/controllers/userController.js:123
 function processUser(data) {
@@ -81,17 +87,20 @@ function processUser(data) {
 Current test coverage is [X]%, with critical paths untested. TDD ensures new code is testable and tested from the start.
 
 **Implementation**:
+
 - Write failing test first
 - Implement minimum code to pass
 - Refactor with confidence
 - Target: 80%+ coverage for new code
 
 **Coverage Requirements**:
+
 - Unit tests: All business logic functions
 - Integration tests: All API endpoints
 - E2E tests: Critical user journeys
 
 **Tools**:
+
 - Unit: [Jest, pytest, xUnit, etc.]
 - Integration: [Supertest, TestContainers, etc.]
 - E2E: [Playwright, Cypress, Selenium]
@@ -106,6 +115,7 @@ Current test coverage is [X]%, with critical paths untested. TDD ensures new cod
 Analysis found [X] endpoints accepting user input without validation, creating XSS and injection risks.
 
 **Implementation**:
+
 - Input validation: Use [library/schema] for all public endpoints
 - Output encoding: Escape HTML, sanitize SQL, parameterize queries
 - Authentication: JWT with expiration, secure session storage
@@ -113,6 +123,7 @@ Analysis found [X] endpoints accepting user input without validation, creating X
 - Secrets: Never commit secrets, use environment variables
 
 **Required Security Checks**:
+
 - [ ] Input validation on all public endpoints
 - [ ] SQL parameterization (no string concatenation)
 - [ ] XSS prevention (output encoding)
@@ -122,6 +133,7 @@ Analysis found [X] endpoints accepting user input without validation, creating X
 
 **Security Review Trigger**:
 Any code touching:
+
 - Authentication/authorization
 - Payment processing
 - Personal data (PII)
@@ -140,6 +152,7 @@ Current error handling is inconsistent (mix of throw/callback/promise rejection)
 **Implementation**:
 
 **Error Classification**:
+
 ```javascript
 class ValidationError extends Error { }     // 400
 class UnauthorizedError extends Error { }   // 401
@@ -150,6 +163,7 @@ class InternalError extends Error { }       // 500
 ```
 
 **Logging Standard**:
+
 ```javascript
 logger.error({
   message: error.message,
@@ -160,11 +174,13 @@ logger.error({
 ```
 
 **Never**:
+
 - ❌ Swallow errors silently
 - ❌ Log sensitive data (passwords, tokens, PII)
 - ❌ Expose internal errors to users
 
 **Always**:
+
 - ✅ Catch at appropriate layer
 - ✅ Log with context
 - ✅ Return user-friendly messages
@@ -181,6 +197,7 @@ Current codebase mixes concerns (database queries in route handlers), making tes
 **Layer Responsibilities**:
 
 **Routes** (src/routes/):
+
 - Define endpoints
 - Parse request
 - Call controller
@@ -188,6 +205,7 @@ Current codebase mixes concerns (database queries in route handlers), making tes
 - NO business logic
 
 **Controllers** (src/controllers/):
+
 - Validate input
 - Call services
 - Handle errors
@@ -195,18 +213,21 @@ Current codebase mixes concerns (database queries in route handlers), making tes
 - NO direct database access
 
 **Services** (src/services/):
+
 - Business logic
 - Orchestrate data access
 - Transaction management
 - NO HTTP concerns
 
 **Data Access** (src/repositories/):
+
 - Database queries
 - ORM/query builder usage
 - Data mapping
 - NO business logic
 
 **Enforcement**:
+
 - Linter rule: No SQL in route/controller files
 - Code review: Check layer violations
 - Architecture tests: Verify dependencies
@@ -221,12 +242,14 @@ Current codebase mixes concerns (database queries in route handlers), making tes
 Analysis found [X] vulnerable dependencies and [Y] packages 2+ major versions behind.
 
 **Requirements**:
+
 - Security vulnerabilities: CRITICAL/HIGH must be fixed within 1 week
 - LTS versions: Upgrade within 3 months of release
 - Deprecated packages: Replace within 6 months of deprecation
 - Unused dependencies: Remove immediately
 
 **Process**:
+
 ```bash
 # Monthly dependency review
 npm outdated
@@ -240,6 +263,7 @@ npm update
 ```
 
 **Adding New Dependencies**:
+
 - [ ] Justify need (can we use existing dependency?)
 - [ ] Check maintenance status (last update < 1 year)
 - [ ] Review bundle size impact
@@ -247,6 +271,7 @@ npm update
 - [ ] Security scan (npm audit, Snyk)
 
 **Never**:
+
 - Add dependencies for trivial utility functions
 - Use packages with critical vulnerabilities
 - Use packages with incompatible licenses
@@ -262,6 +287,7 @@ npm update
 Current documentation is sparse and often outdated. Good documentation explains WHY, not WHAT.
 
 **Code Comments**:
+
 ```javascript
 // ❌ Bad - describes WHAT (obvious from code)
 // Loop through users and increment count
@@ -273,6 +299,7 @@ const activeUsers = users.filter(u => !u.deletedAt);
 ```
 
 **Function Documentation**:
+
 ```javascript
 /**
  * Calculate shipping cost based on distance and package weight.
@@ -292,6 +319,7 @@ function calculateShipping(distanceMiles, weightLbs, isPremium) {
 ```
 
 **Required Documentation**:
+
 - README: Setup, usage, architecture overview
 - API docs: All public endpoints (OpenAPI/Swagger)
 - Architecture Decision Records (ADR): Major technical decisions
@@ -307,6 +335,7 @@ function calculateShipping(distanceMiles, weightLbs, isPremium) {
 Performance impacts user experience and operational costs. Current baseline: [metrics].
 
 **Performance Budgets**:
+
 - API response time: p95 < 500ms, p99 < 1000ms
 - Page load: First Contentful Paint < 1.5s
 - Time to Interactive: < 3.5s
@@ -314,17 +343,20 @@ Performance impacts user experience and operational costs. Current baseline: [me
 - Database queries: < 10 per request
 
 **Monitoring**:
+
 - APM tool: [DataDog, New Relic, etc.]
 - Real User Monitoring (RUM)
 - Synthetic monitoring
 
 **Optimization Requirements**:
+
 - Database: Indexed queries, connection pooling
 - Caching: Redis for frequently accessed data (TTL: [X] minutes)
 - Frontend: Code splitting, lazy loading, image optimization
 - API: Pagination (max 100 items), rate limiting
 
 **Review Triggers**:
+
 - Any API endpoint slower than budget
 - Bundle size increase > 10%
 - Database query count spike
@@ -341,38 +373,45 @@ Code reviews catch bugs early, share knowledge, and enforce standards.
 **Code Review Checklist**:
 
 **Functionality**:
+
 - [ ] Code does what it's supposed to
 - [ ] Edge cases handled
 - [ ] Error scenarios covered
 
 **Quality**:
+
 - [ ] Follows coding standards
 - [ ] No code smells
 - [ ] Readable and maintainable
 - [ ] Appropriate abstractions
 
 **Testing**:
+
 - [ ] Tests included
 - [ ] Tests actually test the functionality
 - [ ] Coverage meets requirement
 
 **Security**:
+
 - [ ] Input validation present
 - [ ] No secrets in code
 - [ ] Authorization checks present
 
 **Performance**:
+
 - [ ] No obvious performance issues
 - [ ] Database queries optimized
 - [ ] Caching used appropriately
 
 **Review Requirements**:
+
 - All PRs require 1+ approval
 - Critical changes (auth, payment, data) require 2+ approvals
 - Reviewers must run code locally
 - Reviewers must check tests pass
 
 **Author Responsibilities**:
+
 - Keep PRs small (< 400 lines)
 - Write descriptive PR description
 - Link to issue/ticket
@@ -390,6 +429,7 @@ Manual deployments are error-prone. Automation ensures consistency.
 **CI/CD Pipeline**:
 
 **On Pull Request**:
+
 - [ ] Run linter
 - [ ] Run tests
 - [ ] Run security scan
@@ -398,6 +438,7 @@ Manual deployments are error-prone. Automation ensures consistency.
 - [ ] Preview deployment (staging)
 
 **On Merge to Main**:
+
 - [ ] Run full test suite
 - [ ] Build production artifacts
 - [ ] Deploy to staging
@@ -406,11 +447,13 @@ Manual deployments are error-prone. Automation ensures consistency.
 - [ ] Run post-deployment checks
 
 **Deployment Strategy**:
+
 - Blue-green deployment (zero downtime)
 - Gradual rollout (10% → 50% → 100%)
 - Automated rollback on error spike
 
 **Deployment Checklist**:
+
 - [ ] Database migrations tested
 - [ ] Environment variables configured
 - [ ] Secrets rotated (if needed)
@@ -424,6 +467,7 @@ Manual deployments are error-prone. Automation ensures consistency.
 ### Amendment Process
 
 **Proposing Changes**:
+
 1. Open issue/RFC describing proposed change
 2. Discuss with team (minimum 1 week)
 3. Vote (requires 2/3 majority)
@@ -431,6 +475,7 @@ Manual deployments are error-prone. Automation ensures consistency.
 5. Update version number (semantic versioning)
 
 **Version Bumping**:
+
 - MAJOR: Breaking changes (remove/redefine principle)
 - MINOR: New principle added
 - PATCH: Clarifications, typos, examples
@@ -440,23 +485,27 @@ Manual deployments are error-prone. Automation ensures consistency.
 **Frequency**: Quarterly
 
 **Review Process**:
+
 1. Audit codebase against principles
 2. Identify violations
 3. Create tickets to address violations
 4. Track remediation progress
 
 **Tooling**:
+
 - Automated: Linters, security scanners
 - Manual: Code review checklist, architecture review
 
 ### Enforcement
 
 **Violations**:
+
 - **Blocker**: Critical security/data issues (MUST fix before merge)
 - **Required**: Principle violations (MUST fix before merge)
 - **Recommended**: Best practices (SHOULD fix, can defer with justification)
 
 **Exceptions**:
+
 - Must be explicitly documented in PR
 - Require additional approval
 - Tracked in technical debt backlog
@@ -466,16 +515,19 @@ Manual deployments are error-prone. Automation ensures consistency.
 ## Implementation Roadmap
 
 **Immediate** (Week 1-2):
+
 - [ ] Set up linters with principle rules
 - [ ] Create code review checklist
 - [ ] Add security scanning to CI
 
 **Short-term** (Month 1-3):
+
 - [ ] Refactor highest-impact violations
 - [ ] Add missing test coverage
 - [ ] Document architecture
 
 **Long-term** (Month 3-12):
+
 - [ ] Address remaining technical debt
 - [ ] Implement full CI/CD pipeline
 - [ ] Achieve 80%+ test coverage
@@ -485,14 +537,16 @@ Manual deployments are error-prone. Automation ensures consistency.
 ## References
 
 ### Internal
+
 - Architecture Decision Records: [LINK]
 - Coding Standards: [LINK]
 - Security Policy: [LINK]
 
 ### External
+
 - [Language] Style Guide: [LINK]
 - [Framework] Best Practices: [LINK]
-- OWASP Top 10: https://owasp.org/www-project-top-ten/
+- OWASP Top 10: <https://owasp.org/www-project-top-ten/>
 
 ---
 

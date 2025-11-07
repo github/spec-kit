@@ -77,18 +77,21 @@ $ARGUMENTS
    ```
 
    **Analysis Depth:**
-   - **QUICK** (30 min): Surface-level scan, dependency check, basic metrics
-   - **STANDARD** (2-4 hours): Full codebase analysis, architecture review, upgrade paths
-   - **COMPREHENSIVE** (1-2 days): Deep dive with performance profiling, security audit, detailed roadmap
+
+- **QUICK** (30 min): Surface-level scan, dependency check, basic metrics
+- **STANDARD** (2-4 hours): Full codebase analysis, architecture review, upgrade paths
+- **COMPREHENSIVE** (1-2 days): Deep dive with performance profiling, security audit, detailed roadmap
 
    **Focus Areas:**
-   - **ALL**: Complete analysis (recommended for first-time analysis)
-   - **SECURITY**: Vulnerability scanning, dependency audits, security patterns
-   - **PERFORMANCE**: Bottleneck identification, optimization opportunities
-   - **ARCHITECTURE**: Design patterns, technical debt, modularity assessment
-   - **DEPENDENCIES**: Package analysis, upgrade paths, LTS compliance
+
+- **ALL**: Complete analysis (recommended for first-time analysis)
+- **SECURITY**: Vulnerability scanning, dependency audits, security patterns
+- **PERFORMANCE**: Bottleneck identification, optimization opportunities
+- **ARCHITECTURE**: Design patterns, technical debt, modularity assessment
+- **DEPENDENCIES**: Package analysis, upgrade paths, LTS compliance
 
    **Example**:
+
    ```text
    PROJECT_PATH: /home/user/my-legacy-app
    ANALYSIS_DEPTH: STANDARD
@@ -200,19 +203,24 @@ When documenting findings:
 ## Error Recovery
 
 **If PROJECT_PATH doesn't exist**:
+
 - ERROR: "Project path not found: [PATH]. Please verify the path and try again."
 
 **If PROJECT_PATH not readable**:
+
 - ERROR: "Cannot access project at [PATH]. Check permissions."
 
 **If no configuration files found**:
+
 - WARN: "No standard configuration files detected. Proceeding with basic analysis."
 - Continue with what's available
 
 **If dependency analysis tools unavailable**:
+
 - WARN: "Dependency scanning tools not found. Providing manual analysis."
 - Use best-effort manual inspection
 
 **If analysis too large for single session**:
+
 - Save intermediate results to `.analysis/[PROJECT]/checkpoints/`
 - Resume from last checkpoint on next run
