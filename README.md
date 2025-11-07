@@ -176,6 +176,7 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
+| `--base`               | Flag     | Use base repository (github/spec-kit) instead of default repository (ykg3211/x-spec-kit) |
 
 ### Examples
 
@@ -216,6 +217,9 @@ specify init my-project --ai claude --debug
 
 # Use GitHub token for API requests (helpful for corporate environments)
 specify init my-project --ai claude --github-token ghp_your_token_here
+
+# Use base repository (github/spec-kit) instead of default fork
+specify init my-project --ai claude --base
 
 # Check system requirements
 specify check
@@ -364,6 +368,12 @@ The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, op
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools
+```
+
+To use the base repository (github/spec-kit) instead of the default fork, add the `--base` flag:
+
+```bash
+specify init <project_name> --ai claude --base
 ```
 
 ### **STEP 1:** Establish project principles
