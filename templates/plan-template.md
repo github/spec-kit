@@ -44,6 +44,7 @@
 - [ ] **Accessibility & i18n**: WCAG 2.1 AA compliance planned, keyboard navigation, i18n support included
 
 **Complexity Justification Required If**:
+
 - Adding new global state beyond established patterns
 - Introducing new build tools or frameworks
 - Creating organizational-only components without clear user value
