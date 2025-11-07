@@ -151,6 +151,59 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
 | [Amp](https://ampcode.com/) | ✅ | |
 
+## 💻 Platform Support & Automation
+
+### Windows PowerShell Support
+
+Core spec-kit features are now available on Windows via PowerShell:
+
+| Feature | Bash Script | PowerShell Script | Description |
+|---------|-------------|-------------------|-------------|
+| Token Budget | `scripts/bash/token-budget.sh` | `scripts/powershell/token-budget.ps1` | Track token usage and get optimization recommendations |
+| Spec Validation | `scripts/bash/validate-spec.sh` | `scripts/powershell/validate-spec.ps1` | Validate specs, plans, and tasks for completeness |
+| Quick Reference | `scripts/bash/setup-ai-doc.sh` | `scripts/powershell/setup-ai-doc.ps1` | Generate ultra-compact feature documentation |
+
+**Usage on Windows:**
+```powershell
+# Check token budget
+.\scripts\powershell\token-budget.ps1
+
+# Validate current feature
+.\scripts\powershell\validate-spec.ps1
+
+# Validate all features
+.\scripts\powershell\validate-spec.ps1 -All
+
+# JSON output for automation
+.\scripts\powershell\token-budget.ps1 -Json
+```
+
+### Git Pre-Commit Hook
+
+Automatically validate specifications before committing:
+
+**Installation:**
+```bash
+# Symlink (recommended - auto-updates)
+ln -s ../../hooks/pre-commit .git/hooks/pre-commit
+
+# Or copy
+cp hooks/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+**What it validates:**
+- `spec.md`: Required sections, minimum content, placeholders
+- `plan.md`: Technology stack, structure
+- `tasks.md`: Minimum 5 tasks, adequate detail
+
+**Behavior:**
+- Critical errors → block commit
+- Warnings → allow commit but notify
+- Bypass when needed: `git commit --no-verify`
+
+See [`hooks/README.md`](hooks/README.md) for full documentation.
+
 ## 🔧 Specify CLI Reference
 
 The `specify` command supports the following options:

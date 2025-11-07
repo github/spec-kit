@@ -149,12 +149,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Semantic Search**: Instant code location vs manual exploration
 - **Combined Potential**: Up to 85-98% total savings vs unoptimized workflow
 
+#### Platform Parity & Automation (Phase 4)
+
+- **PowerShell Feature Parity**: Core Phase 1-2 features now available on Windows
+  - `scripts/powershell/token-budget.ps1`: Full Windows token budget tracking
+  - `scripts/powershell/validate-spec.ps1`: Complete spec validation for Windows
+  - Identical functionality to Bash versions
+  - JSON output support for automation
+
+- **Git Pre-Commit Hook**: Automated spec validation
+  - `hooks/pre-commit`: Validates specs before commit
+  - Checks: required sections, minimum content, placeholders
+  - Critical errors block commits, warnings allow but notify
+  - Easy installation via symlink or copy
+  - Bypass available with `--no-verify` for WIP commits
+  - Comprehensive documentation in `hooks/README.md`
+
 ### Technical Details
 
 - **Bash implementations**: Complete for Linux/macOS/WSL (Phases 1-3)
-- **PowerShell implementations**: Quick-ref generation complete; other tools deferred
-- **Testing**: All Phase 1-3 features tested and verified
+- **PowerShell implementations**: Phase 1-2 core features complete (token budget, validation)
+  - Phase 3-4 advanced features: Deferred pending user feedback
+  - Windows users have full access to essential workflow tools
+- **Testing**: All Phase 1-4 features tested and verified
   - Phase 3: error-analysis.sh, project-analysis.sh --diff-only, clarify-history.sh
+  - Phase 4: token-budget.ps1, validate-spec.ps1, pre-commit hook
+- **Git Hooks**: Pre-commit validation for quality gates
 - **Compatibility**: Backward compatible with existing spec-kit workflows
 
 ## [0.0.20] - 2025-10-14
