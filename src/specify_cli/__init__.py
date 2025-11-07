@@ -1328,7 +1328,7 @@ def version():
     info_table.add_row("Template Version", template_version)
     info_table.add_row("Released", release_date)
     info_table.add_row("", "")
-    info_table.add_row("Python", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    info_table.add_row("Python", platform.python_version())
     info_table.add_row("Platform", platform.system())
     info_table.add_row("Architecture", platform.machine())
     info_table.add_row("OS Version", platform.version())
