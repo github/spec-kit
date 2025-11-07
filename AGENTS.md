@@ -748,3 +748,250 @@ When adding new agents:
 ---
 
 *This documentation should be updated whenever new agents are added to maintain accuracy and completeness.*
+
+---
+
+## Markdown Style Guide
+
+This section defines the markdown style conventions for all documentation and templates in this repository.
+
+### Markdownlint Configuration
+
+We use `.markdownlintrc` that balances strictness with practicality for technical documentation.
+
+### Enabled Rules (Enforced)
+
+**MD003**: Header style - ATX style (`#` prefix)
+
+- ✅ Correct: `## Heading`
+- ❌ Incorrect: `Heading\n-------`
+
+**MD004**: Unordered list style - Dash style
+
+- ✅ Correct: `- List item`
+- ❌ Incorrect: `* List item` or `+ List item`
+
+**MD024**: Multiple headers with same content (siblings_only)
+
+- Same headers allowed in different sections
+- Helps with FAQ sections and repeated patterns
+
+**MD046**: Code block style - Fenced (` ``` `)
+
+- ✅ Correct: ` ```language\ncode\n``` `
+- ❌ Incorrect: Indented code blocks
+
+### Disabled Rules (With Rationale)
+
+**MD013 (Line length)**: Disabled
+
+- **Why**: Documentation often requires long lines for:
+  - Example commands
+  - URLs
+  - Code snippets
+  - Table content
+- **Best practice**: Still try to keep prose under 100 characters when possible
+
+**MD026 (Trailing punctuation in headers)**: Disabled
+
+- **Why**: Allows headers like:
+  - `## What's Good ✅`
+  - `## What's Bad ❌`
+  - `## Prerequisites?`
+- Emojis and question marks can improve readability
+
+**MD033 (Inline HTML)**: Disabled with limits
+
+- **Why**: Allows specific HTML elements for styling:
+  - `<div align="center">` for centering content
+  - `<img>` for logo/images with specific attributes
+  - `<h1>`, `<h3>`, `<p>`, `<strong>`, `<a>` for README styling
+- **Guideline**: Still discouraged outside README and landing pages
+
+**MD040 (Code block language)**: Disabled
+
+- **Why**: Many examples use plain text or outputs:
+  - Command outputs
+  - Generic text examples
+  - Multi-language snippets
+- **Best practice**: Add language when known (bash, python, json, etc.)
+
+**MD041 (First line should be header)**: Disabled
+
+- **Why**: Allows YAML front matter in templates:
+
+```yaml
+---
+description: Command description
+status: stable
+---
+```
+
+### Best Practices
+
+#### 1. Headers
+
+Use ATX style with blank lines before and after:
+
+```markdown
+Paragraph text.
+
+## New Section
+
+More text here.
+```
+
+#### 2. Lists
+
+Use dashes for unordered lists, blank lines before/after:
+
+```markdown
+Paragraph.
+
+- Item 1
+- Item 2
+- Item 3
+
+Next paragraph.
+```
+
+#### 3. Code Blocks
+
+Use fenced style with language when possible:
+
+````markdown
+Command example:
+
+```bash
+npm install
+```
+
+Output:
+
+```text
+✓ Installation complete
+```
+````
+
+#### 4. Links
+
+Use reference-style for repeated links:
+
+```markdown
+See [GitHub Issues][issues] for details.
+Check [GitHub Issues][issues] again.
+
+[issues]: https://github.com/user/repo/issues
+```
+
+#### 5. Tables
+
+Align pipes for readability:
+
+```markdown
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Data 1   | Data 2   | Data 3   |
+```
+
+#### 6. Emphasis
+
+- **Bold**: `**important**` for important terms
+- *Italic*: `*emphasis*` for emphasis
+- `Code`: `` `code` `` for inline code, commands, file names
+
+#### 7. Line Breaks
+
+- Use single blank line between paragraphs
+- No trailing whitespace
+- Consistent spacing around sections
+
+### File-Specific Guidelines
+
+**README.md**:
+
+- Keep concise (link to detailed docs)
+- Use HTML sparingly for styling
+- Include badges at top
+- Table of contents for long docs
+
+**Documentation (docs/)**:
+
+- Comprehensive is okay
+- Use examples liberally
+- Include troubleshooting sections
+- Cross-reference related docs
+
+**Templates (templates/)**:
+
+- Include YAML front matter
+- Clear section markers
+- Placeholder syntax: `[PLACEHOLDER]`
+- Comments for AI agents are okay
+
+### Validation
+
+To check markdown (if markdownlint-cli installed):
+
+```bash
+npx markdownlint-cli2 "**/*.md" "#node_modules"
+```
+
+To fix auto-fixable issues:
+
+```bash
+npx markdownlint-cli2-fix "**/*.md" "#node_modules"
+```
+
+### When to Break Rules
+
+Rules can be broken when:
+
+1. **Readability improves**: Tables with long lines
+2. **Examples require it**: Long command outputs
+3. **External constraints**: Generated content
+4. **Accessibility**: Screen reader-friendly formatting
+
+Always prioritize:
+
+1. Clarity
+2. Consistency
+3. Maintainability
+4. Strict compliance (last)
+
+### References
+
+- [Markdownlint Rules](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md)
+- [CommonMark Spec](https://commonmark.org/)
+- [GitHub Flavored Markdown](https://github.github.com/gfm/)
+
+---
+
+## Documentation Structure
+
+This repository has a clear separation between different types of documentation:
+
+### Repository Development (docs/development/)
+
+For developers working ON this repository:
+
+- **engineering-review.md**: Technical reviews and assessments
+- **implementation-roadmap.md**: Future development plans
+- **architecture.md**: System architecture decisions
+- **README.md**: Developer onboarding guide
+
+### Toolkit Documentation (docs/)
+
+For users OF the toolkit (end users):
+
+- **reverse-engineering.md**: User guide for features
+- **reverse-engineering-examples.md**: Usage examples
+- **quickstart.md**: Getting started guide
+- **installation.md**: Installation instructions
+
+### AI Agent Instructions
+
+- **AGENTS.md** (root): For AI agents working on repository development
+- **.specify/AGENTS.md** (in release package): For AI agents using the toolkit
+
+**Key Rule**: Keep these separated. Don't mix developer implementation details with user-facing documentation.

@@ -21,6 +21,7 @@
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get Started](#-get-started)
+- [🔄 Reverse Engineering & Modernization](#-reverse-engineering--modernization)
 - [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
@@ -178,6 +179,68 @@ flowchart TD
 ```
 
 Then use `/speckit.resume` to continue after chat limits or interruptions.
+
+## 🔄 Reverse Engineering & Modernization
+
+⚠️ **Status**: EXPERIMENTAL - Design proposal and templates ([see limitations](docs/reverse-engineering.md#known-limitations))
+
+**NEW**: Analyze existing projects, assess technical debt, and plan modernization strategies!
+
+### Quick Start
+
+```bash
+# In your AI coding agent (Claude Code, GitHub Copilot, etc.)
+/speckit.analyze-project
+```
+
+When prompted:
+
+```text
+PROJECT_PATH: /path/to/your/existing/project
+ANALYSIS_DEPTH: STANDARD
+FOCUS_AREAS: ALL
+```
+
+### What You Get
+
+Comprehensive analysis with:
+
+- **`analysis-report.md`** - Assessment with strengths/weaknesses, upgrade paths, and data-driven recommendations
+- **`upgrade-plan.md`** - Step-by-step upgrade instructions (9 phases from prep to deployment)
+- **`recommended-constitution.md`** - Project principles derived from codebase patterns
+- **Feasibility scores** (0-100) for inline upgrade vs greenfield rewrite
+- **Confidence scores** for analysis quality
+
+### Key Capabilities
+
+- 📊 Technology stack detection & EOL tracking
+- 🔒 Security vulnerability scanning (CVEs)
+- 📦 Dependency health analysis (outdated, deprecated)
+- 🏗️ Architecture assessment (patterns, technical debt)
+- ⚡ Performance bottleneck identification
+- 🎯 Data-driven recommendations (inline/greenfield/hybrid)
+
+### Use Cases
+
+1. **Inherited Codebase** - Understand state, assess technical debt
+2. **Modernization Planning** - LTS upgrades, framework migrations
+3. **Security Audits** - Identify vulnerabilities and compliance gaps
+4. **Migration Decisions** - Upgrade-in-place vs rewrite with feasibility scoring
+
+### Workflows
+
+**Inline Upgrade**: Follow `upgrade-plan.md` → Fix critical issues → Upgrade incrementally
+
+**Greenfield Rewrite**: Use `recommended-constitution.md` → `/speckit.orchestrate` with modern stack
+
+**Hybrid (Strangler Fig)**: Extract modules incrementally, modernize, maintain parallel systems
+
+### Documentation
+
+- **📖 Complete Guide**: [docs/reverse-engineering.md](docs/reverse-engineering.md) - Comprehensive documentation
+- **💡 Examples & Prompts**: [docs/reverse-engineering-examples.md](docs/reverse-engineering-examples.md) - Practical workflows
+
+---
 
 ## 📽️ Video Overview
 
