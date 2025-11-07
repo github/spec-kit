@@ -52,10 +52,14 @@ done
 REPO_ROOT=$(get_repo_root)
 SPECS_DIR="$REPO_ROOT/specs"
 
-# Get template path
+# Get template paths
 TEMPLATE_FILE="$REPO_ROOT/templates/ai-doc-template.md"
+QUICK_REF_TEMPLATE="$REPO_ROOT/templates/quick-ref-template.md"
 if [ ! -f "$TEMPLATE_FILE" ]; then
     TEMPLATE_FILE="$REPO_ROOT/.specify/templates/ai-doc-template.md"
+fi
+if [ ! -f "$QUICK_REF_TEMPLATE" ]; then
+    QUICK_REF_TEMPLATE="$REPO_ROOT/.specify/templates/quick-ref-template.md"
 fi
 
 # Function to process a single feature
@@ -64,6 +68,7 @@ process_feature() {
     local FEATURE_NAME=$(basename "$FEATURE_DIR")
     local SPEC_FILE="$FEATURE_DIR/spec.md"
     local AI_DOC_FILE="$FEATURE_DIR/ai-doc.md"
+    local QUICK_REF_FILE="$FEATURE_DIR/quick-ref.md"
     local CURRENT_DATE=$(date +%Y-%m-%d)
 
     # Skip if spec.md doesn't exist
@@ -72,7 +77,7 @@ process_feature() {
         return 1
     fi
 
-    # Determine if creating or updating
+    # Determine if creating or updating ai-doc.md
     if [ ! -f "$AI_DOC_FILE" ]; then
         # Create new ai-doc.md
         sed -e "s/\[FEATURE NAME\]/$FEATURE_NAME/g" \
@@ -88,11 +93,26 @@ process_feature() {
         STATUS="updated"
     fi
 
+    # Create or update quick-ref.md (always create if template exists)
+    if [ -f "$QUICK_REF_TEMPLATE" ]; then
+        if [ ! -f "$QUICK_REF_FILE" ]; then
+            # Create new quick-ref.md
+            sed -e "s/\[FEATURE NAME\]/$FEATURE_NAME/g" \
+                "$QUICK_REF_TEMPLATE" > "$QUICK_REF_FILE"
+            QUICK_REF_STATUS="created"
+        else
+            # Quick ref exists - mark as exists (AI should update manually)
+            QUICK_REF_STATUS="exists"
+        fi
+    else
+        QUICK_REF_STATUS="template_not_found"
+    fi
+
     # Get additional file paths
     local PLAN_FILE="$FEATURE_DIR/plan.md"
     local TASKS_FILE="$FEATURE_DIR/tasks.md"
 
-    echo "{\"feature\": \"$FEATURE_NAME\", \"status\": \"$STATUS\", \"ai_doc_file\": \"$AI_DOC_FILE\", \"spec_file\": \"$SPEC_FILE\", \"plan_file\": \"$PLAN_FILE\", \"tasks_file\": \"$TASKS_FILE\"}"
+    echo "{\"feature\": \"$FEATURE_NAME\", \"status\": \"$STATUS\", \"quick_ref_status\": \"$QUICK_REF_STATUS\", \"ai_doc_file\": \"$AI_DOC_FILE\", \"quick_ref_file\": \"$QUICK_REF_FILE\", \"spec_file\": \"$SPEC_FILE\", \"plan_file\": \"$PLAN_FILE\", \"tasks_file\": \"$TASKS_FILE\"}"
     return 0
 }
 
@@ -256,16 +276,19 @@ if [ "$JSON_MODE" = true ]; then
 else
     FEATURE_NAME=$(basename "$FEATURE_DIR")
     AI_DOC_FILE="$FEATURE_DIR/ai-doc.md"
+    QUICK_REF_FILE="$FEATURE_DIR/quick-ref.md"
     SPEC_FILE="$FEATURE_DIR/spec.md"
     PLAN_FILE="$FEATURE_DIR/plan.md"
     TASKS_FILE="$FEATURE_DIR/tasks.md"
     STATUS=$(echo "$RESULT" | grep -o '"status": "[^"]*"' | cut -d'"' -f4)
+    QUICK_REF_STATUS=$(echo "$RESULT" | grep -o '"quick_ref_status": "[^"]*"' | cut -d'"' -f4)
 
     echo "AI Documentation Setup Complete"
     echo ""
     echo "Feature: $FEATURE_NAME"
-    echo "Documentation file: $AI_DOC_FILE"
-    echo "Status: $STATUS"
+    echo "Documentation files:"
+    echo "  - AI Doc: $AI_DOC_FILE (status: $STATUS)"
+    [ "$QUICK_REF_STATUS" != "template_not_found" ] && echo "  - Quick Ref: $QUICK_REF_FILE (status: $QUICK_REF_STATUS)"
     echo ""
     echo "Related files:"
     echo "  - Spec: $SPEC_FILE"

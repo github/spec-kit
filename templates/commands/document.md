@@ -17,8 +17,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 The `/speckit.document` command generates **token-optimized** AI-focused documentation for implemented features. This documentation serves as efficient context for LLMs and Claude Code CLI, enabling quick comprehension for future modifications.
 
+**Generated files**:
+- **quick-ref.md**: Ultra-compact reference (<200 tokens) for instant feature comprehension
+- **ai-doc.md**: Comprehensive documentation (2-3K tokens) with full implementation details
+
 **Key Design Principles**:
-- **Token-efficient**: Concise, structured format optimized for LLM context
+- **Token-efficient**: Two-tier system - quick ref for fast lookup, full docs when needed
 - **Code-first**: Based on actual implementation, not assumptions
 - **Update-friendly**: Re-running updates existing documentation
 - **Context-ready**: Designed for direct LLM/Claude Code consumption
@@ -209,7 +213,8 @@ Before running this command:
 
    Provide summary:
    - Feature name and number
-   - AI documentation file path
+   - Documentation file paths (quick-ref.md and ai-doc.md)
+   - Quick ref token count (target: <200 tokens)
    - Key components documented (count)
    - Integration points identified (count)
    - Test coverage status
@@ -311,7 +316,9 @@ The command will:
 3. Read spec.md, plan.md, tasks.md
 4. Analyze actual implementation code
 5. Generate comprehensive AI documentation
-6. Save to `.specify/specs/5-user-auth/ai-doc.md`
+6. Save to:
+   - `.specify/specs/5-user-auth/quick-ref.md` (ultra-compact)
+   - `.specify/specs/5-user-auth/ai-doc.md` (full details)
 
 ## Common Use Cases
 
