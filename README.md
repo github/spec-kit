@@ -103,6 +103,7 @@
 - [🎯 Experimental Goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn More](#-learn-more)
+- [🏗️ Microservices Architecture](#️-microservices-architecture)
 - [📋 Detailed Process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [👥 Maintainers](#-maintainers)
@@ -534,6 +535,284 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
+- **[Microservices Architecture Guide](#-microservices-architecture)** - Using spec-kit with microservices
+
+---
+
+## 🏗️ Microservices Architecture
+
+Spec-kit is **production-ready for microservices architectures**, with specialized tooling for managing service boundaries, contracts, and dependencies. The enhanced version includes dedicated features for microservices development.
+
+### Why Spec-Kit for Microservices?
+
+**Service Boundary Management**
+- Each microservice gets its own isolated specification
+- Clear bounded context definitions
+- Service-to-service contract specifications
+- Data ownership documentation
+
+**Token Optimization at Scale**
+- Quick reference cards reduce token usage by 90% (200 vs 2,400 tokens per service)
+- Incremental analysis focuses only on changed services
+- Service catalog provides fast navigation (500 tokens vs loading all specs)
+- Critical for large systems with 10+ microservices
+
+**Contract-First Development**
+- OpenAPI specifications for REST APIs
+- Event schema definitions (JSON Schema/Avro)
+- Breaking change detection before deployment
+- Consumer-driven contract validation
+
+### Microservices-Specific Features
+
+#### 1. Service Specification Template
+
+Enhanced template for microservices including:
+- Service boundary and responsibility definition
+- API contract documentation (REST endpoints)
+- Event schemas (publish/subscribe)
+- Service dependencies (upstream/downstream)
+- Data ownership mapping
+- Non-functional requirements (SLA, performance, security)
+- Deployment and operational runbooks
+
+**Location:** `templates/microservices/service-spec-template.md`
+
+#### 2. Contract Validation Command
+
+Validates API and event contracts across all services:
+
+```bash
+# Validate all service contracts
+/speckit.validate-contracts
+
+# Validate specific service
+/speckit.validate-contracts --service=auth-service
+
+# Check for breaking changes only (for CI/CD)
+/speckit.validate-contracts --breaking-changes-only
+```
+
+**Checks:**
+- API completeness (all endpoints documented)
+- Event schema correctness
+- Cross-service dependency validation
+- Breaking change detection
+- Naming consistency
+
+**Location:** `templates/commands/validate-contracts.md`
+
+#### 3. Service Catalog Generator
+
+Auto-generates a navigable catalog of all microservices:
+
+```bash
+# Generate complete service catalog
+/speckit.service-catalog
+
+# View dependency graph
+/speckit.service-catalog --graph-only
+
+# Export as JSON for tooling
+/speckit.service-catalog --format=json
+```
+
+**Catalog includes:**
+- Service list with responsibilities
+- Visual dependency graph
+- Event flow mapping
+- API endpoints by domain
+- Data ownership matrix
+- Service health overview
+
+**Location:** `templates/commands/service-catalog.md`
+
+#### 4. Microservices Constitution
+
+Pre-built constitution template with microservices best practices:
+- Service boundary principles
+- Communication patterns (sync/async)
+- Data management standards
+- API and event standards
+- Security, observability, and deployment guidelines
+
+**Location:** `templates/microservices/constitution-microservices.md`
+
+### Quick Start for Microservices
+
+```bash
+# 1. Initialize your microservices platform
+mkdir my-microservices-platform
+cd my-microservices-platform
+specify init . --ai claude
+
+# 2. Set up platform constitution (using microservices template)
+cp templates/microservices/constitution-microservices.md memory/constitution.md
+# Edit to match your tech stack and standards
+
+# 3. Create your first service
+mkdir -p services/auth-service/specs/001-authentication
+cd services/auth-service
+
+# 4. Use microservices-specific template
+/speckit.specify
+# (AI will use service-spec-template for structured service definition)
+
+# 5. Define API contract
+# Create contracts/api-spec.yaml with OpenAPI spec
+
+# 6. Validate before implementation
+/speckit.validate --spec
+/speckit.validate-contracts --service=auth-service
+
+# 7. Proceed with standard workflow
+/speckit.plan
+/speckit.tasks
+/speckit.implement
+/speckit.document
+
+# 8. Update service catalog
+cd ../../  # Back to root
+/speckit.service-catalog
+```
+
+### Example Project Structure
+
+```
+microservices-platform/
+├── constitution.md                      # Platform-wide principles
+├── .speckit.config.json                 # Configuration
+├── services/
+│   ├── auth-service/
+│   │   ├── specs/001-jwt-auth/
+│   │   │   ├── spec.md              # Service specification
+│   │   │   ├── plan.md              # Technical plan
+│   │   │   ├── tasks.md             # Implementation tasks
+│   │   │   ├── quick-ref.md         # 200-token summary
+│   │   │   └── ai-doc.md            # Full documentation
+│   │   ├── contracts/
+│   │   │   └── api-spec.yaml        # OpenAPI specification
+│   │   └── src/                     # Implementation
+│   ├── user-service/
+│   │   ├── specs/001-user-profile/
+│   │   ├── contracts/
+│   │   │   ├── api-spec.yaml
+│   │   │   └── events/
+│   │   │       └── user-events.json  # Event schemas
+│   │   └── src/
+│   └── order-service/
+│       ├── specs/001-order-management/
+│       ├── contracts/
+│       └── src/
+├── shared/
+│   └── contracts/
+│       └── events/
+│           └── common-events.json   # Shared event schemas
+└── docs/
+    ├── SERVICE-CATALOG.md           # Auto-generated catalog
+    └── ARCHITECTURE.md
+```
+
+### Token Optimization Example
+
+**Traditional approach** (5 microservices, adding new feature):
+```
+Load all service docs: 5 × 2,400 = 12,000 tokens
+Load contracts: 8,000 tokens
+Implementation: 20,000 tokens
+Total: ~40,000 tokens
+```
+
+**Spec-kit optimized approach**:
+```
+/speckit.service-catalog (cached): 500 tokens
+/speckit.find "feature": 300 tokens
+Load quick-refs (5 services): 5 × 200 = 1,000 tokens
+Load only relevant full spec: 2,400 tokens
+Implementation with /speckit.prune: 8,000 tokens
+Total: ~12,000 tokens (70% savings)
+```
+
+### Integration with CI/CD
+
+Add contract validation to your pipeline:
+
+```yaml
+# .github/workflows/validate-contracts.yml
+name: Validate Service Contracts
+
+on: [pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install spec-kit
+        run: uv tool install specify-cli --from git+https://github.com/guisantossi/spec-kit.git
+      - name: Validate contracts
+        run: |
+          cd .claude  # or .gemini, etc.
+          # Run validation via your AI CLI
+          # Fails if breaking changes detected
+```
+
+### Best Practices for Microservices
+
+1. **One spec per service** - Each service owns its specification
+2. **Contract-first design** - Define APIs and events before coding
+3. **Use quick-refs liberally** - 90% token savings for cross-service work
+4. **Validate contracts early** - Catch breaking changes before deployment
+5. **Keep catalog updated** - Run `/speckit.service-catalog` after changes
+6. **Document dependencies** - Clear upstream/downstream relationships
+7. **Event-driven when possible** - Async reduces coupling
+8. **Version your APIs** - Use `/api/v1/` pattern from day one
+
+### Common Workflows
+
+**Adding new service:**
+```bash
+mkdir services/new-service
+/speckit.specify  # Creates service spec
+# Define contracts
+/speckit.validate-contracts --service=new-service
+/speckit.plan → /speckit.tasks → /speckit.implement
+/speckit.service-catalog --regenerate
+```
+
+**Changing API contract:**
+```bash
+# Edit contracts/api-spec.yaml
+/speckit.validate-contracts --breaking-changes-only
+# If breaking: version to v2 or make backward compatible
+/speckit.document --update
+```
+
+**Investigating cross-service issue:**
+```bash
+/speckit.find "error symptom"
+/speckit.service-catalog  # See dependency graph
+# Load quick-refs for involved services
+/speckit.error-context "error details"
+```
+
+### Complete Example
+
+See **[examples/microservices/README.md](examples/microservices/README.md)** for a complete walkthrough of building an e-commerce platform with:
+- auth-service (authentication)
+- user-service (user management)
+- order-service (order processing)
+- notification-service (event consumer)
+
+Includes sample specs, contracts, and catalog.
+
+### Learn More
+
+- **[Service Specification Template](templates/microservices/service-spec-template.md)** - Complete template
+- **[Microservices Constitution](templates/microservices/constitution-microservices.md)** - Best practices
+- **[Contract Validation](templates/commands/validate-contracts.md)** - Validation details
+- **[Service Catalog](templates/commands/service-catalog.md)** - Catalog generation
+- **[Complete Example](examples/microservices/README.md)** - E-commerce walkthrough
 
 ---
 
