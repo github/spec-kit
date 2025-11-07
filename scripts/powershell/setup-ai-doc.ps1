@@ -43,19 +43,28 @@ if ($Help) {
 $repoRoot = Get-RepoRoot
 $specsDir = Join-Path $repoRoot "specs"
 
-# Get template path
+# Get template paths
 $templateFile = Join-Path $repoRoot "templates/ai-doc-template.md"
+$quickRefTemplate = Join-Path $repoRoot "templates/quick-ref-template.md"
 if (-not (Test-Path $templateFile)) {
     $templateFile = Join-Path $repoRoot ".specify/templates/ai-doc-template.md"
+}
+if (-not (Test-Path $quickRefTemplate)) {
+    $quickRefTemplate = Join-Path $repoRoot ".specify/templates/quick-ref-template.md"
 }
 
 # Function to process a single feature
 function Process-Feature {
-    param([string]$FeatureDir, [string]$TemplateFile)
+    param(
+        [string]$FeatureDir,
+        [string]$TemplateFile,
+        [string]$QuickRefTemplate
+    )
 
     $featureName = Split-Path -Leaf $FeatureDir
     $specFile = Join-Path $FeatureDir "spec.md"
     $aiDocFile = Join-Path $FeatureDir "ai-doc.md"
+    $quickRefFile = Join-Path $FeatureDir "quick-ref.md"
     $currentDate = Get-Date -Format "yyyy-MM-dd"
 
     # Skip if spec.md doesn't exist
@@ -67,7 +76,7 @@ function Process-Feature {
         }
     }
 
-    # Determine if creating or updating
+    # Determine if creating or updating ai-doc.md
     if (-not (Test-Path $aiDocFile)) {
         # Create new ai-doc.md
         $content = Get-Content -Path $TemplateFile -Raw
@@ -85,6 +94,21 @@ function Process-Feature {
         $status = "updated"
     }
 
+    # Create or update quick-ref.md (always create if template exists)
+    $quickRefStatus = "template_not_found"
+    if (Test-Path $QuickRefTemplate) {
+        if (-not (Test-Path $quickRefFile)) {
+            # Create new quick-ref.md
+            $content = Get-Content -Path $QuickRefTemplate -Raw
+            $content = $content -replace '\[FEATURE NAME\]', $featureName
+            Set-Content -Path $quickRefFile -Value $content -NoNewline
+            $quickRefStatus = "created"
+        } else {
+            # Quick ref exists - mark as exists (AI should update manually)
+            $quickRefStatus = "exists"
+        }
+    }
+
     # Get additional file paths
     $planFile = Join-Path $FeatureDir "plan.md"
     $tasksFile = Join-Path $FeatureDir "tasks.md"
@@ -92,7 +116,9 @@ function Process-Feature {
     return @{
         feature = $featureName
         status = $status
+        quick_ref_status = $quickRefStatus
         ai_doc_file = $aiDocFile
+        quick_ref_file = $quickRefFile
         spec_file = $specFile
         plan_file = $planFile
         tasks_file = $tasksFile
@@ -135,7 +161,7 @@ if ($All) {
     # Process all features
     $results = @()
     foreach ($featureDir in $featureDirs) {
-        $result = Process-Feature -FeatureDir $featureDir.FullName -TemplateFile $templateFile
+        $result = Process-Feature -FeatureDir $featureDir.FullName -TemplateFile $templateFile -QuickRefTemplate $quickRefTemplate
         $results += $result
 
         if (-not $Json) {
@@ -317,7 +343,7 @@ if (-not (Test-Path $templateFile)) {
 }
 
 # Process the single feature
-$result = Process-Feature -FeatureDir $featureDir -TemplateFile $templateFile
+$result = Process-Feature -FeatureDir $featureDir -TemplateFile $templateFile -QuickRefTemplate $quickRefTemplate
 
 # Output results
 if ($Json) {
@@ -325,6 +351,7 @@ if ($Json) {
 } else {
     $featureName = Split-Path -Leaf $featureDir
     $aiDocFile = Join-Path $featureDir "ai-doc.md"
+    $quickRefFile = Join-Path $featureDir "quick-ref.md"
     $specFile = Join-Path $featureDir "spec.md"
     $planFile = Join-Path $featureDir "plan.md"
     $tasksFile = Join-Path $featureDir "tasks.md"
@@ -332,8 +359,11 @@ if ($Json) {
     Write-Output "AI Documentation Setup Complete"
     Write-Output ""
     Write-Output "Feature: $featureName"
-    Write-Output "Documentation file: $aiDocFile"
-    Write-Output "Status: $($result.status)"
+    Write-Output "Documentation files:"
+    Write-Output "  - AI Doc: $aiDocFile (status: $($result.status))"
+    if ($result.quick_ref_status -ne "template_not_found") {
+        Write-Output "  - Quick Ref: $quickRefFile (status: $($result.quick_ref_status))"
+    }
     Write-Output ""
     Write-Output "Related files:"
     Write-Output "  - Spec: $specFile"

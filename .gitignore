@@ -43,3 +43,10 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Phase 1-2 additions
+.speckit-cache/
+.speckit-analysis-cache.json
+.speckit-progress.json
+.speckit/memory/session-summary-*.md
+.speckit.config.json
