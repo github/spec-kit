@@ -351,8 +351,20 @@ is_cache_valid() {
 die() {
     local message="$1"
     local code="${2:-1}"
-    write_error "$message"
-    exit "$code"
+    local error_type="${3:-}"
+
+    # Check if enhanced error messages are available and an error type is specified
+    if [[ -n "$error_type" ]] && declare -f "error_${error_type}" > /dev/null 2>&1; then
+        # Call specialized error handler
+        # Pass all remaining arguments after the first 3
+        shift 3
+        "error_${error_type}" "$@"
+        exit "$code"
+    else
+        # Fallback to simple error
+        write_error "$message"
+        exit "$code"
+    fi
 }
 
 require_command() {
