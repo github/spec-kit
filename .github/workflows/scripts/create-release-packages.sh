@@ -218,22 +218,22 @@ ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilo
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
-  # convert comma+space separated -> space separated unique while preserving order of first occurrence
-  tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?" ":"") $i)}}}END{printf("\n")}'
+  # convert comma+space separated -> line separated unique while preserving order of first occurrence
+  tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?"\n":"") $i);out=1}}}END{printf("\n")}'
 }
 
 validate_subset() {
   local type=$1; shift; local -n allowed=$1; shift; local items=("$@")
-  local ok=1
+  local invalid=0
   for it in "${items[@]}"; do
     local found=0
     for a in "${allowed[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
     if [[ $found -eq 0 ]]; then
       echo "Error: unknown $type '$it' (allowed: ${allowed[*]})" >&2
-      ok=0
+      invalid=1
     fi
   done
-  return $ok
+  return $invalid
 }
 
 if [[ -n ${AGENTS:-} ]]; then
