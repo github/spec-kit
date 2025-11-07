@@ -862,6 +862,84 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+def ensure_gitignore_entries(project_path: Path, entries: list[str]) -> bool:
+    """
+    Ensure the project .gitignore contains the provided entries.
+
+    Returns True when .gitignore was modified.
+    """
+    if not entries:
+        return False
+
+    gitignore_path = project_path / ".gitignore"
+    if gitignore_path.exists():
+        lines = gitignore_path.read_text(encoding="utf-8").splitlines()
+    else:
+        lines = []
+
+    existing = set(lines)
+    marker = "# Added by Specify CLI (auto-managed)"
+    changed = False
+
+    if any(entry not in existing for entry in entries):
+        if marker not in existing:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines.append(marker)
+            existing.add(marker)
+            changed = True
+        for entry in entries:
+            if entry not in existing:
+                lines.append(entry)
+                existing.add(entry)
+                changed = True
+
+    if changed:
+        if lines and lines[-1] != "":
+            lines.append("")
+        gitignore_path.write_text("\n".join(lines), encoding="utf-8")
+
+    return changed
+
+
+def handle_codex_security(project_path: Path, codex_selected: bool) -> None:
+    """Apply Codex credential guardrails regardless of init context."""
+    codex_dir = project_path / ".codex"
+    needs_guard = codex_selected or codex_dir.exists()
+    if not needs_guard:
+        return
+
+    if ensure_gitignore_entries(project_path, [".codex/"]):
+        console.print("[cyan]Updated .gitignore to exclude .codex/ (protects Codex credentials).[/cyan]")
+
+    codex_auth_path = codex_dir / "auth.json"
+    if codex_auth_path.exists():
+        console.print("[yellow]⚠️  Detected .codex/auth.json. Do not commit this file—remove it from git history if necessary.[/yellow]")
+        git_dir = project_path / ".git"
+        if git_dir.exists():
+            try:
+                rel_auth = codex_auth_path.relative_to(project_path)
+                result = subprocess.run(
+                    ["git", "ls-files", "--error-unmatch", str(rel_auth)],
+                    cwd=project_path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    console.print("[red]❌ .codex/auth.json is currently tracked by git. Run 'git rm --cached .codex/auth.json' and commit the removal.[/red]")
+            except Exception:
+                pass
+
+    if codex_selected:
+        codex_str = str(codex_dir)
+        if os.name == "nt":
+            export_line = f"setx CODEX_HOME {codex_str}"
+        else:
+            export_line = f"export CODEX_HOME={codex_str}"
+        console.print("Now set your CODEX_HOME:")
+        console.print(export_line, highlight=False)
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
@@ -1159,6 +1237,8 @@ def init(
     enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
     console.print()
     console.print(enhancements_panel)
+
+    handle_codex_security(project_path, selected_ai == "codex")
 
 @app.command()
 def check():
