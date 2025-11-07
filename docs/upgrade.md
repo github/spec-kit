@@ -74,7 +74,7 @@ Run this inside your project directory:
 specify init --here --force --ai <your-agent>
 ```
 
-Replace `<your-agent>` with your AI assistant: `claude`, `gemini`, `copilot`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`, `auggie`, `codebuddy`, `roo`, `kilocode`, or `q`.
+Replace `<your-agent>` with your AI assistant. Refer to this list of [Supported AI Agents](../README.md#-supported-ai-agents)
 
 **Example:**
 
