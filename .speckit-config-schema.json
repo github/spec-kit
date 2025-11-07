@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spec-Kit Configuration Schema",
+  "description": "Configuration for spec-kit Universal Adoption in existing repositories",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration version",
+      "default": "1.0"
+    },
+    "initialized_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When spec-kit was initialized in this repository"
+    },
+    "repo_root": {
+      "type": "string",
+      "description": "Absolute path to repository root"
+    },
+    "discovery": {
+      "type": "object",
+      "description": "Discovery configuration",
+      "properties": {
+        "last_scan": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last time discovery was run"
+        },
+        "total_projects": {
+          "type": "integer",
+          "description": "Total projects discovered"
+        },
+        "deep_analysis_enabled": {
+          "type": "boolean",
+          "description": "Whether deep analysis was used",
+          "default": false
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "description": "Onboarded projects",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique project identifier (path-based)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Project name"
+          },
+          "path": {
+            "type": "string",
+            "description": "Relative path from repo root"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["backend-api", "frontend", "library", "cli", "mobile", "monolith", "unknown"],
+            "description": "Project classification"
+          },
+          "technology": {
+            "type": "string",
+            "enum": ["nodejs", "python", "go", "rust", "java", "csharp", "ruby", "php", "cpp"],
+            "description": "Primary technology"
+          },
+          "framework": {
+            "type": "string",
+            "description": "Detected framework (if any)"
+          },
+          "onboarded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When project was onboarded"
+          },
+          "spec_dir": {
+            "type": "string",
+            "description": "Path to project's spec directory (relative to specs/)"
+          },
+          "metadata_file": {
+            "type": "string",
+            "description": "Path to project's metadata file (relative to .speckit/metadata/)"
+          },
+          "constitution": {
+            "type": "string",
+            "description": "Path to project's constitution (if project-specific)"
+          },
+          "templates": {
+            "type": "array",
+            "description": "Templates applied to this project",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": ["discovered", "onboarded", "active", "archived"],
+            "description": "Project status"
+          }
+        },
+        "required": ["id", "name", "path", "type", "technology", "status"]
+      }
+    },
+    "constitution": {
+      "type": "object",
+      "description": "Constitution configuration",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["universal", "microservices", "custom"],
+          "description": "Constitution type"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to constitution file (relative to specs/)"
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "description": "Global settings",
+      "properties": {
+        "auto_discovery": {
+          "type": "boolean",
+          "description": "Automatically discover new projects",
+          "default": false
+        },
+        "deep_analysis_default": {
+          "type": "boolean",
+          "description": "Use deep analysis by default",
+          "default": false
+        },
+        "exclude_patterns": {
+          "type": "array",
+          "description": "Additional patterns to exclude from discovery",
+          "items": {
+            "type": "string"
+          }
+        },
+        "template_preference": {
+          "type": "string",
+          "enum": ["minimal", "standard", "comprehensive"],
+          "description": "Default template verbosity",
+          "default": "standard"
+        }
+      }
+    }
+  },
+  "required": ["version", "initialized_at", "repo_root", "projects"]
+}
