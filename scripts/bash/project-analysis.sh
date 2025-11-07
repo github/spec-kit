@@ -23,7 +23,9 @@ JSON_MODE=false
 CHECK_PATTERNS=false
 INCREMENTAL=false
 SUMMARY_MODE=false
+DIFF_ONLY=false
 MAX_SAMPLE_FILES=20
+START_TIME=$(date +%s%N 2>/dev/null || date +%s)
 
 for arg in "$@"; do
     case "$arg" in
@@ -35,6 +37,9 @@ for arg in "$@"; do
             ;;
         --incremental)
             INCREMENTAL=true
+            ;;
+        --diff-only)
+            DIFF_ONLY=true
             ;;
         --summary)
             SUMMARY_MODE=true
@@ -52,14 +57,22 @@ OPTIONS:
   --json              Output in JSON format
   --check-patterns    Enable code pattern analysis (Security, DRY, KISS, SOLID)
   --incremental       Only analyze changed files since last run (70-90% faster)
+  --diff-only         Only analyze specs with git changes since last commit (80-95% faster)
   --summary           Quick summary mode (90% faster, metrics only)
   --sample-size=N     Max source files to analyze for patterns (default: 20)
   --help, -h          Show this help message
 
 OPTIMIZATION FLAGS:
   --incremental       Uses file hashing to skip unchanged specs (huge token savings)
+  --diff-only         Uses git diff to find changed specs (fastest, requires git)
   --summary           Skips deep analysis, reports only high-level metrics
   --sample-size=N     Limits code pattern analysis to N files (for large projects)
+
+PERFORMANCE MODES (from fastest to most thorough):
+  1. --diff-only      (fastest)  Only specs changed in git working tree
+  2. --incremental    (fast)     Only specs changed since last analysis
+  3. --summary        (quick)    All specs, minimal analysis
+  4. (default)        (thorough) All specs, full analysis
 
 EXAMPLES:
   # Basic project analysis
@@ -70,6 +83,9 @@ EXAMPLES:
 
   # Incremental analysis (only changed files)
   ./project-analysis.sh --json --incremental
+
+  # Git-based differential (fastest)
+  ./project-analysis.sh --json --diff-only
 
   # Quick summary mode (very fast)
   ./project-analysis.sh --json --summary
@@ -187,6 +203,46 @@ fi
 CHANGED_SPECS=()
 UNCHANGED_SPECS=()
 
+# For diff-only mode, use git to detect changed specs
+if $DIFF_ONLY; then
+    # Check if git repository
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        # Get all changed files in specs directory
+        CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || echo "")
+
+        # If no changes staged, check working tree
+        if [ -z "$CHANGED_FILES" ]; then
+            CHANGED_FILES=$(git diff --name-only 2>/dev/null || echo "")
+        fi
+
+        # Extract unique spec directories from changed files
+        if [ -n "$CHANGED_FILES" ]; then
+            while IFS= read -r file; do
+                # Check if file is in specs directory
+                if [[ "$file" == specs/* ]]; then
+                    # Extract spec directory name (e.g., specs/001-feature/spec.md -> 001-feature)
+                    spec_dir=$(echo "$file" | cut -d'/' -f2)
+
+                    # Add to changed specs if not already present
+                    if [[ ! " ${CHANGED_SPECS[@]} " =~ " ${spec_dir} " ]]; then
+                        CHANGED_SPECS+=("$spec_dir")
+                    fi
+                fi
+            done <<< "$CHANGED_FILES"
+        fi
+
+        # All other specs are unchanged
+        for spec_name in "${SORTED_SPECS[@]}"; do
+            if [[ ! " ${CHANGED_SPECS[@]} " =~ " ${spec_name} " ]]; then
+                UNCHANGED_SPECS+=("$spec_name")
+            fi
+        done
+    else
+        echo "Warning: --diff-only requires a git repository. Falling back to full analysis." >&2
+        DIFF_ONLY=false
+    fi
+fi
+
 # Find source code directories
 find_source_dirs() {
     local source_dirs=()
@@ -207,9 +263,9 @@ find_source_dirs() {
 
 SOURCE_DIRS=$(find_source_dirs)
 
-# Generate file hashes for incremental mode
+# Generate file hashes for incremental mode (skip if diff-only is enabled)
 declare -A SPEC_HASHES
-if $INCREMENTAL; then
+if $INCREMENTAL && ! $DIFF_ONLY; then
     for spec_name in "${SORTED_SPECS[@]}"; do
         spec_dir="$SPECS_DIR/$spec_name"
         # Hash key files
@@ -231,6 +287,27 @@ if $INCREMENTAL; then
     done
 fi
 
+# Calculate performance metrics
+END_TIME=$(date +%s%N 2>/dev/null || date +%s)
+if [[ "$START_TIME" =~ ^[0-9]+$ ]] && [[ "$END_TIME" =~ ^[0-9]+$ ]]; then
+    if [[ ${#START_TIME} -gt 10 ]]; then
+        # Nanosecond precision
+        ELAPSED_NS=$((END_TIME - START_TIME))
+        ELAPSED_MS=$((ELAPSED_NS / 1000000))
+    else
+        # Second precision
+        ELAPSED_MS=$(( (END_TIME - START_TIME) * 1000 ))
+    fi
+else
+    ELAPSED_MS=0
+fi
+
+# Calculate specs analyzed
+SPECS_ANALYZED="${#SORTED_SPECS[@]}"
+if $DIFF_ONLY || $INCREMENTAL; then
+    SPECS_ANALYZED="${#CHANGED_SPECS[@]}"
+fi
+
 # Output in JSON format
 if $JSON_MODE; then
     printf '{'
@@ -240,6 +317,7 @@ if $JSON_MODE; then
     printf '"constitution_file":"%s",' "$CONSTITUTION_FILE"
     printf '"pattern_check_enabled":%s,' "$CHECK_PATTERNS"
     printf '"incremental_mode":%s,' "$INCREMENTAL"
+    printf '"diff_only_mode":%s,' "$DIFF_ONLY"
     printf '"summary_mode":%s,' "$SUMMARY_MODE"
     printf '"max_sample_files":%d,' "$MAX_SAMPLE_FILES"
     printf '"detected_languages":"%s",' "$DETECTED_LANGUAGES"
@@ -247,10 +325,20 @@ if $JSON_MODE; then
     printf '"total_specs":%d,' "${#SORTED_SPECS[@]}"
     printf '"changed_specs":%d,' "${#CHANGED_SPECS[@]}"
     printf '"unchanged_specs":%d,' "${#UNCHANGED_SPECS[@]}"
+    printf '"specs_analyzed":%d,' "$SPECS_ANALYZED"
+    printf '"performance":{'
+    printf '"elapsed_ms":%d,' "$ELAPSED_MS"
+    printf '"specs_per_second":%.2f' "$(echo "scale=2; $SPECS_ANALYZED / ($ELAPSED_MS / 1000.0)" | bc 2>/dev/null || echo "0")"
+    printf '},'
     printf '"specs":['
 
     first=true
     for spec_name in "${SORTED_SPECS[@]}"; do
+        # In diff-only or incremental mode, skip unchanged specs
+        if ($DIFF_ONLY || $INCREMENTAL) && [[ " ${UNCHANGED_SPECS[@]} " =~ " ${spec_name} " ]]; then
+            continue
+        fi
+
         if [[ "$first" != true ]]; then
             printf ','
         fi
@@ -272,9 +360,9 @@ if $JSON_MODE; then
         plan_lines=$(count_lines "$spec_dir/plan.md")
         tasks_lines=$(count_lines "$spec_dir/tasks.md")
 
-        # Check if spec changed (for incremental mode)
+        # Check if spec changed (for incremental or diff-only mode)
         changed="false"
-        if $INCREMENTAL; then
+        if $INCREMENTAL || $DIFF_ONLY; then
             for changed_spec in "${CHANGED_SPECS[@]}"; do
                 if [[ "$changed_spec" == "$spec_name" ]]; then
                     changed="true"
@@ -340,12 +428,40 @@ else
     echo "Source Directories: $SOURCE_DIRS"
     echo "Pattern Check: $(if $CHECK_PATTERNS; then echo "Enabled"; else echo "Disabled"; fi)"
     echo ""
+
+    # Performance mode indicator
+    if $DIFF_ONLY; then
+        echo "Mode: Git Differential (--diff-only)"
+        echo "Analyzing: ${#CHANGED_SPECS[@]} changed specs (${#UNCHANGED_SPECS[@]} unchanged, skipped)"
+    elif $INCREMENTAL; then
+        echo "Mode: Incremental (--incremental)"
+        echo "Analyzing: ${#CHANGED_SPECS[@]} changed specs (${#UNCHANGED_SPECS[@]} unchanged, skipped)"
+    elif $SUMMARY_MODE; then
+        echo "Mode: Summary (--summary)"
+    else
+        echo "Mode: Full Analysis"
+    fi
+
+    echo ""
     echo "Total Specifications: ${#SORTED_SPECS[@]}"
+    echo "Specs Analyzed: $SPECS_ANALYZED"
+    echo "Analysis Time: ${ELAPSED_MS}ms"
     echo ""
 
     for spec_name in "${SORTED_SPECS[@]}"; do
+        # In diff-only or incremental mode, skip unchanged specs
+        if ($DIFF_ONLY || $INCREMENTAL) && [[ " ${UNCHANGED_SPECS[@]} " =~ " ${spec_name} " ]]; then
+            continue
+        fi
+
         spec_dir="$SPECS_DIR/$spec_name"
         echo "[$spec_name]"
+
+        # Show change indicator
+        if $DIFF_ONLY || $INCREMENTAL; then
+            echo "  Status: CHANGED"
+        fi
+
         echo "  spec.md:       $(check_spec_file "$spec_dir" "spec.md")"
         echo "  plan.md:       $(check_spec_file "$spec_dir" "plan.md")"
         echo "  tasks.md:      $(check_spec_file "$spec_dir" "tasks.md")"

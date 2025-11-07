@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook for spec-kit validation
+# Validates specification files before allowing commit
+#
+# Installation:
+#   ln -s ../../hooks/pre-commit .git/hooks/pre-commit
+#   or
+#   cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+
+# Get the repository root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SPECS_DIR="$REPO_ROOT/specs"
+
+# Colors for output
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+# Check if specs directory exists
+if [ ! -d "$SPECS_DIR" ]; then
+    # No specs directory, allow commit
+    exit 0
+fi
+
+# Get list of changed spec files
+CHANGED_SPECS=$(git diff --cached --name-only --diff-filter=ACM | grep "^specs/" | cut -d'/' -f2 | sort -u)
+
+if [ -z "$CHANGED_SPECS" ]; then
+    # No spec changes, allow commit
+    exit 0
+fi
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Spec-Kit Pre-Commit Validation"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+VALIDATION_FAILED=0
+WARNINGS=0
+
+# Validate each changed spec
+while IFS= read -r spec_name; do
+    [ -z "$spec_name" ] && continue
+
+    SPEC_DIR="$SPECS_DIR/$spec_name"
+    [ ! -d "$SPEC_DIR" ] && continue
+
+    echo "Checking $spec_name..."
+
+    # Check if spec.md exists and has minimum content
+    if [ -f "$SPEC_DIR/spec.md" ]; then
+        SPEC_SIZE=$(wc -c < "$SPEC_DIR/spec.md" 2>/dev/null || echo "0")
+        if [ "$SPEC_SIZE" -lt 500 ]; then
+            echo -e "${RED}  ✗ spec.md is too short ($SPEC_SIZE bytes, minimum 500)${NC}"
+            VALIDATION_FAILED=1
+        else
+            # Check for required sections
+            if ! grep -q "## User Scenarios" "$SPEC_DIR/spec.md"; then
+                echo -e "${RED}  ✗ spec.md missing '## User Scenarios' section${NC}"
+                VALIDATION_FAILED=1
+            fi
+            if ! grep -q "## Functional Requirements" "$SPEC_DIR/spec.md"; then
+                echo -e "${YELLOW}  ⚠️  spec.md missing '## Functional Requirements' section${NC}"
+                WARNINGS=$((WARNINGS + 1))
+            fi
+
+            # Check for placeholders
+            if grep -qi "TODO\|TBD\|FIXME\|XXX" "$SPEC_DIR/spec.md"; then
+                echo -e "${YELLOW}  ⚠️  spec.md contains TODO/TBD placeholders${NC}"
+                WARNINGS=$((WARNINGS + 1))
+            fi
+
+            if [ $VALIDATION_FAILED -eq 0 ] && [ $WARNINGS -eq 0 ]; then
+                echo -e "${GREEN}  ✓ spec.md valid${NC}"
+            fi
+        fi
+    fi
+
+    # Check plan.md if it exists
+    if [ -f "$SPEC_DIR/plan.md" ]; then
+        PLAN_SIZE=$(wc -c < "$SPEC_DIR/plan.md" 2>/dev/null || echo "0")
+        if [ "$PLAN_SIZE" -lt 300 ]; then
+            echo -e "${YELLOW}  ⚠️  plan.md is too short ($PLAN_SIZE bytes, minimum 300)${NC}"
+            WARNINGS=$((WARNINGS + 1))
+        else
+            if ! grep -q "## Technology Stack\|## Tech Stack" "$SPEC_DIR/plan.md"; then
+                echo -e "${YELLOW}  ⚠️  plan.md missing Technology Stack section${NC}"
+                WARNINGS=$((WARNINGS + 1))
+            fi
+            if [ $WARNINGS -eq 0 ]; then
+                echo -e "${GREEN}  ✓ plan.md valid${NC}"
+            fi
+        fi
+    fi
+
+    # Check tasks.md if it exists
+    if [ -f "$SPEC_DIR/tasks.md" ]; then
+        TASKS_SIZE=$(wc -c < "$SPEC_DIR/tasks.md" 2>/dev/null || echo "0")
+        if [ "$TASKS_SIZE" -lt 200 ]; then
+            echo -e "${YELLOW}  ⚠️  tasks.md is too short ($TASKS_SIZE bytes, minimum 200)${NC}"
+            WARNINGS=$((WARNINGS + 1))
+        else
+            TASK_COUNT=$(grep -c "^-\|^[0-9]" "$SPEC_DIR/tasks.md" 2>/dev/null || echo "0")
+            if [ "$TASK_COUNT" -lt 5 ]; then
+                echo -e "${YELLOW}  ⚠️  tasks.md has only $TASK_COUNT tasks (minimum 5 recommended)${NC}"
+                WARNINGS=$((WARNINGS + 1))
+            fi
+            if [ $WARNINGS -eq 0 ]; then
+                echo -e "${GREEN}  ✓ tasks.md valid${NC}"
+            fi
+        fi
+    fi
+
+    echo ""
+done <<< "$CHANGED_SPECS"
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Summary
+if [ $VALIDATION_FAILED -eq 1 ]; then
+    echo -e "${RED}✗ Validation FAILED - commit blocked${NC}"
+    echo ""
+    echo "Please fix the errors above and try again."
+    echo "Or bypass with: git commit --no-verify"
+    exit 1
+elif [ $WARNINGS -gt 0 ]; then
+    echo -e "${YELLOW}⚠️  $WARNINGS warning(s) found${NC}"
+    echo ""
+    echo "Warnings do not block commits, but should be addressed."
+    echo "Proceeding with commit..."
+    exit 0
+else
+    echo -e "${GREEN}✓ All validations passed${NC}"
+    exit 0
+fi

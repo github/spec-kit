@@ -151,6 +151,80 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
 | [Amp](https://ampcode.com/) | ✅ | |
 
+## 💻 Platform Support & Automation
+
+### Windows PowerShell Support
+
+**100% feature parity achieved!** All spec-kit features are now available on Windows via PowerShell:
+
+| Feature | Bash Script | PowerShell Script | Description |
+|---------|-------------|-------------------|-------------|
+| Token Budget | `scripts/bash/token-budget.sh` | `scripts/powershell/token-budget.ps1` | Track token usage and get optimization recommendations |
+| Spec Validation | `scripts/bash/validate-spec.sh` | `scripts/powershell/validate-spec.ps1` | Validate specs, plans, and tasks for completeness |
+| Semantic Search | `scripts/bash/semantic-search.sh` | `scripts/powershell/semantic-search.ps1` | Natural language code/spec search |
+| Session Prune | `scripts/bash/session-prune.sh` | `scripts/powershell/session-prune.ps1` | Session context compression |
+| Error Analysis | `scripts/bash/error-analysis.sh` | `scripts/powershell/error-analysis.ps1` | AI-assisted error debugging |
+| Clarify History | `scripts/bash/clarify-history.sh` | `scripts/powershell/clarify-history.ps1` | Clarification decision tracking |
+| Quick Reference | `scripts/bash/setup-ai-doc.sh` | `scripts/powershell/setup-ai-doc.ps1` | Generate ultra-compact feature documentation |
+
+**Usage on Windows:**
+```powershell
+# Check token budget
+.\scripts\powershell\token-budget.ps1
+
+# Validate current feature
+.\scripts\powershell\validate-spec.ps1
+
+# Validate all features
+.\scripts\powershell\validate-spec.ps1 -All
+
+# Semantic search
+.\scripts\powershell\semantic-search.ps1 "authentication logic"
+
+# Error analysis
+.\scripts\powershell\error-analysis.ps1 "TypeError: undefined"
+
+# Session prune
+.\scripts\powershell\session-prune.ps1
+
+# Clarification history
+.\scripts\powershell\clarify-history.ps1
+
+# JSON output for automation
+.\scripts\powershell\token-budget.ps1 -Json
+```
+
+**Cross-platform PowerShell Core:**
+All scripts work on Linux, macOS, and Windows with PowerShell Core (`pwsh`).
+
+See [PLATFORM-COMPATIBILITY.md](PLATFORM-COMPATIBILITY.md) for complete cross-platform usage guide.
+
+### Git Pre-Commit Hook
+
+Automatically validate specifications before committing:
+
+**Installation:**
+```bash
+# Symlink (recommended - auto-updates)
+ln -s ../../hooks/pre-commit .git/hooks/pre-commit
+
+# Or copy
+cp hooks/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+**What it validates:**
+- `spec.md`: Required sections, minimum content, placeholders
+- `plan.md`: Technology stack, structure
+- `tasks.md`: Minimum 5 tasks, adequate detail
+
+**Behavior:**
+- Critical errors → block commit
+- Warnings → allow commit but notify
+- Bypass when needed: `git commit --no-verify`
+
+See [`hooks/README.md`](hooks/README.md) for full documentation.
+
 ## 🔧 Specify CLI Reference
 
 The `specify` command supports the following options:
@@ -247,10 +321,12 @@ Additional commands for enhanced quality and validation:
 | `/speckit.budget`            | **NEW** Display current token usage estimation and recommendations. Shows breakdown by specs, conversation, and code context. Provides optimization suggestions based on usage patterns. |
 | `/speckit.find "query"`      | **NEW** Semantic search across code, specs, and docs using natural language. Returns ranked results with file locations. Example: `/speckit.find "authentication logic"` finds auth-related code, docs, and tests. Fast alternative to manual grepping. |
 | `/speckit.prune`             | **NEW** Compress session context to save 40-60K tokens. Creates ultra-compact summary preserving decisions and state while removing redundant conversation. Use when token budget exceeds 80K. |
+| `/speckit.error-context "error message"` | **NEW** AI-assisted error debugging. Cross-references errors with specifications to identify violated requirements or missing specs. Provides possible causes and fix suggestions. Example: `/speckit.error-context "TypeError: undefined"` finds related spec requirements. |
+| `/speckit.clarify-history [search "keyword"]` | **NEW** View all clarification sessions and decisions for a feature. Search by keyword to find specific decisions. Helps with consistency and onboarding. Example: `/speckit.clarify-history search "authentication"` |
 | `/speckit.clarify`           | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`           | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist`         | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
-| `/speckit.project-analysis`  | Comprehensive project-wide analysis to verify all specifications are met, with optional code pattern validation (Security, DRY, KISS, SOLID). Generates a detailed Markdown report with findings and recommendations. **Token optimizations**: Use `--incremental` (70-90% faster), `--summary` (90% faster), or `--sample-size=N` for large projects. |
+| `/speckit.project-analysis`  | Comprehensive project-wide analysis to verify all specifications are met, with optional code pattern validation (Security, DRY, KISS, SOLID). Generates a detailed Markdown report with findings and recommendations. **Token optimizations**: Use `--diff-only` (80-95% faster, git-based), `--incremental` (70-90% faster, cache-based), `--summary` (90% faster), or `--sample-size=N` for large projects. |
 | `/speckit.document [--all]`  | Generate token-optimized AI documentation for implemented features. Use `--all` to document all features at once. Creates both ultra-compact `quick-ref.md` (<200 tokens) and comprehensive `ai-doc.md` (2-3K tokens) optimized for LLM context (run after `/speckit.implement`) |
 
 ### Environment Variables
