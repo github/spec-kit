@@ -200,16 +200,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical Details
 
-- **Bash implementations**: Complete for Linux/macOS/WSL (Phases 1-5)
+- **Bash implementations**: Complete for Linux/macOS/WSL (Phases 1-6)
+  - Phase 6: Cross-platform Bash port for full Linux/macOS support
+  - All PowerShell features ported to Bash with feature parity
+  - Includes common utility library (`scripts/bash/lib/common.sh`)
+  - Supports project analysis, onboarding, reverse engineering, and catalog generation
 - **PowerShell implementations**: 100% feature parity achieved (Phases 1-5)
   - All core and advanced features available on Windows
   - Identical functionality to bash versions
   - JSON output support for automation
   - PowerShell Core compatible (cross-platform)
-- **Testing**: All Phase 1-5 features tested and verified
+- **Testing**: All Phase 1-6 features tested and verified
   - Phase 3: error-analysis.sh, project-analysis.sh --diff-only, clarify-history.sh
   - Phase 4: token-budget.ps1, validate-spec.ps1, pre-commit hook
   - Phase 5: semantic-search.ps1, session-prune.ps1, error-analysis.ps1, clarify-history.ps1
+  - Phase 6: project-analysis.sh, onboard.sh, reverse-engineer.sh, project-catalog.sh
 - **Git Hooks**: Pre-commit validation for quality gates
 - **Platform Support**: Linux, macOS, Windows, WSL, PowerShell Core
 - **Compatibility**: Backward compatible with existing spec-kit workflows
