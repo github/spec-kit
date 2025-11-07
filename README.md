@@ -243,16 +243,13 @@ Additional commands for enhanced quality and validation:
 
 | Command                      | Description                                                           |
 |------------------------------|-----------------------------------------------------------------------|
+| `/speckit.validate [--all]`  | **NEW** Quick validation of specs, plans, and tasks for completeness. Use `--all` for project-wide checks, or `--spec`, `--plan`, `--tasks` for targeted validation. Catch issues early before planning or implementation. |
+| `/speckit.budget`            | **NEW** Display current token usage estimation and recommendations. Shows breakdown by specs, conversation, and code context. Provides optimization suggestions based on usage patterns. |
 | `/speckit.clarify`           | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`           | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist`         | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 | `/speckit.project-analysis`  | Comprehensive project-wide analysis to verify all specifications are met, with optional code pattern validation (Security, DRY, KISS, SOLID). Generates a detailed Markdown report with findings and recommendations. **Token optimizations**: Use `--incremental` (70-90% faster), `--summary` (90% faster), or `--sample-size=N` for large projects. |
-| Command              | Description                                                           |
-|----------------------|-----------------------------------------------------------------------|
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
-| `/speckit.document [--all]`  | Generate token-optimized AI documentation for implemented features. Use `--all` to document all features at once. Creates/updates `ai-doc.md` files optimized for LLM context (run after `/speckit.implement`) |
+| `/speckit.document [--all]`  | Generate token-optimized AI documentation for implemented features. Use `--all` to document all features at once. Creates both ultra-compact `quick-ref.md` (<200 tokens) and comprehensive `ai-doc.md` (2-3K tokens) optimized for LLM context (run after `/speckit.implement`) |
 
 ### Environment Variables
 
