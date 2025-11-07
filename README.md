@@ -82,7 +82,7 @@
 > - **[PLATFORM-COMPATIBILITY.md](PLATFORM-COMPATIBILITY.md)** - Cross-platform usage guide
 > - **[IMPROVED-WORKFLOW.md](IMPROVED-WORKFLOW.md)** - New workflow examples
 > - **[MIGRATION-GUIDE.md](MIGRATION-GUIDE.md)** - Upgrade from original spec-kit
-> - **[CHANGELOG.md](CHANGELOG.md)** - Complete feature documentation (Phases 1-5)
+> - **[CHANGELOG.md](CHANGELOG.md)** - Complete feature documentation (Phases 1-6)
 
 ---
 
