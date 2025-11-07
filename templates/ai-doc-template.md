@@ -1,396 +1,167 @@
-# AI Documentation: [FEATURE NAME]
+# AI Doc: [FEATURE NAME]
 
-**Feature Branch**: `[###-feature-name]`
-**Created**: [DATE]
-**Status**: [Draft/Complete]
-**Related Docs**: [spec.md](./spec.md) | [plan.md](./plan.md) | [tasks.md](./tasks.md)
+**Branch**: `[###-feature-name]` | **Updated**: [DATE] | **Status**: [Draft/Complete]
+**Related**: [spec.md](./spec.md) · [plan.md](./plan.md) · [tasks.md](./tasks.md)
 
-## Feature Overview
+> **Purpose**: Token-optimized documentation for AI/LLM context. Focuses on actual implementation, not plans.
 
-### Purpose
-[1-2 sentence summary of what this feature does and why it exists]
+## Overview
 
-### Key Capabilities
-- [Primary capability 1]
-- [Primary capability 2]
-- [Primary capability 3]
+**What**: [One sentence describing what this feature does]
 
-### User Impact
-[How users interact with this feature - what changes for them]
+**Key capabilities**:
+- [Capability 1]
+- [Capability 2]
+- [Capability 3]
 
 ## Code Map
 
-### Core Implementation Files
+### Implementation Files
 
-```text
-[List primary files/modules with brief descriptions]
-
-src/
-├── [module1/]
-│   ├── [file1.ext]        # [Purpose and responsibility]
-│   └── [file2.ext]        # [Purpose and responsibility]
-├── [module2/]
-│   └── [file3.ext]        # [Purpose and responsibility]
-└── [file4.ext]            # [Purpose and responsibility]
-
-tests/
-├── [test1.ext]            # [What it tests]
-└── [test2.ext]            # [What it tests]
+```
+path/to/file1.ext          - Purpose
+path/to/file2.ext          - Purpose
+path/to/file3.ext          - Purpose
+tests/test_file.ext        - Tests what
 ```
 
 ### Entry Points
 
-**Primary Entry Points** (where execution starts):
-- **[Entry Point 1]**: `[file:line]` - [When/how this is triggered]
-- **[Entry Point 2]**: `[file:line]` - [When/how this is triggered]
+- `file.ext:123` - `functionName()` - Triggered when [condition]
+- `file.ext:456` - `className.method()` - Handles [what]
 
-**Public APIs/Interfaces**:
-- **[Function/Class/Endpoint 1]**: `[location]` - [Purpose]
-- **[Function/Class/Endpoint 2]**: `[location]` - [Purpose]
+### Public APIs
 
-## Architecture Snapshot
+- `function/class @ file:line` - Purpose, params, return
 
-### Component Diagram
+## Architecture
 
-```text
-[ASCII/text diagram showing relationships between key components]
+### Component Map
 
-┌─────────────┐
-│   [Comp A]  │──────▶ [Comp B]
-└─────────────┘         │
-       │                │
-       ▼                ▼
-   [Comp C]         [Comp D]
+```
+[Component A] → [Component B] → [Component C]
+     ↓              ↓
+[Component D]   [Component E]
 ```
 
-### Component Responsibilities
+### Responsibilities
 
-**[Component 1]** (`[location]`)
-- **Purpose**: [What it does]
-- **Dependencies**: [What it depends on]
-- **Used by**: [What uses it]
-
-**[Component 2]** (`[location]`)
-- **Purpose**: [What it does]
-- **Dependencies**: [What it depends on]
-- **Used by**: [What uses it]
-
-[Continue for all major components]
+| Component | Location | Purpose | Depends On |
+|-----------|----------|---------|------------|
+| CompA | file:line | Does X | CompB, lib1 |
+| CompB | file:line | Does Y | lib2 |
 
 ## Data Flow
 
-### Primary Data Flow
+**Primary flow**:
+1. Input: [source] → [format]
+2. Process: `ComponentA.method()` transforms to [format]
+3. Process: `ComponentB.method()` validates/enriches
+4. Output: [destination] → [format]
 
-```text
-[Step-by-step flow of data through the system]
+**State**: [Where stored] - [Key elements]
 
-1. [Input/Trigger]
-   ↓
-2. [First Processing Step] ([component/file])
-   ↓
-3. [Second Processing Step] ([component/file])
-   ↓
-4. [Output/Result]
-```
+## Key Components
 
-### Data Transformations
+### Component1 @ file:line
 
-- **Input**: [What data comes in and from where]
-- **Processing**: [How data is transformed]
-- **Output**: [What data goes out and to where]
+**Purpose**: [What it does]
+**Key methods**: `method1()`, `method2()`, `method3()`
+**Deps**: lib1, lib2
+**Pattern**: [Why implemented this way]
 
-### State Management
+### Component2 @ file:line
 
-**State Location**: [Where state is stored - database, memory, file system, etc.]
-
-**Key State Elements**:
-- **[State 1]**: [What it represents, when it changes]
-- **[State 2]**: [What it represents, when it changes]
-
-**State Transitions**:
-```text
-[Initial State] → [Event/Action] → [New State]
-```
-
-## Key Components Deep Dive
-
-### [Component/Class/Module 1]
-
-**Location**: `[file:line]`
-**Type**: [Class/Function/Module/Service]
-
-**Purpose**: [Detailed explanation of what this does]
-
-**Key Methods/Functions**:
-- **`[method1]`**: [What it does, parameters, return value]
-- **`[method2]`**: [What it does, parameters, return value]
-
-**Dependencies**:
-- [Dependency 1]: [Why needed]
-- [Dependency 2]: [Why needed]
-
-**Usage Example**:
-```[language]
-[Brief code example showing typical usage]
-```
-
-### [Component/Class/Module 2]
-
-[Same structure as above]
+**Purpose**: [What it does]
+**Key methods**: `method1()`, `method2()`
+**Deps**: Component1, lib3
 
 ## Integration Points
 
-### External Dependencies
+**External deps**:
+- `library@version` - Used for [purpose]
+- `library2@version` - Used for [purpose]
 
-**Third-Party Libraries**:
-- **[Library 1]** (`[version]`): [Why used, what functionality it provides]
-- **[Library 2]** (`[version]`): [Why used, what functionality it provides]
+**Storage** (if applicable):
+- Type: [DB/file/memory]
+- Schema: `table1(field1, field2)`, `table2(field1, field2)`
 
-### Internal System Connections
+**APIs** (if applicable):
+- `POST /endpoint` - Purpose
+- `GET /endpoint` - Purpose
 
-**Connected Features**:
-- **[Feature/Module 1]**: [How they interact, data exchanged]
-- **[Feature/Module 2]**: [How they interact, data exchanged]
+## Testing
 
-### Data Storage
+**Run tests**: `command here`
 
-**Database/Storage Type**: [Type of storage used]
+**Test files**:
+- `test_file.ext` - Covers [what]
 
-**Schema/Structure**:
-```text
-[Tables/Collections/Files involved]
+**Coverage**: [X%] | **Gaps**: [What's not tested]
 
-[Entity 1]
-- field1: [type, purpose]
-- field2: [type, purpose]
-
-[Entity 2]
-- field1: [type, purpose]
-- field2: [type, purpose]
-```
-
-**Queries/Operations**:
-- [Key query/operation 1]: [Purpose]
-- [Key query/operation 2]: [Purpose]
-
-### External APIs/Services
-
-**Outbound Calls**:
-- **[API/Service 1]**: [What it's used for, endpoints called]
-- **[API/Service 2]**: [What it's used for, endpoints called]
-
-**Inbound Interfaces**:
-- **[Endpoint/Interface 1]**: [What it accepts, what it returns]
-- **[Endpoint/Interface 2]**: [What it accepts, what it returns]
-
-## Testing Guide
-
-### Test Coverage
-
-**Test Files**:
-- `[test-file-1]`: [What it covers]
-- `[test-file-2]`: [What it covers]
-
-**Coverage Areas**:
-- ✅ [Covered area 1]
-- ✅ [Covered area 2]
-- ⚠️ [Partially covered area]
-- ❌ [Not covered area - explain why]
-
-### Running Tests
-
-**Unit Tests**:
-```bash
-[Command to run unit tests for this feature]
-```
-
-**Integration Tests**:
-```bash
-[Command to run integration tests for this feature]
-```
-
-**Manual Testing**:
-1. [Step 1 to manually verify feature works]
-2. [Step 2 to manually verify feature works]
-3. [Expected outcome]
-
-### Test Data
-
-**Required Test Data**:
-- [Data 1]: [How to set up]
-- [Data 2]: [How to set up]
-
-**Test Fixtures**:
-- `[fixture-file-1]`: [What it provides]
-- `[fixture-file-2]`: [What it provides]
+**Critical setup**: [Only if non-obvious]
 
 ## Modification Guide
 
-### Common Modifications
+**Add [feature/capability]**:
+1. Modify `file:line` - [what to change]
+2. Add test in `test_file:line`
+3. Update [related file]
 
-**Adding a new [capability type]**:
-1. [Step 1 - which file to modify]
-2. [Step 2 - what to add/change]
-3. [Step 3 - tests to update]
-4. [Step 4 - validation]
+**Change [behavior]**:
+1. Config at `file:line`
+2. Impact: [what else changes]
 
-**Changing [behavior/configuration]**:
-1. [Step 1 - where the configuration lives]
-2. [Step 2 - how to modify it]
-3. [Step 3 - side effects to consider]
+**Common patterns**:
+- **Pattern1**: Used when [scenario] - See `file:line`
+- **Pattern2**: Used when [scenario] - See `file:line`
 
-**Extending [integration point]**:
-1. [Step 1 - interface to implement/extend]
-2. [Step 2 - where to register new implementation]
-3. [Step 3 - testing requirements]
+## Gotchas
 
-### Code Patterns
+**[Non-obvious behavior 1]**:
+- What: [Description]
+- Why: [Reason]
+- Where: `file:line`
+- Impact: [What breaks if you don't know this]
 
-**Pattern 1: [Pattern Name]**
-- **When to use**: [Scenario where this pattern is appropriate]
-- **Example**: `[file:line]` - [Brief code snippet or reference]
-- **Why**: [Rationale for this pattern]
+**[Edge case 1]**:
+- Scenario: [When]
+- Behavior: [What happens]
+- Location: `file:line`
 
-**Pattern 2: [Pattern Name]**
-- **When to use**: [Scenario where this pattern is appropriate]
-- **Example**: `[file:line]` - [Brief code snippet or reference]
-- **Why**: [Rationale for this pattern]
+**Performance**:
+- Bottleneck: [Operation] at `file:line` - [Why/mitigation]
 
-### Configuration
+**Security/Privacy** (if applicable):
+- [Concern]: [How handled] - `file:line`
 
-**Configuration Files**:
-- `[config-file-1]`: [What it configures]
-- `[config-file-2]`: [What it configures]
+## AI Guidance
 
-**Key Configuration Options**:
-- **`[option-1]`**: [What it does, valid values, default]
-- **`[option-2]`**: [What it does, valid values, default]
+**Before modifying**:
+- [ ] Read [specific file/section]
+- [ ] Understand [key concept]
+- [ ] Check [dependency/integration]
 
-## Implementation Gotchas
+**Must preserve**:
+- [Invariant 1]: [Why critical]
+- [Invariant 2]: [Why critical]
 
-### Non-Obvious Behaviors
+**Safe to change**:
+- [What can be modified without breaking things]
 
-**[Gotcha 1]**: [Title]
-- **Issue**: [What's not obvious]
-- **Why**: [Reason for this implementation]
-- **Impact**: [What happens if you don't know this]
-- **Location**: `[file:line]`
+**Common issues**:
 
-**[Gotcha 2]**: [Title]
-- **Issue**: [What's not obvious]
-- **Why**: [Reason for this implementation]
-- **Impact**: [What happens if you don't know this]
-- **Location**: `[file:line]`
-
-### Edge Cases
-
-**[Edge Case 1]**:
-- **Scenario**: [When this happens]
-- **Behavior**: [How system handles it]
-- **Code**: `[file:line]`
-
-**[Edge Case 2]**:
-- **Scenario**: [When this happens]
-- **Behavior**: [How system handles it]
-- **Code**: `[file:line]`
-
-### Performance Considerations
-
-**Bottlenecks**:
-- **[Operation/Component]**: [Why it might be slow, mitigation]
-
-**Optimization Opportunities**:
-- **[Area 1]**: [Potential improvement, trade-offs]
-- **[Area 2]**: [Potential improvement, trade-offs]
-
-**Resource Usage**:
-- **Memory**: [Expected usage, peak scenarios]
-- **CPU**: [Expected usage, intensive operations]
-- **I/O**: [Database calls, file operations, network requests]
-
-### Security & Privacy
-
-**Security Considerations**:
-- [Security concern 1]: [How it's addressed]
-- [Security concern 2]: [How it's addressed]
-
-**Data Privacy**:
-- [What sensitive data is handled]
-- [How it's protected]
-- [Compliance requirements met]
-
-## AI Agent Guidance
-
-### When Modifying This Feature
-
-**Before Making Changes**:
-1. [Critical thing to check/understand first]
-2. [Second critical thing to check/understand]
-3. [Third critical thing to check/understand]
-
-**Must Preserve**:
-- [Invariant 1 that must not be broken]
-- [Invariant 2 that must not be broken]
-- [Behavior that must remain unchanged]
-
-**Safe to Change**:
-- [What can be safely modified without breaking things]
-- [What can be safely extended]
-
-### Debugging Tips
-
-**Common Issues**:
-1. **[Issue Description]**
-   - **Symptoms**: [How to recognize it]
-   - **Cause**: [Root cause]
-   - **Fix**: [How to resolve]
-   - **Location**: `[file:line]`
-
-2. **[Issue Description]**
-   - **Symptoms**: [How to recognize it]
-   - **Cause**: [Root cause]
-   - **Fix**: [How to resolve]
-   - **Location**: `[file:line]`
-
-**Debugging Entry Points**:
-- Start here: `[file:function:line]` - [Why this is a good starting point]
-- Breakpoint suggestion: `[file:line]` - [What to inspect]
-- Logging: `[Where to add logs to track flow]`
-
-### Related Documentation
-
-**Internal Docs**:
-- [spec.md](./spec.md) - Original requirements
-- [plan.md](./plan.md) - Architecture and technical approach
-- [tasks.md](./tasks.md) - Implementation tasks
-
-**External Resources**:
-- [Resource 1]: [URL] - [Why it's relevant]
-- [Resource 2]: [URL] - [Why it's relevant]
-
-**Dependencies Documentation**:
-- [Library 1 docs]: [URL]
-- [Library 2 docs]: [URL]
+| Symptom | Cause | Fix | Location |
+|---------|-------|-----|----------|
+| [Issue 1] | [Root cause] | [Solution] | file:line |
+| [Issue 2] | [Root cause] | [Solution] | file:line |
 
 ## Appendix
 
-### Glossary
+**Config files**: `file1`, `file2` - [Key settings]
+**Env vars**: `VAR1=value` - [Purpose]
+**Dependencies docs**: [link1], [link2] - [When needed]
 
-- **[Term 1]**: [Definition specific to this feature]
-- **[Term 2]**: [Definition specific to this feature]
+---
 
-### Change History
-
-| Date | Change | Reason | Modified By |
-|------|--------|--------|-------------|
-| [YYYY-MM-DD] | [What changed] | [Why] | [Who/What] |
-
-### Future Enhancements
-
-**Planned Improvements**:
-- [Enhancement 1]: [Description, priority]
-- [Enhancement 2]: [Description, priority]
-
-**Known Limitations**:
-- [Limitation 1]: [Description, workaround if any]
-- [Limitation 2]: [Description, workaround if any]
+**Last analyzed**: [DATE] | **Implementation status**: [Complete/Partial]

@@ -6,6 +6,7 @@ param(
     [Parameter(Position = 0)]
     [string]$FeatureIdentifier = "",
     [switch]$Json,
+    [switch]$All,
     [switch]$Help
 )
 
@@ -13,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Output "Usage: ./setup-ai-doc.ps1 [-Json] [FeatureIdentifier]"
+    Write-Output "Usage: ./setup-ai-doc.ps1 [-Json] [-All | FeatureIdentifier]"
     Write-Output ""
     Write-Output "Parameters:"
     Write-Output "  FeatureIdentifier    Feature name, number, or branch name (optional)"
@@ -21,10 +22,13 @@ if ($Help) {
     Write-Output ""
     Write-Output "Options:"
     Write-Output "  -Json                Output results in JSON format"
+    Write-Output "  -All                 Process all features in specs/ directory"
     Write-Output "  -Help                Show this help message"
     Write-Output ""
     Write-Output "Examples:"
     Write-Output "  ./setup-ai-doc.ps1                  # Use current branch"
+    Write-Output "  ./setup-ai-doc.ps1 -All             # Process all features"
+    Write-Output "  ./setup-ai-doc.ps1 -Json -All       # Process all features with JSON output"
     Write-Output "  ./setup-ai-doc.ps1 user-auth        # Use feature by name"
     Write-Output "  ./setup-ai-doc.ps1 5                # Use feature by number"
     Write-Output "  ./setup-ai-doc.ps1 5-user-auth      # Use feature by full branch name"
@@ -38,6 +42,121 @@ if ($Help) {
 # Get repository root
 $repoRoot = Get-RepoRoot
 $specsDir = Join-Path $repoRoot "specs"
+
+# Get template path
+$templateFile = Join-Path $repoRoot "templates/ai-doc-template.md"
+if (-not (Test-Path $templateFile)) {
+    $templateFile = Join-Path $repoRoot ".specify/templates/ai-doc-template.md"
+}
+
+# Function to process a single feature
+function Process-Feature {
+    param([string]$FeatureDir, [string]$TemplateFile)
+
+    $featureName = Split-Path -Leaf $FeatureDir
+    $specFile = Join-Path $FeatureDir "spec.md"
+    $aiDocFile = Join-Path $FeatureDir "ai-doc.md"
+    $currentDate = Get-Date -Format "yyyy-MM-dd"
+
+    # Skip if spec.md doesn't exist
+    if (-not (Test-Path $specFile)) {
+        return @{
+            feature = $featureName
+            status = "skipped"
+            reason = "spec.md not found"
+        }
+    }
+
+    # Determine if creating or updating
+    if (-not (Test-Path $aiDocFile)) {
+        # Create new ai-doc.md
+        $content = Get-Content -Path $TemplateFile -Raw
+        $content = $content -replace '\[FEATURE NAME\]', $featureName
+        $content = $content -replace '\[###-feature-name\]', $featureName
+        $content = $content -replace '\[DATE\]', $currentDate
+        $content = $content -replace '\[Draft/Complete\]', 'Draft'
+        Set-Content -Path $aiDocFile -Value $content -NoNewline
+        $status = "created"
+    } else {
+        # Update existing ai-doc.md - update the date
+        $content = Get-Content -Path $aiDocFile -Raw
+        $content = $content -replace '\*\*Updated\*\*: \d{4}-\d{2}-\d{2}', "**Updated**: $currentDate"
+        Set-Content -Path $aiDocFile -Value $content -NoNewline
+        $status = "updated"
+    }
+
+    # Get additional file paths
+    $planFile = Join-Path $FeatureDir "plan.md"
+    $tasksFile = Join-Path $FeatureDir "tasks.md"
+
+    return @{
+        feature = $featureName
+        status = $status
+        ai_doc_file = $aiDocFile
+        spec_file = $specFile
+        plan_file = $planFile
+        tasks_file = $tasksFile
+    }
+}
+
+# Handle -All mode
+if ($All) {
+    # Check if specs directory exists
+    if (-not (Test-Path $specsDir)) {
+        if ($Json) {
+            $error = @{
+                error = "Specs directory not found"
+                path = $specsDir
+            } | ConvertTo-Json -Compress
+            Write-Output $error
+        } else {
+            Write-Error "ERROR: Specs directory not found: $specsDir"
+        }
+        exit 1
+    }
+
+    # Find all feature directories
+    $featureDirs = Get-ChildItem -Path $specsDir -Directory | Sort-Object Name
+
+    if ($featureDirs.Count -eq 0) {
+        if ($Json) {
+            $result = @{
+                features = @()
+                total = 0
+                message = "No feature directories found"
+            } | ConvertTo-Json -Compress
+            Write-Output $result
+        } else {
+            Write-Output "No feature directories found in $specsDir"
+        }
+        exit 0
+    }
+
+    # Process all features
+    $results = @()
+    foreach ($featureDir in $featureDirs) {
+        $result = Process-Feature -FeatureDir $featureDir.FullName -TemplateFile $templateFile
+        $results += $result
+
+        if (-not $Json) {
+            Write-Output "Processing: $($result.feature)"
+        }
+    }
+
+    # Output results
+    if ($Json) {
+        $output = @{
+            features = $results
+            total = $results.Count
+        } | ConvertTo-Json -Compress
+        Write-Output $output
+    } else {
+        Write-Output ""
+        Write-Output "Processed $($results.Count) feature(s)"
+    }
+
+    exit 0
+}
 
 # Function to find feature directory by identifier
 function Find-FeatureDirectory {
@@ -182,52 +301,39 @@ if (-not (Test-Path $templateFile)) {
     }
 }
 
-# Extract feature name from directory
-$featureName = Split-Path -Leaf $featureDir
-
-# Get current date
-$currentDate = Get-Date -Format "yyyy-MM-dd"
-
-# Create ai-doc.md from template if it doesn't exist
-if (-not (Test-Path $aiDocFile)) {
-    # Read template and do basic replacements
-    $content = Get-Content -Path $templateFile -Raw
-    $content = $content -replace '\[FEATURE NAME\]', $featureName
-    $content = $content -replace '\[###-feature-name\]', $featureName
-    $content = $content -replace '\[DATE\]', $currentDate
-    $content = $content -replace '\[Draft/Complete\]', 'Draft'
-
-    # Write to ai-doc.md
-    Set-Content -Path $aiDocFile -Value $content -NoNewline
-
-    $status = "created"
-} else {
-    $status = "exists"
+# Check if template exists
+if (-not (Test-Path $templateFile)) {
+    if ($Json) {
+        $error = @{
+            error = "Template file not found: ai-doc-template.md"
+        } | ConvertTo-Json -Compress
+        Write-Output $error
+    } else {
+        Write-Error "ERROR: Template file not found"
+        Write-Error "Expected at: $repoRoot/templates/ai-doc-template.md"
+        Write-Error "Or at: $repoRoot/.specify/templates/ai-doc-template.md"
+    }
+    exit 1
 }
 
-# Get additional file paths for reference
-$planFile = Join-Path $featureDir "plan.md"
-$tasksFile = Join-Path $featureDir "tasks.md"
+# Process the single feature
+$result = Process-Feature -FeatureDir $featureDir -TemplateFile $templateFile
 
 # Output results
 if ($Json) {
-    $result = @{
-        AI_DOC_FILE = $aiDocFile
-        FEATURE_DIR = $featureDir
-        FEATURE_NAME = $featureName
-        SPEC_FILE = $specFile
-        PLAN_FILE = $planFile
-        TASKS_FILE = $tasksFile
-        STATUS = $status
-        TEMPLATE_USED = $templateFile
-    }
     $result | ConvertTo-Json -Compress
 } else {
+    $featureName = Split-Path -Leaf $featureDir
+    $aiDocFile = Join-Path $featureDir "ai-doc.md"
+    $specFile = Join-Path $featureDir "spec.md"
+    $planFile = Join-Path $featureDir "plan.md"
+    $tasksFile = Join-Path $featureDir "tasks.md"
+
     Write-Output "AI Documentation Setup Complete"
     Write-Output ""
     Write-Output "Feature: $featureName"
     Write-Output "Documentation file: $aiDocFile"
-    Write-Output "Status: $status"
+    Write-Output "Status: $($result.status)"
     Write-Output ""
     Write-Output "Related files:"
     Write-Output "  - Spec: $specFile"

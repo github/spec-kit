@@ -15,7 +15,13 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-The `/speckit.document` command generates comprehensive AI-focused documentation for an **already implemented** feature. This documentation helps AI agents (and developers) quickly understand the implementation for future modifications.
+The `/speckit.document` command generates **token-optimized** AI-focused documentation for implemented features. This documentation serves as efficient context for LLMs and Claude Code CLI, enabling quick comprehension for future modifications.
+
+**Key Design Principles**:
+- **Token-efficient**: Concise, structured format optimized for LLM context
+- **Code-first**: Based on actual implementation, not assumptions
+- **Update-friendly**: Re-running updates existing documentation
+- **Context-ready**: Designed for direct LLM/Claude Code consumption
 
 ### Prerequisites
 
@@ -23,36 +29,43 @@ Before running this command:
 
 1. The feature **must be implemented** (code exists)
 2. Feature spec should exist at `.specify/specs/###-feature-name/spec.md`
-3. Tests should be written and passing
-4. You should be on the feature branch
+3. Tests should be written (passing or documented as failing)
 
 ### Execution Flow
 
-1. **Determine the Feature**:
+1. **Determine the Feature(s)**:
 
-   a. If the user provided a feature name/number in `{ARGS}`:
+   a. **If `--all` flag provided in `{ARGS}`**:
+      - Execute `{SCRIPT} --json --all` to get list of all feature directories
+      - Process each feature sequentially
+      - Report progress: "Processing feature N of M: ###-feature-name"
+      - Continue on errors (log and move to next feature)
+      - Report summary at end: "Documented X of Y features (Z errors)"
+
+   b. **If feature name/number provided in `{ARGS}`**:
       - Use that to locate the feature directory
       - Example: `/speckit.document user-auth` or `/speckit.document 5`
 
-   b. If no arguments provided:
+   c. **If no arguments provided**:
       - Check the current git branch name
       - Extract feature number and name from branch (format: `###-feature-name`)
-      - If not on a feature branch: ERROR "Not on a feature branch. Please specify feature name/number."
+      - If not on a feature branch: ERROR "Not on a feature branch. Please specify feature name/number or use --all."
 
-   c. Verify feature directory exists:
+   d. Verify feature directory exists:
       - Check `.specify/specs/###-feature-name/` exists
       - If not found: ERROR "Feature directory not found. Ensure feature exists."
 
 2. **Run Setup Script**:
 
    Execute `{SCRIPT}` with the feature identifier:
-   - Bash: `{SCRIPT} --json "feature-identifier"`
-   - PowerShell: `{SCRIPT} -Json "feature-identifier"`
+   - Bash: `{SCRIPT} --json "feature-identifier"` or `{SCRIPT} --json --all`
+   - PowerShell: `{SCRIPT} -Json "feature-identifier"` or `{SCRIPT} -Json -All`
 
    **IMPORTANT**:
-   - The script creates the `ai-doc.md` file from the template
-   - The JSON output contains the `AI_DOC_FILE` path
-   - Only run the script once per invocation
+   - The script creates or updates the `ai-doc.md` file
+   - The JSON output contains the `AI_DOC_FILE` path and `STATUS` (created/updated)
+   - For --all mode, script returns array of feature paths
+   - Only run the script once per feature
 
 3. **Load Required Information**:
 
@@ -101,58 +114,65 @@ Before running this command:
 
 5. **Generate the AI Documentation**:
 
-   Fill in the `AI_DOC_FILE` using the template structure:
+   Fill in the `AI_DOC_FILE` using the template structure. **CRITICAL TOKEN OPTIMIZATION RULES**:
 
-   a. **Feature Overview**:
-      - Extract purpose from spec.md
-      - Summarize key capabilities from implementation
-      - Describe actual user impact
+   - **Be concise**: Use bullet points, not paragraphs
+   - **Use tables**: Compact information in tables where possible
+   - **No redundancy**: Don't repeat information already in spec.md or plan.md
+   - **Focus on code**: Only document what's in the actual implementation
+   - **Skip empty sections**: If a section doesn't apply, remove it entirely
+   - **Use abbreviations**: "fn" for function, "cls" for class, "dir" for directory
+   - **Compress paths**: Use relative paths from repo root
+   - **Limit examples**: One code snippet per concept maximum
+   - **Prioritize**: Focus on high-value information (entry points, gotchas, non-obvious patterns)
 
-   b. **Code Map**:
-      - List all implementation files with descriptions
-      - Document entry points with file:line references
-      - List public APIs/interfaces
+   a. **Feature Overview** (2-3 sentences max):
+      - One-line purpose
+      - 3-5 bullet key capabilities
+      - Skip if obvious from spec.md
 
-   c. **Architecture Snapshot**:
-      - Create ASCII diagram of component relationships
-      - Document each component's responsibilities
-      - Map dependencies based on actual code
+   b. **Code Map** (most critical section):
+      - List implementation files in compact format: `path/to/file.ext - Purpose`
+      - Entry points only: `file:line - When triggered`
+      - Public APIs only (not internal helpers)
 
-   d. **Data Flow**:
-      - Document the primary data flow path
-      - Describe data transformations
-      - Explain state management
+   c. **Architecture** (visual + minimal text):
+      - ASCII diagram only if > 3 components
+      - One-line per component responsibility
+      - Dependencies as list, not prose
 
-   e. **Key Components Deep Dive**:
-      - For each major component:
-        - Location (file:line)
-        - Purpose and responsibilities
-        - Key methods/functions
-        - Dependencies
-        - Usage examples from actual code
+   d. **Data Flow** (only if non-trivial):
+      - Numbered steps: `Input → Component → Output`
+      - Skip obvious CRUD operations
+      - Focus on transformations and side effects
 
-   f. **Integration Points**:
-      - Document external dependencies (libraries used)
-      - Map internal system connections
-      - Describe data storage approach
-      - List external APIs/services
+   e. **Key Components** (top 3-5 only):
+      - Format: `Component @ file:line - Purpose | Key methods: fn1, fn2 | Deps: dep1, dep2`
+      - No full code examples unless essential
+      - Link to code location instead of duplicating
 
-   g. **Testing Guide**:
-      - List test files and coverage
-      - Provide commands to run tests
-      - Document manual testing steps
-      - List test data requirements
+   f. **Integration Points** (external only):
+      - Libraries: `name@version - used for X`
+      - APIs: `endpoint - purpose`
+      - Storage: `type - tables/collections`
+      - Skip internal integrations (covered in Architecture)
 
-   h. **Modification Guide**:
-      - Document common modification patterns
-      - Explain code patterns used
-      - List configuration options
+   g. **Testing** (commands + critical notes only):
+      - Test command(s)
+      - Coverage % if known
+      - Critical test data setup (one-liners)
+      - Skip if standard/obvious
 
-   i. **Implementation Gotchas**:
-      - Document non-obvious behaviors
-      - Describe edge cases
-      - Note performance considerations
-      - List security/privacy concerns
+   h. **Modification Guide** (patterns only):
+      - Common modifications as: `To do X: 1) file:line 2) file:line`
+      - Code patterns: `Pattern - When - Why`
+      - Skip obvious additions
+
+   i. **Gotchas** (most valuable section):
+      - Non-obvious behaviors: `What - Why - Where (file:line)`
+      - Edge cases with impact
+      - Performance bottlenecks only
+      - Security/privacy only if present
 
    j. **AI Agent Guidance**:
       - Provide pre-modification checklist

@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 JSON_MODE=false
+ALL_MODE=false
 FEATURE_IDENTIFIER=""
 
 # Parse arguments
@@ -16,17 +17,24 @@ while [ $# -gt 0 ]; do
             JSON_MODE=true
             shift
             ;;
+        --all)
+            ALL_MODE=true
+            shift
+            ;;
         --help|-h)
-            echo "Usage: $0 [--json] [feature_identifier]"
+            echo "Usage: $0 [--json] [--all | feature_identifier]"
             echo ""
             echo "Options:"
             echo "  --json                  Output in JSON format"
+            echo "  --all                   Process all features in specs/ directory"
             echo "  feature_identifier      Feature name, number, or branch name (optional)"
             echo "                          If not provided, uses current branch"
             echo "  --help, -h              Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0                      # Use current branch"
+            echo "  $0 --all                # Process all features"
+            echo "  $0 --json --all         # Process all features with JSON output"
             echo "  $0 user-auth            # Use feature by name"
             echo "  $0 5                    # Use feature by number"
             echo "  $0 5-user-auth          # Use feature by full branch name"
@@ -44,7 +52,107 @@ done
 REPO_ROOT=$(get_repo_root)
 SPECS_DIR="$REPO_ROOT/specs"
 
-# Determine feature directory
+# Get template path
+TEMPLATE_FILE="$REPO_ROOT/templates/ai-doc-template.md"
+if [ ! -f "$TEMPLATE_FILE" ]; then
+    TEMPLATE_FILE="$REPO_ROOT/.specify/templates/ai-doc-template.md"
+fi
+
+# Function to process a single feature
+process_feature() {
+    local FEATURE_DIR="$1"
+    local FEATURE_NAME=$(basename "$FEATURE_DIR")
+    local SPEC_FILE="$FEATURE_DIR/spec.md"
+    local AI_DOC_FILE="$FEATURE_DIR/ai-doc.md"
+    local CURRENT_DATE=$(date +%Y-%m-%d)
+
+    # Skip if spec.md doesn't exist
+    if [ ! -f "$SPEC_FILE" ]; then
+        echo "{\"feature\": \"$FEATURE_NAME\", \"status\": \"skipped\", \"reason\": \"spec.md not found\"}"
+        return 1
+    fi
+
+    # Determine if creating or updating
+    if [ ! -f "$AI_DOC_FILE" ]; then
+        # Create new ai-doc.md
+        sed -e "s/\[FEATURE NAME\]/$FEATURE_NAME/g" \
+            -e "s/\[###-feature-name\]/$FEATURE_NAME/g" \
+            -e "s/\[DATE\]/$CURRENT_DATE/g" \
+            -e "s/\[Draft\/Complete\]/Draft/g" \
+            "$TEMPLATE_FILE" > "$AI_DOC_FILE"
+        STATUS="created"
+    else
+        # Update existing ai-doc.md - update the date
+        sed -i "s/\*\*Updated\*\*: [0-9-]*/**Updated**: $CURRENT_DATE/g" "$AI_DOC_FILE" 2>/dev/null || \
+        sed -i "" "s/\*\*Updated\*\*: [0-9-]*/**Updated**: $CURRENT_DATE/g" "$AI_DOC_FILE" 2>/dev/null || true
+        STATUS="updated"
+    fi
+
+    # Get additional file paths
+    local PLAN_FILE="$FEATURE_DIR/plan.md"
+    local TASKS_FILE="$FEATURE_DIR/tasks.md"
+
+    echo "{\"feature\": \"$FEATURE_NAME\", \"status\": \"$STATUS\", \"ai_doc_file\": \"$AI_DOC_FILE\", \"spec_file\": \"$SPEC_FILE\", \"plan_file\": \"$PLAN_FILE\", \"tasks_file\": \"$TASKS_FILE\"}"
+    return 0
+}
+
+# Handle --all mode
+if [ "$ALL_MODE" = true ]; then
+    # Check if specs directory exists
+    if [ ! -d "$SPECS_DIR" ]; then
+        if [ "$JSON_MODE" = true ]; then
+            echo '{"error": "Specs directory not found", "path": "'$SPECS_DIR'"}'
+        else
+            echo "ERROR: Specs directory not found: $SPECS_DIR" >&2
+        fi
+        exit 1
+    fi
+
+    # Find all feature directories
+    FEATURE_DIRS=()
+    while IFS= read -r -d '' dir; do
+        FEATURE_DIRS+=("$dir")
+    done < <(find "$SPECS_DIR" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+
+    if [ ${#FEATURE_DIRS[@]} -eq 0 ]; then
+        if [ "$JSON_MODE" = true ]; then
+            echo '{"features": [], "total": 0, "message": "No feature directories found"}'
+        else
+            echo "No feature directories found in $SPECS_DIR" >&2
+        fi
+        exit 0
+    fi
+
+    # Process all features
+    RESULTS=()
+    for FEATURE_DIR in "${FEATURE_DIRS[@]}"; do
+        if [ "$JSON_MODE" = true ]; then
+            RESULT=$(process_feature "$FEATURE_DIR")
+            RESULTS+=("$RESULT")
+        else
+            FEATURE_NAME=$(basename "$FEATURE_DIR")
+            echo "Processing: $FEATURE_NAME"
+            process_feature "$FEATURE_DIR" > /dev/null
+        fi
+    done
+
+    # Output results
+    if [ "$JSON_MODE" = true ]; then
+        echo -n '{"features": ['
+        for i in "${!RESULTS[@]}"; do
+            echo -n "${RESULTS[$i]}"
+            [ $i -lt $((${#RESULTS[@]} - 1)) ] && echo -n ","
+        done
+        echo '], "total": '${#RESULTS[@]}'}'
+    else
+        echo ""
+        echo "Processed ${#FEATURE_DIRS[@]} feature(s)"
+    fi
+
+    exit 0
+fi
+
+# Single feature mode - determine feature directory
 if [ -z "$FEATURE_IDENTIFIER" ]; then
     # No identifier provided - use current branch
     CURRENT_BRANCH=$(get_current_branch)
@@ -127,80 +235,32 @@ if [ ! -d "$FEATURE_DIR" ]; then
     exit 1
 fi
 
-# Verify spec.md exists
-SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ ! -f "$SPEC_FILE" ]; then
+# Check if template exists
+if [ ! -f "$TEMPLATE_FILE" ]; then
     if [ "$JSON_MODE" = true ]; then
-        echo "{\"error\": \"Spec file not found: $SPEC_FILE\", \"warning\": \"Feature directory exists but spec.md is missing\"}"
+        echo "{\"error\": \"Template file not found: ai-doc-template.md\"}"
     else
-        echo "ERROR: Spec file not found: $SPEC_FILE" >&2
-        echo "The feature directory exists but spec.md is missing." >&2
+        echo "ERROR: Template file not found" >&2
+        echo "Expected at: $REPO_ROOT/templates/ai-doc-template.md" >&2
+        echo "Or at: $REPO_ROOT/.specify/templates/ai-doc-template.md" >&2
     fi
     exit 1
 fi
 
-# Define AI doc file path
-AI_DOC_FILE="$FEATURE_DIR/ai-doc.md"
-
-# Get template path
-TEMPLATE_FILE="$REPO_ROOT/templates/ai-doc-template.md"
-
-# Check if template exists
-if [ ! -f "$TEMPLATE_FILE" ]; then
-    # Fall back to .specify/templates if repo root doesn't have templates
-    TEMPLATE_FILE="$REPO_ROOT/.specify/templates/ai-doc-template.md"
-
-    if [ ! -f "$TEMPLATE_FILE" ]; then
-        if [ "$JSON_MODE" = true ]; then
-            echo "{\"error\": \"Template file not found: ai-doc-template.md\"}"
-        else
-            echo "ERROR: Template file not found" >&2
-            echo "Expected at: $REPO_ROOT/templates/ai-doc-template.md" >&2
-            echo "Or at: $REPO_ROOT/.specify/templates/ai-doc-template.md" >&2
-        fi
-        exit 1
-    fi
-fi
-
-# Extract feature name from directory
-FEATURE_NAME=$(basename "$FEATURE_DIR")
-
-# Get current date
-CURRENT_DATE=$(date +%Y-%m-%d)
-
-# Create ai-doc.md from template if it doesn't exist
-if [ ! -f "$AI_DOC_FILE" ]; then
-    # Copy template and do basic replacements
-    sed -e "s/\[FEATURE NAME\]/$FEATURE_NAME/g" \
-        -e "s/\[###-feature-name\]/$FEATURE_NAME/g" \
-        -e "s/\[DATE\]/$CURRENT_DATE/g" \
-        -e "s/\[Draft\/Complete\]/Draft/g" \
-        "$TEMPLATE_FILE" > "$AI_DOC_FILE"
-
-    STATUS="created"
-else
-    STATUS="exists"
-fi
-
-# Get additional file paths for reference
-PLAN_FILE="$FEATURE_DIR/plan.md"
-TASKS_FILE="$FEATURE_DIR/tasks.md"
+# Process the single feature
+RESULT=$(process_feature "$FEATURE_DIR")
 
 # Output results
 if [ "$JSON_MODE" = true ]; then
-    cat <<EOF
-{
-  "AI_DOC_FILE": "$AI_DOC_FILE",
-  "FEATURE_DIR": "$FEATURE_DIR",
-  "FEATURE_NAME": "$FEATURE_NAME",
-  "SPEC_FILE": "$SPEC_FILE",
-  "PLAN_FILE": "$PLAN_FILE",
-  "TASKS_FILE": "$TASKS_FILE",
-  "STATUS": "$STATUS",
-  "TEMPLATE_USED": "$TEMPLATE_FILE"
-}
-EOF
+    echo "$RESULT"
 else
+    FEATURE_NAME=$(basename "$FEATURE_DIR")
+    AI_DOC_FILE="$FEATURE_DIR/ai-doc.md"
+    SPEC_FILE="$FEATURE_DIR/spec.md"
+    PLAN_FILE="$FEATURE_DIR/plan.md"
+    TASKS_FILE="$FEATURE_DIR/tasks.md"
+    STATUS=$(echo "$RESULT" | grep -o '"status": "[^"]*"' | cut -d'"' -f4)
+
     echo "AI Documentation Setup Complete"
     echo ""
     echo "Feature: $FEATURE_NAME"

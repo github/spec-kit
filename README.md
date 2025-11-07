@@ -246,7 +246,7 @@ Additional commands for enhanced quality and validation:
 | `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
-| `/speckit.document`  | Generate AI-focused documentation for implemented features to facilitate future AI comprehension and modifications (run after `/speckit.implement`) |
+| `/speckit.document [--all]`  | Generate token-optimized AI documentation for implemented features. Use `--all` to document all features at once. Creates/updates `ai-doc.md` files optimized for LLM context (run after `/speckit.implement`) |
 
 ### Environment Variables
 
