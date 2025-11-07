@@ -366,6 +366,10 @@ The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, op
 specify init <project_name> --ai claude --ignore-agent-tools
 ```
 
+### Codex credential safety
+
+Whenever a project contains a `.codex/` directory (or you initialize a Codex-ready template), the CLI automatically appends `.codex/` to `.gitignore` and warns if `.codex/auth.json` is already tracked. This mirrors the upstream Spec Kitty hardening so Codex tokens stay out of version control even when you rerun `specify init` in existing directories or switch to a different assistant.
+
 ### **STEP 1:** Establish project principles
 
 Go to the project folder and run your AI agent. In our example, we're using `claude`.

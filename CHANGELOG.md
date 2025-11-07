@@ -7,6 +7,17 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.21] - 2025-11-07
+
+### Fixed
+
+- Backported the Spec Kitty Codex credential guardrails so `.codex/` is auto-added to `.gitignore` (even on re-init) and tracked `auth.json` files trigger warnings.
+- Added regression tests covering the new guardrails and Codex security path.
+
+### Added
+
+- Documentation update describing the automatic `.codex/` protections.
+
 ## [0.0.20] - 2025-10-14
 
 ### Added
