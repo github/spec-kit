@@ -7,6 +7,11 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.22] - 2025-11-07
+
+- Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.
+- Move to use `AGENTS.md` for Copilot workloads, since it's already supported out-of-the-box.
+
 ## [0.0.21] - 2025-10-21
 
 - Fixes [#975](https://github.com/github/spec-kit/issues/975) (thank you [@fgalarraga](https://github.com/fgalarraga)).

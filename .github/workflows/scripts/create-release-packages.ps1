@@ -171,7 +171,7 @@ function Generate-Commands {
             'md' {
                 Set-Content -Path $outputFile -Value $body -NoNewline
             }
-            'chatmode.md' {
+            'agent.md' {
                 Set-Content -Path $outputFile -Value $body -NoNewline
             }
         }
@@ -180,16 +180,16 @@ function Generate-Commands {
 
 function Generate-CopilotPrompts {
     param(
-        [string]$ChatmodesDir,
+        [string]$AgentsDir,
         [string]$PromptsDir
     )
     
     New-Item -ItemType Directory -Path $PromptsDir -Force | Out-Null
     
-    $chatmodeFiles = Get-ChildItem -Path "$ChatmodesDir/speckit.*.chatmode.md" -File -ErrorAction SilentlyContinue
+    $agentFiles = Get-ChildItem -Path "$AgentsDir/speckit.*.agent.md" -File -ErrorAction SilentlyContinue
     
-    foreach ($chatmodeFile in $chatmodeFiles) {
-        $basename = $chatmodeFile.Name -replace '\.chatmode\.md$', ''
+    foreach ($agentFile in $agentFiles) {
+        $basename = $agentFile.Name -replace '\.agent\.md$', ''
         $promptFile = Join-Path $PromptsDir "$basename.prompt.md"
         
         $content = @"
@@ -278,12 +278,12 @@ function Build-Variant {
             }
         }
         'copilot' {
-            $chatmodesDir = Join-Path $baseDir ".github/chatmodes"
-            Generate-Commands -Agent 'copilot' -Extension 'chatmode.md' -ArgFormat '$ARGUMENTS' -OutputDir $chatmodesDir -ScriptVariant $Script
+            $agentsDir = Join-Path $baseDir ".github/agents"
+            Generate-Commands -Agent 'copilot' -Extension 'agent.md' -ArgFormat '$ARGUMENTS' -OutputDir $agentsDir -ScriptVariant $Script
             
             # Generate companion prompt files
             $promptsDir = Join-Path $baseDir ".github/prompts"
-            Generate-CopilotPrompts -ChatmodesDir $chatmodesDir -PromptsDir $promptsDir
+            Generate-CopilotPrompts -AgentsDir $agentsDir -PromptsDir $promptsDir
             
             # Create VS Code workspace settings
             $vscodeDir = Join-Path $baseDir ".vscode"
