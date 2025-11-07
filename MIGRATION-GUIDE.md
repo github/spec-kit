@@ -55,7 +55,7 @@ The migration scripts automatically:
 
 ```bash
 # Download the migration script from improved spec-kit
-curl -O https://raw.githubusercontent.com/guisantossi/spec-kit/claude/improve-s-feature-011CUtKowzjCGGTB49vfnCEm/migrate-to-improved-speckit.sh
+curl -O https://raw.githubusercontent.com/guisantossi/spec-kit/main/migrate-to-improved-speckit.sh
 
 # Make it executable
 chmod +x migrate-to-improved-speckit.sh
@@ -71,7 +71,7 @@ chmod +x migrate-to-improved-speckit.sh
 
 ```powershell
 # Download the migration script
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/guisantossi/spec-kit/claude/improve-s-feature-011CUtKowzjCGGTB49vfnCEm/migrate-to-improved-speckit.ps1" -OutFile "migrate-to-improved-speckit.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/guisantossi/spec-kit/main/migrate-to-improved-speckit.ps1" -OutFile "migrate-to-improved-speckit.ps1"
 
 # Run migration
 .\migrate-to-improved-speckit.ps1
@@ -100,7 +100,6 @@ If you prefer manual control:
 ```bash
 git clone https://github.com/guisantossi/spec-kit.git /tmp/spec-kit-improved
 cd /tmp/spec-kit-improved
-git checkout claude/improve-s-feature-011CUtKowzjCGGTB49vfnCEm
 ```
 
 #### Step 2: Backup Your Project
@@ -169,15 +168,15 @@ cp hooks/pre-commit .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 ```
 
-### Method 3: Git Merge (After PR Merge)
+### Method 3: Git Merge
 
-Once the Pull Request is merged to main:
+Merge the improved spec-kit directly:
 
 ```bash
 cd /path/to/your/project
 
 # Add upstream remote if not already added
-git remote add upstream https://github.com/github/spec-kit.git
+git remote add upstream https://github.com/guisantossi/spec-kit.git
 
 # Fetch latest
 git fetch upstream main

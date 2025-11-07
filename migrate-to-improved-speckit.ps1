@@ -45,9 +45,6 @@ if (-not $SourceDir) {
         $SourceDir = Join-Path $env:TEMP "spec-kit-improved-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
         git clone https://github.com/guisantossi/spec-kit.git $SourceDir
-        Push-Location $SourceDir
-        git checkout claude/improve-s-feature-011CUtKowzjCGGTB49vfnCEm
-        Pop-Location
 
         Write-ColorOutput "✓ Cloned to $SourceDir" "Green"
     }
