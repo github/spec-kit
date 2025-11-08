@@ -21,7 +21,8 @@
     "git ls-files": true,
     "git remote": true,
     "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser": true,
-    "Get-ExecutionPolicy": true
+    "Get-ExecutionPolicy": true,
+    "mkdir": true
   },
   "powershell.developer.featureFlags": [
     "RemoteSigning"
