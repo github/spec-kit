@@ -264,7 +264,9 @@ if grep -q "\[PROJECT_NAME\]" memory/constitution.md || \
   EXTRACTED_PRINCIPLES="<extracted from user input in smart parsing step>"
 
   # Invoke constitution workflow with extracted principles
-  # Pass: EXTRACTED_PRINCIPLES (if not empty)
+  # Pass: EXTRACTED_PRINCIPLES (can be empty - constitution will apply defaults)
+  # IMPORTANT: Even if EXTRACTED_PRINCIPLES is empty, still invoke the constitution
+  # workflow so it can establish default principles per constitutional behavior
   # Wait for completion
 
 else
@@ -300,6 +302,19 @@ fi
     "constitution_established": true
   }
 }
+```
+
+**Commit changes:**
+
+```bash
+# After constitution phase completes (if constitution was created/updated)
+if [ "$constitution_action" = "created" ]; then
+  git add memory/constitution.md .speckit-state.json
+  git commit -m "chore: establish project constitution
+
+- Initialize constitution with principles
+- Set up governance for spec-driven workflow"
+fi
 ```
 
 **Gate:** Constitution is OPTIONAL but RECOMMENDED. If placeholders found, establish it. If already established, reuse it.
@@ -373,6 +388,18 @@ EXTRACTED_FEATURE="<functional description extracted from user input>"
 Next phase: Clarification (optional)
 ```
 
+**Commit changes:**
+
+```bash
+# After specify phase completes, commit the specification
+git add specs/$feature_dir/ .speckit-state.json
+git commit -m "feat: add specification for $feature_name
+
+- Create feature specification
+- Initialize requirements checklist
+- Set up feature directory structure"
+```
+
 **Interactive checkpoint:** If mode = "interactive", ask:
 
 ```text
@@ -423,6 +450,19 @@ fi
   },
   "current_phase": "plan"
 }
+```
+
+**Commit changes:**
+
+```bash
+# After clarify phase completes (if not skipped), commit the updates
+if [ "$clarify_status" = "completed" ]; then
+  git add specs/$feature_dir/spec.md .speckit-state.json
+  git commit -m "docs: clarify specification for $feature_name
+
+- Resolve ambiguities and clarification points
+- Update specification with clarified requirements"
+fi
 ```
 
 **Interactive checkpoint:** If mode = "interactive", ask before proceeding to planning.
@@ -497,6 +537,19 @@ EXTRACTED_CONSTRAINTS="<technical constraints extracted from user input>"
 Next phase: Task generation
 ```
 
+**Commit changes:**
+
+```bash
+# After plan phase completes, commit all planning artifacts
+git add specs/$feature_dir/ .speckit-state.json
+git commit -m "docs: add implementation plan for $feature_name
+
+- Create technical implementation plan
+- Document research findings and technology decisions
+- Define data model and API contracts
+- Generate quickstart guide"
+```
+
 **Interactive checkpoint:** If mode = "interactive" OR mode = "auto-spec", ask:
 
 ```text
@@ -560,6 +613,18 @@ Continue to task generation? [Y/n]
 Next phase: Analysis (optional quality check)
 ```
 
+**Commit changes:**
+
+```bash
+# After tasks phase completes, commit the task breakdown
+git add specs/$feature_dir/tasks.md .speckit-state.json
+git commit -m "docs: generate task breakdown for $feature_name
+
+- Create executable task list across implementation phases
+- Break down user stories into actionable tasks
+- Define setup, foundational, and polish tasks"
+```
+
 **Interactive checkpoint:** If mode = "interactive", ask before proceeding to analysis.
 
 ---
@@ -605,6 +670,20 @@ Next phase: Analysis (optional quality check)
   },
   "current_phase": "implement"
 }
+```
+
+**Commit changes:**
+
+```bash
+# After analyze phase completes (if not skipped), commit the analysis results
+if [ "$analyze_status" = "completed" ]; then
+  git add specs/$feature_dir/analysis.md .speckit-state.json
+  git commit -m "docs: add consistency analysis for $feature_name
+
+- Validate specification and plan consistency
+- Document findings and recommendations
+- Perform quality checks before implementation"
+fi
 ```
 
 **Critical finding gate:**
@@ -658,8 +737,11 @@ fi
 # 2. Load all design documents
 # 3. Execute tasks phase-by-phase
 # 4. Mark tasks [X] as completed
-# 5. Run tests and validate
+# 5. Commit after each major milestone (per task group or phase)
+# 6. Run tests and validate
 ```
+
+**Note:** The implement command handles commits internally as tasks progress. No separate commit instruction needed here.
 
 **Real-time state updates:**
 
