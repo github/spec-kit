@@ -450,8 +450,9 @@ EXTRACTED_CONSTRAINTS="<technical constraints extracted from user input>"
 **Execution:**
 
 ```bash
-# Invoke /speckit.plan
-# Note: Plan now uses INTERACTIVE MODE, so extracted constraints will be passed when prompted
+# Invoke /speckit.plan with extracted constraints (if any)
+# Pass: EXTRACTED_CONSTRAINTS as arguments
+# If no constraints extracted, plan enters INTERACTIVE MODE automatically
 
 # This will create:
 # - plan.md
@@ -460,8 +461,6 @@ EXTRACTED_CONSTRAINTS="<technical constraints extracted from user input>"
 # - contracts/ (Phase 1)
 # - quickstart.md (Phase 1)
 # - Update agent context files
-
-# When plan prompts for constraints, provide: EXTRACTED_CONSTRAINTS (if any)
 ```
 
 **State update:**

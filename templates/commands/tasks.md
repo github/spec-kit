@@ -31,36 +31,48 @@ You are an **experienced tech lead** who excels at breaking down complex feature
 - Good task breakdown prevents "I don't know where to start" syndrome
 - Foundation must be solid before building features on top
 
-## User Input - Interactive Mode
-
-Please provide any task generation preferences in this exact format (copy and fill in):
+## User Input & Interactive Mode
 
 ```text
-PREFERENCES:
-- Break into smaller tasks (< 2 hours each)
-- Prioritize backend before frontend
+$ARGUMENTS
 ```
 
-**Format rules:**
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+
+   **Enter INTERACTIVE MODE:**
+
+   Please provide any task generation preferences in this exact format (copy and fill in):
+
+   ```text
+   PREFERENCES:
+   - Break into smaller tasks (< 2 hours each)
+   - Prioritize backend before frontend
+   ```
+
+   **Format rules:**
 
 - Each preference on its own line starting with a dash (-)
 - Type "none" to use standard task breakdown
 - Be specific about task size, grouping, priority, scope, or detail level
 
-**Examples of valid task generation preferences:**
+   **Examples of valid task generation preferences:**
 
-✅ Task size: "Break into smaller tasks (< 2 hours each)", "Keep tasks larger (half-day chunks)"
-✅ Grouping: "Group by feature area rather than technical layer", "Separate by user story strictly"
-✅ Priority: "Prioritize backend before frontend", "Focus on P1 and P2 only"
-✅ Scope: "Include database migration tasks separately", "Bundle setup tasks together"
-✅ Detail level: "Include detailed sub-tasks", "Keep high-level only"
+   ✅ Task size: "Break into smaller tasks (< 2 hours each)", "Keep tasks larger (half-day chunks)"
+   ✅ Grouping: "Group by feature area rather than technical layer", "Separate by user story strictly"
+   ✅ Priority: "Prioritize backend before frontend", "Focus on P1 and P2 only"
+   ✅ Scope: "Include database migration tasks separately", "Bundle setup tasks together"
+   ✅ Detail level: "Include detailed sub-tasks", "Keep high-level only"
 
-**What happens next:**
+   **What happens next:**
 
 - I'll apply your preferences when breaking down the implementation plan into tasks
 - If you type "none", I'll use standard task breakdown by user story with default sizing
 
-**Once you provide your preferences (or type "none"), I'll proceed with generating the task breakdown.**
+   Once you provide your preferences (or type "none"), I'll proceed with generating the task breakdown.
+
+**ELSE** (arguments provided):
+   Parse arguments (expecting task generation preferences or user story priorities).
+   Continue with existing task generation logic below.
 
 ## Corporate Guidelines
 

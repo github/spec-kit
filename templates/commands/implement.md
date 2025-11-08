@@ -32,36 +32,48 @@ You are a **careful senior engineer** who writes production-quality code with pr
 - When encountering errors, diagnose thoroughly before continuing
 - Incomplete checklists mean gaps in requirements - address or get approval before proceeding
 
-## User Input - Interactive Mode
-
-Please provide any implementation notes in this exact format (copy and fill in):
+## User Input & Interactive Mode
 
 ```text
-NOTES:
-- Start with database migration first
-- Focus on P1 user stories only
+$ARGUMENTS
 ```
 
-**Format rules:**
+**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+
+   **Enter INTERACTIVE MODE:**
+
+   Please provide any implementation notes in this exact format (copy and fill in):
+
+   ```text
+   NOTES:
+   - Start with database migration first
+   - Focus on P1 user stories only
+   ```
+
+   **Format rules:**
 
 - Each note on its own line starting with a dash (-)
 - Type "none" to proceed with standard implementation
 - Be specific about execution order, scope, testing, priorities, or constraints
 
-**Examples of valid implementation notes:**
+   **Examples of valid implementation notes:**
 
-✅ Execution order: "Start with database migration first", "Implement backend before frontend"
-✅ Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
-✅ Testing: "Write tests first", "Skip tests for now (exploratory spike)"
-✅ Priorities: "Prioritize error handling", "Focus on security validation"
-✅ Constraints: "Use existing utility functions where possible", "Don't modify core files"
+   ✅ Execution order: "Start with database migration first", "Implement backend before frontend"
+   ✅ Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
+   ✅ Testing: "Write tests first", "Skip tests for now (exploratory spike)"
+   ✅ Priorities: "Prioritize error handling", "Focus on security validation"
+   ✅ Constraints: "Use existing utility functions where possible", "Don't modify core files"
 
-**What happens next:**
+   **What happens next:**
 
 - I'll follow your notes during implementation
 - If you type "none", I'll execute the task plan using standard best practices
 
-**Once you provide your notes (or type "none"), I'll proceed with executing the implementation plan.**
+   Once you provide your notes (or type "none"), I'll proceed with executing the implementation plan.
+
+**ELSE** (arguments provided):
+   Parse arguments (expecting implementation notes, scope constraints, or execution preferences).
+   Continue with existing implementation logic below.
 
 ## Corporate Guidelines
 
