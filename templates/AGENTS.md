@@ -163,6 +163,31 @@ project-root/
 
 **Output:** All artifacts specified in plan + tests for every acceptance scenario
 
+**Code Reuse (MUST):**
+
+- **MUST** search for existing methods/functions before creating new ones
+- **MUST** refactor to enable reuse when duplicate logic is detected
+- **MUST** extract common patterns into shared utilities
+- **SHOULD** document reusable components for discoverability
+
+**Inline Documentation (MUST/MUST NOT):**
+
+**MUST document:**
+
+- Classes: Purpose and responsibilities
+- Important methods: Non-obvious behavior, business logic, complex algorithms
+- Complex logic: WHY (intent/rationale), not WHAT (implementation)
+- Business rules: References to spec sections or business requirements
+
+**MUST NOT document:**
+
+- Entities, DTOs, POCOs, data models (self-documenting via naming)
+- Trivial getters/setters or simple property accessors
+- Obvious implementations (simple CRUD operations, standard patterns)
+- Implementation details that are clear from reading the code
+
+**Documentation Style:** Explain intent and rationale (WHY), not mechanics (WHAT). Example: `// Cache invalidation required per GDPR data retention policy (spec.md L45)` NOT `// This function clears the cache`
+
 ### 4.4 Minimal Changes
 
 **Small Commits:** 1 scenario/story per commit, 1-5 files, <300 lines
@@ -176,6 +201,24 @@ project-root/
 **Build Files:** IF plan mentions → follow. IF spec requires dependency → MAY add + document in research.md. IF neither → CLARIFICATION NEEDED.
 
 **Conflict Detection:** CHECK existing versions → DETECT conflicts → emit `CLARIFICATION NEEDED` (current vs required, compatibility, options) → PREFER existing if compatible.
+
+**Version Selection (when spec/plan doesn't specify):**
+
+- **MUST** default to latest LTS (Long-Term Support) versions for languages and frameworks
+- **MUST** state version chosen in plan.md and reasoning: "Using Node.js 20 LTS (latest stable LTS as of 2025-01-08)"
+- **SHOULD** check project constraints first: existing dependencies, platform requirements, team familiarity
+- **SHOULD** prefer even-numbered versions for Node.js (LTS releases: 18, 20, 22, etc.)
+- **MAY** use current stable version for libraries without explicit LTS designation
+- **MUST NOT** use pre-release, beta, or nightly versions without explicit spec approval
+
+**LTS Examples:**
+
+- Node.js: 20.x (LTS), 22.x (LTS) - prefer latest LTS
+- Python: 3.11, 3.12 - prefer latest stable
+- Java: 17 (LTS), 21 (LTS) - prefer latest LTS
+- .NET: 6.0 (LTS), 8.0 (LTS) - prefer latest LTS
+- React: Latest stable major version (no formal LTS)
+- PostgreSQL: Latest stable major version
 
 ### 4.6 Read-Only Defaults & Guardrails
 

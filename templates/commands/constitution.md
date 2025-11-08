@@ -45,6 +45,69 @@ You are a **technical governance architect** with experience establishing engine
 - Every principle violation should either block progress OR require explicit justification
 - The best principles are ones developers actually follow because they make sense
 
+## Default Constitution Principles
+
+**IMPORTANT: Only apply defaults when user provides NO principles input.**
+
+**Detection criteria for "no input":**
+
+- User provides empty/whitespace-only input in interactive mode
+- User explicitly says "use defaults", "skip", or similar
+- User provides project metadata but zero principles
+
+**DO NOT apply defaults if:**
+
+- User provides even a single custom principle
+- User says "no constitution", "none", or rejects the idea
+
+**Default Principles (apply when criteria met):**
+
+```text
+Engineering Principles:
+- Good Engineering: MUST follow established software engineering principles (SOLID, DRY, separation of concerns)
+- Lean & Simple: MUST keep solutions lean - avoid over-engineering, unnecessary abstractions, or premature optimization
+- Minimal Dependencies: MUST minimize external dependencies - use standard libraries first, evaluate necessity before adding packages
+
+Code Quality:
+- Readability First: MUST prioritize code readability over cleverness - clear is better than concise
+- Composition Over Inheritance: SHOULD prefer composition patterns over deep inheritance hierarchies
+- Code Reuse: MUST check for existing methods before creating duplicates - refactor to enable reuse when needed
+
+Documentation:
+- Self-Documenting Code: MUST write code that explains itself through naming and structure
+- Intent Documentation: MUST document WHY (intent/rationale), not WHAT (implementation details)
+- Selective Comments: MUST document classes, important methods, and complex logic - MUST NOT document entities, DTOs, or trivial code
+
+Testing & Quality:
+- Test Behavior: MUST write tests that verify behavior, not implementation details
+- Explicit Error Handling: MUST handle errors explicitly - no silent failures or swallowed exceptions
+
+Versioning:
+- LTS Versions: SHOULD default to latest LTS (Long-Term Support) versions for languages and frameworks when not specified
+```
+
+**Transparency requirement:**
+When defaults are applied, MUST show user exactly which principles were used:
+
+```text
+ℹ️  No custom principles provided. Applied default constitution principles:
+
+✓ Good Engineering - Follow SOLID, DRY, separation of concerns
+✓ Lean & Simple - Avoid over-engineering and unnecessary abstractions
+✓ Minimal Dependencies - Use standard libraries first
+✓ Readability First - Prioritize clarity over cleverness
+✓ Code Reuse - Check for existing methods before creating duplicates
+✓ Self-Documenting Code - Use clear naming and structure
+✓ Intent Documentation - Document WHY, not WHAT
+✓ Selective Comments - Document important logic only
+✓ Test Behavior - Verify behavior, not implementation
+✓ Explicit Error Handling - No silent failures
+✓ LTS Versions - Default to latest LTS versions
+
+Constitution saved to: memory/constitution.md
+You can customize these principles by running this command again with your own principles.
+```
+
 ## User Input & Interactive Mode
 
 ```text
@@ -55,7 +118,9 @@ $ARGUMENTS
 
    **Enter INTERACTIVE MODE:**
 
-   Please provide the following information in this exact format (copy and fill in):
+   Please provide your constitution principles, or press Enter/provide empty input to use defaults.
+
+   **Option 1: Provide custom principles** (copy and fill in):
 
    ```text
    PRINCIPLES (one per line, format: "Name: Description"):
@@ -87,7 +152,11 @@ $ARGUMENTS
 
    📖 More examples: [PLACEHOLDER_CONSTITUTION_EXAMPLES_LINK]
 
-   Once you provide the formatted input, I'll generate your constitution document.
+   **Option 2: Use defaults**
+
+   Simply provide empty input, type "use defaults", or provide only PROJECT METADATA with zero principles to use the default constitution principles (see "Default Constitution Principles" section above for the full list).
+
+   Once you provide input (or choose defaults), I'll generate your constitution document.
 
 **ELSE** (arguments provided):
    Parse and use the provided arguments to generate the constitution.
