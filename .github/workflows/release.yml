@@ -34,29 +34,26 @@ jobs:
           .github/workflows/scripts/check-release-exists.sh ${{ steps.get_tag.outputs.new_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Delete existing release if it exists
-        if: steps.check_release.outputs.exists == 'true'
-        run: |
-          echo "Deleting existing release ${{ steps.get_tag.outputs.new_version }} to recreate with fresh packages..."
-          gh release delete ${{ steps.get_tag.outputs.new_version }} --yes --cleanup-tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Create release package variants
+        if: steps.check_release.outputs.exists == 'false'
         run: |
           chmod +x .github/workflows/scripts/create-release-packages.sh
           .github/workflows/scripts/create-release-packages.sh ${{ steps.get_tag.outputs.new_version }}
       - name: Generate release notes
+        if: steps.check_release.outputs.exists == 'false'
         id: release_notes
         run: |
           chmod +x .github/workflows/scripts/generate-release-notes.sh
           .github/workflows/scripts/generate-release-notes.sh ${{ steps.get_tag.outputs.new_version }} ${{ steps.get_tag.outputs.latest_tag }}
       - name: Create GitHub Release
+        if: steps.check_release.outputs.exists == 'false'
         run: |
           chmod +x .github/workflows/scripts/create-github-release.sh
           .github/workflows/scripts/create-github-release.sh ${{ steps.get_tag.outputs.new_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Update version in pyproject.toml (for release artifacts only)
+        if: steps.check_release.outputs.exists == 'false'
         run: |
           chmod +x .github/workflows/scripts/update-version.sh
           .github/workflows/scripts/update-version.sh ${{ steps.get_tag.outputs.new_version }}
