@@ -20,7 +20,8 @@ param(
     [switch]$RequireTasks,
     [switch]$IncludeTasks,
     [switch]$PathsOnly,
-    [switch]$Help
+    [switch]$Help,
+    [string]$Arguments = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +38,7 @@ OPTIONS:
   -RequireTasks       Require tasks.md to exist (for implementation phase)
   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
   -PathsOnly          Only output path variables (no prerequisite validation)
+  -Arguments          Optional user description (for consistency with setup-plan)
   -Help, -h           Show this help message
 
 EXAMPLES:

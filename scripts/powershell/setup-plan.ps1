@@ -4,16 +4,18 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
-    [switch]$Help
+    [switch]$Help,
+    [string]$Arguments = ""
 )
 
 $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Output "Usage: ./setup-plan.ps1 [-Json] [-Help]"
-    Write-Output "  -Json     Output results in JSON format"
-    Write-Output "  -Help     Show this help message"
+    Write-Output "Usage: ./setup-plan.ps1 [-Json] [-Arguments <description>] [-Help]"
+    Write-Output "  -Json         Output results in JSON format"
+    Write-Output "  -Arguments    Optional user description to record in plan template"
+    Write-Output "  -Help         Show this help message"
     exit 0
 }
 
@@ -33,8 +35,21 @@ New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
 # Copy plan template if it exists, otherwise note it or create empty file
 $template = Join-Path $paths.REPO_ROOT '.specify/templates/plan-template.md'
-if (Test-Path $template) { 
+if (Test-Path $template) {
     Copy-Item $template $paths.IMPL_PLAN -Force
+
+    # Replace the Input line with user arguments if provided
+    if ($Arguments) {
+        # Escape special regex characters in the replacement string
+        $escapedArgs = [regex]::Escape($Arguments)
+        # Note: [regex]::Escape escapes for pattern matching, but for replacement we need literal $
+        $escapedArgs = $Arguments -replace '\$', '$$'
+
+        $content = Get-Content $paths.IMPL_PLAN -Raw
+        $content = $content -replace '\*\*Input\*\*:.*', "**Input**: User description: `"$escapedArgs`""
+        Set-Content -Path $paths.IMPL_PLAN -Value $content -NoNewline
+    }
+
     Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
 } else {
     Write-Warning "Plan template not found at $template"

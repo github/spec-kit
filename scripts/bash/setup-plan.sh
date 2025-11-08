@@ -4,21 +4,32 @@ set -e
 
 # Parse command line arguments
 JSON_MODE=false
-ARGS=()
+ARGUMENTS=""
 
-for arg in "$@"; do
-    case "$arg" in
-        --json) 
-            JSON_MODE=true 
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --json)
+            JSON_MODE=true
+            shift
             ;;
-        --help|-h) 
-            echo "Usage: $0 [--json]"
-            echo "  --json    Output results in JSON format"
-            echo "  --help    Show this help message"
-            exit 0 
+        --arguments)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "ERROR: --arguments requires a value" >&2
+                exit 1
+            fi
+            ARGUMENTS="$2"
+            shift 2
             ;;
-        *) 
-            ARGS+=("$arg") 
+        --help|-h)
+            echo "Usage: $0 [--json] [--arguments <description>]"
+            echo "  --json         Output results in JSON format"
+            echo "  --arguments    Optional user description to record in plan template"
+            echo "  --help         Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "ERROR: Unknown option '$1'. Use --help for usage information." >&2
+            exit 1
             ;;
     esac
 done
@@ -40,6 +51,15 @@ mkdir -p "$FEATURE_DIR"
 TEMPLATE="$REPO_ROOT/.specify/templates/plan-template.md"
 if [[ -f "$TEMPLATE" ]]; then
     cp "$TEMPLATE" "$IMPL_PLAN"
+
+    # Replace the Input line with user arguments if provided
+    if [[ -n "$ARGUMENTS" ]]; then
+        # Escape special characters for sed replacement (escape &, \, /, and |)
+        ESCAPED_ARGS=$(printf '%s\n' "$ARGUMENTS" | sed 's/[&\/|\\]/\\&/g')
+        sed -i.bak "s|\*\*Input\*\*:.*|\*\*Input\*\*: User description: \"$ESCAPED_ARGS\"|" "$IMPL_PLAN"
+        rm -f "$IMPL_PLAN.bak"
+    fi
+
     echo "Copied plan template to $IMPL_PLAN"
 else
     echo "Warning: Plan template not found at $TEMPLATE"
