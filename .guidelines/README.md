@@ -1,35 +1,24 @@
 # Corporate Guidelines
 
-This directory contains corporate/organizational guidelines that customize Spec Kit behavior for your specific development environment.
-
-## Purpose
-
-These guidelines allow you to specify:
-
-- **Corporate infrastructure** - Internal scaffolding commands, package registries, SDKs
-- **Mandatory libraries** - Required corporate packages for authentication, UI components, APIs
-- **Security & compliance** - Corporate security policies, data handling requirements
-- **Coding standards** - Tech stack-specific best practices and patterns
-- **Branch naming** - Corporate branch naming conventions
+Corporate/organizational guidelines for AI agents implementing Spec-Driven Development.
 
 ## Hierarchy
 
-When making decisions, prompts follow this priority order:
+Priority order when making decisions:
 
-1. **Constitution** (`/memory/constitution.md`) - Project-specific principles (HIGHEST)
-2. **Corporate Guidelines** (this directory) - Organizational standards (MEDIUM)
-3. **Spec Kit Defaults** - Built-in best practices (LOWEST)
+1. **Constitution** (`/memory/constitution.md`) - HIGHEST
+2. **Corporate Guidelines** (this directory) - MEDIUM
+3. **Spec Kit Defaults** - LOWEST
 
-**Example**: If constitution says "MUST use PostgreSQL" but guidelines suggest MySQL, constitution wins.
+Constitution always wins. If constitution says "MUST use PostgreSQL" but guidelines suggest MySQL, use PostgreSQL.
 
 ## File Structure
 
 ```text
 .guidelines/
 ├── README.md                    # This file
-├── branch-config.json           # Branch naming configuration (Phase 2)
-├── stack-mapping.json           # Multi-stack path mapping (Phase 3)
-├── branching-guidelines.md      # Branch naming conventions
+├── branch-config.json           # Branch naming configuration
+├── stack-mapping.json           # Multi-stack path mapping
 ├── reactjs-guidelines.md        # React/frontend standards
 ├── java-guidelines.md           # Java/Spring Boot standards
 ├── dotnet-guidelines.md         # .NET/C# standards
@@ -39,57 +28,37 @@ When making decisions, prompts follow this priority order:
 
 ## Version Management
 
-All configuration files include version metadata for tracking changes and ensuring compatibility:
-
-**Configuration files** (`branch-config.json`, `stack-mapping.json`):
+Configuration files include version metadata:
 
 ```json
 {
   "version": "1.0",
-  "last_updated": "2025-01-15",
-  "description": "..."
+  "last_updated": "2025-01-15"
 }
 ```
 
-**Guideline markdown files** (optional header):
+Guideline markdown files (optional):
 
 ```markdown
 ---
 version: 1.2.0
 last_updated: 2025-01-15
-maintainer: architecture-team@company.com
 ---
 ```
 
-### Version Compatibility
+## Auto-Detection
 
-- **Major version change** (1.x → 2.x): Breaking changes, may require prompt updates
-- **Minor version change** (1.2 → 1.3): New features, backward compatible
-- **Patch version change** (1.2.0 → 1.2.1): Bug fixes, clarifications
-
-**When to update versions:**
-
-1. **Configuration files**: Update version on schema changes
-2. **Guidelines**: Update version when mandatory requirements change
-3. **Version tracking**: Add `last_updated` date on every modification
-
-## How It Works
-
-### Auto-Detection
-
-Prompts automatically detect your tech stack from project files:
+Tech stack detected from project files:
 
 - **ReactJS**: `package.json` with `"react"` dependency
 - **Java**: `pom.xml` or `build.gradle`
 - **.NET**: `*.csproj` or `*.sln`
-- **Node.js**: `package.json` with `"express"` or backend-focused dependencies
+- **Node.js**: `package.json` with `"express"` or backend dependencies
 - **Python**: `requirements.txt`, `pyproject.toml`, or `setup.py`
 
-### Multi-Stack Support (Phase 3)
+## Multi-Stack Support
 
-If multiple tech stacks detected (e.g., React frontend + Java backend), prompts load and apply both guidelines contextually using intelligent path mapping.
-
-**Configuration**: `stack-mapping.json` defines how guidelines map to project paths:
+`stack-mapping.json` defines how guidelines map to paths:
 
 ```json
 {
@@ -112,344 +81,48 @@ If multiple tech stacks detected (e.g., React frontend + Java backend), prompts 
 }
 ```
 
-**Precedence Rules**:
+Precedence (highest to lowest):
 
-1. **Explicit path mapping** (from `stack-mapping.json`) - HIGHEST
-2. **File extension** (`*.tsx` → React, `*.java` → Java)
-3. **Directory convention** (`frontend/` → React, `backend/` → Java)
-4. **Auto-detection** (from project markers) - LOWEST
+1. Explicit path mapping (`stack-mapping.json`)
+2. File extension (`*.tsx` → React, `*.java` → Java)
+3. Directory convention (`frontend/` → React, `backend/` → Java)
+4. Auto-detection (project markers)
 
-**Example Application**:
+## Branch Configuration
 
-```text
-Project structure:
-  frontend/src/components/Login.tsx  → React guidelines
-  backend/src/main/java/Auth.java    → Java guidelines
-  shared/utils/validation.ts         → Both guidelines or constitution priority
-```
+**Note**: Branch naming strategy is handled by `branch-config.json` (machine-readable configuration) and scripts (`scripts/bash/create-new-feature.sh`), not by markdown guidelines. AI agents should use the JSON configuration for deterministic branch creation.
 
-**Benefits**:
-
-- **Contextual validation**: Each stack validated against correct guidelines
-- **Clear organization**: Guidelines apply where they make sense
-- **Conflict resolution**: Precedence rules handle overlapping concerns
-- **Flexible mapping**: Customize paths per your project structure
+See `docs/branching-strategy.md` for user documentation on the branching system.
 
 ## Customization
 
-### Step 1: Copy This Directory to Your Project
+Replace `@YOUR_ORG` placeholders with actual corporate package names in all `*-guidelines.md` files.
 
-When initializing a new project with Specify:
+## Constitution vs Guidelines
 
-```bash
-specify init --ai claude
-```
+- **Constitution** (`/memory/constitution.md`): Project principles, highest priority, requires team vote
+- **Guidelines** (`/.guidelines/*.md`): Corporate infrastructure, medium priority, updated as standards change
 
-Copy `.guidelines/` from the Spec Kit release package to your project root.
+## Non-Compliance
 
-### Step 2: Customize Guidelines
+When guideline violations detected:
 
-Edit each `*-guidelines.md` file to match your organization:
+1. Warning message about non-compliance
+2. Create `.guidelines-todo.md` in feature directory
+3. Continue work (guidelines are recommendations, not blockers)
 
-**Before** (generic placeholder):
+## Usage
 
-```markdown
-## Scaffolding
+Load guidelines automatically based on detected tech stack. Apply in priority order: Constitution > Guidelines > Defaults.
 
-Use corporate React scaffolding:
-
-```bash
-npx @YOUR_ORG/create-react-app my-app
-```
-
-**After** (customized):
-
-```markdown
-## Scaffolding
-
-Use corporate React scaffolding:
-
-```bash
-npx @acmecorp/create-react-app my-app --template typescript
-```
-
-### Step 3: Commit Guidelines to Your Repo
-
-Guidelines are **project-specific** and should be versioned:
-
-```bash
-git add .guidelines/
-git commit -m "chore: add corporate development guidelines"
-```
-
-### Step 4: Update as Standards Evolve
-
-When corporate standards change:
-
-1. Update relevant `*-guidelines.md` files
-2. Commit changes
-3. Spec Kit prompts automatically use updated guidelines
-
-## Guidelines vs Constitution
-
-| Aspect | Constitution | Guidelines |
-|--------|--------------|------------|
-| **Scope** | Project principles | Corporate infrastructure |
-| **Priority** | Highest | Medium |
-| **Location** | `/memory/constitution.md` | `/.guidelines/*.md` |
-| **Changes** | Requires team vote | Updated as standards change |
-| **Example** | "MUST write tests first" | "Use @acme/ui-components" |
-
-## Non-Compliance Handling
-
-When prompts detect guideline violations:
-
-1. **Warning**: Explicit message about non-compliance
-2. **TODO file**: Creates `.guidelines-todo.md` in feature directory listing violations
-3. **Continue**: Allows work to proceed (guidelines are recommendations, not blockers)
-
-**Example TODO file**:
-
-```markdown
-# Guideline Compliance TODOs
-
-## ⚠️ Violations Detected
-
-- [ ] Replace public npm packages with @acme/ui-components
-- [ ] Configure Artifactory registry in package.json
-- [ ] Update authentication to use @acme/idm-client
-
-## Corporate Standards
-
-See: `.guidelines/reactjs-guidelines.md`
-```
-
-## Usage in Prompts
-
-Guidelines are read by these prompts:
-
-- **`/specify plan`** - Architecture decisions (CRITICAL)
-- **`/specify implement`** - Code generation (CRITICAL)
-- **`/specify analyze`** - Compliance validation (IMPORTANT)
-- **`/specify tasks`** - Task generation (IMPORTANT)
-
-**Example usage** (automatic, no user action needed):
-
-```text
-User: /specify plan
-
-Agent:
-1. Reading constitution.md...
-2. Detecting tech stack... found React + Java
-3. Loading reactjs-guidelines.md and java-guidelines.md...
-4. Creating architecture plan following:
-   - Constitution principles (highest priority)
-   - Corporate guidelines (medium priority)
-   - Spec Kit defaults (lowest priority)
-```
-
-## Tech Stack Templates
+## Guideline Structure
 
 Each `*-guidelines.md` file contains:
 
-### 1. Scaffolding
-
-Corporate commands for creating new projects/modules.
-
-### 2. Package Registry
-
-Internal registry configuration (Artifactory, Nexus, etc.).
-
-### 3. Mandatory Libraries
-
-Required corporate packages with usage examples.
-
-### 4. Banned Libraries
-
-Public packages that must not be used (security/licensing).
-
-### 5. Architecture Patterns
-
-Preferred patterns (microservices, monolith, layering).
-
-### 6. Security & Compliance
-
-Authentication, authorization, data handling, logging.
-
-### 7. Coding Standards
-
-Style guides, naming conventions, file structure.
-
-## Examples
-
-### Example 1: React with Corporate UI Library
-
-**`.guidelines/reactjs-guidelines.md`**:
-
-```markdown
-## Mandatory Libraries
-
-### UI Components
-
-**MUST** use corporate component library:
-
-```bash
-npm install @acmecorp/ui-components@latest
-```
-
-**Usage**:
-
-```javascript
-import { Button, Modal, DataTable } from '@acmecorp/ui-components';
-```
-
-**Result**: When running `/specify implement`, agent generates code using `@acmecorp/ui-components` instead of public libraries like Material-UI.
-
-### Example 2: Java with Corporate SDK
-
-**`.guidelines/java-guidelines.md`**:
-
-```markdown
-## Mandatory Libraries
-
-### API Client
-
-**MUST** use corporate API SDK:
-
-```xml
-<dependency>
-    <groupId>com.acmecorp</groupId>
-    <artifactId>acme-api-client</artifactId>
-    <version>2.4.1</version>
-</dependency>
-```
-
-**Result**: When running `/specify plan`, agent includes corporate SDK in architecture instead of building custom HTTP clients.
-
-### Example 3: Multi-Stack Project
-
-**Project structure**:
-
-```text
-my-app/
-├── frontend/     # React app
-├── backend/      # Java Spring Boot
-├── .guidelines/
-│   ├── reactjs-guidelines.md
-│   └── java-guidelines.md
-```
-
-**Result**: Prompts load both guidelines and apply contextually based on which part of the codebase is being worked on.
-
-## Troubleshooting
-
-### Guidelines Not Applied
-
-**Symptom**: Agent ignores corporate libraries, uses public packages.
-
-**Solutions**:
-
-1. Check file location: Must be `/.guidelines/*.md` at project root
-2. Check file names: Must match exactly (e.g., `reactjs-guidelines.md`)
-3. Check formatting: Must follow template structure with proper headings
-4. Check tech stack detection: Run `/specify analyze` to verify detected stack
-
-### Multiple Tech Stacks Not Detected
-
-**Symptom**: Only one guideline file loaded in multi-stack project.
-
-**Solution**: Ensure project structure clearly indicates both stacks:
-
-- Frontend: `package.json` in frontend directory
-- Backend: `pom.xml` or `*.csproj` in backend directory
-
-### Constitution Conflicts with Guidelines
-
-**Symptom**: Unclear which rule to follow.
-
-**Solution**: Constitution always wins. Update constitution or guidelines to align:
-
-**Option 1** (Update constitution):
-
-```markdown
-Database: SHOULD use PostgreSQL unless corporate guidelines specify otherwise
-```
-
-**Option 2** (Update guidelines):
-
-```markdown
-NOTE: Project constitution mandates PostgreSQL. This guideline defers to constitution.
-```
-
-## Best Practices
-
-### 1. Keep Guidelines Updated
-
-Review and update quarterly or when corporate standards change.
-
-### 2. Be Specific
-
-**Bad** (vague):
-
-```markdown
-Use corporate libraries
-```
-
-**Good** (specific):
-
-```markdown
-## Authentication
-
-MUST use @acmecorp/idm-client v3.x:
-
-```bash
-npm install @acmecorp/idm-client@^3.0.0
-```
-
-Example:
-
-```javascript
-import { Auth } from '@acmecorp/idm-client';
-const user = await Auth.login(credentials);
-```
-
-### 3. Provide Examples
-
-Every guideline should include code examples showing correct usage.
-
-### 4. Document Rationale
-
-Explain **why** a guideline exists:
-
-**Example**:
-
-```markdown
-## Banned Libraries
-
-**DO NOT USE** public authentication libraries (passport, auth0, etc.)
-
-**Rationale**: Corporate security policy requires all authentication to use
-@acmecorp/idm-client for centralized audit logging and compliance.
-```
-
-### 5. Version Dependencies
-
-Always specify version ranges or exact versions:
-
-```markdown
-MUST use @acmecorp/ui-components v2.x (v1.x is deprecated, v3.x not yet approved)
-```
-
-## Support
-
-For questions about:
-
-- **Guidelines content**: Contact your tech lead or architecture team
-- **Spec Kit usage**: See main README.md or open GitHub issue
-- **Corporate standards**: Consult internal developer portal
-
-## See Also
-
-- `/memory/constitution.md` - Project-specific principles
-- `AGENTS.md` - AI agent development practices
-- Main `README.md` - Spec Kit documentation
+1. **Scaffolding**: Corporate commands for creating projects
+2. **Package Registry**: Internal registry configuration
+3. **Mandatory Libraries**: Required corporate packages
+4. **Banned Libraries**: Packages that must not be used
+5. **Architecture**: Preferred patterns
+6. **Security**: Authentication, authorization, data handling
+7. **Coding Standards**: Style guides, naming conventions
