@@ -114,35 +114,55 @@ if ($pythonCmd) {
     # Try to run the Python analyzer
     Write-Host "Running Python analyzer..." -ForegroundColor Yellow
 
+    $logPath = Join-Path $analysisDir "analyzer-log.txt"
+
+    # Change to repository root to ensure Python can find the scripts module
+    Push-Location $repoRoot
+
     try {
-        $logPath = Join-Path $analysisDir "analyzer-log.txt"
+        # Build arguments array
+        $analyzerArgs = @(
+            "-m", "scripts.python.analyzer",
+            "--project", $ProjectPath,
+            "--output", $analysisDir,
+            "--depth", $Depth,
+            "--focus", $Focus,
+            "--json"
+        )
 
-        # Change to repository root to ensure Python can find the scripts module
-        Push-Location $repoRoot
+        # Temporarily disable error action to prevent PowerShell from treating
+        # Python's stderr logging output as terminating errors
+        $previousErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
 
-        & $pythonCmd -m scripts.python.analyzer `
-            --project $ProjectPath `
-            --output $analysisDir `
-            --depth $Depth `
-            --focus $Focus `
-            --json 2>&1 | Tee-Object -FilePath $logPath | Select-Object -Last 20
+        # Run analyzer and capture output
+        & $pythonCmd $analyzerArgs 2>&1 | Out-File -FilePath $logPath -Encoding utf8
 
-        Pop-Location
+        # Restore error action preference
+        $ErrorActionPreference = $previousErrorAction
 
-        if ($LASTEXITCODE -eq 0) {
-            $pythonAnalysisStatus = "success"
-            Write-Host "✓ Python analyzer completed successfully" -ForegroundColor Green
-        } else {
-            $pythonAnalysisStatus = "failed"
-            $pythonAnalysisError = "Python analyzer failed - see analyzer-log.txt"
-            Write-Host "⚠ Python analyzer failed - will use AI-guided analysis fallback" -ForegroundColor Yellow
-        }
+        # Capture exit code before Pop-Location resets it
+        $analyzerExitCode = $LASTEXITCODE
     } catch {
-        $pythonAnalysisStatus = "failed"
-        $pythonAnalysisError = "Exception during Python analyzer: $_"
-        Write-Host "⚠ Python analyzer failed - will use AI-guided analysis fallback" -ForegroundColor Yellow
-        # Ensure we pop location even on error
+        # If we catch an exception, log it
+        $_ | Out-File -FilePath $logPath -Append -Encoding utf8
+        $analyzerExitCode = 1
+        # Restore error action preference
+        $ErrorActionPreference = $previousErrorAction
+    } finally {
+        # Always pop location
         Pop-Location
+    }
+
+    # Check result
+    if ($analyzerExitCode -eq 0) {
+        $pythonAnalysisStatus = "success"
+        Write-Host "✓ Python analyzer completed successfully" -ForegroundColor Green
+    } else {
+        $pythonAnalysisStatus = "failed"
+        $pythonAnalysisError = "Python analyzer exit code: $analyzerExitCode - see $logPath"
+        Write-Host "⚠ Python analyzer failed with exit code: $analyzerExitCode" -ForegroundColor Yellow
+        Write-Host "Check log file for details: $logPath" -ForegroundColor Cyan
     }
 } else {
     Write-Host "⚠ Python not available - will use AI-guided analysis" -ForegroundColor Yellow
