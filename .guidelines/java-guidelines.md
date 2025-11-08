@@ -428,7 +428,7 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_status ON users(status);
 ```
 
-### Logging
+### Logging (Mandatory)
 
 **MUST USE**: Corporate logging library (SLF4J + Logback with JSON format)
 
@@ -662,7 +662,7 @@ class UserControllerIntegrationTest {
 
 ✅ **PREFER**: Spring Data JPA with corporate extensions
 
-### Logging
+### Logging (Banned)
 
 ❌ **BANNED**:
 

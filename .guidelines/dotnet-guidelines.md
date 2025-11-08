@@ -437,7 +437,7 @@ public partial class InitialCreate : Migration
 }
 ```
 
-### Logging
+### Logging (Mandatory)
 
 **MUST USE**: Serilog with structured JSON logging
 
@@ -689,7 +689,7 @@ public class UsersControllerIntegrationTests : IClassFixture<WebApplicationFacto
 
 ✅ **USE INSTEAD**: `Acmecorp.Http.Client`
 
-### Logging
+### Logging (Banned)
 
 ❌ **BANNED**:
 

@@ -1,0 +1,173 @@
+# GitHub Actions workflow for automated codebase analysis
+#
+# This workflow runs the Reverse Engineering & Modernization analysis
+# on pull requests and pushes to track technical debt over time.
+#
+# Usage:
+#   1. Copy this file to .github/workflows/codebase-analysis.yml
+#   2. Customize the configuration section below
+#   3. Push to your repository
+
+name: Codebase Analysis
+
+on:
+  # Run on pull requests
+  pull_request:
+    branches: [ main, master, develop ]
+
+  # Run on pushes to main branch
+  push:
+    branches: [ main, master ]
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      analysis_depth:
+        description: 'Analysis depth (QUICK, STANDARD, COMPREHENSIVE)'
+        required: false
+        default: 'STANDARD'
+        type: choice
+        options:
+          - QUICK
+          - STANDARD
+          - COMPREHENSIVE
+
+  # Run weekly on schedule
+  schedule:
+    # Every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+
+# Configuration
+env:
+  ANALYSIS_DEPTH: STANDARD
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  analyze:
+    name: Analyze Codebase
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write  # For PR comments
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install analysis tools
+        run: |
+          # Install optional but recommended tools
+          sudo apt-get update
+          sudo apt-get install -y cloc
+
+          # Install Python tools
+          pip install pip-audit
+
+      - name: Clone spec-kit-smart
+        run: |
+          git clone https://github.com/veerabhadra-ponna/spec-kit-smart.git /tmp/spec-kit
+          chmod +x /tmp/spec-kit/scripts/bash/analyze-project.sh
+
+      - name: Run analysis
+        id: analysis
+        run: |
+          DEPTH="${{ github.event.inputs.analysis_depth || env.ANALYSIS_DEPTH }}"
+
+          /tmp/spec-kit/scripts/bash/analyze-project.sh \
+            ${{ github.workspace }} \
+            --depth "$DEPTH" \
+            --output analysis-results
+
+      - name: Upload analysis reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-reports-${{ github.run_number }}
+          path: analysis-results/
+          retention-days: 30
+
+      - name: Read analysis summary
+        id: summary
+        run: |
+          if [ -f analysis-results/metrics-summary.json ]; then
+            # Extract key metrics
+            INLINE_SCORE=$(jq -r '.feasibility.inline_upgrade_score' analysis-results/metrics-summary.json)
+            GREENFIELD_SCORE=$(jq -r '.feasibility.greenfield_rewrite_score' analysis-results/metrics-summary.json)
+            RECOMMENDATION=$(jq -r '.feasibility.recommendation' analysis-results/metrics-summary.json)
+            VULNERABLE=$(jq -r '.dependencies.vulnerable' analysis-results/metrics-summary.json)
+            OUTDATED=$(jq -r '.dependencies.outdated' analysis-results/metrics-summary.json)
+
+            echo "inline_score=$INLINE_SCORE" >> $GITHUB_OUTPUT
+            echo "greenfield_score=$GREENFIELD_SCORE" >> $GITHUB_OUTPUT
+            echo "recommendation=$RECOMMENDATION" >> $GITHUB_OUTPUT
+            echo "vulnerable=$VULNERABLE" >> $GITHUB_OUTPUT
+            echo "outdated=$OUTDATED" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let comment = '## 📊 Codebase Analysis Results\n\n';
+
+            if (fs.existsSync('analysis-results/metrics-summary.json')) {
+              const metrics = JSON.parse(fs.readFileSync('analysis-results/metrics-summary.json', 'utf8'));
+
+              comment += `### Feasibility Scores\n\n`;
+              comment += `- **Inline Upgrade**: ${metrics.feasibility.inline_upgrade_score}/100\n`;
+              comment += `- **Greenfield Rewrite**: ${metrics.feasibility.greenfield_rewrite_score}/100\n`;
+              comment += `- **Recommendation**: ${metrics.feasibility.recommendation.toUpperCase().replace(/_/g, ' ')}\n`;
+              comment += `- **Confidence**: ${metrics.feasibility.confidence}%\n\n`;
+
+              comment += `### Dependency Health\n\n`;
+              comment += `- **Total**: ${metrics.dependencies.total}\n`;
+              comment += `- **Outdated**: ${metrics.dependencies.outdated}\n`;
+              comment += `- **Vulnerable**: ${metrics.dependencies.vulnerable} ${metrics.dependencies.vulnerable > 0 ? '⚠️' : '✅'}\n`;
+              comment += `- **Deprecated**: ${metrics.dependencies.deprecated}\n\n`;
+
+              comment += `### Code Metrics\n\n`;
+              comment += `- **Lines of Code**: ${metrics.metrics.code_lines.toLocaleString()}\n`;
+              comment += `- **Files**: ${metrics.metrics.file_count}\n`;
+              comment += `- **Test Coverage**: ${metrics.metrics.test_coverage}%\n\n`;
+
+              if (metrics.dependencies.vulnerable > 0) {
+                comment += `\n⚠️ **Security Alert**: ${metrics.dependencies.vulnerable} vulnerable dependencies detected!\n\n`;
+              }
+
+              comment += `\n📁 Full reports available in workflow artifacts.\n`;
+            } else {
+              comment += '❌ Analysis failed or incomplete. Check workflow logs for details.\n';
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail on critical vulnerabilities
+        if: steps.summary.outputs.vulnerable > 0
+        run: |
+          echo "::error::${{ steps.summary.outputs.vulnerable }} vulnerable dependencies detected!"
+          echo "Review analysis-results/analysis-report.md for details"
+          exit 1
+
+      - name: Track metrics over time
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Save metrics to a tracking file
+          mkdir -p metrics-history
+          cp analysis-results/metrics-summary.json metrics-history/metrics-$(date +%Y-%m-%d).json
+
+          # TODO: Optionally push to metrics storage or dashboard

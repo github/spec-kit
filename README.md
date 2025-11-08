@@ -1,19 +1,15 @@
-<div align="center">
-    <img src="./media/logo_small.webp" alt="Spec Kit Logo"/>
-    <h1>🌱 Spec Kit</h1>
-    <h3><em>Build high-quality software faster.</em></h3>
-</div>
+![Spec Kit Logo](./media/logo_small.webp)
 
-<p align="center">
-    <strong>An open source toolkit that allows you to focus on product scenarios and predictable outcomes instead of vibe coding every piece from scratch.</strong>
-</p>
+# 🌱 Spec Kit
 
-<p align="center">
-    <a href="https://github.com/veerabhadra-ponna/spec-kit-smart/actions/workflows/release.yml"><img src="https://github.com/veerabhadra-ponna/spec-kit-smart/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
-    <a href="https://github.com/veerabhadra-ponna/spec-kit-smart/stargazers"><img src="https://img.shields.io/github/stars/veerabhadra-ponna/spec-kit-smart?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/veerabhadra-ponna/spec-kit-smart/blob/main/LICENSE"><img src="https://img.shields.io/github/license/veerabhadra-ponna/spec-kit-smart" alt="License"/></a>
-    <a href="https://veerabhadra-ponna.github.io/spec-kit-smart/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
-</p>
+*Build high-quality software faster.*
+
+**An open source toolkit that allows you to focus on product scenarios and predictable outcomes instead of vibe coding every piece from scratch.**
+
+[![Release](https://github.com/veerabhadra-ponna/spec-kit-smart/actions/workflows/release.yml/badge.svg)](https://github.com/veerabhadra-ponna/spec-kit-smart/actions/workflows/release.yml)
+[![GitHub stars](https://img.shields.io/github/stars/veerabhadra-ponna/spec-kit-smart?style=social)](https://github.com/veerabhadra-ponna/spec-kit-smart/stargazers)
+[![License](https://img.shields.io/github/license/veerabhadra-ponna/spec-kit-smart)](https://github.com/veerabhadra-ponna/spec-kit-smart/blob/main/LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://veerabhadra-ponna.github.io/spec-kit-smart/)
 
 ---
 
@@ -129,7 +125,7 @@ Use **`/speckit.implement`** to execute all tasks and build your feature accordi
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
-### Workflow Diagram
+### Workflow Diagram (Spec-Driven Development)
 
 ```mermaid
 flowchart TD
@@ -186,7 +182,7 @@ Then use `/speckit.resume` to continue after chat limits or interruptions.
 
 **NEW**: Analyze existing projects, assess technical debt, and plan modernization strategies!
 
-### Quick Start
+### Quick Start (Reverse Engineering)
 
 ```bash
 # In your AI coding agent (Claude Code, GitHub Copilot, etc.)
@@ -235,7 +231,7 @@ Comprehensive analysis with:
 
 **Hybrid (Strangler Fig)**: Extract modules incrementally, modernize, maintain parallel systems
 
-### Documentation
+### Documentation (Reverse Engineering)
 
 - **📖 Complete Guide**: [docs/reverse-engineering.md](docs/reverse-engineering.md) - Comprehensive documentation
 - **💡 Examples & Prompts**: [docs/reverse-engineering-examples.md](docs/reverse-engineering-examples.md) - Practical workflows
@@ -388,7 +384,7 @@ Additional commands for enhanced quality and validation:
 
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches. **Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands.** |
 
 ## 🎭 Orchestrator Workflow
 
@@ -627,7 +623,7 @@ To start over:
 
 Simply fix the issue (e.g., `npm install stripe`) and run `/speckit.resume` to continue.
 
-### Workflow Diagram
+### Workflow Diagram (Orchestrator)
 
 ```mermaid
 flowchart TD
@@ -855,7 +851,7 @@ graph TD
 
 **Example:** If constitution says "MUST use PostgreSQL" but guidelines suggest MySQL, constitution wins.
 
-### Quick Start
+### Quick Start (Guidelines)
 
 1. Customize guidelines: Edit `.guidelines/*.md` files
 2. Configure branch naming: Edit `.guidelines/branch-config.json` (optional)
@@ -863,7 +859,7 @@ graph TD
 4. Auto-fix issues: `./scripts/bash/autofix-guidelines.sh`
 5. Set up CI/CD: Copy templates from `.guidelines/examples/ci-cd/`
 
-### Documentation
+### Documentation (Guidelines)
 
 See `.guidelines/README.md`, `GUIDELINES-IMPLEMENTATION-PLAN.md`, `IMPROVEMENTS.md`, and `.guidelines/examples/ci-cd/` for details.
 
@@ -882,9 +878,9 @@ Spec-Driven Development is a structured process that emphasizes:
 
 | Phase | Focus | Key Activities |
 |-------|-------|----------------|
-| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+| **0-to-1 Development** ("Greenfield") | Generate from scratch | Start with high-level requirements, generate specifications, plan implementation steps, build production-ready applications |
+| **Creative Exploration** | Parallel implementations | Explore diverse solutions, support multiple technology stacks & architectures, experiment with UX patterns |
+| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | Add features iteratively, modernize legacy systems, adapt processes |
 
 ## 🎯 Experimental Goals
 
@@ -931,8 +927,7 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 ## 📋 Detailed Process
 
-<details>
-<summary>Click to expand the detailed step-by-step walkthrough</summary>
+**Step-by-step walkthrough:**
 
 You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
 
@@ -1207,8 +1202,6 @@ The `/speckit.implement` command will:
 >The AI agent will execute local CLI commands (such as `dotnet`, `npm`, etc.) - make sure you have the required tools installed on your machine.
 
 Once the implementation is complete, test the application and resolve any runtime errors that may not be visible in CLI logs (e.g., browser console errors). You can copy and paste such errors back to your AI agent for resolution.
-
-</details>
 
 ---
 

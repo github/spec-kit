@@ -1,0 +1,157 @@
+# GitLab CI configuration for automated codebase analysis
+#
+# This configuration runs the Reverse Engineering & Modernization analysis
+# and publishes results as artifacts.
+#
+# Usage:
+#   1. Add this to your .gitlab-ci.yml or include it
+#   2. Customize the variables section below
+#   3. Push to trigger pipeline
+
+# Variables
+variables:
+  ANALYSIS_DEPTH: "STANDARD"
+  PYTHON_VERSION: "3.11"
+
+# Only run analysis on main branch and merge requests
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - when: manual
+
+stages:
+  - analyze
+  - report
+
+# Analysis job
+codebase_analysis:
+  stage: analyze
+  image: python:${PYTHON_VERSION}
+
+  before_script:
+    # Install tools
+    - apt-get update
+    - apt-get install -y cloc git
+
+    # Install Python tools
+    - pip install pip-audit
+
+    # Clone spec-kit-smart
+    - git clone https://github.com/veerabhadra-ponna/spec-kit-smart.git /tmp/spec-kit
+    - chmod +x /tmp/spec-kit/scripts/bash/analyze-project.sh
+
+  script:
+    - |
+      /tmp/spec-kit/scripts/bash/analyze-project.sh \
+        ${CI_PROJECT_DIR} \
+        --depth ${ANALYSIS_DEPTH} \
+        --output analysis-results
+
+  artifacts:
+    name: "analysis-reports-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - analysis-results/
+    reports:
+      # Expose metrics as GitLab metrics
+      metrics: analysis-results/metrics-summary.json
+    expire_in: 30 days
+    when: always
+
+  allow_failure: true
+
+  # Cache dependencies
+  cache:
+    key: analysis-tools
+    paths:
+      - /tmp/spec-kit
+
+# Report job - create merge request comment
+post_mr_comment:
+  stage: report
+  image: alpine:latest
+  needs: [codebase_analysis]
+
+  before_script:
+    - apk add --no-cache jq curl
+
+  script:
+    - |
+      if [ -f analysis-results/metrics-summary.json ]; then
+        # Extract metrics
+        INLINE_SCORE=$(jq -r '.feasibility.inline_upgrade_score' analysis-results/metrics-summary.json)
+        GREENFIELD_SCORE=$(jq -r '.feasibility.greenfield_rewrite_score' analysis-results/metrics-summary.json)
+        RECOMMENDATION=$(jq -r '.feasibility.recommendation' analysis-results/metrics-summary.json)
+        VULNERABLE=$(jq -r '.dependencies.vulnerable' analysis-results/metrics-summary.json)
+        OUTDATED=$(jq -r '.dependencies.outdated' analysis-results/metrics-summary.json)
+
+        # Create comment
+        COMMENT="## 📊 Codebase Analysis Results\n\n"
+        COMMENT+="### Feasibility Scores\n\n"
+        COMMENT+="- **Inline Upgrade**: ${INLINE_SCORE}/100\n"
+        COMMENT+="- **Greenfield Rewrite**: ${GREENFIELD_SCORE}/100\n"
+        COMMENT+="- **Recommendation**: ${RECOMMENDATION}\n\n"
+        COMMENT+="### Dependencies\n\n"
+        COMMENT+="- **Outdated**: ${OUTDATED}\n"
+        COMMENT+="- **Vulnerable**: ${VULNERABLE}\n\n"
+
+        if [ "$VULNERABLE" -gt 0 ]; then
+          COMMENT+="⚠️ **Security Alert**: ${VULNERABLE} vulnerable dependencies!\n\n"
+        fi
+
+        COMMENT+="📁 Full reports available in pipeline artifacts.\n"
+
+        # Post comment to MR (requires CI/CD token with api scope)
+        if [ -n "$CI_MERGE_REQUEST_IID" ]; then
+          curl --request POST \
+            --header "PRIVATE-TOKEN: ${CI_JOB_TOKEN}" \
+            --data-urlencode "body=${COMMENT}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
+        fi
+      fi
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+  allow_failure: true
+
+# Security gate - fail pipeline on critical vulnerabilities
+security_gate:
+  stage: report
+  image: alpine:latest
+  needs: [codebase_analysis]
+
+  before_script:
+    - apk add --no-cache jq
+
+  script:
+    - |
+      if [ -f analysis-results/metrics-summary.json ]; then
+        VULNERABLE=$(jq -r '.dependencies.vulnerable' analysis-results/metrics-summary.json)
+
+        if [ "$VULNERABLE" -gt 0 ]; then
+          echo "ERROR: ${VULNERABLE} vulnerable dependencies detected!"
+          echo "Review analysis-results/analysis-report.md for details"
+          exit 1
+        fi
+      fi
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+  allow_failure: false  # Block pipeline on vulnerabilities
+
+# Scheduled weekly analysis
+weekly_analysis:
+  extends: codebase_analysis
+  variables:
+    ANALYSIS_DEPTH: "COMPREHENSIVE"
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+  after_script:
+    # TODO: Send notification or update dashboard
+    - echo "Weekly analysis complete"
