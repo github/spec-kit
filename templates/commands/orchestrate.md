@@ -55,6 +55,65 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+### Smart Input Parsing
+
+The user input may contain a mixture of:
+
+- **Principles**: Coding standards, architectural patterns, quality standards (goes to constitution)
+- **Functional specification**: What to build and why (goes to specify)
+- **Technical constraints**: How to build it, technology choices (goes to plan)
+
+**Your task**: Parse the user input and intelligently extract these components:
+
+1. **Identify Principles** (for constitution phase):
+   - Look for: coding standards, naming conventions, architecture patterns, quality gates
+   - Keywords: "always", "never", "must", "standard", "principle", "rule", "convention"
+   - Examples: "Use clean architecture", "Follow SOLID principles", "No God objects"
+
+2. **Identify Functional Spec** (for specify phase):
+   - Look for: User needs, business goals, what features to build
+   - Keywords: "user", "feature", "add", "create", "implement", "need", "want"
+   - Examples: "Add user authentication", "Create analytics dashboard"
+
+3. **Identify Technical Constraints** (for plan phase):
+   - Look for: Technology choices, performance requirements, integrations
+   - Keywords: "use", "must use", "integrate with", "performance", "< Xms"
+   - Examples: "Must use PostgreSQL", "< 200ms response time"
+
+If user input contains multiple components, you will pass the appropriate extracted content to each phase.
+
+### Extraction Validation Rules
+
+**CRITICAL: After extraction, validate inputs:**
+
+1. **EXTRACTED_FEATURE must not be empty:**
+   - If empty: ERROR - cannot proceed without a feature description
+   - Minimum length: 10 characters
+   - Ask user: "What feature do you want to build?"
+
+2. **Keep related clauses together:**
+   - "Add X using Y" → Keep full phrase, note "using Y" as constraint
+   - Don't split mid-sentence - preserve context
+
+3. **Handle ambiguity:**
+   - If only constraints provided (no feature) → Request feature description
+   - If only feature provided (no constraints) → Proceed with defaults
+   - If extraction unclear → Show what was extracted, ask for confirmation
+
+**Example Extractions:**
+
+**Input 1:** "Add user authentication using OAuth2. Must support Google and GitHub. Response time < 100ms. Follow clean architecture."
+
+**Extracted:**
+
+- Principles: "Follow clean architecture"
+- Functional: "Add user authentication. Must support Google and GitHub providers."
+- Technical: "using OAuth2, Response time < 100ms, Must support Google and GitHub"
+
+**Input 2:** "Must use PostgreSQL. < 200ms response time." (INVALID - no feature!)
+
+**Action:** ERROR - "No feature description found. Please provide what you want to build."
+
 ## Workflow State Management
 
 ### State File: `.speckit-state.json`
@@ -185,18 +244,42 @@ Optional phases in brackets are skippable based on user preference or context.
 
 #### **PHASE 1: Constitution Check**
 
-**Purpose:** Ensure project constitution exists
+**Purpose:** Ensure project constitution is established (run ONCE per repository)
 
-**Execution:**
+**Smart Constitution Logic:**
 
 ```bash
-# Check if constitution exists
-if [ ! -f memory/constitution.md ]; then
-  echo "⚠️  No constitution found. Running /speckit.constitution first..."
-  # Invoke constitution workflow
+# Step 1: Check if constitution is ESTABLISHED (not just file exists)
+# memory/constitution.md always exists but may contain template placeholders
+
+# Check for placeholder tokens (template state)
+if grep -q "\[PROJECT_NAME\]" memory/constitution.md || \
+   grep -q "\[PRINCIPLE_1_NAME\]" memory/constitution.md || \
+   grep -q "\[CONSTITUTION_VERSION\]" memory/constitution.md; then
+
+  echo "⚠️  Constitution template found but not yet established"
+  echo "Running /speckit.constitution to fill in principles..."
+
+  # Extract principles from user input (if any)
+  EXTRACTED_PRINCIPLES="<extracted from user input in smart parsing step>"
+
+  # Invoke constitution workflow with extracted principles
+  # Pass: EXTRACTED_PRINCIPLES (if not empty)
   # Wait for completion
+
+else
+  echo "✓ Constitution already established: memory/constitution.md"
+  echo "✓ Skipping constitution phase (no placeholders found)"
+  # Mark as completed-existing and proceed to specify
 fi
 ```
+
+**Key Points:**
+
+- `memory/constitution.md` ALWAYS exists (created during repo setup)
+- Template contains placeholders: `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`, `[PRINCIPLE_1_DESCRIPTION]`, etc.
+- Constitution is "established" when placeholders are replaced with actual values
+- Check for placeholder tokens to determine if constitution needs to be filled
 
 **State update:**
 
@@ -204,16 +287,29 @@ fi
 {
   "checkpoints": {
     "constitution": {
-      "status": "completed",
+      "status": "completed|completed-existing",
       "timestamp": "<timestamp>",
-      "file": "memory/constitution.md"
+      "file": "memory/constitution.md",
+      "action": "created|reused-existing",
+      "has_placeholders": false
     }
   },
-  "current_phase": "specify"
+  "current_phase": "specify",
+  "context": {
+    "constitution_exists": true,
+    "constitution_established": true
+  }
 }
 ```
 
-**Gate:** Constitution MUST exist before proceeding.
+**Gate:** Constitution is OPTIONAL but RECOMMENDED. If placeholders found, establish it. If already established, reuse it.
+
+**Rationale:**
+
+- Constitution is established once per repository, not per feature
+- Subsequent orchestrations skip this step if already established
+- Template file always exists, check content not file existence
+- `templates/reverse-engineering-constitution-template.md` is for analyzing existing codebases (reverse engineering workflow)
 
 ---
 
@@ -221,10 +317,25 @@ fi
 
 **Purpose:** Create feature specification
 
+**Smart Feature Extraction:**
+
+Extract the functional specification (WHAT and WHY) from user input:
+
+```text
+# From user input, extract:
+# - Feature name/description (WHAT to build)
+# - User needs and goals (WHY to build it)
+# - Remove any HOW details (save those for plan phase)
+
+EXTRACTED_FEATURE="<functional description extracted from user input>"
+```
+
 **Execution:**
 
 ```bash
-# Invoke /speckit.specify with user's feature description
+# Invoke /speckit.specify with extracted feature description
+# Pass: EXTRACTED_FEATURE (the WHAT and WHY)
+
 # The specify command will:
 # - Generate branch and feature number
 # - Create specs/[###-name]/ directory
@@ -322,10 +433,26 @@ fi
 
 **Purpose:** Generate technical implementation plan
 
+**Smart Technical Extraction:**
+
+Extract technical constraints (HOW to build) from user input:
+
+```text
+# From user input, extract:
+# - Technology requirements (databases, frameworks, libraries)
+# - Performance requirements (response time, throughput)
+# - Integration requirements (external systems, APIs)
+# - Compliance requirements (GDPR, security standards)
+
+EXTRACTED_CONSTRAINTS="<technical constraints extracted from user input>"
+```
+
 **Execution:**
 
 ```bash
 # Invoke /speckit.plan
+# Note: Plan now uses INTERACTIVE MODE, so extracted constraints will be passed when prompted
+
 # This will create:
 # - plan.md
 # - research.md (Phase 0)
@@ -333,6 +460,8 @@ fi
 # - contracts/ (Phase 1)
 # - quickstart.md (Phase 1)
 # - Update agent context files
+
+# When plan prompts for constraints, provide: EXTRACTED_CONSTRAINTS (if any)
 ```
 
 **State update:**

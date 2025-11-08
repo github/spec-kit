@@ -219,16 +219,18 @@ Given that feature description, do this:
       - Find the highest number N
       - Use N+1 for the new branch number
 
-   d. **OS Detection & Script Execution**:   **Environment Variable Override (Optional)**:
+   d. **OS Detection & Script Execution**:
+
+   **Step 1: Check SPEC_KIT_PLATFORM Environment Variable**:
 
    First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
    - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
    - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
-   - If not set or `auto` → proceed with auto-detection below
+   - If not set or `auto` → proceed to Step 2 (auto-detection)
 
-      **Auto-detect Operating System**:
-      - On Unix/Linux/macOS: Run `uname`. If successful → use bash script below
-      - On Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell script below
+   **Step 2: Auto-detect Operating System** (only if SPEC_KIT_PLATFORM not set):
+   - On Unix/Linux/macOS: Run `uname`. If successful → use bash script below
+   - On Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell script below
 
       **For Unix/Linux/macOS (bash)**:
 

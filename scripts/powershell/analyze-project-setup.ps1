@@ -71,7 +71,7 @@ $templatesDir = Join-Path $repoRoot ".specify/templates"
 $templateFiles = @{
     "analysis-report-template.md" = $analysisReport
     "upgrade-plan-template.md" = $upgradePlan
-    "recommended-constitution-template.md" = $recommendedConstitution
+    "reverse-engineering-constitution-template.md" = $recommendedConstitution
 }
 
 foreach ($template in $templateFiles.Keys) {

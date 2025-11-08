@@ -8,7 +8,32 @@
     },
     "chat.tools.terminal.autoApprove": {
         ".specify/scripts/bash/": true,
-        ".specify/scripts/powershell/": true
-    }
+        ".specify/scripts/powershell/": true,
+        ".specify/scripts/python/": true,
+        ".specify/scripts/": true,
+        "git status": true,
+        "git diff": true,
+        "git log": true,
+        "git branch": true,
+        "git ls-remote": true,
+        "git fetch": true,
+        "git checkout": true,
+        "git add": true,
+        "git commit": true,
+        "git push": true,
+        "git pull": true,
+        "git stash": true,
+        "git show": true,
+        "git rev-parse": true,
+        "git ls-files": true,
+        "git remote": true,
+        "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser": true,
+        "Get-ExecutionPolicy": true
+    },
+    "powershell.developer.featureFlags": {
+        "RemoteSigning": false
+    },
+    "terminal.integrated.allowChords": false,
+    "terminal.integrated.commandsToSkipShell": []
 }
 

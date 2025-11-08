@@ -104,8 +104,8 @@ if [[ -f "$TEMPLATES_DIR/upgrade-plan-template.md" ]]; then
     cp "$TEMPLATES_DIR/upgrade-plan-template.md" "$UPGRADE_PLAN"
 fi
 
-if [[ -f "$TEMPLATES_DIR/recommended-constitution-template.md" ]]; then
-    cp "$TEMPLATES_DIR/recommended-constitution-template.md" "$RECOMMENDED_CONSTITUTION"
+if [[ -f "$TEMPLATES_DIR/reverse-engineering-constitution-template.md" ]]; then
+    cp "$TEMPLATES_DIR/reverse-engineering-constitution-template.md" "$RECOMMENDED_CONSTITUTION"
 fi
 
 # Check if we have git in the target project (optional)

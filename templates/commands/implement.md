@@ -1,8 +1,8 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
 scripts:
-  bash: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks "{ARGS}"
-  powershell: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks "{ARGS}"
+  bash: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+  powershell: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
 ## Role & Mindset
@@ -32,49 +32,36 @@ You are a **careful senior engineer** who writes production-quality code with pr
 - When encountering errors, diagnose thoroughly before continuing
 - Incomplete checklists mean gaps in requirements - address or get approval before proceeding
 
-## User Input & Interactive Mode
+## User Input - Interactive Mode
+
+Please provide any implementation notes in this exact format (copy and fill in):
 
 ```text
-$ARGUMENTS
+NOTES:
+- Start with database migration first
+- Focus on P1 user stories only
 ```
 
-**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
-
-   **Enter INTERACTIVE MODE:**
-
-   Please provide the following information in this exact format (copy and fill in):
-
-   ```text
-   NOTES:
-   - Start with database migration first
-   - Focus on P1 user stories only
-   ```
-
-   **Format rules:**
+**Format rules:**
 
 - Each note on its own line starting with a dash (-)
 - Type "none" to proceed with standard implementation
 - Be specific about execution order, scope, testing, priorities, or constraints
 
-   **Examples of valid implementation notes:**
+**Examples of valid implementation notes:**
 
-   ✅ Execution order: "Start with database migration first", "Implement backend before frontend"
-   ✅ Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
-   ✅ Testing: "Write tests first", "Skip tests for now (exploratory spike)"
-   ✅ Priorities: "Prioritize error handling", "Focus on security validation"
-   ✅ Constraints: "Use existing utility functions where possible", "Don't modify core files"
+✅ Execution order: "Start with database migration first", "Implement backend before frontend"
+✅ Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
+✅ Testing: "Write tests first", "Skip tests for now (exploratory spike)"
+✅ Priorities: "Prioritize error handling", "Focus on security validation"
+✅ Constraints: "Use existing utility functions where possible", "Don't modify core files"
 
-   **What happens next:**
+**What happens next:**
 
 - I'll follow your notes during implementation
 - If you type "none", I'll execute the task plan using standard best practices
 
-   **Once you provide your notes (or type "none"), I'll proceed with executing the implementation plan.**
-
-**ELSE** (arguments provided):
-
-   Use the provided notes as implementation guidance.
-   Continue with implementation execution below.
+**Once you provide your notes (or type "none"), I'll proceed with executing the implementation plan.**
 
 ## Corporate Guidelines
 
@@ -175,14 +162,16 @@ Contact DevOps team for package access.
 
 ## Outline
 
-1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root.   **Environment Variable Override (Optional)**:
+1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root.
+
+   **Step 1: Check SPEC_KIT_PLATFORM Environment Variable**:
 
    First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
    - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
    - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
-   - If not set or `auto` → proceed with auto-detection below
+   - If not set or `auto` → proceed to Step 2 (auto-detection)
 
-   **Auto-detect Operating System**:
+   **Step 2: Auto-detect Operating System** (only if SPEC_KIT_PLATFORM not set):
    - On Unix/Linux/macOS: Run `uname`. If successful → use bash script below
    - On Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell script below
 

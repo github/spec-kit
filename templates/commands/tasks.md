@@ -1,8 +1,8 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
 scripts:
-  bash: scripts/bash/check-prerequisites.sh --json "{ARGS}"
-  powershell: scripts/powershell/check-prerequisites.ps1 -Json "{ARGS}"
+  bash: scripts/bash/check-prerequisites.sh --json
+  powershell: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
 ## Role & Mindset
@@ -31,49 +31,36 @@ You are an **experienced tech lead** who excels at breaking down complex feature
 - Good task breakdown prevents "I don't know where to start" syndrome
 - Foundation must be solid before building features on top
 
-## User Input & Interactive Mode
+## User Input - Interactive Mode
+
+Please provide any task generation preferences in this exact format (copy and fill in):
 
 ```text
-$ARGUMENTS
+PREFERENCES:
+- Break into smaller tasks (< 2 hours each)
+- Prioritize backend before frontend
 ```
 
-**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
-
-   **Enter INTERACTIVE MODE:**
-
-   Please provide the following information in this exact format (copy and fill in):
-
-   ```text
-   PREFERENCES:
-   - Break into smaller tasks (< 2 hours each)
-   - Prioritize backend before frontend
-   ```
-
-   **Format rules:**
+**Format rules:**
 
 - Each preference on its own line starting with a dash (-)
 - Type "none" to use standard task breakdown
 - Be specific about task size, grouping, priority, scope, or detail level
 
-   **Examples of valid task generation preferences:**
+**Examples of valid task generation preferences:**
 
-   ✅ Task size: "Break into smaller tasks (< 2 hours each)", "Keep tasks larger (half-day chunks)"
-   ✅ Grouping: "Group by feature area rather than technical layer", "Separate by user story strictly"
-   ✅ Priority: "Prioritize backend before frontend", "Focus on P1 and P2 only"
-   ✅ Scope: "Include database migration tasks separately", "Bundle setup tasks together"
-   ✅ Detail level: "Include detailed sub-tasks", "Keep high-level only"
+✅ Task size: "Break into smaller tasks (< 2 hours each)", "Keep tasks larger (half-day chunks)"
+✅ Grouping: "Group by feature area rather than technical layer", "Separate by user story strictly"
+✅ Priority: "Prioritize backend before frontend", "Focus on P1 and P2 only"
+✅ Scope: "Include database migration tasks separately", "Bundle setup tasks together"
+✅ Detail level: "Include detailed sub-tasks", "Keep high-level only"
 
-   **What happens next:**
+**What happens next:**
 
 - I'll apply your preferences when breaking down the implementation plan into tasks
 - If you type "none", I'll use standard task breakdown by user story with default sizing
 
-   **Once you provide your preferences (or type "none"), I'll proceed with generating the task breakdown.**
-
-**ELSE** (arguments provided):
-
-   Use the provided hints to guide task breakdown.
-   Continue with task generation logic below.
+**Once you provide your preferences (or type "none"), I'll proceed with generating the task breakdown.**
 
 ## Corporate Guidelines
 
@@ -252,14 +239,16 @@ Generate tasks with standard best practices and public libraries.
 
 ## Outline
 
-1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root.   **Environment Variable Override (Optional)**:
+1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root.
+
+   **Step 1: Check SPEC_KIT_PLATFORM Environment Variable**:
 
    First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
    - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
    - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
-   - If not set or `auto` → proceed with auto-detection below
+   - If not set or `auto` → proceed to Step 2 (auto-detection)
 
-   **Auto-detect Operating System**:
+   **Step 2: Auto-detect Operating System** (only if SPEC_KIT_PLATFORM not set):
    - Unix/Linux/macOS: Run `uname`. If successful → use bash
    - Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell
 
