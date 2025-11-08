@@ -327,6 +327,38 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
 | [Amp](https://ampcode.com/) | ✅ | |
 
+### Cross-Platform Support
+
+All packages include **both bash and PowerShell scripts**, providing seamless cross-platform support:
+
+- **Unix/Linux/macOS**: AI agents automatically use `scripts/bash/`
+- **Windows**: AI agents automatically use `scripts/powershell/`
+- **Git Bash on Windows**: Uses bash scripts automatically
+
+No need to choose between sh/ps packages - one package works everywhere!
+
+**Manual Override (Optional)**:
+
+Set the `SPEC_KIT_PLATFORM` environment variable to force a specific platform:
+
+```bash
+# Force bash scripts (Unix/Linux/macOS)
+export SPEC_KIT_PLATFORM=unix
+
+# Force PowerShell scripts (Windows)
+set SPEC_KIT_PLATFORM=windows  # CMD
+$env:SPEC_KIT_PLATFORM="windows"  # PowerShell
+
+# Use auto-detection (default)
+export SPEC_KIT_PLATFORM=auto
+```
+
+Use cases for manual override:
+
+- Testing scripts on non-native platforms
+- Cloud environments where auto-detection may be unreliable
+- Explicit platform preference for debugging
+
 ## 🔧 Specify CLI Reference
 
 The `specify` command supports the following options:

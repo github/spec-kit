@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # create-github-release.sh
-# Create a GitHub release with all template zip files
+# Create a GitHub release with all unified template zip files
 # Usage: create-github-release.sh <version>
 
 if [[ $# -ne 1 ]]; then
@@ -15,7 +15,7 @@ VERSION="$1"
 # Remove 'v' prefix from version for release title
 VERSION_NO_V=${VERSION#v}
 
-# Build list of all package files dynamically
+# Build list of all unified package files dynamically
 AGENTS=(
   claude
   gemini
@@ -33,18 +33,14 @@ AGENTS=(
   q
 )
 
-SCRIPTS=(sh ps)
-
 FILES=()
 for agent in "${AGENTS[@]}"; do
-  for script in "${SCRIPTS[@]}"; do
-    artifact=".genreleases/spec-kit-template-${agent}-${script}-${VERSION}.zip"
-    if [[ ! -f "$artifact" ]]; then
-      echo "Error: missing release artifact '$artifact'" >&2
-      exit 1
-    fi
-    FILES+=("$artifact")
-  done
+  artifact=".genreleases/spec-kit-template-${agent}-${VERSION}.zip"
+  if [[ ! -f "$artifact" ]]; then
+    echo "Error: missing release artifact '$artifact'" >&2
+    exit 1
+  fi
+  FILES+=("$artifact")
 done
 
 gh release create "$VERSION" \

@@ -1,8 +1,8 @@
 ---
 description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec.
 scripts:
-   sh: scripts/bash/check-prerequisites.sh --json --paths-only
-   ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
+   bash: scripts/bash/check-prerequisites.sh --json --paths-only
+   powershell: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
 ---
 
 ## Role & Mindset
@@ -45,7 +45,30 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 Execution steps:
 
-1. Run `{SCRIPT}` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
+1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`).   **Environment Variable Override (Optional)**:
+
+   First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
+   - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
+   - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
+   - If not set or `auto` → proceed with auto-detection below
+
+   **Auto-detect Operating System**:
+   - Unix/Linux/macOS: Run `uname`. If successful → use bash
+   - Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell
+
+   **For Unix/Linux/macOS (bash)**:
+
+   ```bash
+   {SCRIPT_BASH}
+   ```
+
+   **For Windows (PowerShell)**:
+
+   ```powershell
+   {SCRIPT_POWERSHELL}
+   ```
+
+   Parse minimal JSON payload fields:
    - `FEATURE_DIR`
    - `FEATURE_SPEC`
    - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)

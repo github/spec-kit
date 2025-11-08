@@ -1,8 +1,8 @@
 ---
 description: Generate a custom checklist for the current feature based on user requirements.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json
-  ps: scripts/powershell/check-prerequisites.ps1 -Json
+  bash: scripts/bash/check-prerequisites.sh --json
+  powershell: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
 ## Role & Mindset
@@ -67,7 +67,30 @@ $ARGUMENTS
 
 ## Execution Steps
 
-1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS list.
+1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root.   **Environment Variable Override (Optional)**:
+
+   First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
+   - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
+   - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
+   - If not set or `auto` → proceed with auto-detection below
+
+   **Auto-detect Operating System**:
+   - Unix/Linux/macOS: Run `uname`. If successful → use bash
+   - Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell
+
+   **For Unix/Linux/macOS (bash)**:
+
+   ```bash
+   {SCRIPT_BASH}
+   ```
+
+   **For Windows (PowerShell)**:
+
+   ```powershell
+   {SCRIPT_POWERSHELL}
+   ```
+
+   Parse JSON for FEATURE_DIR and AVAILABLE_DOCS list.
    - All file paths must be absolute.
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 

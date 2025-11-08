@@ -1,8 +1,8 @@
 ---
 description: Perform a non-destructive cross-artifact consistency and quality analysis across spec.md, plan.md, and tasks.md after task generation.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+  bash: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+  powershell: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
 ## Role & Mindset
@@ -260,7 +260,32 @@ Identify inconsistencies, duplications, ambiguities, and underspecified items ac
 
 ### 1. Initialize Analysis Context
 
-Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
+**OS Detection & Setup**: Detect your operating system and run the appropriate setup script from repo root.   **Environment Variable Override (Optional)**:
+
+   First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
+
+- If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
+- If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
+- If not set or `auto` → proceed with auto-detection below
+
+**Auto-detect Operating System**:
+
+- Unix/Linux/macOS: Run `uname`. If successful → use bash
+- Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell
+
+**For Unix/Linux/macOS (bash)**:
+
+```bash
+{SCRIPT_BASH}
+```
+
+**For Windows (PowerShell)**:
+
+```powershell
+{SCRIPT_POWERSHELL}
+```
+
+Parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
 
 - SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md

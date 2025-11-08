@@ -1,11 +1,11 @@
 ---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
 scripts:
-  sh: scripts/bash/setup-plan.sh --json
-  ps: scripts/powershell/setup-plan.ps1 -Json
+  bash: scripts/bash/setup-plan.sh --json
+  powershell: scripts/powershell/setup-plan.ps1 -Json
 agent_scripts:
-  sh: scripts/bash/update-agent-context.sh __AGENT__
-  ps: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
+  bash: scripts/bash/update-agent-context.sh __AGENT__
+  powershell: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
 ## Role & Mindset
@@ -140,7 +140,49 @@ When making technology choices:
 
 **IMPORTANT**: This command does NOT create the specs directory - that was already created by `/specify` command. NEVER create or move directories.
 
-1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root.
+
+   **Environment Variable Override (Optional)**:
+
+   First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
+   - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
+   - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
+   - If not set or `auto` → proceed with auto-detection below
+
+   **Auto-detect Operating System**:
+
+   On Unix/Linux/macOS, run:
+
+   ```bash
+   uname
+   ```
+
+   If successful, you're on a Unix-like system → Use bash scripts below
+
+   On Windows, check:
+
+   ```powershell
+   $env:OS
+   $IsWindows
+   ```
+
+   If `$env:OS` equals "Windows_NT" or `$IsWindows` is true → Use PowerShell scripts below
+
+   **For Unix/Linux/macOS (bash)**:
+
+   ```bash
+   {SCRIPT_BASH}
+   ```
+
+   **For Windows (PowerShell)**:
+
+   ```powershell
+   {SCRIPT_POWERSHELL}
+   ```
+
+   Parse the JSON output for: FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH
+
+   For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
    **Note**: SPECS_DIR is already set up by previous commands - use it as-is. Do NOT create new directories.
 
@@ -197,8 +239,23 @@ When making technology choices:
    - Output OpenAPI/GraphQL schema to `/contracts/`
 
 3. **Agent context update**:
-   - Run `{AGENT_SCRIPT}`
-   - These scripts detect which AI agent is in use
+
+   Run the appropriate agent context update script for your OS:
+
+   **For Unix/Linux/macOS (bash)**:
+
+   ```bash
+   {AGENT_SCRIPT_BASH}
+   ```
+
+   **For Windows (PowerShell)**:
+
+   ```powershell
+   {AGENT_SCRIPT_POWERSHELL}
+   ```
+
+   These scripts:
+   - Detect which AI agent is in use
    - Update the appropriate agent-specific context file
    - Add only new technology from current plan
    - Preserve manual additions between markers

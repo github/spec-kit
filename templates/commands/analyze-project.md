@@ -1,8 +1,8 @@
 ---
 description: Reverse engineer and analyze an existing project to assess modernization opportunities, identify technical debt, and recommend upgrade paths
 scripts:
-  sh: scripts/bash/analyze-project-setup.sh --json --project "$1" --depth "$2" --focus "$3"
-  ps: scripts/powershell/analyze-project-setup.ps1 -Json -ProjectPath "$1" -Depth "$2" -Focus "$3"
+  bash: scripts/bash/analyze-project-setup.sh --json --project "$1" --depth "$2" --focus "$3"
+  powershell: scripts/powershell/analyze-project-setup.ps1 -Json -ProjectPath "$1" -Depth "$2" -Focus "$3"
 status: EXPERIMENTAL
 version: 1.0.0-alpha
 ---
@@ -167,12 +167,37 @@ When documenting findings:
 
 **CRITICAL**: This command analyzes an **EXISTING** project, not one managed by Spec Kit. Do NOT modify the target project directory structure.
 
-1. **Setup**: Parse arguments from interactive mode or $ARGUMENTS. Run `{SCRIPT}` from repo root and parse JSON for PROJECT_PATH, ANALYSIS_DIR, ANALYSIS_REPORT, and other output paths. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup & OS Detection**: Parse arguments from interactive mode or $ARGUMENTS. Detect your operating system and run the appropriate setup script from repo root.   **Environment Variable Override (Optional)**:
+
+   First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
+   - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
+   - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
+   - If not set or `auto` → proceed with auto-detection below
+
+   **Auto-detect Operating System**:
+   - Unix/Linux/macOS: Run `uname`. If successful → use bash
+   - Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell
+
+   **For Unix/Linux/macOS (bash)**:
+
+   ```bash
+   {SCRIPT_BASH} --json --project "$1" --depth "$2" --focus "$3"
+   ```
+
+   **For Windows (PowerShell)**:
+
+   ```powershell
+   {SCRIPT_POWERSHELL} -Json -ProjectPath "$1" -Depth "$2" -Focus "$3"
+   ```
 
    **Script arguments**:
    - `$1`: PROJECT_PATH (absolute path to project being analyzed)
    - `$2`: ANALYSIS_DEPTH (QUICK | STANDARD | COMPREHENSIVE)
    - `$3`: FOCUS_AREAS (ALL | SECURITY | PERFORMANCE | ARCHITECTURE | DEPENDENCIES)
+
+   Parse JSON output for PROJECT_PATH, ANALYSIS_DIR, ANALYSIS_REPORT, and other output paths.
+
+   For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load Templates**: Read templates copied by script to ANALYSIS_DIR (analysis-report-template.md, upgrade-plan-template.md, etc.)
 

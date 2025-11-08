@@ -1,8 +1,8 @@
 ---
 description: Create or update the feature specification from a natural language feature description.
 scripts:
-  sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
-  ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
+  bash: scripts/bash/create-new-feature.sh --json "{ARGS}"
+  powershell: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
 ## ⚠️ MANDATORY: Read Agent Instructions First
@@ -219,10 +219,42 @@ Given that feature description, do this:
       - Find the highest number N
       - Use N+1 for the new branch number
 
-   d. Run the script `{SCRIPT}` with the calculated number, jira-number, and short-name:
-      - Pass `--number N+1`, `--jira-number "C12345-7890"`, and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `{SCRIPT} --json --number 5 --jira-number "C12345-7890" --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `{SCRIPT} -Json -Number 5 -JiraNumber "C12345-7890" -ShortName "user-auth" "Add user authentication"`
+   d. **OS Detection & Script Execution**:   **Environment Variable Override (Optional)**:
+
+   First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
+   - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
+   - If `SPEC_KIT_PLATFORM=windows` → use PowerShell scripts (skip auto-detection)
+   - If not set or `auto` → proceed with auto-detection below
+
+      **Auto-detect Operating System**:
+      - On Unix/Linux/macOS: Run `uname`. If successful → use bash script below
+      - On Windows: Check `$env:OS`. If "Windows_NT" → use PowerShell script below
+
+      **For Unix/Linux/macOS (bash)**:
+
+      ```bash
+      {SCRIPT_BASH} --json --number N+1 --jira-number "C12345-7890" --short-name "your-short-name" "Feature description"
+      ```
+
+      Example:
+
+      ```bash
+      {SCRIPT_BASH} --json --number 5 --jira-number "C12345-7890" --short-name "user-auth" "Add user authentication"
+      ```
+
+      **For Windows (PowerShell)**:
+
+      ```powershell
+      {SCRIPT_POWERSHELL} -Json -Number N+1 -JiraNumber "C12345-7890" -ShortName "your-short-name" "Feature description"
+      ```
+
+      Example:
+
+      ```powershell
+      {SCRIPT_POWERSHELL} -Json -Number 5 -JiraNumber "C12345-7890" -ShortName "user-auth" "Add user authentication"
+      ```
+
+      Pass the calculated number (N+1), jira-number, short-name, and feature description to the appropriate script
 
    **IMPORTANT**:
    - Check all three sources (remote branches, local branches, specs directories) to find the highest number

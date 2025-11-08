@@ -1,8 +1,8 @@
 ---
 description: Orchestrate the complete spec-driven workflow from feature description to implementation
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json
-  ps: scripts/powershell/check-prerequisites.ps1 -Json
+  bash: scripts/bash/check-prerequisites.sh --json
+  powershell: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
 ## ⚠️ MANDATORY: Read Agent Instructions First
