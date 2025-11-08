@@ -197,11 +197,37 @@ When documenting findings:
 
    Parse JSON output for PROJECT_PATH, ANALYSIS_DIR, ANALYSIS_REPORT, and other output paths.
 
+   **IMPORTANT**: The setup script now includes automated Python analysis! Check the JSON output for:
+   - `PYTHON_ANALYZER_AVAILABLE`: "true" if Python is installed
+   - `PYTHON_ANALYSIS_STATUS`: "success", "failed", or "not_run"
+   - `PYTHON_ANALYSIS_ERROR`: Error message if analysis failed
+
    For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-2. **Load Templates**: Read templates copied by script to ANALYSIS_DIR (analysis-report-template.md, upgrade-plan-template.md, etc.)
+2. **Check Python Analysis Results**:
 
-3. **Execute Analysis Workflow**: Follow the structure in analysis-report-template.md to conduct:
+   **IF** `PYTHON_ANALYSIS_STATUS` is "success":
+
+   The Python analyzer has already completed the following:
+   - Tech stack detection (languages, frameworks, build tools)
+   - Code metrics calculation (LOC, file count, complexity)
+   - Dependency analysis (vulnerabilities, outdated packages)
+   - Feasibility scoring (inline upgrade vs greenfield rewrite)
+   - Report generation (analysis-report.md, upgrade-plan.md, etc.)
+
+   **Your task**: Review and enhance the generated reports in ANALYSIS_DIR:
+   1. Read the generated `analysis-report.md`
+   2. Read the generated `dependency-audit.json` and `metrics-summary.json`
+   3. Review for accuracy and completeness
+   4. Add contextual insights and recommendations based on your analysis
+   5. Enhance the reports with additional findings if needed
+   6. **DO NOT** manually scan the entire codebase - the Python scripts already did that
+
+   **ELSE IF** `PYTHON_ANALYSIS_STATUS` is "failed" or "not_run":
+
+   Python analyzer unavailable - fall back to AI-guided manual analysis (continue to step 3 below).
+
+3. **Manual Analysis Workflow (Fallback)**: Only if Python analyzer failed or unavailable. Follow the structure in analysis-report-template.md to conduct:
    - **Phase 1**: Project Discovery - Tech stack detection, config file analysis
    - **Phase 2**: Codebase Analysis - Metrics, dependencies, code quality, architecture
    - **Phase 3**: Positive Findings - What's working well (with file paths)
@@ -212,12 +238,20 @@ When documenting findings:
    - **Phase 8**: Decision Matrix - Compare approaches (time, cost, risk, disruption)
    - **Phase 9**: Generate Recommendations - Primary recommendation, immediate actions, roadmaps
 
-4. **Generate Artifacts**: Fill templates and create supporting files:
-   - ANALYSIS_REPORT - Comprehensive findings and recommendations
-   - UPGRADE_PLAN - Step-by-step instructions (if inline upgrade recommended)
-   - RECOMMENDED_CONSTITUTION - Principles derived from codebase (if greenfield recommended)
-   - RECOMMENDED_SPEC - Reverse-engineered spec (if greenfield recommended)
-   - DEPENDENCY_AUDIT (JSON), METRICS_SUMMARY (JSON), DECISION_MATRIX (MD)
+4. **Generate Artifacts**:
+
+   **IF** Python analyzer succeeded (step 2):
+   - Reports are already generated! Just review and enhance them if needed
+   - All artifacts are in ANALYSIS_DIR (analysis-report.md, upgrade-plan.md, dependency-audit.json, etc.)
+   - Add any additional insights or recommendations to the existing reports
+
+   **ELSE** (manual analysis):
+   - Fill templates and create supporting files:
+     - ANALYSIS_REPORT - Comprehensive findings and recommendations
+     - UPGRADE_PLAN - Step-by-step instructions (if inline upgrade recommended)
+     - RECOMMENDED_CONSTITUTION - Principles derived from codebase (if greenfield recommended)
+     - RECOMMENDED_SPEC - Reverse-engineered spec (if greenfield recommended)
+     - DEPENDENCY_AUDIT (JSON), METRICS_SUMMARY (JSON), DECISION_MATRIX (MD)
 
 5. **Final Report**: Summarize key findings, state primary recommendation with confidence score, list next steps, provide artifact file paths
 

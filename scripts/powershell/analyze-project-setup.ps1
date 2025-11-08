@@ -95,6 +95,52 @@ try {
     Pop-Location
 }
 
+# Run Python analyzer if available
+$pythonAnalyzerAvailable = "false"
+$pythonAnalysisStatus = "not_run"
+$pythonAnalysisError = ""
+
+# Check if python3 or python is available
+$pythonCmd = $null
+if (Get-Command python3 -ErrorAction SilentlyContinue) {
+    $pythonCmd = "python3"
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    $pythonCmd = "python"
+}
+
+if ($pythonCmd) {
+    $pythonAnalyzerAvailable = "true"
+
+    # Try to run the Python analyzer
+    Write-Host "Running Python analyzer..." -ForegroundColor Yellow
+
+    try {
+        $logPath = Join-Path $analysisDir "analyzer-log.txt"
+
+        & $pythonCmd -m scripts.python.analyzer `
+            --project $ProjectPath `
+            --output $analysisDir `
+            --depth $Depth `
+            --focus $Focus `
+            --json 2>&1 | Tee-Object -FilePath $logPath | Select-Object -Last 20
+
+        if ($LASTEXITCODE -eq 0) {
+            $pythonAnalysisStatus = "success"
+            Write-Host "✓ Python analyzer completed successfully" -ForegroundColor Green
+        } else {
+            $pythonAnalysisStatus = "failed"
+            $pythonAnalysisError = "Python analyzer failed - see analyzer-log.txt"
+            Write-Host "⚠ Python analyzer failed - will use AI-guided analysis fallback" -ForegroundColor Yellow
+        }
+    } catch {
+        $pythonAnalysisStatus = "failed"
+        $pythonAnalysisError = "Exception during Python analyzer: $_"
+        Write-Host "⚠ Python analyzer failed - will use AI-guided analysis fallback" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "⚠ Python not available - will use AI-guided analysis" -ForegroundColor Yellow
+}
+
 # Output results
 if ($Json) {
     $result = [PSCustomObject]@{
@@ -112,6 +158,9 @@ if ($Json) {
         FOCUS_AREAS = $Focus
         TARGET_HAS_GIT = $targetHasGit
         TIMESTAMP = $timestamp
+        PYTHON_ANALYZER_AVAILABLE = $pythonAnalyzerAvailable
+        PYTHON_ANALYSIS_STATUS = $pythonAnalysisStatus
+        PYTHON_ANALYSIS_ERROR = $pythonAnalysisError
     }
     $result | ConvertTo-Json -Compress
 } else {
@@ -129,4 +178,7 @@ if ($Json) {
     Write-Output "FOCUS_AREAS: $Focus"
     Write-Output "TARGET_HAS_GIT: $targetHasGit"
     Write-Output "TIMESTAMP: $timestamp"
+    Write-Output "PYTHON_ANALYZER_AVAILABLE: $pythonAnalyzerAvailable"
+    Write-Output "PYTHON_ANALYSIS_STATUS: $pythonAnalysisStatus"
+    Write-Output "PYTHON_ANALYSIS_ERROR: $pythonAnalysisError"
 }
