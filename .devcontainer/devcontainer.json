@@ -1,34 +1,34 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/python
 {
-	"name": "SpecKitDevContainer",
-	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/python:3.13-trixie", // based on Debian "Trixie" (13)
-	"features": {
-		"ghcr.io/devcontainers/features/common-utils:2": {
-			"installZsh": true,
-			"installOhMyZsh": true,
-			"installOhMyZshConfig": true,
-			"upgradePackages": true,
-			"username": "devcontainer",
-			"userUid": "automatic",
-			"userGid": "automatic"
-		},
-		"ghcr.io/devcontainers/features/dotnet:2": {
-			"version": "lts"
-		},
-		"ghcr.io/devcontainers/features/git:1": {
-			"ppa": true,
-			"version": "latest"
-		},
-		"ghcr.io/devcontainers/features/node": {
-			"version": "lts"
-		}
-	},
+  "name": "SpecKitDevContainer",
+  // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+  "image": "mcr.microsoft.com/devcontainers/python:3.13-trixie", // based on Debian "Trixie" (13)
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": true,
+      "installOhMyZshConfig": true,
+      "upgradePackages": true,
+      "username": "devcontainer",
+      "userUid": "automatic",
+      "userGid": "automatic"
+    },
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "ppa": true,
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/node": {
+      "version": "lts"
+    }
+  },
 
-	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
   "forwardPorts": [
-	8080 // for Spec-Kit documentation site
+    8080 // for Spec-Kit documentation site
   ],
   "containerUser": "devcontainer",
   "updateRemoteUserUID": true,
@@ -37,60 +37,65 @@
   "customizations": {
     "vscode": {
       "extensions": [
-		"mhutchie.git-graph",
-		"eamodio.gitlens",
-		"anweber.reveal-button",
-		"chrisdias.promptboost",
-		// Github Copilot
-		"GitHub.copilot",
-		"GitHub.copilot-chat",
-		// Codex
-		"openai.chatgpt",
-		// Kilo Code
-		"kilocode.Kilo-Code",
-		// Roo Code
-		"RooVeterinaryInc.roo-cline",
-		// Amazon Developer Q
-		"AmazonWebServices.amazon-q-vscode",
-		// Claude Code
-		"anthropic.claude-code"
-	],
+        "mhutchie.git-graph",
+        "eamodio.gitlens",
+        "anweber.reveal-button",
+        "chrisdias.promptboost",
+        // Github Copilot
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        // Codex
+        "openai.chatgpt",
+        // Kilo Code
+        "kilocode.Kilo-Code",
+        // Roo Code
+        "RooVeterinaryInc.roo-cline",
+        // Amazon Developer Q
+        "AmazonWebServices.amazon-q-vscode",
+        // Claude Code
+        "anthropic.claude-code"
+      ],
       "settings": {
-		"debug.javascript.autoAttachFilter": "disabled", // fix running commands in integrated terminal
+        "debug.javascript.autoAttachFilter": "disabled", // fix running commands in integrated terminal
 
-		// Specify settings for Github Copilot
-		"git.autofetch": true,
-		"chat.promptFilesRecommendations": {
-			"speckit.constitution": true,
-			"speckit.specify": true,
-			"speckit.plan": true,
-			"speckit.tasks": true,
-			"speckit.implement": true
-		},
-		"chat.tools.terminal.autoApprove": {
-			".specify/scripts/bash/": true,
-			".specify/scripts/powershell/": true,
-			".specify/scripts/python/": true,
-			".specify/scripts/": true,
-			"git status": true,
-			"git diff": true,
-			"git log": true,
-			"git branch": true,
-			"git ls-remote": true,
-			"git fetch": true,
-			"git checkout": true,
-			"git add": true,
-			"git commit": true,
-			"git push": true,
-			"git pull": true,
-			"git stash": true,
-			"git show": true,
-			"git rev-parse": true,
-			"git ls-files": true,
-			"git remote": true,
-			"Set-ExecutionPolicy RemoteSigned -Scope CurrentUser": true,
-			"Get-ExecutionPolicy": true
-		}
+        // Specify settings for Github Copilot
+        "git.autofetch": true,
+        "chat.promptFilesRecommendations": {
+          "speckit.constitution": true,
+          "speckit.specify": true,
+          "speckit.plan": true,
+          "speckit.tasks": true,
+          "speckit.implement": true
+        },
+        "chat.tools.terminal.autoApprove": {
+          ".specify/scripts/bash/": true,
+          ".specify/scripts/powershell/": true,
+          ".specify/scripts/python/": true,
+          ".specify/scripts/": true,
+          "git status": true,
+          "git diff": true,
+          "git log": true,
+          "git branch": true,
+          "git ls-remote": true,
+          "git fetch": true,
+          "git checkout": true,
+          "git add": true,
+          "git commit": true,
+          "git push": true,
+          "git pull": true,
+          "git stash": true,
+          "git show": true,
+          "git rev-parse": true,
+          "git ls-files": true,
+          "git remote": true,
+          "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser": true,
+          "Get-ExecutionPolicy": true
+        },
+        "powershell.developer.featureFlags": [
+          "RemoteSigning"
+        ],
+        "terminal.integrated.allowChords": false,
+        "terminal.integrated.commandsToSkipShell": []
       }
     }
   }
