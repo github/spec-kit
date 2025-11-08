@@ -1,7 +1,7 @@
 # AI Agent Guidelines
 
-**Version:** 2.2
-**Last Updated:** 2025-11-02
+**Version:** 2.3
+**Last Updated:** 2025-11-08
 
 ---
 
@@ -29,51 +29,58 @@
 
 ```text
 Problem → Action
-├─ Spec unclear? → CLARIFICATION NEEDED (5.1), mark tasks [B], WAIT
+├─ Spec unclear? → CLARIFICATION NEEDED (4.1), mark tasks [B], WAIT
 ├─ Test failed?
-│  ├─ Syntax/typo? → Auto-fix max 2× (7.3)
-│  ├─ Logic error? → Mark [F], REPORT, WAIT (7.3)
-│  └─ Flaky? → Document, ESCALATE (7.3)
-├─ Constitution conflict? → STOP, FLAG, WAIT (7.2)
-├─ Missing dependency/file? → research.md, [B], ESCALATE (7.4)
-├─ Version conflict? → CLARIFICATION NEEDED (5.4)
-├─ License conflict? → research.md, suggest alternatives (9.2)
-├─ Workflow command fails? → Check, retry 1×, escalate (3)
-├─ Gate fails? → STOP, check plan.md justification (6.6)
-└─ Git conflict? → abort, REPORT, WAIT (8.1)
+│  ├─ Syntax/typo? → Auto-fix max 2× (6.3)
+│  ├─ Logic error? → Mark [F], REPORT, WAIT (6.3)
+│  └─ Flaky? → Document, ESCALATE (6.3)
+├─ Constitution conflict? → STOP, FLAG, WAIT (6.2)
+├─ Missing dependency/file? → research.md, [B], ESCALATE (6.4)
+├─ Version conflict? → CLARIFICATION NEEDED (4.4)
+├─ License conflict? → research.md, suggest alternatives (8.2)
+├─ Workflow command fails? → Check, retry 1×, escalate (2)
+├─ Gate fails? → STOP, check plan.md justification (5.6)
+└─ Git conflict? → abort, REPORT, WAIT (7.1)
 ```
 
 ---
 
-## 2. Purpose
+## 2. Toolkit Intelligence
 
-AI agent behavioral/operational standards for Spec-Driven Development using Spec Kit framework. Agents MUST follow to ensure deterministic, auditable, production-ready contributions aligned with specs and Constitution.
+**Available Capabilities:** The toolkit provides cross-platform scripts (bash + PowerShell) for common operations. Agents SHOULD leverage these instead of implementing from scratch.
 
----
+**Script Locations:**
 
-## 3. Document Structure & Priority
+- Bash: `.specify/scripts/bash/`
+- PowerShell: `.specify/scripts/powershell/`
 
-**Project Structure:**
+**Core Functions Available:**
 
-```text
-project-root/
-├── .specify/memory/constitution.md    # Immutable principles
-├── .specify/templates/                 # Templates
-├── .specify/scripts/                   # Scripts
-└── specs/[###-feature-name]/
-    ├── spec.md                         # WHAT/WHY
-    ├── plan.md                         # HOW
-    ├── data-model.md, contracts/, research.md, quickstart.md, tasks.md
-```
+| Function | Description | Bash | PowerShell |
+|----------|-------------|------|------------|
+| Repository root detection | Gets project root (git or fallback) | `get_repo_root()` | `Get-RepoRoot` |
+| Git detection | Checks if git is available | `has_git()` | `Test-HasGit` |
+| Branch detection | Gets current branch or feature | `get_current_branch()` | `Get-CurrentBranch` |
+| Feature paths | Gets all spec file paths | `get_feature_paths()` | `Get-FeaturePathsEnv` |
+| File validation | Checks file existence | `check_file()` | `Test-FileExists` |
 
-**Priority (Highest→Lowest):**
+**Environment Variables:**
 
-1. **Constitution** - Immutable. Ex: "no ORMs" overrides spec suggestion
-2. **Spec** - Requirements. Ex: "CSV export" overrides plan "JSON only"
-3. **Plan** - Architecture. Ex: Plan's library choice overrides agent preference
-4. **Supporting Docs** - Sub-priority: data-model > contracts > research > quickstart > tasks
+- `SPECIFY_FEATURE`: Override feature detection (useful for CI/CD)
+- Standard git env vars (GIT_DIR, etc.) work as expected
 
-**Conflict Resolution:** STOP → emit `CLARIFICATION NEEDED` (conflicting sections) → DO NOT guess → WAIT for human + spec update
+**OS Detection:** Agents CAN detect OS from:
+
+1. Bash presence → Unix-like (Linux/macOS)
+2. PowerShell presence → Windows (or cross-platform)
+3. Script file extensions in project (.sh → bash, .ps1 → PowerShell)
+
+**Pre-commit Hooks:** Check for:
+
+- `.pre-commit-config.yaml` (pre-commit framework)
+- `.git/hooks/pre-commit` (manual hooks)
+- `package.json` → `husky`, `lint-staged`
+- `Makefile` → `pre-commit` or `lint` targets
 
 **Workflow Commands:**
 
@@ -90,310 +97,296 @@ project-root/
 
 ---
 
-## 4. Core Responsibilities
+## 3. Document Structure & Priority
 
-Agents MUST interpret specs as **single source of truth** and produce deterministic, production-ready results.
+**Project Structure:**
 
-### 4.1 Specification Interpretation
+```text
+project-root/
+├── .specify/memory/constitution.md    # Immutable principles
+├── .specify/templates/                 # Templates
+├── .specify/scripts/{bash,powershell}/ # Cross-platform scripts
+└── specs/[###-feature-name]/
+    ├── spec.md                         # WHAT/WHY (requirements)
+    ├── plan.md                         # HOW (architecture)
+    └── data-model.md, contracts/, research.md, quickstart.md, tasks.md
+```
 
-- **MUST** read in priority order (3) before implementation
-- **MUST** derive all logic from specs only
-- **MUST NOT** add requirements/dependencies/opinions not in specs
-- **SHOULD** cross-reference spec/plan/supporting docs
+**Priority (Highest→Lowest):**
 
-**Context Window:** If docs exceed capacity: (1) read Constitution+Spec+Plan fully, (2) load supporting docs on-demand, (3) emit warning, (4) reserve 30%/40%/30% for docs/code/history. **If mandatory docs don't fit:** STOP, emit `CONTEXT OVERFLOW`, suggest splitting, WAIT.
+1. **Constitution** - Immutable project principles
+2. **Spec** - Requirements (WHAT/WHY)
+3. **Plan** - Architecture (HOW)
+4. **Supporting Docs** - Sub-priority: data-model > contracts > research > quickstart > tasks
 
-**Binary Files:** If spec references images/PDFs: emit warning, REQUEST text description in spec/plan, DO NOT proceed with assumptions.
-
-### 4.2 Code Generation
-
-**MUST** generate code that is:
-
-- **Functionally Deterministic:** Same logic/behavior (timestamps/UUIDs in metadata may vary)
-- **Idempotent:** Re-execution doesn't duplicate/corrupt
-- **Production-ready:** Compiles, passes tests, follows conventions
-
-**Randomness Seeds (priority):** (1) Explicit in spec/plan, (2) Hash of feature dir name, (3) Fixed constant (e.g., 0)
-
-**Output:** All artifacts from plan, tests for every acceptance scenario
+**Conflict Resolution:** STOP → emit `CLARIFICATION NEEDED` (cite conflicting sections) → DO NOT guess → WAIT for human + spec update
 
 ---
 
-## 5. Behavioral Principles
+## 4. Core Responsibilities & Behavioral Principles
 
-### 5.1 Ambiguity Protocol
+### 4.1 Ambiguity Protocol
 
-**When unclear:** emit `CLARIFICATION NEEDED` with: Document+line, Question, Options, Recommendation (if Constitution-aligned), Blocked tasks
-
-**Multiple Ambiguities:** BATCH if found upfront. EMIT immediately + CONTINUE non-blocked if found during implementation.
+**When unclear:** emit `CLARIFICATION NEEDED` with: Document+line, Question, Options (if any), Recommendation (if Constitution-aligned), Blocked tasks
 
 **Scope Decision:**
 
 | Ambiguity Type | Action |
 |----------------|--------|
-| Fundamental (affects all) | STOP ALL WORK |
-| Isolated (affects some) | STOP blocked, CONTINUE others |
-| Detail (affects function) | CONTINUE, emit clarification |
+| Fundamental (affects architecture) | STOP ALL WORK, WAIT |
+| Isolated (affects one module) | STOP blocked tasks, CONTINUE others |
+| Detail (affects one function) | CONTINUE, emit clarification for later |
 
-### 5.2 Minimal Changes
+**Multiple Ambiguities:** BATCH if found upfront. EMIT immediately + CONTINUE non-blocked if found during implementation.
 
-**Small:** 1 scenario/story per commit, 1-5 files, <300 lines
+### 4.2 Specification Interpretation
 
-**Exceptions (>300 lines OK):** Generated code, migrations, test fixtures, scaffolding (1st commit), lockfiles
+- **MUST** read in priority order (§3) before implementation
+- **MUST** derive all logic from specs only - no assumptions, opinions, or undocumented requirements
+- **SHOULD** cross-reference spec/plan/supporting docs for consistency
+- **MUST NOT** add dependencies, libraries, or features not in specs
 
-**Partial Implementation:** MAY ship incremental user stories. MUST NOT ship half-implemented (broken code). CAN ship `[B]` blocked with research.md docs. CANNOT ship `[F]` failed.
+**Context Window Management:** If docs exceed capacity: (1) read Constitution+Spec+Plan fully, (2) load supporting docs on-demand, (3) emit warning, (4) reserve 30%/40%/30% for docs/code/history. **If mandatory docs don't fit:** STOP, emit `CONTEXT OVERFLOW`, suggest splitting, WAIT.
 
-### 5.3 Rationale
+**Binary Files:** If spec references images/PDFs: emit warning, REQUEST text description in spec/plan, DO NOT proceed with assumptions.
 
-**MUST** link to spec sections in commits/code:
+### 4.3 Code Generation Standards
 
-- **Commit:** "Implement [###-name]: Story 2, Scenario 1\n- Adds X per spec.md L67-72\nRefs: specs/[###-name]/spec.md"
-- **Code:** `# Implements spec.md Story 2, Scenario 1: CSV export (plan.md 3.4)`
+**MUST** generate code that is:
 
-### 5.4 Read-Only Defaults
+- **Functionally Deterministic:** Same spec → same behavior (timestamps/UUIDs in metadata may vary)
+- **Idempotent:** Re-execution doesn't duplicate or corrupt state
+- **Production-ready:** Compiles, passes all tests, follows project conventions
+- **Traceable:** Links to spec sections via comments and commit messages
 
-**Allowed:** src/, tests/, dev configs (`/config/{dev,test,local,development,staging}.*`), build files (Makefile, package.json, Cargo.toml, pyproject.toml, go.mod, etc.)
+**Randomness Seeds (priority order):** (1) Explicit in spec/plan, (2) Hash of feature dir name, (3) Fixed constant (e.g., 0)
+
+**Output:** All artifacts specified in plan + tests for every acceptance scenario
+
+### 4.4 Minimal Changes
+
+**Small Commits:** 1 scenario/story per commit, 1-5 files, <300 lines
+
+**Exceptions (>300 lines OK):** Generated code, migrations, test fixtures, initial scaffolding, lockfiles
+
+**Partial Implementation:** MAY ship incremental user stories. MUST NOT ship half-implemented (broken) code. CAN ship `[B]` blocked with research.md documentation. CANNOT ship `[F]` failed.
+
+### 4.5 Dependency Management
 
 **Build Files:** IF plan mentions → follow. IF spec requires dependency → MAY add + document in research.md. IF neither → CLARIFICATION NEEDED.
 
-**Dependency Conflicts:** CHECK existing → DETECT conflicts (version/compatibility) → emit `CLARIFICATION NEEDED` (current vs required, options) → PREFER existing if compatible.
+**Conflict Detection:** CHECK existing versions → DETECT conflicts → emit `CLARIFICATION NEEDED` (current vs required, compatibility, options) → PREFER existing if compatible.
 
-**Prohibited:** `.specify/*`, `specs/[###-name]/*.md`, production configs (`/config/*.{production,prod}.*`), dependencies (`node_modules`, `.venv`, `target`, `build`), `.git`, system files
+### 4.6 Read-Only Defaults & Guardrails
 
-### 5.5 Guardrails
+**Allowed:** `src/`, `tests/`, dev configs (`/config/{dev,test,local,development,staging}.*`), build files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, build.gradle, Makefile)
 
-See 5.4 Prohibited. **Exception:** Changes with plan justification.
+**Prohibited:** `.specify/*`, `specs/[###-name]/*.md`, production configs (`/config/*.{production,prod}.*`), dependencies (node_modules, .venv, target, build), `.git`, system files
 
-### 5.6 Traceability
+**Exception:** Changes with explicit plan.md justification in "Complexity Tracking" section.
 
-**PR Template:** Feature, Spec/Plan paths, Status (✅/⏳ user stories), Constitution Compliance (gates + coverage ≥80% line, 100% scenario), Acceptance Testing, How to Test (→quickstart.md)
+### 4.7 Traceability & Rationale
 
-### 5.7 Compliance
+**MUST** link to spec sections:
 
-**MUST** follow Constitution. **If conflict:** STOP → FLAG → DO NOT proceed without human decision.
+- **Commit Message:** `Implement [###-name]: Story 2, Scenario 1\n- Adds X per spec.md L67-72\nRefs: specs/[###-name]/spec.md`
+- **Code Comments:** `# Implements spec.md Story 2, Scenario 1: CSV export (plan.md 3.4)`
+
+**PR Template Must Include:** Feature name, Spec/Plan paths, Status (✅/⏳ user stories), Constitution Compliance (gates + coverage ≥80% line, 100% scenario), Acceptance Testing results, How to Test (→quickstart.md)
+
+### 4.8 Constitution Compliance
+
+**MUST** follow all Constitution articles. **If conflict:** STOP → FLAG (article, spec requirement, conflict reason) → DO NOT proceed → WAIT for human decision.
+
+**Resolution:** (A) Human updates spec to align, OR (B) Human adds justification to plan.md Complexity Tracking
 
 ---
 
-## 6. Quality & Verification
+## 5. Quality & Verification
 
-### 6.1 Pre-Commit
+### 5.1 Pre-Commit Validation
 
-**MUST run:** Formatters, linters, type checkers, build verification
+**MUST run before every commit:** Formatters → linters → type checkers → build verification
 
-**WHERE/WHEN/HOW:** Local / before commit / via hooks or CI scripts
+**No hooks?** Check configs → run manually → document missing automation in research.md → suggest adding hooks in PR comments
 
-**No hooks?** Check configs (.pre-commit-config.yaml, package.json, Makefile) → run manually → document missing automation in research.md.
+### 5.2 Acceptance Testing
 
-### 6.2 Acceptance Testing
+**For each Given-When-Then:** Test code that (1) sets up Given, (2) executes When, (3) asserts Then
 
-**For each Given-When-Then:** test code that (1) sets up Given, (2) executes When, (3) asserts Then
+**Failure Policy:** Fix all scenarios for current story before marking complete. MAY proceed to next story if current passes. MUST NOT ship PR with failing scenarios. **Priority:** P1 before P2/P3.
 
-**Failure Policy:** Fix all scenarios for story before complete. MAY proceed to next story if current passes. MUST NOT ship PR with failing scenarios. **Priority:** P1 before P2/P3.
+**Time-Dependent Tests:** MUST use mocking (freezegun, Sinon, timecop, Clock). Document in plan.md. **NO real sleeps or wall-clock dependencies.**
 
-**Time-Dependent:** MUST use mocking (freezegun, Sinon, timecop, Clock, clockwork). Document in plan.md. **Example:** `@freeze_time("2025-01-01 12:00")` + jump time vs real sleep.
+### 5.3 Contract, Data Model & Quickstart Compliance
 
-### 6.3 Contract Compliance
+| Document | Verification Required |
+|----------|----------------------|
+| contracts/ | Compare endpoints to definitions, validate schemas exactly, test error responses, verify auth |
+| data-model.md | Verify migrations/models/validation/relationships match schemas |
+| quickstart.md | Follow steps exactly, verify outputs, test edge cases |
 
-**IF contracts/ exists:** (1) Compare endpoints to definitions, (2) Validate schemas exactly, (3) Test error responses, (4) Verify auth
+**Tools (SHOULD use if available):** OpenAPI (Spectral, Redocly), GraphQL (graphql-inspector), REST (Pact)
 
-**Tools (SHOULD use if available):** OpenAPI (Spectral, Redocly), GraphQL (graphql-inspector), REST (Pact, Spring Cloud Contract)
+### 5.4 Constitution Gates
 
-### 6.4 Data Model Alignment
-
-**IF data-model.md exists:** Verify migrations/models/validation/relationships match schemas
-
-### 6.5 Quickstart Verification
-
-**IF quickstart.md exists:** Follow steps exactly, verify outputs, test edge cases
-
-### 6.6 Constitution Gates
-
-**Common:** Library-First, CLI Interface, Test-First, Simplicity (max 3 projects), Anti-Abstraction, Integration-First
+**Common Gates:** Library-First, CLI Interface, Test-First, Simplicity, Anti-Abstraction, Integration-First
 
 **Gate fail = BLOCKER.** MUST NOT proceed without plan.md "Complexity Tracking" justification.
 
 **Custom Gates (non-Constitution):** Verify same as Constitution gates. Treat as blocker unless marked "SHOULD"/"aspirational". Report in PR.
 
-### 6.7 Fail Fast
+### 5.5 Fail Fast
 
-**Abort:** STOP → REPORT (test/build failed, error, blocked scenario, affected tasks) → UPDATE tasks.md `[F]` → EMIT issue (7.3) → WAIT
+**On any blocker:** STOP → REPORT (test/build failed, error, affected tasks) → UPDATE tasks.md with `[F]` or `[B]` → EMIT issue → WAIT
 
 **Report to:** Console (interactive), CI log (automated), tasks.md comments (async)
 
 ---
 
-## 7. Violation Handling & Recovery
+## 6. Violation Handling & Recovery
 
-**Pattern:** Trigger → Response (actions) → Recovery (resolution)
+**Pattern:** Trigger → Response → Recovery
 
-### 7.1 Specification Violations
+### 6.1 Specification Violations
 
-**Trigger:** Spec ambiguous/contradictory/incomplete
+| Trigger | Response | Recovery |
+|---------|----------|----------|
+| Spec ambiguous/contradictory | STOP (per §4.1 scope table) → CLARIFICATION NEEDED → WAIT | Human updates spec → re-read → validate → resume |
+| Spec incomplete | Same as ambiguous | Same as ambiguous |
 
-**Response:** DETERMINE scope (see 5.1 table) → STOP (as appropriate) → EMIT `CLARIFICATION NEEDED` → DO NOT guess → WAIT
+**Detection (git):** Poll `git log -1 spec.md` every 5min for updates
 
-**Recovery:** Human updates spec → agent detects (interactive: "CLARIFICATION PROVIDED" msg; git: `git log -1 spec.md` every 5min; file: timestamp every 5min; CI: timeout plan.md or 30min) → re-read spec → validate resolved → resume
+### 6.2 Constitutional Violations
 
-### 7.2 Constitutional Violations
+| Trigger | Response | Recovery |
+|---------|----------|----------|
+| Spec conflicts Constitution | STOP all → FLAG (article, requirement, conflict) → WAIT | Human updates spec OR adds plan.md justification |
+| Constitution article ambiguous | STOP → CONSTITUTION AMBIGUITY (article, question, situation, interpretations) → WAIT | Human clarifies (constitution.md note or message) → proceed |
 
-**Trigger:** Spec/implementation conflicts Constitution
+### 6.3 Quality Failures
 
-**Response:** STOP all → FLAG (article, spec requirement, conflict reason) → REQUEST human decision → WAIT
+**Test/Build Failures:**
 
-**Resolution:** (A) Human updates spec to align, OR (B) Human adds justification to plan.md Complexity Tracking
+| Error Type | Response | Recovery |
+|------------|----------|----------|
+| Obvious (syntax, imports, typos) | Auto-fix max 2× | Fix + retest + resume (if ≤2 attempts) |
+| Ambiguous (logic, assertions) | Mark `[F]`, WAIT | Human diagnosis + fix + retest |
+| Spec issue (requirements wrong) | CLARIFICATION NEEDED | Human updates spec + regenerate |
+| Flaky (non-deterministic) | DOCUMENT in research.md → mark `[F]` → ESCALATE | Human fixes root cause (races, timeouts, network deps) |
 
-### 7.3 Quality Failures
+**Flaky Test Documentation:** Test name, evidence (logs), root cause hypothesis, recommendations. **DO NOT:** retry >2×, mark passed, ignore.
 
-**Trigger:** Tests fail or quality checks fail
-
-**Response:** SUSPEND → REPORT (6.7) → DETERMINE: (1) Obvious (syntax, typos, imports) → auto-fix max 2×, (2) Ambiguous (logic, assertions) → mark `[F]`, WAIT, (3) Spec issue → `CLARIFICATION NEEDED`
-
-**Flaky Tests (non-deterministic pass/fail):** IDENTIFY (different errors, timeouts, races, network deps) → DOCUMENT in research.md (test, evidence, root cause, recommendations) → EMIT warning → mark `[F]` → ESCALATE. **DO NOT:** retry >2×, mark passed, ignore.
-
-**Recovery:** Obvious → fix + retest + resume (if ≤2 attempts). Ambiguous → human diagnosis + fix + retest. Spec issue → human updates spec + regenerate.
-
-### 7.4 Technical Blockers
+### 6.4 Technical Blockers
 
 **Types:** Missing dependencies/credentials, missing/renamed files, platform incompatibility
 
-**Response:** DOCUMENT in research.md (blocker, blocked tasks, description, impact, alternatives, recommendation, status) → UPDATE tasks.md `[B]` with comment → SUGGEST alternatives → ESCALATE
+**Response:** DOCUMENT in research.md (blocker, blocked tasks, description, impact, alternatives, recommendation, status) → UPDATE tasks.md `[B]` → SUGGEST alternatives → ESCALATE
 
-**Missing Files:** SEARCH similar (fuzzy) → IF found: `CLARIFICATION NEEDED` (similar files found, question) → IF not found: `CLARIFICATION NEEDED` (no similar files, should create or path wrong?) → DO NOT create without confirmation.
+**Missing Files:** SEARCH similar (fuzzy) → IF found: `CLARIFICATION NEEDED` (similar files, question) → IF not: `CLARIFICATION NEEDED` (should create or path wrong?) → DO NOT create without confirmation.
 
 **Recovery:** Human provides dependency/API/credentials → validate available → resume
 
-### 7.5 Constitution Ambiguity
-
-**Trigger:** Constitution article vague (e.g., "Keep it simple" - how many files?)
-
-**Common ambiguous:** Simplicity (how many?), Libraries (even if 10× larger?), Test-first (which types?), Optimization (what's premature?)
-
-**Response:** STOP → DOCUMENT ambiguity → EMIT `CONSTITUTION AMBIGUITY` (article, question, current situation, interpretations, blocked) → DO NOT proceed → WAIT
-
-**Recovery:** Human clarifies (constitution.md note or message) → re-read → validate understanding → proceed
-
 ---
 
-## 8. Collaboration Protocol
+## 7. Collaboration Protocol
 
-### 8.1 Version Control
+### 7.1 Version Control
 
-- **MUST** commit after validation passes (6.1)
+**Commit Rules:**
+
 - **MUST** atomic commits (1 story/scenario)
+- **MUST** commit after validation passes (§5.1)
 - **MUST** reference feature + spec sections
 - **MUST** work on feature branch `[###-feature-name]`
-- **SHOULD** group related tasks into scenario/story commits
+- **SHOULD** 1 task at a time (MAY parallel if no shared deps/files)
 
-**Timing:** Complete → mark `[x]` → validate → IF pass: commit, IF fail: fix + repeat
-
-**Parallelization:** SHOULD 1 task at time. MAY parallel IF no shared deps/files/models AND agent capable. MUST NOT parallel if shared files/models or dependencies.
+**Timing:** Complete task → mark `[x]` → validate → IF pass: commit, IF fail: fix + repeat
 
 **Merge Conflicts:** git abort → REPORT (files, local/remote changes) → DO NOT resolve → WAIT
 
-**Rollback:** DO NOT delete branch → IF merged: revert → IF not merged: reset --hard (only if human requests) → PREFER fix commits → WAIT for direction before force-push/delete
+**Rollback:** DO NOT delete branch → PREFER fix commits → WAIT for direction before force-push/delete
 
-### 8.2 Change Communication
+### 7.2 Change Communication & Feedback Loop
 
-**MUST** update design docs when trade-offs occur. **MUST** document decisions in research.md: Chosen, Rationale, Alternatives (rejected + why), Trade-offs, References. **MUST** use PR template (5.6).
+**MUST** update design docs when trade-offs occur. **MUST** document decisions in research.md: Chosen approach, Rationale, Alternatives (rejected + why), Trade-offs, References.
 
-### 8.3 Feedback Loop
-
-**MUST** update spec first if issues found. **MUST NOT** override human feedback without updated spec. **MUST** regenerate when specs updated.
+**MUST** update spec first if issues found. **MUST NOT** override human feedback without updated spec.
 
 **Regeneration Strategy:**
 
 | Spec Change | Strategy | Action |
 |-------------|----------|--------|
 | Requirements added | Incremental | Add new code, keep existing |
-| Requirements modified | Selective | Regen affected functions/classes |
+| Requirements modified | Selective | Regen affected functions/classes only |
 | Architecture changed | Full | Regen entire modules from scratch |
-| Data model changed | Full | Regen models, migrations, deps |
+| Data model changed | Full | Regen models, migrations, dependencies |
 | Acceptance criteria changed | Test-first | Regen tests → update impl to pass |
 
-**Workflow:** Identify scope → backup (git commit) → regen tests → regen impl → validate → IF fail: fix or repeat. **When in doubt:** prefer incremental/selective, ALWAYS tests before impl, NEVER delete working code without backup.
+**Workflow:** Identify scope → backup (git commit) → regen tests → regen impl → validate → IF fail: fix or repeat
 
 ---
 
-## 9. Ethics & Safety
+## 8. Ethics & Safety
 
-### 9.1 Prohibited Actions
+### 8.1 Prohibited Actions
 
 **MUST NOT:** Commit secrets/keys/tokens/passwords, share PII in logs, make undisclosed network calls, exfiltrate data
 
-**Detection MUST:** Run scanners (git-secrets, truffleHog, gitleaks, detect-secrets), validate no hardcoded credentials (patterns: password=, api_key=, token=, secret=), check data leaks (PII, emails, IPs). **SHOULD:** Use .gitignore for sensitive files (`.env`, `credentials.json`, `*.pem`, `*.key`)
+**Detection (MUST run):** Scanners (git-secrets, truffleHog, gitleaks, detect-secrets), validate no hardcoded credentials (patterns: `password=`, `api_key=`, `token=`, `secret=`, `private_key=`), check data leaks
 
-### 9.2 Licensing
+**SHOULD:** Use `.gitignore` for sensitive files (`.env`, `credentials.json`, `*.pem`, `*.key`, `secrets.yml`)
 
-**MUST** respect licenses. **SHOULD** prefer permissive (MIT, Apache, BSD). **MUST NOT** include closed-source without approval. **MUST** ensure privacy/compliance alignment.
+### 8.2 Licensing & Standards
 
-**Conflicts:** STOP → DOCUMENT in research.md (library+license, Constitution requirement, why needed) → SUGGEST compatible alternatives → ESCALATE → WAIT
+**MUST** respect licenses. **SHOULD** prefer permissive (MIT, Apache, BSD). **MUST NOT** include closed-source without approval.
 
-### 9.3 Standards & Portability
+**License Conflicts:** STOP → DOCUMENT in research.md (library+license, Constitution requirement, why needed) → SUGGEST compatible alternatives → ESCALATE → WAIT
 
-**SHOULD** prefer open standards (JSON > binary), portable code. **MUST** document platform deps in plan.md if unavoidable.
-
-**Platform Deps:** Document WHERE (plan.md "Platform Requirements"), WHAT (OS/version/arch/libs), WHY (why platform-specific needed), ALTERNATIVES (rejected cross-platform + why)
+**Standards:** SHOULD prefer open standards (JSON > binary), portable code. MUST document platform deps in plan.md if unavoidable.
 
 ---
 
-## 10. Meta-Guidelines
+## 9. Meta-Guidelines
 
-### 10.1 Document Errors
+### 9.1 Document Errors
 
 **IF** error in AGENTS.md: EMIT `DOCUMENT ERROR` (location, issue, impact, severity) → CONTINUE implementation → LOG for human. **DO NOT:** stop for minor errors, attempt fix, ignore severe contradictions.
 
-### 10.2 Version Management
+### 9.2 Version Management
 
-**MUST** use version at **start of feature** implementation. **DO NOT** switch mid-feature. **IF** new version released during: complete current with original → adopt new for **next** feature.
+**MUST** use version at **start of feature** implementation. **DO NOT** switch mid-feature.
 
 **Upgrade triggers:** New feature starts, human requests, critical bug fix (human notifies)
 
-**Detection:** Check line 3-4. Document in PR: "Implemented per AGENTS.md v2.2"
+**Detection:** Check lines 3-4 of this file. Document in PR: `Implemented per AGENTS.md v2.3`
 
 ---
 
-## 11. Glossary
+## 10. Glossary
 
-**Acceptance Criteria** - Measurable conditions for user story completion (spec.md)
-
-**Acceptance Scenario** - Given-When-Then test case defining success criteria
-
-**Atomic Commit** - Single logical change implementing 1 story/scenario
-
-**Constitution** - Immutable project principles (`.specify/memory/constitution.md`)
-
-**Constitution Gate** - Yes/no compliance check (plan.md). Gate failure = blocker without justification.
-
-**Complexity Tracking** - Table in plan.md: `| Violation | Why Needed | Simpler Alternative Rejected |`
-
-**Deterministic** - Same spec → functionally equivalent code (behavior identical, metadata may vary)
-
-**Feature Branch** - Git branch `[###-feature-name]` for specific feature
-
-**Feature Directory** - `specs/[###-feature-name]/` with all feature docs
-
-**Feature Directory Name** - Format `[###-feature-name]` (e.g., `001-user-auth`)
-
-**Given-When-Then** - Scenario format: "Given [context] When [action] Then [outcome]"
-
-**Idempotent** - Re-execution produces same result without side effects
-
-**Implementation Plan** - `plan.md` defining HOW (technical architecture)
-
-**Feature Specification** - `spec.md` defining WHAT/WHY (requirements)
-
-**P1/P2/P3** - Priority levels (P1=must-have, P2=should-have, P3=nice-to-have)
-
-**Pre-Commit Validation** - Formatters → linters → type checkers → build before commit
-
-**Single Source of Truth** - Authoritative specification documents
-
-**Supporting Documents** - Optional artifacts: data-model, contracts, research, quickstart, tasks
-
-**Task States** - `[ ]` pending, `[x]` complete, `[F]` failed, `[B]` blocked (external), `[W]` waiting (approval)
-
-**User Story** - High-level requirement: "As [user], I want [goal] so that [benefit]". Contains acceptance scenarios.
+| Term | Definition |
+|------|------------|
+| **Acceptance Criteria** | Measurable conditions for user story completion (spec.md) |
+| **Acceptance Scenario** | Given-When-Then test case defining success criteria |
+| **Atomic Commit** | Single logical change implementing 1 story/scenario |
+| **Constitution** | Immutable project principles (`.specify/memory/constitution.md`) |
+| **Constitution Gate** | Yes/no compliance check (plan.md). Failure = blocker without justification |
+| **Complexity Tracking** | Table in plan.md: `Violation │ Why Needed │ Simpler Alternative Rejected` |
+| **Deterministic** | Same spec → functionally equivalent code (behavior identical) |
+| **Feature Branch** | Git branch `[###-feature-name]` for specific feature |
+| **Feature Directory** | `specs/[###-feature-name]/` containing all feature docs |
+| **Given-When-Then** | Scenario format: "Given [context] When [action] Then [outcome]" |
+| **Idempotent** | Re-execution produces same result without side effects |
+| **Implementation Plan** | `plan.md` defining HOW (technical architecture) |
+| **Feature Specification** | `spec.md` defining WHAT/WHY (requirements) |
+| **P1/P2/P3** | Priority levels (P1=must-have, P2=should-have, P3=nice-to-have) |
+| **Pre-Commit Validation** | Formatters → linters → type checkers → build before commit |
+| **Single Source of Truth** | Authoritative specification documents |
+| **Supporting Documents** | Optional artifacts: data-model, contracts, research, quickstart, tasks |
+| **Task States** | `[ ]` pending, `[x]` complete, `[F]` failed, `[B]` blocked, `[W]` waiting |
+| **User Story** | High-level requirement: "As [user], I want [goal] so that [benefit]" |
 
 ---
 
-*AI agents MUST internalize and honor these guidelines for quality, consistency, and specification alignment in Spec-Driven Development projects using Spec Kit.*
+*AI agents MUST internalize and follow these guidelines for quality, consistency, and specification alignment in Spec-Driven Development projects using Spec Kit.*
