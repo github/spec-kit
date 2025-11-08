@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # Setup analysis workspace for reverse engineering an existing project
 
 [CmdletBinding()]
