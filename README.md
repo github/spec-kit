@@ -178,7 +178,7 @@ Then use `/speckit.resume` to continue after chat limits or interruptions.
 
 ## 🔄 Reverse Engineering & Modernization
 
-⚠️ **Status**: EXPERIMENTAL - Design proposal and templates ([see limitations](docs/reverse-engineering.md#known-limitations))
+⚠️ **Status**: EXPERIMENTAL - Working implementation (~4,564 LOC Python + orchestration + templates) with AI-guided workflow (v1.0.0-alpha) ([see details](docs/reverse-engineering.md#️-important-notice))
 
 **NEW**: Analyze existing projects, assess technical debt, and plan modernization strategies!
 
@@ -189,10 +189,34 @@ Then use `/speckit.resume` to continue after chat limits or interruptions.
 /speckit.analyze-project
 ```
 
-When prompted:
+When prompted, provide the following parameters:
 
 ```text
 PROJECT_PATH: /path/to/your/existing/project
+ANALYSIS_DEPTH: QUICK | STANDARD | COMPREHENSIVE
+FOCUS_AREAS: ALL | SECURITY | PERFORMANCE | ARCHITECTURE | DEPENDENCIES
+```
+
+**Parameter Values:**
+
+**ANALYSIS_DEPTH:**
+
+- `QUICK` (30 min) - Surface-level scan, dependency check, basic metrics
+- `STANDARD` (2-4 hours) - Full codebase analysis, architecture review, upgrade paths (recommended)
+- `COMPREHENSIVE` (1-2 days) - Deep dive with performance profiling, security audit, detailed roadmap
+
+**FOCUS_AREAS:**
+
+- `ALL` - Complete analysis (recommended for first-time analysis)
+- `SECURITY` - Vulnerability scanning, dependency audits, security patterns
+- `PERFORMANCE` - Bottleneck identification, optimization opportunities
+- `ARCHITECTURE` - Design patterns, technical debt, modularity assessment
+- `DEPENDENCIES` - Package analysis, upgrade paths, LTS compliance
+
+**Example:**
+
+```text
+PROJECT_PATH: /home/user/my-legacy-app
 ANALYSIS_DEPTH: STANDARD
 FOCUS_AREAS: ALL
 ```
@@ -531,7 +555,7 @@ Runs constitution → specify → plan → tasks automatically, pauses before im
 
 ```mermaid
 flowchart TD
-    NewChat[New Chat Session] --> Resume[/speckit.resume]
+    NewChat[New Chat Session] --> Resume["/speckit.resume"]
     Resume --> LoadState[Load State]
     LoadState --> LoadArtifacts[Load All Artifacts]
     LoadArtifacts --> Constitution[Constitution]
@@ -691,7 +715,7 @@ flowchart TD
     Implement -.-> State
 
     State -.-> Resume
-    Resume[/speckit.resume]
+    Resume["/speckit.resume"]
     Resume -.-> Constitution
     Resume -.-> Specify
     Resume -.-> Clarify
