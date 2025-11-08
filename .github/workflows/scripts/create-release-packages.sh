@@ -139,7 +139,7 @@ build_unified() {
   [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
   [[ -d .guidelines ]] && { cp -r .guidelines "$base_dir/"; echo "Copied .guidelines -> package root"; }
 
-  # Copy BOTH bash and powershell script directories
+  # Copy bash, powershell, and python script directories
   if [[ -d scripts ]]; then
     mkdir -p "$SPEC_DIR/scripts"
     [[ -d scripts/bash ]] && {
@@ -149,6 +149,10 @@ build_unified() {
     [[ -d scripts/powershell ]] && {
       cp -r scripts/powershell "$SPEC_DIR/scripts/"
       echo "Copied scripts/powershell -> .specify/scripts"
+    }
+    [[ -d scripts/python ]] && {
+      cp -r scripts/python "$SPEC_DIR/scripts/"
+      echo "Copied scripts/python -> .specify/scripts"
     }
     # Copy any script files that aren't in variant-specific directories
     find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
