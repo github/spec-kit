@@ -126,3 +126,68 @@ Each `*-guidelines.md` file contains:
 5. **Architecture**: Preferred patterns
 6. **Security**: Authentication, authorization, data handling
 7. **Coding Standards**: Style guides, naming conventions
+
+## Guideline Format: Principle-Based (No Code Examples)
+
+**Philosophy**: Guidelines define **WHAT** and **WHY**, not **HOW**. AI agents adapt principles to the target language/framework version.
+
+**Format**:
+
+```markdown
+### Category
+
+**MUST** use: `@YOUR_ORG/package-name` package
+**Requirements**:
+
+- Requirement stated as principle (no code)
+- Another principle-based requirement
+
+**Features**: Auto-included features, benefits
+
+**NEVER**:
+
+- Prohibited action or library
+```
+
+**Key Characteristics**:
+
+- **No code examples**: Prevents version coupling (React 16 vs 18, .NET 6 vs 8)
+- **MUST/SHOULD/NEVER keywords**: Clear requirement levels (RFC 2119 style)
+- **Principle-based**: State what to do, not how to implement
+- **Version-agnostic**: Works across framework/language versions
+- **Concise**: 1-3 lines per rule, ~80% smaller than code-heavy guidelines
+
+**Benefits**:
+
+- **Prevents build errors**: No outdated syntax from wrong language version
+- **Reduces maintenance**: Update only when principles change, not on version bumps
+- **Faster AI processing**: 80% fewer tokens to parse
+- **Better adaptation**: AI chooses syntax appropriate for target version
+
+**Example**:
+
+```markdown
+❌ BAD (Code Example):
+
+### Authentication
+
+(Python code example with versioned syntax)
+
+✅ GOOD (Principle-Based):
+
+### Authentication
+
+**MUST** use: `YOUR_ORG-auth` package
+**Requirements**:
+
+- Decorate endpoints with `@require_auth` decorator
+- Extract authenticated user via `get_current_user()` dependency
+- Pass user context to all service layer calls
+```
+
+**Why This Matters**:
+
+- AI agent working on FastAPI 0.68 project gets same guideline as FastAPI 1.0 project
+- AI adapts decorator syntax, async/await patterns, dependency injection to match project version
+- Guidelines remain valid across Python 3.10, 3.11, 3.12+ without updates
+- No risk of AI copying incompatible code examples into codebase

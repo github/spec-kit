@@ -1,250 +1,327 @@
 # Python Corporate Guidelines
 
 **Tech Stack**: Python, Django, Flask, FastAPI, Backend Services, APIs, Data Processing
-
 **Auto-detected from**: `requirements.txt`, `pyproject.toml`, `setup.py`, or `*.py` files
+**Version**: 1.0
+
+---
 
 ## Scaffolding
 
-**MUST** use corporate command:
+**MUST**:
 
-```bash
-python -m YOUR_ORG.cli create-service <service-name> --framework fastapi
-```
+- Use corporate scaffolding command (`YOUR_ORG.cli create-service`)
+- Choose appropriate framework template (fastapi, django, flask)
 
-Frameworks: `fastapi`, `django`, `flask`
+**NEVER**:
 
-**DO NOT** use: `django-admin startproject`, `flask init`
+- Use public `django-admin startproject` or `flask init` directly
+
+**Rationale**: Corporate scaffolding includes security, logging, monitoring, compliance from day one
+
+---
 
 ## Package Registry
 
-Configure `pip.conf`:
+**MUST**:
 
-```ini
-[global]
-index-url = https://artifactory.YOUR_DOMAIN.com/artifactory/api/pypi/pypi-virtual/simple
-```
+- Configure `pip.conf` with corporate PyPI repository (Artifactory/Nexus)
+- All packages resolved through corporate registry only
+
+**NEVER**:
+
+- Install packages from public pypi.org directly
+
+---
 
 ## Mandatory Libraries
 
-### FastAPI Starter
+### Framework Starter
 
-**MUST** use corporate FastAPI starter:
-
-```bash
-pip install YOUR_ORG-fastapi-starter
-```
-
-```python
-from YOUR_ORG.fastapi import create_app, AcmecorpConfig
-
-config = AcmecorpConfig(
-    service_name="user-service",
-    jwt_issuer="https://auth.example.com"
-)
-
-app = create_app(config)
-app.include_router(users.router, prefix="/api/users")
-```
-
-Includes: Security, logging, metrics, error handling, CORS
+**MUST** use: `YOUR_ORG-fastapi-starter` or equivalent for chosen framework
+**Includes**: Security, logging, metrics, error handling, CORS, health checks
+**Integration**: Use `create_app()` factory function with corporate configuration
 
 ### Authentication
 
-**MUST** use corporate auth:
+**MUST** use: `YOUR_ORG-auth` package
+**Requirements**:
 
-```bash
-pip install YOUR_ORG-auth
-```
-
-```python
-from YOUR_ORG.auth import require_auth, require_roles
-
-@router.get("/users")
-@require_auth
-@require_roles(["user", "admin"])
-async def get_users(current_user = Depends(get_current_user)):
-    return await user_service.get_users(current_user)
-```
+- Decorate endpoints with `@require_auth` and `@require_roles()` decorators
+- Extract authenticated user via `get_current_user()` dependency
+- Pass user context to all service layer calls
 
 ### API Client
 
-**MUST** use corporate HTTP client:
+**MUST** use: `YOUR_ORG-http-client` package
+**Requirements**:
 
-```bash
-pip install YOUR_ORG-http-client
-```
+- Use `AcmecorpHttpClient` class for external API calls
+- Configure timeout, retry attempts, circuit breaker
+- Never use raw `requests` or `httpx` directly
 
-```python
-from YOUR_ORG.http import AcmecorpHttpClient
+**Features**: Automatic retry, timeout handling, distributed tracing, circuit breaking
 
-order_client = AcmecorpHttpClient(
-    base_url="https://order-service.example.com",
-    timeout=5.0,
-    retry_attempts=3
-)
-```
+### Database (SQL)
 
-### Database (PostgreSQL/MySQL)
+**MUST** use: SQLAlchemy with Alembic for migrations
+**MUST** use: `YOUR_ORG-sqlalchemy-utils` for corporate extensions
+**Requirements**:
 
-**MUST** use SQLAlchemy with Alembic:
+- Entities inherit from `AuditMixin` for automatic audit trail (created_by, created_at, updated_by, updated_at)
+- Use Alembic for schema migrations
+- Apply migrations on deployment
 
-```bash
-pip install sqlalchemy alembic psycopg2-binary YOUR_ORG-sqlalchemy-utils
-```
+### Database (NoSQL)
 
-```python
-from sqlalchemy import Column, Integer, String
-from YOUR_ORG.sqlalchemy import AuditMixin
-
-class User(Base, AuditMixin):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    email = Column(String(255), unique=True, nullable=False)
-```
-
-### Database (MongoDB)
-
-**MUST** use Motor + Beanie:
-
-```bash
-pip install motor beanie
-```
+**SHOULD** use: Motor (async MongoDB) or corporate MongoDB wrapper if available
 
 ### Logging
 
-**MUST** use corporate logger:
+**MUST** use: Standard Python logging with corporate configuration
+**Requirements**:
 
-```bash
-pip install YOUR_ORG-logger
-```
+- Use structured logging with JSON formatter
+- Include correlation ID in all log statements
+- Never log PII, secrets, passwords, or tokens
 
-```python
-from YOUR_ORG.logger import get_logger
+**NEVER**:
 
-logger = get_logger(__name__)
-logger.info("User created", extra={"user_id": user.id})
-```
+- Use `print()` statements for logging
 
 ### Validation
 
-**MUST** use Pydantic (built into FastAPI):
+**MUST** use: Pydantic for request/response validation
+**Requirements**:
 
-```python
-from pydantic import BaseModel, EmailStr, Field
+- Define Pydantic models for all API requests and responses
+- Use field validators for custom validation logic
+- Return 422 Unprocessable Entity for validation errors
 
-class CreateUserRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(..., min_length=12)
-    first_name: str = Field(..., max_length=100)
-```
+---
 
 ## Banned Libraries
 
-**DO NOT USE**:
+**NEVER** use:
 
-- `flask-jwt` → use `YOUR_ORG-auth`
-- `requests` without wrapper → use `YOUR_ORG-http-client`
-- `logging` directly → use `YOUR_ORG-logger`
+- Raw `requests` or `httpx` → Use `YOUR_ORG-http-client`
+- Direct JWT handling → Use `YOUR_ORG-auth`
+- `print()` statements → Use proper logging
+
+**Rationale**: Corporate libraries enforce security, observability, compliance
+
+---
 
 ## Architecture
 
-**Structure** (FastAPI):
+### Project Structure
 
-```text
-app/
-├── main.py
-├── routers/
-├── services/
-├── models/
-├── schemas/        # Pydantic models
-└── config.py
-```
+**MUST** follow: Layered architecture (Routes → Services → Repositories)
 
-Layers: Routers → Services → Models
+- **Routes/Controllers**: Endpoint definitions, request/response handling
+- **Services**: Business logic layer
+- **Repositories**: Data access layer
+- **Models**: Database entities and Pydantic schemas
+
+### Separation of Concerns
+
+**MUST**:
+
+- Keep route handlers thin (validation, serialization only)
+- Put business logic in service layer
+- Use repository pattern for database access
+- Never put business logic in routes or repositories
+
+### Type Hints
+
+**MUST**:
+
+- Use type hints for all function parameters and return values
+- Use `typing` module for complex types (List, Dict, Optional, Union)
+- Enable type checking with mypy or pyright
+
+### Error Handling
+
+**MUST**:
+
+- Use exception handling middleware for centralized error responses
+- Return generic error messages to clients (no internal details)
+- Log full exception details server-side with traceback
+
+---
 
 ## Security
 
-- **Secrets**: Environment variables or secrets manager
-- **Validation**: Use Pydantic for all inputs
-- **SQL Injection**: Use parameterized queries (SQLAlchemy handles)
-- **Rate Limiting**: Use `YOUR_ORG-rate-limiter`
-- **HTTPS**: Always in production
+### Input Validation
+
+**MUST**:
+
+- Validate all API inputs using Pydantic models
+- Return 422 Unprocessable Entity for validation failures
+- Sanitize user inputs before processing
+
+### SQL Injection Prevention
+
+**MUST**:
+
+- Use SQLAlchemy ORM (parameterized queries automatic)
+- Never concatenate strings for SQL queries
+- Use query parameters for all dynamic values
+
+### Secrets Management
+
+**MUST**:
+
+- Store secrets in environment variables or corporate secrets manager
+- Load secrets via configuration management (never hardcode)
+- Use `.env` files for local development (gitignored)
+
+**NEVER**:
+
+- Hardcode secrets in code or configuration files
+- Commit secrets to source control
+
+### Authentication & Authorization
+
+**MUST**:
+
+- Validate user roles before resource access
+- Use `@require_auth` and `@require_roles()` decorators on protected endpoints
+- Implement principle of least privilege
+
+---
 
 ## Coding Standards
 
-**MUST** use Python 3.10+:
+### Python Version
 
-```toml
-[tool.poetry]
-python = "^3.10"
-```
+**MUST**:
 
-**MUST** use type hints:
+- Use Python 3.10+ (prefer latest stable version)
+- Use modern Python features (dataclasses, type hints, pattern matching)
 
-```python
-async def get_user_by_id(user_id: int) -> Optional[User]:
-    return await db.query(User).filter(User.id == user_id).first()
-```
+### Code Style
 
-**PREFER** async/await for I/O:
+**MUST**:
 
-```python
-async def create_user(request: CreateUserRequest) -> User:
-    user = User(**request.dict())
-    await db.add(user)
-    return user
-```
+- Follow PEP 8 style guide
+- Use Black formatter for consistent formatting
+- Use isort for import sorting
+- Use flake8 or ruff for linting
 
-**Naming**:
+### Naming Conventions
 
-- Functions/variables: snake_case (`get_user`, `user_id`)
-- Classes: PascalCase (`UserService`, `User`)
-- Constants: UPPER_SNAKE_CASE (`MAX_RETRIES`)
+**MUST** follow:
 
-**Code style** - MUST follow PEP 8, use `black`:
+- Functions, variables: `snake_case`
+- Classes: `PascalCase`
+- Constants: `UPPER_SNAKE_CASE`
+- Private methods: `_leading_underscore`
+- Modules: `lowercase` or `snake_case`
 
-```bash
-pip install black
-black .
-```
+### Async/Await
+
+**SHOULD**:
+
+- Use async/await for I/O-bound operations (database, HTTP, file system)
+- Use asyncio-compatible libraries (motor, httpx, asyncpg)
+- Choose FastAPI for async workloads, Django for sync
+
+### Code Quality
+
+**SHOULD**:
+
+- Keep functions under 50 lines
+- Limit cyclomatic complexity (< 10 per function)
+- Write docstrings for public functions and classes
+- Use meaningful names (no abbreviations, no single letters except loops)
+
+---
+
+## Dependency Management
+
+### Requirements Files
+
+**MUST**:
+
+- Use `requirements.txt` for production dependencies
+- Use `requirements-dev.txt` for development dependencies
+- Pin versions for reproducible builds
+
+**SHOULD**:
+
+- Use `poetry` or `pipenv` for advanced dependency management
+- Use virtual environments for all projects
+
+### Virtual Environments
+
+**MUST**:
+
+- Use virtual environments (venv, virtualenv, poetry, pipenv)
+- Never install packages globally
+- Document Python version in `runtime.txt` or `pyproject.toml`
+
+---
+
+## Testing
+
+**MUST**:
+
+- Write unit tests with pytest
+- Write integration tests for API endpoints
+- Aim for 80%+ coverage on critical paths
+
+**SHOULD**:
+
+- Use fixtures for test data
+- Use factories (factory_boy) for model creation
+- Mock external dependencies (APIs, databases)
+
+---
 
 ## Build & Deployment
 
-**Dependencies**:
+### Build Process
 
-```toml
-[tool.poetry.dependencies]
-python = "^3.10"
-fastapi = "^0.100.0"
-uvicorn = "^0.23.0"
-```
+**MUST**:
 
-**Docker**:
+- Run tests before deployment (`pytest`)
+- Run linters before deployment (flake8, mypy, black)
+- Use CI/CD pipeline for automated testing
 
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+### Docker
+
+**MUST**:
+
+- Use multi-stage builds (install dependencies in build stage)
+- Use official Python base images (python:3.11-slim)
+- Run as non-root user in container
+- Copy only necessary files (use .dockerignore)
+
+**SHOULD**:
+
+- Keep container images small (< 200MB for simple services)
+- Use layer caching for faster builds
+
+---
 
 ## Observability
 
 **MUST** include:
 
-- Health endpoint (`/health`)
-- Metrics (`/metrics` - Prometheus)
-- Distributed tracing
-- Structured logging (JSON)
+- Health checks endpoint (`/health`) for readiness/liveness probes
+- Metrics endpoint (`/metrics`) for monitoring (Prometheus format)
+- Distributed tracing with correlation IDs
+- Structured logging with JSON format
 
-Included in corporate FastAPI starter.
+**Note**: Corporate FastAPI/Django starter includes all observability features by default
 
-**Testing** - minimum 80% coverage:
+---
 
-```bash
-pytest --cov=app --cov-report=html
-```
+## Non-Compliance
+
+If corporate library unavailable or causes blocking issue:
+
+1. Document violation in `.guidelines-todo.md` with justification
+2. Create ticket to resolve (target: next sprint)
+3. Proceed with alternative, mark with `# TODO: GUIDELINE-VIOLATION` comment for tracking

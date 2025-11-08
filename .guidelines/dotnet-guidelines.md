@@ -1,341 +1,280 @@
 # .NET Corporate Guidelines
 
-**Tech Stack**: .NET 6+, C#, ASP.NET Core, Backend Services, Microservices
-
+**Tech Stack**: .NET, C#, ASP.NET Core, Backend Services, Microservices
 **Auto-detected from**: `*.csproj`, `*.sln`, or `*.cs` files
+**Version**: 1.0
+
+---
 
 ## Scaffolding
 
-**MUST** use corporate templates:
+**MUST**:
 
-```bash
-dotnet new YOUR_ORG_template -n MyService
-```
+- Use corporate dotnet templates (YOUR_ORG-webapi, YOUR_ORG-minimal-api, YOUR_ORG-worker, YOUR_ORG-blazor)
+- Install templates from corporate NuGet source
 
-Templates: `YOUR_ORG-webapi`, `YOUR_ORG-minimal-api`, `YOUR_ORG-worker`, `YOUR_ORG-blazor`
+**NEVER**:
 
-**Installation**:
+- Use default Microsoft templates (`dotnet new webapi`)
 
-```bash
-dotnet new --install YOUR_ORG.Templates::1.0.0 --nuget-source https://nuget.YOUR_DOMAIN.com/v3/index.json
-```
+**Rationale**: Corporate templates include security, logging, monitoring, compliance from day one
 
-**DO NOT** use default templates: `dotnet new webapi`
+---
 
 ## Package Registry
 
-**Configure** `nuget.config`:
+**MUST**:
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <add key="YOUR_ORG" value="https://nuget.YOUR_DOMAIN.com/v3/index.json" />
-  </packageSources>
-</configuration>
-```
+- Configure `nuget.config` with corporate NuGet source (YOUR_ORG NuGet registry)
+- All packages resolved through corporate registry only
+
+**NEVER**:
+
+- Install packages from public NuGet.org directly
+
+---
 
 ## Mandatory Libraries
 
 ### ASP.NET Core Starter
 
-**MUST** use corporate starter package:
-
-```xml
-<PackageReference Include="YOUR_ORG.AspNetCore.Starter" Version="2.1.0" />
-```
-
-```csharp
-using YOUR_ORG.AspNetCore;
-
-var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddYourOrgServices(builder.Configuration);
-
-var app = builder.Build();
-app.UseYourOrgMiddleware();
-```
-
-Includes: Security, logging, monitoring, health checks, exception handling, CORS
+**MUST** use: `YOUR_ORG.AspNetCore.Starter` package
+**Includes**: Security, logging, monitoring, health checks, exception handling, CORS
+**Integration**: Register services via `AddYourOrgServices()`, apply middleware via `UseYourOrgMiddleware()`
 
 ### Security & Authentication
 
-**MUST** use corporate security library:
+**MUST** use: `YOUR_ORG.Security` package
+**Requirements**:
 
-```xml
-<PackageReference Include="YOUR_ORG.Security" Version="3.0.0" />
-```
+- Decorate endpoints with `[SecuredEndpoint(Roles = "...")]` attribute
+- Extract authenticated user context via `User.GetCurrentUser()`
+- Pass user context to all service layer calls
 
-```csharp
-using YOUR_ORG.Security;
+### HTTP Client
 
-[ApiController]
-[Route("api/[controller]")]
-public class UsersController : ControllerBase
-{
-    [HttpGet]
-    [SecuredEndpoint(Roles = "User,Admin")]
-    public async Task<IActionResult> GetUsers()
-    {
-        var currentUser = User.GetCurrentUser();
-        return Ok(await _userService.GetUsers(currentUser));
-    }
-}
-```
+**MUST** use: `YOUR_ORG.HttpClient` package
+**Requirements**:
 
-### API Client
+- Inject via `IYourOrgHttpClientFactory`, never create HttpClient directly
+- Use circuit breaker pattern with fallback methods
+- All external API calls auto-instrumented for distributed tracing
 
-**MUST** use corporate HTTP client:
-
-```xml
-<PackageReference Include="YOUR_ORG.HttpClient" Version="1.5.0" />
-```
-
-```csharp
-using YOUR_ORG.HttpClient;
-
-public class UserService
-{
-    private readonly IYourOrgHttpClient _orderClient;
-
-    public UserService(IYourOrgHttpClientFactory clientFactory)
-    {
-        _orderClient = clientFactory.CreateClient("OrderService");
-    }
-
-    [CircuitBreaker(FallbackMethod = nameof(GetOrdersFallback))]
-    public async Task<List<Order>> GetUserOrders(string userId)
-    {
-        return await _orderClient.GetAsync<List<Order>>($"/api/orders?userId={userId}");
-    }
-}
-```
-
-Features: Service discovery, circuit breaker, retry, distributed tracing
+**Features**: Service discovery, circuit breaker, retry logic, timeout handling, distributed tracing
 
 ### Database
 
-**MUST** use Entity Framework Core with corporate extensions:
+**MUST** use: Entity Framework Core with `YOUR_ORG.EntityFrameworkCore.Extensions`
+**Requirements**:
 
-```xml
-<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
-<PackageReference Include="YOUR_ORG.EntityFrameworkCore.Extensions" Version="1.2.0" />
-```
-
-```csharp
-using YOUR_ORG.EntityFrameworkCore;
-
-public class User : AuditedEntity
-{
-    public long Id { get; set; }
-    public string Email { get; set; }
-    public string PasswordHash { get; set; }
-}
-
-public class AppDbContext : DbContext
-{
-    public DbSet<User> Users { get; set; }
-}
-```
-
-### Database Migration
-
-**MUST** use EF Core migrations:
-
-```bash
-dotnet ef migrations add CreateUsersTable
-dotnet ef database update
-```
+- Entities inherit from `AuditedEntity` for automatic audit trail (CreatedBy, CreatedAt, UpdatedBy, UpdatedAt)
+- Use EF Core migrations for schema changes (`dotnet ef migrations add`)
+- Apply migrations on deployment (`dotnet ef database update`)
 
 ### Logging
 
-**MUST** use corporate logger (built on Microsoft.Extensions.Logging):
+**MUST** use: `YOUR_ORG.Logging` package (built on Microsoft.Extensions.Logging)
+**Requirements**:
 
-```xml
-<PackageReference Include="YOUR_ORG.Logging" Version="2.0.0" />
-```
+- Inject `ILogger<T>` via dependency injection
+- Use structured logging with named parameters
+- Include correlation ID in all log statements (auto-added by corporate middleware)
 
-```csharp
-using Microsoft.Extensions.Logging;
+**NEVER**:
 
-public class UserService
-{
-    private readonly ILogger<UserService> _logger;
-
-    public async Task<User> CreateUser(CreateUserRequest request)
-    {
-        _logger.LogInformation("Creating user {Email}", request.Email);
-        // ...
-    }
-}
-```
+- Use `Console.WriteLine()` for logging
+- Log PII, secrets, passwords, or authentication tokens
 
 ### Validation
 
-**MUST** use FluentValidation with corporate validators:
+**MUST** use: FluentValidation with `YOUR_ORG.Validators` extensions
+**Requirements**:
 
-```xml
-<PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
-<PackageReference Include="YOUR_ORG.Validators" Version="1.1.0" />
-```
+- Create validator classes inheriting `AbstractValidator<T>`
+- Use corporate validators for common patterns (e.g., `CorporateEmail()`)
+- Validate all API inputs before processing
 
-```csharp
-using FluentValidation;
-using YOUR_ORG.Validators;
-
-public class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
-{
-    public CreateUserRequestValidator()
-    {
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().CorporateEmail();
-        RuleFor(x => x.Password).NotEmpty().MinimumLength(12);
-    }
-}
-```
+---
 
 ## Banned Libraries
 
-**DO NOT USE**:
+**NEVER** use:
 
-- `HttpClient` directly → use `YOUR_ORG.HttpClient`
-- Serilog without corporate wrapper → use `YOUR_ORG.Logging`
-- Console.WriteLine for logging
+- `HttpClient` directly → Use `YOUR_ORG.HttpClient`
+- Serilog without corporate wrapper → Use `YOUR_ORG.Logging`
+- `Console.WriteLine()` → Use `ILogger<T>`
+
+**Rationale**: Corporate wrappers add security, monitoring, compliance, circuit breaking
+
+---
 
 ## Architecture
 
-**Structure**:
+### Project Structure
 
-```text
-src/
-├── UserService.Api/
-│   ├── Controllers/
-│   ├── Program.cs
-│   └── appsettings.json
-├── UserService.Core/
-│   ├── Services/
-│   └── Models/
-└── UserService.Infrastructure/
-    ├── Data/
-    └── Repositories/
-```
+**MUST** follow: Layered architecture (API → Core → Infrastructure)
 
-**Layers**: Controllers → Services → Repositories → Database
+- **API Layer**: Controllers, Program.cs, appsettings.json
+- **Core Layer**: Services, Domain Models, Interfaces
+- **Infrastructure Layer**: Data, Repositories, External Integrations
 
-**MUST** use DTOs:
+### Separation of Concerns
 
-```csharp
-// Entity (internal)
-public class User
-{
-    public string PasswordHash { get; set; }  // Never expose
-}
+**MUST**:
 
-// DTO (API)
-public record UserDto(long Id, string Email, string FirstName);
-```
+- Keep controllers thin (routing, validation, response formatting only)
+- Put business logic in service layer
+- Use repository pattern for data access
+- Never put business logic in controllers or repositories
 
-**MUST** use centralized exception handling:
+### DTOs (Data Transfer Objects)
 
-```csharp
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
-    {
-        context.Response.StatusCode = 500;
-        await context.Response.WriteAsJsonAsync(new { error = "Internal server error" });
-    });
-});
-```
+**MUST**:
+
+- Use separate DTOs for API contracts (never expose entities directly)
+- Keep sensitive fields (PasswordHash, InternalId) in entities only
+- Use `record` types for immutable DTOs
+
+### Exception Handling
+
+**MUST**:
+
+- Use centralized exception handling middleware
+- Return generic error messages to clients (no internal details)
+- Log full exception details server-side with correlation ID
+
+---
 
 ## Security
 
-**Input validation** - ALWAYS validate:
+### Input Validation
 
-```csharp
-[HttpPost]
-public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
-{
-    if (!ModelState.IsValid)
-        return BadRequest(ModelState);
+**MUST**:
 
-    return Ok(await _userService.CreateUser(request));
-}
-```
+- Validate all API inputs (ModelState, FluentValidation)
+- Return 400 Bad Request for validation failures
+- Reject requests before reaching business logic
 
-**SQL injection** - use parameterized queries (EF Core handles):
+### SQL Injection Prevention
 
-```csharp
-var user = await _context.Users
-    .Where(u => u.Email == email)
-    .FirstOrDefaultAsync();
-```
+**MUST**:
 
-**Secrets** - NEVER hardcode:
+- Use Entity Framework Core (parameterized queries automatic)
+- Never concatenate strings for SQL queries
+- Use LINQ or stored procedures only
 
-```csharp
-var apiKey = builder.Configuration["YourOrg:ApiKey"];
-```
+### Secrets Management
 
-Use Azure Key Vault or corporate secrets manager.
+**MUST**:
+
+- Store secrets in Azure Key Vault or corporate secrets manager
+- Access secrets via configuration (`builder.Configuration["YourOrg:ApiKey"]`)
+
+**NEVER**:
+
+- Hardcode secrets in code or appsettings.json
+- Commit secrets to source control
+
+### Authentication & Authorization
+
+**MUST**:
+
+- Validate user roles before resource access
+- Use `[SecuredEndpoint]` attribute on all protected endpoints
+- Implement principle of least privilege
+
+---
 
 ## Coding Standards
 
-**MUST** use .NET 6+ with nullable reference types:
+### .NET Version & Features
 
-```xml
-<PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-</PropertyGroup>
-```
+**MUST**:
 
-**Use**:
+- Target .NET 6+ (prefer latest LTS version)
+- Enable nullable reference types (`<Nullable>enable</Nullable>`)
+- Use modern C# features (record types, pattern matching, global usings)
 
-- Async/await for I/O operations
-- Dependency injection
-- Record types for DTOs
-- Pattern matching
+### Async/Await
 
-**Naming**:
+**MUST**:
 
-- Classes: PascalCase (`UserService`)
-- Methods: PascalCase (`CreateUser`)
-- Properties: PascalCase (`FirstName`)
-- Local variables: camelCase (`userId`)
-- Constants: PascalCase (`MaxRetries`)
+- Use async/await for all I/O operations (database, HTTP, file system)
+- Never block on async calls (no `.Result` or `.Wait()`)
+- Use `ValueTask<T>` for hot paths if applicable
+
+### Dependency Injection
+
+**MUST**:
+
+- Use constructor injection for all dependencies
+- Register services with appropriate lifetime (Singleton, Scoped, Transient)
+- Never use `new` for services (except POCOs, DTOs)
+
+### Naming Conventions
+
+**MUST** follow:
+
+- Classes, Methods, Properties: `PascalCase`
+- Local variables, parameters: `camelCase`
+- Private fields: `_camelCase` with underscore prefix
+- Constants: `PascalCase`
+- Interfaces: `IPascalCase` with I prefix
+
+### Code Quality
+
+**SHOULD**:
+
+- Keep methods under 50 lines
+- Limit cyclomatic complexity (< 10 per method)
+- Follow SOLID principles
+- Write meaningful names (no abbreviations, no single letters except loop counters)
+
+---
 
 ## Build & Deployment
 
-**Build**:
+### Build Process
 
-```bash
-dotnet build
-dotnet publish -c Release
-```
+**MUST**:
 
-**Docker**:
+- Use `dotnet build` for compilation
+- Use `dotnet publish -c Release` for deployment packages
+- Run tests before deployment (`dotnet test`)
 
-```dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /src
-COPY *.csproj ./
-RUN dotnet restore
-COPY . .
-RUN dotnet publish -c Release -o /app
+### Docker
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY --from=build /app .
-EXPOSE 80
-ENTRYPOINT ["dotnet", "UserService.Api.dll"]
-```
+**MUST**:
+
+- Use multi-stage builds (SDK for build, runtime for runtime)
+- Use official Microsoft base images (mcr.microsoft.com/dotnet)
+- Run as non-root user in container
+- Copy only necessary files (use .dockerignore)
+
+**SHOULD**:
+
+- Keep container images small (runtime-only, no SDK)
+- Use layer caching for faster builds
+
+---
 
 ## Observability
 
 **MUST** include:
 
-- Health checks (`/health`)
-- Metrics (`/metrics`)
-- Distributed tracing
-- Structured logging
+- Health checks endpoint (`/health`) for readiness/liveness probes
+- Metrics endpoint (`/metrics`) for monitoring (Prometheus format)
+- Distributed tracing with correlation IDs
+- Structured logging with context (user, request, operation)
 
-Included in corporate ASP.NET Core starter.
+**Note**: Corporate ASP.NET Core starter includes all observability features by default
+
+---
+
+## Non-Compliance
+
+If corporate library unavailable or causes blocking issue:
+
+1. Document violation in `.guidelines-todo.md` with justification
+2. Create ticket to resolve (target: next sprint)
+3. Proceed with alternative, mark with `// TODO: GUIDELINE-VIOLATION` comment for tracking

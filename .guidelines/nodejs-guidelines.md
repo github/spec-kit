@@ -1,241 +1,327 @@
 # Node.js Corporate Guidelines
 
 **Tech Stack**: Node.js, Express, TypeScript, Backend Services, APIs
-
 **Auto-detected from**: `package.json` with backend dependencies (express, fastify, koa)
+**Version**: 1.0
+
+---
 
 ## Scaffolding
 
-**MUST** use corporate command:
+**MUST**:
 
-```bash
-npx @YOUR_ORG/create-node-service <service-name> --template express-ts
-```
+- Use corporate scaffolding command (`@YOUR_ORG/create-node-service`)
+- Choose appropriate template (express-ts, fastify-ts, minimal-api, microservice)
 
-Templates: `express-ts`, `fastify-ts`, `minimal-api`, `microservice`
+**NEVER**:
 
-**DO NOT** use: `npm init`, `npx express-generator`
+- Use `npm init` or `npx express-generator` directly
+
+**Rationale**: Corporate scaffolding includes security, logging, monitoring, compliance from day one
+
+---
 
 ## Package Registry
 
-Configure `.npmrc`:
+**MUST**:
 
-```text
-registry=https://artifactory.YOUR_DOMAIN.com/artifactory/api/npm/npm-virtual/
-@YOUR_ORG:registry=https://artifactory.YOUR_DOMAIN.com/artifactory/api/npm/npm-local/
-```
+- Configure `.npmrc` with corporate npm registry (Artifactory/Nexus)
+- All dependencies resolved through corporate registry only
+
+**NEVER**:
+
+- Install packages from public npmjs.org directly
+
+---
 
 ## Mandatory Libraries
 
-### Express Starter
+### Framework Starter
 
-**MUST** use corporate Express starter:
-
-```bash
-npm install @YOUR_ORG/express-starter
-```
-
-```typescript
-import { createApp, AcmecorpConfig } from '@YOUR_ORG/express-starter';
-
-const config: AcmecorpConfig = {
-  serviceName: 'user-service',
-  port: 3000,
-  auth: { jwtIssuer: 'https://auth.example.com' }
-};
-
-const app = createApp(config);
-app.use('/api/users', usersRouter);
-```
-
-Includes: Security middleware, logging, metrics, error handling, CORS
+**MUST** use: `@YOUR_ORG/express-starter` or equivalent for chosen framework
+**Includes**: Security middleware, logging, metrics, error handling, CORS
+**Integration**: Use `createApp()` factory function with corporate configuration
 
 ### Authentication
 
-**MUST** use corporate auth middleware:
+**MUST** use: `@YOUR_ORG/auth-middleware` package
+**Requirements**:
 
-```bash
-npm install @YOUR_ORG/auth-middleware
-```
-
-```typescript
-import { authMiddleware, authorize } from '@YOUR_ORG/auth-middleware';
-
-app.use(authMiddleware());
-router.get('/users', authorize(['user', 'admin']), async (req, res) => {
-  const currentUser = req.user;
-  // ...
-});
-```
+- Apply `authMiddleware()` globally or per-route
+- Use `authorize([roles])` middleware for role-based access control
+- Extract authenticated user via `req.user` property
 
 ### API Client
 
-**MUST** use corporate API client:
+**MUST** use: `@YOUR_ORG/api-client` package
+**Requirements**:
 
-```bash
-npm install @YOUR_ORG/api-client
-```
+- Use `createApiClient()` factory for external service calls
+- Configure timeout, retry attempts, base URL
+- Never use raw `axios`, `node-fetch`, or `got` directly
 
-```typescript
-import { createApiClient } from '@YOUR_ORG/api-client';
-
-const orderClient = createApiClient({
-  baseURL: process.env.ORDER_SERVICE_URL,
-  timeout: 5000,
-  retry: { attempts: 3 }
-});
-```
+**Features**: Automatic retry, timeout handling, distributed tracing, circuit breaking
 
 ### Database (MongoDB)
 
-**MUST** use Mongoose with corporate plugins:
+**SHOULD** use: Mongoose with `@YOUR_ORG/mongoose-plugins`
+**Requirements**:
 
-```bash
-npm install mongoose @YOUR_ORG/mongoose-plugins
-```
+- Apply `auditPlugin` to schemas for automatic timestamps
+- Define schemas with TypeScript types
+- Use connection pooling and retry logic
 
-```typescript
-import { auditPlugin } from '@YOUR_ORG/mongoose-plugins';
+### Database (PostgreSQL/MySQL)
 
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true }
-});
+**SHOULD** use: Prisma or TypeORM
+**Requirements**:
 
-userSchema.plugin(auditPlugin);  // Adds createdAt, updatedAt
-```
-
-### Database (PostgreSQL)
-
-**MUST** use Prisma or TypeORM:
-
-```bash
-npm install @prisma/client prisma
-```
+- Define schema in Prisma schema file or TypeORM entities
+- Use migrations for schema changes
+- Apply migrations on deployment
 
 ### Logging
 
-**MUST** use corporate logger:
+**MUST** use: `@YOUR_ORG/logger` package
+**Requirements**:
 
-```bash
-npm install @YOUR_ORG/logger
-```
+- Use structured logging with JSON format
+- Include correlation ID in all log statements
+- Never log PII, secrets, passwords, or tokens
 
-```typescript
-import { logger } from '@YOUR_ORG/logger';
+**NEVER**:
 
-logger.info('User created', { userId: user.id });
-logger.error('Failed to create user', { error });
-```
+- Use `console.log()` for logging
 
 ### Validation
 
-**MUST** use Zod or Joi:
+**MUST** use: Zod or Joi for request validation
+**Requirements**:
 
-```bash
-npm install zod
-```
+- Define validation schemas for all API requests
+- Validate inputs in middleware or route handlers
+- Return 400 Bad Request for validation failures
 
-```typescript
-import { z } from 'zod';
-
-const createUserSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(12)
-});
-
-router.post('/users', async (req, res) => {
-  const validated = createUserSchema.parse(req.body);
-  // ...
-});
-```
+---
 
 ## Banned Libraries
 
-**DO NOT USE**:
+**NEVER** use:
 
-- `express-jwt` → use `@YOUR_ORG/auth-middleware`
-- `axios` without wrapper → use `@YOUR_ORG/api-client`
-- `winston` → use `@YOUR_ORG/logger`
+- `express-jwt` → Use `@YOUR_ORG/auth-middleware`
+- Raw `axios` or `node-fetch` → Use `@YOUR_ORG/api-client`
+- `winston` or `pino` directly → Use `@YOUR_ORG/logger`
+- `console.log()` → Use proper logging
+
+**Rationale**: Corporate libraries enforce security, observability, compliance
+
+---
 
 ## Architecture
 
-**Structure**:
+### Project Structure
 
-```text
-src/
-├── index.ts
-├── app.ts
-├── routes/
-├── controllers/
-├── services/
-├── models/
-└── middleware/
-```
+**MUST** follow: Layered architecture (Routes → Controllers → Services → Models)
 
-Layers: Routes → Controllers → Services → Models
+- **Routes**: Endpoint definitions and route registration
+- **Controllers**: Request/response handling and validation
+- **Services**: Business logic layer
+- **Models**: Database schemas and entities
+
+### Separation of Concerns
+
+**MUST**:
+
+- Keep route handlers thin (routing only)
+- Keep controllers thin (validation, serialization)
+- Put business logic in service layer
+- Use models/repositories for database access
+
+### Type Safety
+
+**MUST**:
+
+- Use TypeScript for all new code
+- Define types for request/response bodies, database models
+- Enable strict mode in `tsconfig.json`
+
+### Error Handling
+
+**MUST**:
+
+- Use centralized error handling middleware
+- Return generic error messages to clients (no internal details)
+- Log full error details server-side with stack traces
+
+---
 
 ## Security
 
-- **Secrets**: Environment variables only, never hardcode
-- **Validation**: Validate all inputs with Zod/Joi
-- **SQL Injection**: Use parameterized queries (ORM handles)
-- **Rate Limiting**: Use `@YOUR_ORG/rate-limiter`
-- **HTTPS**: Always in production
+### Input Validation
+
+**MUST**:
+
+- Validate all API inputs using Zod or Joi
+- Return 400 Bad Request for validation failures
+- Sanitize user inputs before processing
+
+### SQL/NoSQL Injection Prevention
+
+**MUST**:
+
+- Use ORM/ODM (Prisma, TypeORM, Mongoose) for parameterized queries
+- Never concatenate strings for database queries
+- Use query parameters for all dynamic values
+
+### Secrets Management
+
+**MUST**:
+
+- Store secrets in environment variables or corporate secrets manager
+- Load secrets via `process.env` (never hardcode)
+- Use `.env` files for local development (gitignored)
+
+**NEVER**:
+
+- Hardcode secrets in code or configuration files
+- Commit secrets to source control
+
+### Rate Limiting
+
+**SHOULD**:
+
+- Use `@YOUR_ORG/rate-limiter` middleware for public endpoints
+- Configure limits based on user tier or IP address
+- Return 429 Too Many Requests when limits exceeded
+
+### HTTPS Only
+
+**MUST**:
+
+- Use HTTPS in production environments
+- All external API calls must use HTTPS protocol
+
+---
 
 ## Coding Standards
 
-**MUST** use TypeScript:
+### Node.js & TypeScript Version
 
-```json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "strict": true,
-    "esModuleInterop": true
-  }
-}
-```
+**MUST**:
 
-**Use**:
+- Use Node.js 18+ LTS (prefer latest LTS version)
+- Use TypeScript 5+ with strict mode enabled
 
-- Async/await (not callbacks)
-- Centralized error middleware
-- Naming: camelCase for functions, PascalCase for classes
+### Code Style
+
+**MUST**:
+
+- Use ESLint for linting (with corporate config)
+- Use Prettier for formatting
+- Follow Airbnb or Google TypeScript style guide
+
+### Naming Conventions
+
+**MUST** follow:
+
+- Functions, variables: `camelCase`
+- Classes, Interfaces: `PascalCase`
+- Constants: `UPPER_SNAKE_CASE`
+- Files: `kebab-case.ts` or `camelCase.ts` (be consistent)
+
+### Async/Await
+
+**MUST**:
+
+- Use async/await for all asynchronous operations (no callbacks)
+- Handle promise rejections with try/catch
+- Never use callback-style APIs for new code
+
+### Code Quality
+
+**SHOULD**:
+
+- Keep functions under 50 lines
+- Limit cyclomatic complexity (< 10 per function)
+- Write meaningful names (no abbreviations, no single letters except loops)
+- Use functional programming patterns where appropriate
+
+---
+
+## Dependency Management
+
+**MUST**:
+
+- Use `package-lock.json` or `yarn.lock` for deterministic installs
+- Pin versions for production dependencies
+- Use `npm ci` in CI/CD (not `npm install`)
+
+**SHOULD**:
+
+- Keep dependencies up to date (security patches)
+- Audit dependencies regularly (`npm audit`)
+
+---
+
+## Testing
+
+**MUST**:
+
+- Write unit tests with Jest or Vitest
+- Write integration tests for API endpoints
+- Aim for 80%+ coverage on critical paths
+
+**SHOULD**:
+
+- Use Supertest for HTTP endpoint testing
+- Mock external dependencies (APIs, databases)
+- Use test containers for integration tests with databases
+
+---
 
 ## Build & Deployment
 
-**Build**:
+### Build Process
 
-```bash
-npm run build  # tsc
-npm start      # node dist/index.js
-```
+**MUST**:
 
-**Docker**:
+- Use TypeScript compiler (`tsc`) for build
+- Run tests before deployment (`npm test`)
+- Run linters before deployment (`npm run lint`)
 
-```dockerfile
-FROM node:18-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+### Docker
 
-FROM node:18-alpine
-WORKDIR /app
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-```
+**MUST**:
+
+- Use multi-stage builds (build dependencies in build stage)
+- Use official Node.js Alpine base images (e.g., `node:18-alpine`)
+- Run as non-root user in container
+- Copy only necessary files (use .dockerignore)
+
+**SHOULD**:
+
+- Keep container images small (< 150MB for simple services)
+- Use layer caching for faster builds
+
+---
 
 ## Observability
 
 **MUST** include:
 
-- Health endpoint (`/health`)
-- Metrics (`/metrics` - Prometheus)
-- Distributed tracing
-- Structured logging
+- Health checks endpoint (`/health`) for readiness/liveness probes
+- Metrics endpoint (`/metrics`) for monitoring (Prometheus format)
+- Distributed tracing with correlation IDs
+- Structured logging with JSON format
 
-Included in corporate Express starter.
+**Note**: Corporate Express/Fastify starter includes all observability features by default
+
+---
+
+## Non-Compliance
+
+If corporate library unavailable or causes blocking issue:
+
+1. Document violation in `.guidelines-todo.md` with justification
+2. Create ticket to resolve (target: next sprint)
+3. Proceed with alternative, mark with `// TODO: GUIDELINE-VIOLATION` comment for tracking

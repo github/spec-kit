@@ -1,244 +1,267 @@
 # ReactJS Corporate Guidelines
 
 **Tech Stack**: React, TypeScript, Frontend Web Applications
-
 **Auto-detected from**: `package.json` with `"react"` dependency
+**Version**: 1.0
+
+---
 
 ## Scaffolding
 
-**MUST** use corporate scaffolding:
+**MUST**:
 
-```bash
-npx @YOUR_ORG/create-react-app <app-name> --template typescript
-```
+- Use corporate scaffolding command (`@YOUR_ORG/create-react-app`)
+- Use TypeScript template for all new projects
 
-**DO NOT** use public scaffolding:
+**NEVER**:
 
-- `create-react-app`
-- `vite`
+- Use public `create-react-app` or `vite` directly
+
+**Rationale**: Corporate scaffolding includes security, logging, auth, monitoring from day one
+
+---
 
 ## Package Registry
 
-Configure `.npmrc`:
+**MUST**:
 
-```text
-registry=https://artifactory.YOUR_DOMAIN.com/artifactory/api/npm/npm-virtual/
-@YOUR_ORG:registry=https://artifactory.YOUR_DOMAIN.com/artifactory/api/npm/npm-local/
-```
+- Configure `.npmrc` with corporate npm registry (Artifactory/Nexus)
+- All dependencies resolved through corporate registry only
+
+**NEVER**:
+
+- Install packages from public npmjs.org directly
+
+---
 
 ## Mandatory Libraries
 
 ### UI Components
 
-**MUST** use corporate component library:
-
-```bash
-npm install @YOUR_ORG/ui-components@latest
-```
-
-```typescript
-import { Button, Modal, DataTable } from '@YOUR_ORG/ui-components';
-```
+**MUST** use: `@YOUR_ORG/ui-components` package
+**Includes**: Buttons, Modals, DataTables, Forms with built-in accessibility (WCAG 2.1 AA)
+**Benefits**: Consistent design, built-in security, accessibility compliance
 
 ### Authentication
 
-**MUST** use corporate identity client:
+**MUST** use: `@YOUR_ORG/idm-client` package
+**Requirements**:
 
-```bash
-npm install @YOUR_ORG/idm-client@latest
-```
-
-```typescript
-import { AuthProvider, useAuth, ProtectedRoute } from '@YOUR_ORG/idm-client';
-
-// Wrap app
-<AuthProvider clientId={process.env.REACT_APP_CLIENT_ID}>
-  <ProtectedRoute path="/dashboard" component={Dashboard} />
-</AuthProvider>
-```
+- Wrap app with `<AuthProvider>` at root level
+- Use `<ProtectedRoute>` for authenticated pages
+- Access user context via `useAuth()` hook
+- Pass authentication token to all API calls
 
 ### API Client
 
-**MUST** use corporate API client:
+**MUST** use: `@YOUR_ORG/api-client` package
+**Requirements**:
 
-```bash
-npm install @YOUR_ORG/api-client@latest
-```
+- Use `useQuery()` hook for GET requests
+- Use `useMutation()` hook for POST/PUT/DELETE
+- Never use raw `fetch()` or `axios` directly
 
-```typescript
-import { useQuery, useMutation } from '@YOUR_ORG/api-client';
-
-const { data, loading } = useQuery('/api/users');
-const { mutate } = useMutation('/api/users', 'POST');
-```
+**Features**: Automatic token injection, retry logic, error handling, request/response interceptors
 
 ### Logging
 
-**MUST** use corporate logger:
+**MUST** use: `@YOUR_ORG/logger` package
+**Requirements**:
 
-```bash
-npm install @YOUR_ORG/logger@latest
-```
+- Log user actions for audit trail
+- Include correlation ID in all logs
+- Never log sensitive data (passwords, tokens, PII)
 
-```typescript
-import { logger } from '@YOUR_ORG/logger';
-
-logger.info('User action', { userId: user.id });
-logger.error('Error occurred', { error });
-```
+---
 
 ## Banned Libraries
 
-**DO NOT USE**:
+**NEVER** use:
 
-- Material-UI, Ant Design, Chakra UI → use `@YOUR_ORG/ui-components`
-- auth0-react, DIY JWT → use `@YOUR_ORG/idm-client`
-- Direct fetch without interceptors → use `@YOUR_ORG/api-client`
+- Material-UI, Ant Design, Chakra UI → Use `@YOUR_ORG/ui-components`
+- auth0-react, DIY JWT handling → Use `@YOUR_ORG/idm-client`
+- Direct `fetch()` without interceptors → Use `@YOUR_ORG/api-client`
+
+**Rationale**: Corporate libraries enforce security, accessibility, compliance
+
+---
 
 ## Architecture
 
-**Structure** (feature-based for large apps):
+### Project Structure
 
-```text
-src/
-├── features/
-│   ├── authentication/
-│   ├── dashboard/
-│   └── users/
-├── shared/
-│   ├── components/
-│   └── hooks/
-└── App.tsx
-```
+**MUST** choose based on app size:
 
-**Structure** (layer-based for small apps):
+- **Feature-based** (large apps): Group by feature (authentication/, dashboard/, users/)
+- **Layer-based** (small apps): Group by type (components/, hooks/, services/)
 
-```text
-src/
-├── components/
-├── hooks/
-├── services/
-└── App.tsx
-```
+**MUST** have:
 
-**MUST** use code splitting for routes:
+- `shared/` directory for reusable components and hooks
+- Separate directories for components, hooks, services
 
-```typescript
-const Dashboard = lazy(() => import('./features/dashboard'));
-```
+### Code Splitting
 
-**MUST** centralize API calls in services:
+**MUST**:
 
-```typescript
-// services/userService.ts
-export const userService = {
-  getUsers: () => apiClient.get('/api/users'),
-  createUser: (data) => apiClient.post('/api/users', data),
-};
-```
+- Use lazy loading for routes (`React.lazy()`)
+- Split large features into separate bundles
+- Target bundle size < 500KB gzipped
+
+### Service Layer
+
+**MUST**:
+
+- Centralize all API calls in service files
+- Never call API client directly from components
+- Export service objects with typed methods
+
+---
 
 ## Security
 
-**Environment variables** - prefix with `REACT_APP_`:
+### Environment Variables
 
-```bash
-REACT_APP_API_URL=https://api.example.com
-REACT_APP_CLIENT_ID=abc123
-```
+**MUST**:
 
-**NEVER** hardcode secrets. Use `.env` files, not committed to git.
+- Prefix all env vars with `REACT_APP_` or `VITE_`
+- Store secrets in `.env` files (never commit to git)
+- Use corporate secrets manager for production
 
-**XSS prevention** - sanitize user input:
+**NEVER**:
 
-```bash
-npm install dompurify
-```
+- Hardcode API keys or secrets in code
 
-**HTTPS only** in production. All API URLs must use HTTPS.
+### XSS Prevention
 
-**Route protection**:
+**MUST**:
 
-```typescript
-<ProtectedRoute path="/admin" element={<Admin />} roles={['admin']} />
-```
+- Sanitize user-generated HTML before rendering
+- Use `dompurify` library for sanitization
+- Validate all user inputs
+
+### HTTPS Only
+
+**MUST**:
+
+- Use HTTPS in production environments
+- All API URLs must use HTTPS protocol
+
+### Route Protection
+
+**MUST**:
+
+- Wrap protected routes with `<ProtectedRoute>` component
+- Specify required roles for role-based access
+- Redirect unauthorized users to login page
+
+---
 
 ## Coding Standards
 
-**MUST** use TypeScript with strict mode:
+### TypeScript
 
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "noImplicitAny": true
-  }
-}
-```
+**MUST**:
 
-**Prefer** functional components with hooks:
+- Use TypeScript for all new code
+- Enable strict mode in `tsconfig.json`
+- Define types for all props, state, API responses
 
-```typescript
-export function UserProfile({ userId }: UserProfileProps) {
-  const [user, setUser] = useState<User | null>(null);
-  return <div>{user?.name}</div>;
-}
-```
+**NEVER**:
 
-**Naming**:
+- Use `any` type (use `unknown` if type is truly unknown)
 
-- Components: PascalCase (`UserProfile.tsx`)
-- Hooks: camelCase with `use` prefix (`useAuth.ts`)
-- Constants: UPPER_SNAKE_CASE (`API_BASE_URL`)
+### Components
 
-**Testing** - MUST test critical flows:
+**MUST**:
 
-```typescript
-import { render, screen } from '@testing-library/react';
+- Use functional components with hooks (no class components)
+- Define prop types with TypeScript interfaces
+- Export components as named exports
 
-test('should render component', () => {
-  render(<LoginForm />);
-  expect(screen.getByRole('button')).toBeInTheDocument();
-});
-```
+### Naming Conventions
 
-## Build & Deployment
+**MUST** follow:
 
-**Production build**:
+- Components: `PascalCase` (UserProfile.tsx)
+- Hooks: `camelCase` with `use` prefix (useAuth.ts)
+- Constants: `UPPER_SNAKE_CASE` (API_BASE_URL)
+- Files: Match component name (UserProfile.tsx for UserProfile component)
 
-```bash
-npm run build
-```
+### Testing
 
-**Docker** (multi-stage):
+**MUST**:
 
-```dockerfile
-FROM node:18-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+- Write tests for critical user flows (authentication, checkout, etc.)
+- Use React Testing Library (not Enzyme)
+- Aim for 80%+ coverage on critical paths
 
-FROM nginx:alpine
-COPY --from=build /app/build /usr/share/nginx/html
-EXPOSE 80
-```
+---
 
 ## Performance
 
+### Requirements
+
 **MUST** meet:
 
-- Initial load < 3 seconds (LCP)
-- Time to interactive < 5 seconds (TTI)
+- Initial load (LCP) < 3 seconds
+- Time to interactive (TTI) < 5 seconds
 - Bundle size < 500KB gzipped
 
-**Optimize re-renders**:
+### Optimization
 
-```typescript
-const sortedUsers = useMemo(() => users.sort(...), [users]);
-const handleClick = useCallback(() => {...}, []);
-```
+**SHOULD**:
+
+- Use `useMemo()` for expensive computations
+- Use `useCallback()` for stable function references
+- Avoid unnecessary re-renders (React DevTools Profiler)
+- Lazy load images and routes
+
+---
 
 ## Accessibility
 
-**MUST** meet WCAG 2.1 Level AA. Use corporate component library for built-in accessibility.
+**MUST**:
+
+- Meet WCAG 2.1 Level AA compliance
+- Use semantic HTML elements
+- Provide alt text for images
+- Support keyboard navigation
+
+**Note**: Corporate UI components library includes accessibility by default
+
+---
+
+## Build & Deployment
+
+### Build Process
+
+**MUST**:
+
+- Use `npm run build` for production builds
+- Run tests before deployment (`npm test`)
+- Verify bundle size meets requirements
+
+### Docker
+
+**MUST**:
+
+- Use multi-stage builds (build stage + nginx runtime)
+- Use official Node.js and nginx base images
+- Copy only build artifacts to runtime image
+- Serve via nginx or similar web server
+
+**SHOULD**:
+
+- Use layer caching for faster builds
+- Keep final image small (< 100MB)
+
+---
+
+## Non-Compliance
+
+If corporate library unavailable or causes blocking issue:
+
+1. Document violation in `.guidelines-todo.md` with justification
+2. Create ticket to resolve (target: next sprint)
+3. Proceed with alternative, mark with `// TODO: GUIDELINE-VIOLATION` comment for tracking

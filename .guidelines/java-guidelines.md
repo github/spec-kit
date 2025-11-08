@@ -1,354 +1,301 @@
 # Java Corporate Guidelines
 
 **Tech Stack**: Java, Spring Boot, Backend Services, Microservices
-
 **Auto-detected from**: `pom.xml`, `build.gradle`, or `*.java` files
+**Version**: 1.0
+
+---
 
 ## Scaffolding
 
-**MUST** use corporate command:
+**MUST**:
 
-```bash
-npx @YOUR_ORG/create-spring-app <app-name> --template microservice
-```
+- Use corporate scaffolding command (`@YOUR_ORG/create-spring-app`)
+- Choose appropriate template (microservice, monolith, batch)
 
-Templates: `microservice`, `monolith`, `batch`
+**NEVER**:
 
-**DO NOT** use public Spring Initializr: `https://start.spring.io`
+- Use public Spring Initializr (`https://start.spring.io`)
 
-Alternative: Internal Spring Initializr at `https://spring-init.YOUR_DOMAIN.com`
+**Alternative**: Internal Spring Initializr at `https://spring-init.YOUR_DOMAIN.com`
+
+**Rationale**: Corporate scaffolding includes security, logging, monitoring, compliance from day one
+
+---
 
 ## Package Registry
 
-**Maven** - configure `pom.xml`:
+**MUST**:
 
-```xml
-<repositories>
-    <repository>
-        <id>YOUR_ORG-releases</id>
-        <url>https://artifactory.YOUR_DOMAIN.com/artifactory/libs-release</url>
-    </repository>
-</repositories>
-```
+- Configure Maven/Gradle with corporate artifact repository (Artifactory/Nexus)
+- All dependencies resolved through corporate repository only
+- Authenticate via `~/.m2/settings.xml` or `~/.gradle/gradle.properties`
 
-**Authentication** - `~/.m2/settings.xml`:
+**NEVER**:
 
-```xml
-<servers>
-    <server>
-        <id>YOUR_ORG-releases</id>
-        <username>${env.ARTIFACTORY_USER}</username>
-        <password>${env.ARTIFACTORY_PASSWORD}</password>
-    </server>
-</servers>
-```
+- Download packages from public Maven Central directly
+
+---
 
 ## Mandatory Libraries
 
 ### Spring Boot Starter
 
-**MUST** use corporate Spring Boot parent:
-
-```xml
-<parent>
-    <groupId>com.YOUR_ORG</groupId>
-    <artifactId>YOUR_ORG-spring-boot-starter-parent</artifactId>
-    <version>2.1.0</version>
-</parent>
-
-<dependencies>
-    <dependency>
-        <groupId>com.YOUR_ORG</groupId>
-        <artifactId>YOUR_ORG-spring-boot-starter-web</artifactId>
-    </dependency>
-</dependencies>
-```
-
-Includes: Security, logging, monitoring, health checks, exception handling, CORS
+**MUST** use: Corporate Spring Boot parent POM (`YOUR_ORG-spring-boot-starter-parent`)
+**MUST** use: `YOUR_ORG-spring-boot-starter-web` for web applications
+**Includes**: Security, logging, monitoring, health checks, exception handling, CORS
 
 ### Security & Authentication
 
-**MUST** use corporate security library:
+**MUST** use: `YOUR_ORG-security-spring-boot-starter` package
+**Requirements**:
 
-```xml
-<dependency>
-    <groupId>com.YOUR_ORG</groupId>
-    <artifactId>YOUR_ORG-security-spring-boot-starter</artifactId>
-</dependency>
-```
-
-```java
-import com.YOUR_ORG.security.annotation.SecuredEndpoint;
-import com.YOUR_ORG.security.context.SecurityContextHolder;
-
-@RestController
-@RequestMapping("/api/users")
-public class UserController {
-    @GetMapping
-    @SecuredEndpoint(roles = {"USER", "ADMIN"})
-    public List<UserDTO> getAllUsers() {
-        User currentUser = SecurityContextHolder.getCurrentUser();
-        return userService.getAllUsers(currentUser);
-    }
-}
-```
+- Decorate endpoints with `@SecuredEndpoint(roles = {...})` annotation
+- Extract authenticated user via `SecurityContextHolder.getCurrentUser()`
+- Pass user context to all service layer calls
 
 ### API Client
 
-**MUST** use corporate API client:
+**MUST** use: `YOUR_ORG-api-client` package
+**Requirements**:
 
-```xml
-<dependency>
-    <groupId>com.YOUR_ORG</groupId>
-    <artifactId>YOUR_ORG-api-client</artifactId>
-</dependency>
-```
+- Inject `ApiClient<T>` for external service calls
+- Use `@CircuitBreaker` annotation with fallback methods
+- Never create RestTemplate or WebClient manually
 
-```java
-import com.YOUR_ORG.client.ApiClient;
-import com.YOUR_ORG.client.annotation.CircuitBreaker;
-
-@Service
-public class UserService {
-    private final ApiClient<OrderServiceClient> orderClient;
-
-    @CircuitBreaker(fallbackMethod = "getOrdersFallback")
-    public List<Order> getUserOrders(String userId) {
-        return orderClient.get().getOrdersByUserId(userId);
-    }
-}
-```
-
-Features: Service discovery, load balancing, circuit breaker, retry
+**Features**: Service discovery, load balancing, circuit breaker, retry, distributed tracing
 
 ### Database
 
-**MUST** use Spring Data JPA with corporate extensions:
+**MUST** use: Spring Data JPA with `YOUR_ORG-jpa-extensions`
+**Requirements**:
 
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-jpa</artifactId>
-</dependency>
-<dependency>
-    <groupId>com.YOUR_ORG</groupId>
-    <artifactId>YOUR_ORG-jpa-extensions</artifactId>
-</dependency>
-```
-
-```java
-import com.YOUR_ORG.jpa.audit.AuditedEntity;
-
-@Entity
-@Table(name = "users")
-public class User extends AuditedEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false, unique = true)
-    private String email;
-}
-```
-
-### Database Migration
-
-**MUST** use Flyway:
-
-```xml
-<dependency>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-core</artifactId>
-</dependency>
-```
-
-Migrations: `src/main/resources/db/migration/V1__create_users_table.sql`
+- Entities extend `AuditedEntity` for automatic audit trail
+- Use repositories extending `JpaRepository` or `CrudRepository`
+- Use Flyway for database migrations
 
 ### Logging
 
-**MUST** use SLF4J + Logback (included in corporate starter):
+**MUST** use: SLF4J + Logback (included in corporate starter)
+**Requirements**:
 
-```java
-import lombok.extern.slf4j.Slf4j;
-import com.YOUR_ORG.logging.annotation.LogExecution;
+- Use `@Slf4j` annotation (Lombok) for logger injection
+- Use structured logging with MDC for correlation IDs
+- Use `@LogExecution` annotation for method-level logging
 
-@Service
-@Slf4j
-public class UserService {
-    @LogExecution
-    public UserDTO createUser(CreateUserRequest request) {
-        log.info("Creating user with email: {}", request.getEmail());
-        // ...
-    }
-}
-```
+**NEVER**:
+
+- Use `System.out.println()` for logging
+- Use Log4j 1.x or `java.util.logging`
 
 ### Validation
 
-**MUST** use Jakarta Bean Validation with corporate validators:
+**MUST** use: Jakarta Bean Validation with `YOUR_ORG-validators`
+**Requirements**:
 
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-validation</artifactId>
-</dependency>
-<dependency>
-    <groupId>com.YOUR_ORG</groupId>
-    <artifactId>YOUR_ORG-validators</artifactId>
-</dependency>
-```
+- Use `@Valid` annotation on request objects
+- Define validation rules using Jakarta annotations (@NotBlank, @Email, etc.)
+- Use custom corporate validators (e.g., @ValidCorporateEmail)
 
-```java
-import javax.validation.constraints.*;
-import com.YOUR_ORG.validation.annotation.ValidCorporateEmail;
-
-public class CreateUserRequest {
-    @NotBlank
-    @Email
-    @ValidCorporateEmail
-    private String email;
-
-    @NotBlank
-    @Size(min = 12)
-    private String password;
-}
-```
+---
 
 ## Banned Libraries
 
-**DO NOT USE**:
+**NEVER** use:
 
-- Apache HttpClient, OkHttp directly → use `YOUR_ORG-api-client`
-- Log4j 1.x, java.util.logging → use SLF4J + Logback
-- System.out.println for logging
+- Apache HttpClient, OkHttp directly → Use `YOUR_ORG-api-client`
+- Log4j 1.x, `java.util.logging` → Use SLF4J + Logback
+- `System.out.println()` → Use proper logging
+
+**Rationale**: Corporate libraries enforce security, observability, compliance
+
+---
 
 ## Architecture
 
-**Structure**:
+### Project Structure
 
-```text
-src/main/java/com/YOUR_ORG/userservice/
-├── UserServiceApplication.java
-├── controller/
-├── service/
-├── repository/
-├── model/
-├── dto/
-└── config/
-```
+**MUST** follow: Layered architecture (Controller → Service → Repository)
 
-**Layers**: Controller → Service → Repository → Database
+- **Controller**: REST endpoints, request/response handling
+- **Service**: Business logic layer
+- **Repository**: Data access layer (Spring Data JPA)
+- **Model/Entity**: Domain models and database entities
+- **DTO**: Data transfer objects for API contracts
 
-**MUST** separate DTOs from entities:
+### Separation of Concerns
 
-```java
-// Entity (internal)
-@Entity
-public class User {
-    private String passwordHash;  // Never expose
-}
+**MUST**:
 
-// DTO (API)
-public record UserDTO(Long id, String email, String firstName) {}
-```
+- Keep controllers thin (routing, validation, response formatting only)
+- Put business logic in service layer
+- Use repository interfaces for database access
+- Never put business logic in controllers or repositories
 
-**MUST** use centralized exception handling:
+### DTOs vs Entities
 
-```java
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handle(ResourceNotFoundException ex) {
-        return ResponseEntity.status(NOT_FOUND).body(...);
-    }
-}
-```
+**MUST**:
+
+- Use separate DTOs for API contracts (never expose entities directly)
+- Keep sensitive fields (passwordHash, internalId) in entities only
+- Use Java records for immutable DTOs (Java 14+)
+
+### Exception Handling
+
+**MUST**:
+
+- Use `@RestControllerAdvice` for centralized exception handling
+- Map domain exceptions to HTTP status codes
+- Return generic error messages to clients (no internal details)
+- Log full exception details server-side with stack traces
+
+---
 
 ## Security
 
-**Input validation** - ALWAYS validate:
+### Input Validation
 
-```java
-@PostMapping("/api/users")
-public ResponseEntity<UserDTO> createUser(@Valid @RequestBody CreateUserRequest request) {
-    return ResponseEntity.ok(userService.createUser(request));
-}
-```
+**MUST**:
 
-**SQL injection** - use parameterized queries:
+- Validate all API inputs using `@Valid` annotation
+- Return 400 Bad Request for validation failures
+- Reject requests before reaching business logic
 
-```java
-@Query("SELECT u FROM User u WHERE u.email = :email")
-Optional<User> findByEmail(@Param("email") String email);
-```
+### SQL Injection Prevention
 
-**Secrets** - NEVER hardcode:
+**MUST**:
 
-```java
-@Value("${YOUR_ORG.api.key}")
-private String apiKey;
-```
+- Use Spring Data JPA (parameterized queries automatic)
+- Use `@Query` annotation with named parameters (`:paramName`)
+- Never concatenate strings for SQL queries
+
+### Secrets Management
+
+**MUST**:
+
+- Store secrets in corporate secrets manager or environment variables
+- Access secrets via Spring's `@Value` annotation or `Environment`
+- Use Spring Cloud Config for centralized configuration
+
+**NEVER**:
+
+- Hardcode secrets in code or application.properties
+- Commit secrets to source control
+
+### Authentication & Authorization
+
+**MUST**:
+
+- Validate user roles before resource access
+- Use `@SecuredEndpoint` annotation on all protected endpoints
+- Implement principle of least privilege
+
+---
 
 ## Coding Standards
 
-**MUST** use Java 17+:
+### Java Version
 
-```xml
-<properties>
-    <java.version>17</java.version>
-</properties>
-```
+**MUST**:
 
-**RECOMMENDED** - use Lombok:
+- Use Java 17+ (prefer latest LTS version)
+- Use modern Java features (records, pattern matching, sealed classes)
 
-```java
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class UserService {
-    private final UserRepository userRepository;
-}
-```
+### Code Style
 
-**Naming**:
+**SHOULD**:
 
-- Classes: PascalCase (`UserService`)
-- Methods: camelCase (`createUser`)
-- Constants: UPPER_SNAKE_CASE (`MAX_RETRIES`)
-- Packages: lowercase (`com.YOUR_ORG.userservice`)
+- Use Lombok to reduce boilerplate (`@Data`, `@RequiredArgsConstructor`, `@Slf4j`)
+- Follow Google Java Style Guide or corporate style guide
+- Use Checkstyle or SpotBugs for code quality checks
+
+### Naming Conventions
+
+**MUST** follow:
+
+- Classes, Interfaces: `PascalCase`
+- Methods, variables: `camelCase`
+- Constants: `UPPER_SNAKE_CASE`
+- Packages: `lowercase` (e.g., `com.yourorg.userservice`)
+
+### Dependency Injection
+
+**MUST**:
+
+- Use constructor injection (recommended over field injection)
+- Use `@RequiredArgsConstructor` (Lombok) for automatic constructor generation
+- Avoid `@Autowired` on fields (use constructor injection instead)
+
+### Code Quality
+
+**SHOULD**:
+
+- Keep methods under 50 lines
+- Limit cyclomatic complexity (< 10 per method)
+- Follow SOLID principles
+- Write meaningful names (no abbreviations, no single letters except loops)
+
+---
+
+## Testing
+
+**MUST**:
+
+- Write unit tests with JUnit 5
+- Write integration tests for API endpoints (@SpringBootTest)
+- Aim for 80%+ coverage on critical paths
+
+**SHOULD**:
+
+- Use Mockito for mocking dependencies
+- Use TestContainers for integration tests with databases
+- Use AssertJ for fluent assertions
+
+---
 
 ## Build & Deployment
 
-**Build**:
+### Build Process
 
-```bash
-mvn clean install
-```
+**MUST**:
 
-**Docker**:
+- Use Maven (`mvn clean install`) or Gradle (`gradle build`)
+- Run tests before deployment
+- Use CI/CD pipeline for automated testing and deployment
 
-```dockerfile
-FROM maven:3.9-eclipse-temurin-17 AS build
-WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline
-COPY src ./src
-RUN mvn clean package -DskipTests
+### Docker
 
-FROM eclipse-temurin:17-jre-alpine
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
+**MUST**:
+
+- Use multi-stage builds (Maven/Gradle build stage + JRE runtime stage)
+- Use official Eclipse Temurin base images (e.g., `eclipse-temurin:17-jre-alpine`)
+- Run as non-root user in container
+- Copy only JAR file to runtime image (use .dockerignore)
+
+**SHOULD**:
+
+- Keep container images small (< 200MB for simple services)
+- Use layer caching for faster builds
+
+---
 
 ## Observability
 
 **MUST** include:
 
-- Health checks (`/actuator/health`)
-- Metrics (`/actuator/metrics`)
-- Distributed tracing
-- Structured logging
+- Health checks (`/actuator/health`) for readiness/liveness probes
+- Metrics (`/actuator/metrics`) for monitoring (Prometheus format)
+- Distributed tracing with correlation IDs
+- Structured logging with JSON format
 
-Included in corporate Spring Boot starter.
+**Note**: Corporate Spring Boot starter includes Spring Boot Actuator with all observability features by default
+
+---
+
+## Non-Compliance
+
+If corporate library unavailable or causes blocking issue:
+
+1. Document violation in `.guidelines-todo.md` with justification
+2. Create ticket to resolve (target: next sprint)
+3. Proceed with alternative, mark with `// TODO: GUIDELINE-VIOLATION` comment for tracking
