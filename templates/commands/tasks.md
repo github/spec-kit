@@ -1,8 +1,8 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
 scripts:
-  bash: scripts/bash/check-prerequisites.sh --json
-  powershell: scripts/powershell/check-prerequisites.ps1 -Json
+  bash: scripts/bash/check-prerequisites.sh --json "{ARGS}"
+  powershell: scripts/powershell/check-prerequisites.ps1 -Json "{ARGS}"
 ---
 
 ## Role & Mindset
@@ -41,9 +41,7 @@ $ARGUMENTS
 
    **Enter INTERACTIVE MODE:**
 
-   Any preferences for how tasks should be broken down?
-
-   **Format** (provide your preferences, or type "none" for standard task breakdown):
+   Please provide the following information in this exact format (copy and fill in):
 
    ```text
    PREFERENCES:
@@ -51,15 +49,26 @@ $ARGUMENTS
    - Prioritize backend before frontend
    ```
 
+   **Format rules:**
+
+- Each preference on its own line starting with a dash (-)
+- Type "none" to use standard task breakdown
+- Be specific about task size, grouping, priority, scope, or detail level
+
    **Examples of valid task generation preferences:**
 
-- Task size: "Break into smaller tasks (< 2 hours each)", "Keep tasks larger (half-day chunks)"
-- Grouping: "Group by feature area rather than technical layer", "Separate by user story strictly"
-- Priority: "Prioritize backend before frontend", "Focus on P1 and P2 only"
-- Scope: "Include database migration tasks separately", "Bundle setup tasks together"
-- Detail level: "Include detailed sub-tasks", "Keep high-level only"
+   ✅ Task size: "Break into smaller tasks (< 2 hours each)", "Keep tasks larger (half-day chunks)"
+   ✅ Grouping: "Group by feature area rather than technical layer", "Separate by user story strictly"
+   ✅ Priority: "Prioritize backend before frontend", "Focus on P1 and P2 only"
+   ✅ Scope: "Include database migration tasks separately", "Bundle setup tasks together"
+   ✅ Detail level: "Include detailed sub-tasks", "Keep high-level only"
 
-   **Your preferences** (type your preferences above, or "none" to skip):
+   **What happens next:**
+
+- I'll apply your preferences when breaking down the implementation plan into tasks
+- If you type "none", I'll use standard task breakdown by user story with default sizing
+
+   **Once you provide your preferences (or type "none"), I'll proceed with generating the task breakdown.**
 
 **ELSE** (arguments provided):
 

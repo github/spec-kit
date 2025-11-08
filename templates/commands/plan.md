@@ -1,8 +1,8 @@
 ---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
 scripts:
-  bash: scripts/bash/setup-plan.sh --json
-  powershell: scripts/powershell/setup-plan.ps1 -Json
+  bash: scripts/bash/setup-plan.sh --json "{ARGS}"
+  powershell: scripts/powershell/setup-plan.ps1 -Json "{ARGS}"
 agent_scripts:
   bash: scripts/bash/update-agent-context.sh __AGENT__
   powershell: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
@@ -44,9 +44,7 @@ $ARGUMENTS
 
    **Enter INTERACTIVE MODE:**
 
-   Do you have any additional architectural constraints or preferences for this feature?
-
-   **Format** (provide your constraints, or type "none" to proceed without additional constraints):
+   Please provide the following information in this exact format (copy and fill in):
 
    ```text
    CONSTRAINTS:
@@ -54,15 +52,26 @@ $ARGUMENTS
    - Performance requirement: < 200ms response time
    ```
 
+   **Format rules:**
+
+- Each constraint on its own line starting with a dash (-)
+- Type "none" to proceed without additional constraints
+- Be specific about technology, architecture, performance, integration, or compliance requirements
+
    **Examples of valid constraints:**
 
-- Technology requirements: "Must use PostgreSQL", "Prefer Redis for caching"
-- Architecture preferences: "Prefer microservices over monolith", "Use event-driven architecture"
-- Performance requirements: "< 200ms response time", "Support 10,000 concurrent users"
-- Integration requirements: "Must integrate with existing auth system", "Use corporate API gateway"
-- Compliance: "Must be GDPR compliant", "PII must be encrypted at rest"
+   ✅ Technology requirements: "Must use PostgreSQL", "Prefer Redis for caching"
+   ✅ Architecture preferences: "Prefer microservices over monolith", "Use event-driven architecture"
+   ✅ Performance requirements: "< 200ms response time", "Support 10,000 concurrent users"
+   ✅ Integration requirements: "Must integrate with existing auth system", "Use corporate API gateway"
+   ✅ Compliance: "Must be GDPR compliant", "PII must be encrypted at rest"
 
-   **Your constraints** (type your constraints above, or "none" to skip):
+   **What happens next:**
+
+- I'll incorporate your constraints into the architecture and design decisions
+- If you type "none", I'll proceed with standard best practices from the specification
+
+   **Once you provide your constraints (or type "none"), I'll proceed with generating the implementation plan.**
 
 **ELSE** (arguments provided):
 

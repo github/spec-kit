@@ -1,8 +1,8 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
 scripts:
-  bash: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-  powershell: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+  bash: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks "{ARGS}"
+  powershell: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks "{ARGS}"
 ---
 
 ## Role & Mindset
@@ -42,9 +42,7 @@ $ARGUMENTS
 
    **Enter INTERACTIVE MODE:**
 
-   Any special instructions or considerations for implementation?
-
-   **Format** (provide your notes, or type "none" to proceed with standard implementation):
+   Please provide the following information in this exact format (copy and fill in):
 
    ```text
    NOTES:
@@ -52,15 +50,26 @@ $ARGUMENTS
    - Focus on P1 user stories only
    ```
 
+   **Format rules:**
+
+- Each note on its own line starting with a dash (-)
+- Type "none" to proceed with standard implementation
+- Be specific about execution order, scope, testing, priorities, or constraints
+
    **Examples of valid implementation notes:**
 
-- Execution order: "Start with database migration first", "Implement backend before frontend"
-- Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
-- Testing: "Write tests first", "Skip tests for now (exploratory spike)"
-- Priorities: "Prioritize error handling", "Focus on security validation"
-- Constraints: "Use existing utility functions where possible", "Don't modify core files"
+   ✅ Execution order: "Start with database migration first", "Implement backend before frontend"
+   ✅ Scope: "Focus on P1 user stories only", "Skip optional features for MVP"
+   ✅ Testing: "Write tests first", "Skip tests for now (exploratory spike)"
+   ✅ Priorities: "Prioritize error handling", "Focus on security validation"
+   ✅ Constraints: "Use existing utility functions where possible", "Don't modify core files"
 
-   **Your notes** (type your notes above, or "none" to skip):
+   **What happens next:**
+
+- I'll follow your notes during implementation
+- If you type "none", I'll execute the task plan using standard best practices
+
+   **Once you provide your notes (or type "none"), I'll proceed with executing the implementation plan.**
 
 **ELSE** (arguments provided):
 
