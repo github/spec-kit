@@ -137,6 +137,7 @@ build_unified() {
   mkdir -p "$SPEC_DIR"
 
   [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
+  [[ -d .guidelines ]] && { cp -r .guidelines "$base_dir/"; echo "Copied .guidelines -> package root"; }
 
   # Copy BOTH bash and powershell script directories
   if [[ -d scripts ]]; then
