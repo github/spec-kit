@@ -117,12 +117,17 @@ if ($pythonCmd) {
     try {
         $logPath = Join-Path $analysisDir "analyzer-log.txt"
 
+        # Change to repository root to ensure Python can find the scripts module
+        Push-Location $repoRoot
+
         & $pythonCmd -m scripts.python.analyzer `
             --project $ProjectPath `
             --output $analysisDir `
             --depth $Depth `
             --focus $Focus `
             --json 2>&1 | Tee-Object -FilePath $logPath | Select-Object -Last 20
+
+        Pop-Location
 
         if ($LASTEXITCODE -eq 0) {
             $pythonAnalysisStatus = "success"
@@ -136,6 +141,8 @@ if ($pythonCmd) {
         $pythonAnalysisStatus = "failed"
         $pythonAnalysisError = "Exception during Python analyzer: $_"
         Write-Host "⚠ Python analyzer failed - will use AI-guided analysis fallback" -ForegroundColor Yellow
+        # Ensure we pop location even on error
+        Pop-Location
     }
 } else {
     Write-Host "⚠ Python not available - will use AI-guided analysis" -ForegroundColor Yellow

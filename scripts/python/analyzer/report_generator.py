@@ -142,7 +142,7 @@ class ReportGenerator:
         sections.append(self._build_recommendations(feasibility_result, scan_result))
 
         # Write to file
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n\n".join(sections))
 
         return output_path
@@ -192,7 +192,7 @@ class ReportGenerator:
         sections.append(self._build_rollback_plan())
 
         # Write to file
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(sections))
 
         return output_path
@@ -229,7 +229,7 @@ class ReportGenerator:
         sections.append(self._build_core_principles(scan_result, metrics))
 
         # Write to file
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(sections))
 
         return output_path
@@ -321,7 +321,7 @@ Based on the **{feasibility_result.recommendation.upper().replace('_', ' ')}** r
 5. Make final decision and commit to approach
 """
 
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
         return output_path

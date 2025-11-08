@@ -173,24 +173,28 @@ def main():
         # Build ProjectMetrics from scan results
         metrics = ProjectMetrics(
             lines_of_code=scan_result.metrics.code_lines,
-            file_count=scan_result.metrics.file_count,
             test_coverage=50.0 if scan_result.structure.has_tests else 0.0,  # Estimate
             code_quality_score=7.0 if scan_result.structure.has_documentation else 5.0,  # Estimate
             technical_debt_percentage=40.0 if not scan_result.structure.has_tests else 20.0,  # Estimate
             documentation_quality=8.0 if scan_result.structure.has_documentation else 3.0,
             modularity_score=7.0 if len(scan_result.structure.source_dirs) > 0 else 4.0,
-            dependencies_outdated=outdated_count,
-            dependencies_vulnerable=vulnerable_count,
-            has_ci_cd=scan_result.structure.has_ci_cd,
-            has_tests=scan_result.structure.has_tests,
-            runtime_eol_soon=False,  # Would need more analysis
-            framework_version_outdated=outdated_count > 0
+            architecture_score=7.0 if scan_result.structure.has_documentation else 5.0,  # Estimate
+            outdated_dependencies=outdated_count,
+            vulnerable_dependencies=vulnerable_count,
+            total_dependencies=sum(r.total_dependencies for r in dependency_reports),
+            deprecated_dependencies=sum(r.deprecated_count for r in dependency_reports),
+            team_familiarity=5.0,  # Default neutral score
+            requirements_clarity=5.0,  # Default neutral score
+            business_continuity_risk="medium",  # Default
+            team_capacity_score=5.0,  # Default neutral score
+            time_available_weeks=12,  # Default 3 months
+            budget_available=True  # Assume budget available
         )
 
         # Phase 4: Feasibility Scoring
         logger.info("Phase 4: Calculating feasibility scores...")
         scorer = FeasibilityScorer()
-        feasibility_result = scorer.score_project(metrics)
+        feasibility_result = scorer.analyze_feasibility(metrics)
 
         logger.info(f"✓ Inline upgrade score: {feasibility_result.inline_upgrade_score}/100")
         logger.info(f"✓ Greenfield rewrite score: {feasibility_result.greenfield_rewrite_score}/100")
@@ -256,13 +260,18 @@ def main():
             with open(metrics_summary_path, 'w', encoding='utf-8') as f:
                 metrics_summary = {
                     "lines_of_code": metrics.lines_of_code,
-                    "file_count": metrics.file_count,
+                    "file_count": scan_result.metrics.file_count,
                     "test_coverage": metrics.test_coverage,
                     "code_quality_score": metrics.code_quality_score,
                     "technical_debt_percentage": metrics.technical_debt_percentage,
                     "modularity_score": metrics.modularity_score,
-                    "has_ci_cd": metrics.has_ci_cd,
-                    "has_tests": metrics.has_tests,
+                    "architecture_score": metrics.architecture_score,
+                    "has_ci_cd": scan_result.structure.has_ci_cd,
+                    "has_tests": scan_result.structure.has_tests,
+                    "total_dependencies": metrics.total_dependencies,
+                    "outdated_dependencies": metrics.outdated_dependencies,
+                    "vulnerable_dependencies": metrics.vulnerable_dependencies,
+                    "deprecated_dependencies": metrics.deprecated_dependencies,
                     "tech_stack": {
                         "primary_language": scan_result.tech_stack.primary_language,
                         "languages": scan_result.tech_stack.languages,
