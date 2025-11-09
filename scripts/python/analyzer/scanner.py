@@ -11,8 +11,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from .config import DEFAULT_CONFIG
-from .security import validate_project_path, SecurityError
+# Handle both relative and absolute imports
+try:
+    from .config import DEFAULT_CONFIG
+    from .security import validate_project_path, SecurityError
+except ImportError:
+    from config import DEFAULT_CONFIG
+    from security import validate_project_path, SecurityError
 
 logger = logging.getLogger(__name__)
 

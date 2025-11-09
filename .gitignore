@@ -52,3 +52,4 @@ coverage.xml
 *.zip
 sdd-*/
 /.vs
+.analysis/

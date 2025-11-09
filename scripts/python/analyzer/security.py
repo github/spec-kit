@@ -8,7 +8,11 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from .config import DEFAULT_CONFIG
+# Handle both relative and absolute imports
+try:
+    from .config import DEFAULT_CONFIG
+except ImportError:
+    from config import DEFAULT_CONFIG
 
 logger = logging.getLogger(__name__)
 
