@@ -1,0 +1,305 @@
+{
+  // ========================================================================
+  // VSCode Claude Auto-Approve Settings for Spec Kit
+  // ========================================================================
+  //
+  // This configuration enables auto-approval for Spec Kit commands with
+  // intelligent platform detection:
+  //
+  // PLATFORM DETECTION LOGIC:
+  //
+  // 1. Environment Variable Override (Optional):
+  //    - If SPEC_KIT_PLATFORM=unix → use bash scripts (skip auto-detection)
+  //    - If SPEC_KIT_PLATFORM=windows → use PowerShell scripts (skip auto-detection)
+  //    - If not set or 'auto' → proceed with auto-detection below
+  //
+  // 2. Auto-detect Operating System:
+  //    - Unix/Linux/macOS: Run `uname`. If successful → use bash
+  //    - Windows: Check $env:OS. If "Windows_NT" → use PowerShell
+  //
+  // All Spec Kit scripts (bash and PowerShell) are pre-approved, along with
+  // common development tools (git, npm, python, docker, etc.)
+  //
+  // ========================================================================
+
+  "claude.autoApprove": {
+    "description": "Auto-approve settings for Spec Kit toolkit commands and scripts with platform detection",
+    "patterns": [
+      // ====================================================================
+      // PLATFORM DETECTION & OS COMMANDS
+      // ====================================================================
+
+      // Environment variable check for SPEC_KIT_PLATFORM
+      "echo $SPEC_KIT_PLATFORM",
+      "$env:SPEC_KIT_PLATFORM",
+
+      // Auto-detect Operating System
+      "uname",
+      "uname -a",
+      "uname -s",
+      "$env:OS",
+      "$IsWindows",
+
+      // ====================================================================
+      // BASH SCRIPTS (Unix/Linux/macOS)
+      // ====================================================================
+
+      // Core workflow scripts
+      "scripts/bash/check-prerequisites.sh*",
+      "scripts/bash/setup-plan.sh*",
+      "scripts/bash/update-agent-context.sh*",
+      "scripts/bash/create-new-feature.sh*",
+      "scripts/bash/analyze-project-setup.sh*",
+
+      // Analysis and compliance scripts
+      "scripts/bash/analyze-project.sh*",
+      "scripts/bash/check-guidelines-compliance.sh*",
+      "scripts/bash/autofix-guidelines.sh*",
+      "scripts/bash/guidelines-analytics.sh*",
+      "scripts/bash/diff-guidelines.sh*",
+
+      // Common utilities
+      "scripts/bash/common.sh*",
+
+      // ====================================================================
+      // POWERSHELL SCRIPTS (Windows)
+      // ====================================================================
+
+      // Core workflow scripts
+      "scripts/powershell/check-prerequisites.ps1*",
+      "scripts/powershell/setup-plan.ps1*",
+      "scripts/powershell/update-agent-context.ps1*",
+      "scripts/powershell/create-new-feature.ps1*",
+      "scripts/powershell/analyze-project-setup.ps1*",
+
+      // Common utilities
+      "scripts/powershell/common.ps1*",
+
+      // ====================================================================
+      // PYTHON SCRIPTS & COMMANDS
+      // ====================================================================
+
+      // Python interpreter
+      "python3*",
+      "python *",
+
+      // Validation scripts
+      "scripts/validate-guidelines.py*",
+      "scripts/python/analyzer/__main__.py*",
+
+      // Python analyzer modules
+      "python3 -m scripts.python.analyzer*",
+
+      // ====================================================================
+      // GIT COMMANDS
+      // ====================================================================
+
+      // Git information and status
+      "git rev-parse --show-toplevel",
+      "git rev-parse --git-dir",
+      "git rev-parse --abbrev-ref HEAD",
+      "git status",
+      "git status --porcelain",
+      "git diff*",
+      "git log*",
+      "git branch",
+      "git branch -a",
+      "git branch -r",
+
+      // Git remote operations
+      "git fetch*",
+      "git ls-remote*",
+      "git remote -v",
+
+      // Git branch operations
+      "git checkout -b*",
+      "git switch -c*",
+
+      // ====================================================================
+      // PACKAGE MANAGERS
+      // ====================================================================
+
+      // npm (Node.js)
+      "npm --version",
+      "npm test",
+      "npm run lint",
+      "npm install",
+      "npm ci",
+      "npm run*",
+
+      // pip (Python)
+      "pip --version",
+      "pip3 --version",
+      "pip list",
+      "pip3 list",
+      "pip show*",
+      "pip3 show*",
+
+      // yarn (Node.js alternative)
+      "yarn --version",
+      "yarn install",
+      "yarn test",
+      "yarn lint",
+
+      // pnpm (Node.js alternative)
+      "pnpm --version",
+      "pnpm install",
+      "pnpm test",
+
+      // ====================================================================
+      // CODE ANALYSIS TOOLS
+      // ====================================================================
+
+      // Code metrics
+      "cloc*",
+      "tokei*",
+
+      // ====================================================================
+      // BUILD & TEST TOOLS
+      // ====================================================================
+
+      // Java
+      "mvn --version",
+      "mvn clean*",
+      "mvn test",
+      "gradle --version",
+      "gradle build",
+      "gradle test",
+
+      // .NET
+      "dotnet --version",
+      "dotnet build",
+      "dotnet test",
+      "dotnet run",
+
+      // Python
+      "pytest*",
+
+      // JavaScript
+      "jest*",
+
+      // ====================================================================
+      // CONTAINER & ORCHESTRATION TOOLS
+      // ====================================================================
+
+      // Docker
+      "docker --version",
+      "docker build*",
+      "docker run*",
+      "docker ps",
+
+      // Kubernetes
+      "kubectl version",
+      "kubectl get*",
+      "kubectl describe*",
+
+      // ====================================================================
+      // INFRASTRUCTURE AS CODE
+      // ====================================================================
+
+      // Terraform
+      "terraform --version",
+      "terraform init",
+      "terraform plan",
+      "terraform validate",
+
+      // ====================================================================
+      // COMMON UNIX/LINUX COMMANDS
+      // ====================================================================
+
+      // File operations (read-only)
+      "cat *",
+      "ls *",
+      "ls -la*",
+      "ls -A*",
+      "pwd",
+      "head *",
+      "tail *",
+
+      // Directory operations
+      "mkdir -p*",
+      "cd *",
+
+      // File permissions
+      "chmod +x*",
+      "chmod u+x*",
+
+      // Text processing
+      "grep*",
+      "sed*",
+      "awk*",
+
+      // File finding
+      "find *",
+      "which *",
+      "whereis *",
+
+      // System information
+      "date*",
+      "whoami",
+      "hostname",
+
+      // ====================================================================
+      // POWERSHELL SPECIFIC COMMANDS
+      // ====================================================================
+
+      "Get-ChildItem*",
+      "Test-Path*",
+      "New-Item*",
+      "Write-Output*",
+      "ConvertTo-Json*",
+      "Out-Null",
+
+      // ====================================================================
+      // JSON PROCESSING
+      // ====================================================================
+
+      "python3 -m json.tool*",
+      "jq*",
+
+      // ====================================================================
+      // TEXT PROCESSING & UTILITIES
+      // ====================================================================
+
+      // Command utilities
+      "xargs*",
+      "sort*",
+      "uniq*",
+      "cut*",
+      "tr*",
+      "wc*",
+      "basename*",
+
+      // Command existence checks
+      "command -v*",
+      "type *",
+      "where.exe*",
+
+      // ====================================================================
+      // SPEC KIT CLI & UV TOOL
+      // ====================================================================
+
+      // Spec Kit CLI
+      "specify*",
+
+      // UV Python tool installer
+      "uv*",
+      "uvx*",
+
+      // ====================================================================
+      // ENVIRONMENT & PATH OPERATIONS
+      // ====================================================================
+
+      "echo $PATH",
+      "echo $HOME",
+      "echo $USER",
+      "echo $REPO_ROOT",
+      "echo $FEATURE_DIR",
+      "$env:PATH",
+      "$env:HOME",
+      "$env:USER",
+      "$env:REPO_ROOT",
+      "$env:FEATURE_DIR"
+    ]
+  }
+}
