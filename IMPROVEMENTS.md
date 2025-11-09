@@ -316,19 +316,21 @@ Using AI analysis of legacy code + user's modernization preferences, generate:
 
 ##### Task 1: Create Interactive Analysis Prompt Template
 
-- [ ] Create `templates/commands/analyze-project-interactive.md`
-- [ ] Define multi-step workflow with clear sections
-- [ ] Add tech stack detection logic (sampling approach)
-- [ ] Add modernization preference questionnaire
-- [ ] Add deep analysis guidance (what to look for in legacy code)
-- [ ] Add artifact generation instructions with real examples
+- [x] ~~Create `templates/commands/analyze-project-interactive.md`~~ **Updated `analyze-project.md` directly instead**
+- [x] Define multi-step workflow with clear sections
+- [x] Add tech stack detection logic (sampling approach)
+- [x] Add modernization preference questionnaire (10 questions)
+- [x] Add deep analysis guidance (what to look for in legacy code)
+- [x] Add artifact generation instructions with real examples
+
+**Completed**: 2025-11-09 - Implemented in `templates/commands/analyze-project.md`
 
 ##### Task 2: Create Artifact Generation Templates
 
-**Reference**: Use structure from `tmp/Meta-Prompt - Universal Meta-Prompt to Gen
-BA_ARCH_EXEC_AIB_SPEC_JSON docs.md`
+**Reference**: Used structure from `tmp/Meta-Prompt - Universal Meta-Prompt to Gen
+BA_ARCH_EXEC_AIB_SPEC_JSON docs.md` (reference file later removed to fix markdownlint errors)
 
-- [ ] Create `templates/analysis/functional-spec-template.md`
+- [x] Create `templates/analysis/functional-spec-template.md`
   - **Base structure**: Meta-prompt Section A (Business Analysis)
   - **Adapt for legacy**: Add "Evidence" column with file:line references
   - **Sections**:
@@ -341,7 +343,7 @@ BA_ARCH_EXEC_AIB_SPEC_JSON docs.md`
     - Known Quirks & Legacy Behaviors
   - **Placeholders**: `<<EXTRACT_FEATURES_FROM>>`, `<<EXTRACT_DATA_MODELS>>`,
     `<<EXTRACT_CONFIG>>`, etc.
-- [ ] Create `templates/analysis/technical-spec-template.md`
+- [x] Create `templates/analysis/technical-spec-template.md`
   - **Base structure**: Meta-prompt Section B (Architecture)
   - **Adapt for modernization**: Add "Legacy vs. Target" comparison
   - **Sections**:
@@ -355,31 +357,38 @@ BA_ARCH_EXEC_AIB_SPEC_JSON docs.md`
   - **Placeholders**: `<<USER_CHOICE_LANGUAGE>>`, `<<USER_CHOICE_DATABASE>>`,
     `<<USER_CHOICE_DEPLOYMENT>>`, `<<LEGACY_PAIN_POINTS>>`, etc.
   - **Mermaid**: Use meta-prompt phase colors + adapt pattern for target infra
-- [ ] Create `templates/analysis/stage-prompt-templates/`
+- [x] Create `templates/analysis/stage-prompt-templates/`
   - 6 template files: constitution, specify, plan, clarify, tasks, implement
   - Structure: Legacy Context + Modernization Guidance + Ready-to-Paste Prompt
   - Clarify & Implement prompts include: "Consult legacy app <<path>> as source of
     truth if specification is underspecified, ambiguous, or requires clarification"
 
+**Completed**: 2025-11-09 - All templates created and markdownlint errors fixed
+
 ##### Task 3: Update analyze-project Command
 
-- [ ] Modify `templates/commands/analyze-project.md` to be INTERACTIVE-ONLY
-- [ ] Remove non-interactive mode (arguments mode)
-- [ ] Add "Act as senior developer and architect" guidance
-- [ ] Add instruction to use Python analyzer for metrics only
-- [ ] Add instruction to use AI for semantic analysis and artifact generation
+- [x] Modify `templates/commands/analyze-project.md` to be INTERACTIVE-ONLY
+- [x] ~~Remove non-interactive mode (arguments mode)~~ **Kept for script passthrough, removed confusing messaging**
+- [x] Add "Act as senior developer and architect" guidance (already in Role & Mindset)
+- [x] Add instruction to use Python analyzer for metrics only
+- [x] Add instruction to use AI for semantic analysis and artifact generation
+
+**Completed**: 2025-11-09 - Interactive workflow with 10 modernization questions implemented
 
 ##### Task 4: Remove Template-Only Python Generators
 
-- [ ] Remove or refactor `functional_spec_generator.py`
-- [ ] Remove or refactor `tech_stack_proposer.py`
-- [ ] Remove or refactor `prompt_generator.py`
-- [ ] Keep `report_generator.py` for analysis-report.md and metrics
-- [ ] Keep `principle_extractor.py` if it extracts real patterns from code
+- [x] Remove `functional_spec_generator.py`
+- [x] Remove `tech_stack_proposer.py`
+- [x] Remove `prompt_generator.py`
+- [x] Remove `principle_extractor.py`
+- [x] Keep `report_generator.py` for analysis-report.md and metrics
+- [x] Update `report_generator.py` imports to remove deleted generators
+
+**Completed**: 2025-11-09 - All template-only generators removed, cleanup complete
 
 ##### Task 5: Update Python Analyzer Role
 
-Python analyzer should focus on **metrics and structure**:
+Python analyzer already focuses on **metrics and structure**:
 
 - ✅ Tech stack detection (languages, frameworks, tools)
 - ✅ Code metrics (LOC, complexity, test coverage)
@@ -387,37 +396,31 @@ Python analyzer should focus on **metrics and structure**:
 - ✅ File structure analysis (directories, patterns)
 - ✅ Generate `analysis-report.md` with technical findings
 
-Python analyzer should NOT generate:
+Python analyzer does NOT generate:
 
 - ❌ Functional specifications (requires semantic understanding)
 - ❌ Tech stack proposals (requires business context)
 - ❌ Stage prompts (requires understanding of Toolkit workflow)
 
+**Status**: Already correct - No changes needed
+
 ##### Task 6: Create Meta-Prompt Style Templates
 
-**Reference**: Study `tmp/Meta-Prompt - Universal Meta-Prompt to Gen
-BA_ARCH_EXEC_AIB_SPEC_JSON docs.md`
+**Reference**: Studied `tmp/Meta-Prompt - Universal Meta-Prompt to Gen
+BA_ARCH_EXEC_AIB_SPEC_JSON docs.md` (file later removed)
 
-- [ ] Analyze meta-prompt structure and adapt for legacy code analysis:
-  - **Section A (Business Analysis)** → `functional-spec-generator-prompt.md`
-  - **Section B (Architecture)** → `technical-spec-generator-prompt.md`
-  - **Mermaid patterns** → Adapt for target infrastructure (K8s, AWS, etc.)
-  - **Phase coloring (50/30/15/5)** → Map legacy features to phases
-  - **NFR measurability** → Convert legacy configs to SLO/SLI targets
-  - **R→C→T traceability** → Map legacy features to new components & tests
+- [x] Analyze meta-prompt structure and adapt for legacy code analysis:
+  - **Section A (Business Analysis)** → Used for `functional-spec-template.md`
+  - **Section B (Architecture)** → Used for `technical-spec-template.md`
+  - **Mermaid patterns** → Adapted for target infrastructure (K8s, AWS, etc.)
+  - **Phase coloring (50/30/15/5)** → Implemented in technical-spec template
+  - **NFR measurability** → Convert legacy configs to SLO/SLI targets guidance added
+  - **R→C→T traceability** → Mentioned in technical-spec template
   - **Determinism guardrails** → Use AI knowledge base for LTS (not hardcoded)
-- [ ] Create `functional-spec-generator-prompt.md` with:
-  - Instructions: "Use meta-prompt Section A structure"
-  - "Extract WHAT from legacy code, not HOW"
-  - "Every requirement needs Evidence: file:line"
-  - Examples from meta-prompt adapted for legacy analysis
-  - Placeholders AI fills: `<<EXTRACT_FEATURES>>`, `<<EXTRACT_PERSONAS>>`, etc.
-- [ ] Create `technical-spec-generator-prompt.md` with:
-  - Instructions: "Use meta-prompt Section B structure"
-  - "Fill `<<USER_CHOICE_X>>` placeholders from Q1-Q10 answers"
-  - "Use AI knowledge base for LTS versions (meta-prompt LTSGuidance approach)"
-  - "Generate phase-colored Mermaid matching target infrastructure"
-  - "Convert legacy NFRs to measurable SLO/SLI targets"
+- [x] ~~Create `functional-spec-generator-prompt.md`~~ **Embedded in analyze-project.md Step 6**
+- [x] ~~Create `technical-spec-generator-prompt.md`~~ **Embedded in analyze-project.md Step 6**
+
+**Completed**: 2025-11-09 - Templates created with meta-prompt structure, guidance integrated into main prompt
 
 ##### Task 7: Integration Testing
 
@@ -427,47 +430,57 @@ BA_ARCH_EXEC_AIB_SPEC_JSON docs.md`
 - [ ] Validate that stage prompts contain actual legacy code references
 - [ ] Ensure artifacts can feed into Toolkit workflow successfully
 
+**Status**: ⏳ User tested on ASP.NET project, identified UX issues (Phase 8.1)
+
 ---
 
 #### 8.3 Implementation Plan (Phased Approach)
 
-##### Week 1-2: Foundation & Design
+##### Week 1-2: Foundation & Design ✅ COMPLETED
 
-- [ ] Document current issues with detailed examples
-- [ ] Design new interactive workflow (state machine diagram)
-- [ ] Create wireframes for questionnaires (modernization preferences)
-- [ ] Study `tmp/Meta-Prompt - Universal Meta-Prompt...` thoroughly
+- [x] Document current issues with detailed examples
+- [x] Design new interactive workflow (state machine diagram)
+- [x] Create wireframes for questionnaires (modernization preferences)
+- [x] Study `tmp/Meta-Prompt - Universal Meta-Prompt...` thoroughly
   - Understand Section A (Business Analysis) structure
   - Understand Section B (Architecture) structure
   - Study Mermaid patterns and phase coloring
   - Study NFR measurability approach (SLO/SLI)
-- [ ] Design template structure for functional-spec.md (based on Section A)
-- [ ] Design template structure for technical-spec.md (based on Section B)
-- [ ] Get user approval on design before implementation
+- [x] Design template structure for functional-spec.md (based on Section A)
+- [x] Design template structure for technical-spec.md (based on Section B)
+- [x] Get user approval on design before implementation
 
-##### Week 3-4: Template Creation
+**Completed**: 2025-11-09
 
-- [ ] Create `analyze-project-interactive.md` prompt template
-- [ ] Create `functional-spec-template.md` with clear structure
-- [ ] Create `technical-spec-template.md` with clear structure
-- [ ] Create 6 stage-prompt templates
-- [ ] Add detailed examples in each template
+##### Week 3-4: Template Creation ✅ COMPLETED
 
-##### Week 5-6: Refactoring
+- [x] Create `analyze-project-interactive.md` prompt template (updated `analyze-project.md` instead)
+- [x] Create `functional-spec-template.md` with clear structure
+- [x] Create `technical-spec-template.md` with clear structure
+- [x] Create 6 stage-prompt templates
+- [x] Add detailed examples in each template
 
-- [ ] Update `analyze-project.md` command to use new workflow
-- [ ] Refactor or remove Python generators
-- [ ] Update Python analyzer to focus on metrics only
-- [ ] Update `report_generator.py` to generate only technical reports
-- [ ] Test on sample legacy project
+**Completed**: 2025-11-09
 
-##### Week 7-8: Testing & Documentation
+##### Week 5-6: Refactoring ✅ COMPLETED
+
+- [x] Update `analyze-project.md` command to use new workflow
+- [x] Refactor or remove Python generators
+- [x] Update Python analyzer to focus on metrics only (no changes needed)
+- [x] Update `report_generator.py` to generate only technical reports
+- [x] Test on sample legacy project (ASP.NET tested by user)
+
+**Completed**: 2025-11-09
+
+##### Week 7-8: Testing & Documentation ⏳ IN PROGRESS
 
 - [ ] Test on 3 diverse legacy projects (Java, Python, Node.js)
-- [ ] Validate artifact quality (real content vs templates)
+- [x] Validate artifact quality (real content vs templates) - User confirmed good output
 - [ ] Document new workflow in `docs/reverse-engineering.md`
 - [ ] Create video walkthrough (optional)
-- [ ] Collect user feedback and iterate
+- [x] Collect user feedback and iterate - **UX issues identified (see Phase 8.1)**
+
+**Status**: User testing complete on ASP.NET project, UX improvements needed
 
 ---
 
@@ -542,6 +555,171 @@ Technical-spec.md must be consumable by plan stage.
 ---
 
 **Note on Phase 7**: Phase 7 (Analysis-to-Spec Workflow Integration) was completed on 2025-11-08 but has been superseded by Phase 8 redesign based on user feedback. The Python generators created in Phase 7 produced template-only artifacts without real legacy code analysis. See "Completed Improvements" section for Phase 7 historical record.
+
+---
+
+### Phase 8.1 - UX Enhancements: Conditional Questions (MEDIUM PRIORITY) 🟡
+
+**Current Problem** (User Feedback 2025-11-09):
+
+After Phase 8 implementation, user testing revealed UX issues with the 10 modernization questions:
+
+#### Issue 1: Confusing "Enter INTERACTIVE MODE" Message
+
+**Problem**: The prompt says "Now I need to enter INTERACTIVE MODE since no specific arguments were provided" which is confusing because there's only one mode.
+
+**Root Cause**: Legacy code from when we had both interactive and non-interactive modes. The `$ARGUMENTS` check is kept for bash/PowerShell script passthrough, but the messaging is outdated.
+
+**Solution**:
+- Remove "entering INTERACTIVE MODE" announcement
+- Keep `$ARGUMENTS` parsing silently for script compatibility
+- Directly say: "Please provide the following information:" (no mode explanation)
+
+**Priority**: LOW - Minor UX polish, doesn't affect functionality
+
+---
+
+#### Issue 2: Irrelevant Questions
+
+**Problem**: Asking questions that don't make sense based on detected stack or previous answers.
+
+**Examples**:
+- **Q3 (Message Bus)**: Code analysis shows "None detected" yet we ask 6 options
+  - Why bad: Wastes time, feels like AI didn't pay attention
+- **Q5 = "Keep traditional (IIS on Windows Server)"** then asking:
+  - **Q6 (IaC)**: "Terraform? Kubernetes Helm charts?" (irrelevant for IIS)
+  - **Q7 (Containerization)**: "Docker? Kubernetes?" (can't use with IIS)
+  - Why absurd: IIS on Windows Server doesn't use these modern cloud tools
+
+**Analysis** (Senior Architect Perspective):
+
+**Approach A: Ask Everything (Current - Simple but Poor UX)**
+
+Pros:
+- ✓ Simple, consistent flow
+- ✓ Might spark ideas ("I didn't know I could add message queue!")
+- ✓ "None / Not needed" handles opt-out
+
+Cons:
+- ✗ Wastes time on irrelevant questions
+- ✗ Poor UX - feels like AI isn't listening
+- ✗ Asking about K8s after "keep traditional" is jarring
+
+**Approach B: Conditional Skip Logic (Smart but Complex)**
+
+Pros:
+- ✓ Smart, context-aware
+- ✓ Great UX - only relevant questions
+- ✓ Faster workflow
+
+Cons:
+- ✗ Complex to implement (nested conditionals in prompts)
+- ✗ Risk of skipping questions user wanted
+- ✗ Harder to maintain
+
+**Approach C: Hybrid - Mark Optional + Conditional ⭐ RECOMMENDED**
+
+Question structure:
+1. **Always ask**: Language, Database, Package Manager, Deployment
+2. **Mark optional**: Questions for features not detected (Message Bus, Observability if none found)
+3. **Conditional skip**: Q6-Q7 (IaC, Containerization) if Q5 = "traditional deployment"
+4. **Educational notes**: Explain why we're skipping and when it might become relevant
+
+Example:
+```text
+3. Message Bus/Queue [OPTIONAL - Not detected in legacy code]
+   Current: None (email processing appears polling-based)
+
+   Since your legacy app doesn't use message queues, you can skip this.
+   However, modernization could benefit from async messaging for:
+   - Email processing (background jobs instead of polling)
+   - Future event-driven features
+
+   Options:
+   - [A] None / Not needed - Keep simple
+   - [B] Redis Pub/Sub - Lightweight, also useful for caching
+   - [C] Azure Service Bus - If going Azure
+   - [D] Other (specify)
+   Your choice (or press Enter to skip): ___
+
+5. Target Deployment Infrastructure
+   [Selected: A - Dedicated server (IIS) - Keep traditional]
+
+6. Infrastructure as Code (IaC) [SKIPPED - Not applicable for traditional IIS]
+   Note: If you later migrate to cloud, IaC becomes relevant.
+   For Windows Server, deployment scripts or DSC are alternatives.
+
+7. Containerization Strategy [SKIPPED - Not applicable for IIS]
+   Note: Containerization requires migrating away from IIS.
+   This becomes relevant if you choose cloud deployment in future.
+```
+
+**Benefits**:
+- ✓ Respects user time (skip obviously irrelevant)
+- ✓ Still allows discovery (optional = user can opt-in)
+- ✓ Provides education (explain why question matters)
+- ✓ Flexible (can still add message bus even if not detected)
+
+---
+
+#### Implementation Tasks
+
+##### Task 1: Remove "Interactive Mode" Messaging
+
+- [ ] Update `templates/commands/analyze-project.md` User Input section
+- [ ] Remove "Enter INTERACTIVE MODE:" announcement
+- [ ] Keep `$ARGUMENTS` parsing for script compatibility
+- [ ] Change to direct: "Please provide the following information:"
+
+**Complexity**: LOW (simple text change)
+
+##### Task 2: Implement Conditional Question Logic
+
+- [ ] Add detection flags after tech stack analysis:
+  - `HAS_MESSAGE_BUS`: true/false (from code analysis)
+  - `HAS_OBSERVABILITY`: true/false (logging, monitoring configs detected)
+  - `IS_TRADITIONAL_DEPLOYMENT`: true/false (based on Q5 answer)
+- [ ] Update Step 3 (Modernization Questions):
+  - **Q1-Q2**: Always ask (Language, Database)
+  - **Q3**: Mark `[OPTIONAL - Not detected]` if `!HAS_MESSAGE_BUS`
+  - **Q4**: Always ask (Package Manager)
+  - **Q5**: Always ask (Deployment)
+  - **Q6-Q7**: Skip with `[Not applicable]` note if `IS_TRADITIONAL_DEPLOYMENT`
+  - **Q8**: Mark `[OPTIONAL - Not detected]` if `!HAS_OBSERVABILITY`
+  - **Q9-Q10**: Always ask (Auth, Testing)
+- [ ] Add educational notes explaining:
+  - Why question is optional/skipped
+  - When it might become relevant
+  - Alternatives for current choice
+
+**Complexity**: MEDIUM (conditional logic in prompts)
+
+##### Task 3: Add "Press Enter to Skip" UX
+
+- [ ] For optional questions, add: `Your choice (or press Enter to skip): ___`
+- [ ] For skipped questions, show: `[SKIPPED - Reason]` with future guidance
+- [ ] Validate that AI handles empty/skipped responses gracefully
+
+**Complexity**: MEDIUM (requires prompt flow testing)
+
+---
+
+#### Implementation Priority
+
+**Phase 8.1a (Quick Win - Days)**:
+- Fix "Enter INTERACTIVE MODE" messaging
+- Add `[OPTIONAL]` and `[SKIPPED]` markers based on detection
+
+**Phase 8.1b (Full Solution - Weeks)**:
+- Implement full conditional logic
+- Add educational notes
+- Test on multiple scenarios (traditional vs cloud deployments)
+
+**Recommendation**: Start with Phase 8.1a for immediate UX improvement, then iterate to Phase 8.1b based on user feedback.
+
+---
+
+**Status**: 📋 Documented (2025-11-09) - Awaiting user approval on approach
 
 ---
 
