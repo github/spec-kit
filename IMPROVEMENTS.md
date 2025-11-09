@@ -99,567 +99,449 @@ Additional nice-to-have features:
 
 ### Reverse Engineering & Modernization Feature
 
-**Current Status**: v1.0.0-alpha (EXPERIMENTAL) - Working implementation complete (~4,564 LOC Python)
+**Current Status**: v1.0.0-alpha (EXPERIMENTAL) - Redesign Required
 
-**Note**: Phases 1-4 complete. See "Completed Improvements" section below.
+**Note**: Phases 1-4 complete (see "Completed Improvements" section). Phase 7 completed but requires redesign based on user feedback. Phase 8 (new) addresses core issues.
 
-**Phase 2 - Language-Specific Analyzers** ✅ COMPLETE:
-
-- [x] JavaScript/Node.js analyzer (framework detection, build tools) - `languages/javascript.py` (661 lines)
-- [x] Python analyzer (virtual env, framework detection) - `languages/python.py` (524 lines)
-- [x] Java analyzer (Maven/Gradle, Spring Boot) - `languages/java.py` (423 lines)
-- [x] .NET analyzer (NuGet, project type) - `languages/dotnet.py` (~400 lines)
-- [ ] Ruby analyzer (Rails, Bundler) - Deferred (low priority)
-- [ ] PHP analyzer (Composer, Laravel/Symfony) - Deferred (low priority)
-
-**Phase 3 - Incremental Analysis** ✅ COMPLETE:
-
-- [x] Checkpoint system for large codebases - `checkpoint.py` implemented
-- [x] Resume capability from last checkpoint
-- [x] Progress indicators and streaming reports
-- [x] Support for 500K+ LOC projects
-
-**Phase 4 - Advanced Features** ✅ COMPLETE:
-
-- [x] CI/CD integration templates (GitHub Actions, GitLab CI, Jenkins)
-- [ ] Baseline comparison (track improvements over time) - Deferred to Phase 6
-- [ ] Plugin architecture for custom analyzers - Deferred to Phase 6
-- [ ] Export formats (PDF, JSON, HTML, CSV) - Partial (JSON exists)
-- [ ] Architecture diagram generation - Deferred to Phase 6
-
-**Phase 5 - Enterprise Features** (Deferred):
-
-- [ ] Multi-project/monorepo analysis
-- [x] Customizable scoring weights - `config.py` with ScoringWeights dataclass
-- [ ] Team capacity assessment
-- [ ] Historical analytics and trending
+**Phases 2-5 Status**: See "Completed Improvements" section for details.
 
 ---
 
-### Phase 7 - Analysis-to-Spec Workflow Integration ✅ COMPLETE (2025-11-08)
+### Phase 8 - Interactive AI-Driven Analysis Workflow (HIGH PRIORITY) 🔴
 
-**Status**: Core deliverables (7.1-7.4) COMPLETED 2025-11-08. Integration features (7.5) and documentation (7.6-7.7) remain for future work.
+**Current Problem** (User Feedback 2025-11-09):
 
-**Goal**: Bridge reverse engineering analysis with spec-driven development workflow by generating stage-specific prompts and artifacts.
+The existing Python generators (`functional_spec_generator.py`, `tech_stack_proposer.py`, `prompt_generator.py`) produce **template-only artifacts** without real analysis of legacy code. This results in:
 
-**Problem Statement**:
+- ❌ `functional-spec.md` is just a template (no actual features from legacy code)
+- ❌ `proposed-tech-stack.md` is just a template (no real tech stack analysis)
+- ❌ Stage prompts are generic templates (no legacy code references)
+- ❌ No interactive workflow to gather modernization requirements
+- ❌ Cannot ask about target stack preferences, deployment infrastructure, IaC choices
+- ❌ Generated artifacts don't provide useful feedback to Toolkit workflow
 
-Current analysis produces generic reports (`analysis-report.md`, `upgrade-plan.md`) that require manual interpretation to feed into the spec-driven workflow. This causes:
+**Root Cause**: Python cannot perform semantic analysis like AI agents. The current approach has Python generating templates that should be filled by AI analysis + legacy code understanding.
 
-- Context loss between analysis and implementation
-- Manual effort to extract principles, functional specs, tech stack
-- Risk of ignoring legacy code nuances during modernization
-- Ambiguity resolution without reference to "source of truth" (legacy code)
+**Solution**: Redesign to use **Interactive AI-Driven Workflow** with AI analysis + prompt templates (similar to meta-prompt approach used in regular Toolkit workflow).
 
-**Solution**: Transform analysis output to produce **workflow-ready artifacts** that automatically feed into each spec-driven stage (Constitution → Specify → Clarify → Plan → Tasks → Analyze → Implement → Checklist).
+---
 
-#### 7.1 Stage-Specific Prompt Generation (HIGH PRIORITY)
+#### 8.1 Interactive Workflow Design (CRITICAL)
 
-**Objective**: Generate custom prompts for ALL 8 workflow stages that inject legacy context at the right time.
+**Objective**: Make analyze-project **INTERACTIVE-ONLY** with multi-step guided analysis.
 
-**Deliverables**:
+**Workflow Steps**:
 
-- [x] Create `stage-prompts/` output directory structure
-- [x] Generate 8 prompt files (one per workflow stage):
-  - [x] `1-constitution-prompt.md` - Extracted principles from legacy codebase
-  - [x] `2-specify-prompt.md` - Functional spec derived from legacy features
-  - [x] `3-clarify-prompt.md` - Ambiguity resolution rules with legacy code references
-  - [x] `4-plan-prompt.md` - Proposed tech stack (LTS) + legacy architecture context
-  - [x] `5-tasks-prompt.md` - Task breakdown guidance with legacy complexity hints
-  - [x] `6-analyze-prompt.md` - Consistency checks against legacy behavior
-  - [x] `7-implement-prompt.md` - Implementation guidance with legacy code references
-  - [x] `8-checklist-prompt.md` - Quality validation based on legacy standards
-- [x] Add `README.md` in `stage-prompts/` explaining how to use each prompt
-- [x] Update `report_generator.py` to produce stage prompt files
+##### Step 1: Initial Inputs (Required)
 
-**Prompt Structure Template**:
-
-Each stage prompt should contain:
-
-```markdown
-# [STAGE NAME] Guidance (from Legacy Analysis)
-
-## Quick Reference
-**Project**: [Name]
-**Legacy Tech Stack**: [List]
-**Proposed Tech Stack**: [List with LTS versions]
-**Analysis Date**: [ISO 8601]
-
-## Legacy Code References
-- **Authentication**: `legacy/auth.py:45-120` (session-based, 30min timeout)
-- **Payment Processing**: `legacy/payments.py:156-234` (CRITICAL - preserve exactly)
-- **Rate Limiting**: `legacy/middleware/ratelimit.py:23-67` (100 req/min per user)
-
-## Extracted Principles/Requirements
-[Stage-specific content extracted from analysis]
-
-## Ambiguity Resolution Rules
-When specifications are unclear:
-1. Check corresponding legacy code (see references above)
-2. Treat legacy implementation as "source of truth"
-3. If still unclear after checking code, ASK USER
-4. NEVER assume or guess behavior
-
-## Critical Constraints
-- [Must-preserve behaviors]
-- [Known limitations to maintain]
-- [Security/compliance requirements]
-
-## Suggested Prompt
-When running /speckit.[stage], use this prompt:
-
-"""
-[Ready-to-paste prompt text with all context]
-"""
+```text
+PROJECT_PATH: /path/to/legacy/project
+ANALYSIS_DEPTH: QUICK | STANDARD | COMPREHENSIVE
+FOCUS_AREAS: ALL | SECURITY | PERFORMANCE | ARCHITECTURE | DEPENDENCIES
 ```
 
-**Example - Clarify Stage Prompt**:
+##### Step 2: Quick Tech Stack Sampling
 
-```markdown
-# Clarify Stage Guidance (from Legacy Analysis)
+Scan codebase to identify current stack (language, framework, database,
+enterprise bus, caching, etc.). Display findings to user:
 
-## Quick Reference
-**Project**: E-Commerce Platform v2.3
-**Legacy Stack**: Python 2.7, Flask 0.12, MySQL 5.7
-**Proposed Stack**: Python 3.12 (LTS), FastAPI 0.104+, PostgreSQL 16 (LTS)
-
-## Legacy Code References
-- **User Auth**: `src/auth/login.py:34-89` (session + cookie-based)
-- **Order Processing**: `src/orders/checkout.py:112-345` (multi-step workflow)
-- **Inventory**: `src/inventory/stock.py:45-123` (race condition exists!)
-
-## Ambiguity Resolution Rules
-For ANY clarification questions about:
-- **Authentication flow**: Refer to `src/auth/login.py:34-89` - preserves exact session behavior
-- **Payment processing**: Refer to `src/orders/payment.py:67-234` - CRITICAL, preserve exactly
-- **Edge cases**: Check legacy code first, then ask user if still unclear
-
-## Critical Behaviors (Preserve Exactly)
-- Session timeout: 30 minutes (hardcoded in `config.py:12`)
-- Payment retry: 3 attempts with exponential backoff (see `payment.py:189-201`)
-- Order cancellation: Refunds must be idempotent (see `refund.py:45-67`)
-
-## Suggested Prompt
-"""
-When clarifying requirements:
-- For any ambiguous options, decide based on legacy app code as source of truth
-- Specifically refer to: auth (src/auth/login.py), payments (src/orders/payment.py)
-- If still not clear after checking legacy code, ASK ME - don't assume
-- Preserve these exact behaviors: 30min session timeout, 3-retry payment logic
-"""
+```text
+Detected Stack:
+- Frontend: React 16.8 (JavaScript)
+- Backend: Java 8 (Spring Boot 2.1)
+- Database: Oracle 11g
+- Message Bus: TIBCO EMS
+- Caching: Memcached 1.4
+- Build Tool: Maven 3.6
 ```
 
-**Implementation Plan**:
+##### Step 3: Modernization Target Questions
 
-Week 1-2:
+Ask user about target stack preferences:
 
-- [x] Design prompt template format (Markdown structure) - **COMPLETED 2025-11-08**
-- [x] Create `PromptGenerator` class in new `prompt_generator.py` module - **COMPLETED 2025-11-08**
-- [x] Implement stage prompt generation for 3 core stages (constitution, clarify, implement) - **COMPLETED 2025-11-08**
-- [ ] Add unit tests for prompt generation - **Deferred**
+```text
+MODERNIZATION PREFERENCES:
 
-Week 3-4:
+1. Backend Language:
+   Current: Java 8
+   Options:
+   - [A] Java 21 LTS (same language, latest LTS)
+   - [B] Python 3.12 LTS (different language)
+   - [C] Other (specify)
+   Your choice: ___
 
-- [x] Complete remaining 5 stage prompts (specify, plan, tasks, analyze, checklist) - **COMPLETED 2025-11-08**
-- [x] Add file path extraction logic (find relevant legacy code sections) - **COMPLETED 2025-11-08**
-- [x] Generate "ready-to-paste" prompt text with all context - **COMPLETED 2025-11-08**
-- [x] Add stage-prompts/ to output directory structure - **COMPLETED 2025-11-08**
-- [x] Update orchestration scripts to produce stage prompts - **COMPLETED 2025-11-08**
+2. Database:
+   Current: Oracle 11g
+   Options:
+   - [A] Oracle 21c (same vendor, latest)
+   - [B] PostgreSQL 16 LTS (open source RDBMS)
+   - [C] MongoDB 7.0 (NoSQL)
+   - [D] Other (specify)
+   Your choice: ___
 
-**Success Criteria**:
+3. Message Bus:
+   Current: TIBCO EMS
+   Options:
+   - [A] TIBCO EMS (latest version)
+   - [B] Apache Kafka (open source)
+   - [C] Solace (cloud-native)
+   - [D] Other (specify)
+   Your choice: ___
 
-- ✅ Analysis produces 8 stage-specific prompt files
-- ✅ Each prompt contains actionable legacy code references (file paths + line numbers)
-- ✅ Prompts are copy-pasteable (< 2 pages, ready to use)
-- ✅ Clarify prompt includes "legacy as source of truth" guidance
-- ✅ Plan prompt includes proposed tech stack with LTS versions + rationale
+4. Package Manager (for Java):
+   Options:
+   - [A] Maven (current)
+   - [B] Gradle
+   Your choice: ___
 
-#### 7.2 Extracted Principles (Constitution Feed) (HIGH PRIORITY)
+5. Target Deployment Infrastructure:
+   Options:
+   - [A] Dedicated server (physical/VM)
+   - [B] Kubernetes cluster
+   - [C] OpenShift
+   - [D] Azure (App Service, AKS, etc.)
+   - [E] AWS (ECS, EKS, Lambda, etc.)
+   - [F] Google Cloud (GKE, Cloud Run, etc.)
+   Your choice: ___
 
-**Objective**: Generate `extracted-principles.md` that feeds directly into `/speckit.constitution` stage.
+6. Infrastructure as Code (IaC):
+   Options:
+   - [A] Helm charts (for Kubernetes)
+   - [B] Terraform
+   - [C] OpenShift templates
+   - [D] CloudFormation (AWS)
+   - [E] ARM templates (Azure)
+   - [F] None / Manual
+   Your choice: ___
 
-**Current State**: `recommended-constitution.md` exists but is template-based, not extracted from code.
+7. Containerization:
+   Options:
+   - [A] Docker containers
+   - [B] Kubernetes (orchestration)
+   - [C] Docker + Kubernetes
+   - [D] No containerization
+   Your choice: ___
 
-**Improvement**:
+8. Observability Stack:
+   Options:
+   - [A] ELK Stack (Elasticsearch, Logstash, Kibana)
+   - [B] Prometheus + Grafana
+   - [C] Azure Monitor / Application Insights
+   - [D] AWS CloudWatch
+   - [E] Google Cloud Operations
+   - [F] OpenTelemetry (vendor-neutral)
+   - [G] Other (specify)
+   Your choice: ___
 
-- [x] Analyze legacy codebase patterns to extract ACTUAL principles: - **COMPLETED 2025-11-08**
-  - [x] Security patterns (encryption, auth, audit logging)
-  - [x] Architectural patterns (microservices, monolith, event-driven)
-  - [x] Quality standards (test coverage, code conventions)
-  - [x] Business rules (payment processing, user workflows)
-- [x] Generate `extracted-principles.md` with three sections: - **COMPLETED 2025-11-08**
-  - **Business Principles** (domain logic, workflows)
-  - **Architectural Principles** (patterns, structure)
-  - **Quality Principles** (testing, monitoring, performance)
-- [x] Include evidence/references for each principle (file paths) - **COMPLETED 2025-11-08**
-- [x] Update `report_generator.py` to produce extracted principles - **COMPLETED 2025-11-08**
+9. Security Requirements:
+   Options:
+   - [A] OAuth 2.0 / OpenID Connect
+   - [B] JWT tokens
+   - [C] SAML
+   - [D] API Keys
+   - [E] Mutual TLS
+   - [F] Keep current auth mechanism
+   Your choice: ___
 
-**Example Output**:
-
-```markdown
-# Extracted Principles (from Legacy Codebase Analysis)
-
-## Business Principles
-
-### 1. Customer Data Privacy
-**Evidence**: All customer PII encrypted at rest (`models/customer.py:23-45`)
-**Source**: Database encryption middleware (`middleware/encryption.py`)
-**Requirement**: Continue encrypting PII in new system
-
-### 2. Audit Trail Requirement
-**Evidence**: All transactions logged to `audit_log` table (`services/audit.py:12-34`)
-**Source**: Regulatory compliance requirement (GDPR, SOX)
-**Requirement**: Maintain audit logging with same detail level
-
-## Architectural Principles
-
-### 1. Service-Oriented Design
-**Evidence**: Clear separation: Auth service, Order service, Inventory service
-**Source**: `services/` directory structure
-**Requirement**: Maintain service boundaries in new architecture
-
-### 2. API-First Design
-**Evidence**: All features exposed via REST API (`api/v1/`)
-**Source**: Mobile app + web app both consume API
-**Requirement**: Continue API-first approach, upgrade to OpenAPI 3.1
-
-## Quality Principles
-
-### 1. 80%+ Test Coverage
-**Evidence**: `tests/` directory with 1,234 tests, 82% coverage
-**Source**: CI/CD pipeline enforces coverage threshold
-**Requirement**: Maintain or improve test coverage in new system
+10. Testing Strategy:
+    Options:
+    - [A] Unit tests only
+    - [B] Unit + Integration tests
+    - [C] Unit + Integration + E2E tests (full coverage)
+    - [D] Minimal testing
+    Your choice: ___
 ```
 
-**Implementation**:
-
-- [x] Create `PrincipleExtractor` class in `principle_extractor.py` - **COMPLETED 2025-11-08**
-- [x] Scan codebase for patterns: - **COMPLETED 2025-11-08**
-  - Security patterns (encryption, auth, validation)
-  - Architectural patterns (service boundaries, data flow)
-  - Testing patterns (test coverage, test types)
-- [x] Cross-reference with documentation and comments - **COMPLETED 2025-11-08**
-- [x] Generate evidence-backed principles document - **COMPLETED 2025-11-08**
-
-**Success Criteria**:
-
-- ✅ Produces `extracted-principles.md` with 10-20 concrete principles
-- ✅ Each principle has evidence (file path + line numbers)
-- ✅ Categorized into Business/Architecture/Quality sections
-- ✅ Ready to feed into `/speckit.constitution` command
-
-#### 7.3 Functional Specification Generation (HIGH PRIORITY)
-
-**Objective**: Generate `functional-spec.md` that documents WHAT the legacy system does (features, workflows, configurations).
-
-**Deliverables**:
-
-- [x] Create `FunctionalSpecGenerator` class in `functional_spec_generator.py` - **COMPLETED 2025-11-08**
-- [x] Generate comprehensive functional spec with: - **COMPLETED 2025-11-08**
-  - [x] **Features Inventory** - List all major features with descriptions
-  - [x] **User Workflows** - Document key user journeys
-  - [x] **Configuration Mapping** - All config files and their purposes
-  - [x] **API Endpoints** - Document all REST/GraphQL endpoints
-  - [x] **Data Models** - Key entities and relationships
-  - [x] **Known Quirks** - Undocumented behaviors and edge cases
-- [x] Stratify features by criticality: - **COMPLETED 2025-11-08**
-  - **CRITICAL** - Must preserve exactly (payment, auth, audit)
-  - **STANDARD** - Can modernize implementation (logging, caching)
-  - **LEGACY QUIRKS** - Decide whether to preserve or fix
-- [x] Add to analysis output directory - **COMPLETED 2025-11-08**
-
-**Example Output**:
-
-```markdown
-# Functional Specification (Legacy System)
-
-## Features Inventory
-
-### CRITICAL Features (Preserve Exactly)
-1. **Payment Processing** (`src/orders/payment.py`)
-   - Credit card payment with 3-retry logic
-   - Refund processing (idempotent)
-   - Payment gateway integration (Stripe API v2)
-
-2. **User Authentication** (`src/auth/`)
-   - Session-based auth (30min timeout)
-   - Multi-factor authentication (TOTP)
-   - Password reset workflow (email-based)
-
-### STANDARD Features (Can Modernize)
-3. **Logging** (`src/logging/`)
-   - Current: Text-based logs to `/var/log/app.log`
-   - Opportunity: Upgrade to structured logging (JSON)
-
-4. **Caching** (`src/cache/`)
-   - Current: Redis with manual cache invalidation
-   - Opportunity: Add cache TTL, implement cache-aside pattern
-
-### LEGACY QUIRKS (Decide: Preserve or Fix)
-5. **Session Timeout Hardcoded** (`config.py:12`)
-   - Currently: 30 minutes (not configurable)
-   - Decision Needed: Make configurable via env var?
-
-6. **Order ID Format** (`src/orders/models.py:23`)
-   - Currently: `ORD-{timestamp}-{random}`
-   - Issue: Not sortable by creation date
-   - Decision Needed: Switch to UUID or keep for compatibility?
-
-## Configuration Mapping
-
-| Config File | Purpose | Migration Strategy |
-|-------------|---------|-------------------|
-| `config.py` | App settings | Migrate to env vars |
-| `database.ini` | DB connection | Migrate to connection string |
-| `.env.example` | Env template | Keep, update keys |
-| `logging.conf` | Log settings | Replace with structured logging |
-```
-
-**Implementation**:
-
-- [ ] Scan code for feature markers (routes, controllers, services)
-- [ ] Document API endpoints from code (Flask routes, FastAPI endpoints)
-- [ ] Extract configuration from files (`.env`, `config.py`, YAML)
-- [ ] Identify critical vs standard features based on:
-  - Payment/auth/audit keywords → CRITICAL
-  - Logging/caching/formatting → STANDARD
-  - Hardcoded values → LEGACY QUIRKS
-
-**Success Criteria**:
-
-- ✅ Produces `functional-spec.md` with complete feature inventory
-- ✅ Features categorized by criticality (CRITICAL/STANDARD/QUIRKS)
-- ✅ Configuration files mapped with migration strategy
-- ✅ Serves as reference for all downstream stages
-
-#### 7.4 Proposed Tech Stack with LTS + Rationale (HIGH PRIORITY)
-
-**Objective**: Generate `proposed-tech-stack.md` with latest LTS versions and rationale for each choice.
-
-**Current State**: `upgrade-plan.md` suggests versions but lacks detailed rationale.
-
-**Improvement**:
-
-- [x] Create `TechStackProposer` class in `tech_stack_proposer.py` - **COMPLETED 2025-11-08**
-- [x] For each component, recommend: - **COMPLETED 2025-11-08**
-  - **Latest LTS version** (not just "upgrade to X")
-  - **Rationale** (why this version, why this framework)
-  - **Migration Complexity** (Low/Medium/High)
-  - **Compatibility Notes** (breaking changes, migration guides)
-- [x] Include version EOL dates for urgency context - **COMPLETED 2025-11-08**
-- [x] Add "Alternative Options" section for each choice - **COMPLETED 2025-11-08**
-
-**Example Output**:
-
-```markdown
-# Proposed Tech Stack (with LTS + Rationale)
-
-## Language & Runtime
-
-### Python 3.12 (LTS until 2028-10)
-**Current**: Python 2.7 (EOL 2020-01-01)
-**Rationale**:
-- Latest LTS version with 5-year support
-- Performance improvements (up to 10% faster than 3.11)
-- Type hinting improvements for better IDE support
-- Team already familiar with Python
-**Migration Complexity**: HIGH (breaking changes from 2.7)
-**Migration Guide**: [Official 2-to-3 Guide](https://docs.python.org/3/howto/pyporting.html)
-
-**Alternative Options**:
-- Python 3.11 (stable, but shorter support window)
-- Go 1.21 (better performance, but team has no expertise)
-
-## Web Framework
-
-### FastAPI 0.104+ (Latest Stable)
-**Current**: Flask 0.12 (EOL 2018)
-**Rationale**:
-- Modern async support (10x throughput improvement)
-- Automatic OpenAPI schema generation
-- Type validation with Pydantic
-- Similar to Flask (easier team adoption)
-**Migration Complexity**: MEDIUM (async patterns new to team)
-**Migration Path**: Incremental (run Flask + FastAPI side-by-side)
-
-**Alternative Options**:
-- Flask 3.0 (easier migration, but no async support)
-- Django 5.0 (more batteries included, but overkill for our API-first design)
-
-## Database
-
-### PostgreSQL 16 (LTS until 2028-11)
-**Current**: MySQL 5.7 (EOL 2023-10)
-**Rationale**:
-- Compatible with existing schema (minimal changes)
-- JSONB support for new flexible fields
-- Better concurrent write performance
-- Strong ACID compliance (critical for payments)
-**Migration Complexity**: LOW (schema mostly compatible)
-**Migration Path**: Use `pgloader` tool for automated migration
-
-**Alternative Options**:
-- MySQL 8.4 LTS (familiar, but less feature-rich)
-- MongoDB 7.0 (flexible schema, but lose ACID guarantees)
-
-## Summary Table
-
-| Component | Current | Proposed (LTS) | Complexity | Priority |
-|-----------|---------|----------------|------------|----------|
-| Python    | 2.7 (EOL) | 3.12 (2028) | HIGH | CRITICAL |
-| Flask     | 0.12 (EOL) | FastAPI 0.104+ | MEDIUM | HIGH |
-| MySQL     | 5.7 (EOL) | PostgreSQL 16 | LOW | HIGH |
-| Redis     | 3.2 (EOL) | 7.2 LTS (2027) | LOW | MEDIUM |
-```
-
-**LTS Version Resolution Logic**:
-
-- [ ] Query official sources for LTS versions:
-  - Python: [python.org/downloads](https://www.python.org/downloads/)
-  - Node.js: [nodejs.org/releases](https://nodejs.org/en/about/releases/)
-  - Java: [oracle.com/java/support-roadmap](https://www.oracle.com/java/technologies/java-se-support-roadmap.html)
-  - .NET: [dotnet.microsoft.com/platform/support/policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core)
-- [ ] Fallback: Use package manager to query (e.g., `npm view node versions`)
-- [ ] Default: "Latest Stable" if LTS not clearly defined
-
-**Implementation**:
-
-- [ ] Create mapping of tech stacks to LTS sources
-- [ ] Implement LTS version lookup (with caching)
-- [ ] Generate rationale based on:
-  - Team expertise (from legacy tech stack)
-  - Migration complexity (breaking changes)
-  - Feature gaps (what new stack enables)
-  - Community support (ecosystem size)
-- [ ] Add EOL dates for urgency
-
-**Success Criteria**:
-
-- ✅ All proposed versions are latest LTS (or latest stable)
-- ✅ Each choice includes detailed rationale (3-5 bullet points)
-- ✅ Migration complexity assessed (LOW/MEDIUM/HIGH)
-- ✅ Alternative options provided for major choices
-- ✅ Ready to feed into `/speckit.plan` stage
-
-#### 7.5 Integration with Orchestrator Workflow (MEDIUM PRIORITY)
+##### Step 4: Deep Legacy Analysis
+
+**Scan ALL code files** to understand functionality. Analyze legacy codebase thoroughly:
+
+- Controllers, services, models, repositories
+- Configuration files (application.properties, XML configs)
+- Database schemas (DDL, migrations)
+- API endpoints and contracts
+- Business logic and workflows
+- Security implementations (auth, authorization, encryption)
+- Integration points (external APIs, message queues)
+- Deployment scripts and infrastructure code
+- Containerization configs (Dockerfile, docker-compose.yml)
+- Observability configs (logging, monitoring, tracing)
+- Testing suites (unit, integration, E2E tests)
+
+##### Step 5: Clarification Questions (If Needed)
+
+After deep analysis, ask user for any missing details:
+
+```text
+CLARIFICATIONS NEEDED:
+
+  1. Your legacy app uses custom encryption for PII fields.
+     Should we:
+     - [A] Preserve exact encryption algorithm (AES-256-CBC with custom key derivation)
+     - [B] Upgrade to modern encryption (AES-256-GCM with industry standard KDF)
+
+  2. Found hardcoded API timeout of 30 seconds in multiple places.
+     Should we:
+     - [A] Preserve 30 second timeout
+     - [B] Make configurable via environment variable
+
+  ... (other clarifications based on analysis findings)
+  ```
+
+##### Step 6: Generate Artifacts
+
+Using AI analysis of legacy code + user's modernization preferences, generate:
+
+- ✅ `analysis-report.md` - Comprehensive findings
+- ✅ `EXECUTIVE-SUMMARY.md` - High-level overview for stakeholders
+- ✅ `functional-spec.md` - BA document (WHAT system does) with REAL features
+- ✅ `technical-spec.md` - Architecture document (HOW to build) with target stack
+- ✅ Stage prompts for Toolkit workflow (6 stages):
+  - `constitution-prompt.md` - Principles for new system
+  - `specify-prompt.md` - Requirements for specify stage (uses functional-spec.md)
+  - `plan-prompt.md` - Architecture for plan stage (uses technical-spec.md)
+  - `clarify-prompt.md` - Clarification guidance + "consult legacy app as source of truth"
+  - `tasks-prompt.md` - Task breakdown guidance
+  - `implement-prompt.md` - Implementation guidance + "consult legacy app as source of truth"
+
+**Artifacts NOT Generated** (User Feedback):
+
+- ❌ `recommended-constitution.md` - Not needed (replaced by constitution-prompt)
+- ❌ `upgrade-plan.md` - Not needed (inline upgrade not goal; full modernization)
+- ❌ `proposed-tech-stack.md` - Not needed (embedded in technical-spec.md)
+
+---
+
+#### 8.2 Implementation Tasks
+
+##### Task 1: Create Interactive Analysis Prompt Template
+
+- [ ] Create `templates/commands/analyze-project-interactive.md`
+- [ ] Define multi-step workflow with clear sections
+- [ ] Add tech stack detection logic (sampling approach)
+- [ ] Add modernization preference questionnaire
+- [ ] Add deep analysis guidance (what to look for in legacy code)
+- [ ] Add artifact generation instructions with real examples
+
+##### Task 2: Create Artifact Generation Templates
+
+**Reference**: Use structure from `tmp/Meta-Prompt - Universal Meta-Prompt to Gen
+BA_ARCH_EXEC_AIB_SPEC_JSON docs.md`
+
+- [ ] Create `templates/analysis/functional-spec-template.md`
+  - **Base structure**: Meta-prompt Section A (Business Analysis)
+  - **Adapt for legacy**: Add "Evidence" column with file:line references
+  - **Sections**:
+    - Executive Summary (WHAT/WHO/WHY extracted from code)
+    - Problem & Goals (current state KPIs from legacy)
+    - Personas & Journeys (from auth/user roles in code)
+    - Functional Requirements (extracted with evidence: file:line)
+    - Data Models (from DB schemas/migrations)
+    - Configuration Mapping (all config files)
+    - Known Quirks & Legacy Behaviors
+  - **Placeholders**: `<<EXTRACT_FEATURES_FROM>>`, `<<EXTRACT_DATA_MODELS>>`,
+    `<<EXTRACT_CONFIG>>`, etc.
+- [ ] Create `templates/analysis/technical-spec-template.md`
+  - **Base structure**: Meta-prompt Section B (Architecture)
+  - **Adapt for modernization**: Add "Legacy vs. Target" comparison
+  - **Sections**:
+    - Architectural Principles (extracted from legacy + new)
+    - Why This Pattern (legacy pattern → target pattern + rationale)
+    - Capabilities by Phase (50/30/15/5 with legacy features mapped)
+    - High-Level Architecture (phase-colored Mermaid from meta-prompt)
+    - Target Tech Stack (from user Q1-Q10 answers)
+    - NFR Targets (SLO/SLI based on legacy + improvements)
+    - Migration Path (strangler fig/big bang/hybrid)
+  - **Placeholders**: `<<USER_CHOICE_LANGUAGE>>`, `<<USER_CHOICE_DATABASE>>`,
+    `<<USER_CHOICE_DEPLOYMENT>>`, `<<LEGACY_PAIN_POINTS>>`, etc.
+  - **Mermaid**: Use meta-prompt phase colors + adapt pattern for target infra
+- [ ] Create `templates/analysis/stage-prompt-templates/`
+  - 6 template files: constitution, specify, plan, clarify, tasks, implement
+  - Structure: Legacy Context + Modernization Guidance + Ready-to-Paste Prompt
+  - Clarify & Implement prompts include: "Consult legacy app <<path>> as source of
+    truth if specification is underspecified, ambiguous, or requires clarification"
+
+##### Task 3: Update analyze-project Command
+
+- [ ] Modify `templates/commands/analyze-project.md` to be INTERACTIVE-ONLY
+- [ ] Remove non-interactive mode (arguments mode)
+- [ ] Add "Act as senior developer and architect" guidance
+- [ ] Add instruction to use Python analyzer for metrics only
+- [ ] Add instruction to use AI for semantic analysis and artifact generation
+
+##### Task 4: Remove Template-Only Python Generators
+
+- [ ] Remove or refactor `functional_spec_generator.py`
+- [ ] Remove or refactor `tech_stack_proposer.py`
+- [ ] Remove or refactor `prompt_generator.py`
+- [ ] Keep `report_generator.py` for analysis-report.md and metrics
+- [ ] Keep `principle_extractor.py` if it extracts real patterns from code
+
+##### Task 5: Update Python Analyzer Role
+
+Python analyzer should focus on **metrics and structure**:
+
+- ✅ Tech stack detection (languages, frameworks, tools)
+- ✅ Code metrics (LOC, complexity, test coverage)
+- ✅ Dependency analysis (vulnerable packages, outdated versions)
+- ✅ File structure analysis (directories, patterns)
+- ✅ Generate `analysis-report.md` with technical findings
+
+Python analyzer should NOT generate:
+
+- ❌ Functional specifications (requires semantic understanding)
+- ❌ Tech stack proposals (requires business context)
+- ❌ Stage prompts (requires understanding of Toolkit workflow)
+
+##### Task 6: Create Meta-Prompt Style Templates
+
+**Reference**: Study `tmp/Meta-Prompt - Universal Meta-Prompt to Gen
+BA_ARCH_EXEC_AIB_SPEC_JSON docs.md`
+
+- [ ] Analyze meta-prompt structure and adapt for legacy code analysis:
+  - **Section A (Business Analysis)** → `functional-spec-generator-prompt.md`
+  - **Section B (Architecture)** → `technical-spec-generator-prompt.md`
+  - **Mermaid patterns** → Adapt for target infrastructure (K8s, AWS, etc.)
+  - **Phase coloring (50/30/15/5)** → Map legacy features to phases
+  - **NFR measurability** → Convert legacy configs to SLO/SLI targets
+  - **R→C→T traceability** → Map legacy features to new components & tests
+  - **Determinism guardrails** → Use AI knowledge base for LTS (not hardcoded)
+- [ ] Create `functional-spec-generator-prompt.md` with:
+  - Instructions: "Use meta-prompt Section A structure"
+  - "Extract WHAT from legacy code, not HOW"
+  - "Every requirement needs Evidence: file:line"
+  - Examples from meta-prompt adapted for legacy analysis
+  - Placeholders AI fills: `<<EXTRACT_FEATURES>>`, `<<EXTRACT_PERSONAS>>`, etc.
+- [ ] Create `technical-spec-generator-prompt.md` with:
+  - Instructions: "Use meta-prompt Section B structure"
+  - "Fill `<<USER_CHOICE_X>>` placeholders from Q1-Q10 answers"
+  - "Use AI knowledge base for LTS versions (meta-prompt LTSGuidance approach)"
+  - "Generate phase-colored Mermaid matching target infrastructure"
+  - "Convert legacy NFRs to measurable SLO/SLI targets"
+
+##### Task 7: Integration Testing
+
+- [ ] Test on real legacy project (e.g., Java 8 Spring Boot app)
+- [ ] Validate that functional-spec.md contains REAL features (not templates)
+- [ ] Validate that technical-spec.md contains target stack based on preferences
+- [ ] Validate that stage prompts contain actual legacy code references
+- [ ] Ensure artifacts can feed into Toolkit workflow successfully
+
+---
+
+#### 8.3 Implementation Plan (Phased Approach)
+
+##### Week 1-2: Foundation & Design
+
+- [ ] Document current issues with detailed examples
+- [ ] Design new interactive workflow (state machine diagram)
+- [ ] Create wireframes for questionnaires (modernization preferences)
+- [ ] Study `tmp/Meta-Prompt - Universal Meta-Prompt...` thoroughly
+  - Understand Section A (Business Analysis) structure
+  - Understand Section B (Architecture) structure
+  - Study Mermaid patterns and phase coloring
+  - Study NFR measurability approach (SLO/SLI)
+- [ ] Design template structure for functional-spec.md (based on Section A)
+- [ ] Design template structure for technical-spec.md (based on Section B)
+- [ ] Get user approval on design before implementation
 
-**Objective**: Enable seamless flow from analysis → spec-driven workflow using `/speckit.orchestrate --from-analysis`.
-
-**Deliverables**:
-
-- [ ] Add `--from-analysis` flag to `/speckit.orchestrate` command
-- [ ] Detect presence of analysis artifacts (`stage-prompts/`, `extracted-principles.md`, etc.)
-- [ ] Auto-inject stage prompts when running each workflow phase
-- [ ] Update orchestration state to track analysis-driven workflow
-- [ ] Add validation: warn if analysis is > 30 days old (may be stale)
-
-**Workflow Integration**:
+##### Week 3-4: Template Creation
 
-```bash
-# Step 1: Analyze legacy project
-/speckit.analyze-project
-# Produces: analysis-report.md, stage-prompts/, extracted-principles.md, etc.
+- [ ] Create `analyze-project-interactive.md` prompt template
+- [ ] Create `functional-spec-template.md` with clear structure
+- [ ] Create `technical-spec-template.md` with clear structure
+- [ ] Create 6 stage-prompt templates
+- [ ] Add detailed examples in each template
 
-# Step 2: Start modernization workflow with analysis context
-/speckit.orchestrate --from-analysis "Modernize e-commerce platform"
-# Automatically:
-# - Loads extracted-principles.md for constitution
-# - Uses constitution-prompt.md guidance
-# - Injects legacy context into each stage
-# - References functional-spec.md throughout
-
-# Step 3: Resume after interruption (preserves analysis context)
-/speckit.resume
-# Continues with full analysis context restored
-```
-
-**Implementation**:
-
-- [ ] Update `orchestrate` script to accept `--from-analysis` flag
-- [ ] Scan for analysis artifacts in project root or `analysis/` directory
-- [ ] Modify stage execution to:
-  - Load corresponding stage prompt file
-  - Append prompt content to user's stage input
-  - Inject legacy code references into agent context
-- [ ] Update `.speckit-state.json` to include:
-  - `analysis_based: true`
-  - `analysis_date: "2025-11-08"`
-  - `analysis_artifacts: ["stage-prompts/", "extracted-principles.md"]`
-
-**Success Criteria**:
-
-- ✅ `/speckit.orchestrate --from-analysis` successfully loads all analysis artifacts
-- ✅ Each stage automatically receives relevant legacy context
-- ✅ No manual copy-paste of prompts required
-- ✅ Resume workflow preserves analysis context
-
-#### 7.6 Documentation & Examples (MEDIUM PRIORITY)
-
-**Objective**: Document the analysis-to-spec workflow with clear examples.
-
-**Deliverables**:
-
-- [ ] Create `docs/analysis-to-spec-workflow.md` guide
-- [ ] Add "Complete Example" section with before/after
-- [ ] Update `docs/reverse-engineering.md` with stage-prompts section
-- [ ] Add FAQ: "How do I use stage prompts?"
-- [ ] Create video walkthrough (optional, 5-10 minutes)
-
-**Documentation Structure**:
-
-```markdown
-# Analysis-to-Spec Workflow Guide
-
-## Overview
-How to use analysis artifacts to drive modernization workflow.
-
-## Quick Start
-1. Run analysis: `/speckit.analyze-project`
-2. Review artifacts: `analysis/stage-prompts/`
-3. Start modernization: `/speckit.orchestrate --from-analysis "Description"`
-
-## Using Stage Prompts Manually
-[Step-by-step for each stage]
-
-## Complete Example
-[Before/after comparison with real project]
-
-## FAQ
-- How do I know if stage prompts are being used?
-- Can I edit stage prompts before using them?
-- What if analysis is outdated?
-```
-
-**Success Criteria**:
-
-- ✅ Complete documentation with examples
-- ✅ FAQ addresses common questions
-- ✅ Examples show real output from analysis
-
-#### 7.7 Success Metrics & Validation (LOW PRIORITY)
-
-**Objective**: Validate that analysis-to-spec workflow improves modernization outcomes.
-
-**Metrics to Track**:
-
-- [ ] **Context Preservation**: % of legacy requirements captured in spec
-- [ ] **Rework Reduction**: % of implementation rework due to missed requirements
-- [ ] **Time Savings**: Time to complete modernization (with vs without analysis)
-- [ ] **Accuracy**: % of critical behaviors preserved correctly
-
-**Validation Plan**:
-
-- [ ] Test on 3 real legacy projects
-- [ ] Compare analysis-driven workflow vs manual workflow
-- [ ] Survey users on usefulness of stage prompts
-- [ ] Measure reduction in "forgot to preserve X" issues
-
-**Success Criteria**:
-
-- ✅ 90%+ of legacy requirements captured in spec
-- ✅ 50%+ reduction in implementation rework
-- ✅ 30%+ time savings vs manual approach
-- ✅ 95%+ critical behaviors preserved correctly
+##### Week 5-6: Refactoring
+
+- [ ] Update `analyze-project.md` command to use new workflow
+- [ ] Refactor or remove Python generators
+- [ ] Update Python analyzer to focus on metrics only
+- [ ] Update `report_generator.py` to generate only technical reports
+- [ ] Test on sample legacy project
+
+##### Week 7-8: Testing & Documentation
+
+- [ ] Test on 3 diverse legacy projects (Java, Python, Node.js)
+- [ ] Validate artifact quality (real content vs templates)
+- [ ] Document new workflow in `docs/reverse-engineering.md`
+- [ ] Create video walkthrough (optional)
+- [ ] Collect user feedback and iterate
+
+---
+
+#### 8.4 Success Criteria
+
+##### Functional Requirements
+
+- ✅ Analyze-project is INTERACTIVE-ONLY (no non-interactive mode)
+- ✅ AI asks for PROJECT_PATH, ANALYSIS_DEPTH, FOCUS_AREAS upfront
+- ✅ AI performs quick tech stack sampling and displays findings
+- ✅ AI asks user about modernization preferences (target stack, deployment, IaC)
+- ✅ AI performs deep analysis of legacy code (all files)
+- ✅ AI asks clarification questions if needed
+- ✅ AI generates artifacts with REAL content (not templates)
+
+##### Artifact Quality
+
+- ✅ `functional-spec.md` contains actual features from legacy code (with references)
+- ✅ `technical-spec.md` contains target stack based on user preferences
+- ✅ Stage prompts contain real legacy code references (file paths + line numbers)
+- ✅ `analysis-report.md` contains technical metrics and findings
+- ✅ `EXECUTIVE-SUMMARY.md` provides high-level overview for stakeholders
+
+##### Integration
+
+- ✅ Generated artifacts feed seamlessly into Toolkit workflow
+- ✅ `specify` stage can use functional-spec.md as input
+- ✅ `plan` stage can use technical-spec.md as input
+- ✅ `constitution` stage can use extracted principles
+- ✅ Other stages can use corresponding stage prompts
+
+##### User Experience (Phase 8)
+
+- ✅ Clear guidance at each step of the workflow
+- ✅ Reasonable defaults for modernization choices
+- ✅ Ability to skip optional questions
+- ✅ Progress indicators during analysis
+- ✅ Estimated time for each phase
+- ✅ Ability to resume if interrupted
+
+---
+
+#### 8.5 Key Design Principles
+
+##### Principle 1: Python for Structure, AI for Semantics
+
+Python analyzer detects tech stack, calculates metrics, finds vulnerabilities.
+AI agent understands business logic, extracts requirements, proposes solutions.
+Clear separation of responsibilities.
+
+##### Principle 2: Interactive Over Automatic
+
+Always ask user for preferences (don't assume). Provide reasonable defaults but
+allow customization. Explain why each question matters.
+
+##### Principle 3: Evidence-Based Analysis
+
+Every finding includes file path + line number reference. Features extracted
+from actual code, not guessed. Configurations mapped from actual config files.
+
+##### Principle 4: Template + AI = Real Content
+
+Templates provide structure and guidance. AI fills templates with real analysis
+of legacy code. Similar to meta-prompt approach in regular Toolkit workflow.
+
+##### Principle 5: Toolkit Workflow Integration
+
+Generated artifacts must be usable by downstream stages. Stage prompts must be
+ready-to-paste. Functional-spec.md must be consumable by specify stage.
+Technical-spec.md must be consumable by plan stage.
+
+---
+
+**Note on Phase 7**: Phase 7 (Analysis-to-Spec Workflow Integration) was completed on 2025-11-08 but has been superseded by Phase 8 redesign based on user feedback. The Python generators created in Phase 7 produced template-only artifacts without real legacy code analysis. See "Completed Improvements" section for Phase 7 historical record.
 
 ---
 
