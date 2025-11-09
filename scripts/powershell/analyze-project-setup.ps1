@@ -58,8 +58,8 @@ New-Item -ItemType Directory -Path (Join-Path $analysisDir "checkpoints") -Force
 
 # Define output file paths
 $analysisReport = Join-Path $analysisDir "analysis-report.md"
-$upgradePlan = Join-Path $analysisDir "upgrade-plan.md"
-$recommendedConstitution = Join-Path $analysisDir "recommended-constitution.md"
+# Note: upgrade-plan.md and recommended-constitution.md removed in Phase 8
+# Replaced by stage-prompts/ directory and new workflow artifacts
 $recommendedSpec = Join-Path $analysisDir "recommended-spec.md"
 $dependencyAudit = Join-Path $analysisDir "dependency-audit.json"
 $metricsSummary = Join-Path $analysisDir "metrics-summary.json"
@@ -70,8 +70,8 @@ $templatesDir = Join-Path $repoRoot ".specify/templates"
 
 $templateFiles = @{
     "analysis-report-template.md" = $analysisReport
-    "upgrade-plan-template.md" = $upgradePlan
-    "reverse-engineering-constitution-template.md" = $recommendedConstitution
+    # Phase 8: upgrade-plan and recommended-constitution templates removed
+    # These have been replaced by stage-prompts/ directory with 6 prompt files
 }
 
 foreach ($template in $templateFiles.Keys) {
@@ -175,8 +175,6 @@ if ($Json) {
         PROJECT_NAME = $projectName
         ANALYSIS_DIR = $analysisDir
         ANALYSIS_REPORT = $analysisReport
-        UPGRADE_PLAN = $upgradePlan
-        RECOMMENDED_CONSTITUTION = $recommendedConstitution
         RECOMMENDED_SPEC = $recommendedSpec
         DEPENDENCY_AUDIT = $dependencyAudit
         METRICS_SUMMARY = $metricsSummary
@@ -195,8 +193,6 @@ if ($Json) {
     Write-Output "PROJECT_NAME: $projectName"
     Write-Output "ANALYSIS_DIR: $analysisDir"
     Write-Output "ANALYSIS_REPORT: $analysisReport"
-    Write-Output "UPGRADE_PLAN: $upgradePlan"
-    Write-Output "RECOMMENDED_CONSTITUTION: $recommendedConstitution"
     Write-Output "RECOMMENDED_SPEC: $recommendedSpec"
     Write-Output "DEPENDENCY_AUDIT: $dependencyAudit"
     Write-Output "METRICS_SUMMARY: $metricsSummary"

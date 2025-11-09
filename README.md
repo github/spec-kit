@@ -223,13 +223,55 @@ FOCUS_AREAS: ALL
 
 ### What You Get
 
-Comprehensive analysis with:
+Comprehensive analysis with AI-driven interactive workflow:
 
-- **`analysis-report.md`** - Assessment with strengths/weaknesses, upgrade paths, and data-driven recommendations
-- **`upgrade-plan.md`** - Step-by-step upgrade instructions (9 phases from prep to deployment)
-- **`recommended-constitution.md`** - Project principles derived from codebase patterns
+**Core Analysis Documents:**
+
+- **`analysis-report.md`** - Technical assessment with strengths/weaknesses, upgrade paths, and data-driven recommendations
+- **`EXECUTIVE-SUMMARY.md`** - High-level overview for stakeholders and decision-makers
+- **`functional-spec.md`** - Business Analyst document (WHAT the system does) with real features extracted from code
+- **`technical-spec.md`** - Architecture document (HOW to build) with your chosen target stack
+
+**Toolkit Workflow Integration:**
+
+- **`stage-prompts/`** - 6 ready-to-use prompts for each Toolkit workflow stage:
+  - `constitution-prompt.md` - Principles for new system (derived from legacy code)
+  - `specify-prompt.md` - Requirements guidance (references functional-spec.md)
+  - `clarify-prompt.md` - Clarification guidance with legacy code references
+  - `plan-prompt.md` - Architecture guidance (references technical-spec.md)
+  - `tasks-prompt.md` - Task breakdown guidance
+  - `implement-prompt.md` - Implementation guidance with legacy code references
+
+**Decision Support:**
+
 - **Feasibility scores** (0-100) for inline upgrade vs greenfield rewrite
 - **Confidence scores** for analysis quality
+- **Interactive modernization questions** - 10 questions about target stack, deployment, observability, and testing strategy (with conditional logic to skip irrelevant questions)
+
+### Modernization Workflow
+
+The analysis is **fully interactive** with AI-guided questions about your modernization goals:
+
+**Step 1: Quick Tech Stack Detection** - AI scans your codebase and displays detected stack (language, framework, database, etc.)
+
+**Step 2: Modernization Target Questions** - AI asks 10 questions about your preferences:
+
+1. Target Language/Framework (e.g., Java 21 LTS, Python 3.12, etc.)
+2. Target Database (PostgreSQL, MongoDB, keep current, etc.)
+3. Message Bus/Queue (Apache Kafka, RabbitMQ, Redis, or none) - **[OPTIONAL if not detected]**
+4. Package Manager (keep current or switch)
+5. Deployment Infrastructure (Kubernetes, AWS, Azure, GCP, traditional server)
+6. Infrastructure as Code (Terraform, Helm, CloudFormation, etc.) - **[SKIPPED for traditional deployments]**
+7. Containerization Strategy (Docker, Kubernetes, none) - **[SKIPPED for traditional deployments]**
+8. Observability Stack (ELK, Prometheus+Grafana, cloud-native, etc.) - **[OPTIONAL if not detected]**
+9. Security & Authentication (OAuth 2.0, JWT, SAML, keep current)
+10. Testing Strategy (unit only, integration, E2E, comprehensive)
+
+**Phase 8.1 UX Enhancement:** Questions marked [OPTIONAL] or [SKIPPED] include educational notes explaining why and when they might become relevant.
+
+**Step 3: Deep Code Analysis** - AI analyzes ALL code files to extract features, business logic, configurations, and architecture patterns
+
+**Step 4: Artifact Generation** - Creates functional-spec.md, technical-spec.md, and stage prompts based on analysis + your choices
 
 ### Key Capabilities
 
@@ -239,6 +281,8 @@ Comprehensive analysis with:
 - 🏗️ Architecture assessment (patterns, technical debt)
 - ⚡ Performance bottleneck identification
 - 🎯 Data-driven recommendations (inline/greenfield/hybrid)
+- 💬 **NEW**: Interactive modernization planning with conditional questions
+- 📝 **NEW**: Ready-to-use Toolkit workflow prompts for seamless integration
 
 ### Use Cases
 

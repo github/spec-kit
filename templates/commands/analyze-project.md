@@ -66,8 +66,6 @@ $ARGUMENTS
 
 **IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
 
-   **Enter INTERACTIVE MODE:**
-
    Please provide the following information:
 
    ```text
@@ -232,7 +230,14 @@ When documenting findings:
 
    **IMPORTANT**: Before deep analysis, gather user preferences for target stack.
 
-   Ask the following 10 questions interactively:
+   **Detection Flags** (for conditional question logic):
+
+   Based on the detected stack and code analysis, set these flags:
+   - `HAS_MESSAGE_BUS`: true/false (detect message queue usage: Kafka, RabbitMQ, Azure Service Bus, AWS SQS, Redis Pub/Sub, etc.)
+   - `HAS_OBSERVABILITY`: true/false (detect logging frameworks, monitoring configs, APM tools)
+   - `IS_TRADITIONAL_DEPLOYMENT`: Set based on Q5 answer (true if user chooses "Dedicated server")
+
+   Ask the following questions interactively (some conditional based on detection):
 
    ```text
    MODERNIZATION PREFERENCES:
@@ -256,16 +261,40 @@ When documenting findings:
       - [D] Other (please specify)
       Your choice: ___
 
-   3. Message Bus/Queue (if applicable):
+   3. Message Bus/Queue [CONDITIONAL]:
       Current: [detected or "None detected"]
-      Options:
-      - [A] Apache Kafka
-      - [B] RabbitMQ
-      - [C] Redis Pub/Sub
-      - [D] Cloud-native (Azure Service Bus / AWS SQS / Google Pub/Sub)
-      - [E] None / Not needed
-      - [F] Other (please specify)
-      Your choice: ___
+
+      **IF** `!HAS_MESSAGE_BUS` (no message queue detected):
+         Mark as **[OPTIONAL - Not detected in legacy code]**
+         Add educational note:
+         ```
+         Since your legacy app doesn't use message queues, you can skip this.
+         However, modernization could benefit from async messaging for:
+         - Background job processing
+         - Event-driven architecture
+         - Decoupling services
+
+         Options:
+         - [A] None / Not needed - Keep simple
+         - [B] Apache Kafka - Industry standard, high throughput
+         - [C] RabbitMQ - Feature-rich, easier learning curve
+         - [D] Redis Pub/Sub - Lightweight, good if already using Redis
+         - [E] Cloud-native (Azure Service Bus / AWS SQS / Google Pub/Sub)
+         - [F] Other (please specify)
+         Your choice (or press Enter to skip): ___
+         ```
+
+      **ELSE** (message queue detected):
+         ```
+         Options:
+         - [A] Keep current ([detected message bus])
+         - [B] Apache Kafka
+         - [C] RabbitMQ
+         - [D] Redis Pub/Sub
+         - [E] Cloud-native (Azure Service Bus / AWS SQS / Google Pub/Sub)
+         - [F] Other (please specify)
+         Your choice: ___
+         ```
 
    4. Package Manager:
       Current: [detected - npm, Maven, NuGet, pip, etc.]
@@ -276,7 +305,7 @@ When documenting findings:
 
    5. Target Deployment Infrastructure:
       Options:
-      - [A] Dedicated server (physical/VM)
+      - [A] Dedicated server (physical/VM) - Keep traditional
       - [B] Kubernetes cluster (cloud-agnostic)
       - [C] Azure (App Service, AKS, Container Apps)
       - [D] AWS (ECS, EKS, Lambda, Elastic Beanstalk)
@@ -285,38 +314,104 @@ When documenting findings:
       - [G] Other (please specify)
       Your choice: ___
 
-   6. Infrastructure as Code (IaC):
-      Options:
-      - [A] Terraform
-      - [B] Helm charts (for Kubernetes)
-      - [C] Azure ARM templates / Bicep
-      - [D] AWS CloudFormation
-      - [E] Google Cloud Deployment Manager
-      - [F] Ansible / Puppet / Chef
-      - [G] None / Manual deployment
-      - [H] Other (please specify)
-      Your choice: ___
+      **Store choice**: Set `IS_TRADITIONAL_DEPLOYMENT = true` if user selects [A]
 
-   7. Containerization Strategy:
-      Options:
-      - [A] Docker containers only
-      - [B] Docker + Kubernetes orchestration
-      - [C] Docker + Docker Compose (development)
-      - [D] No containerization
-      - [E] Other (please specify)
-      Your choice: ___
+   6. Infrastructure as Code (IaC) [CONDITIONAL]:
 
-   8. Observability Stack:
-      Options:
-      - [A] ELK Stack (Elasticsearch, Logstash, Kibana)
-      - [B] Prometheus + Grafana
-      - [C] Azure Monitor / Application Insights
-      - [D] AWS CloudWatch + X-Ray
-      - [E] Google Cloud Operations (Logging + Monitoring)
-      - [F] OpenTelemetry (vendor-neutral)
-      - [G] Datadog / New Relic (commercial SaaS)
-      - [H] Other (please specify)
-      Your choice: ___
+      **IF** `IS_TRADITIONAL_DEPLOYMENT` (user chose dedicated server):
+         ```
+         [SKIPPED - Not applicable for traditional deployment]
+
+         Note: Infrastructure as Code is typically used with cloud deployments.
+         For traditional deployments, consider:
+         - Deployment scripts (bash/PowerShell)
+         - Configuration management (Ansible, Puppet, Chef)
+         - Windows DSC (for Windows Server)
+
+         If you migrate to cloud in the future, IaC becomes relevant.
+         ```
+
+      **ELSE** (cloud deployment chosen):
+         ```
+         Options:
+         - [A] Terraform (cloud-agnostic)
+         - [B] Helm charts (for Kubernetes)
+         - [C] Azure ARM templates / Bicep (if chose Azure)
+         - [D] AWS CloudFormation (if chose AWS)
+         - [E] Google Cloud Deployment Manager (if chose GCP)
+         - [F] Ansible / Puppet / Chef
+         - [G] None / Manual deployment
+         - [H] Other (please specify)
+         Your choice: ___
+         ```
+
+   7. Containerization Strategy [CONDITIONAL]:
+
+      **IF** `IS_TRADITIONAL_DEPLOYMENT`:
+         ```
+         [SKIPPED - Not applicable for traditional deployment]
+
+         Note: Containerization requires migrating away from traditional servers.
+         Benefits of containerization:
+         - Consistent environments (dev/test/prod)
+         - Easier scaling and orchestration
+         - Cloud portability
+
+         This becomes relevant if you choose cloud deployment in the future.
+         ```
+
+      **ELSE** (cloud deployment chosen):
+         ```
+         Options:
+         - [A] Docker containers only
+         - [B] Docker + Kubernetes orchestration
+         - [C] Docker + Docker Compose (development)
+         - [D] No containerization
+         - [E] Other (please specify)
+         Your choice: ___
+         ```
+
+   8. Observability Stack [CONDITIONAL]:
+      Current: [detected or "None detected"]
+
+      **IF** `!HAS_OBSERVABILITY` (no structured logging/monitoring detected):
+         Mark as **[OPTIONAL - Not detected in legacy code]**
+         Add educational note:
+         ```
+         No structured observability stack detected in legacy code.
+         Modern observability includes:
+         - Structured logging (JSON logs, log aggregation)
+         - Metrics collection (application and infrastructure)
+         - Distributed tracing (request flow across services)
+         - Dashboards and alerting
+
+         Options:
+         - [A] ELK Stack (Elasticsearch, Logstash, Kibana) - Self-hosted
+         - [B] Prometheus + Grafana - Cloud-native, Kubernetes-friendly
+         - [C] Azure Monitor / Application Insights (if chose Azure)
+         - [D] AWS CloudWatch + X-Ray (if chose AWS)
+         - [E] Google Cloud Operations (if chose GCP)
+         - [F] OpenTelemetry (vendor-neutral, future-proof)
+         - [G] Datadog / New Relic (commercial SaaS, turnkey)
+         - [H] Basic logging only (not recommended for production)
+         - [I] Other (please specify)
+         Your choice (or press Enter to skip): ___
+         ```
+
+      **ELSE** (observability stack detected):
+         ```
+         Options:
+         - [A] Keep current ([detected stack])
+         - [B] ELK Stack (Elasticsearch, Logstash, Kibana)
+         - [C] Prometheus + Grafana
+         - [D] Azure Monitor / Application Insights
+         - [E] AWS CloudWatch + X-Ray
+         - [F] Google Cloud Operations
+         - [G] OpenTelemetry (vendor-neutral)
+         - [H] Datadog / New Relic (commercial SaaS)
+         - [I] Other (please specify)
+         Your choice: ___
+         ```
 
    9. Security & Authentication:
       Current: [detected from code or "Unknown"]

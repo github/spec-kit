@@ -86,8 +86,8 @@ mkdir -p "$ANALYSIS_DIR/checkpoints"
 
 # Define output file paths
 ANALYSIS_REPORT="$ANALYSIS_DIR/analysis-report.md"
-UPGRADE_PLAN="$ANALYSIS_DIR/upgrade-plan.md"
-RECOMMENDED_CONSTITUTION="$ANALYSIS_DIR/recommended-constitution.md"
+# Note: upgrade-plan.md and recommended-constitution.md removed in Phase 8
+# Replaced by stage-prompts/ directory and new workflow artifacts
 RECOMMENDED_SPEC="$ANALYSIS_DIR/recommended-spec.md"
 DEPENDENCY_AUDIT="$ANALYSIS_DIR/dependency-audit.json"
 METRICS_SUMMARY="$ANALYSIS_DIR/metrics-summary.json"
@@ -100,13 +100,8 @@ if [[ -f "$TEMPLATES_DIR/analysis-report-template.md" ]]; then
     cp "$TEMPLATES_DIR/analysis-report-template.md" "$ANALYSIS_REPORT"
 fi
 
-if [[ -f "$TEMPLATES_DIR/upgrade-plan-template.md" ]]; then
-    cp "$TEMPLATES_DIR/upgrade-plan-template.md" "$UPGRADE_PLAN"
-fi
-
-if [[ -f "$TEMPLATES_DIR/reverse-engineering-constitution-template.md" ]]; then
-    cp "$TEMPLATES_DIR/reverse-engineering-constitution-template.md" "$RECOMMENDED_CONSTITUTION"
-fi
+# Phase 8: upgrade-plan and recommended-constitution templates removed
+# These have been replaced by stage-prompts/ directory with 6 prompt files
 
 # Check if we have git in the target project (optional)
 TARGET_HAS_GIT="false"
@@ -146,15 +141,13 @@ fi
 
 # Output results
 if $JSON_MODE; then
-    printf '{"PROJECT_PATH":"%s","PROJECT_NAME":"%s","ANALYSIS_DIR":"%s","ANALYSIS_REPORT":"%s","UPGRADE_PLAN":"%s","RECOMMENDED_CONSTITUTION":"%s","RECOMMENDED_SPEC":"%s","DEPENDENCY_AUDIT":"%s","METRICS_SUMMARY":"%s","DECISION_MATRIX":"%s","ANALYSIS_DEPTH":"%s","FOCUS_AREAS":"%s","TARGET_HAS_GIT":"%s","TIMESTAMP":"%s","PYTHON_ANALYZER_AVAILABLE":"%s","PYTHON_ANALYSIS_STATUS":"%s","PYTHON_ANALYSIS_ERROR":"%s"}\n' \
-        "$PROJECT_PATH" "$PROJECT_NAME" "$ANALYSIS_DIR" "$ANALYSIS_REPORT" "$UPGRADE_PLAN" "$RECOMMENDED_CONSTITUTION" "$RECOMMENDED_SPEC" "$DEPENDENCY_AUDIT" "$METRICS_SUMMARY" "$DECISION_MATRIX" "$ANALYSIS_DEPTH" "$FOCUS_AREAS" "$TARGET_HAS_GIT" "$TIMESTAMP" "$PYTHON_ANALYZER_AVAILABLE" "$PYTHON_ANALYSIS_STATUS" "$PYTHON_ANALYSIS_ERROR"
+    printf '{"PROJECT_PATH":"%s","PROJECT_NAME":"%s","ANALYSIS_DIR":"%s","ANALYSIS_REPORT":"%s","RECOMMENDED_SPEC":"%s","DEPENDENCY_AUDIT":"%s","METRICS_SUMMARY":"%s","DECISION_MATRIX":"%s","ANALYSIS_DEPTH":"%s","FOCUS_AREAS":"%s","TARGET_HAS_GIT":"%s","TIMESTAMP":"%s","PYTHON_ANALYZER_AVAILABLE":"%s","PYTHON_ANALYSIS_STATUS":"%s","PYTHON_ANALYSIS_ERROR":"%s"}\n' \
+        "$PROJECT_PATH" "$PROJECT_NAME" "$ANALYSIS_DIR" "$ANALYSIS_REPORT" "$RECOMMENDED_SPEC" "$DEPENDENCY_AUDIT" "$METRICS_SUMMARY" "$DECISION_MATRIX" "$ANALYSIS_DEPTH" "$FOCUS_AREAS" "$TARGET_HAS_GIT" "$TIMESTAMP" "$PYTHON_ANALYZER_AVAILABLE" "$PYTHON_ANALYSIS_STATUS" "$PYTHON_ANALYSIS_ERROR"
 else
     echo "PROJECT_PATH: $PROJECT_PATH"
     echo "PROJECT_NAME: $PROJECT_NAME"
     echo "ANALYSIS_DIR: $ANALYSIS_DIR"
     echo "ANALYSIS_REPORT: $ANALYSIS_REPORT"
-    echo "UPGRADE_PLAN: $UPGRADE_PLAN"
-    echo "RECOMMENDED_CONSTITUTION: $RECOMMENDED_CONSTITUTION"
     echo "RECOMMENDED_SPEC: $RECOMMENDED_SPEC"
     echo "DEPENDENCY_AUDIT: $DEPENDENCY_AUDIT"
     echo "METRICS_SUMMARY: $METRICS_SUMMARY"

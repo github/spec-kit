@@ -1,0 +1,21 @@
+{
+  "name": "spec-kit-smart",
+  "version": "1.0.0",
+  "description": "AI-Powered Spec Kit for software development with Claude Code",
+  "private": true,
+  "scripts": {
+    "lint:md": "markdownlint-cli2 '**/*.md' '#node_modules'",
+    "lint:md:fix": "markdownlint-cli2 --fix '**/*.md' '#node_modules'"
+  },
+  "keywords": [
+    "spec-kit",
+    "claude-code",
+    "ai-powered",
+    "software-development"
+  ],
+  "author": "Spec Kit Team",
+  "license": "MIT",
+  "devDependencies": {
+    "markdownlint-cli2": "^0.14.0"
+  }
+}

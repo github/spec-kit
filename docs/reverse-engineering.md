@@ -144,48 +144,111 @@ ANALYSIS_DEPTH: STANDARD
 FOCUS_AREAS: ALL
 ```text
 
-### Step 2: Wait for Completion
+### Step 2: Interactive Modernization Questions
 
-The agent will:
+**NEW (Phase 8):** The agent will ask you **10 interactive questions** about your modernization goals:
 
-- Scan your codebase
-- Analyze dependencies
-- Detect tech stack
-- Generate comprehensive reports
+1. Target Language/Framework (e.g., upgrade to latest LTS)
+2. Target Database (PostgreSQL, MongoDB, keep current)
+3. Message Bus/Queue - **[OPTIONAL if not detected in legacy code]**
+4. Package Manager (keep current or switch)
+5. Deployment Infrastructure (Kubernetes, AWS, Azure, traditional server)
+6. Infrastructure as Code - **[SKIPPED for traditional deployments]**
+7. Containerization Strategy - **[SKIPPED for traditional deployments]**
+8. Observability Stack - **[OPTIONAL if not detected in legacy code]**
+9. Security & Authentication (OAuth 2.0, JWT, keep current)
+10. Testing Strategy (unit only, integration, E2E, comprehensive)
+
+**Phase 8.1 Enhancement:** Questions adapt based on your legacy stack:
+
+- **[OPTIONAL]** = Feature not detected, but you can opt-in
+- **[SKIPPED]** = Not applicable for your deployment choice (e.g., no Kubernetes for traditional servers)
+- Educational notes explain why questions are skipped and when they become relevant
+
+### Step 3: Deep Code Analysis
+
+After gathering your preferences, the agent will:
+
+- **Scan ALL code files** to understand functionality
+- Analyze dependencies and detect vulnerabilities
+- Extract features, business logic, and configuration
+- Map architecture patterns and technical debt
+- Generate comprehensive reports **with real content** (not templates)
 
 **Time**: 2-4 hours for standard analysis
 
-### Step 3: Review Reports
+### Step 4: Review Generated Artifacts
 
 Analysis results saved to `.analysis/[PROJECT_NAME]-[TIMESTAMP]/`:
 
-- `analysis-report.md` - Main comprehensive report
-- `upgrade-plan.md` - Step-by-step upgrade instructions
-- `recommended-constitution.md` - Suggested project principles
-- `decision-matrix.md` - Comparison table for stakeholders
+**Core Analysis Documents:**
+
+- `analysis-report.md` - Technical assessment with strengths/weaknesses and data-driven recommendations
+- `EXECUTIVE-SUMMARY.md` - High-level overview for stakeholders
+- `functional-spec.md` - Business Analyst document (WHAT system does) with real features from code
+- `technical-spec.md` - Architecture document (HOW to build) with your chosen target stack
+
+**Toolkit Workflow Integration:**
+
+- `stage-prompts/` - 6 ready-to-use prompts for Toolkit workflow:
+  - `constitution-prompt.md` - Principles derived from legacy code
+  - `specify-prompt.md` - Requirements guidance (references functional-spec.md)
+  - `clarify-prompt.md` - Clarification guidance with legacy code references
+  - `plan-prompt.md` - Architecture guidance (references technical-spec.md)
+  - `tasks-prompt.md` - Task breakdown guidance
+  - `implement-prompt.md` - Implementation guidance with legacy code references
+
+**Supporting Files:**
+
+- `decision-matrix.md` - Comparison table for stakeholders (optional)
 - `dependency-audit.json` - Machine-readable dependency data
 - `metrics-summary.json` - Codebase metrics
 
-### Step 4: Make Decision
+### Step 5: Use Artifacts in Toolkit Workflow
+
+**NEW (Phase 8):** Generated artifacts integrate seamlessly with Spec Kit workflow:
+
+#### Option A: Use Stage Prompts Directly
+
+```bash
+# Copy stage prompts to .claude/commands/
+cp .analysis/[PROJECT]/stage-prompts/* .claude/commands/
+
+# Then run Toolkit workflow as normal
+/speckit.constitution    # Uses constitution-prompt.md
+/speckit.specify         # Uses specify-prompt.md + functional-spec.md
+/speckit.plan           # Uses plan-prompt.md + technical-spec.md
+# ... continue with clarify, tasks, implement
+```
+
+#### Option B: Manual Review and Adaptation
+
+- Review `functional-spec.md` to understand what the system does
+- Review `technical-spec.md` to see proposed architecture
+- Use as reference during modernization implementation
+
+### Step 6: Make Decision
 
 Based on the recommendation:
 
-**If INLINE UPGRADE**:
+**If INLINE UPGRADE** (modernize existing codebase):
 
-1. Review `upgrade-plan.md`
-1. Follow phase-by-phase instructions
+1. Review `analysis-report.md` for upgrade recommendations
+1. Review `technical-spec.md` for target architecture
+1. Use `stage-prompts/` to guide Toolkit workflow implementation
 1. Start with immediate security patches
 1. Test thoroughly at each phase
 
 **If GREENFIELD REWRITE**:
 
-1. Review `recommended-constitution.md`
+1. Review `stage-prompts/constitution-prompt.md` for principles
+1. Review `functional-spec.md` for features to preserve
 1. Use as starting point for new project:
 
    ```bash
-   /speckit.constitution [use recommended principles]
-   /speckit.specify [describe features based on analysis]
-   /speckit.plan [modern tech stack]
+   /speckit.constitution [use principles from constitution-prompt.md]
+   /speckit.specify [describe features based on functional-spec.md]
+   /speckit.plan [use target stack from technical-spec.md]
    ```
 
 **If HYBRID APPROACH**:
