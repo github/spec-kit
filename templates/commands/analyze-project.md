@@ -204,58 +204,254 @@ When documenting findings:
 
    For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
-2. **Check Python Analysis Results**:
+2. **Quick Tech Stack Detection & Display**:
 
    **IF** `PYTHON_ANALYSIS_STATUS` is "success":
 
-   The Python analyzer has already completed the following:
-   - Tech stack detection (languages, frameworks, build tools)
-   - Code metrics calculation (LOC, file count, complexity)
-   - Dependency analysis (vulnerabilities, outdated packages)
-   - Feasibility scoring (inline upgrade vs greenfield rewrite)
-   - Report generation (analysis-report.md, upgrade-plan.md, etc.)
+   The Python analyzer has detected the current tech stack. Review the generated reports:
+   - Read `metrics-summary.json` for detected languages, frameworks, build tools
+   - Read `dependency-audit.json` for package inventory
+   - Read `analysis-report.md` for initial findings
 
-   **Your task**: Review and enhance the generated reports in ANALYSIS_DIR:
-   1. Read the generated `analysis-report.md`
-   2. Read the generated `dependency-audit.json` and `metrics-summary.json`
-   3. Review for accuracy and completeness
-   4. Add contextual insights and recommendations based on your analysis
-   5. Enhance the reports with additional findings if needed
-   6. **DO NOT** manually scan the entire codebase - the Python scripts already did that
+   **Display detected stack to user**:
+
+   ```text
+   Detected Legacy Stack:
+   - Language: [e.g., Java 8]
+   - Framework: [e.g., Spring Boot 2.1]
+   - Database: [e.g., Oracle 11g / detected from config]
+   - Build Tool: [e.g., Maven 3.6]
+   - Dependencies: [X packages, Y outdated, Z vulnerable]
+   ```
 
    **ELSE IF** `PYTHON_ANALYSIS_STATUS` is "failed" or "not_run":
 
-   Python analyzer unavailable - fall back to AI-guided manual analysis (continue to step 3 below).
+   Manually detect stack by scanning config files (package.json, pom.xml, *.csproj, requirements.txt, etc.) and display to user.
 
-3. **Manual Analysis Workflow (Fallback)**: Only if Python analyzer failed or unavailable. Follow the structure in analysis-report-template.md to conduct:
+3. **Ask Modernization Target Questions (CRITICAL - NEW STEP)**:
+
+   **IMPORTANT**: Before deep analysis, gather user preferences for target stack.
+
+   Ask the following 10 questions interactively:
+
+   ```text
+   MODERNIZATION PREFERENCES:
+
+   Based on detected legacy stack, please answer the following:
+
+   1. Target Language/Framework:
+      Current: [detected language/framework]
+      Options:
+      - [A] [Same language, latest LTS version]
+      - [B] [Alternative popular option]
+      - [C] Other (please specify)
+      Your choice: ___
+
+   2. Target Database:
+      Current: [detected or "Unknown - please specify"]
+      Options:
+      - [A] [Same database vendor, latest version]
+      - [B] PostgreSQL [latest LTS]
+      - [C] MongoDB [latest stable]
+      - [D] Other (please specify)
+      Your choice: ___
+
+   3. Message Bus/Queue (if applicable):
+      Current: [detected or "None detected"]
+      Options:
+      - [A] Apache Kafka
+      - [B] RabbitMQ
+      - [C] Redis Pub/Sub
+      - [D] Cloud-native (Azure Service Bus / AWS SQS / Google Pub/Sub)
+      - [E] None / Not needed
+      - [F] Other (please specify)
+      Your choice: ___
+
+   4. Package Manager:
+      Current: [detected - npm, Maven, NuGet, pip, etc.]
+      Options:
+      - [A] Keep current
+      - [B] [Alternative option if applicable]
+      Your choice: ___
+
+   5. Target Deployment Infrastructure:
+      Options:
+      - [A] Dedicated server (physical/VM)
+      - [B] Kubernetes cluster (cloud-agnostic)
+      - [C] Azure (App Service, AKS, Container Apps)
+      - [D] AWS (ECS, EKS, Lambda, Elastic Beanstalk)
+      - [E] Google Cloud (GKE, Cloud Run, App Engine)
+      - [F] OpenShift
+      - [G] Other (please specify)
+      Your choice: ___
+
+   6. Infrastructure as Code (IaC):
+      Options:
+      - [A] Terraform
+      - [B] Helm charts (for Kubernetes)
+      - [C] Azure ARM templates / Bicep
+      - [D] AWS CloudFormation
+      - [E] Google Cloud Deployment Manager
+      - [F] Ansible / Puppet / Chef
+      - [G] None / Manual deployment
+      - [H] Other (please specify)
+      Your choice: ___
+
+   7. Containerization Strategy:
+      Options:
+      - [A] Docker containers only
+      - [B] Docker + Kubernetes orchestration
+      - [C] Docker + Docker Compose (development)
+      - [D] No containerization
+      - [E] Other (please specify)
+      Your choice: ___
+
+   8. Observability Stack:
+      Options:
+      - [A] ELK Stack (Elasticsearch, Logstash, Kibana)
+      - [B] Prometheus + Grafana
+      - [C] Azure Monitor / Application Insights
+      - [D] AWS CloudWatch + X-Ray
+      - [E] Google Cloud Operations (Logging + Monitoring)
+      - [F] OpenTelemetry (vendor-neutral)
+      - [G] Datadog / New Relic (commercial SaaS)
+      - [H] Other (please specify)
+      Your choice: ___
+
+   9. Security & Authentication:
+      Current: [detected from code or "Unknown"]
+      Options:
+      - [A] OAuth 2.0 / OpenID Connect
+      - [B] JWT tokens
+      - [C] SAML 2.0
+      - [D] API Keys
+      - [E] Mutual TLS (mTLS)
+      - [F] Keep current auth mechanism
+      - [G] Other (please specify)
+      Your choice: ___
+
+   10. Testing Strategy:
+       Current: [detected test coverage or "No tests detected"]
+       Target:
+       - [A] Unit tests only (minimum viable)
+       - [B] Unit + Integration tests
+       - [C] Unit + Integration + E2E tests (comprehensive)
+       - [D] Unit + Integration + E2E + Contract tests (full suite)
+       - [E] Minimal testing (not recommended)
+       Your choice: ___
+   ```
+
+   **WAIT FOR USER RESPONSES** before proceeding to deep analysis.
+
+   **Store responses** for use in artifact generation (functional-spec.md, technical-spec.md).
+
+4. **Deep Legacy Code Analysis**:
+
+   **After receiving user's modernization preferences**, conduct comprehensive analysis:
+
+   **Scan ALL code files** to understand functionality:
+   - Controllers, services, models, repositories
+   - Configuration files (application.properties, appsettings.json, web.config, etc.)
+   - Database schemas (DDL, migrations, ORM models)
+   - API endpoints and contracts
+   - Business logic and workflows
+   - Security implementations (auth, authorization, encryption)
+   - Integration points (external APIs, message queues)
+   - Deployment scripts and infrastructure code
+   - Containerization configs (Dockerfile, docker-compose.yml)
+   - Observability configs (logging, monitoring, tracing)
+   - Testing suites (unit, integration, E2E tests)
+
+   **Extract real features with evidence**:
+   - Each feature must include `file:line` references
+   - Categorize by criticality: CRITICAL (must preserve) / STANDARD / LEGACY QUIRKS
+   - Document configuration values, validation rules, error handling patterns
+   - Identify business rules and domain logic
+
+   **Follow the structure in analysis-report-template.md**:
    - **Phase 1**: Project Discovery - Tech stack detection, config file analysis
    - **Phase 2**: Codebase Analysis - Metrics, dependencies, code quality, architecture
    - **Phase 3**: Positive Findings - What's working well (with file paths)
    - **Phase 4**: Negative Findings - Technical debt, vulnerabilities (categorized by severity)
    - **Phase 5**: Upgrade Path Analysis - Runtime/framework upgrades, security patches
    - **Phase 6**: Modernization Recommendations - Quick wins and long-term improvements
-   - **Phase 7**: Feasibility Scoring - Calculate inline upgrade and greenfield rewrite scores (see analysis-report-template.md for scoring rubrics)
+   - **Phase 7**: Feasibility Scoring - Calculate inline upgrade and greenfield rewrite scores
    - **Phase 8**: Decision Matrix - Compare approaches (time, cost, risk, disruption)
    - **Phase 9**: Generate Recommendations - Primary recommendation, immediate actions, roadmaps
 
-4. **Generate Artifacts**:
+5. **Ask Clarification Questions (If Needed)**:
 
-   **IF** Python analyzer succeeded (step 2):
-   - Reports are already generated! Just review and enhance them if needed
-   - All artifacts are in ANALYSIS_DIR (analysis-report.md, upgrade-plan.md, dependency-audit.json, etc.)
-   - Add any additional insights or recommendations to the existing reports
+   After deep analysis, if there are ambiguities, ask user for clarification:
 
-   **ELSE** (manual analysis):
-   - Fill templates and create supporting files:
-     - ANALYSIS_REPORT - Comprehensive findings and recommendations
-     - UPGRADE_PLAN - Step-by-step instructions (if inline upgrade recommended)
-     - RECOMMENDED_CONSTITUTION - Principles derived from codebase (if greenfield recommended)
-     - RECOMMENDED_SPEC - Reverse-engineered spec (if greenfield recommended)
-     - DEPENDENCY_AUDIT (JSON), METRICS_SUMMARY (JSON), DECISION_MATRIX (MD)
+   ```text
+   CLARIFICATIONS NEEDED:
 
-5. **Final Report**: Summarize key findings, state primary recommendation with confidence score, list next steps, provide artifact file paths
+   1. Your legacy app uses custom encryption for [field X].
+      Should we:
+      - [A] Preserve exact encryption algorithm ([algorithm details])
+      - [B] Upgrade to modern encryption ([recommended algorithm])
 
-**Note**: Detailed workflow steps, scoring rubrics, and artifact structures are documented in the template files (analysis-report-template.md, upgrade-plan-template.md, etc.).
+   2. Found hardcoded timeout of [N] seconds in [file:line].
+      Should we:
+      - [A] Preserve [N] second timeout
+      - [B] Make configurable via environment variable
+
+   [Additional clarifications based on analysis findings]
+   ```
+
+6. **Generate Artifacts**:
+
+   Using AI analysis of legacy code + user's modernization preferences + clarifications, generate:
+
+   **REQUIRED ARTIFACTS** (Phase 8 Design):
+
+   - ✅ **analysis-report.md** - Comprehensive findings (Python-generated + AI enhancements)
+   - ✅ **EXECUTIVE-SUMMARY.md** - High-level overview for stakeholders
+   - ✅ **functional-spec.md** - BA document (WHAT system does) with REAL features extracted from code
+     - Use template: `templates/analysis/functional-spec-template.md`
+     - Include evidence with `file:line` references for all features
+     - Categorize by criticality (CRITICAL/STANDARD/QUIRKS)
+   - ✅ **technical-spec.md** - Architecture document (HOW to build) with user's chosen target stack
+     - Use template: `templates/analysis/technical-spec-template.md`
+     - Include "Legacy vs. Target" comparisons
+     - Use phase-colored Mermaid diagrams (50/30/15/5 phasing)
+     - Reference user's choices from modernization questions (deployment, IaC, observability, etc.)
+   - ✅ **stage-prompts/** (6 files) - Guidance for Toolkit workflow stages
+     - Use templates from `templates/analysis/stage-prompt-templates/`
+     - `constitution-prompt.md` - Principles for new system
+     - `specify-prompt.md` - Requirements (references functional-spec.md)
+     - `clarify-prompt.md` - **CRITICAL**: Include "consult legacy app <<path>> as source of truth"
+     - `plan-prompt.md` - Architecture (references technical-spec.md)
+     - `tasks-prompt.md` - Task breakdown guidance
+     - `implement-prompt.md` - **CRITICAL**: Include "consult legacy app <<path>> as source of truth"
+
+   **ARTIFACTS NOT GENERATED** (Phase 8 - Removed):
+
+   - ❌ **recommended-constitution.md** - Not needed (replaced by constitution-prompt.md)
+   - ❌ **upgrade-plan.md** - Not needed (inline upgrade not goal; full modernization via Toolkit)
+   - ❌ **proposed-tech-stack.md** - Not needed (embedded in technical-spec.md)
+
+   **SUPPORTING FILES** (Python-generated, keep as-is):
+
+   - `dependency-audit.json` - Package inventory
+   - `metrics-summary.json` - Code metrics
+   - `decision-matrix.md` - Strategy comparison (optional)
+
+7. **Final Report**: Summarize key findings, state primary recommendation with confidence score, list next steps, provide artifact file paths
+
+   **Summary should include**:
+   - Legacy stack detected
+   - User's chosen target stack (from 10 questions)
+   - Key findings (security, technical debt, complexity)
+   - Generated artifacts and their locations
+   - Next steps (review artifacts, start constitution stage, etc.)
+
+**Note**: Detailed workflow steps, scoring rubrics, and artifact structures are documented in the template files:
+
+- `templates/analysis-report-template.md` - Analysis report structure
+- `templates/analysis/functional-spec-template.md` - Functional specification template
+- `templates/analysis/technical-spec-template.md` - Technical specification template
+- `templates/analysis/stage-prompt-templates/` - Stage-specific prompt templates (6 files)
 
 ---
 
