@@ -324,20 +324,52 @@ The reverse engineering system uses **orchestration scripts (bash/PowerShell)** 
   - `cloc` / `tokei` - Code metrics calculation
   - Snyk / OWASP - Advanced security vulnerability detection
 
-**Generated Output:**
+**Generated Output (Phase 8):**
 
-- `analysis-report.md` - Complete assessment with scores
-- `upgrade-plan.md` - 9-phase upgrade roadmap
-- `recommended-constitution.md` - Derived project principles
+**Core Analysis Documents:**
+
+- `analysis-report.md` - Technical assessment with Python metrics + AI analysis
+- `EXECUTIVE-SUMMARY.md` - High-level overview for stakeholders
+- `functional-spec.md` - Business Analyst document (WHAT system does) with real features
+- `technical-spec.md` - Architecture document (HOW to build) with target stack
+
+**Toolkit Workflow Integration:**
+
+- `stage-prompts/` - 6 ready-to-use prompts:
+  - `constitution-prompt.md` - Principles for new system
+  - `specify-prompt.md` - Requirements guidance
+  - `clarify-prompt.md` - Clarification guidance with legacy code references
+  - `plan-prompt.md` - Architecture guidance
+  - `tasks-prompt.md` - Task breakdown guidance
+  - `implement-prompt.md` - Implementation guidance with legacy code references
+
+**Supporting Files:**
+
 - `metrics-summary.json` - Machine-readable metrics
+- `dependency-audit.json` - Package inventory
+- `decision-matrix.md` - Strategy comparison (optional)
 
 ### Workflows
 
-**Inline Upgrade**: Follow `upgrade-plan.md` → Fix critical issues → Upgrade incrementally
+**Inline Upgrade** (modernize existing codebase):
 
-**Greenfield Rewrite**: Use `recommended-constitution.md` → `/speckit.orchestrate` with modern stack
+1. Review `analysis-report.md` for findings
+2. Review `technical-spec.md` for target architecture
+3. Use `stage-prompts/` to guide Toolkit workflow
+4. Implement changes incrementally with testing
 
-**Hybrid (Strangler Fig)**: Extract modules incrementally, modernize, maintain parallel systems
+**Greenfield Rewrite** (build from scratch):
+
+1. Review `functional-spec.md` for features to preserve
+2. Use `stage-prompts/constitution-prompt.md` for principles
+3. Run `/speckit.constitution` → `/speckit.specify` → `/speckit.plan`
+4. Reference `technical-spec.md` for target stack
+
+**Hybrid (Strangler Fig)**:
+
+- Extract modules incrementally
+- Modernize using Toolkit workflow
+- Maintain parallel systems during migration
 
 ### Documentation (Reverse Engineering)
 
