@@ -83,75 +83,15 @@ check_feature_branch() {
 
 get_feature_dir() { echo "$1/specs/$2"; }
 
-# Find feature directory by numeric prefix or exact name match
-# This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
-# and ensures consistent folder lookup regardless of branch name
+# Find feature directory - exact folder name matching in specs/
+# Once branch is created, simply expect folder name to match branch name exactly
 find_feature_dir_by_prefix() {
     local repo_root="$1"
     local branch_name="$2"
     local specs_dir="$repo_root/specs"
 
-    # If specs directory doesn't exist, return early
-    if [[ ! -d "$specs_dir" ]]; then
-        echo "$specs_dir/$branch_name"
-        return
-    fi
-
-    # Strategy 1: Try exact folder name match first (most reliable)
-    if [[ -d "$specs_dir/$branch_name" ]]; then
-        echo "$specs_dir/$branch_name"
-        return
-    fi
-
-    # Strategy 2: Extract numeric prefix from branch and search for matching folders
-    if [[ "$branch_name" =~ ^([0-9]{3})- ]]; then
-        local prefix="${BASH_REMATCH[1]}"
-
-        # Search for directories in specs/ that start with this prefix
-        local matches=()
-        for dir in "$specs_dir"/"$prefix"-*; do
-            if [[ -d "$dir" ]]; then
-                matches+=("$(basename "$dir")")
-            fi
-        done
-
-        # Handle results
-        if [[ ${#matches[@]} -eq 1 ]]; then
-            # Exactly one match - use it!
-            echo "$specs_dir/${matches[0]}"
-            return
-        elif [[ ${#matches[@]} -gt 1 ]]; then
-            # Multiple matches - use first one but warn
-            echo "WARNING: Multiple spec directories found with prefix '$prefix': ${matches[*]}" >&2
-            echo "Using first match: ${matches[0]}" >&2
-            echo "$specs_dir/${matches[0]}"
-            return
-        fi
-    fi
-
-    # Strategy 3: Search all directories in specs/ for any partial match
-    local matches=()
-    for dir in "$specs_dir"/*; do
-        if [[ -d "$dir" ]]; then
-            local dirname=$(basename "$dir")
-            # Check if branch_name is contained in dirname
-            if [[ "$dirname" == *"$branch_name"* ]] || [[ "$branch_name" == *"$dirname"* ]]; then
-                matches+=("$dirname")
-            fi
-        fi
-    done
-
-    if [[ ${#matches[@]} -eq 1 ]]; then
-        echo "$specs_dir/${matches[0]}"
-        return
-    elif [[ ${#matches[@]} -gt 1 ]]; then
-        echo "WARNING: Multiple spec directories found matching '$branch_name': ${matches[*]}" >&2
-        echo "Using first match: ${matches[0]}" >&2
-        echo "$specs_dir/${matches[0]}"
-        return
-    fi
-
-    # No match found - return constructed path (will fail later with clear error)
+    # Simply return specs/branch_name path
+    # The folder should exactly match the branch name
     echo "$specs_dir/$branch_name"
 }
 

@@ -92,9 +92,8 @@ function Get-FeatureDir {
     Join-Path $RepoRoot "specs" $Branch
 }
 
-# Find feature directory by numeric prefix or exact name match
-# This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
-# and ensures consistent folder lookup regardless of branch name
+# Find feature directory - exact folder name matching in specs/
+# Once branch is created, simply expect folder name to match branch name exactly
 function Find-FeatureDirByPrefix {
     param(
         [string]$RepoRoot,
@@ -103,58 +102,8 @@ function Find-FeatureDirByPrefix {
 
     $specsDir = Join-Path $RepoRoot "specs"
 
-    # If specs directory doesn't exist, return early
-    if (-not (Test-Path $specsDir -PathType Container)) {
-        return (Join-Path $specsDir $BranchName)
-    }
-
-    # Strategy 1: Try exact folder name match first (most reliable)
-    $exactPath = Join-Path $specsDir $BranchName
-    if (Test-Path $exactPath -PathType Container) {
-        return $exactPath
-    }
-
-    # Strategy 2: Extract numeric prefix from branch and search for matching folders
-    if ($BranchName -match '^([0-9]{3})-') {
-        $prefix = $matches[1]
-
-        # Search for directories in specs/ that start with this prefix
-        $matchingDirs = @()
-        $matchingDirs = Get-ChildItem -Path $specsDir -Directory |
-            Where-Object { $_.Name -match "^$prefix-" } |
-            Select-Object -ExpandProperty Name
-
-        # Handle results
-        if ($matchingDirs.Count -eq 1) {
-            # Exactly one match - use it!
-            return (Join-Path $specsDir $matchingDirs[0])
-        }
-        elseif ($matchingDirs.Count -gt 1) {
-            # Multiple matches - use first one but warn
-            Write-Warning "Multiple spec directories found with prefix '$prefix': $($matchingDirs -join ', ')"
-            Write-Warning "Using first match: $($matchingDirs[0])"
-            return (Join-Path $specsDir $matchingDirs[0])
-        }
-    }
-
-    # Strategy 3: Search all directories in specs/ for any partial match
-    $matchingDirs = @()
-    $matchingDirs = Get-ChildItem -Path $specsDir -Directory |
-        Where-Object {
-            $_.Name -like "*$BranchName*" -or $BranchName -like "*$($_.Name)*"
-        } |
-        Select-Object -ExpandProperty Name
-
-    if ($matchingDirs.Count -eq 1) {
-        return (Join-Path $specsDir $matchingDirs[0])
-    }
-    elseif ($matchingDirs.Count -gt 1) {
-        Write-Warning "Multiple spec directories found matching '$BranchName': $($matchingDirs -join ', ')"
-        Write-Warning "Using first match: $($matchingDirs[0])"
-        return (Join-Path $specsDir $matchingDirs[0])
-    }
-
-    # No match found - return constructed path (will fail later with clear error)
+    # Simply return specs/branch_name path
+    # The folder should exactly match the branch name
     return (Join-Path $specsDir $BranchName)
 }
 
