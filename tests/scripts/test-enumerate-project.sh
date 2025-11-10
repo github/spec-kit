@@ -96,13 +96,16 @@ test_bash_no_errors() {
 
     create_test_project "$test_project"
 
+    # Run the script and check exit code and output file
     if "$REPO_ROOT/scripts/bash/enumerate-project.sh" \
         --project "$test_project" \
-        --output "$output_file" 2>&1 | grep -q "Enumeration complete"; then
+        --output "$output_file" >/dev/null 2>&1 && \
+        [ -f "$output_file" ] && \
+        [ -s "$output_file" ]; then
         print_pass "Bash script completed successfully"
         return 0
     else
-        print_fail "Bash script failed to complete"
+        print_fail "Bash script failed to complete or output file missing"
         return 1
     fi
 }
@@ -261,13 +264,16 @@ test_powershell_no_errors() {
 
     create_test_project "$test_project"
 
+    # Run the script and check exit code and output file
     if pwsh -File "$REPO_ROOT/scripts/powershell/enumerate-project.ps1" \
         -Project "$test_project" \
-        -Output "$output_file" 2>&1 | grep -q "Enumeration complete"; then
+        -Output "$output_file" >/dev/null 2>&1 && \
+        [ -f "$output_file" ] && \
+        [ -s "$output_file" ]; then
         print_pass "PowerShell script completed successfully"
         return 0
     else
-        print_fail "PowerShell script failed to complete"
+        print_fail "PowerShell script failed to complete or output file missing"
         return 1
     fi
 }

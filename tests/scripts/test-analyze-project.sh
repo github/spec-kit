@@ -63,7 +63,7 @@ test_bash_creates_workspace() {
 
     local output_dir="$TEST_OUTPUT_DIR/analysis"
 
-    if "$REPO_ROOT/scripts/bash/analyze-project.sh" "$test_project" --output "$output_dir" 2>&1 | grep -q "ready"; then
+    if "$REPO_ROOT/scripts/bash/analyze-project.sh" "$test_project" --output "$output_dir" 2>&1 | grep -qi "ready"; then
         if [ -f "$output_dir/file-manifest.json" ]; then
             print_pass "Bash creates workspace with file-manifest.json"
         else

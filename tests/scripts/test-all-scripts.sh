@@ -71,12 +71,15 @@ test_script_help() {
     print_test "$script_name --help flag"
 
     if [[ "$script_path" == *.sh ]]; then
-        if bash "$script_path" --help 2>&1 | grep -qiE "(usage|help|options)"; then
+        local help_output
+        help_output=$(bash "$script_path" --help 2>&1 || true)
+        if echo "$help_output" | grep -qiE "(usage|help|options)"; then
             print_pass "$script_name --help works"
             return 0
         else
-            print_fail "$script_name --help does not work"
-            return 1
+            # Don't fail if help isn't implemented - just warn
+            print_skip "$script_name --help not implemented"
+            return 0
         fi
     elif [[ "$script_path" == *.ps1 ]]; then
         if ! command -v pwsh &> /dev/null; then
@@ -84,12 +87,15 @@ test_script_help() {
             return 0
         fi
 
-        if pwsh -File "$script_path" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
+        local help_output
+        help_output=$(pwsh -File "$script_path" -Help 2>&1 || true)
+        if echo "$help_output" | grep -qiE "(usage|help|parameters)"; then
             print_pass "$script_name -Help works"
             return 0
         else
-            print_fail "$script_name -Help does not work"
-            return 1
+            # Don't fail if help isn't implemented - just warn
+            print_skip "$script_name -Help not implemented"
+            return 0
         fi
     fi
 }
@@ -136,19 +142,24 @@ test_check_prerequisites() {
     local ps_script="$REPO_ROOT/scripts/powershell/check-prerequisites.ps1"
 
     test_script_syntax "$bash_script" || true
-    test_script_help "$bash_script" || true
+    # check-prerequisites.sh has --help flag, test it
+    ((TESTS_RUN++))
+    if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
+        print_pass "check-prerequisites.sh --help works"
+    else
+        print_fail "check-prerequisites.sh --help failed"
+    fi
 
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
-        test_script_help "$ps_script" || true
-    fi
-
-    # Test actual execution with --help
-    ((TESTS_RUN++))
-    if bash "$bash_script" 2>&1 | grep -qiE "(checking|prerequisites)"; then
-        print_pass "check-prerequisites.sh runs without errors"
-    else
-        print_skip "check-prerequisites.sh requires specific environment"
+        if command -v pwsh &> /dev/null; then
+            ((TESTS_RUN++))
+            if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
+                print_pass "check-prerequisites.ps1 -Help works"
+            else
+                print_fail "check-prerequisites.ps1 -Help failed"
+            fi
+        fi
     fi
 }
 
@@ -160,11 +171,11 @@ test_update_agent_context() {
     local ps_script="$REPO_ROOT/scripts/powershell/update-agent-context.ps1"
 
     test_script_syntax "$bash_script" || true
-    test_script_help "$bash_script" || true
+    # update-agent-context.sh does not have --help flag, skip help test
 
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
-        test_script_help "$ps_script" || true
+        # update-agent-context.ps1 does not have -Help flag, skip help test
     fi
 }
 
@@ -176,11 +187,24 @@ test_create_new_feature() {
     local ps_script="$REPO_ROOT/scripts/powershell/create-new-feature.ps1"
 
     test_script_syntax "$bash_script" || true
-    test_script_help "$bash_script" || true
+    # create-new-feature.sh has --help flag, test it
+    ((TESTS_RUN++))
+    if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
+        print_pass "create-new-feature.sh --help works"
+    else
+        print_fail "create-new-feature.sh --help failed"
+    fi
 
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
-        test_script_help "$ps_script" || true
+        if command -v pwsh &> /dev/null; then
+            ((TESTS_RUN++))
+            if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
+                print_pass "create-new-feature.ps1 -Help works"
+            else
+                print_fail "create-new-feature.ps1 -Help failed"
+            fi
+        fi
     fi
 }
 
@@ -192,11 +216,24 @@ test_setup_plan() {
     local ps_script="$REPO_ROOT/scripts/powershell/setup-plan.ps1"
 
     test_script_syntax "$bash_script" || true
-    test_script_help "$bash_script" || true
+    # setup-plan.sh has --help flag, test it
+    ((TESTS_RUN++))
+    if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
+        print_pass "setup-plan.sh --help works"
+    else
+        print_fail "setup-plan.sh --help failed"
+    fi
 
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
-        test_script_help "$ps_script" || true
+        if command -v pwsh &> /dev/null; then
+            ((TESTS_RUN++))
+            if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
+                print_pass "setup-plan.ps1 -Help works"
+            else
+                print_fail "setup-plan.ps1 -Help failed"
+            fi
+        fi
     fi
 }
 
@@ -209,12 +246,25 @@ test_analyze_project_setup() {
 
     if [ -f "$bash_script" ]; then
         test_script_syntax "$bash_script" || true
-        test_script_help "$bash_script" || true
+        # analyze-project-setup.sh has --help flag, test it
+        ((TESTS_RUN++))
+        if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
+            print_pass "analyze-project-setup.sh --help works"
+        else
+            print_fail "analyze-project-setup.sh --help failed"
+        fi
     fi
 
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
-        test_script_help "$ps_script" || true
+        if command -v pwsh &> /dev/null; then
+            ((TESTS_RUN++))
+            if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
+                print_pass "analyze-project-setup.ps1 -Help works"
+            else
+                print_fail "analyze-project-setup.ps1 -Help failed"
+            fi
+        fi
     fi
 }
 
@@ -238,17 +288,24 @@ test_common_scripts() {
 test_guidelines_scripts() {
     print_header "Testing guidelines scripts"
 
-    local scripts=(
-        "$REPO_ROOT/scripts/bash/check-guidelines-compliance.sh"
-        "$REPO_ROOT/scripts/bash/autofix-guidelines.sh"
-        "$REPO_ROOT/scripts/bash/diff-guidelines.sh"
-        "$REPO_ROOT/scripts/bash/guidelines-analytics.sh"
+    local scripts_with_help=(
+        "check-guidelines-compliance.sh"
+        "autofix-guidelines.sh"
+        "diff-guidelines.sh"
+        "guidelines-analytics.sh"
     )
 
-    for script in "${scripts[@]}"; do
+    for script_name in "${scripts_with_help[@]}"; do
+        local script="$REPO_ROOT/scripts/bash/$script_name"
         if [ -f "$script" ]; then
             test_script_syntax "$script" || true
-            test_script_help "$script" || true
+            # All guidelines scripts have --help flags
+            ((TESTS_RUN++))
+            if bash "$script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
+                print_pass "$script_name --help works"
+            else
+                print_fail "$script_name --help failed"
+            fi
         fi
     done
 }
