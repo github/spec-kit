@@ -92,8 +92,9 @@ function Get-FeatureDir {
     Join-Path $RepoRoot "specs" $Branch
 }
 
-# Find feature directory - exact folder name matching in specs/
-# Once branch is created, simply expect folder name to match branch name exactly
+# Find feature directory - extract folder name from branch name
+# Splits branch name by '/' or '\' and takes the last part
+# Example: "feature/C12345-6789-new-app" → "C12345-6789-new-app"
 function Find-FeatureDirByPrefix {
     param(
         [string]$RepoRoot,
@@ -102,9 +103,11 @@ function Find-FeatureDirByPrefix {
 
     $specsDir = Join-Path $RepoRoot "specs"
 
-    # Simply return specs/branch_name path
-    # The folder should exactly match the branch name
-    return (Join-Path $specsDir $BranchName)
+    # Extract the last part of branch name (after last '/' or '\')
+    $folderName = $BranchName.Split('/', '\')[-1]
+
+    # Return specs/folder_name path
+    return (Join-Path $specsDir $folderName)
 }
 
 function Get-FeaturePathsEnv {
