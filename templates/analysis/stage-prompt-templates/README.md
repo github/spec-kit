@@ -1,7 +1,11 @@
 # Stage-Specific Prompts for Modernization Workflow
 
-This directory contains **6 stage-specific prompts** that inject legacy code context
+This directory contains **4 stage-specific prompts** that inject legacy code context
 into each stage of the Toolkit workflow.
+
+**Note**: We do NOT generate prompts for the `specify` and `plan` stages. Instead, use
+the `functional-spec.md` and `technical-spec.md` documents directly, as they contain
+all the necessary information without the redundant wrapper prompts.
 
 ## How to Use These Prompts
 
@@ -34,8 +38,8 @@ For detailed requirements, see functional-spec.md.
 | File | Toolkit Stage | Purpose |
 |------|---------------|---------|
 | `constitution-prompt.md` | /speckit.constitution | Extract principles from legacy |
-| `specify-prompt.md` | /speckit.specify | Map legacy features to requirements |
-| `plan-prompt.md` | /speckit.plan | Design architecture based on target stack |
+| ~~`specify-prompt.md`~~ | /speckit.specify | **Use `functional-spec.md` directly** |
+| ~~`plan-prompt.md`~~ | /speckit.plan | **Use `technical-spec.md` directly** |
 | `clarify-prompt.md` | /speckit.clarify | Use legacy code as source of truth |
 | `tasks-prompt.md` | /speckit.tasks | Break down with legacy complexity |
 | `implement-prompt.md` | /speckit.implement | Reference legacy code during implementation |

@@ -534,14 +534,13 @@ When documenting findings:
      - Include "Legacy vs. Target" comparisons
      - Use phase-colored Mermaid diagrams (50/30/15/5 phasing)
      - Reference user's choices from modernization questions (deployment, IaC, observability, etc.)
-   - ✅ **stage-prompts/** (6 files) - Guidance for Toolkit workflow stages
+   - ✅ **stage-prompts/** (4 files) - Guidance for Toolkit workflow stages
      - Use templates from `templates/analysis/stage-prompt-templates/`
      - `constitution-prompt.md` - Principles for new system
-     - `specify-prompt.md` - Requirements (references functional-spec.md)
      - `clarify-prompt.md` - **CRITICAL**: Include "consult legacy app <<path>> as source of truth"
-     - `plan-prompt.md` - Architecture (references technical-spec.md)
      - `tasks-prompt.md` - Task breakdown guidance
      - `implement-prompt.md` - **CRITICAL**: Include "consult legacy app <<path>> as source of truth"
+     - **Note**: Do NOT generate `specify-prompt.md` or `plan-prompt.md` - use `functional-spec.md` and `technical-spec.md` directly instead
 
    **ARTIFACTS NOT GENERATED** (Phase 8 - Removed):
 
@@ -569,7 +568,7 @@ When documenting findings:
 - `templates/analysis-report-template.md` - Analysis report structure
 - `templates/analysis/functional-spec-template.md` - Functional specification template
 - `templates/analysis/technical-spec-template.md` - Technical specification template
-- `templates/analysis/stage-prompt-templates/` - Stage-specific prompt templates (6 files)
+- `templates/analysis/stage-prompt-templates/` - Stage-specific prompt templates (4 files: constitution, clarify, tasks, implement)
 
 ---
 
