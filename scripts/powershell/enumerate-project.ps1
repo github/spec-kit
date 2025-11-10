@@ -27,7 +27,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Script metadata
-$SCRIPT_VERSION = "1.0.1"
+$SCRIPT_VERSION = "1.0.2"
 $SCRIPT_NAME = "enumerate-project.ps1"
 $SCAN_START = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 

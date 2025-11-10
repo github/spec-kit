@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # Script metadata
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 SCRIPT_NAME="enumerate-project.sh"
 
 # Default values
@@ -312,29 +312,25 @@ enumerate_files() {
         exec 3>&1
     fi
 
-    # Output JSON header
-    jq -n \
-        --arg project "$PROJECT_PATH" \
-        --arg scanner "bash-${BASH_VERSION}" \
-        --arg version "$SCRIPT_VERSION" \
-        --arg start "$SCAN_START" \
-        --argjson max_size "$MAX_FILE_SIZE" \
-        '{
-            scan_info: {
-                project_path: $project,
-                scanner: $scanner,
-                script_version: $version,
-                scan_start: $start,
-                scan_end: null,
-                max_file_size_bytes: $max_size
-            },
-            files: [' >&3
+    # Output JSON header (manually, not through jq for partial output)
+    cat >&3 <<EOF
+{
+  "scan_info": {
+    "project_path": $(jq -n --arg p "$PROJECT_PATH" '$p'),
+    "scanner": "bash-${BASH_VERSION}",
+    "script_version": "$SCRIPT_VERSION",
+    "scan_start": "$SCAN_START",
+    "scan_end": null,
+    "max_file_size_bytes": $MAX_FILE_SIZE
+  },
+  "files": [
+EOF
 
     local first_file=true
 
     # Enumerate all files
     while IFS= read -r -d '' filepath; do
-        ((file_count++))
+        ((file_count++)) || true  # Post-increment from 0 returns 0, causing set -e to fail
 
         # Show progress every 100 files
         if [[ $((file_count % 100)) -eq 0 ]]; then
@@ -368,7 +364,11 @@ enumerate_files() {
         fi
 
         # Track largest files (keep top 10)
-        if [[ ${#largest_files[@]} -lt 10 ]]; then
+        # Get array size safely (handles empty arrays with set -u)
+        local array_size
+        array_size=$({  printf '%s\n' "${!largest_files[@]}" 2>/dev/null || true; } | wc -l)
+
+        if [[ $array_size -lt 10 ]]; then
             largest_files["$size:$filepath"]="$rel_path"
         else
             # Check if this file is larger than smallest in top 10
@@ -390,21 +390,21 @@ enumerate_files() {
         if [[ ! -r "$filepath" ]]; then
             readable="false"
             skip_reason="permission_denied"
-            ((error_count++))
+            ((error_count++)) || true
         # Check size before doing binary detection (CRITICAL FIX)
         elif [[ $size -gt $MAX_FILE_SIZE ]]; then
             size_category="oversized"
             skip_reason="exceeds_max_size"
-            ((oversized_count++))
+            ((oversized_count++)) || true
         # Check if binary by extension first
         elif [[ "$category" == "binary" ]] || [[ "$category" == "image" ]] || [[ "$category" == "archive" ]]; then
             is_binary_file="true"
-            ((binary_count++))
+            ((binary_count++)) || true
         # Only now check binary by content (after size check!)
         elif [[ -f "$filepath" ]] && [[ -r "$filepath" ]]; then
             is_binary_file=$(is_binary "$filepath")
             if [[ "$is_binary_file" == "true" ]]; then
-                ((binary_count++))
+                ((binary_count++)) || true
             fi
         fi
 
@@ -454,9 +454,6 @@ enumerate_files() {
 
     log_success "Scanned $file_count files"
 
-    # Close files array
-    echo "]," >&3
-
     # Build statistics
     local scan_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -487,32 +484,24 @@ enumerate_files() {
     done
     ext_json+="}"
 
-    # Build largest files array
-    echo "\"statistics\": {" >&3
-    jq -n \
-        --argjson total "$file_count" \
-        --argjson size "$total_size" \
-        --argjson binary "$binary_count" \
-        --argjson oversized "$oversized_count" \
-        --argjson errors "$error_count" \
-        --argjson by_cat "$cat_json" \
-        --argjson by_ext "$ext_json" \
-        '{
-            total_files: $total,
-            total_size_bytes: $size,
-            binary_files: $binary,
-            oversized_files: $oversized,
-            unreadable_files: $errors,
-            by_category: $by_cat,
-            by_extension: $by_ext,
-            largest_files: []
-        }' | head -n -1 | tail -n +2 >&3  # Remove outer braces
-
-    # Add largest files
-    echo "," >&3
-    echo "\"largest_files\": [" >&3
+    # Build statistics section
+    cat >&3 <<EOF
+  ],
+  "statistics": {
+    "total_files": $file_count,
+    "total_size_bytes": $total_size,
+    "binary_files": $binary_count,
+    "oversized_files": $oversized_count,
+    "unreadable_files": $error_count,
+    "by_category": $cat_json,
+    "by_extension": $ext_json,
+    "largest_files": [
+EOF
     first=true
-    for key in $(printf '%s\n' "${!largest_files[@]}" | sort -rn | head -10); do
+    # Output largest files (temporarily disable set -u for array access)
+    set +u
+    while IFS= read -r key; do
+        [[ -z "$key" ]] && continue  # Skip empty lines
         if [[ "$first" == "true" ]]; then
             first=false
         else
@@ -524,12 +513,13 @@ enumerate_files() {
             --arg p "$path" \
             --argjson s "$size" \
             '{path: $p, size_bytes: $s}' | tr -d '\n' >&3
-    done
-    echo "]" >&3
-    echo "}" >&3  # Close statistics
-
-    # Update scan_end in scan_info
-    echo "}" >&3  # Close root object
+    done < <({ printf '%s\n' "${!largest_files[@]}" 2>/dev/null || true; } | sort -rn | head -10)
+    set -u
+    cat >&3 <<EOF
+    ]
+  }
+}
+EOF
 
     # Close file descriptor
     exec 3>&-
