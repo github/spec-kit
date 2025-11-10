@@ -12,6 +12,23 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# Show help if requested (BEFORE any validation)
+if ($Help) {
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] [-JiraNumber <jira>] <feature description>"
+    Write-Host ""
+    Write-Host "Options:"
+    Write-Host "  -Json                 Output in JSON format"
+    Write-Host "  -ShortName <name>     Provide a custom short name (2-4 words) for the branch"
+    Write-Host "  -Number N             Specify branch number manually (overrides auto-detection)"
+    Write-Host "  -JiraNumber <jira>    Jira ticket number (e.g., C12345-7890)"
+    Write-Host "  -Help                 Show this help message"
+    Write-Host ""
+    Write-Host "Examples:"
+    Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth' -JiraNumber 'C12345-7890'"
+    Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API' -JiraNumber 'C12345-7890'"
+    exit 0
+}
+
 # Load branch configuration from .guidelines/branch-config.json
 function Load-BranchConfig {
     $configPath = ".guidelines/branch-config.json"
@@ -63,23 +80,6 @@ if ($branchConfig.JiraRequired -and -not $JiraNumber) {
 if ($JiraNumber -and $JiraNumber -notmatch $branchConfig.JiraRegex) {
     Write-Error "Error: Jira number must match format $($branchConfig.JiraFormat)`nProvided: $JiraNumber`nPattern: $($branchConfig.JiraRegex)"
     exit 1
-}
-
-# Show help if requested
-if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] [-JiraNumber <jira>] <feature description>"
-    Write-Host ""
-    Write-Host "Options:"
-    Write-Host "  -Json                 Output in JSON format"
-    Write-Host "  -ShortName <name>     Provide a custom short name (2-4 words) for the branch"
-    Write-Host "  -Number N             Specify branch number manually (overrides auto-detection)"
-    Write-Host "  -JiraNumber <jira>    Jira ticket number (e.g., C12345-7890)"
-    Write-Host "  -Help                 Show this help message"
-    Write-Host ""
-    Write-Host "Examples:"
-    Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth' -JiraNumber 'C12345-7890'"
-    Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API' -JiraNumber 'C12345-7890'"
-    exit 0
 }
 
 # Check if feature description provided

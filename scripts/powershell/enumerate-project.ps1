@@ -12,8 +12,8 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$Project,
+    [Parameter(Mandatory=$false)]
+    [string]$Project = "",
 
     [Parameter(Mandatory=$false)]
     [string]$Output = "",
@@ -61,6 +61,13 @@ Examples:
 
 "@
     exit 0
+}
+
+# Validate required parameters
+if ([string]::IsNullOrWhiteSpace($Project)) {
+    Write-Error "ERROR: -Project parameter is required"
+    Write-Output "Use -Help for usage information"
+    exit 1
 }
 
 # Validate max size parameter
