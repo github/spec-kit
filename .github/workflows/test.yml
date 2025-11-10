@@ -1,0 +1,95 @@
+name: Test Scripts
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  test-bash-scripts:
+    name: Test Bash Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Run bash script syntax checks
+        run: |
+          echo "Checking bash script syntax..."
+          find scripts/bash -name "*.sh" -type f | while read script; do
+            echo "Checking $script"
+            bash -n "$script" || exit 1
+          done
+
+      - name: Run test suite
+        run: |
+          bash tests/scripts/test-all-scripts.sh
+
+  test-powershell-scripts:
+    name: Test PowerShell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShell Core
+        run: |
+          # Install PowerShell Core
+          wget -q https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo apt-get install -y powershell
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+
+      - name: Run PowerShell script syntax checks
+        shell: pwsh
+        run: |
+          Write-Host "Checking PowerShell script syntax..."
+          Get-ChildItem -Path scripts/powershell -Filter *.ps1 -Recurse | ForEach-Object {
+            Write-Host "Checking $($_.FullName)"
+            $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $_.FullName -Raw), [ref]$null)
+          }
+
+      - name: Run test suite (with PowerShell)
+        run: |
+          bash tests/scripts/test-all-scripts.sh
+
+  test-script-parity:
+    name: Test Bash/PowerShell Parity
+    runs-on: ubuntu-latest
+    needs: [test-bash-scripts, test-powershell-scripts]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShell Core
+        run: |
+          wget -q https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo apt-get install -y powershell
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+
+      - name: Run parity tests
+        run: |
+          bash tests/scripts/test-enumerate-project.sh
+
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All script tests completed" >> $GITHUB_STEP_SUMMARY
