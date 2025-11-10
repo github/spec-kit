@@ -14,6 +14,89 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 - Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
 
+### ⚠️ CRITICAL: Chunked File Generation for Large Outputs
+
+**RULE:** When generating large files (function specs, technical specs, implementation code, or any file likely >2000 lines), ALWAYS use chunked generation to prevent "max limit reached" errors and avoid wasted tokens.
+
+**Automatic Chunking Strategy:**
+
+1. **Estimate file size before generation** - If likely >1500 lines, use chunks
+2. **Generate in logical sections** - Split by major components/modules
+3. **Use append mode** - Write first chunk with `Write`, subsequent chunks with `Edit` (append to end)
+4. **No manual intervention required** - Continue automatically between chunks
+
+**Implementation Pattern:**
+
+```markdown
+# Step 1: Create file with first chunk
+I'll generate the function specification in chunks to avoid token limits.
+
+Chunk 1/4: Core Data Models (lines 1-500)
+[Use Write tool to create file with header + first section]
+
+# Step 2: Append remaining chunks
+Chunk 2/4: API Endpoints (lines 501-1000)
+[Use Edit tool to append to end of file]
+
+Chunk 3/4: Business Logic (lines 1001-1500)
+[Use Edit tool to append to end of file]
+
+Chunk 4/4: Utilities and Helpers (lines 1501-2000)
+[Use Edit tool to append to end of file]
+```
+
+**Chunk Size Guidelines:**
+
+- **Small chunks**: 300-500 lines (safest, use for complex content)
+- **Medium chunks**: 500-800 lines (good balance)
+- **Large chunks**: 800-1200 lines (only for simple/repetitive content)
+
+**When to Use Chunking:**
+
+- ✅ Function specifications >1000 lines
+- ✅ Technical specifications >1500 lines
+- ✅ Implementation code >2000 lines
+- ✅ Generated configuration files >1000 lines
+- ✅ Any file where you're uncertain about size
+- ❌ Small utility files <500 lines
+- ❌ Configuration files <300 lines
+
+**Benefits:**
+
+- Prevents failed requests due to output token limits
+- Avoids wasting tokens on incomplete generations
+- No user intervention needed
+- Maintains complete file integrity
+
+**Example - Function Spec Generation:**
+
+```markdown
+I need to generate a comprehensive function specification for a large e-commerce system.
+Estimated size: ~2400 lines. I'll generate in 4 chunks:
+
+**Chunk 1/4: Introduction, Overview, Data Models (lines 1-600)**
+[Generate and write with Write tool]
+
+**Chunk 2/4: User Management & Authentication APIs (lines 601-1200)**
+[Append with Edit tool: old_string = last few lines of chunk 1, new_string = last lines + chunk 2]
+
+**Chunk 3/4: Product & Inventory APIs (lines 1201-1800)**
+[Append with Edit tool: old_string = last few lines of chunk 2, new_string = last lines + chunk 3]
+
+**Chunk 4/4: Order Processing & Reporting (lines 1801-2400)**
+[Append with Edit tool: old_string = last few lines of chunk 3, new_string = last lines + chunk 4]
+```
+
+**Important:** This applies to ALL file generation tasks including:
+
+- Specification documents (function-spec.md, technical-spec.md)
+- Implementation code (large modules, controllers, services)
+- Generated configuration (complex configs, large schemas)
+- Documentation (comprehensive guides, API docs)
+- Test files (extensive test suites)
+
+**Failure Recovery:** If a chunk fails mid-generation, resume from the last successful chunk rather than restarting from the beginning.
+
 ### ⚠️ CRITICAL: Never Use TODOs in Prompts or Templates
 
 **RULE:** Never add TODO comments to prompt/template files (`.md` files in `templates/`). TODOs confuse AI agents who interpret them as executable tasks.
@@ -60,12 +143,7 @@ This section explains how to add support for new AI agents/assistants to the Spe
 
 ### Overview
 
-Specify supports multiple AI agents by generating agent-specific command files and directory structures when initializing projects. Each agent has its own conventions for:
-
-- **Command file formats** (Markdown, TOML, etc.)
-- **Directory structures** (`.claude/commands/`, `.windsurf/workflows/`, etc.)
-- **Command invocation patterns** (slash commands, CLI tools, etc.)
-- **Argument passing conventions** (`$ARGUMENTS`, `{{args}}`, etc.)
+Specify generates agent-specific command files and directories. Each agent uses different formats (Markdown/TOML), directory structures (`.claude/commands/`, `.windsurf/workflows/`), invocation patterns (slash commands/CLI), and argument conventions (`$ARGUMENTS`, `{{args}}`).
 
 ### Current Supported Agents
 
@@ -88,346 +166,98 @@ Specify supports multiple AI agents by generating agent-specific command files a
 
 ### Step-by-Step Integration Guide
 
-Follow these steps to add a new agent (using a hypothetical new agent as an example):
-
 #### 1. Add to AGENT_CONFIG
 
-**IMPORTANT**: Use the actual CLI tool name as the key, not a shortened version.
-
-Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/__init__.py`. This is the **single source of truth** for all agent metadata:
+Add to `AGENT_CONFIG` in `src/specify_cli/__init__.py` (single source of truth):
 
 ```python
 AGENT_CONFIG = {
-    # ... existing agents ...
-    "new-agent-cli": {  # Use the ACTUAL CLI tool name (what users type in terminal)
+    "new-agent-cli": {  # ⚠️ MUST match actual CLI executable name
         "name": "New Agent Display Name",
-        "folder": ".newagent/",  # Directory for agent files
-        "install_url": "https://example.com/install",  # URL for installation docs (or None if IDE-based)
-        "requires_cli": True,  # True if CLI tool required, False for IDE-based agents
+        "folder": ".newagent/",
+        "install_url": "https://example.com/install",  # or None for IDE-based
+        "requires_cli": True,  # False for IDE-based agents
     },
 }
 ```
 
-**Key Design Principle**: The dictionary key should match the actual executable name that users install. For example:
-
-- ✅ Use `"cursor-agent"` because the CLI tool is literally called `cursor-agent`
-- ❌ Don't use `"cursor"` as a shortcut if the tool is `cursor-agent`
-
-This eliminates the need for special-case mappings throughout the codebase.
-
-**Field Explanations**:
-
-- `name`: Human-readable display name shown to users
-- `folder`: Directory where agent-specific files are stored (relative to project root)
-- `install_url`: Installation documentation URL (set to `None` for IDE-based agents)
-- `requires_cli`: Whether the agent requires a CLI tool check during initialization
+**Critical**: Use actual executable name (e.g., `cursor-agent` not `cursor`) to avoid special-case mappings. Fields: `name` (display), `folder` (files dir), `install_url` (docs or None), `requires_cli` (CLI check needed).
 
 #### 2. Update CLI Help Text
 
-Update the `--ai` parameter help text in the `init()` command to include the new agent:
-
-```python
-ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, new-agent-cli, or q"),
-```
-
-Also update any function docstrings, examples, and error messages that list available agents.
+Add agent to `--ai` parameter help in `init()` command. Update function docstrings, examples, and error messages listing available agents.
 
 #### 3. Update README Documentation
 
-Update the **Supported AI Agents** section in `README.md` to include the new agent:
+Add to **Supported AI Agents** table in `README.md`: support level (Full/Partial), official website link, implementation notes. Maintain table alignment.
 
-- Add the new agent to the table with appropriate support level (Full/Partial)
-- Include the agent's official website link
-- Add any relevant notes about the agent's implementation
-- Ensure the table formatting remains aligned and consistent
+#### 4. Update Release Scripts
 
-#### 4. Update Release Package Script
+**Package script** (`.github/workflows/scripts/create-release-packages.sh`):
 
-Modify `.github/workflows/scripts/create-release-packages.sh`:
+- Add to `ALL_AGENTS` array
+- Add case statement for directory structure
 
-##### Add to ALL_AGENTS array
+**Release script** (`.github/workflows/scripts/create-github-release.sh`):
 
-```bash
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
-```
-
-##### Add case statement for directory structure
-
-```bash
-case $agent in
-  # ... existing cases ...
-  windsurf)
-    mkdir -p "$base_dir/.windsurf/workflows"
-    generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
-esac
-```
-
-#### 4. Update GitHub Release Script
-
-Modify `.github/workflows/scripts/create-github-release.sh` to include the new agent's packages:
-
-```bash
-gh release create "$VERSION" \
-  # ... existing packages ...
-  .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
-  .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
-  # Add new agent packages here
-```
+- Add agent's zip packages to `gh release create`
 
 #### 5. Update Agent Context Scripts
 
-##### Bash script (`scripts/bash/update-agent-context.sh`)
+**Bash** (`scripts/bash/update-agent-context.sh`): Add file variable, add to case statement
+**PowerShell** (`scripts/powershell/update-agent-context.ps1`): Add file variable, add to switch statement
 
-Add file variable:
+#### 6. Update CLI Tool Checks
 
-```bash
-WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
-```
-
-Add to case statement:
-
-```bash
-case "$AGENT_TYPE" in
-  # ... existing cases ...
-  windsurf) update_agent_file "$WINDSURF_FILE" "Windsurf" ;;
-  "") 
-    # ... existing checks ...
-    [ -f "$WINDSURF_FILE" ] && update_agent_file "$WINDSURF_FILE" "Windsurf";
-    # Update default creation condition
-    ;;
-esac
-```
-
-##### PowerShell script (`scripts/powershell/update-agent-context.ps1`)
-
-Add file variable:
-
-```powershell
-$windsurfFile = Join-Path $repoRoot '.windsurf/rules/specify-rules.md'
-```
-
-Add to switch statement:
-
-```powershell
-switch ($AgentType) {
-    # ... existing cases ...
-    'windsurf' { Update-AgentFile $windsurfFile 'Windsurf' }
-    '' {
-        foreach ($pair in @(
-            # ... existing pairs ...
-            @{file=$windsurfFile; name='Windsurf'}
-        )) {
-            if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
-        }
-        # Update default creation condition
-    }
-}
-```
-
-#### 6. Update CLI Tool Checks (Optional)
-
-For agents that require CLI tools, add checks in the `check()` command and agent validation:
-
-```python
-# In check() command
-tracker.add("windsurf", "Windsurf IDE (optional)")
-windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
-
-# In init validation (only if CLI tool required)
-elif selected_ai == "windsurf":
-    if not check_tool("windsurf", "Install from: https://windsurf.com/"):
-        console.print("[red]Error:[/red] Windsurf CLI is required for Windsurf projects")
-        agent_tool_missing = True
-```
-
-**Note**: CLI tool checks are now handled automatically based on the `requires_cli` field in AGENT_CONFIG. No additional code changes needed in the `check()` or `init()` commands - they automatically loop through AGENT_CONFIG and check tools as needed.
+**Note**: CLI tool checks auto-handled via `requires_cli` field in AGENT_CONFIG. No additional code changes needed in `check()` or `init()` commands.
 
 ## Important Design Decisions
 
 ### Using Actual CLI Tool Names as Keys
 
-**CRITICAL**: When adding a new agent to AGENT_CONFIG, always use the **actual executable name** as the dictionary key, not a shortened or convenient version.
+**CRITICAL**: Use **actual executable name** as AGENT_CONFIG key (e.g., `cursor-agent` not `cursor`).
 
-**Why this matters:**
+**Why**: `check_tool()` uses `shutil.which(tool)` - mismatched keys require special-case mappings everywhere.
 
-- The `check_tool()` function uses `shutil.which(tool)` to find executables in the system PATH
-- If the key doesn't match the actual CLI tool name, you'll need special-case mappings throughout the codebase
-- This creates unnecessary complexity and maintenance burden
-
-**Example - The Cursor Lesson:**
-
-❌ **Wrong approach** (requires special-case mapping):
-
-```python
-AGENT_CONFIG = {
-    "cursor": {  # Shorthand that doesn't match the actual tool
-        "name": "Cursor",
-        # ...
-    }
-}
-
-# Then you need special cases everywhere:
-cli_tool = agent_key
-if agent_key == "cursor":
-    cli_tool = "cursor-agent"  # Map to the real tool name
-```
-
-✅ **Correct approach** (no mapping needed):
-
-```python
-AGENT_CONFIG = {
-    "cursor-agent": {  # Matches the actual executable name
-        "name": "Cursor",
-        # ...
-    }
-}
-
-# No special cases needed - just use agent_key directly!
-```
-
-**Benefits of this approach:**
-
-- Eliminates special-case logic scattered throughout the codebase
-- Makes the code more maintainable and easier to understand
-- Reduces the chance of bugs when adding new agents
-- Tool checking "just works" without additional mappings
+**Benefits**: Eliminates special-case logic, improves maintainability, prevents bugs, tool checking "just works".
 
 #### 7. Update Devcontainer files (Optional)
 
-For agents that have VS Code extensions or require CLI installation, update the devcontainer configuration files:
-
-##### VS Code Extension-based Agents
-
-For agents available as VS Code extensions, add them to `.devcontainer/devcontainer.json`:
-
-```json
-{
-  "customizations": {
-    "vscode": {
-      "extensions": [
-        // ... existing extensions ...
-        // [New Agent Name]
-        "[New Agent Extension ID]"
-      ]
-    }
-  }
-}
-```
-
-##### CLI-based Agents
-
-For agents that require CLI tools, add installation commands to `.devcontainer/post-create.sh`:
-
-```bash
-#!/bin/bash
-
-# Existing installations...
-
-echo -e "\n🤖 Installing [New Agent Name] CLI..."
-# run_command "npm install -g [agent-cli-package]@latest" # Example for node-based CLI
-# or other installation instructions (must be non-interactive and compatible with Linux Debian "Trixie" or later)...
-echo "✅ Done"
-
-```
-
-**Quick Tips:**
-
-- **Extension-based agents**: Add to the `extensions` array in `devcontainer.json`
-- **CLI-based agents**: Add installation scripts to `post-create.sh`
-- **Hybrid agents**: May require both extension and CLI installation
-- **Test thoroughly**: Ensure installations work in the devcontainer environment
+**VS Code extensions**: Add to `.devcontainer/devcontainer.json` extensions array
+**CLI tools**: Add installation to `.devcontainer/post-create.sh`
+**Hybrid**: May need both. Test in devcontainer environment.
 
 ## Agent Categories
 
-### CLI-Based Agents
-
-Require a command-line tool to be installed:
-
-- **Claude Code**: `claude` CLI
-- **Gemini CLI**: `gemini` CLI  
-- **Cursor**: `cursor-agent` CLI
-- **Qwen Code**: `qwen` CLI
-- **opencode**: `opencode` CLI
-- **Amazon Q Developer CLI**: `q` CLI
-- **CodeBuddy CLI**: `codebuddy` CLI
-- **Amp**: `amp` CLI
-
-### IDE-Based Agents
-
-Work within integrated development environments:
-
-- **GitHub Copilot**: Built into VS Code/compatible editors
-- **Windsurf**: Built into Windsurf IDE
+**CLI-Based**: claude, gemini, cursor-agent, qwen, opencode, q, codebuddy, amp
+**IDE-Based**: GitHub Copilot (VS Code), Windsurf (Windsurf IDE)
 
 ## Command File Formats
 
-### Markdown Format
+**Markdown** (Claude, Cursor, opencode, Windsurf, Q, Amp): Frontmatter + content with `$ARGUMENTS`
+**TOML** (Gemini, Qwen): `description` + `prompt` with `{{args}}`
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp
+## Conventions
 
-```markdown
----
-description: "Command description"
----
-
-Command content with {SCRIPT} and $ARGUMENTS placeholders.
-```
-
-### TOML Format
-
-Used by: Gemini, Qwen
-
-```toml
-description = "Command description"
-
-prompt = """
-Command content with {SCRIPT} and {{args}} placeholders.
-"""
-```
-
-## Directory Conventions
-
-- **CLI agents**: Usually `.<agent-name>/commands/`
-- **IDE agents**: Follow IDE-specific patterns:
-  - Copilot: `.github/prompts/`
-  - Cursor: `.cursor/commands/`
-  - Windsurf: `.windsurf/workflows/`
-
-## Argument Patterns
-
-Different agents use different argument placeholders:
-
-- **Markdown/prompt-based**: `$ARGUMENTS`
-- **TOML-based**: `{{args}}`
-- **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
-- **Agent placeholders**: `__AGENT__` (replaced with agent name)
+**Directories**: CLI agents use `.<agent-name>/commands/`, IDE agents vary (`.github/prompts/`, `.windsurf/workflows/`)
+**Arguments**: Markdown=`$ARGUMENTS`, TOML=`{{args}}`, Scripts=`{SCRIPT}`, Agent=`__AGENT__`
 
 ## Testing New Agent Integration
 
-1. **Build test**: Run package creation script locally
-2. **CLI test**: Test `specify init --ai <agent>` command
-3. **File generation**: Verify correct directory structure and files
-4. **Command validation**: Ensure generated commands work with the agent
-5. **Context update**: Test agent context update scripts
+1. Run package creation locally 2. Test `specify init --ai <agent>` 3. Verify directory/files 4. Validate commands work 5. Test context update scripts
 
 ## Common Pitfalls
 
-1. **Using shorthand keys instead of actual CLI tool names**: Always use the actual executable name as the AGENT_CONFIG key (e.g., `"cursor-agent"` not `"cursor"`). This prevents the need for special-case mappings throughout the codebase.
-2. **Forgetting update scripts**: Both bash and PowerShell scripts must be updated when adding new agents.
-3. **Incorrect `requires_cli` value**: Set to `True` only for agents that actually have CLI tools to check; set to `False` for IDE-based agents.
-4. **Wrong argument format**: Use correct placeholder format for each agent type (`$ARGUMENTS` for Markdown, `{{args}}` for TOML).
-5. **Directory naming**: Follow agent-specific conventions exactly (check existing agents for patterns).
-6. **Help text inconsistency**: Update all user-facing text consistently (help strings, docstrings, README, error messages).
+1. Using shorthand keys not actual CLI names (e.g., `cursor` vs `cursor-agent`)
+2. Forgetting bash/PowerShell script updates
+3. Wrong `requires_cli` value (True=CLI tool, False=IDE-based)
+4. Wrong argument format (`$ARGUMENTS`=Markdown, `{{args}}`=TOML)
+5. Incorrect directory naming
+6. Inconsistent help text updates
 
 ## Future Considerations
 
-When adding new agents:
-
-- Consider the agent's native command/workflow patterns
-- Ensure compatibility with the Spec-Driven Development process
-- Document any special requirements or limitations
-- Update this guide with lessons learned
-- Verify the actual CLI tool name before adding to AGENT_CONFIG
+Consider native patterns, ensure SDD compatibility, document requirements, update guide, verify actual CLI name.
 
 ---
 
@@ -437,67 +267,18 @@ When adding new agents:
 
 ## Markdown Style Guide
 
-We use markdownlint-cli2 for consistent markdown formatting across all documentation and templates.
+Uses markdownlint-cli2 (config: `.markdownlint-cli2.jsonc`). Key rules: ATX headers, asterisk emphasis, 2-space indents. Disabled: MD013 (line length), MD033 (HTML), MD041, MD051.
 
-### Configuration
+**Commands**: `npx markdownlint-cli2 "**/*.md"` (check), add `--fix` (auto-fix)
 
-- **Config file**: `.markdownlint-cli2.jsonc`
-- **Rules reference**: [Markdownlint Rules Documentation](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md)
-
-**Key rules enforced**:
-
-- ATX-style headers (`## Heading`)
-- Asterisk-style emphasis (`*italic*`, `**bold**`)
-- 2-space indent for nested lists
-
-**Rules disabled**: MD013 (line length), MD033 (HTML), MD041 (first line header), MD051 (link fragments) - see `.markdownlint-cli2.jsonc` for complete configuration.
-
-### Quick Reference
-
-```bash
-# Check all markdown files
-npx markdownlint-cli2 "**/*.md"
-
-# Auto-fix issues
-npx markdownlint-cli2 --fix "**/*.md"
-```
-
-### Best Practices
-
-- Use blank lines before/after headers, lists, and code blocks
-- Specify language for code blocks (bash, python, json, text, etc.)
-- Use dashes for unordered lists
-- Keep prose under 100 characters when possible (long commands/URLs excepted)
-
-See `.markdownlint-cli2.jsonc` for complete rule configuration and [CommonMark Spec](https://commonmark.org/) for markdown syntax.
+**Best Practices**: Blank lines around blocks, specify code languages, dashes for lists, ~100 char prose (except long commands/URLs)
 
 ---
 
 ## Documentation Structure
 
-This repository has a clear separation between different types of documentation:
+**Repository Development** (`docs/development/`): For devs ON repo (engineering-review, roadmap, architecture, developer README)
+**Toolkit Documentation** (`docs/`): For toolkit USERS (guides, examples, quickstart, installation)
+**AI Instructions**: `AGENTS.md` (repo dev) vs `.specify/AGENTS.md` (toolkit usage)
 
-### Repository Development (docs/development/)
-
-For developers working ON this repository:
-
-- **engineering-review.md**: Technical reviews and assessments
-- **implementation-roadmap.md**: Future development plans
-- **architecture.md**: System architecture decisions
-- **README.md**: Developer onboarding guide
-
-### Toolkit Documentation (docs/)
-
-For users OF the toolkit (end users):
-
-- **reverse-engineering.md**: User guide for features
-- **reverse-engineering-examples.md**: Usage examples
-- **quickstart.md**: Getting started guide
-- **installation.md**: Installation instructions
-
-### AI Agent Instructions
-
-- **AGENTS.md** (root): For AI agents working on repository development
-- **.specify/AGENTS.md** (in release package): For AI agents using the toolkit
-
-**Key Rule**: Keep these separated. Don't mix developer implementation details with user-facing documentation.
+**Key Rule**: Separate developer implementation from user-facing docs.
