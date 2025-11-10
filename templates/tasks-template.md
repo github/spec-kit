@@ -113,5 +113,3 @@ description: "Task list template for feature implementation"
 
 - [ ] TN.1 检查 lint error
 - [ ] TN.2 检查所有 phase & tasks 是否完成
-
----
