@@ -92,8 +92,9 @@ function Get-FeatureDir {
     Join-Path $RepoRoot "specs" $Branch
 }
 
-# Find feature directory by numeric prefix instead of exact branch match
+# Find feature directory by numeric prefix or exact name match
 # This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
+# and ensures consistent folder lookup regardless of branch name
 function Find-FeatureDirByPrefix {
     param(
         [string]$RepoRoot,
@@ -102,37 +103,59 @@ function Find-FeatureDirByPrefix {
 
     $specsDir = Join-Path $RepoRoot "specs"
 
-    # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
-    if ($BranchName -notmatch '^([0-9]{3})-') {
-        # If branch doesn't have numeric prefix, fall back to exact match
+    # If specs directory doesn't exist, return early
+    if (-not (Test-Path $specsDir -PathType Container)) {
         return (Join-Path $specsDir $BranchName)
     }
 
-    $prefix = $matches[1]
+    # Strategy 1: Try exact folder name match first (most reliable)
+    $exactPath = Join-Path $specsDir $BranchName
+    if (Test-Path $exactPath -PathType Container) {
+        return $exactPath
+    }
 
-    # Search for directories in specs/ that start with this prefix
-    $matchingDirs = @()
-    if (Test-Path $specsDir -PathType Container) {
+    # Strategy 2: Extract numeric prefix from branch and search for matching folders
+    if ($BranchName -match '^([0-9]{3})-') {
+        $prefix = $matches[1]
+
+        # Search for directories in specs/ that start with this prefix
+        $matchingDirs = @()
         $matchingDirs = Get-ChildItem -Path $specsDir -Directory |
             Where-Object { $_.Name -match "^$prefix-" } |
             Select-Object -ExpandProperty Name
+
+        # Handle results
+        if ($matchingDirs.Count -eq 1) {
+            # Exactly one match - use it!
+            return (Join-Path $specsDir $matchingDirs[0])
+        }
+        elseif ($matchingDirs.Count -gt 1) {
+            # Multiple matches - use first one but warn
+            Write-Warning "Multiple spec directories found with prefix '$prefix': $($matchingDirs -join ', ')"
+            Write-Warning "Using first match: $($matchingDirs[0])"
+            return (Join-Path $specsDir $matchingDirs[0])
+        }
     }
 
-    # Handle results
-    if ($matchingDirs.Count -eq 0) {
-        # No match found - return the branch name path (will fail later with clear error)
-        return (Join-Path $specsDir $BranchName)
-    }
-    elseif ($matchingDirs.Count -eq 1) {
-        # Exactly one match - perfect!
+    # Strategy 3: Search all directories in specs/ for any partial match
+    $matchingDirs = @()
+    $matchingDirs = Get-ChildItem -Path $specsDir -Directory |
+        Where-Object {
+            $_.Name -like "*$BranchName*" -or $BranchName -like "*$($_.Name)*"
+        } |
+        Select-Object -ExpandProperty Name
+
+    if ($matchingDirs.Count -eq 1) {
         return (Join-Path $specsDir $matchingDirs[0])
     }
-    else {
-        # Multiple matches - this shouldn't happen with proper naming convention
-        Write-Output "ERROR: Multiple spec directories found with prefix '$prefix': $($matchingDirs -join ', ')"
-        Write-Output "Please ensure only one spec directory exists per numeric prefix."
-        return (Join-Path $specsDir $BranchName)  # Return something to avoid breaking the script
+    elseif ($matchingDirs.Count -gt 1) {
+        Write-Warning "Multiple spec directories found matching '$BranchName': $($matchingDirs -join ', ')"
+        Write-Warning "Using first match: $($matchingDirs[0])"
+        return (Join-Path $specsDir $matchingDirs[0])
     }
+
+    # No match found - return constructed path (will fail later with clear error)
+    return (Join-Path $specsDir $BranchName)
 }
 
 function Get-FeaturePathsEnv {

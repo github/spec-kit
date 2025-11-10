@@ -314,7 +314,12 @@ When documenting findings:
       - [G] Other (please specify)
       Your choice: ___
 
-      **Store choice**: Set `IS_TRADITIONAL_DEPLOYMENT = true` if user selects [A]
+      **Store choice**:
+      - Set `IS_TRADITIONAL_DEPLOYMENT = true` if user selects **[A]** (Dedicated server)
+      - Set `IS_TRADITIONAL_DEPLOYMENT = false` if user selects **[B], [C], [D], [E], [F]** (any cloud/container platform)
+      - If user selects **[G] Other**, ask clarifying question: "Is this a cloud/container platform (Kubernetes, Docker, etc.)?"
+        - If yes → Set `IS_TRADITIONAL_DEPLOYMENT = false`
+        - If no → Set `IS_TRADITIONAL_DEPLOYMENT = true`
 
    6. Infrastructure as Code (IaC) [CONDITIONAL]:
 
