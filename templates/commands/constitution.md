@@ -114,9 +114,11 @@ You can customize these principles by running this command again with your own p
 $ARGUMENTS
 ```
 
-**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+**CRITICAL: Check the $ARGUMENTS value above.**
 
-   **Enter INTERACTIVE MODE:**
+**IF the text above shows literally "$ARGUMENTS" OR is empty/blank**:
+
+   ⚠️ **YOU MUST ENTER INTERACTIVE MODE - DO NOT SKIP THIS** ⚠️
 
    Please provide your constitution principles, or press Enter/provide empty input to use defaults.
 
@@ -156,11 +158,12 @@ $ARGUMENTS
 
    Simply provide empty input, type "use defaults", or provide only PROJECT METADATA with zero principles to use the default constitution principles (see "Default Constitution Principles" section above for the full list).
 
-   Once you provide input (or choose defaults), I'll generate your constitution document.
+   **WAIT FOR USER RESPONSE before proceeding to the Outline section below.**
 
-**ELSE** (arguments provided):
+**ELSE IF the text above contains actual principles or metadata** (not "$ARGUMENTS"):
+
    Parse and use the provided arguments to generate the constitution.
-   Continue with existing constitution generation logic below.
+   Continue with constitution generation logic in the Outline section below.
 
 ## Outline
 

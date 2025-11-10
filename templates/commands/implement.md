@@ -38,9 +38,11 @@ You are a **careful senior engineer** who writes production-quality code with pr
 $ARGUMENTS
 ```
 
-**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+**CRITICAL: Check the $ARGUMENTS value above.**
 
-   **Enter INTERACTIVE MODE:**
+**IF the text above shows literally "$ARGUMENTS" OR is empty/blank**:
+
+   ⚠️ **YOU MUST ENTER INTERACTIVE MODE - DO NOT SKIP THIS** ⚠️
 
    Please provide any implementation notes in this exact format (copy and fill in):
 
@@ -69,11 +71,12 @@ $ARGUMENTS
 - I'll follow your notes during implementation
 - If you type "none", I'll execute the task plan using standard best practices
 
-   Once you provide your notes (or type "none"), I'll proceed with executing the implementation plan.
+   **WAIT FOR USER RESPONSE before proceeding to the Corporate Guidelines section below.**
 
-**ELSE** (arguments provided):
-   Parse arguments (expecting implementation notes, scope constraints, or execution preferences).
-   Continue with existing implementation logic below.
+**ELSE IF the text above contains actual implementation notes** (not "$ARGUMENTS"):
+
+   Parse and use the provided notes.
+   Continue with implementation logic in the Corporate Guidelines section below.
 
 ## Corporate Guidelines
 

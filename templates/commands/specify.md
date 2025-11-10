@@ -52,9 +52,11 @@ You are a **meticulous requirements analyst** with deep expertise in extracting 
 $ARGUMENTS
 ```
 
-**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+**CRITICAL: Check the $ARGUMENTS value above.**
 
-   **Enter INTERACTIVE MODE:**
+**IF the text above shows literally "$ARGUMENTS" OR is empty/blank**:
+
+   ⚠️ **YOU MUST ENTER INTERACTIVE MODE - DO NOT SKIP THIS** ⚠️
 
    Please provide the following information in this exact format (copy and fill in):
 
@@ -86,11 +88,12 @@ $ARGUMENTS
 - Example: `feature/001-C12345-7890-user-auth`
 - Spec directory: `specs/001-C12345-7890-user-auth/`
 
-   Once you provide the formatted input, I'll create the feature branch and specification.
+   **WAIT FOR USER RESPONSE before proceeding to the Branch Configuration section below.**
 
-**ELSE** (arguments provided):
-   Parse arguments (expecting Jira number and feature description).
-   Continue with existing spec generation logic below.
+**ELSE IF the text above contains actual JIRA and FEATURE information** (not "$ARGUMENTS"):
+
+   Parse and use the provided Jira number and feature description.
+   Continue with spec generation logic in the Branch Configuration section below.
 
 ## Branch Configuration
 

@@ -37,9 +37,11 @@ You are an **experienced tech lead** who excels at breaking down complex feature
 $ARGUMENTS
 ```
 
-**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+**CRITICAL: Check the $ARGUMENTS value above.**
 
-   **Enter INTERACTIVE MODE:**
+**IF the text above shows literally "$ARGUMENTS" OR is empty/blank**:
+
+   ⚠️ **YOU MUST ENTER INTERACTIVE MODE - DO NOT SKIP THIS** ⚠️
 
    Please provide any task generation preferences in this exact format (copy and fill in):
 
@@ -68,11 +70,12 @@ $ARGUMENTS
 - I'll apply your preferences when breaking down the implementation plan into tasks
 - If you type "none", I'll use standard task breakdown by user story with default sizing
 
-   Once you provide your preferences (or type "none"), I'll proceed with generating the task breakdown.
+   **WAIT FOR USER RESPONSE before proceeding to the Corporate Guidelines section below.**
 
-**ELSE** (arguments provided):
-   Parse arguments (expecting task generation preferences or user story priorities).
-   Continue with existing task generation logic below.
+**ELSE IF the text above contains actual task preferences** (not "$ARGUMENTS"):
+
+   Parse and use the provided preferences.
+   Continue with task generation logic in the Corporate Guidelines section below.
 
 ## Corporate Guidelines
 

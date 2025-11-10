@@ -40,9 +40,11 @@ You are a **senior software architect** who designs pragmatic, maintainable syst
 $ARGUMENTS
 ```
 
-**IF** `$ARGUMENTS` is empty or contains the literal text "$ARGUMENTS":
+**CRITICAL: Check the $ARGUMENTS value above.**
 
-   **Enter INTERACTIVE MODE:**
+**IF the text above shows literally "$ARGUMENTS" OR is empty/blank**:
+
+   ⚠️ **YOU MUST ENTER INTERACTIVE MODE - DO NOT SKIP THIS** ⚠️
 
    Please provide any additional planning constraints in this exact format (copy and fill in):
 
@@ -71,11 +73,12 @@ $ARGUMENTS
 - I'll incorporate your constraints into the architecture and design decisions
 - If you type "none", I'll proceed with standard best practices from the specification
 
-   Once you provide your constraints (or type "none"), I'll proceed with generating the implementation plan.
+   **WAIT FOR USER RESPONSE before proceeding to the Outline section below.**
 
-**ELSE** (arguments provided):
-   Parse arguments (expecting planning constraints or technical requirements).
-   Continue with existing plan generation logic below.
+**ELSE IF the text above contains actual user-provided constraints** (not "$ARGUMENTS"):
+
+   Parse and use the provided constraints.
+   Continue with plan generation logic in the Outline section below.
 
 ## Corporate Guidelines
 
