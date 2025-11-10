@@ -61,7 +61,7 @@ specify init <PROJECT_NAME> --base
 # 开发流程
 
 clone 该仓库修改相应的 prompt 之后 push 到 main 分支
-然后跟随一下路径执行 workflow 
-![操作路径](https://lf3-static.bytednsdoc.com/obj/eden-cn/lnphrbf/speckit/Snipaste_2025-11-07_14-34-24.jpg)
+改动完 prompt 后，在commit上创建一个 v1.0.x 的 tag。
+push 到 main 会自动触发 workflow 执行
 
 随后重新使用 `specify init <PROJECT_NAME>` 初始化项目即可生效
