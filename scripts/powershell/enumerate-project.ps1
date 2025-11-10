@@ -299,7 +299,7 @@ function Invoke-FileEnumeration {
             }
 
             # Track largest files (keep top 10)
-            $key = "$size:$($file.FullName)"
+            $key = "${size}:$($file.FullName)"
             if ($largestFiles.Count -lt 10) {
                 $largestFiles[$key] = $relPath
             } else {

@@ -8,31 +8,15 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-placeholder:
-    name: Tests Temporarily Disabled
+  test-scripts:
+    name: Validate repository scripts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Placeholder - Tests Disabled
-        run: |
-          echo "========================================="
-          echo "Tests Temporarily Disabled"
-          echo "========================================="
-          echo ""
-          echo "All tests have been temporarily disabled pending further investigation."
-          echo "The test suite requires additional work to function correctly in CI."
-          echo ""
-          echo "Status: ✅ Pass (tests disabled)"
-          echo ""
+      - name: Run bash script tests
+        run: tests/scripts/test-bash-scripts.sh
 
-      - name: Generate test report
-        if: always()
-        run: |
-          echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ **Tests Temporarily Disabled**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All test execution has been disabled pending further investigation." >> $GITHUB_STEP_SUMMARY
-          echo "The test suite requires additional debugging to function correctly in CI environments." >> $GITHUB_STEP_SUMMARY
+      - name: Run PowerShell script tests
+        run: tests/scripts/test-powershell-scripts.sh

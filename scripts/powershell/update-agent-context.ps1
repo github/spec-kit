@@ -14,6 +14,9 @@ Mirrors the behavior of scripts/bash/update-agent-context.sh:
 .PARAMETER AgentType
 Optional agent key to update a single agent. If omitted, updates all existing agent files (creating a default Claude file if none exist).
 
+.PARAMETER Help
+Displays this help text.
+
 .EXAMPLE
 ./update-agent-context.ps1 -AgentType claude
 
@@ -26,8 +29,15 @@ Relies on common helper functions in common.ps1
 param(
     [Parameter(Position=0)]
     [ValidateSet('claude','gemini','copilot','cursor-agent','qwen','opencode','codex','windsurf','kilocode','auggie','roo','codebuddy','amp','q')]
-    [string]$AgentType
+    [string]$AgentType,
+
+    [switch]$Help
 )
+
+if ($Help.IsPresent) {
+    Get-Help -Full -ErrorAction SilentlyContinue -Name $MyInvocation.MyCommand.Path | Out-String
+    return
+}
 
 $ErrorActionPreference = 'Stop'
 
