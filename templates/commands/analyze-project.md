@@ -321,9 +321,12 @@ When documenting findings:
         - If yes → Set `IS_TRADITIONAL_DEPLOYMENT = false`
         - If no → Set `IS_TRADITIONAL_DEPLOYMENT = true`
 
-   6. Infrastructure as Code (IaC) [CONDITIONAL]:
+   6. Infrastructure as Code (IaC) [CONDITIONAL - Based on Q5 Answer]:
 
-      **IF** `IS_TRADITIONAL_DEPLOYMENT` (user chose dedicated server):
+      **CRITICAL LOGIC: Check the user's answer to Question 5 above.**
+
+      **IF user selected [A] "Dedicated server" in Question 5**:
+         Display this message and SKIP to Question 8:
          ```
          [SKIPPED - Not applicable for traditional deployment]
 
@@ -336,8 +339,10 @@ When documenting findings:
          If you migrate to cloud in the future, IaC becomes relevant.
          ```
 
-      **ELSE** (cloud deployment chosen):
+      **ELSE IF user selected [B], [C], [D], [E], or [F] in Question 5** (Kubernetes, Azure, AWS, GCP, OpenShift):
+         **ASK this question**:
          ```
+         Infrastructure as Code (IaC):
          Options:
          - [A] Terraform (cloud-agnostic)
          - [B] Helm charts (for Kubernetes)
@@ -350,9 +355,16 @@ When documenting findings:
          Your choice: ___
          ```
 
-   7. Containerization Strategy [CONDITIONAL]:
+      **ELSE IF user selected [G] "Other" in Question 5**:
+         - If they answered "yes" to the clarifying question (is cloud/container platform) → **ASK this question** (same as above)
+         - If they answered "no" → **SKIP to Question 8** (same skip message as [A])
 
-      **IF** `IS_TRADITIONAL_DEPLOYMENT`:
+   7. Containerization Strategy [CONDITIONAL - Based on Q5 Answer]:
+
+      **CRITICAL LOGIC: Check the user's answer to Question 5 above.**
+
+      **IF user selected [A] "Dedicated server" in Question 5**:
+         Display this message and SKIP to Question 8:
          ```
          [SKIPPED - Not applicable for traditional deployment]
 
@@ -365,8 +377,10 @@ When documenting findings:
          This becomes relevant if you choose cloud deployment in the future.
          ```
 
-      **ELSE** (cloud deployment chosen):
+      **ELSE IF user selected [B], [C], [D], [E], or [F] in Question 5** (Kubernetes, Azure, AWS, GCP, OpenShift):
+         **ASK this question**:
          ```
+         Containerization Strategy:
          Options:
          - [A] Docker containers only
          - [B] Docker + Kubernetes orchestration
@@ -375,6 +389,10 @@ When documenting findings:
          - [E] Other (please specify)
          Your choice: ___
          ```
+
+      **ELSE IF user selected [G] "Other" in Question 5**:
+         - If they answered "yes" to the clarifying question (is cloud/container platform) → **ASK this question** (same as above)
+         - If they answered "no" → **SKIP to Question 8** (same skip message as [A])
 
    8. Observability Stack [CONDITIONAL]:
       Current: [detected or "None detected"]
