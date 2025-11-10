@@ -180,8 +180,8 @@ function Test-BinaryFile {
     param([string]$Path)
 
     try {
-        # Read first 8KB as bytes
-        $bytes = Get-Content -Path $Path -Encoding Byte -TotalCount 8192 -ErrorAction Stop
+        # Read first 8KB as bytes (PowerShell Core compatible)
+        $bytes = Get-Content -Path $Path -AsByteStream -TotalCount 8192 -ErrorAction Stop
 
         # Count null bytes (0x00)
         $nullCount = ($bytes | Where-Object { $_ -eq 0 }).Count
