@@ -104,7 +104,7 @@ function Find-FeatureDirByPrefix {
     $specsDir = Join-Path $RepoRoot "specs"
 
     # Extract the last part of branch name (after last '/' or '\')
-    $folderName = $BranchName.Split('/', '\')[-1]
+    $folderName = $BranchName.Split(@('/', '\'))[-1]
 
     # Return specs/folder_name path
     return (Join-Path $specsDir $folderName)
