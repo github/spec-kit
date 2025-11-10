@@ -13,6 +13,109 @@
 
 ---
 
+## 🚀 Why This Fork? Enterprise-Ready Spec-Driven Development
+
+This fork extends the [original Spec Kit](https://github.com/github/spec-kit) with **enterprise-grade features** designed for **corporate teams and production environments**. While the original focuses on spec-driven development fundamentals, this fork adds critical capabilities that teams need in real-world corporate settings.
+
+### Key Enterprise Enhancements
+
+#### 🔄 **Reverse Engineering & Modernization** (Highest Value)
+
+**The Problem:** In corporate environments, legacy systems are everywhere. Documentation is missing, original developers are gone, and nobody understands how the application works. Yet modernization is critical.
+
+**The Solution:** This fork includes a comprehensive reverse engineering system that analyzes existing codebases, extracts functional requirements, assesses technical debt, and generates actionable modernization plans.
+
+- **Automated Legacy Analysis** - Scan existing projects to understand architecture, identify technical debt, and detect security vulnerabilities
+- **AI-Guided Modernization** - Interactive workflow that asks targeted questions about your modernization goals (target tech stack, deployment strategy, observability)
+- **Dual-Mode Output** - Generate both functional specs (what the system does) and technical specs (how to rebuild it)
+- **Seamless Integration** - Produces ready-to-use prompts for the entire Spec Kit workflow, enabling smooth transition from legacy to modern stack
+- **Strategic Decision Support** - Provides feasibility scores (0-100) for inline upgrade vs greenfield rewrite vs hybrid approaches
+
+**Real-World Use Case:** A company has a 10-year-old Java monolith with no documentation. Use `/speckit.analyze-project` to extract business logic, assess upgrade paths (Java 8 → 21 LTS), identify security risks, and generate a complete modernization plan with implementation-ready prompts.
+
+#### 🎯 **Orchestrator Workflow with Seamless Resumption**
+
+**The Problem:** Complex features require running 7+ separate commands. When you hit chat token limits or need to stop work, you lose context and waste time reconstructing where you left off.
+
+**The Solution:** Single-command orchestration with automatic state persistence and zero-context-loss resumption.
+
+- **One-Command Workflow** - `/speckit.orchestrate <feature-description>` runs the entire spec-driven process from constitution to implementation
+- **Automatic State Persistence** - Saves progress to `.speckit-state.json` with phase tracking, task completion counts, and checkpoint data
+- **Seamless Resumption** - `/speckit.resume` restores full context after interruptions, chat limits, or end-of-day shutdowns
+- **Flexible Execution Modes** - Interactive (ask before each phase), auto-spec (automated planning with manual implementation), or full-auto
+
+**Real-World Use Case:** Developer starts implementing a complex authentication system. After 2 hours, hits Claude's chat limit at task 28 of 47. Next day, runs `/speckit.resume`, and work continues from task 29 with full context—no rework, no confusion.
+
+#### 🏢 **Corporate Guidelines System**
+
+**The Problem:** Every company has standards—internal SDKs, banned libraries, compliance requirements, architecture patterns. Generic tools ignore these, generating non-compliant code that requires extensive rework.
+
+**The Solution:** Customizable corporate guidelines with enforcement, compliance checking, and automated fixes.
+
+- **Multi-Stack Guidelines** - Pre-built templates for React, Java, .NET, Node.js, Python, Go with tech stack auto-detection
+- **Compliance Enforcement** - Define mandatory libraries (internal auth SDKs), banned packages (security/licensing), architecture patterns
+- **Automated Validation** - `check-guidelines-compliance.sh` validates projects with severity levels (CRITICAL/HIGH/MEDIUM/LOW)
+- **Auto-Fix Tooling** - Automatically fix common violations (missing `.env` in `.gitignore`, security configs, folder structure)
+- **CI/CD Integration** - Ready-to-use GitHub Actions, GitLab CI, and Jenkins templates for automated enforcement
+- **Hierarchy System** - Constitution > Corporate Guidelines > Spec Kit Defaults ensures project-specific rules always win
+
+**Real-World Use Case:** A bank requires all projects to use their internal OAuth library, PostgreSQL with specific encryption, and specific folder structure. Guidelines ensure AI generates compliant code from day one, saving hours of rework and passing security reviews.
+
+#### 🌍 **Universal Cross-Platform Support**
+
+**The Problem:** Teams use mixed environments—developers on Windows, CI/CD on Linux, cloud agents on Unix. Managing separate script packages is painful.
+
+**The Solution:** One unified package with automatic platform detection.
+
+- **Dual-Script Architecture** - Every command includes both bash (`scripts/bash/`) and PowerShell (`scripts/powershell/`) implementations
+- **Automatic Detection** - AI agents auto-select the correct script variant based on OS
+- **No Configuration Required** - Works out of the box on Unix/Linux/macOS, Windows, and Git Bash
+- **Cloud-Ready** - Perfect for hybrid workflows where developers use Windows locally but delegate to cloud-based AI agents (Devin, Cursor) running on Linux
+
+**Real-World Use Case:** Developer on Windows starts a feature, pushes code, and a Linux-based CI pipeline continues the workflow. Same package, zero configuration changes, seamless execution across platforms.
+
+#### 📋 **Interactive Prompts with Examples**
+
+**The Problem:** New team members need extensive training to use development toolkits effectively. Onboarding is slow and error-prone.
+
+**The Solution:** Self-documenting interactive prompts with contextual examples and educational notes.
+
+- **Zero Training Required** - Interactive questions with examples (e.g., "Target Language? Options: Java 21 LTS, Python 3.12, Node.js 20 LTS")
+- **Contextual Guidance** - Educational notes explain why questions matter and when options become relevant
+- **Conditional Logic** - Skips irrelevant questions (e.g., no Kubernetes questions for traditional server deployments)
+- **Smart Defaults** - Detects existing tech stack and suggests compatible upgrade paths
+
+**Real-World Use Case:** Junior developer joins team, needs to modernize a legacy app. Runs `/speckit.analyze-project`, answers 10 guided questions, and gets a complete modernization plan without reading documentation or attending training sessions.
+
+#### 🔧 **Custom Branching Strategies**
+
+**The Problem:** Companies have specific branch naming conventions (Jira integration, feature numbering) that generic tools don't support.
+
+**The Solution:** Configurable branch patterns with optional Jira integration.
+
+- **JSON-Based Configuration** - `branch-config.json` defines custom patterns, prefixes, and Jira format
+- **Flexible Jira Support** - Optional Jira integration for teams that use it, skippable for teams that don't
+- **Regex Validation** - Enforce company-specific ticket formats (e.g., `C12345-7890`)
+- **Backward Compatible** - Works with existing projects without requiring migration
+
+**Real-World Use Case:** Company uses Jira tickets in branch names (`feature/001-PROJ-1234-user-auth`). Configure once in `branch-config.json`, and all feature branches follow the standard automatically.
+
+---
+
+### How This Fork Differs from the Original
+
+| Feature | Original Spec Kit | This Fork (Enterprise) |
+|---------|------------------|------------------------|
+| **Target Audience** | Individual developers, greenfield projects | **Corporate teams, legacy modernization** |
+| **Platform Support** | Bash scripts (Unix/Linux/macOS) | **Bash + PowerShell (Windows + Unix)** |
+| **Workflow Management** | Manual command execution | **Orchestrator + auto-resume** |
+| **Legacy Code Support** | Greenfield only | **Reverse engineering & modernization** |
+| **Corporate Standards** | Generic defaults | **Customizable guidelines + compliance** |
+| **Branching Strategy** | Fixed pattern | **Configurable with Jira integration** |
+| **Onboarding Complexity** | Requires documentation reading | **Interactive prompts with examples** |
+
+---
+
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
