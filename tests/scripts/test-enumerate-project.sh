@@ -48,12 +48,12 @@ print_test() {
 }
 
 print_pass() {
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
     echo -e "${GREEN}✓ PASS:${NC} $1"
 }
 
 print_fail() {
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
     echo -e "${RED}✗ FAIL:${NC} $1"
 }
 
@@ -88,7 +88,7 @@ create_test_project() {
 
 # Test: Bash script runs without errors
 test_bash_no_errors() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash script runs without errors"
 
     local test_project="$TEST_OUTPUT_DIR/test-project-bash"
@@ -112,7 +112,7 @@ test_bash_no_errors() {
 
 # Test: Bash output is valid JSON
 test_bash_valid_json() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash output is valid JSON"
 
     local test_project="$TEST_OUTPUT_DIR/test-project-bash"
@@ -137,7 +137,7 @@ test_bash_valid_json() {
 
 # Test: Bash output has required fields
 test_bash_required_fields() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash output has all required fields"
 
     local output_file="$TEST_OUTPUT_DIR/bash-output.json"
@@ -174,7 +174,7 @@ test_bash_required_fields() {
 
 # Test: Bash handles special characters
 test_bash_special_chars() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash handles special characters (spaces, quotes)"
 
     local output_file="$TEST_OUTPUT_DIR/bash-output.json"
@@ -196,7 +196,7 @@ test_bash_special_chars() {
 
 # Test: Bash detects oversized files
 test_bash_oversized_detection() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash detects oversized files"
 
     local output_file="$TEST_OUTPUT_DIR/bash-output.json"
@@ -215,7 +215,7 @@ test_bash_oversized_detection() {
 
 # Test: Bash detects binary files
 test_bash_binary_detection() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash detects binary files"
 
     local output_file="$TEST_OUTPUT_DIR/bash-output.json"
@@ -233,7 +233,7 @@ test_bash_binary_detection() {
 
 # Test: Bash populates largest_files
 test_bash_largest_files() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash populates largest_files array"
 
     local output_file="$TEST_OUTPUT_DIR/bash-output.json"
@@ -251,7 +251,7 @@ test_bash_largest_files() {
 
 # Test: PowerShell script runs without errors (if pwsh available)
 test_powershell_no_errors() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "PowerShell script runs without errors"
 
     if ! command -v pwsh &> /dev/null; then
@@ -280,7 +280,7 @@ test_powershell_no_errors() {
 
 # Test: PowerShell output is valid JSON
 test_powershell_valid_json() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "PowerShell output is valid JSON"
 
     if ! command -v pwsh &> /dev/null; then
@@ -309,7 +309,7 @@ test_powershell_valid_json() {
 
 # Test: Bash and PowerShell parity
 test_bash_powershell_parity() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash and PowerShell output parity"
 
     if ! command -v pwsh &> /dev/null; then
@@ -345,7 +345,7 @@ test_bash_powershell_parity() {
 
 # Test: Empty directory handling
 test_empty_directory() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash handles empty directory"
 
     local empty_dir="$TEST_OUTPUT_DIR/empty-project"
@@ -374,7 +374,7 @@ test_empty_directory() {
 
 # Test: Help flag works
 test_help_flag() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "Bash --help flag works"
 
     if "$REPO_ROOT/scripts/bash/enumerate-project.sh" --help 2>&1 | grep -q "Usage:"; then

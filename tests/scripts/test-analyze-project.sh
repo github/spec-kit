@@ -34,18 +34,18 @@ print_header() {
 }
 
 print_pass() {
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
     echo -e "${GREEN}✓ PASS:${NC} $1"
 }
 
 print_fail() {
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
     echo -e "${RED}✗ FAIL:${NC} $1"
 }
 
 # Test: Bash help flag works
 test_bash_help() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     if "$REPO_ROOT/scripts/bash/analyze-project.sh" --help 2>&1 | grep -q "Usage:"; then
         print_pass "Bash --help works"
     else
@@ -55,7 +55,7 @@ test_bash_help() {
 
 # Test: Bash script creates workspace
 test_bash_creates_workspace() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
 
     local test_project="$TEST_OUTPUT_DIR/test-project"
     mkdir -p "$test_project"
@@ -76,7 +76,7 @@ test_bash_creates_workspace() {
 
 # Test: Bash checks for jq dependency
 test_bash_jq_check() {
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
 
     if "$REPO_ROOT/scripts/bash/analyze-project.sh" --help 2>&1; then
         # Script should mention jq in its checks or help

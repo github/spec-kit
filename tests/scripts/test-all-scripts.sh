@@ -48,17 +48,17 @@ print_test() {
 }
 
 print_pass() {
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED++)) || true
     echo -e "${GREEN}✓ PASS:${NC} $1"
 }
 
 print_fail() {
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED++)) || true
     echo -e "${RED}✗ FAIL:${NC} $1"
 }
 
 print_skip() {
-    ((TESTS_SKIPPED++))
+    ((TESTS_SKIPPED++)) || true
     echo -e "${YELLOW}⊘ SKIP:${NC} $1"
 }
 
@@ -67,7 +67,7 @@ test_script_help() {
     local script_path="$1"
     local script_name=$(basename "$script_path")
 
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "$script_name --help flag"
 
     if [[ "$script_path" == *.sh ]]; then
@@ -105,7 +105,7 @@ test_script_syntax() {
     local script_path="$1"
     local script_name=$(basename "$script_path")
 
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     print_test "$script_name syntax check"
 
     if [[ "$script_path" == *.sh ]]; then
@@ -143,7 +143,7 @@ test_check_prerequisites() {
 
     test_script_syntax "$bash_script" || true
     # check-prerequisites.sh has --help flag, test it
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
         print_pass "check-prerequisites.sh --help works"
     else
@@ -153,7 +153,7 @@ test_check_prerequisites() {
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
         if command -v pwsh &> /dev/null; then
-            ((TESTS_RUN++))
+            ((TESTS_RUN++)) || true
             if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
                 print_pass "check-prerequisites.ps1 -Help works"
             else
@@ -188,7 +188,7 @@ test_create_new_feature() {
 
     test_script_syntax "$bash_script" || true
     # create-new-feature.sh has --help flag, test it
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
         print_pass "create-new-feature.sh --help works"
     else
@@ -198,7 +198,7 @@ test_create_new_feature() {
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
         if command -v pwsh &> /dev/null; then
-            ((TESTS_RUN++))
+            ((TESTS_RUN++)) || true
             if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
                 print_pass "create-new-feature.ps1 -Help works"
             else
@@ -217,7 +217,7 @@ test_setup_plan() {
 
     test_script_syntax "$bash_script" || true
     # setup-plan.sh has --help flag, test it
-    ((TESTS_RUN++))
+    ((TESTS_RUN++)) || true
     if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
         print_pass "setup-plan.sh --help works"
     else
@@ -227,7 +227,7 @@ test_setup_plan() {
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
         if command -v pwsh &> /dev/null; then
-            ((TESTS_RUN++))
+            ((TESTS_RUN++)) || true
             if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
                 print_pass "setup-plan.ps1 -Help works"
             else
@@ -247,7 +247,7 @@ test_analyze_project_setup() {
     if [ -f "$bash_script" ]; then
         test_script_syntax "$bash_script" || true
         # analyze-project-setup.sh has --help flag, test it
-        ((TESTS_RUN++))
+        ((TESTS_RUN++)) || true
         if bash "$bash_script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
             print_pass "analyze-project-setup.sh --help works"
         else
@@ -258,7 +258,7 @@ test_analyze_project_setup() {
     if [ -f "$ps_script" ]; then
         test_script_syntax "$ps_script" || true
         if command -v pwsh &> /dev/null; then
-            ((TESTS_RUN++))
+            ((TESTS_RUN++)) || true
             if pwsh -File "$ps_script" -Help 2>&1 | grep -qiE "(usage|help|parameters)"; then
                 print_pass "analyze-project-setup.ps1 -Help works"
             else
@@ -300,7 +300,7 @@ test_guidelines_scripts() {
         if [ -f "$script" ]; then
             test_script_syntax "$script" || true
             # All guidelines scripts have --help flags
-            ((TESTS_RUN++))
+            ((TESTS_RUN++)) || true
             if bash "$script" --help 2>&1 | grep -qiE "(usage|help|options)"; then
                 print_pass "$script_name --help works"
             else
@@ -318,12 +318,12 @@ run_specialized_tests() {
     if [ -f "$SCRIPT_DIR/test-enumerate-project.sh" ]; then
         echo -e "\n${BLUE}Running enumerate-project test suite...${NC}"
         if bash "$SCRIPT_DIR/test-enumerate-project.sh"; then
-            ((TESTS_RUN++))
-            ((TESTS_PASSED++))
+            ((TESTS_RUN++)) || true
+            ((TESTS_PASSED++)) || true
             print_pass "enumerate-project test suite passed"
         else
-            ((TESTS_RUN++))
-            ((TESTS_FAILED++))
+            ((TESTS_RUN++)) || true
+            ((TESTS_FAILED++)) || true
             print_fail "enumerate-project test suite failed"
         fi
     fi
@@ -332,12 +332,12 @@ run_specialized_tests() {
     if [ -f "$SCRIPT_DIR/test-analyze-project.sh" ]; then
         echo -e "\n${BLUE}Running analyze-project test suite...${NC}"
         if bash "$SCRIPT_DIR/test-analyze-project.sh"; then
-            ((TESTS_RUN++))
-            ((TESTS_PASSED++))
+            ((TESTS_RUN++)) || true
+            ((TESTS_PASSED++)) || true
             print_pass "analyze-project test suite passed"
         else
-            ((TESTS_RUN++))
-            ((TESTS_FAILED++))
+            ((TESTS_RUN++)) || true
+            ((TESTS_FAILED++)) || true
             print_fail "analyze-project test suite failed"
         fi
     fi
