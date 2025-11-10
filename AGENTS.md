@@ -194,10 +194,12 @@ Add to **Supported AI Agents** table in `README.md`: support level (Full/Partial
 #### 4. Update Release Scripts
 
 **Package script** (`.github/workflows/scripts/create-release-packages.sh`):
+
 - Add to `ALL_AGENTS` array
 - Add case statement for directory structure
 
 **Release script** (`.github/workflows/scripts/create-github-release.sh`):
+
 - Add agent's zip packages to `gh release create`
 
 #### 5. Update Agent Context Scripts
