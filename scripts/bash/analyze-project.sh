@@ -93,6 +93,30 @@ EOF
     exit 0
 }
 
+check_dependencies() {
+    print_header "Checking Dependencies"
+
+    local missing=0
+
+    # Check jq (required for enumerate-project.sh)
+    if ! command -v jq &> /dev/null; then
+        print_error "jq is required but not installed"
+        print_info "Why? It prevents JSON injection vulnerabilities"
+        print_info "Install: sudo apt-get install jq  OR  brew install jq"
+        print_info "Corporate? Download portable binary: https://github.com/jqlang/jq/releases"
+        print_info "Alternative: Use PowerShell version (scripts/powershell/analyze-project.ps1)"
+        missing=1
+    else
+        print_success "jq found: $(jq --version)"
+    fi
+
+    if [[ $missing -eq 1 ]]; then
+        exit 1
+    fi
+
+    echo ""
+}
+
 validate_project_path() {
     print_header "Validating Project Path"
 
@@ -262,6 +286,7 @@ main() {
     echo ""
 
     # Run workflow
+    check_dependencies
     validate_project_path
     setup_output_directory
     run_enumeration

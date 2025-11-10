@@ -27,7 +27,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Script metadata
-$SCRIPT_VERSION = "1.0.0"
+$SCRIPT_VERSION = "1.0.1"
 $SCRIPT_NAME = "enumerate-project.ps1"
 $SCAN_START = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
@@ -63,6 +63,12 @@ Examples:
     exit 0
 }
 
+# Validate max size parameter
+if ($MaxSize -lt 0) {
+    Write-Error "ERROR: -MaxSize must be a positive integer (bytes)"
+    exit 1
+}
+
 # Validate project path
 if (-not (Test-Path $Project -PathType Container)) {
     Write-Error "ERROR: Project path does not exist or is not a directory: $Project"
@@ -73,7 +79,7 @@ if (-not (Test-Path $Project -PathType Container)) {
 $Project = (Resolve-Path $Project).Path
 
 # Determine if we should show progress
-$ShowProgress = $Output -ne ""
+$ShowProgress = $Output -ne "" -and [Console]::IsErrorRedirected -eq $false
 
 # Progress functions
 function Write-Progress-Info {
@@ -90,21 +96,89 @@ function Write-Progress-Success {
     }
 }
 
-function Write-Progress-Warning {
-    param([string]$Message)
-    if ($ShowProgress) {
-        Write-Host "⚠ $Message" -ForegroundColor Yellow
+# Get file category based on extension
+function Get-FileCategory {
+    param([string]$Extension)
+
+    # Remove leading dot if present
+    $ext = $Extension.TrimStart('.')
+
+    switch -Regex ($ext) {
+        # Code files
+        '^(js|ts|jsx|tsx|mjs|cjs)$' { return "code" }
+        '^(cs|fs|vb)$' { return "code" }
+        '^(java|kt|scala|groovy)$' { return "code" }
+        '^(py|pyw|pyx)$' { return "code" }
+        '^(rb|rake|gemspec)$' { return "code" }
+        '^go$' { return "code" }
+        '^rs$' { return "code" }
+        '^(php|phtml)$' { return "code" }
+        '^(c|cpp|cc|cxx|h|hpp)$' { return "code" }
+        '^(swift|m|mm)$' { return "code" }
+
+        # Markup and styles
+        '^(html|htm|xhtml)$' { return "markup" }
+        '^(css|scss|sass|less)$' { return "style" }
+        '^(vue|svelte)$' { return "component" }
+
+        # Configuration
+        '^(json|yaml|yml|toml|ini|conf|config)$' { return "config" }
+        '^(xml|plist)$' { return "config" }
+        '^(env|properties)$' { return "config" }
+
+        # Build and project files
+        '^(csproj|sln|fsproj|vbproj)$' { return "project" }
+        '^(gradle|pom)$' { return "project" }
+        '^(gemfile|rakefile)$' { return "project" }
+        '^lock$' { return "lockfile" }
+
+        # Database
+        '^(sql|psql|mysql)$' { return "database" }
+
+        # Scripts
+        '^(sh|bash|zsh|fish)$' { return "script" }
+        '^(ps1|psm1|psd1)$' { return "script" }
+        '^(bat|cmd)$' { return "script" }
+
+        # Documentation
+        '^(md|markdown|txt|rst|adoc)$' { return "documentation" }
+
+        # Data
+        '^(csv|tsv|dat)$' { return "data" }
+
+        # Binary/compiled
+        '^(dll|exe|so|dylib|a|o|obj|pdb)$' { return "binary" }
+        '^(class|jar|war|ear)$' { return "binary" }
+        '^(pyc|pyo)$' { return "binary" }
+
+        # Images
+        '^(jpg|jpeg|png|gif|svg|ico|webp|bmp)$' { return "image" }
+
+        # Archives
+        '^(zip|tar|gz|bz2|xz|7z|rar)$' { return "archive" }
+
+        # Default
+        default {
+            if ([string]::IsNullOrEmpty($ext)) {
+                return "no_extension"
+            }
+            return "other"
+        }
     }
 }
 
-# Detect if a file is binary
+# Detect if file is binary by checking for null bytes (IDENTICAL to bash version)
+# Returns: $true or $false
 function Test-BinaryFile {
     param([string]$Path)
 
     try {
-        # Read first 8KB and check for null bytes
+        # Read first 8KB as bytes
         $bytes = Get-Content -Path $Path -Encoding Byte -TotalCount 8192 -ErrorAction Stop
+
+        # Count null bytes (0x00)
         $nullCount = ($bytes | Where-Object { $_ -eq 0 }).Count
+
         return $nullCount -gt 0
     }
     catch {
@@ -113,75 +187,27 @@ function Test-BinaryFile {
     }
 }
 
-# Get file category based on extension
-function Get-FileCategory {
-    param([string]$Extension)
+# Extract file extension properly (IDENTICAL to bash version logic)
+function Get-FileExtensionSafe {
+    param([string]$FilePath)
 
-    switch -Regex ($Extension) {
-        # Code files
-        '^\.(js|ts|jsx|tsx|mjs|cjs)$' { return "code" }
-        '^\.(cs|fs|vb)$' { return "code" }
-        '^\.(java|kt|scala|groovy)$' { return "code" }
-        '^\.(py|pyw|pyx)$' { return "code" }
-        '^\.(rb|rake|gemspec)$' { return "code" }
-        '^\.go$' { return "code" }
-        '^\.rs$' { return "code" }
-        '^\.(php|phtml)$' { return "code" }
-        '^\.(c|cpp|cc|cxx|h|hpp)$' { return "code" }
-        '^\.(swift|m|mm)$' { return "code" }
+    $basename = Split-Path -Leaf $FilePath
 
-        # Markup and styles
-        '^\.(html|htm|xhtml)$' { return "markup" }
-        '^\.(css|scss|sass|less)$' { return "style" }
-        '^\.(vue|svelte)$' { return "component" }
-
-        # Configuration
-        '^\.(json|yaml|yml|toml|ini|conf|config)$' { return "config" }
-        '^\.(xml|plist)$' { return "config" }
-        '^\.(env|properties)$' { return "config" }
-
-        # Build and project files
-        '^\.(csproj|sln|fsproj|vbproj)$' { return "project" }
-        '^\.(gradle|pom)$' { return "project" }
-        '^\.(gemfile|rakefile)$' { return "project" }
-        '^\.lock$' { return "lockfile" }
-
-        # Database
-        '^\.(sql|psql|mysql)$' { return "database" }
-
-        # Scripts
-        '^\.(sh|bash|zsh|fish)$' { return "script" }
-        '^\.(ps1|psm1|psd1)$' { return "script" }
-        '^\.(bat|cmd)$' { return "script" }
-
-        # Documentation
-        '^\.(md|markdown|txt|rst|adoc)$' { return "documentation" }
-
-        # Data
-        '^\.(csv|tsv|dat)$' { return "data" }
-
-        # Binary/compiled
-        '^\.(dll|exe|so|dylib|a|o|obj|pdb)$' { return "binary" }
-        '^\.(class|jar|war|ear)$' { return "binary" }
-        '^\.(pyc|pyo)$' { return "binary" }
-
-        # Images
-        '^\.(jpg|jpeg|png|gif|svg|ico|webp)$' { return "image" }
-
-        # Archives
-        '^\.(zip|tar|gz|bz2|xz|7z|rar)$' { return "archive" }
-
-        # Default
-        default {
-            if ($Extension -eq "") {
-                return "no_extension"
-            }
-            return "other"
-        }
+    # Handle dotfiles without extension (.gitignore)
+    if ($basename.StartsWith('.') -and (-not $basename.Contains('.', 1))) {
+        return ""
     }
+
+    # Extract extension
+    if ($basename.Contains('.')) {
+        $ext = [System.IO.Path]::GetExtension($basename)
+        return $ext
+    }
+
+    return ""
 }
 
-# Main enumeration function
+# Main enumeration function - streams JSON output
 function Invoke-FileEnumeration {
     Write-Progress-Info "Starting full recursive scan of: $Project"
 
@@ -191,156 +217,188 @@ function Invoke-FileEnumeration {
     $oversizedCount = 0
     $errorCount = 0
 
-    # Collections
-    $files = @()
-    $errors = @()
     $categoryCounts = @{}
     $extensionCounts = @{}
-    $largestFiles = @()
+    $largestFiles = @{}  # key="size:path"
 
-    # Enumerate all files
-    Get-ChildItem -Path $Project -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-        $fileCount++
-
-        # Show progress every 100 files
-        if ($fileCount % 100 -eq 0) {
-            Write-Progress-Info "Scanned $fileCount files..."
-        }
-
-        $file = $_
-        $relPath = $file.FullName.Substring($Project.Length).TrimStart('\', '/')
-
-        # Get file size
-        $size = $file.Length
-
-        $totalSize += $size
-
-        # Get extension
-        $ext = $file.Extension
-
-        # Get category
-        $category = Get-FileCategory -Extension $ext
-
-        # Update counters
-        if ($categoryCounts.ContainsKey($category)) {
-            $categoryCounts[$category]++
-        } else {
-            $categoryCounts[$category] = 1
-        }
-
-        if ($ext -ne "") {
-            if ($extensionCounts.ContainsKey($ext)) {
-                $extensionCounts[$ext]++
-            } else {
-                $extensionCounts[$ext] = 1
-            }
-        }
-
-        # Check file properties
-        $readable = $true
-        $isBinary = $false
-        $sizeCategory = "normal"
-        $skipReason = ""
-
-        try {
-            # Check if file is readable
-            if (-not $file.PSIsContainer -and -not (Get-Content -Path $file.FullName -TotalCount 1 -ErrorAction Stop)) {
-                # File exists and is readable (even if empty)
-            }
-        }
-        catch [UnauthorizedAccessException] {
-            $readable = $false
-            $skipReason = "permission_denied"
-            $errorCount++
-        }
-        catch {
-            # Other read errors
-            $readable = $false
-            $skipReason = "read_error"
-            $errorCount++
-        }
-
-        if ($size -gt $MaxSize) {
-            $sizeCategory = "oversized"
-            $skipReason = "exceeds_max_size"
-            $oversizedCount++
-        }
-        elseif ($category -in @("binary", "image", "archive")) {
-            $isBinary = $true
-            $binaryCount++
-        }
-        elseif ($readable) {
-            # Check if actually binary
-            $isBinary = Test-BinaryFile -Path $file.FullName
-            if ($isBinary) {
-                $binaryCount++
-            }
-        }
-
-        # Determine size category
-        if ($sizeCategory -ne "oversized" -and $readable) {
-            if ($size -lt 10KB) {
-                $sizeCategory = "tiny"
-            }
-            elseif ($size -lt 100KB) {
-                $sizeCategory = "small"
-            }
-            elseif ($size -lt 1MB) {
-                $sizeCategory = "medium"
-            }
-            else {
-                $sizeCategory = "large"
-            }
-        }
-
-        # Build file object
-        $fileObj = [PSCustomObject]@{
-            path = $relPath
-            absolute_path = $file.FullName
-            size_bytes = $size
-            extension = $ext
-            category = $category
-            size_category = $sizeCategory
-            is_binary = $isBinary
-            readable = $readable
-            skip_reason = $skipReason
-        }
-
-        $files += $fileObj
-
-        # Track largest files
-        $largestFiles += [PSCustomObject]@{
-            path = $relPath
-            size_bytes = $size
-        }
-
-        # Log errors
-        if (-not $readable) {
-            $errors += [PSCustomObject]@{
-                path = $relPath
-                reason = $skipReason
-            }
-        }
+    # Open output stream
+    if ($Output -ne "") {
+        $stream = [System.IO.StreamWriter]::new($Output, $false, [System.Text.Encoding]::UTF8)
+    } else {
+        $stream = [System.IO.StreamWriter]::new([Console]::OpenStandardOutput())
+        $stream.AutoFlush = $true
     }
 
-    Write-Progress-Success "Scanned $fileCount files"
-
-    # Get top 10 largest files
-    $largestFiles = $largestFiles | Sort-Object -Property size_bytes -Descending | Select-Object -First 10
-
-    # Build final result
-    $scanEnd = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-    $result = [PSCustomObject]@{
-        scan_info = [PSCustomObject]@{
+    try {
+        # Write JSON header
+        $scanInfo = @{
             project_path = $Project
             scanner = "powershell-$($PSVersionTable.PSVersion)"
             script_version = $SCRIPT_VERSION
             scan_start = $SCAN_START
-            scan_end = $scanEnd
+            scan_end = $null
             max_file_size_bytes = $MaxSize
+        } | ConvertTo-Json -Compress
+
+        $stream.WriteLine("{")
+        $stream.WriteLine("`"scan_info`": $scanInfo,")
+        $stream.WriteLine("`"files`": [")
+
+        $firstFile = $true
+
+        # Enumerate all files
+        Get-ChildItem -Path $Project -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $fileCount++
+
+            # Show progress every 100 files
+            if ($fileCount % 100 -eq 0) {
+                Write-Progress-Info "Scanned $fileCount files..."
+            }
+
+            $file = $_
+            $relPath = $file.FullName.Substring($Project.Length).TrimStart('\', '/')
+
+            # Get file size
+            $size = $file.Length
+
+            $totalSize += $size
+
+            # Get extension
+            $ext = Get-FileExtensionSafe -FilePath $file.FullName
+            $extForCategory = $ext.TrimStart('.')
+
+            # Get category
+            $category = Get-FileCategory -Extension $ext
+
+            # Update counters
+            if ($categoryCounts.ContainsKey($category)) {
+                $categoryCounts[$category]++
+            } else {
+                $categoryCounts[$category] = 1
+            }
+
+            if ($ext -ne "") {
+                if ($extensionCounts.ContainsKey($ext)) {
+                    $extensionCounts[$ext]++
+                } else {
+                    $extensionCounts[$ext] = 1
+                }
+            }
+
+            # Track largest files (keep top 10)
+            $key = "$size:$($file.FullName)"
+            if ($largestFiles.Count -lt 10) {
+                $largestFiles[$key] = $relPath
+            } else {
+                # Find smallest in top 10
+                $smallestKey = ($largestFiles.Keys | Sort-Object { [int64]($_ -split ':')[0] } | Select-Object -First 1)
+                $smallestSize = [int64]($smallestKey -split ':')[0]
+                if ($size -gt $smallestSize) {
+                    $largestFiles.Remove($smallestKey)
+                    $largestFiles[$key] = $relPath
+                }
+            }
+
+            # Determine file properties
+            $readable = $true
+            $isBinary = $false
+            $sizeCategory = "normal"
+            $skipReason = ""
+
+            # Check readability
+            try {
+                $null = Get-Content -Path $file.FullName -TotalCount 1 -ErrorAction Stop
+            }
+            catch [UnauthorizedAccessException] {
+                $readable = $false
+                $skipReason = "permission_denied"
+                $errorCount++
+            }
+            catch {
+                $readable = $false
+                $skipReason = "read_error"
+                $errorCount++
+            }
+
+            # Check size before doing binary detection (CRITICAL FIX)
+            if ($readable -and $size -gt $MaxSize) {
+                $sizeCategory = "oversized"
+                $skipReason = "exceeds_max_size"
+                $oversizedCount++
+            }
+            # Check if binary by extension first
+            elseif ($category -in @("binary", "image", "archive")) {
+                $isBinary = $true
+                $binaryCount++
+            }
+            # Only now check binary by content (after size check!)
+            elseif ($readable) {
+                $isBinary = Test-BinaryFile -Path $file.FullName
+                if ($isBinary) {
+                    $binaryCount++
+                }
+            }
+
+            # Determine size category for readable files
+            if ($sizeCategory -ne "oversized" -and $readable) {
+                if ($size -lt 10KB) {
+                    $sizeCategory = "tiny"
+                }
+                elseif ($size -lt 100KB) {
+                    $sizeCategory = "small"
+                }
+                elseif ($size -lt 1MB) {
+                    $sizeCategory = "medium"
+                }
+                else {
+                    $sizeCategory = "large"
+                }
+            }
+
+            # Build file object (using ConvertTo-Json for safety - CRITICAL FIX)
+            $fileObj = @{
+                path = $relPath
+                absolute_path = $file.FullName
+                size_bytes = $size
+                extension = $ext
+                category = $category
+                size_category = $sizeCategory
+                is_binary = $isBinary
+                readable = $readable
+                skip_reason = $skipReason
+            }
+
+            # Write JSON (streaming, no buffering)
+            if (-not $firstFile) {
+                $stream.WriteLine(",")
+            }
+            $firstFile = $false
+
+            $json = ($fileObj | ConvertTo-Json -Compress)
+            $stream.Write($json)
         }
-        statistics = [PSCustomObject]@{
+
+        Write-Progress-Success "Scanned $fileCount files"
+
+        # Close files array
+        $stream.WriteLine()
+        $stream.WriteLine("],")
+
+        # Build statistics
+        $scanEnd = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+        # Build largest files array
+        $largestFilesArray = @()
+        foreach ($key in ($largestFiles.Keys | Sort-Object { [int64]($_ -split ':')[0] } -Descending | Select-Object -First 10)) {
+            $size = [int64]($key -split ':')[0]
+            $path = $largestFiles[$key]
+            $largestFilesArray += @{
+                path = $path
+                size_bytes = $size
+            }
+        }
+
+        $statistics = @{
             total_files = $fileCount
             total_size_bytes = $totalSize
             binary_files = $binaryCount
@@ -348,27 +406,33 @@ function Invoke-FileEnumeration {
             unreadable_files = $errorCount
             by_category = $categoryCounts
             by_extension = $extensionCounts
-            largest_files = $largestFiles
+            largest_files = $largestFilesArray
         }
-        files = $files
-        errors = $errors
+
+        $statsJson = ($statistics | ConvertTo-Json -Compress -Depth 10)
+        $stream.WriteLine("`"statistics`": $statsJson")
+        $stream.WriteLine("}")
+
+    } finally {
+        $stream.Close()
+        $stream.Dispose()
     }
 
-    return $result
+    # Update scan_end timestamp
+    if ($Output -ne "") {
+        $content = Get-Content -Path $Output -Raw | ConvertFrom-Json
+        $content.scan_info.scan_end = $scanEnd
+        $content | ConvertTo-Json -Depth 100 | Set-Content -Path $Output -Encoding UTF8
+    }
 }
 
 # Main execution
 Write-Progress-Info "enumerate-project.ps1 v$SCRIPT_VERSION"
 Write-Progress-Info "Project: $Project"
 
-$result = Invoke-FileEnumeration
+Invoke-FileEnumeration
 
+Write-Progress-Success "Enumeration complete"
 if ($Output -ne "") {
-    Write-Progress-Info "Output: $Output"
-    $result | ConvertTo-Json -Depth 10 -Compress:$false | Out-File -FilePath $Output -Encoding utf8
-    Write-Progress-Success "Enumeration complete: $Output"
-}
-else {
-    # Output to stdout
-    $result | ConvertTo-Json -Depth 10 -Compress:$false
+    Write-Progress-Success "Output: $Output"
 }

@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+# Script metadata
+SCRIPT_VERSION="1.0.1"
+SCRIPT_NAME="enumerate-project.sh"
+
 # Default values
 PROJECT_PATH=""
 OUTPUT_FILE=""
@@ -25,27 +29,93 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Script metadata
-SCRIPT_VERSION="1.0.0"
-SCRIPT_NAME="enumerate-project.sh"
+# Platform-specific command (detected once at startup)
+STAT_SIZE_CMD=""
+
+# Progress reporting flag
+SHOW_PROGRESS=false
+
+# Check dependencies
+check_dependencies() {
+    local missing=0
+
+    if ! command -v jq &> /dev/null; then
+        echo "ERROR: jq is required but not installed" >&2
+        echo "" >&2
+        echo "Why jq? It prevents JSON injection vulnerabilities (security requirement)" >&2
+        echo "" >&2
+        echo "Installation options:" >&2
+        echo "  • Standard: sudo apt-get install jq  OR  brew install jq" >&2
+        echo "  • Corporate/Air-gapped: Download portable jq binary" >&2
+        echo "    https://github.com/jqlang/jq/releases" >&2
+        echo "    (Single file, no installation needed - just place in PATH)" >&2
+        echo "  • Alternative: Use PowerShell version (scripts/powershell/enumerate-project.ps1)" >&2
+        echo "    (No external dependencies)" >&2
+        missing=1
+    fi
+
+    if ! command -v find &> /dev/null; then
+        echo "ERROR: find command is required" >&2
+        missing=1
+    fi
+
+    if [[ $missing -eq 1 ]]; then
+        exit 1
+    fi
+}
+
+# Detect platform and set stat command (run once at startup)
+detect_platform() {
+    # Create temp file to test stat command
+    local test_file="${BASH_SOURCE[0]}"
+
+    if stat -f %z "$test_file" &>/dev/null 2>&1; then
+        STAT_SIZE_CMD="stat -f %z"  # macOS/BSD
+    elif stat -c %s "$test_file" &>/dev/null 2>&1; then
+        STAT_SIZE_CMD="stat -c %s"   # Linux/GNU
+    else
+        echo "ERROR: Cannot determine stat command for this platform" >&2
+        exit 1
+    fi
+}
 
 # Parse arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --project)
-            PROJECT_PATH="$2"
-            shift 2
-            ;;
-        --output)
-            OUTPUT_FILE="$2"
-            shift 2
-            ;;
-        --max-size)
-            MAX_FILE_SIZE="$2"
-            shift 2
-            ;;
-        -h|--help)
-            cat <<EOF
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --project)
+                if [[ -z "${2:-}" ]]; then
+                    echo "ERROR: --project requires a path argument" >&2
+                    exit 1
+                fi
+                PROJECT_PATH="$2"
+                shift 2
+                ;;
+            --output)
+                if [[ -z "${2:-}" ]]; then
+                    echo "ERROR: --output requires a path argument" >&2
+                    exit 1
+                fi
+                OUTPUT_FILE="$2"
+                SHOW_PROGRESS=true
+                shift 2
+                ;;
+            --max-size)
+                if [[ -z "${2:-}" ]]; then
+                    echo "ERROR: --max-size requires a numeric argument" >&2
+                    exit 1
+                fi
+                # Validate numeric input
+                if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                    echo "ERROR: --max-size must be a positive integer (bytes)" >&2
+                    echo "Received: $2" >&2
+                    exit 1
+                fi
+                MAX_FILE_SIZE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                cat <<EOF
 Usage: $0 --project PATH [OPTIONS]
 
 Enumerate all files in a project directory for AI analysis.
@@ -71,86 +141,54 @@ Examples:
   # Scan with custom size limit (50MB)
   $0 --project . --output manifest.json --max-size 52428800
 
+Dependencies:
+  - jq (required for JSON generation)
+  - find (standard utility)
+
 EOF
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1" >&2
-            echo "Use --help for usage information" >&2
-            exit 1
-            ;;
-    esac
-done
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                echo "Use --help for usage information" >&2
+                exit 1
+                ;;
+        esac
+    done
 
-# Validate required arguments
-if [[ -z "$PROJECT_PATH" ]]; then
-    echo "ERROR: --project is required" >&2
-    echo "Use --help for usage information" >&2
-    exit 1
-fi
+    # Validate required arguments
+    if [[ -z "$PROJECT_PATH" ]]; then
+        echo "ERROR: --project is required" >&2
+        echo "Use --help for usage information" >&2
+        exit 1
+    fi
 
-# Validate project path
-if [[ ! -d "$PROJECT_PATH" ]]; then
-    echo "ERROR: Project path does not exist or is not a directory: $PROJECT_PATH" >&2
-    exit 1
-fi
+    # Validate project path
+    if [[ ! -d "$PROJECT_PATH" ]]; then
+        echo "ERROR: Project path does not exist or is not a directory: $PROJECT_PATH" >&2
+        exit 1
+    fi
 
-# Convert to absolute path
-PROJECT_PATH=$(cd "$PROJECT_PATH" && pwd)
+    # Convert to absolute path
+    PROJECT_PATH=$(cd "$PROJECT_PATH" && pwd)
+}
 
-# Determine if we should show progress (only if output goes to file)
-SHOW_PROGRESS=false
-if [[ -n "$OUTPUT_FILE" ]]; then
-    SHOW_PROGRESS=true
-fi
-
-# Progress function
+# Progress logging (only if output goes to file and stderr is TTY)
 log_progress() {
-    if [[ "$SHOW_PROGRESS" == "true" ]]; then
+    if [[ "$SHOW_PROGRESS" == "true" ]] && [[ -t 2 ]]; then
         echo -e "${BLUE}ℹ${NC} $1" >&2
     fi
 }
 
 log_success() {
-    if [[ "$SHOW_PROGRESS" == "true" ]]; then
+    if [[ "$SHOW_PROGRESS" == "true" ]] && [[ -t 2 ]]; then
         echo -e "${GREEN}✓${NC} $1" >&2
-    fi
-}
-
-log_warning() {
-    if [[ "$SHOW_PROGRESS" == "true" ]]; then
-        echo -e "${YELLOW}⚠${NC} $1" >&2
-    fi
-}
-
-log_error() {
-    echo -e "${RED}✗${NC} $1" >&2
-}
-
-# Detect if a file is binary
-is_binary() {
-    local file="$1"
-
-    # Check using file command if available
-    if command -v file &> /dev/null; then
-        if file --mime-type "$file" 2>/dev/null | grep -q 'text/'; then
-            echo "false"
-            return
-        fi
-    fi
-
-    # Fallback: check for null bytes in first 8KB
-    if head -c 8192 "$file" 2>/dev/null | grep -qI .; then
-        echo "false"
-    else
-        echo "true"
     fi
 }
 
 # Get file category based on extension
 get_category() {
-    local file="$1"
-    local ext="${file##*.}"
+    local ext="$1"
 
     case "$ext" in
         # Code files
@@ -201,14 +239,14 @@ get_category() {
         pyc|pyo) echo "binary" ;;
 
         # Images
-        jpg|jpeg|png|gif|svg|ico|webp) echo "image" ;;
+        jpg|jpeg|png|gif|svg|ico|webp|bmp) echo "image" ;;
 
         # Archives
         zip|tar|gz|bz2|xz|7z|rar) echo "archive" ;;
 
         # Default
         *)
-            if [[ ! "$file" =~ \. ]]; then
+            if [[ -z "$ext" ]]; then
                 echo "no_extension"
             else
                 echo "other"
@@ -217,7 +255,43 @@ get_category() {
     esac
 }
 
-# Main enumeration function
+# Detect if file is binary by checking for null bytes
+# Returns: "true" or "false"
+is_binary() {
+    local filepath="$1"
+
+    # Read first 8KB and count null bytes
+    local null_count
+    null_count=$(head -c 8192 "$filepath" 2>/dev/null | tr -cd '\000' | wc -c | tr -d ' ')
+
+    if [[ -z "$null_count" ]] || [[ "$null_count" -eq 0 ]]; then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
+
+# Extract file extension properly
+get_extension() {
+    local filepath="$1"
+    local basename="${filepath##*/}"
+
+    # Handle dotfiles without extension (.gitignore)
+    if [[ "$basename" == .* ]] && [[ ! "$basename" =~ \..+\. ]] && [[ "$basename" != *.* || "$basename" == .* ]]; then
+        echo ""
+        return
+    fi
+
+    # Extract extension
+    if [[ "$basename" =~ \. ]]; then
+        local ext="${basename##*.}"
+        echo ".${ext}"
+    else
+        echo ""
+    fi
+}
+
+# Main enumeration function - streams JSON output
 enumerate_files() {
     log_progress "Starting full recursive scan of: $PROJECT_PATH"
 
@@ -227,13 +301,38 @@ enumerate_files() {
     local oversized_count=0
     local error_count=0
 
-    # Arrays to collect data
-    declare -a files_json
-    declare -a errors_json
     declare -A category_counts
     declare -A extension_counts
+    declare -A largest_files  # key="size:path", stores top 10
 
-    # Use find to enumerate all files
+    # Start JSON output
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        exec 3>"$OUTPUT_FILE"
+    else
+        exec 3>&1
+    fi
+
+    # Output JSON header
+    jq -n \
+        --arg project "$PROJECT_PATH" \
+        --arg scanner "bash-${BASH_VERSION}" \
+        --arg version "$SCRIPT_VERSION" \
+        --arg start "$SCAN_START" \
+        --argjson max_size "$MAX_FILE_SIZE" \
+        '{
+            scan_info: {
+                project_path: $project,
+                scanner: $scanner,
+                script_version: $version,
+                scan_start: $start,
+                scan_end: null,
+                max_file_size_bytes: $max_size
+            },
+            files: [' >&3
+
+    local first_file=true
+
+    # Enumerate all files
     while IFS= read -r -d '' filepath; do
         ((file_count++))
 
@@ -245,26 +344,22 @@ enumerate_files() {
         # Get relative path
         local rel_path="${filepath#$PROJECT_PATH/}"
 
-        # Get file size
-        local size
+        # Get file size (using platform-specific command)
+        local size=0
         if [[ -f "$filepath" ]]; then
-            size=$(stat -f %z "$filepath" 2>/dev/null || stat -c %s "$filepath" 2>/dev/null || echo 0)
-        else
-            size=0
+            size=$($STAT_SIZE_CMD "$filepath" 2>/dev/null || echo 0)
         fi
 
         ((total_size += size))
 
-        # Get file extension
-        local ext="${filepath##*.}"
-        if [[ "$filepath" =~ \. ]]; then
-            ext=".$ext"
-        else
-            ext=""
-        fi
+        # Get extension
+        local ext
+        ext=$(get_extension "$filepath")
+        local ext_for_category="${ext#.}"  # Remove leading dot for category lookup
 
         # Get category
-        local category=$(get_category "$filepath")
+        local category
+        category=$(get_category "$ext_for_category")
 
         # Update counters
         ((category_counts[$category]=${category_counts[$category]:-0} + 1))
@@ -272,25 +367,41 @@ enumerate_files() {
             ((extension_counts[$ext]=${extension_counts[$ext]:-0} + 1))
         fi
 
-        # Check if file is readable
+        # Track largest files (keep top 10)
+        if [[ ${#largest_files[@]} -lt 10 ]]; then
+            largest_files["$size:$filepath"]="$rel_path"
+        else
+            # Check if this file is larger than smallest in top 10
+            local smallest_key=$(printf '%s\n' "${!largest_files[@]}" | sort -n | head -1)
+            local smallest_size="${smallest_key%%:*}"
+            if [[ $size -gt $smallest_size ]]; then
+                unset "largest_files[$smallest_key]"
+                largest_files["$size:$filepath"]="$rel_path"
+            fi
+        fi
+
+        # Determine file properties
         local readable="true"
         local is_binary_file="false"
         local size_category="normal"
         local skip_reason=""
 
+        # Check readability
         if [[ ! -r "$filepath" ]]; then
             readable="false"
             skip_reason="permission_denied"
             ((error_count++))
+        # Check size before doing binary detection (CRITICAL FIX)
         elif [[ $size -gt $MAX_FILE_SIZE ]]; then
             size_category="oversized"
             skip_reason="exceeds_max_size"
             ((oversized_count++))
+        # Check if binary by extension first
         elif [[ "$category" == "binary" ]] || [[ "$category" == "image" ]] || [[ "$category" == "archive" ]]; then
             is_binary_file="true"
             ((binary_count++))
-        elif [[ -f "$filepath" ]]; then
-            # Check if actually binary
+        # Only now check binary by content (after size check!)
+        elif [[ -f "$filepath" ]] && [[ -r "$filepath" ]]; then
             is_binary_file=$(is_binary "$filepath")
             if [[ "$is_binary_file" == "true" ]]; then
                 ((binary_count++))
@@ -310,111 +421,138 @@ enumerate_files() {
             fi
         fi
 
-        # Build JSON object for this file
-        local file_json=$(cat <<EOF
-{
-  "path": "$rel_path",
-  "absolute_path": "$filepath",
-  "size_bytes": $size,
-  "extension": "$ext",
-  "category": "$category",
-  "size_category": "$size_category",
-  "is_binary": $is_binary_file,
-  "readable": $readable,
-  "skip_reason": "$skip_reason"
-}
-EOF
-)
-
-        files_json+=("$file_json")
-
-        # Log errors
-        if [[ "$readable" == "false" ]]; then
-            local error_json=$(cat <<EOF
-{
-  "path": "$rel_path",
-  "reason": "$skip_reason"
-}
-EOF
-)
-            errors_json+=("$error_json")
+        # Output JSON for this file (using jq for safety - CRITICAL FIX)
+        if [[ "$first_file" == "true" ]]; then
+            first_file=false
+        else
+            echo "," >&3
         fi
+
+        jq -n \
+            --arg path "$rel_path" \
+            --arg abs_path "$filepath" \
+            --argjson size "$size" \
+            --arg ext "$ext" \
+            --arg cat "$category" \
+            --arg size_cat "$size_category" \
+            --argjson is_bin "$is_binary_file" \
+            --argjson read "$readable" \
+            --arg skip "$skip_reason" \
+            '{
+                path: $path,
+                absolute_path: $abs_path,
+                size_bytes: $size,
+                extension: $ext,
+                category: $cat,
+                size_category: $size_cat,
+                is_binary: $is_bin,
+                readable: $read,
+                skip_reason: $skip
+            }' | tr -d '\n' >&3
 
     done < <(find "$PROJECT_PATH" -type f -print0 2>/dev/null)
 
     log_success "Scanned $file_count files"
 
-    # Build category statistics JSON
-    local categories_json=""
-    for category in "${!category_counts[@]}"; do
-        if [[ -n "$categories_json" ]]; then
-            categories_json+=","
-        fi
-        categories_json+="\"$category\": ${category_counts[$category]}"
-    done
+    # Close files array
+    echo "]," >&3
 
-    # Build extension statistics JSON
-    local extensions_json=""
-    for ext in "${!extension_counts[@]}"; do
-        if [[ -n "$extensions_json" ]]; then
-            extensions_json+=","
-        fi
-        extensions_json+="\"$ext\": ${extension_counts[$ext]}"
-    done
-
-    # Get top 10 largest files
-    local largest_files=$(find "$PROJECT_PATH" -type f -exec stat -f '%z %N' {} \; 2>/dev/null | \
-                          sort -rn | head -10 | \
-                          awk -v project="$PROJECT_PATH/" '{size=$1; $1=""; path=$0; sub(/^[ \t]+/, "", path); sub(project, "", path); printf "{\"path\": \"%s\", \"size_bytes\": %d}", path, size}' | \
-                          paste -sd ',' -)
-
-    # Build final JSON output
+    # Build statistics
     local scan_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    # Join files array
-    local files_array=$(printf "%s," "${files_json[@]}" | sed 's/,$//')
+    # Convert category_counts to JSON
+    local cat_json="{"
+    local first=true
+    for cat in "${!category_counts[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            cat_json+=","
+        fi
+        cat_json+="\"$cat\":${category_counts[$cat]}"
+    done
+    cat_json+="}"
 
-    # Join errors array
-    local errors_array=""
-    if [[ ${#errors_json[@]} -gt 0 ]]; then
-        errors_array=$(printf "%s," "${errors_json[@]}" | sed 's/,$//')
+    # Convert extension_counts to JSON
+    local ext_json="{"
+    first=true
+    for ext in "${!extension_counts[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            ext_json+=","
+        fi
+        # Escape extension for JSON
+        ext_json+="$(jq -n --arg e "$ext" '$e'):${extension_counts[$ext]}"
+    done
+    ext_json+="}"
+
+    # Build largest files array
+    echo "\"statistics\": {" >&3
+    jq -n \
+        --argjson total "$file_count" \
+        --argjson size "$total_size" \
+        --argjson binary "$binary_count" \
+        --argjson oversized "$oversized_count" \
+        --argjson errors "$error_count" \
+        --argjson by_cat "$cat_json" \
+        --argjson by_ext "$ext_json" \
+        '{
+            total_files: $total,
+            total_size_bytes: $size,
+            binary_files: $binary,
+            oversized_files: $oversized,
+            unreadable_files: $errors,
+            by_category: $by_cat,
+            by_extension: $by_ext,
+            largest_files: []
+        }' | head -n -1 | tail -n +2 >&3  # Remove outer braces
+
+    # Add largest files
+    echo "," >&3
+    echo "\"largest_files\": [" >&3
+    first=true
+    for key in $(printf '%s\n' "${!largest_files[@]}" | sort -rn | head -10); do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            echo "," >&3
+        fi
+        local size="${key%%:*}"
+        local path="${largest_files[$key]}"
+        jq -n \
+            --arg p "$path" \
+            --argjson s "$size" \
+            '{path: $p, size_bytes: $s}' | tr -d '\n' >&3
+    done
+    echo "]" >&3
+    echo "}" >&3  # Close statistics
+
+    # Update scan_end in scan_info
+    echo "}" >&3  # Close root object
+
+    # Close file descriptor
+    exec 3>&-
+
+    # Fix scan_end timestamp using jq (update in place)
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        local temp_file="${OUTPUT_FILE}.tmp"
+        jq --arg end "$scan_end" '.scan_info.scan_end = $end' "$OUTPUT_FILE" > "$temp_file"
+        mv "$temp_file" "$OUTPUT_FILE"
     fi
-
-    # Output JSON
-    cat <<EOF
-{
-  "scan_info": {
-    "project_path": "$PROJECT_PATH",
-    "scanner": "bash-${BASH_VERSION}",
-    "script_version": "$SCRIPT_VERSION",
-    "scan_start": "$SCAN_START",
-    "scan_end": "$scan_end",
-    "max_file_size_bytes": $MAX_FILE_SIZE
-  },
-  "statistics": {
-    "total_files": $file_count,
-    "total_size_bytes": $total_size,
-    "binary_files": $binary_count,
-    "oversized_files": $oversized_count,
-    "unreadable_files": $error_count,
-    "by_category": {$categories_json},
-    "by_extension": {$extensions_json},
-    "largest_files": [$largest_files]
-  },
-  "files": [$files_array],
-  "errors": [$errors_array]
-}
-EOF
 }
 
 # Main execution
-log_progress "enumerate-project.sh v$SCRIPT_VERSION"
-log_progress "Project: $PROJECT_PATH"
-
-if [[ -n "$OUTPUT_FILE" ]]; then
-    log_progress "Output: $OUTPUT_FILE"
-    enumerate_files > "$OUTPUT_FILE"
-    log_success "Enumeration complete: $OUTPUT_FILE"
-else
+main() {
+    check_dependencies
+    detect_platform
+    parse_arguments "$@"
     enumerate_files
-fi
+
+    log_success "Enumeration complete"
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        log_success "Output: $OUTPUT_FILE"
+    fi
+}
+
+main "$@"
