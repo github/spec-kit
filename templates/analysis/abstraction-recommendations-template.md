@@ -146,9 +146,11 @@ Your <<CONCERN_TYPE>> concern has partial abstractions. Some improvements will r
 
 2. **Replace with DI**
    - Constructor injection pattern:
-     ```
+
+     ```typescript
      constructor(private readonly service: IInterface) {}
      ```
+
    - Register in DI container: <<file:line>>
 
 3. **Testing**
@@ -254,7 +256,8 @@ interface I<<ConcernName>>Service {
 **Current Implementation**: <<ConcreteClass>> at <<file:line>>
 
 **New Structure**:
-```
+
+```text
 1. I<<ConcernName>>Service interface (contract)
 2. <<Current>>Provider implements I<<ConcernName>>Service (wraps current logic)
 3. <<Target>>Provider implements I<<ConcernName>>Service (future migration)
@@ -289,7 +292,8 @@ interface I<<ConcernName>>Service {
 - **Python**: dependency-injector, injector
 
 **DI Registration**:
-```
+
+```typescript
 // EXAMPLE (adapt to your framework)
 container.register(I<<ConcernName>>Service, <<Current>>Provider);
 ```
@@ -297,7 +301,8 @@ container.register(I<<ConcernName>>Service, <<Current>>Provider);
 **Consumer Refactoring**:
 
 **BEFORE** (current, tightly coupled):
-```
+
+```typescript
 class UserController {
   authenticate() {
     const service = new ConcreteClass(); // ❌ Tight coupling
@@ -307,7 +312,8 @@ class UserController {
 ```
 
 **AFTER** (with DI, loose coupling):
-```
+
+```typescript
 class UserController {
   constructor(private service: I<<ConcernName>>Service) {} // ✅ Depends on interface
 
@@ -337,6 +343,7 @@ class UserController {
 - ... (comprehensive list)
 
 **Recommended Config Structure**:
+
 ```yaml
 # config/<<concern>>.yml (or appropriate for your stack)
 <<concern>>:
@@ -439,13 +446,15 @@ At this point:
 
 ### Cost-Benefit Analysis
 
-**Option A: Direct Migration (Not Recommended)**
+#### Option A: Direct Migration (Not Recommended)
+
 - ⏱️ **Time**: 3-6 months
 - ⚠️ **Risk**: HIGH (likely bugs, breaking changes)
 - 💰 **Cost**: High (team time + bug fixes + rollbacks)
 - 📉 **Technical Debt**: Increases (still tightly coupled after migration)
 
-**Option B: Refactor First, Then Migrate (Recommended)**
+#### Option B: Refactor First, Then Migrate (Recommended)
+
 - ⏱️ **Time**: 10-16 weeks total (6-8 refactor + 4-8 migrate)
 - ✅ **Risk**: LOW (clean separation of concerns)
 - 💰 **Cost**: Moderate upfront, low long-term

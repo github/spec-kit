@@ -12,16 +12,24 @@
 
 | Attribute | Value |
 |-----------|-------|
-| **Concern Type** | <<e.g., Authentication/Authorization>> |
-| **Current** | <<e.g., Custom JWT implementation>> |
-| **Target** | <<e.g., Migrate to Okta>> |
+| **Concern Type** | <<CONCERN_TYPE>> |
+| **Current** | <<CURRENT_IMPLEMENTATION>> |
+| **Target** | <<TARGET_IMPLEMENTATION>> |
 | **Abstraction Level** | <<HIGH / MEDIUM / LOW>> |
 | **Blast Radius** | <<X% of codebase, N files, M LOC>> |
 | **Coupling Degree** | <<LOOSE / MODERATE / TIGHT>> |
 | **Recommended Strategy** | <<STRANGLER_FIG / ADAPTER_PATTERN / REFACTOR_FIRST / BIG_BANG_WITH_FEATURE_FLAGS>> |
 | **Risk Assessment** | <<LOW / MEDIUM / HIGH>> |
-| **Effort Estimate** | <<Time range, e.g., 2-4 weeks>> |
-| **Business Impact** | <<Brief statement on why this migration matters>> |
+| **Effort Estimate** | <<TIME_ESTIMATE>> |
+| **Business Impact** | <<BUSINESS_IMPACT>> |
+
+<!-- Examples:
+- Concern Type: Authentication/Authorization
+- Current: Custom JWT implementation
+- Target: Migrate to Okta
+- Effort Estimate: 2-4 weeks
+- Business Impact: Reduce security maintenance burden, improve compliance
+-->
 
 **Primary Recommendation**: <<One-sentence summary of recommended approach>>
 
@@ -33,12 +41,18 @@
 
 | File Path | Type | Evidence | LOC | Criticality |
 |-----------|------|----------|-----|-------------|
-| <<file:line>> | Core Implementation | <<Evidence, e.g., Exports authenticate(), uses jsonwebtoken>> | <<LOC>> | CRITICAL / STANDARD |
-| <<file:line>> | Middleware | <<Evidence>> | <<LOC>> | CRITICAL / STANDARD |
-| <<file:line>> | Configuration | <<Evidence>> | <<LOC>> | STANDARD |
-| ... | ... | ... | ... | ... |
+| <<file:line>> | <<TYPE>> | <<EVIDENCE>> | <<LOC>> | <<CRITICAL / STANDARD>> |
+| <<file:line>> | <<TYPE>> | <<EVIDENCE>> | <<LOC>> | <<CRITICAL / STANDARD>> |
+| <<file:line>> | <<TYPE>> | <<EVIDENCE>> | <<LOC>> | <<CRITICAL / STANDARD>> |
+
+<!-- Example row:
+| src/auth/AuthService.ts:15 | Core Implementation | Exports authenticate(), uses jsonwebtoken | 247 | CRITICAL |
+| src/middleware/authGuard.ts:8 | Middleware | Uses AuthService, applies @require_auth decorator | 89 | STANDARD |
+| config/auth.config.ts:1 | Configuration | JWT secret, token expiration settings | 34 | STANDARD |
+-->
 
 **Summary**:
+
 - **Total Files**: <<N>> files
 - **Total LOC**: <<M>> lines (~<<X>>% of codebase)
 - **Critical Files**: <<Count of CRITICAL files>>
@@ -55,6 +69,7 @@ Analysis of where and how this concern is used throughout the codebase:
 | ... | ... | ... | ... | ... |
 
 **Consumer Files** (files that depend on this concern):
+
 - <<file:line>> - <<N>> callsites - <<Brief description, e.g., "All user endpoints require auth">>
 - <<file:line>> - <<M>> callsites - <<Description>>
 - ... (list all major consumers)
@@ -66,6 +81,7 @@ Analysis of where and how this concern is used throughout the codebase:
 **Level**: <<HIGH / MEDIUM / LOW>>
 
 **Rationale**:
+
 - <<Evidence 1 with file:line references>>
 - <<Evidence 2 with file:line references>>
 - <<Evidence 3 with file:line references>>
@@ -357,6 +373,7 @@ Mapping concern usage to business capabilities:
 **Strategy**: <<STRANGLER_FIG / ADAPTER_PATTERN / REFACTOR_FIRST / BIG_BANG_WITH_FEATURE_FLAGS>>
 
 **Rationale**:
+
 - **Abstraction Level**: <<HIGH/MEDIUM/LOW>> → <<Implication for migration>>
 - **Blast Radius**: <<X% of codebase>> → <<Risk level and phasing needs>>
 - **Coupling Degree**: <<LOOSE/MODERATE/TIGHT>> → <<Isolation capability>>

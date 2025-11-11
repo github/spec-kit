@@ -314,77 +314,21 @@ Using AI analysis of legacy code + user's modernization preferences, generate:
 
 #### 8.2 Implementation Tasks
 
-##### Task 1: Create Interactive Analysis Prompt Template
+##### Task 1: Create Interactive Analysis Prompt Template ✅
 
-- [x] ~~Create `templates/commands/analyze-project-interactive.md`~~ **Updated `analyze-project.md` directly instead**
-- [x] Define multi-step workflow with clear sections
-- [x] Add tech stack detection logic (sampling approach)
-- [x] Add modernization preference questionnaire (10 questions)
-- [x] Add deep analysis guidance (what to look for in legacy code)
-- [x] Add artifact generation instructions with real examples
+**Completed**: 2025-11-09 - Implemented interactive analysis workflow in `templates/commands/analyze-project.md` with multi-step structure, tech stack detection, 10 modernization questions, and artifact generation guidance.
 
-**Completed**: 2025-11-09 - Implemented in `templates/commands/analyze-project.md`
+##### Task 2: Create Artifact Generation Templates ✅
 
-##### Task 2: Create Artifact Generation Templates
+**Completed**: 2025-11-09 - Created functional-spec, technical-spec, and 6 stage-prompt templates based on meta-prompt structure. All templates include evidence-based placeholders, legacy-to-target comparisons, and phased migration guidance.
 
-**Reference**: Used structure from `tmp/Meta-Prompt - Universal Meta-Prompt to Gen
-BA_ARCH_EXEC_AIB_SPEC_JSON docs.md` (reference file later removed to fix markdownlint errors)
+##### Task 3: Update analyze-project Command ✅
 
-- [x] Create `templates/analysis/functional-spec-template.md`
-  - **Base structure**: Meta-prompt Section A (Business Analysis)
-  - **Adapt for legacy**: Add "Evidence" column with file:line references
-  - **Sections**:
-    - Executive Summary (WHAT/WHO/WHY extracted from code)
-    - Problem & Goals (current state KPIs from legacy)
-    - Personas & Journeys (from auth/user roles in code)
-    - Functional Requirements (extracted with evidence: file:line)
-    - Data Models (from DB schemas/migrations)
-    - Configuration Mapping (all config files)
-    - Known Quirks & Legacy Behaviors
-  - **Placeholders**: `<<EXTRACT_FEATURES_FROM>>`, `<<EXTRACT_DATA_MODELS>>`,
-    `<<EXTRACT_CONFIG>>`, etc.
-- [x] Create `templates/analysis/technical-spec-template.md`
-  - **Base structure**: Meta-prompt Section B (Architecture)
-  - **Adapt for modernization**: Add "Legacy vs. Target" comparison
-  - **Sections**:
-    - Architectural Principles (extracted from legacy + new)
-    - Why This Pattern (legacy pattern → target pattern + rationale)
-    - Capabilities by Phase (50/30/15/5 with legacy features mapped)
-    - High-Level Architecture (phase-colored Mermaid from meta-prompt)
-    - Target Tech Stack (from user Q1-Q10 answers)
-    - NFR Targets (SLO/SLI based on legacy + improvements)
-    - Migration Path (strangler fig/big bang/hybrid)
-  - **Placeholders**: `<<USER_CHOICE_LANGUAGE>>`, `<<USER_CHOICE_DATABASE>>`,
-    `<<USER_CHOICE_DEPLOYMENT>>`, `<<LEGACY_PAIN_POINTS>>`, etc.
-  - **Mermaid**: Use meta-prompt phase colors + adapt pattern for target infra
-- [x] Create `templates/analysis/stage-prompt-templates/`
-  - 6 template files: constitution, specify, plan, clarify, tasks, implement
-  - Structure: Legacy Context + Modernization Guidance + Ready-to-Paste Prompt
-  - Clarify & Implement prompts include: "Consult legacy app <<path>> as source of
-    truth if specification is underspecified, ambiguous, or requires clarification"
+**Completed**: 2025-11-09 - Updated to interactive-only workflow with clear Python/AI role separation, modernization questionnaire, and artifact generation instructions.
 
-**Completed**: 2025-11-09 - All templates created and markdownlint errors fixed
+##### Task 4: Remove Template-Only Python Generators ✅
 
-##### Task 3: Update analyze-project Command
-
-- [x] Modify `templates/commands/analyze-project.md` to be INTERACTIVE-ONLY
-- [x] ~~Remove non-interactive mode (arguments mode)~~ **Kept for script passthrough, removed confusing messaging**
-- [x] Add "Act as senior developer and architect" guidance (already in Role & Mindset)
-- [x] Add instruction to use Python analyzer for metrics only
-- [x] Add instruction to use AI for semantic analysis and artifact generation
-
-**Completed**: 2025-11-09 - Interactive workflow with 10 modernization questions implemented
-
-##### Task 4: Remove Template-Only Python Generators
-
-- [x] Remove `functional_spec_generator.py`
-- [x] Remove `tech_stack_proposer.py`
-- [x] Remove `prompt_generator.py`
-- [x] Remove `principle_extractor.py`
-- [x] Keep `report_generator.py` for analysis-report.md and metrics
-- [x] Update `report_generator.py` imports to remove deleted generators
-
-**Completed**: 2025-11-09 - All template-only generators removed, cleanup complete
+**Completed**: 2025-11-09 - Removed 4 template-only generators (functional_spec, tech_stack_proposer, prompt, principle_extractor). Kept report_generator for metrics only.
 
 ##### Task 5: Update Python Analyzer Role
 
@@ -452,25 +396,13 @@ BA_ARCH_EXEC_AIB_SPEC_JSON docs.md` (file later removed)
 
 **Completed**: 2025-11-09
 
-##### Week 3-4: Template Creation ✅ COMPLETED
+##### Week 3-4: Template Creation ✅
 
-- [x] Create `analyze-project-interactive.md` prompt template (updated `analyze-project.md` instead)
-- [x] Create `functional-spec-template.md` with clear structure
-- [x] Create `technical-spec-template.md` with clear structure
-- [x] Create 6 stage-prompt templates
-- [x] Add detailed examples in each template
+**Completed**: 2025-11-09 - Created all analysis templates with detailed examples and clear structure.
 
-**Completed**: 2025-11-09
+##### Week 5-6: Refactoring ✅
 
-##### Week 5-6: Refactoring ✅ COMPLETED
-
-- [x] Update `analyze-project.md` command to use new workflow
-- [x] Refactor or remove Python generators
-- [x] Update Python analyzer to focus on metrics only (no changes needed)
-- [x] Update `report_generator.py` to generate only technical reports
-- [x] Test on sample legacy project (ASP.NET tested by user)
-
-**Completed**: 2025-11-09
+**Completed**: 2025-11-09 - Updated workflows, removed Python generators, tested on legacy ASP.NET project.
 
 ##### Week 7-8: Testing & Documentation ⏳ IN PROGRESS
 
@@ -806,7 +738,7 @@ The analyze-project feature analyzes **entire applications** for full modernizat
 
 ##### Extension Points for Cross-Cutting Concerns
 
-**Extension Point 1: Scope Selection (analyze-project.md:60-85)**
+###### Extension Point 1: Scope Selection (analyze-project.md:60-85)
 
 Current:
 
@@ -855,7 +787,7 @@ $ARGUMENTS
    TARGET_IMPLEMENTATION: ___   (e.g., "Migrate to Okta", "VM → OpenShift", "AWS → Azure")
 ```
 
-**Extension Point 2: AI Analysis Guidance (analyze-project.md Step 4)**
+#### Extension Point 2: AI Analysis Guidance (analyze-project.md Step 4)
 
 Current: AI analyzes entire codebase
 
@@ -962,7 +894,7 @@ Based on abstraction level + blast radius + coupling:
 Explain your reasoning with evidence.
 ```
 
-**Extension Point 3: New Templates (AI-Generated Content)**
+#### Extension Point 3: New Templates (AI-Generated Content)
 
 Proposed templates for concern-specific analysis:
 
@@ -1081,7 +1013,7 @@ Proposed templates for concern-specific analysis:
 ...
 ```
 
-2. **abstraction-recommendations-template.md**
+#### File 2: abstraction-recommendations-template.md
 
 ```markdown
 # Abstraction Recommendations: <<CONCERN_TYPE>>
@@ -1261,7 +1193,7 @@ AI follows these criteria (from analyze-project.md Step 4):
 
 AI follows this decision tree (from analyze-project.md Step 4):
 
-```
+```text
 IF abstraction=HIGH AND coupling=LOOSE:
    → Recommend: STRANGLER_FIG
    → Risk: LOW
@@ -1433,7 +1365,7 @@ No data migration needed (cache is ephemeral)
 
 #### 9.5 Design Principles
 
-**Principle 1: Concern Identification via Multiple Signals**
+##### Principle 1: Concern Identification via Multiple Signals
 
 Use layered detection:
 
@@ -1443,7 +1375,7 @@ Use layered detection:
 4. **Configuration Files**: auth.config.js, database.yml, redis.conf
 5. **Call Graph Analysis**: Which functions call the concern's functions?
 
-**Principle 2: Abstraction Quality Assessment**
+##### Principle 2: Abstraction Quality Assessment
 
 Three-level taxonomy:
 
@@ -1465,11 +1397,11 @@ Three-level taxonomy:
   - No interfaces or contracts
   - Requires refactoring before migration
 
-**Principle 3: Risk-Based Strategy Selection**
+##### Principle 3: Risk-Based Strategy Selection
 
 Migration strategy based on abstraction + coupling + blast radius:
 
-```
+```text
 IF high_abstraction AND loose_coupling THEN
     strategy = STRANGLER_FIG (low risk, incremental)
 ELSE IF medium_abstraction THEN
@@ -1481,7 +1413,7 @@ ELSE
 END IF
 ```
 
-**Principle 4: Phased Rollout with Rollback Points**
+##### Principle 4: Phased Rollout with Rollback Points
 
 Every migration strategy includes:
 
@@ -1491,7 +1423,7 @@ Every migration strategy includes:
 - **Monitoring**: Metrics to detect regressions
 - **Rollback triggers**: Automated rollback on error rate spike
 
-**Principle 5: Future-Proofing via Abstraction**
+##### Principle 5: Future-Proofing via Abstraction
 
 Every concern migration should:
 
@@ -2171,6 +2103,25 @@ Track completed items here for reference.
   - Clarified EXPERIMENTAL status with transparent reasons
   - Added comprehensive parameter documentation to README
   - Fixed Mermaid diagram rendering errors
+- [x] Implement Reverse Engineering Phase 8 (Interactive AI Workflow) - (2025-11-09)
+  - Redesigned analyze-project.md as interactive-only workflow
+  - Created 10-question modernization preference questionnaire
+  - Created functional-spec and technical-spec templates with meta-prompt structure
+  - Created 6 stage-prompt templates for Toolkit integration
+  - Removed 4 template-only Python generators
+  - Clear separation: Python for metrics, AI for semantic analysis
+  - User tested on legacy ASP.NET project with positive results
+- [x] Implement Reverse Engineering Phase 9 (Cross-Cutting Concern Analysis) - (commit a56349a, 2025-11-09)
+  - Added ANALYSIS_SCOPE selection (Full App vs Concern Migration)
+  - Created 9 concern types with detection heuristics (Auth, DB, Cache, Queue, Search, Observability, Deployment, Service Mesh, Other)
+  - Implemented abstraction quality assessment (HIGH/MEDIUM/LOW)
+  - Created 4 migration strategies (STRANGLER_FIG, ADAPTER_PATTERN, REFACTOR_FIRST, BIG_BANG_WITH_FEATURE_FLAGS)
+  - Created 3 comprehensive templates:
+    - concern-analysis-template.md (10-section tactical analysis)
+    - abstraction-recommendations-template.md (conditional refactoring guidance)
+    - concern-migration-plan-template.md (detailed phased migration with 4 strategies)
+  - Updated docs/reverse-engineering.md with concern analysis workflow
+  - Total: ~3,512 LOC added across 6 files
 
 ---
 

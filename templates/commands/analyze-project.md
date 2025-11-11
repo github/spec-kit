@@ -1,5 +1,8 @@
 ---
 description: Reverse engineer and analyze an existing project to assess modernization opportunities, identify technical debt, and recommend upgrade paths
+# Script invocation with parameters
+# These commands are automatically expanded when {SCRIPT_BASH} or {SCRIPT_POWERSHELL} placeholders are used
+# DO NOT append additional parameters in the template body - they are already included here
 scripts:
   bash: scripts/bash/analyze-project.sh "$1"
   powershell: scripts/powershell/analyze-project.ps1 "$1"
@@ -102,12 +105,21 @@ $ARGUMENTS
    Your choice: ___
    ```
 
+**VALIDATION**: After receiving user input:
+
+- **IF** user choice is **not** [A] or [B]:
+  - Display error: "❌ Invalid selection. Please choose [A] for Full Application or [B] for Cross-Cutting Concern."
+  - Re-prompt for ANALYSIS_SCOPE
+  - DO NOT proceed until valid choice received
+
 **IF CHOICE = [A]** (Full Application Modernization):
-   - Continue with standard workflow (Step 2: Tech Stack Detection)
-   - Skip cross-cutting concern questions below
+
+- Continue with standard workflow (Step 2: Tech Stack Detection)
+- Skip cross-cutting concern questions below
 
 **IF CHOICE = [B]** (Cross-Cutting Concern Migration):
-   - Ask follow-up questions:
+
+- Ask follow-up questions:
 
    ```text
    CONCERN_TYPE:
@@ -242,7 +254,13 @@ When documenting findings:
    ```
 
    **Script arguments**:
-   - The scripts are invoked with PROJECT_PATH as defined in the YAML header above
+   - Both scripts accept PROJECT_PATH as the first positional argument
+   - Example invocations:
+     - Bash: `scripts/bash/analyze-project.sh /path/to/project`
+     - PowerShell: `scripts/powershell/analyze-project.ps1 /path/to/project`
+   - **Important**: Parameters are defined in the YAML header at the top of this file
+   - The {SCRIPT_BASH} and {SCRIPT_POWERSHELL} placeholders automatically expand to include parameters
+   - DO NOT append additional parameters when using these placeholders
 
    The script will:
    - Enumerate all files in the project
@@ -515,7 +533,9 @@ When documenting findings:
 
    ---
 
-   ### IF ANALYSIS_SCOPE = [A] (Full Application Modernization):
+   ### Step 4.A - Full Application Analysis
+
+   **IF ANALYSIS_SCOPE = [A]** (Full Application Modernization):
 
    **After receiving user's modernization preferences**, conduct comprehensive analysis:
 
@@ -551,7 +571,9 @@ When documenting findings:
 
    ---
 
-   ### IF ANALYSIS_SCOPE = [B] (Cross-Cutting Concern Migration):
+   ### Step 4.B - Cross-Cutting Concern Analysis
+
+   **IF ANALYSIS_SCOPE = [B]** (Cross-Cutting Concern Migration):
 
    **Focus analysis ONLY on the selected concern**. Your goal is to:
    - Identify all files related to this concern
@@ -769,7 +791,7 @@ When documenting findings:
 
    **Decision Tree**:
 
-   ```
+   ```text
    IF high_abstraction AND loose_coupling:
       → STRANGLER_FIG (Recommended)
          - Low risk, 2-4 weeks effort
@@ -913,7 +935,9 @@ When documenting findings:
 
    ---
 
-   ### IF ANALYSIS_SCOPE = [A] (Full Application Modernization):
+   ### Step 6.A - Full Application Artifacts
+
+   **IF ANALYSIS_SCOPE = [A]** (Full Application Modernization):
 
    Using AI analysis of legacy code + user's modernization preferences + clarifications, generate:
 
@@ -952,7 +976,9 @@ When documenting findings:
 
    ---
 
-   ### IF ANALYSIS_SCOPE = [B] (Cross-Cutting Concern Migration):
+   ### Step 6.B - Cross-Cutting Concern Artifacts
+
+   **IF ANALYSIS_SCOPE = [B]** (Cross-Cutting Concern Migration):
 
    Using AI analysis of the specific concern + CURRENT_IMPLEMENTATION + TARGET_IMPLEMENTATION, generate:
 

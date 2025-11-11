@@ -385,70 +385,82 @@
 
 <<IF STRATEGY = STRANGLER_FIG>>
 
-**Week 1-2: Implement New Provider**
+#### Week 1-2: Implement New Provider
+
 - [ ] Day 1-2: Set up <<TARGET_IMPLEMENTATION>> SDK/libraries
 - [ ] Day 3-5: Implement <<IInterfaceName>> using <<TARGET_IMPLEMENTATION>>
 - [ ] Day 6-8: Unit tests for new provider (target: 90% coverage)
 - [ ] Day 9-10: Integration tests with mock services
 
-**Week 3: Feature Flag Integration**
+#### Week 3: Feature Flag Integration
+
 - [ ] Day 1-2: Add feature flag: `use_<<target>>_<<concern>>`
 - [ ] Day 3-4: Update DI container to resolve based on flag
 - [ ] Day 5: Test flag toggling in dev environment
 
-**Week 4-6: Gradual Migration (Phase 1)**
+#### Week 4-6: Gradual Migration (Phase 1)
+
 - [ ] Week 4: Internal users only (1% traffic)
 - [ ] Week 5: Beta cohort (10% traffic)
 - [ ] Week 6: Expanded rollout (50% traffic)
 - [ ] Monitor metrics daily, rollback if issues
 
-**Week 7-8: Full Rollout & Cleanup**
+#### Week 7-8: Full Rollout & Cleanup
+
 - [ ] Week 7: 100% traffic to new provider
 - [ ] Week 8: Decommission old provider, remove feature flag
 
 <<ELSE IF STRATEGY = ADAPTER_PATTERN>>
 
-**Week 1-3: Adapter Design & Implementation**
+#### Week 1-3: Adapter Design & Implementation
+
 - [ ] Week 1: Design adapter interface
 - [ ] Week 2: Implement adapter wrapping <<TARGET_IMPLEMENTATION>>
 - [ ] Week 3: Unit + integration tests
 
-**Week 4-5: Adapter Testing**
+#### Week 4-5: Adapter Testing
+
 - [ ] Week 4: Staging deployment, load testing
 - [ ] Week 5: Fix issues, performance tuning
 
-**Week 6-8: Production Rollout**
+#### Week 6-8: Production Rollout
+
 - [ ] Week 6: Canary deployment (5-10% traffic)
 - [ ] Week 7: Expanded rollout (50% traffic)
 - [ ] Week 8: Full rollout (100% traffic)
 
 <<ELSE IF STRATEGY = REFACTOR_FIRST>>
 
-**Week 1-4: Refactoring Phase**
+#### Week 1-4: Refactoring Phase
+
 - [ ] Week 1-2: Extract interfaces, implement DI
 - [ ] Week 3: Wrap current implementation in provider pattern
 - [ ] Week 4: Testing and validation (no functionality changes)
 
-**Week 5-12: Migration Phase**
+#### Week 5-12: Migration Phase
+
 - [ ] Week 5-6: Implement new provider
 - [ ] Week 7-10: Gradual migration (STRANGLER_FIG)
 - [ ] Week 11-12: Full rollout and cleanup
 
 <<ELSE IF STRATEGY = BIG_BANG_WITH_FEATURE_FLAGS>>
 
-**Week 1-8: Implementation Phase**
+#### Week 1-8: Implementation Phase
+
 - [ ] Week 1-2: Implement <<TARGET_IMPLEMENTATION>> in all consumers
 - [ ] Week 3-4: Add feature flags at decision points
 - [ ] Week 5-6: Comprehensive testing (unit, integration, E2E)
 - [ ] Week 7-8: Load testing, security testing, bug fixes
 
-**Week 9-16: Gradual Rollout Phase**
+#### Week 9-16: Gradual Rollout Phase
+
 - [ ] Week 9-10: Internal/dev (1% traffic)
 - [ ] Week 11-12: Beta users (10% traffic)
 - [ ] Week 13-14: Expanded (50% traffic)
 - [ ] Week 15-16: Full rollout (100% traffic)
 
-**Week 17-20: Stabilization & Cleanup**
+#### Week 17-20: Stabilization & Cleanup
+
 - [ ] Week 17-18: Monitor production, fix issues
 - [ ] Week 19: Decommission old implementation
 - [ ] Week 20: Remove feature flags, final cleanup
@@ -578,17 +590,20 @@
 
 ### Dashboards
 
-**Dashboard 1: Migration Progress**
+#### Dashboard 1: Migration Progress
+
 - Percentage of traffic on new vs. old implementation
 - Feature flag status across environments
 - Migration phase status
 
-**Dashboard 2: Health Metrics**
+#### Dashboard 2: Health Metrics
+
 - Error rates (old vs. new)
 - Latency comparisons (old vs. new)
 - Throughput and capacity
 
-**Dashboard 3: Business Impact**
+#### Dashboard 3: Business Impact
+
 - User-facing metrics (login success, API calls, etc.)
 - Business KPIs affected by this concern
 
