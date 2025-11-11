@@ -1,50 +1,132 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# 项目宪法
 
-## Core Principles
+CONSTITUTION_VERSION: 1.2.0
+RATIFICATION_DATE: 2025-10-27
+LAST_AMENDED_DATE: 2025-10-30
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+本宪法定义项目治理、工程原则与不可变准则。所有工程决策与交付必须遵守下列原则与质量门（Gates）。
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+## 核心原则
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### 自包含模块优先
+每一项功能首先以“可复用、可独立测试、可独立文档化”的库 / 模块形式存在。模块必须：
+1. 拥有清晰单一职责与外部可理解的用途说明。
+2. 不依赖未声明的全局状态；所有输入通过函数参数、API参数或标准输入显式传递。
+3. 提供独立的单元测试与契约测试；测试失败时禁止合并代码。
+4. 文档（README 或内嵌注释）解释公共接口、示例输入输出、边界条件。
+违规风险：导致耦合、测试困难、后期拆分成本高。
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### 阿里巴巴规范与静态检查刚性执行
+- 本仓库中所有 Java 代码及与之互操作的 JVM 组件 MUST 满足《阿里巴巴 Java 开发手册》强制与推荐条款。
+- 本地与 CI 流水线 MUST 启用 Alibaba P3C 静态检查，CI 中出现 ERROR 严重级别违规时禁止合并；WARNING 级别需在 PR 中注明处理结论。
+- 日志 MUST 使用占位符语法（例如 slf4j `{}`），禁止字符串拼接输出；日志内容 MUST 完成敏感信息脱敏。
+- 异常处理 MUST 明确分类：仅允许捕获可恢复异常，禁止使用 `catch (Exception e)` 吞异常；必要时封装为领域自定义异常。
+- 方法、类与包名 MUST 使用有语义的英文标识并遵守命名规范；公共 API 改动 MUST 注明 SemVer 影响。
+- 并发、集合与资源操作 MUST 采用标准库安全实现（`java.util.concurrent`、`try-with-resources`），严禁自定义不可验证的同步逻辑。
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+落地措施：必须在 `pom.xml` 中声明 P3C 插件或在 CI 脚本中执行等效检查；PR 模板需包含“已运行 P3C 并通过”确认项。
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+理由：自动化规范执行是防止常见错误与退化的首道防线，确保跨团队协作可预测。
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### 安全与隐私防线
+- 涉及认证、授权、审计、敏感数据处理的改动 MUST 附风险分析，明确数据分类、权限边界与加密策略。
+- 所有对外接口 MUST 进行输入验证与输出脱敏；日志不得写入口令、证件号、密钥等敏感信息。
+- 高风险改动（含权限模型、数据出境、密钥轮换）在合并前 MUST 获得安全负责人或指定 Reviewer 的书面批准。
+- 依赖必须锁定版本（使用锁文件或精确版本号）。
+- 禁止引入已知高危 CVE 依赖；每周最少一次依赖扫描（自动或手动报告）。
+- 所有敏感配置（密钥、令牌）使用环境变量或安全密钥管理（不直接写入仓库）。
+- 输入校验与输出编码是必须步骤：CLI 参数、文件、网络数据需验证类型与范围。
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+理由：安全缺陷代价高昂，必须在需求、设计、发布各环节被持续审视。
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### 测试先行（TDD 强制）
+实现顺序：编写测试 → 评审通过 → 测试失败（红）→ 编码实现（绿）→ 重构（保持绿）。要求：
+1. 新增公共接口必须伴随至少一个成功路径与一个失败/边界路径测试。
+2. 禁止跳过测试以“临时验证”功能；临时代码需在同一合并请求中补齐测试。
+3. 测试命名清晰表达 Given/When/Then；测试不依赖外部不可控服务（需使用模拟或契约）。
+4. 覆盖率指标：语句 ≥ 95%，关键决策分支 ≥ 95%；低于阈值需书面技术债条目。
+5. 重构阶段仅可调整内部实现，不得改变已 ratified 的公共接口行为（除非遵守版本治理流程）。
 
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+### 契约与集成测试
+除了单元测试，以下情况必须有契约或集成测试：
+1. 新增跨进程/跨服务接口（HTTP/消息队列）。
+2. 修改现有数据结构（schema 字段新增、删除、语义改变）。
+3. 跨模块共享库出现行为变更或性能要求提升。
+4. 与外部第三方系统交互的边界行为（超时、错误重试、速率限制）。
+契约测试定义输入输出稳定性；集成测试验证模块协作与非功能特性（性能、并发）。
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+### 性能与资源度量
+- 与性能相关的需求或改动 MUST 提供可量化目标（例如 p95 延迟、吞吐量、内存），并记录验证脚本与数据集位置。
+- 优化提交 MUST 附“前后对比”数据；缺少对比数据的优化视为不可接受。
+- 线上性能问题处理后 MUST 编写复盘，说明根因、监控指标与防护措施。
+- 默认controller 或 方法执行耗时不超过1s
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+理由：未经验证的性能假设可能引入额外复杂度与风险，需要基于数据决策。
+
+### 可观测性、版本与简洁性
+三个方面统一管控：
+1. 可观测性：标准输出日志需结构化（时间戳、级别、模块、事件ID）；不得在生产路径打印调试残留。
+2. 版本：采用 语义化版本 MAJOR.MINOR.PATCH；MAJOR 破坏兼容、MINOR 新增向后兼容功能、PATCH 文档与内部非语义修正。公共接口变更必须附迁移说明。
+3. 简洁性：实现遵循 YAGNI（未确认需求不预先实现）；禁止“未来可能需要”而添加抽象层。新增复杂度需在实施计划中列出“更简单替代方案被拒绝的原因”。
+验收：可观测字段在测试中可被断言；版本变更触发治理审查；复杂度 justification 记录于 plan.md 的“复杂度追踪”表。
+
+### 禁止性约束（MUST NOT）
+- 禁止在循环体中直接执行数据库或外部 HTTP 调用；必须使用批处理或异步策略。
+- 禁止使用类型不明确的集合（如 `Map<Object, Object>`、`Map<String, Object>`）；需要定义明确的 DTO 或封装类型。
+- 禁止硬编码环境配置与密钥；所有配置 MUST 通过配置中心或受控配置文件加载。
+- 禁止引入 N+1 查询、重复序列化或全量加载等已知性能反模式；一经发现必须立即整改。
+- 使用实体对象时 MUST 明确空值语义并在校验层（Bean Validation）声明约束。
+
+理由：这些反模式已被验证会造成严重的性能和维护问题，必须通过规范直接消除。
+
+### 标准化JSON 接口
+- 所有库的核心能力必须通过命令行暴露：标准输入/参数 → 标准输出（JSON），错误信息 → 标准错误。要求：
+- 1. 默认输出为人类可读文本；使用 --json 或类似参数可切换为 JSON 结构。
+- 2. 所有非零退出码必须对应结构化错误消息（包含错误码、简述、可选修复建议）。
+- 3. 不写入交互式提示除非明确使用 --interactive；禁止隐藏的魔法行为。
+- 价值：统一集成方式、易于访问、可观测性增强。
+
+### 技术栈约束
+- 通用字符串、日期、正则与集合操作优先使用 Hutool 工具包；若选择其他库 MUST 在 PR 中说明原因与对比。
+
+## 开发流程与质量闸门
+1. 阶段划分：研究 → 设计 → 实现 → 验证 → 发布。进入下一阶段前需通过“宪法检查”与相应评审。
+2. 合并请求必须：引用对应 spec.md 与 plan.md；列出涉及的原则与验证点；附测试运行截图或报告。
+3. 质量闸门：
+  - 构建与测试全绿。
+  - 新增或修改公共接口附文档与示例。
+  - 覆盖率达标或技术债条目已记录。
+  - 可观测性字段与错误处理路径通过审查。
+4. 发布前：版本号决策（是否 MAJOR/MINOR/PATCH）、更新 CHANGELOG、执行回归与性能冒烟测试。
+5. 每月一次治理回顾：核查技术债清单、违反原则的临时豁免项，决定处置计划
+
+## Constitution Check（实现与 CI 集成）
+- 初始门（Pre-merge）：
+  - 静态检查（P3C）零 ERROR，关联 PR 必须附测试结果与 SemVer 影响说明（若无影响可写“无”）。
+  - 审查清单覆盖安全（原则 3）、性能（原则 5）与配置（原则 6）风险评估。
+- 发布门（Release）：
+  - 版本说明必须包含性能数据、已知风险与回滚方案。
+  - 完成合规审查并在发布记录中附带检查结果与责任人签字。
+
+## 治理与修订流程
+- 提案流程：任何贡献者欲修改宪法 MUST 提交 PR，附历史版本对比与预期影响；至少两名核心维护者批准后方可合并。
+- 版本策略：宪法采用 SemVer。新增原则或扩展约束 → MINOR；删除或实质性放宽约束 → MAJOR；文字澄清 → PATCH。
+- 审查节奏：每个季度末由治理委员会进行一次宪法合规审计，检查 CI 配置、模板输出与文档执行情况，并记录结论。
+- 记录归档：每次修订 MUST 在 Sync Impact Report 中更新模板同步状态，保存在版本控制历史中以备审计。
+
+## 附录：核查项（可直接用于 CI 脚本）
+1. 在源码根及各子模块执行：`mvn -DskipTests=false test` 与 `mvn p3c:check`（或等效 Gradle 任务）。
+2. 解析 P3C 输出：禁止 ERROR 级别违规；WARNING 需在 PR 描述中说明处理意见并获得 Reviewer 确认。
+3. 确认 PR 模板包含：本地检查命令输出、测试覆盖变更摘要、SemVer 影响说明、性能数据（若适用）。
+
+## 中文知识交付
+- `specs/` 目录及其子文件夹中的文档（含 `spec.md`、`plan.md`、`tasks.md`、`requirements.md` 等） MUST 使用中文撰写，可穿插必要英文术语或代码。
+- 当存在外部引用或英文原文时 MUST 提供中文摘要，确保维护者在中文语境下理解。
+- 模板生成器与 PR 审查 MUST 验证该语言约束；违反者直接驳回。
+
+理由：项目维护与审阅以中文为主，统一语言显著降低沟通与审核成本并提高文档可用性。
+
+## 引用当前工程子宪法 (NON-NEGOTIABLE)
+- 子宪法位置：`.specify/memory/constitution-project.md`
+- 子宪法所具备的宪法效力同当前文件
+- 子宪法为当前宪法的一部分
