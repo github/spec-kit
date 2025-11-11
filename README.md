@@ -23,15 +23,20 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 
 **The Problem:** In corporate environments, legacy systems are everywhere. Documentation is missing, original developers are gone, and nobody understands how the application works. Yet modernization is critical.
 
-**The Solution:** This fork includes a comprehensive reverse engineering system that analyzes existing codebases, extracts functional requirements, assesses technical debt, and generates actionable modernization plans.
+**The Solution:** This fork includes a comprehensive reverse engineering system that analyzes existing codebases, extracts functional requirements, assesses technical debt, and generates actionable modernization plans with data-driven decision support.
 
 - **Automated Legacy Analysis** - Scan existing projects to understand architecture, identify technical debt, and detect security vulnerabilities
 - **AI-Guided Modernization** - Interactive workflow that asks targeted questions about your modernization goals (target tech stack, deployment strategy, observability)
 - **Dual-Mode Output** - Generate both functional specs (what the system does) and technical specs (how to rebuild it)
 - **Seamless Integration** - Produces ready-to-use prompts for the entire Spec Kit workflow, enabling smooth transition from legacy to modern stack
-- **Strategic Decision Support** - Provides feasibility scores (0-100) for inline upgrade vs greenfield rewrite vs hybrid approaches
+- **Strategic Decision Support** - Provides feasibility scores (0-100) with detailed risk analysis and effort estimates for inline upgrade vs greenfield rewrite vs hybrid approaches, enabling confident decision-making
+- **Language Migration Assessment** - Evaluate cross-language migrations (Java → Python, .NET → Node.js, PHP → Go) with compatibility analysis, ecosystem comparisons, and migration complexity scoring
+- **Targeted Concern Migration** - Modernize specific components (auth, database, caching, deployment) without full rewrites—ideal for "not-too-old" apps that need focused improvements rather than complete overhauls
 
-**Real-World Use Case:** A company has a 10-year-old Java monolith with no documentation. Use `/speckit.analyze-project` to extract business logic, assess upgrade paths (Java 8 → 21 LTS), identify security risks, and generate a complete modernization plan with implementation-ready prompts.
+**Real-World Use Cases:**
+
+- **Full Modernization**: A company has a 10-year-old Java 8 monolith with no documentation. Use `/speckit.analyze-project` to extract business logic, assess upgrade paths (Java 8 → Java 21 LTS or Java → Python with pros/cons), identify security risks, and generate a complete modernization plan with risk-weighted recommendations.
+- **Targeted Migration**: A 3-year-old Node.js app needs to migrate from custom JWT to Okta without rewriting the entire application. Cross-cutting concern analysis identifies auth files, assesses blast radius (8% of codebase), and provides a 3-week migration plan with rollback strategy.
 
 #### 🎯 **Orchestrator Workflow with Seamless Resumption**
 
@@ -333,8 +338,11 @@ Comprehensive analysis with AI-driven interactive workflow:
 
 **Decision Support:**
 
-- **Feasibility scores** (0-100) for inline upgrade vs greenfield rewrite
-- **Confidence scores** for analysis quality
+- **Feasibility scores** (0-100) for inline upgrade vs greenfield rewrite with transparent scoring rubrics
+- **Risk assessment** - Quantified technical risk, business disruption, and migration complexity
+- **Effort estimates** - Time, cost, and team size projections based on codebase metrics
+- **Confidence scores** for analysis quality with evidence-based reasoning
+- **Language migration evaluation** - When considering cross-language moves (e.g., Java → Python, .NET → Node.js), includes ecosystem maturity, library equivalents, performance implications, and team skill requirements
 - **Interactive modernization questions** - 10 questions about target stack, deployment, observability, and testing strategy (with conditional logic to skip irrelevant questions)
 
 #### For Cross-Cutting Concern Migration ([B]) - **NEW (Phase 9)**
@@ -419,18 +427,35 @@ The analysis is **fully interactive** with AI-guided questions about your modern
 ### Use Cases
 
 **Full Application Modernization:**
-1. **Inherited Codebase** - Understand state, assess technical debt
-2. **Modernization Planning** - LTS upgrades, framework migrations
-3. **Security Audits** - Identify vulnerabilities and compliance gaps
-4. **Migration Decisions** - Upgrade-in-place vs rewrite with feasibility scoring
 
-**Cross-Cutting Concern Migration (NEW - Phase 9):**
-1. **Auth Provider Swap** - Migrate from custom JWT to Okta/Auth0 without rewriting the entire app
-2. **Database Migration** - Switch from Oracle to PostgreSQL, or Raw SQL to ORM (e.g., Prisma, Entity Framework)
-3. **Cloud Migration** - Move from VM/on-premise to OpenShift, Kubernetes, or cloud platforms (AWS/Azure/GCP)
-4. **Caching Upgrade** - Replace Memcached with Redis or add distributed caching to legacy app
-5. **Messaging Modernization** - Migrate from TIBCO to Kafka, or RabbitMQ to Azure Service Bus
-6. **Observability Enhancement** - Add structured logging, metrics, and tracing to legacy systems
+1. **Inherited Codebase** - Understand current state, assess technical debt, extract business logic
+2. **Modernization Planning** - LTS upgrades (Java 8 → 21, .NET Framework → .NET 8), framework migrations (Spring Boot 2.x → 3.x)
+3. **Cross-Language Migration** - Evaluate language switches with detailed analysis:
+   - **Java → Python**: Ecosystem comparison (Spring Boot → Django/FastAPI), performance trade-offs, ML/AI capabilities
+   - **.NET → Node.js**: Windows-to-Linux migration, async patterns, microservices readiness
+   - **PHP → Go**: Performance gains, concurrency benefits, modern tooling, migration effort estimation
+   - **Ruby → Java/Kotlin**: Type safety, performance, enterprise integration requirements
+4. **Security Audits** - Identify vulnerabilities, compliance gaps, outdated dependencies with CVE tracking
+5. **In-Place vs Greenfield Decision-Making** - Data-driven recommendations based on:
+   - **Risk factors**: Code quality metrics, test coverage, coupling analysis, architecture complexity
+   - **Business constraints**: Budget, timeline, team expertise, downtime tolerance
+   - **Technical feasibility**: Compatibility matrices, breaking changes, migration tool availability
+   - **ROI analysis**: Cost of maintaining legacy vs modernization investment, long-term savings projection
+
+**Cross-Cutting Concern Migration (NEW - Phase 9) - For "Not-Too-Old" Apps:**
+
+Perfect for applications that are **relatively modern but need targeted improvements** rather than complete rewrites:
+
+1. **Auth Provider Swap** (2-4 weeks) - Migrate from custom JWT to Okta/Auth0 without touching business logic
+2. **Database Migration** (4-8 weeks) - Switch from Oracle to PostgreSQL, or refactor raw SQL to ORM (Prisma, Entity Framework, SQLAlchemy)
+3. **Cloud Migration** (6-12 weeks) - Move from VM/on-premise to OpenShift, Kubernetes, or cloud platforms (AWS/Azure/GCP) with containerization strategy
+4. **Caching Upgrade** (2-3 weeks) - Replace Memcached with Redis or add distributed caching to improve performance
+5. **Messaging Modernization** (4-8 weeks) - Migrate from TIBCO to Kafka, RabbitMQ to Azure Service Bus, or add event-driven architecture
+6. **Observability Enhancement** (3-6 weeks) - Add structured logging, metrics (Prometheus), and distributed tracing (OpenTelemetry) to production systems
+
+**Why Cross-Cutting Concerns for Modern Apps?**
+
+Many applications from the last 3-5 years are **architecturally sound** but have **outdated infrastructure components**. Full rewrites are overkill—targeted migrations deliver 80% of the value at 20% of the cost and risk.
 
 ### How It Works (Technical Implementation)
 
