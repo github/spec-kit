@@ -4,6 +4,7 @@
 # analyze-project.ps1 - AI-driven project analysis and modernization
 #
 # Usage:
+#   ./analyze-project.ps1 PATH [-Output DIR]
 #   ./analyze-project.ps1 -Project PATH [-Output DIR]
 #
 # This script enumerates a legacy project and prepares it for AI analysis.
@@ -12,10 +13,10 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, Position=0)]
     [string]$Project = ".",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, Position=1)]
     [string]$Output = "",
 
     [switch]$Help
@@ -30,24 +31,29 @@ $repoRoot = (Resolve-Path (Join-Path $scriptDir "../..")).Path
 # Show help if requested
 if ($Help) {
     Write-Output @"
-Usage: $($MyInvocation.MyCommand.Name) -Project PATH [-Output DIR]
+Usage: $($MyInvocation.MyCommand.Name) PATH [-Output DIR]
+       $($MyInvocation.MyCommand.Name) -Project PATH [-Output DIR]
 
 AI-driven analysis of legacy projects for reverse engineering and modernization.
 
 Parameters:
-  -Project PATH        Path to project root directory (default: current directory)
+  PATH (positional)    Path to project root directory (default: current directory)
+  -Project PATH        Named parameter for project path
   -Output DIR         Output directory (default: .analysis/PROJECT_NAME-TIMESTAMP)
   -Help               Show this help message
 
 Examples:
   # Analyze current directory
-  .\$($MyInvocation.MyCommand.Name) -Project .
+  .\$($MyInvocation.MyCommand.Name) .
 
-  # Analyze specific project
+  # Analyze specific project (positional)
+  .\$($MyInvocation.MyCommand.Name) C:\path\to\project
+
+  # Analyze specific project (named parameter)
   .\$($MyInvocation.MyCommand.Name) -Project C:\path\to\project
 
   # Custom output directory
-  .\$($MyInvocation.MyCommand.Name) -Project C:\path\to\project -Output C:\analysis-results
+  .\$($MyInvocation.MyCommand.Name) C:\path\to\project -Output C:\analysis-results
 
 Workflow:
   1. Enumerate all files in the project (full recursive scan)
