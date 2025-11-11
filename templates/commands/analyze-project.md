@@ -929,6 +929,119 @@ When documenting findings:
    [Additional clarifications based on analysis findings]
    ```
 
+5B. **Validate Proposed Libraries Against Artifactory (Optional)**:
+
+   **Purpose**: Check if proposed target stack libraries are whitelisted in corporate Artifactory/Nexus before generating technical spec.
+
+   **When to Run**: After modernization preferences collected (Step 3), before generating technical-spec.md (Step 6)
+
+   **How it Works**:
+
+   1. **Check for Corporate Guidelines**:
+      - Look for guideline file matching target stack in `/.guidelines/` directory
+      - E.g., `java-guidelines.md`, `reactjs-guidelines.md`, `python-guidelines.md`, `nodejs-guidelines.md`, `dotnet-guidelines.md`
+
+   2. **Extract Artifactory URL**:
+      - If guideline file exists, extract "Package Registry" URL from guideline
+      - Look for section: `## Package Registry` with `**Registry URL**: <URL>`
+      - If URL is "Not configured" or missing, SKIP validation (proceed to step 6)
+
+   3. **Identify Libraries to Validate**:
+      - Based on user's modernization choices (Q1-Q10), create list of proposed external libraries
+      - **Categorize libraries** (only validate EXTERNAL and CORPORATE):
+
+        **Standard/Built-in** (SKIP validation - no Artifactory check needed):
+        - Language standard library: `java.util.*`, `java.io.*`, Python's `os`/`sys`/`json`, Node's `fs`/`path`/`http`
+        - Framework built-ins: Spring Boot starters included in parent, React core
+
+        **External/Third-Party** (VALIDATE - check Artifactory):
+        - Community packages: `lodash`, `requests`, `gson`, `axios`, `jackson-databind`
+        - Framework extensions: `spring-boot-starter-data-jpa`, `express-validator`, `pytest`
+
+        **Corporate Internal** (VALIDATE - check Artifactory):
+        - Company-developed packages (e.g., `@acmecorp/*`, `com.company.*`)
+
+      - **Example proposed libraries** (adapt to user's target stack):
+        - **Java**: `spring-boot-starter-web`, `jackson-databind`, `logback`, `junit-jupiter`, `testcontainers`
+        - **Node.js**: `express`, `axios`, `lodash`, `jest`, `winston`
+        - **Python**: `flask`, `requests`, `pytest`, `sqlalchemy`, `pydantic`
+        - **React**: `react-router-dom`, `axios`, `@tanstack/react-query`, `tailwindcss`
+        - **.NET**: `Microsoft.AspNetCore.Mvc`, `Newtonsoft.Json`, `Serilog`, `xUnit`
+
+   4. **Run Validation Script**:
+      - Detect OS and use appropriate script:
+        - **Bash**: `scripts/bash/check-artifactory.sh <artifactory-url> <library-name> [api-key]`
+        - **PowerShell**: `scripts/powershell/check-artifactory.ps1 <artifactory-url> <library-name> [api-key]`
+      - Pass ARTIFACTORY_API_KEY from environment variable (if available)
+      - Script returns exit codes:
+        - `0` = Library found (approved)
+        - `1` = Library not found (not whitelisted)
+        - `2` = Authentication error
+        - `3` = API error (network/timeout)
+        - `4` = Artifactory URL not configured (SKIP)
+
+   5. **Collect Results**:
+      - Store validation results for each library:
+        - ✅ **APPROVED**: Found in Artifactory (exit 0)
+        - ❌ **NOT WHITELISTED**: Not found in Artifactory (exit 1)
+        - ⚠️ **ERROR**: Auth/network issue (exit 2/3)
+        - ⊘ **SKIPPED**: Artifactory URL not configured (exit 4) OR standard library
+
+   6. **Display Results to User**:
+      ```text
+      LIBRARY VALIDATION RESULTS:
+
+      Artifactory URL: <URL or "Not configured">
+
+      Standard/Built-in Libraries (no validation needed):
+      ⊘ java.util.* - Standard library
+      ⊘ Spring Boot Core - Framework built-in
+
+      External Libraries (validated):
+      ✅ spring-boot-starter-web:3.2.0 - Approved
+      ✅ jackson-databind:2.15.3 - Approved
+      ❌ some-random-library:1.0.0 - NOT WHITELISTED
+         Suggestion: Check with security team or use approved alternative
+
+      Corporate Libraries (validated):
+      ✅ @acmecorp/auth-client:2.1.0 - Approved
+
+      Summary: 3 approved, 1 not whitelisted, 2 skipped (standard)
+      ```
+
+   7. **User Action (if any failures)**:
+      - If all libraries approved or Artifactory not configured: Proceed to step 6
+      - If any libraries not whitelisted: Ask user for decision:
+        ```text
+        Some proposed libraries are not whitelisted in Artifactory:
+        - some-random-library:1.0.0
+
+        Options:
+        [A] Proceed anyway (document as risk in technical-spec.md)
+        [B] Remove non-approved libraries (suggest alternatives)
+        [C] Pause - I'll check with security team
+
+        Your choice: ___
+        ```
+
+   8. **Include Results in Technical Spec**:
+      - Store validation results for inclusion in technical-spec.md section "8. Target Tech Stack"
+      - Add subsection "Library Availability Validation" with results table
+
+   **Error Handling**:
+
+- If check-artifactory script not found: SKIP validation, add note to technical-spec
+- If Artifactory URL not configured: SKIP validation (exit 4 from script)
+- If authentication fails: WARN user, proceed with incomplete results
+
+   **Note**: This step is optional and gracefully skipped if:
+
+- No corporate guidelines exist
+- Artifactory URL not configured
+- Validation scripts not available
+
+   ---
+
 6. **Generate Artifacts**:
 
    **CONDITIONAL WORKFLOW - Based on ANALYSIS_SCOPE**:

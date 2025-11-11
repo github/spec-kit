@@ -368,6 +368,32 @@ CREATE TYPE user_role AS ENUM ('admin', 'user', 'guest');
 
 <<Repeat for other stack components>>
 
+#### Library Availability Validation
+
+**Artifactory URL**: <<ARTIFACTORY_URL or "Not configured">>
+
+**Validation Results** (if Artifactory configured):
+
+| Library | Category | Status | Version | Notes |
+|---------|----------|--------|---------|-------|
+| <<spring-boot-starter-web>> | External | ✅ Approved | 3.2.0 | Found in Artifactory |
+| <<jackson-databind>> | External | ✅ Approved | 2.15.3 | Found in Artifactory |
+| <<@acmecorp/auth-client>> | Corporate | ✅ Approved | 2.1.0 | Internal package |
+| <<some-library>> | External | ❌ Not Whitelisted | N/A | Not found - risk documented |
+| <<java.util.*>> | Standard | ⊘ Skipped | N/A | Built-in, no validation needed |
+
+**Summary**:
+- ✅ Approved: <<N>> libraries
+- ❌ Not Whitelisted: <<N>> libraries (documented as risk)
+- ⊘ Skipped: <<N>> standard/built-in libraries
+
+**Risk Assessment** (if any libraries not whitelisted):
+- **Impact**: <<Libraries not approved may cause build failures in corporate environment>>
+- **Mitigation**: <<1) Request security approval, 2) Use approved alternatives, 3) Document exception>>
+- **Decision**: <<User chose [A/B/C] - see analysis-report.md for details>>
+
+**Note**: If Artifactory URL not configured, this section shows "Validation skipped - no corporate package registry configured"
+
 ---
 
 ## 9. NFR Targets (Measurable SLO/SLI)

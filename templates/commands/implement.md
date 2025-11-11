@@ -175,6 +175,195 @@ import com.acmecorp.client.ApiClient;
 Contact DevOps team for package access.
 ```
 
+## Library Validation Against Artifactory
+
+**BEFORE adding any new external dependency** (npm install, pip install, maven dependency, etc.), validate it against corporate Artifactory/Nexus:
+
+### 1. When to Validate
+
+Validate BEFORE executing package manager commands for external/corporate libraries:
+
+**Triggers**:
+- Adding new dependency to package.json/requirements.txt/pom.xml/build.gradle
+- Installing packages via npm/pip/maven/gradle
+- Importing third-party libraries in code
+
+**Skip validation for**:
+- Language standard libraries (`java.util.*`, Python `os`/`sys`, Node `fs`/`path`)
+- Framework built-ins (Spring Boot core, React core)
+- Dependencies already validated in technical-spec.md
+
+### 2. Validation Workflow
+
+#### Step 1: Check for Corporate Guidelines
+
+- Look for guideline file matching tech stack in `/.guidelines/` directory
+- Extract "Package Registry" URL from `## Package Registry` section
+- If URL is "Not configured" or missing → SKIP validation (proceed with installation)
+
+#### Step 2: Categorize the Library
+
+Determine library category to decide if validation needed:
+
+**Standard/Built-in** (SKIP validation):
+
+- `java.util.*`, `java.io.*`, `java.lang.*`
+- Python: `os`, `sys`, `json`, `re`, `datetime`, `pathlib`
+- Node.js: `fs`, `path`, `http`, `crypto`, `util`
+- Framework core: Spring Boot starters in parent, React/ReactDOM
+
+**External/Third-Party** (VALIDATE):
+
+- Community packages: `lodash`, `axios`, `requests`, `jackson-databind`, `gson`
+- Framework extensions: `spring-boot-starter-data-jpa`, `express-validator`, `pytest`
+
+**Corporate Internal** (VALIDATE):
+
+- Company-developed: `@acmecorp/*`, `com.company.*`, `company-*` packages
+
+#### Step 3: Run Validation
+
+Execute appropriate script based on OS:
+
+**Bash**:
+
+```bash
+./scripts/bash/check-artifactory.sh "$ARTIFACTORY_URL" "$LIBRARY_NAME" "$ARTIFACTORY_API_KEY"
+```
+
+**PowerShell**:
+
+```powershell
+./scripts/powershell/check-artifactory.ps1 -ArtifactoryUrl "$ARTIFACTORY_URL" -LibraryName "$LIBRARY_NAME" -ApiKey "$ARTIFACTORY_API_KEY"
+```
+
+**Exit Codes**:
+
+- `0` = Library found (✅ proceed with installation)
+- `1` = Library not found (❌ not whitelisted)
+- `2` = Authentication error (⚠️ check API key)
+- `3` = API error (⚠️ network/timeout)
+- `4` = Artifactory URL not configured (⊘ skip validation, proceed)
+
+#### Step 4: Handle Results
+
+**If exit code 0 (✅ Approved)**:
+- Proceed with installation: `npm install <package>`, `pip install <package>`, etc.
+- Log validation success (optional)
+
+**If exit code 1 (❌ Not Whitelisted)**:
+- **DO NOT** install the library
+- Display warning to user:
+  ```text
+  ⚠️  Library Validation Failed
+
+  Library: <package-name>
+  Status: NOT WHITELISTED in corporate Artifactory
+  Artifactory URL: <url>
+
+  This library is not approved for use. Options:
+  [A] Find approved alternative (check guidelines or ask user)
+  [B] Document as blocker (add to .guidelines-todo.md)
+  [C] Request approval (pause implementation, user must contact security)
+
+  Recommendation: Check corporate guidelines for approved alternatives.
+  ```
+- Ask user for decision
+- Document the issue in `.guidelines-todo.md` if user chooses option B
+
+**If exit code 2/3 (⚠️ Error)**:
+- Display error: "Artifactory validation failed: [auth error / network error]"
+- Ask user: "Proceed anyway? [yes/no]"
+- If yes: Proceed with installation (document risk)
+- If no: Halt, user must fix Artifactory access
+
+**If exit code 4 (⊘ Skipped)**:
+- Artifactory URL not configured → Proceed with installation (no validation available)
+
+### 3. Examples
+
+#### Example 1: Adding axios to Node.js project
+
+```text
+Task: Install axios for HTTP client
+
+Step 1: Check guidelines → Found /.guidelines/nodejs-guidelines.md
+Step 2: Extract Artifactory URL → https://artifactory.acmecorp.com/api
+Step 3: Categorize library → axios = External (validate)
+Step 4: Run validation:
+  $ ./scripts/bash/check-artifactory.sh "https://artifactory.acmecorp.com/api" "axios"
+  ✅ FOUND: axios:1.6.0 available in Artifactory
+
+Step 5: Proceed with installation:
+  $ npm install axios
+```
+
+#### Example 2: Adding banned library
+
+```text
+Task: Install deprecated-lib
+
+Step 1-3: [same as above]
+Step 4: Run validation:
+  $ ./scripts/bash/check-artifactory.sh "..." "deprecated-lib"
+  ❌ NOT FOUND: deprecated-lib not found in Artifactory
+
+Step 5: Display warning to user:
+  ⚠️ Library Validation Failed
+
+  Library: deprecated-lib
+  Status: NOT WHITELISTED
+
+  Options:
+  [A] Find approved alternative
+  [B] Document as blocker
+  [C] Request approval
+
+  User selects: [A]
+
+Step 6: Check guidelines for alternatives → Use "modern-lib" instead
+Step 7: Validate "modern-lib" → ✅ Found
+Step 8: Install "modern-lib" instead
+```
+
+#### Example 3: No Artifactory configured
+
+```text
+Task: Install lodash
+
+Step 1: Check guidelines → Found /.guidelines/nodejs-guidelines.md
+Step 2: Extract Artifactory URL → "Not configured"
+Step 3: Run validation:
+  $ ./scripts/bash/check-artifactory.sh "Not configured" "lodash"
+  ⊘ SKIPPED: Artifactory URL not configured - skipping validation for lodash
+
+Step 4: Proceed with installation (no validation available):
+  $ npm install lodash
+```
+
+### 4. Best Practices
+
+- **Validate early**: Check before adding to package.json/requirements.txt
+- **Batch validation**: If adding multiple packages, validate all first
+- **Document failures**: Always add non-whitelisted libraries to `.guidelines-todo.md`
+- **Check guidelines first**: Corporate guidelines may already specify approved alternatives
+- **Don't block implementation**: If validation fails, document and continue (guidelines are recommendations)
+
+### 5. Integration with Guidelines
+
+This validation step works in conjunction with Corporate Guidelines (section above):
+
+1. **Guidelines** specify **what** libraries are mandatory/banned
+2. **Artifactory validation** checks **if** proposed libraries are **available/approved**
+
+**Combined workflow**:
+1. Check corporate guidelines for mandatory/banned libraries
+2. Use mandatory libraries (from guidelines)
+3. Validate external libraries (via Artifactory)
+4. Never use banned libraries (from guidelines)
+
+---
+
 ## Outline
 
 1. **Setup & OS Detection**: Detect your operating system and run the appropriate setup script from repo root.

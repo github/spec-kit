@@ -54,6 +54,7 @@ coverage.xml
 sdd-*/
 /.vs
 .analysis/
+.guidelines-analysis/
 
 # Node.js
 node_modules/
