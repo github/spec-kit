@@ -283,7 +283,7 @@ Then use `/speckit.resume` to continue after chat limits or interruptions.
 
 ⚠️ **Status**: EXPERIMENTAL - Working implementation (~4,564 LOC Python + orchestration + templates) with AI-guided workflow (v1.0.0-alpha) ([see details](docs/reverse-engineering.md#️-important-notice))
 
-**NEW**: Analyze existing projects, assess technical debt, and plan modernization strategies!
+**NEW**: Analyze existing projects, assess technical debt, and plan modernization strategies - including **targeted cross-cutting concern migrations**!
 
 ### Quick Start (Reverse Engineering)
 
@@ -292,41 +292,28 @@ Then use `/speckit.resume` to continue after chat limits or interruptions.
 /speckit.analyze-project
 ```
 
-When prompted, provide the following parameters:
+When prompted, provide the project path:
 
 ```text
 PROJECT_PATH: /path/to/your/existing/project
-ANALYSIS_DEPTH: QUICK | STANDARD | COMPREHENSIVE
-FOCUS_AREAS: ALL | SECURITY | PERFORMANCE | ARCHITECTURE | DEPENDENCIES
 ```
-
-**Parameter Values:**
-
-**ANALYSIS_DEPTH:**
-
-- `QUICK` (30 min) - Surface-level scan, dependency check, basic metrics
-- `STANDARD` (2-4 hours) - Full codebase analysis, architecture review, upgrade paths (recommended)
-- `COMPREHENSIVE` (1-2 days) - Deep dive with performance profiling, security audit, detailed roadmap
-
-**FOCUS_AREAS:**
-
-- `ALL` - Complete analysis (recommended for first-time analysis)
-- `SECURITY` - Vulnerability scanning, dependency audits, security patterns
-- `PERFORMANCE` - Bottleneck identification, optimization opportunities
-- `ARCHITECTURE` - Design patterns, technical debt, modularity assessment
-- `DEPENDENCIES` - Package analysis, upgrade paths, LTS compliance
 
 **Example:**
 
 ```text
 PROJECT_PATH: /home/user/my-legacy-app
-ANALYSIS_DEPTH: STANDARD
-FOCUS_AREAS: ALL
 ```
+
+**Next, choose your analysis scope:**
+
+- **[A] Full Application Modernization** - Analyze entire codebase for comprehensive modernization (generates functional/technical specs)
+- **[B] Cross-Cutting Concern Migration** - Analyze ONLY a specific cross-cutting concern (auth, database, caching, deployment, etc.) without rewriting the entire app
 
 ### What You Get
 
 Comprehensive analysis with AI-driven interactive workflow:
+
+#### For Full Application Modernization ([A])
 
 **Core Analysis Documents:**
 
@@ -337,19 +324,51 @@ Comprehensive analysis with AI-driven interactive workflow:
 
 **Toolkit Workflow Integration:**
 
-- **`stage-prompts/`** - 6 ready-to-use prompts for each Toolkit workflow stage:
+- **`stage-prompts/`** - 4 ready-to-use prompts for Toolkit workflow stages:
   - `constitution-prompt.md` - Principles for new system (derived from legacy code)
-  - `specify-prompt.md` - Requirements guidance (references functional-spec.md)
   - `clarify-prompt.md` - Clarification guidance with legacy code references
-  - `plan-prompt.md` - Architecture guidance (references technical-spec.md)
   - `tasks-prompt.md` - Task breakdown guidance
   - `implement-prompt.md` - Implementation guidance with legacy code references
+  - *Note: Use `functional-spec.md` and `technical-spec.md` directly instead of separate specify/plan prompts*
 
 **Decision Support:**
 
 - **Feasibility scores** (0-100) for inline upgrade vs greenfield rewrite
 - **Confidence scores** for analysis quality
 - **Interactive modernization questions** - 10 questions about target stack, deployment, observability, and testing strategy (with conditional logic to skip irrelevant questions)
+
+#### For Cross-Cutting Concern Migration ([B]) - **NEW (Phase 9)**
+
+**Concern-Specific Documents:**
+
+- **`concern-analysis.md`** - Detailed analysis of the selected concern:
+  - Identified concern files with evidence (file:line)
+  - Abstraction level assessment (HIGH/MEDIUM/LOW)
+  - Blast radius calculation (files, LOC, percentage)
+  - Coupling degree analysis (LOOSE/MODERATE/TIGHT)
+  - Entry points and consumer callsites
+
+- **`abstraction-recommendations.md`** - Guidance on improving abstractions before migration (if needed)
+
+- **`concern-migration-plan.md`** - Step-by-step migration strategy:
+  - Recommended approach (STRANGLER_FIG/ADAPTER_PATTERN/REFACTOR_FIRST/BIG_BANG_WITH_FEATURE_FLAGS)
+  - Phased implementation (50/30/15/5 value delivery)
+  - Week-by-week execution plan
+  - Risk management and rollback procedures
+
+- **`EXECUTIVE-SUMMARY.md`** - High-level overview with timeline and business impact
+
+**Supported Concern Types:**
+
+1. Authentication/Authorization (e.g., Custom JWT → Okta/Auth0, SAML → OAuth 2.0)
+2. Database/ORM Layer (e.g., Oracle → PostgreSQL, Raw SQL → ORM)
+3. Caching Layer (e.g., Memcached → Redis, adding distributed cache)
+4. Message Bus/Queue (e.g., TIBCO → Kafka, RabbitMQ → Azure Service Bus)
+5. Logging/Observability (e.g., Custom logs → ELK Stack, adding Prometheus+Grafana)
+6. API Gateway/Routing (e.g., Custom routing → Kong/Nginx)
+7. File Storage/CDN (e.g., Local filesystem → S3/Azure Blob)
+8. **Deployment/Infrastructure** (e.g., VM → OpenShift, AWS → Azure, On-premise → Cloud)
+9. Other (user-specified)
 
 ### Modernization Workflow
 
@@ -378,81 +397,105 @@ The analysis is **fully interactive** with AI-guided questions about your modern
 
 ### Key Capabilities
 
+**Full Application Modernization:**
 - 📊 Technology stack detection & EOL tracking
 - 🔒 Security vulnerability scanning (CVEs)
 - 📦 Dependency health analysis (outdated, deprecated)
 - 🏗️ Architecture assessment (patterns, technical debt)
 - ⚡ Performance bottleneck identification
 - 🎯 Data-driven recommendations (inline/greenfield/hybrid)
-- 💬 **NEW**: Interactive modernization planning with conditional questions
-- 📝 **NEW**: Ready-to-use Toolkit workflow prompts for seamless integration
+- 💬 Interactive modernization planning with conditional questions
+- 📝 Ready-to-use Toolkit workflow prompts for seamless integration
+
+**Cross-Cutting Concern Migration (NEW - Phase 9):**
+- 🎯 **Targeted analysis** - Focus on specific concerns without full rewrites
+- 🔍 **Abstraction assessment** - Evaluate how easy it is to swap implementations (HIGH/MEDIUM/LOW)
+- 📏 **Blast radius calculation** - Quantify impact (files, LOC, percentage of codebase)
+- 🔗 **Coupling analysis** - Determine how tightly integrated the concern is (LOOSE/MODERATE/TIGHT)
+- 🛠️ **Migration strategy recommendations** - STRANGLER_FIG, ADAPTER_PATTERN, REFACTOR_FIRST, or BIG_BANG_WITH_FEATURE_FLAGS
+- 📅 **Phased roadmap** - 50/30/15/5 value delivery with week-by-week execution plan
+- 🎯 **9 concern types** - Auth, Database, Caching, Messaging, Observability, API Gateway, Storage, Deployment, Other
 
 ### Use Cases
 
+**Full Application Modernization:**
 1. **Inherited Codebase** - Understand state, assess technical debt
 2. **Modernization Planning** - LTS upgrades, framework migrations
 3. **Security Audits** - Identify vulnerabilities and compliance gaps
 4. **Migration Decisions** - Upgrade-in-place vs rewrite with feasibility scoring
 
+**Cross-Cutting Concern Migration (NEW - Phase 9):**
+1. **Auth Provider Swap** - Migrate from custom JWT to Okta/Auth0 without rewriting the entire app
+2. **Database Migration** - Switch from Oracle to PostgreSQL, or Raw SQL to ORM (e.g., Prisma, Entity Framework)
+3. **Cloud Migration** - Move from VM/on-premise to OpenShift, Kubernetes, or cloud platforms (AWS/Azure/GCP)
+4. **Caching Upgrade** - Replace Memcached with Redis or add distributed caching to legacy app
+5. **Messaging Modernization** - Migrate from TIBCO to Kafka, or RabbitMQ to Azure Service Bus
+6. **Observability Enhancement** - Add structured logging, metrics, and tracing to legacy systems
+
 ### How It Works (Technical Implementation)
 
-The reverse engineering system uses **orchestration scripts (bash/PowerShell)** that invoke **Python analysis modules**:
+The reverse engineering system uses **AI-guided analysis** with orchestration scripts:
 
 **Execution Flow:**
 
 1. `/speckit.analyze-project` command (AI agent)
-2. → Orchestration script (cross-platform):
-   - **Unix/Linux/macOS**: `scripts/bash/analyze-project-setup.sh`
-   - **Windows**: `scripts/powershell/analyze-project-setup.ps1`
-3. → Generates `run_analysis.py` script dynamically
-4. → `run_analysis.py` imports and executes Python modules:
-   - `scanner.py` - Tech stack detection, code metrics calculation
-   - `dependency_analyzer.py` - Dependency health analysis
-   - `scoring_engine.py` - Feasibility score calculation (0-100)
-   - `report_generator.py` - Markdown report generation
-   - `security.py` - Security validation and CVE detection
-   - **Language-specific analyzers**:
-     - `languages/java.py` - Java/Spring Boot analysis
-     - `languages/python.py` - Python/Django/Flask analysis
-     - `languages/javascript.py` - Node.js/React analysis
-     - `languages/dotnet.py` - .NET/C# analysis
+2. → User provides PROJECT_PATH and chooses ANALYSIS_SCOPE:
+   - **[A] Full Application Modernization** - Comprehensive analysis of entire codebase
+   - **[B] Cross-Cutting Concern Migration** - Targeted analysis of specific concern (9 types)
+3. → Orchestration script (cross-platform):
+   - **Unix/Linux/macOS**: `scripts/bash/analyze-project.sh`
+   - **Windows**: `scripts/powershell/analyze-project.ps1`
+4. → AI-guided analysis workflow:
+   - **Quick tech stack detection** - Identify current technologies
+   - **Interactive modernization questions** (10 questions with conditional logic)
+   - **Deep code analysis** - Extract features, assess quality, identify technical debt
+   - **Artifact generation** - Create specs, reports, and migration plans
 
-**Note:** The Python modules are **library code**, not standalone CLI commands. They are invoked exclusively through the orchestration scripts. Direct Python execution is not supported.
+**Analysis Capabilities:**
+
+**For Full Application ([A]):**
+- Tech stack detection, code metrics, dependency health
+- Architecture assessment, security scanning
+- Feasibility scoring (0-100) for inline/greenfield approaches
+- Generates: analysis-report.md, functional-spec.md, technical-spec.md, stage-prompts/
+
+**For Cross-Cutting Concerns ([B]) - NEW (Phase 9):**
+- Identify concern-specific files with evidence (file:line)
+- Assess abstraction level (HIGH/MEDIUM/LOW)
+- Calculate blast radius (% of codebase affected)
+- Analyze coupling degree (LOOSE/MODERATE/TIGHT)
+- Recommend migration strategy (STRANGLER_FIG/ADAPTER_PATTERN/REFACTOR_FIRST/BIG_BANG_WITH_FEATURE_FLAGS)
+- Generates: concern-analysis.md, abstraction-recommendations.md, concern-migration-plan.md
 
 **Requirements:**
 
-- Python 3.10+ (detected automatically by orchestration scripts)
+- AI coding agent (Claude Code, GitHub Copilot, etc.)
+- Python 3.10+ (for optional analysis tools)
 - Optional external tools for enhanced analysis:
   - `npm audit` / `pip-audit` - Automated dependency scanning
   - `cloc` / `tokei` - Code metrics calculation
   - Snyk / OWASP - Advanced security vulnerability detection
 
-**Generated Output (Phase 8):**
+**Generated Output:**
 
-**Core Analysis Documents:**
-
-- `analysis-report.md` - Technical assessment with Python metrics + AI analysis
+**Full Application Modernization ([A]):**
+- `analysis-report.md` - Technical assessment with strengths/weaknesses
 - `EXECUTIVE-SUMMARY.md` - High-level overview for stakeholders
-- `functional-spec.md` - Business Analyst document (WHAT system does) with real features
-- `technical-spec.md` - Architecture document (HOW to build) with target stack
+- `functional-spec.md` - Business Analyst document (WHAT system does)
+- `technical-spec.md` - Architecture document (HOW to build)
+- `stage-prompts/` - 4 ready-to-use prompts: constitution, clarify, tasks, implement
+- `metrics-summary.json`, `dependency-audit.json`, `decision-matrix.md` (supporting files)
 
-**Toolkit Workflow Integration:**
-
-- `stage-prompts/` - 6 ready-to-use prompts:
-  - `constitution-prompt.md` - Principles for new system
-  - `specify-prompt.md` - Requirements guidance
-  - `clarify-prompt.md` - Clarification guidance with legacy code references
-  - `plan-prompt.md` - Architecture guidance
-  - `tasks-prompt.md` - Task breakdown guidance
-  - `implement-prompt.md` - Implementation guidance with legacy code references
-
-**Supporting Files:**
-
-- `metrics-summary.json` - Machine-readable metrics
-- `dependency-audit.json` - Package inventory
-- `decision-matrix.md` - Strategy comparison (optional)
+**Cross-Cutting Concern Migration ([B]):**
+- `concern-analysis.md` - Detailed concern assessment with evidence
+- `abstraction-recommendations.md` - Guidance on improving abstractions
+- `concern-migration-plan.md` - Step-by-step migration strategy
+- `EXECUTIVE-SUMMARY.md` - High-level overview with timeline and impact
+- `concern-files-inventory.json`, `dependency-graph.md` (optional supporting files)
 
 ### Workflows
+
+#### Full Application Modernization ([A])
 
 **Inline Upgrade** (modernize existing codebase):
 
@@ -473,6 +516,26 @@ The reverse engineering system uses **orchestration scripts (bash/PowerShell)** 
 - Extract modules incrementally
 - Modernize using Toolkit workflow
 - Maintain parallel systems during migration
+
+#### Cross-Cutting Concern Migration ([B]) - **NEW (Phase 9)**
+
+**Targeted Concern Migration** (swap specific implementation without full rewrite):
+
+1. Review `concern-analysis.md` to understand current implementation
+2. Review `abstraction-recommendations.md` (if abstraction level is LOW/MEDIUM)
+3. Follow `concern-migration-plan.md` step-by-step:
+   - **STRANGLER_FIG** (if HIGH abstraction + LOOSE coupling): Implement new provider alongside old, gradually switch via feature flags (2-4 weeks)
+   - **ADAPTER_PATTERN** (if MEDIUM abstraction): Create adapter interface, refactor consumers, swap internals (4-8 weeks)
+   - **REFACTOR_FIRST** (if LOW abstraction + small blast radius): Extract interfaces, introduce DI, then migrate (6-12 weeks)
+   - **BIG_BANG_WITH_FEATURE_FLAGS** (if LOW abstraction + large blast radius): Extensive refactoring with gradual rollout (3-6 months)
+4. Implement phased rollout (50/30/15/5 value delivery)
+5. Test thoroughly and maintain rollback plan
+
+**Example Use Cases:**
+- Migrate auth from custom JWT to Okta (STRANGLER_FIG, 3 weeks)
+- Switch database from Oracle to PostgreSQL (ADAPTER_PATTERN, 6 weeks)
+- Move from VM to OpenShift (REFACTOR_FIRST + deployment migration, 8 weeks)
+- Replace Memcached with Redis (STRANGLER_FIG, 2 weeks)
 
 ### Documentation (Reverse Engineering)
 
