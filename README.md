@@ -55,8 +55,10 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 
 **The Problem:** Every company has standards—internal SDKs, banned libraries, compliance requirements, architecture patterns. Generic tools ignore these, generating non-compliant code that requires extensive rework.
 
-**The Solution:** Customizable corporate guidelines with enforcement, compliance checking, and automated fixes.
+**The Solution:** Customizable corporate guidelines with enforcement, compliance checking, and automated generation from existing corporate resources.
 
+- **AI-Powered Guideline Generation** - `/speckit.generate-guidelines` analyzes corporate documents (PDFs, standards, policies) and reference codebases to automatically extract and synthesize coding guidelines
+- **Three-Persona Analysis** - Standards Architect (documents) → Code Archeologist (codebases) → Technical Writer (synthesis) for comprehensive principle extraction
 - **Multi-Stack Guidelines** - Pre-built templates for React, Java, .NET, Node.js, Python, Go with tech stack auto-detection
 - **Compliance Enforcement** - Define mandatory libraries (internal auth SDKs), banned packages (security/licensing), architecture patterns
 - **Automated Validation** - `check-guidelines-compliance.sh` validates projects with severity levels (CRITICAL/HIGH/MEDIUM/LOW)
@@ -64,7 +66,9 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 - **CI/CD Integration** - Ready-to-use GitHub Actions, GitLab CI, and Jenkins templates for automated enforcement
 - **Hierarchy System** - Constitution > Corporate Guidelines > Spec Kit Defaults ensures project-specific rules always win
 
-**Real-World Use Case:** A bank requires all projects to use their internal OAuth library, PostgreSQL with specific encryption, and specific folder structure. Guidelines ensure AI generates compliant code from day one, saving hours of rework and passing security reviews.
+**Real-World Use Cases:**
+- **Guideline Generation**: A company has 3 coding standard PDFs and 5 reference Spring Boot projects. Run `/speckit.generate-guidelines` to automatically extract principles, detect patterns across codebases, and generate a unified `java-guidelines.md` with mandatory/banned libraries, architecture patterns, and security requirements.
+- **AI-Generated Compliance**: A bank requires all projects to use their internal OAuth library, PostgreSQL with specific encryption, and specific folder structure. Guidelines ensure AI generates compliant code from day one, saving hours of rework and passing security reviews.
 
 #### 🌍 **Universal Cross-Platform Support**
 
@@ -737,11 +741,12 @@ Essential commands for the Spec-Driven Development workflow (can be used individ
 
 Additional commands for enhanced quality and validation:
 
-| Command              | Description                                                           |
-|----------------------|-----------------------------------------------------------------------|
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| Command                      | Description                                                           |
+|------------------------------|-----------------------------------------------------------------------|
+| `/speckit.clarify`           | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
+| `/speckit.analyze`           | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
+| `/speckit.checklist`         | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/speckit.generate-guidelines` | **NEW**: Generate or update corporate coding guidelines by analyzing corporate documents and reference codebases (EXPERIMENTAL v1.0.0-alpha) |
 
 ### Environment Variables
 
@@ -1058,6 +1063,99 @@ Corporate Guidelines enable you to specify:
 - **Security & compliance** - Authentication requirements, data classification, audit logging
 - **Architecture patterns** - Folder structure, design patterns, coding standards
 - **Branch naming** - Configurable branch naming conventions and Jira integration
+
+### Generating Guidelines from Corporate Resources
+
+**NEW (Phase 5)**: Automatically generate or update guidelines by analyzing existing corporate documents and reference codebases.
+
+#### Quick Start (Guidelines Generation)
+
+```bash
+# In your AI coding agent (Claude Code, GitHub Copilot, etc.)
+/speckit.generate-guidelines /path/to/corporate-resources
+```
+
+**Expected folder structure:**
+
+```text
+/path/to/corporate-resources/
+  ├── docs/
+  │   ├── java-coding-standards.pdf
+  │   ├── security-guidelines.md
+  │   └── architecture-patterns.docx
+  └── reference-projects/
+      ├── project-a/  (Spring Boot reference app)
+      ├── project-b/  (Another Spring Boot app)
+      └── project-c/  (Third Spring Boot app)
+```
+
+#### How It Works
+
+The command uses a **three-persona AI analysis workflow**:
+
+##### Phase 1: Document Analysis (Standards Architect)
+
+- Extracts explicit principles from corporate PDFs, Markdown, Word docs
+- Identifies MUST/SHOULD/MAY/NEVER requirements using RFC 2119 keywords
+- Categorizes by guideline sections (Security, Architecture, Testing, etc.)
+- Records source references (document:page) for traceability
+- Flags conflicts between documents for user clarification
+
+##### Phase 2: Code Analysis (Code Archeologist)
+
+- Reverse-engineers implicit patterns from 3+ reference projects
+- Calculates consensus confidence (ALL projects = MUST, MOST = SHOULD, SOME = ask user)
+- Extracts architecture patterns, naming conventions, dependency choices
+- Identifies mandatory libraries (3/3 projects use it = corporate standard)
+- Converts patterns to principles (NO code examples, version-agnostic)
+
+##### Phase 3: Synthesis & Conflict Resolution (Technical Writer)
+
+- Merges document principles + code patterns
+- Prompts user to resolve conflicts (docs vs code, old vs new)
+- Applies RFC 2119 severity based on source + consensus
+- Generates principle-based guidelines (no code examples)
+- Supports UPDATE modes: ADD (merge), REPLACE (targeted), FULL_REGEN (rebuild)
+
+#### What You Get
+
+**Generated Artifacts:**
+
+- **`.guidelines/{stack}-guidelines.md`** - Final guideline file (e.g., `java-guidelines.md`)
+  - Scaffolding, Package Registry, Mandatory/Banned Libraries
+  - Architecture, Security, Coding Standards, Testing
+  - Build & Deployment, Observability, Non-Compliance handling
+  - Version metadata and changelog
+
+- **`.guidelines-analysis/document-findings.md`** - Extracted principles from documents with sources
+- **`.guidelines-analysis/code-findings.md`** - Extracted patterns from codebases with evidence
+- **`.guidelines-analysis/{stack}-analysis-report.md`** - Comprehensive analysis report
+
+#### Key Features
+
+- **Version-Agnostic Principles** - No code examples, works across framework versions (React 16/18/19, Java 8/11/21)
+- **Artifactory Integration** - Validates mandatory/banned libraries against corporate package registry
+- **Dependency Categorization** - Distinguishes standard libs (no check) vs external libs (requires Artifactory validation)
+- **Update Modes** - ADD (additive), REPLACE (targeted sections), FULL_REGEN (rebuild), NEW (create backup)
+- **Consensus Scoring** - HIGH (3/3 projects), MEDIUM (2/3), LOW (1/3) for data-driven decision support
+- **Multi-Stack Support** - Detect and generate guidelines for React, Java, .NET, Node.js, Python, Go
+
+#### Example Use Cases
+
+1. **New Company Onboarding** - Extract implicit standards from 5 legacy Spring Boot projects to create a unified `java-guidelines.md`
+2. **Guideline Modernization** - Update existing guidelines by analyzing 3 new React 18 reference apps and latest security policies
+3. **Multi-Stack Enterprises** - Generate separate guidelines for frontend (React), backend (Java), and data (Python) teams from mixed codebases
+4. **Compliance Enforcement** - Convert verbose corporate security PDFs into enforceable MUST/NEVER principles for AI agents
+
+#### Interactive Workflow
+
+The command is fully interactive and will prompt you for:
+
+1. **Tech Stack Selection** - Auto-detects from reference projects (Java, React, .NET, etc.)
+2. **Artifactory URL** - Optional corporate package registry for library whitelist validation
+3. **Update Mode** - How to update existing guidelines (ADD/REPLACE/FULL_REGEN/NEW)
+4. **Conflict Resolution** - When documents contradict code or each other, you choose the correct standard
+5. **Low-Confidence Patterns** - For patterns found in only 1/3 projects, you confirm if it's a corporate standard
 
 ### Implementation Phases
 
