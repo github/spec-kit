@@ -175,21 +175,16 @@ When documenting findings:
 
    Parse JSON output for PROJECT_PATH, ANALYSIS_DIR, ANALYSIS_REPORT, and other output paths.
 
-   **IMPORTANT**: The setup script now includes automated Python analysis! Check the JSON output for:
-   - `PYTHON_ANALYZER_AVAILABLE`: "true" if Python is installed
-   - `PYTHON_ANALYSIS_STATUS`: "success", "failed", or "not_run"
-   - `PYTHON_ANALYSIS_ERROR`: Error message if analysis failed
-
    For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Quick Tech Stack Detection & Display**:
 
-   **IF** `PYTHON_ANALYSIS_STATUS` is "success":
-
-   The Python analyzer has detected the current tech stack. Review the generated reports:
-   - Read `metrics-summary.json` for detected languages, frameworks, build tools
-   - Read `dependency-audit.json` for package inventory
-   - Read `analysis-report.md` for initial findings
+   Manually detect stack by scanning config files and display to user:
+   - **ReactJS**: `package.json` with `"react"` dependency
+   - **Java**: `pom.xml`, `build.gradle`, or `*.java` files
+   - **.NET**: `*.csproj`, `*.sln`, or `*.cs` files
+   - **Node.js**: `package.json` with backend dependencies (express, fastify, koa)
+   - **Python**: `requirements.txt`, `pyproject.toml`, `setup.py`, or `*.py` files
 
    **Display detected stack to user**:
 
@@ -201,10 +196,6 @@ When documenting findings:
    - Build Tool: [e.g., Maven 3.6]
    - Dependencies: [X packages, Y outdated, Z vulnerable]
    ```
-
-   **ELSE IF** `PYTHON_ANALYSIS_STATUS` is "failed" or "not_run":
-
-   Manually detect stack by scanning config files (package.json, pom.xml, *.csproj, requirements.txt, etc.) and display to user.
 
 3. **Ask Modernization Target Questions (CRITICAL - NEW STEP)**:
 
