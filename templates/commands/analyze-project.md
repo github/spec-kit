@@ -82,6 +82,77 @@ $ARGUMENTS
    Parse and use the provided PROJECT_PATH.
    Continue with analysis workflow below.
 
+**AFTER** obtaining PROJECT_PATH, ask for analysis scope:
+
+   ```text
+   ANALYSIS_SCOPE:
+   What type of analysis do you need?
+
+   - [A] Full Application Modernization (entire codebase)
+         → Analyze entire application for comprehensive modernization
+         → Generate complete functional/technical specs
+         → Suitable for legacy app migration
+
+   - [B] Cross-Cutting Concern Migration (specific area)
+         → Analyze ONLY a specific cross-cutting concern
+         → Assess abstraction quality for migration
+         → Recommend migration strategy without rewriting entire app
+         → Suitable for: auth migration, database swap, caching layer, etc.
+
+   Your choice: ___
+   ```
+
+**IF CHOICE = [A]** (Full Application Modernization):
+   - Continue with standard workflow (Step 2: Tech Stack Detection)
+   - Skip cross-cutting concern questions below
+
+**IF CHOICE = [B]** (Cross-Cutting Concern Migration):
+   - Ask follow-up questions:
+
+   ```text
+   CONCERN_TYPE:
+   Which cross-cutting concern do you want to migrate?
+
+   - [1] Authentication/Authorization
+         → Examples: Custom JWT → Okta/Auth0/Azure AD, SAML → OAuth 2.0
+
+   - [2] Database/ORM Layer
+         → Examples: PostgreSQL → MongoDB, Raw SQL → ORM, Oracle → PostgreSQL
+
+   - [3] Caching Layer
+         → Examples: Memcached → Redis, Adding Redis cache (greenfield), In-memory → Distributed cache
+
+   - [4] Message Bus/Queue
+         → Examples: TIBCO → Kafka, RabbitMQ → Azure Service Bus, Adding messaging (greenfield)
+
+   - [5] Logging/Observability
+         → Examples: Custom logs → ELK Stack, Log4j → Prometheus+Grafana, Adding observability (greenfield)
+
+   - [6] API Gateway/Routing
+         → Examples: Custom routing → Kong/Nginx, Monolith → API Gateway pattern
+
+   - [7] File Storage/CDN
+         → Examples: Local filesystem → S3/Azure Blob, FTP → Object storage
+
+   - [8] Deployment/Infrastructure
+         → Examples: VM → OpenShift, AWS → Azure, On-premise → Cloud, Dedicated server → Kubernetes
+
+   - [9] Other (specify)
+         → Any other cross-cutting concern not listed above
+
+   Your choice: ___
+
+   CURRENT_IMPLEMENTATION: ___
+   (Will be detected from code, but you can specify if known)
+   Examples: "Custom JWT with bcrypt", "Oracle 11g with raw SQL", "Memcached 1.4"
+
+   TARGET_IMPLEMENTATION: ___
+   (What do you want to migrate to?)
+   Examples: "Okta", "PostgreSQL 15 with Prisma ORM", "Redis 7.x", "OpenShift", "AWS"
+   ```
+
+   **Store responses** for use in concern-specific analysis (Step 4).
+
 ---
 
 ## Corporate Guidelines
@@ -440,6 +511,12 @@ When documenting findings:
 
 4. **Deep Legacy Code Analysis**:
 
+   **CONDITIONAL WORKFLOW - Based on ANALYSIS_SCOPE**:
+
+   ---
+
+   ### IF ANALYSIS_SCOPE = [A] (Full Application Modernization):
+
    **After receiving user's modernization preferences**, conduct comprehensive analysis:
 
    **Scan ALL code files** to understand functionality:
@@ -472,6 +549,344 @@ When documenting findings:
    - **Phase 8**: Decision Matrix - Compare approaches (time, cost, risk, disruption)
    - **Phase 9**: Generate Recommendations - Primary recommendation, immediate actions, roadmaps
 
+   ---
+
+   ### IF ANALYSIS_SCOPE = [B] (Cross-Cutting Concern Migration):
+
+   **Focus analysis ONLY on the selected concern**. Your goal is to:
+   - Identify all files related to this concern
+   - Assess abstraction quality (how easy to swap implementations)
+   - Calculate blast radius (how much code would be affected)
+   - Recommend migration strategy
+
+   #### Step 4.1: Identify Concern-Specific Files
+
+   Use detection heuristics based on CONCERN_TYPE to locate relevant files:
+
+   **[1] Authentication/Authorization:**
+   - **File patterns**: auth*, login*, session*, jwt*, passport*, oauth*, security*, *guard*, *policy*
+   - **Import patterns**: jsonwebtoken, passport, bcrypt, oauth, jose, @nestjs/passport, express-session, spring-security, ASP.NET Identity, Django auth
+   - **Decorator patterns**: @authenticated, @require_auth, @authorize, @Secured, @PreAuthorize, [Authorize]
+   - **Config files**: auth.config.*, security.yml, passport.config.*, appsettings.json (auth section)
+   - **Database**: Users, Roles, Permissions tables
+
+   **[2] Database/ORM Layer:**
+   - **File patterns**: *repository*, *model*, *entity*, *dao*, db*, database*, *schema*, migrations/*
+   - **Import patterns**: sequelize, mongoose, typeorm, prisma, knex, hibernate, Entity Framework, SQLAlchemy, JDBC, ADO.NET
+   - **Config files**: database.yml, ormconfig.*, knexfile.*, application.properties (DB config), appsettings.json (ConnectionStrings)
+   - **SQL files**: *.sql, migrations/*, schema/*, seeds/*
+
+   **[3] Caching Layer:**
+   - **File patterns**: *cache*, *redis*, *memcached*, *session*
+   - **Import patterns**: redis, ioredis, node-cache, memcached, @nestjs/cache-manager, Spring Cache, IMemoryCache, django-redis
+   - **Decorator patterns**: @Cacheable, @CacheEvict, @CachePut, [ResponseCache]
+   - **Config files**: redis.conf, cache.config.*, appsettings.json (cache section)
+
+   **[4] Message Bus/Queue:**
+   - **File patterns**: *queue*, *message*, *event*, *consumer*, *producer*, *publisher*, *subscriber*, *listener*
+   - **Import patterns**: kafkajs, amqplib, rabbitmq, bull, azure-service-bus, aws-sdk (SQS/SNS), @nestjs/microservices, Spring AMQP, MassTransit
+   - **Config files**: kafka.config.*, rabbitmq.config.*, application.yml (messaging section)
+   - **Queue definitions**: Job classes, event handlers, message contracts
+
+   **[5] Logging/Observability:**
+   - **File patterns**: *logger*, *logging*, *monitor*, *telemetry*, *metrics*, *tracing*
+   - **Import patterns**: winston, pino, log4js, bunyan, @opentelemetry, prometheus-client, log4j, slf4j, Serilog, NLog, ILogger
+   - **Config files**: log4j.properties, logback.xml, nlog.config, serilog.config.json
+   - **Observability**: APM agent configs (DataDog, New Relic, Application Insights)
+
+   **[6] API Gateway/Routing:**
+   - **File patterns**: *router*, *route*, *gateway*, *proxy*, routes/*, middleware/*
+   - **Import patterns**: express.Router, @nestjs/core (routing), Spring Cloud Gateway, Ocelot, Kong, nginx configs
+   - **Config files**: routes.config.*, gateway.yml, nginx.conf, ocelot.json
+
+   **[7] File Storage/CDN:**
+   - **File patterns**: *storage*, *upload*, *file*, *asset*, *media*, *document*
+   - **Import patterns**: multer, aws-sdk (S3), @azure/storage-blob, @google-cloud/storage, formidable
+   - **Config files**: storage.config.*, aws.config.*, azure-storage.config.*
+
+   **[8] Deployment/Infrastructure:**
+   - **File patterns**: Dockerfile, docker-compose.yml, *.tf (Terraform), *.bicep, Helm charts, Kubernetes manifests (*.yaml in k8s/)
+   - **CI/CD files**: .github/workflows/*, .gitlab-ci.yml, azure-pipelines.yml, Jenkinsfile
+   - **Infrastructure configs**: VM provisioning scripts, cloud formation templates, ARM templates
+   - **Deployment scripts**: deploy.sh, deploy.ps1, ansible playbooks
+
+   **[9] Other (User-Specified):**
+   - Use semantic understanding to identify relevant files based on user's description
+   - Look for patterns, imports, and configs related to the specified concern
+
+   **Output**: List of concern-specific files with evidence:
+
+   ```markdown
+   ### Identified Concern Files
+
+   | File Path | Type | Evidence | LOC |
+   |-----------|------|----------|-----|
+   | src/auth/AuthService.ts | Core Implementation | Exports authenticate(), uses jsonwebtoken | 247 |
+   | src/middleware/authGuard.ts | Middleware | Uses AuthService, @require_auth decorator | 89 |
+   | config/auth.config.ts | Configuration | JWT secret, token expiration | 34 |
+   [... more files ...]
+
+   **Total**: 23 files, 3,456 LOC (~8% of codebase)
+   ```
+
+   #### Step 4.2: Analyze Abstraction Level
+
+   Assess how well the concern is abstracted (determines migration difficulty):
+
+   **HIGH Abstraction Indicators** ✅:
+   - Single interface/contract (e.g., IAuthProvider, IRepository, ICacheService)
+   - Dependency injection used throughout (constructor injection, DI container)
+   - No direct implementation imports in consumers (only interface imports)
+   - Configuration-driven behavior (easily swappable via config)
+   - Clear separation: Interface definition → Implementation → Consumers
+   - **Example**: `UserController` depends on `IAuthService` interface, not `JwtAuthService` class
+
+   **MEDIUM Abstraction Indicators** ⚠️:
+   - Multiple entry points but consistent patterns (e.g., 3-4 service classes with similar APIs)
+   - Some direct dependencies, but localized (e.g., only in service layer, not controllers)
+   - Partial use of interfaces (some consumers use interface, others use concrete class)
+   - Mix of dependency injection and direct instantiation
+   - **Example**: Most code uses `AuthService` abstract class, but a few files import `JwtAuthService` directly
+
+   **LOW Abstraction Indicators** ❌:
+   - Scattered across codebase with no clear pattern
+   - Direct imports of implementation everywhere (tight coupling)
+   - No interfaces or contracts
+   - Hardcoded dependencies (e.g., `new JwtService()` in every file)
+   - Implementation details leak into business logic
+   - **Example**: JWT token generation code duplicated in 15+ controllers
+
+   **Assessment Output**:
+
+   ```markdown
+   ### Abstraction Assessment
+
+   **Level**: [HIGH | MEDIUM | LOW]
+
+   **Rationale**:
+   - [Evidence 1 with file:line references]
+   - [Evidence 2 with file:line references]
+   - [Evidence 3 with file:line references]
+
+   **Interface/Contract Analysis**:
+   - Interfaces found: [List interfaces, e.g., IAuthProvider at src/interfaces/IAuthProvider.ts:1]
+   - Implementation classes: [List implementations, e.g., JwtAuthProvider at src/auth/JwtAuthProvider.ts:12]
+   - Consumer count: [X files depend on interface, Y files depend on concrete implementation]
+
+   **Dependency Injection Usage**:
+   - DI framework: [Detected or "None"]
+   - Injection pattern: [Constructor/Property/Service Locator/Manual instantiation]
+   - Coverage: [X% of consumers use DI, Y% use direct instantiation]
+   ```
+
+   #### Step 4.3: Calculate Blast Radius
+
+   Determine how much code would be affected by migration:
+
+   **Metrics to Calculate**:
+   - **Files affected**: Count of files that import/use the concern
+   - **LOC affected**: Total lines of code in affected files
+   - **Percentage of codebase**: (LOC affected / Total project LOC) × 100
+   - **Consumer callsites**: Number of places where concern is invoked
+
+   **Categorization**:
+   - **Small** (<10% of codebase): Low-risk, focused migration
+   - **Medium** (10-25% of codebase): Moderate risk, phased approach recommended
+   - **Large** (>25% of codebase): High-risk, requires careful planning
+
+   **Output**:
+
+   ```markdown
+   ### Blast Radius Analysis
+
+   | Metric | Value | Assessment |
+   |--------|-------|------------|
+   | Files affected | 23 files | [Small/Medium/Large] |
+   | LOC affected | 3,456 lines | 8% of codebase |
+   | Consumer callsites | 147 callsites | [Focused/Widespread] |
+   | Critical paths | 5 paths | [List: user login, API auth, session refresh, ...] |
+
+   **Risk Level**: [LOW | MEDIUM | HIGH]
+
+   **Critical Dependencies** (files that depend heavily on this concern):
+   | File | Callsites | Criticality | Evidence |
+   |------|-----------|-------------|----------|
+   | UserController.ts | 12 calls | CRITICAL | All user endpoints require auth (file:line) |
+   | ApiGateway.ts | 8 calls | CRITICAL | Gateway-level auth (file:line) |
+   [... more critical files ...]
+   ```
+
+   #### Step 4.4: Assess Coupling Degree
+
+   Evaluate how tightly the concern is coupled to the rest of the system:
+
+   **LOOSE Coupling Indicators** ✅:
+   - Concern isolated in dedicated module/package
+   - Well-defined boundaries (clear input/output contracts)
+   - No bidirectional dependencies (concern doesn't call back into business logic)
+   - Can be tested independently (unit tests don't require entire app)
+   - **Example**: Auth module exports IAuthService, has no imports from business domain
+
+   **MODERATE Coupling Indicators** ⚠️:
+   - Some separation but with leaks (e.g., auth module imports User entity)
+   - Unidirectional dependencies (business logic → concern, but not reverse)
+   - Shared models/DTOs between concern and business logic
+   - **Example**: CacheService uses business entities as cache keys
+
+   **TIGHT Coupling Indicators** ❌:
+   - Bidirectional dependencies (concern knows about business logic, vice versa)
+   - Shared state or global variables
+   - Circular dependencies
+   - Concern implementation embedded in business logic
+   - **Example**: Database transaction code mixed with business rules in same function
+
+   **Output**:
+
+   ```markdown
+   ### Coupling Degree Analysis
+
+   **Level**: [LOOSE | MODERATE | TIGHT]
+
+   **Dependency Graph**:
+   - Concern → External dependencies: [List, e.g., jsonwebtoken, bcrypt]
+   - Concern → Business logic: [List imports, e.g., User entity, Permission enum]
+   - Business logic → Concern: [List imports, e.g., IAuthService interface]
+   - Circular dependencies: [None | List with file:line]
+
+   **Isolation Score**: [0-10, where 10 = fully isolated]
+   - Module boundaries: [Clear/Blurred]
+   - Shared state: [None/Some/Extensive]
+   - Bidirectional deps: [Yes/No]
+
+   **Evidence**:
+   - [Evidence 1 with file:line references]
+   - [Evidence 2 with file:line references]
+   ```
+
+   #### Step 4.5: Recommend Migration Strategy
+
+   Based on abstraction level + blast radius + coupling, recommend one of four strategies:
+
+   **Decision Tree**:
+
+   ```
+   IF high_abstraction AND loose_coupling:
+      → STRANGLER_FIG (Recommended)
+         - Low risk, 2-4 weeks effort
+         - Implement new provider alongside old one
+         - Gradually switch consumers via feature flags
+         - Roll back easily if issues arise
+
+   ELSE IF medium_abstraction:
+      → ADAPTER_PATTERN (Recommended)
+         - Medium risk, 4-8 weeks effort
+         - Create adapter interface wrapping new implementation
+         - Refactor consumers to use adapter
+         - Swap adapter internals when confident
+
+   ELSE IF low_abstraction AND blast_radius < 20%:
+      → REFACTOR_FIRST (Recommended)
+         - Medium risk, 6-12 weeks effort
+         - Phase 1: Extract interfaces, introduce DI (2-4 weeks)
+         - Phase 2: Implement new provider (2-3 weeks)
+         - Phase 3: Migrate consumers (2-5 weeks)
+
+   ELSE:
+      → BIG_BANG_WITH_FEATURE_FLAGS (Recommended)
+         - High risk, 3-6 months effort
+         - Low abstraction + large blast radius = significant refactoring needed
+         - Use feature flags for gradual rollout
+         - Extensive testing required
+         - Consider if migration value justifies effort
+   ```
+
+   **Output**:
+
+   ```markdown
+   ### Migration Strategy Recommendation
+
+   **Recommended Approach**: [STRANGLER_FIG | ADAPTER_PATTERN | REFACTOR_FIRST | BIG_BANG_WITH_FEATURE_FLAGS]
+
+   **Rationale**:
+   - Abstraction level: [HIGH/MEDIUM/LOW] → [Implication]
+   - Blast radius: [X% of codebase] → [Implication]
+   - Coupling degree: [LOOSE/MODERATE/TIGHT] → [Implication]
+   - **Conclusion**: [Why this strategy is best fit]
+
+   **Effort Estimate**: [Time range]
+   **Risk Level**: [LOW | MEDIUM | HIGH]
+
+   **Phasing** (50/30/15/5 value delivery):
+
+   ### Phase 1 (50% value) - [Timeline]
+   - [Key deliverable 1]
+   - [Key deliverable 2]
+   - **Value**: [Benefit to business]
+
+   ### Phase 2 (30% value) - [Timeline]
+   - [Key deliverable 1]
+   - **Value**: [Benefit to business]
+
+   ### Phase 3 (15% value) - [Timeline]
+   - [Key deliverable 1]
+   - **Value**: [Benefit to business]
+
+   ### Phase 4 (5% value) - [Timeline]
+   - [Key deliverable 1]
+   - **Value**: [Benefit to business]
+
+   **Rollback Plan**:
+   - [How to revert if migration fails]
+
+   **Testing Strategy**:
+   - [Unit tests, integration tests, E2E tests needed]
+   - [Recommended test coverage: X%]
+   ```
+
+   #### Step 4.6: Identify Missing Abstractions (If LOW Abstraction)
+
+   **IF abstraction_level = LOW**, provide guidance on creating abstractions for future migrations:
+
+   ```markdown
+   ### Missing Abstractions & Recommendations
+
+   **Problem**: Current implementation is tightly coupled and difficult to migrate.
+
+   **Recommended Abstractions to Introduce**:
+
+   1. **Interface/Contract Definition**:
+      - Create: `I[ConcernName]Service` interface
+      - Location: `src/interfaces/` or `src/contracts/`
+      - Methods: [List key methods that should be abstracted]
+      - **Example**: `IAuthService` with methods: `authenticate()`, `validateToken()`, `refreshToken()`
+
+   2. **Dependency Injection Setup**:
+      - Framework: [Recommend DI framework for tech stack]
+      - Pattern: Constructor injection
+      - Registration: [Where to register services]
+
+   3. **Configuration Externalization**:
+      - Move hardcoded values to config files
+      - Environment-specific configs (dev/staging/prod)
+      - **Example**: JWT secret, token expiration, provider endpoints
+
+   4. **Adapter/Wrapper Layer** (if needed):
+      - Wrap current implementation in adapter
+      - Future migrations just swap adapter internals
+      - Consumers remain unchanged
+
+   **Refactoring Roadmap** (if user wants to improve abstractions first):
+   - Week 1-2: Extract interfaces, define contracts
+   - Week 3-4: Implement DI, refactor consumers
+   - Week 5-6: Externalize configuration
+   - Week 7+: Ready for migration to new implementation
+
+   **Future Migration Benefit**:
+   After refactoring, next migration will be [STRANGLER_FIG/ADAPTER_PATTERN] with [LOW/MEDIUM] risk.
+   ```
+
+   ---
+
 5. **Ask Clarification Questions (If Needed)**:
 
    After deep analysis, if there are ambiguities, ask user for clarification:
@@ -493,6 +908,12 @@ When documenting findings:
    ```
 
 6. **Generate Artifacts**:
+
+   **CONDITIONAL WORKFLOW - Based on ANALYSIS_SCOPE**:
+
+   ---
+
+   ### IF ANALYSIS_SCOPE = [A] (Full Application Modernization):
 
    Using AI analysis of legacy code + user's modernization preferences + clarifications, generate:
 
@@ -528,6 +949,64 @@ When documenting findings:
    - `dependency-audit.json` - Package inventory
    - `metrics-summary.json` - Code metrics
    - `decision-matrix.md` - Strategy comparison (optional)
+
+   ---
+
+   ### IF ANALYSIS_SCOPE = [B] (Cross-Cutting Concern Migration):
+
+   Using AI analysis of the specific concern + CURRENT_IMPLEMENTATION + TARGET_IMPLEMENTATION, generate:
+
+   **REQUIRED ARTIFACTS** (Phase 9 - Concern-Specific):
+
+   - ✅ **concern-analysis.md** - Detailed analysis of the selected concern
+     - Use template: `templates/analysis/concern-analysis-template.md`
+     - Include all findings from Step 4 analysis:
+       - Identified concern files (file:line evidence)
+       - Abstraction level assessment (HIGH/MEDIUM/LOW)
+       - Blast radius calculation (files, LOC, percentage)
+       - Coupling degree analysis (LOOSE/MODERATE/TIGHT)
+       - Entry points and consumer callsites
+     - **Critical**: All findings must include `file:line` references
+
+   - ✅ **abstraction-recommendations.md** - Guidance on improving abstractions (if needed)
+     - Use template: `templates/analysis/abstraction-recommendations-template.md`
+     - **IF abstraction_level = LOW**:
+       - Include detailed refactoring roadmap
+       - Interface/contract definitions to create
+       - Dependency injection setup guidance
+       - Configuration externalization recommendations
+     - **ELSE** (HIGH/MEDIUM abstraction):
+       - Brief recommendations for maintaining/improving current abstractions
+       - Best practices for future migrations
+
+   - ✅ **concern-migration-plan.md** - Step-by-step migration strategy
+     - Use template: `templates/analysis/concern-migration-plan-template.md`
+     - Include recommended migration strategy (STRANGLER_FIG/ADAPTER_PATTERN/REFACTOR_FIRST/BIG_BANG_WITH_FEATURE_FLAGS)
+     - Detailed phasing (50/30/15/5 value delivery)
+     - Effort estimates and risk assessment
+     - Rollback plan
+     - Testing strategy
+     - **Critical**: Specific to TARGET_IMPLEMENTATION (e.g., "Migrate to Okta", "VM → OpenShift")
+
+   - ✅ **EXECUTIVE-SUMMARY.md** - High-level overview for stakeholders
+     - Concern type and current/target implementations
+     - Key findings (abstraction quality, blast radius, risk)
+     - Recommended approach and timeline
+     - Business impact and value delivery
+
+   **ARTIFACTS NOT GENERATED** (Not applicable for concern migration):
+
+   - ❌ **functional-spec.md** - Not needed (concern migration doesn't require full functional spec)
+   - ❌ **technical-spec.md** - Not needed (migration plan covers technical details)
+   - ❌ **stage-prompts/** - Not needed (concern migration is tactical, not full Toolkit workflow)
+   - ❌ **analysis-report.md** - Not needed (concern-analysis.md is more focused)
+
+   **SUPPORTING FILES** (Optional):
+
+   - `concern-files-inventory.json` - List of all concern-related files with metadata (optional, for tracking)
+   - `dependency-graph.md` - Visual dependency map for the concern (optional, if complex)
+
+   ---
 
 7. **Final Report**: Summarize key findings, state primary recommendation with confidence score, list next steps, provide artifact file paths
 

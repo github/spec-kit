@@ -79,14 +79,16 @@ The **Reverse Engineering & Modernization** feature helps you analyze existing c
 - 🔄 **Plan upgrades** - LTS versions, security patches, framework migrations
 - 🎯 **Make decisions** - Inline upgrade vs greenfield rewrite vs hybrid approach
 - 📈 **Score feasibility** - Data-driven confidence scores for recommendations
+- 🎯 **NEW (Phase 9)**: **Cross-Cutting Concern Migration** - Analyze and migrate specific concerns (auth, database, caching, messaging, deployment) without rewriting the entire app
 
 This is particularly useful for:
 
-- **Legacy modernization** projects
+- **Legacy modernization** projects (full application or targeted concerns)
 - **Technical debt** assessment
 - **Security audits** and compliance
-- **Migration planning** (e.g., upgrade to latest LTS)
+- **Migration planning** (e.g., upgrade to latest LTS, migrate auth to Okta, VM → Kubernetes)
 - **Architecture reviews**
+- **NEW**: **Cross-cutting concern migrations** (auth services, database types, caching layers, message buses, deployment infrastructure)
 
 ---
 
@@ -165,7 +167,38 @@ FOCUS_AREAS: ALL
 - **[SKIPPED]** = Not applicable for your deployment choice (e.g., no Kubernetes for traditional servers)
 - Educational notes explain why questions are skipped and when they become relevant
 
+### Step 2.5: Choose Analysis Scope (NEW - Phase 9)
+
+**ANALYSIS_SCOPE Selection:**
+
+The agent will ask what type of analysis you need:
+
+- **[A] Full Application Modernization** - Analyze entire codebase for comprehensive modernization (existing workflow)
+- **[B] Cross-Cutting Concern Migration** - Analyze ONLY a specific cross-cutting concern (NEW)
+
+**If you choose [B] Cross-Cutting Concern Migration**, you'll be asked:
+
+**CONCERN_TYPE** - Select from 9 concern types:
+1. Authentication/Authorization (e.g., Custom JWT → Okta, SAML → OAuth 2.0)
+2. Database/ORM Layer (e.g., Oracle → PostgreSQL, Raw SQL → ORM)
+3. Caching Layer (e.g., Memcached → Redis, adding distributed cache)
+4. Message Bus/Queue (e.g., TIBCO → Kafka, RabbitMQ → Azure Service Bus)
+5. Logging/Observability (e.g., Custom logs → ELK Stack, adding Prometheus+Grafana)
+6. API Gateway/Routing (e.g., Custom routing → Kong/Nginx)
+7. File Storage/CDN (e.g., Local filesystem → S3/Azure Blob)
+8. **Deployment/Infrastructure** (e.g., VM → OpenShift, AWS → Azure, On-premise → Cloud)
+9. Other (user-specified)
+
+**CURRENT_IMPLEMENTATION** - What you're migrating FROM (auto-detected from code)
+**TARGET_IMPLEMENTATION** - What you're migrating TO (e.g., "Okta", "OpenShift", "AWS")
+
+**→ See [Cross-Cutting Concern Analysis](#cross-cutting-concern-analysis-phase-9) section below for detailed workflow**
+
+---
+
 ### Step 3: Deep Code Analysis
+
+**For Full Application Modernization ([A]):**
 
 After gathering your preferences, the agent will:
 
@@ -177,9 +210,23 @@ After gathering your preferences, the agent will:
 
 **Time**: 2-4 hours for standard analysis
 
+**For Cross-Cutting Concern Migration ([B]):**
+
+The agent will focus ONLY on the selected concern:
+
+- Identify all concern-related files (using detection heuristics)
+- Assess abstraction quality (HIGH/MEDIUM/LOW)
+- Calculate blast radius (% of codebase affected)
+- Analyze coupling degree (LOOSE/MODERATE/TIGHT)
+- Recommend migration strategy (STRANGLER_FIG, ADAPTER_PATTERN, REFACTOR_FIRST, or BIG_BANG_WITH_FEATURE_FLAGS)
+
+**Time**: 30-60 minutes for concern-specific analysis
+
 ### Step 4: Review Generated Artifacts
 
 Analysis results saved to `.analysis/[PROJECT_NAME]-[TIMESTAMP]/`:
+
+**For Full Application Modernization ([A]):**
 
 **Core Analysis Documents:**
 
@@ -203,6 +250,43 @@ Analysis results saved to `.analysis/[PROJECT_NAME]-[TIMESTAMP]/`:
 - `decision-matrix.md` - Comparison table for stakeholders (optional)
 - `dependency-audit.json` - Machine-readable dependency data
 - `metrics-summary.json` - Codebase metrics
+
+---
+
+**For Cross-Cutting Concern Migration ([B]) - NEW:**
+
+**Core Concern-Specific Documents:**
+
+- `concern-analysis.md` - Detailed analysis of the selected concern:
+  - Identified concern files with evidence (file:line)
+  - Abstraction level assessment (HIGH/MEDIUM/LOW)
+  - Blast radius calculation (files, LOC, percentage)
+  - Coupling degree analysis (LOOSE/MODERATE/TIGHT)
+  - Entry points and consumer callsites
+  - All findings with file:line references
+
+- `abstraction-recommendations.md` - Guidance on improving abstractions:
+  - If LOW: Detailed refactoring roadmap before migration
+  - If MEDIUM: Recommendations for completing interface coverage
+  - If HIGH: Best practices for maintaining abstractions
+
+- `concern-migration-plan.md` - Step-by-step migration strategy:
+  - Recommended approach (STRANGLER_FIG/ADAPTER_PATTERN/REFACTOR_FIRST/BIG_BANG_WITH_FEATURE_FLAGS)
+  - Phased implementation (50/30/15/5 value delivery)
+  - Week-by-week execution plan
+  - Risk management and rollback procedures
+  - Testing strategy and success criteria
+
+- `EXECUTIVE-SUMMARY.md` - High-level overview for stakeholders:
+  - Concern type and current/target implementations
+  - Key findings (abstraction quality, blast radius, risk)
+  - Recommended approach and timeline
+  - Business impact and value delivery
+
+**Supporting Files (Optional):**
+
+- `concern-files-inventory.json` - List of all concern-related files with metadata
+- `dependency-graph.md` - Visual dependency map for the concern
 
 ### Step 5: Use Artifacts in Toolkit Workflow
 
