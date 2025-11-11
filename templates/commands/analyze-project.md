@@ -1,8 +1,8 @@
 ---
 description: Reverse engineer and analyze an existing project to assess modernization opportunities, identify technical debt, and recommend upgrade paths
 scripts:
-  bash: scripts/bash/analyze-project-setup.sh --json --project "$1" --depth "$2" --focus "$3"
-  powershell: scripts/powershell/analyze-project-setup.ps1 -Json -ProjectPath "$1" -Depth "$2" -Focus "$3"
+  bash: scripts/bash/analyze-project-setup.sh --json --project "$1"
+  powershell: scripts/powershell/analyze-project-setup.ps1 -Json -ProjectPath "$1"
 status: EXPERIMENTAL
 version: 1.0.0-alpha
 ---
@@ -70,34 +70,16 @@ $ARGUMENTS
 
    ```text
    PROJECT_PATH: /path/to/existing/project
-   ANALYSIS_DEPTH: QUICK | STANDARD | COMPREHENSIVE
-   FOCUS_AREAS: ALL | SECURITY | PERFORMANCE | ARCHITECTURE | DEPENDENCIES
    ```
-
-   **Analysis Depth:**
-
-- **QUICK** (30 min): Surface-level scan, dependency check, basic metrics
-- **STANDARD** (2-4 hours): Full codebase analysis, architecture review, upgrade paths
-- **COMPREHENSIVE** (1-2 days): Deep dive with performance profiling, security audit, detailed roadmap
-
-   **Focus Areas:**
-
-- **ALL**: Complete analysis (recommended for first-time analysis)
-- **SECURITY**: Vulnerability scanning, dependency audits, security patterns
-- **PERFORMANCE**: Bottleneck identification, optimization opportunities
-- **ARCHITECTURE**: Design patterns, technical debt, modularity assessment
-- **DEPENDENCIES**: Package analysis, upgrade paths, LTS compliance
 
    **Example**:
 
    ```text
    PROJECT_PATH: /home/user/my-legacy-app
-   ANALYSIS_DEPTH: STANDARD
-   FOCUS_AREAS: ALL
    ```
 
 **ELSE** (arguments provided):
-   Parse and use the provided arguments.
+   Parse and use the provided PROJECT_PATH.
    Continue with analysis workflow below.
 
 ---
@@ -179,19 +161,17 @@ When documenting findings:
    **For Unix/Linux/macOS (bash)**:
 
    ```bash
-   {SCRIPT_BASH} --json --project "$1" --depth "$2" --focus "$3"
+   {SCRIPT_BASH} --json --project "$1"
    ```
 
    **For Windows (PowerShell)**:
 
    ```powershell
-   {SCRIPT_POWERSHELL} -Json -ProjectPath "$1" -Depth "$2" -Focus "$3"
+   {SCRIPT_POWERSHELL} -Json -ProjectPath "$1"
    ```
 
    **Script arguments**:
    - `$1`: PROJECT_PATH (absolute path to project being analyzed)
-   - `$2`: ANALYSIS_DEPTH (QUICK | STANDARD | COMPREHENSIVE)
-   - `$3`: FOCUS_AREAS (ALL | SECURITY | PERFORMANCE | ARCHITECTURE | DEPENDENCIES)
 
    Parse JSON output for PROJECT_PATH, ANALYSIS_DIR, ANALYSIS_REPORT, and other output paths.
 
