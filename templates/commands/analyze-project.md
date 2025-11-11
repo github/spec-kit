@@ -1,8 +1,8 @@
 ---
 description: Reverse engineer and analyze an existing project to assess modernization opportunities, identify technical debt, and recommend upgrade paths
 scripts:
-  bash: scripts/bash/analyze-project-setup.sh --json --project "$1"
-  powershell: scripts/powershell/analyze-project-setup.ps1 -Json -ProjectPath "$1"
+  bash: scripts/bash/analyze-project.sh "$1"
+  powershell: scripts/powershell/analyze-project.ps1 -Project "$1"
 status: EXPERIMENTAL
 version: 1.0.0-alpha
 ---
@@ -147,7 +147,7 @@ When documenting findings:
 
 **CRITICAL**: This command analyzes an **EXISTING** project, not one managed by Spec Kit. Do NOT modify the target project directory structure.
 
-1. **Setup & OS Detection**: Parse arguments from interactive mode or $ARGUMENTS. Detect your operating system and run the appropriate setup script from repo root.   **Environment Variable Override (Optional)**:
+1. **Setup & OS Detection**: Parse arguments from interactive mode or $ARGUMENTS. Detect your operating system and run the appropriate analysis script from repo root.   **Environment Variable Override (Optional)**:
 
    First, check if the user has set `SPEC_KIT_PLATFORM` environment variable:
    - If `SPEC_KIT_PLATFORM=unix` → use bash scripts (skip auto-detection)
@@ -161,19 +161,23 @@ When documenting findings:
    **For Unix/Linux/macOS (bash)**:
 
    ```bash
-   {SCRIPT_BASH} --json --project "$1"
+   {SCRIPT_BASH} "$1"
    ```
 
    **For Windows (PowerShell)**:
 
    ```powershell
-   {SCRIPT_POWERSHELL} -Json -ProjectPath "$1"
+   {SCRIPT_POWERSHELL} -Project "$1"
    ```
 
    **Script arguments**:
    - `$1`: PROJECT_PATH (absolute path to project being analyzed)
 
-   Parse JSON output for PROJECT_PATH, ANALYSIS_DIR, ANALYSIS_REPORT, and other output paths.
+   The script will:
+   - Enumerate all files in the project
+   - Generate file-manifest.json
+   - Create analysis workspace with checkpoints/ directory
+   - Create analysis-report.md template with AI instructions
 
    For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
