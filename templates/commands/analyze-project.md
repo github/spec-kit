@@ -2,7 +2,7 @@
 description: Reverse engineer and analyze an existing project to assess modernization opportunities, identify technical debt, and recommend upgrade paths
 scripts:
   bash: scripts/bash/analyze-project.sh "$1"
-  powershell: scripts/powershell/analyze-project.ps1 -Project "$1"
+  powershell: scripts/powershell/analyze-project.ps1 "$1"
 status: EXPERIMENTAL
 version: 1.0.0-alpha
 ---
@@ -167,7 +167,7 @@ When documenting findings:
    **For Windows (PowerShell)**:
 
    ```powershell
-   {SCRIPT_POWERSHELL} -Project "$1"
+   {SCRIPT_POWERSHELL} "$1"
    ```
 
    **Script arguments**:
