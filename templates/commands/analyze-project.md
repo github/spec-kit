@@ -161,17 +161,17 @@ When documenting findings:
    **For Unix/Linux/macOS (bash)**:
 
    ```bash
-   {SCRIPT_BASH} "$1"
+   {SCRIPT_BASH}
    ```
 
    **For Windows (PowerShell)**:
 
    ```powershell
-   {SCRIPT_POWERSHELL} "$1"
+   {SCRIPT_POWERSHELL}
    ```
 
    **Script arguments**:
-   - `$1`: PROJECT_PATH (absolute path to project being analyzed)
+   - The scripts are invoked with PROJECT_PATH as defined in the YAML header above
 
    The script will:
    - Enumerate all files in the project
