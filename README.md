@@ -247,6 +247,15 @@ Additional commands for enhanced quality and validation:
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
+#### Productivity & Optimization Commands
+
+Commands for managing development environment and conversation efficiency:
+
+| Command                     | Description                                                           |
+|-----------------------------|-----------------------------------------------------------------------|
+| `/rec_remove_agents_mcp`    | Analyze current project and recommend which agents/MCP servers to keep or remove for optimal context management |
+| `/compact_with_topic`       | Automatically analyze recent conversation topics and run `/compact` with intelligent focus |
+
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
