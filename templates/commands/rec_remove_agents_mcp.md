@@ -12,7 +12,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-This command analyzes the current project context and provides actionable recommendations for managing Claude Code agents and MCP servers to optimize performance and context window usage.
+This command analyzes the current project context and provides actionable recommendations for managing AI agents and MCP servers to optimize performance and context window usage.
 
 1. **Analyze Current Configuration**: Scan the project for:
    - Active agents (from agent context files)

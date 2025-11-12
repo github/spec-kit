@@ -12,7 +12,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-This command enhances the Claude Code `/compact` feature by automatically analyzing conversation history to identify key topics and generate an optimized compact focus area. Instead of manually determining what to preserve, this command intelligently extracts the conversation essence.
+This command enhances the `/compact` feature by automatically analyzing conversation history to identify key topics and generate an optimized compact focus area. Instead of manually determining what to preserve, this command intelligently extracts the conversation essence.
 
 1. **Analyze Conversation History**: Review recent messages to identify:
    - Primary topics discussed
@@ -164,7 +164,7 @@ Generate a compact, well-structured focus area that captures what matters:
    After compaction, briefly confirm:
    - Topics preserved
    - Estimated context reduction
-   - Any critical information that might need re-stating
+   - Any critical information that might need restating
 
 ## Guidelines for Topic Analysis
 
