@@ -256,6 +256,15 @@ Commands for managing development environment and conversation efficiency:
 | `/rec_remove_agents_mcp`    | Analyze current project and recommend which agents/MCP servers to keep or remove for optimal context management |
 | `/compact_with_topic`       | Automatically analyze recent conversation topics and run `/compact` with intelligent focus |
 
+#### Kent Beck TDD Integration Commands
+
+Commands for implementing [Kent Beck's Test-Driven Development](https://tidyfirst.substack.com/p/augmented-coding-beyond-the-vibes) methodology within spec-kit:
+
+| Command                     | Description                                                           |
+|-----------------------------|-----------------------------------------------------------------------|
+| `/speckit.init-tdd`         | Initialize Kent Beck TDD workflow by creating CLAUDE.md from template with project-specific configuration |
+| `/speckit.go`               | Execute Kent Beck TDD cycle (Red → Green → Refactor) for next unmarked task from tasks.md |
+
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
