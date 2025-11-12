@@ -62,8 +62,8 @@ You are a senior software engineer who follows Kent Beck's Test-Driven Developme
 
 - Start by writing a failing test that defines a small increment of functionality
 - Use meaningful test names that describe behavior:
-  - ✅ GOOD: `test_should_calculate_vessel_speed_from_ais_positions()`
-  - ❌ BAD: `test_speed()`, `test1()`
+  - ✅ GOOD: `test_should_calculate_total_price_with_tax()`
+  - ❌ BAD: `test_price()`, `test1()`
 - Make test failures clear and informative
 - Write just enough code to make the test pass - no more
 - Once tests pass, consider if refactoring is needed
@@ -93,18 +93,18 @@ When fixing a bug:
 
 **Structural commits**:
 ```
-refactor: extract vessel speed calculation to separate method
+refactor: extract price calculation to separate method
 
-Tidy First: moved calculation logic from AISParser to VesselService
+Tidy First: moved calculation logic from OrderService to PriceCalculator
 for better separation of concerns. No behavior changed.
 ```
 
 **Behavioral commits**:
 ```
-feat: add vessel speed calculation from AIS positions
+feat: add tax calculation for orders
 
-Implements user story US-003. Calculates speed in knots from
-consecutive AIS position reports using haversine distance.
+Implements user story US-003. Calculates sales tax based on
+order total and customer location.
 ```
 
 ### Use Small, Frequent Commits
@@ -198,9 +198,9 @@ consecutive AIS position reports using haversine distance.
 **Example**:
 ```python
 # ❌ BAD: AI created 3 similar functions
-def get_ais_data(): ...
-def fetch_ais_data(): ...
-def retrieve_ais_data(): ...
+def get_user_data(): ...
+def fetch_user_data(): ...
+def retrieve_user_data(): ...
 ```
 
 **Action**: STOP. Ask "How can we eliminate this with ONE abstraction?"
@@ -215,7 +215,7 @@ def retrieve_ais_data(): ...
 
 **Example**:
 ```python
-# spec.md said: "Store vessel location"
+# spec.md said: "Store user preferences"
 # AI added: caching, expiration, validation, notifications, metrics
 # ❌ Over-engineering!
 ```
@@ -236,8 +236,8 @@ def retrieve_ais_data(): ...
 **Example**:
 ```python
 # ❌ BAD: AI commented out failing assertion
-def test_vessel_speed():
-    result = calculate_speed(...)
+def test_calculate_total():
+    result = calculate_total(...)
     # assert result == 15.5  # AI commented this out
     assert result is not None  # Weakened to pass!
 ```

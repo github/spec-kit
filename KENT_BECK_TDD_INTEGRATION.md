@@ -261,9 +261,9 @@ src/**/*                        # Actual code (following TDD)
 **Example**:
 ```python
 # ❌ AI generated 3 similar functions
-def get_ais_data(): ...
-def fetch_ais_data(): ...
-def retrieve_ais_data(): ...
+def get_user_data(): ...
+def fetch_user_data(): ...
+def retrieve_user_data(): ...
 ```
 
 **Action**: `/speckit.go` STOPS and asks:
@@ -275,7 +275,7 @@ def retrieve_ais_data(): ...
 
 **Example**:
 ```python
-# spec.md said: "Store vessel location"
+# spec.md said: "Store user preferences"
 # AI added: caching, expiration, validation, notifications, metrics
 ```
 
@@ -302,16 +302,16 @@ assert result is not None  # ❌ Weakened!
 
 ## 📖 Real-World Example
 
-### Project: SAAB Maritime Domain Awareness
+### Project: E-Commerce Platform
 
-**Problem**: Building real-time vessel tracking system with <3s latency
+**Problem**: Building user authentication and shopping cart system
 
 **Before TDD Integration**:
 - Spec-Kit created spec.md in 15 minutes ✅
 - Plan.md generated architecture ✅
 - AI coded 2000 lines in 1 hour 🏃‍♂️
 - But: 15 bugs found in testing 😰
-- And: AI added Redis caching (not requested) 🤦
+- And: AI added caching features (not requested) 🤦
 - And: 30% test coverage 📉
 
 **After TDD Integration**:
@@ -402,7 +402,7 @@ Commands for implementing Kent Beck's Test-Driven Development methodology:
 
 > "Kent Beck의 TDD 블로그를 읽고 spec-kit에 적용해봤는데, 정말 효과적이었습니다. AI가 반복 코드를 만들거나 테스트를 약화시키는 것을 자동으로 감지해주니까, 코드 품질이 확 올라갔어요. Spec-Kit의 빠른 문서화와 Kent Beck의 엄격한 TDD를 결합하니까 정말 최고의 조합이더라구요!"
 >
-> — JH Baek, SAAB MDA Project Developer
+> — JH Baek, Software Developer
 
 ---
 

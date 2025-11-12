@@ -81,7 +81,7 @@ This command sets up **Kent Beck's Test-Driven Development workflow** in your pr
 
    **[PROJECT NAME]** → From constitution or git repo name
    ```markdown
-   # SAAB MDA Project - Development Guidelines (Kent Beck TDD)
+   # MyProject - Development Guidelines (Kent Beck TDD)
    ```
 
    **[AUTO-GENERATED DATE]** → Current date
@@ -203,7 +203,7 @@ This command sets up **Kent Beck's Test-Driven Development workflow** in your pr
 📁 Created: CLAUDE.md (12.5 KB)
 
 📋 Configuration:
-- Project: SAAB MDA Project
+- Project: MyProject
 - Current Feature: 001-user-auth
 - Tech Stack: Python 3.11+, FastAPI, PostgreSQL
 - Test Framework: pytest
