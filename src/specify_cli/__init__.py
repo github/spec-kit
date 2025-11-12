@@ -823,7 +823,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             # Read the file content
             content = constitution_file.read_text(encoding='utf-8')
             # Replace constitution-project with actual project name
-            updated_content = content.replace('constitution-project', project_name)
+            updated_content = content.replace('constitution-project','constitution-' project_name)
             # Write back the updated content
             constitution_file.write_text(updated_content, encoding='utf-8')
         except Exception as e:
