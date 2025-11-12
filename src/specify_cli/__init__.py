@@ -1202,6 +1202,139 @@ def check():
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
+@app.command()
+def update(
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, or q"),
+    script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+    force: bool = typer.Option(False, "--force", help="Force update without confirmation"),
+    skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
+    github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+):
+    """
+    Update an existing Specify project with the latest template files.
+    
+    This command will:
+    1. Download the latest template for the selected AI assistant
+    2. Extract and merge template files into the current directory
+    3. Overwrite existing files with newer versions from the template
+    4. Preserve any additional files not in the template
+    
+    Examples:
+        specify update
+        specify update --ai claude
+        specify update --ai copilot --force
+    """
+    
+    show_banner()
+    
+    project_path = Path.cwd()
+    
+    # Check if current directory looks like a Specify project
+    if not force:
+        is_specify_project = (
+            (project_path / ".git").exists() or
+            (project_path / ".specify").exists() or
+            (project_path / "spec-driven.md").exists()
+        )
+        
+        if not is_specify_project:
+            console.print("[yellow]Warning:[/yellow] Current directory doesn't appear to be a Specify project")
+            response = typer.confirm("Do you want to continue with the update?")
+            if not response:
+                console.print("[yellow]Operation cancelled[/yellow]")
+                raise typer.Exit(0)
+    
+    console.print(Panel(f"[cyan]Updating Specify Project[/cyan]\n\nWorking Path: [dim]{project_path}[/dim]", 
+                       border_style="cyan", padding=(1, 2)))
+    
+    if ai_assistant:
+        if ai_assistant not in AGENT_CONFIG:
+            console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+            raise typer.Exit(1)
+        selected_ai = ai_assistant
+    else:
+        # Create options dict for selection (agent_key: display_name)
+        ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
+        selected_ai = select_with_arrows(
+            ai_choices,
+            "Choose your AI assistant:",
+            "copilot"
+        )
+    
+    if script_type:
+        if script_type not in SCRIPT_TYPE_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
+            raise typer.Exit(1)
+        selected_script = script_type
+    else:
+        default_script = "ps" if os.name == "nt" else "sh"
+
+        if sys.stdin.isatty():
+            selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
+        else:
+            selected_script = default_script
+    
+    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
+    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+    
+    tracker = StepTracker("Update Specify Project")
+    
+    sys._specify_tracker_active = True
+    
+    tracker.add("ai-select", "Select AI assistant")
+    tracker.complete("ai-select", f"{selected_ai}")
+    tracker.add("script-select", "Select script type")
+    tracker.complete("script-select", selected_script)
+    for key, label in [
+        ("fetch", "Fetch latest release"),
+        ("download", "Download template"),
+        ("extract", "Extract template"),
+        ("zip-list", "Archive contents"),
+        ("extracted-summary", "Extraction summary"),
+        ("chmod", "Ensure scripts executable"),
+        ("cleanup", "Cleanup"),
+        ("final", "Finalize")
+    ]:
+        tracker.add(key, label)
+    
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+        try:
+            verify = not skip_tls
+            local_ssl_context = ssl_context if verify else False
+            local_client = httpx.Client(verify=local_ssl_context)
+            
+            # Use the download_and_extract_template function with here=True to merge into current directory
+            download_and_extract_template(project_path, selected_ai, selected_script, True, 
+                                        verbose=False, tracker=tracker, client=local_client, 
+                                        debug=debug, github_token=github_token)
+            
+            ensure_executable_scripts(project_path, tracker=tracker)
+            
+            tracker.complete("final", "project updated")
+        except Exception as e:
+            tracker.error("final", str(e))
+            console.print(Panel(f"Update failed: {e}", title="Failure", border_style="red"))
+            if debug:
+                _env_pairs = [
+                    ("Python", sys.version.split()[0]),
+                    ("Platform", sys.platform),
+                    ("CWD", str(Path.cwd())),
+                ]
+                _label_width = max(len(k) for k, _ in _env_pairs)
+                env_lines = [f"{k.ljust(_label_width)} → [bright_black]{v}[/bright_black]" for k, v in _env_pairs]
+                console.print(Panel("\n".join(env_lines), title="Debug Environment", border_style="magenta"))
+            raise typer.Exit(1)
+        finally:
+            pass
+    
+    console.print(tracker.render())
+    console.print("\n[bold green]Project updated successfully.[/bold green]")
+    
+    console.print(Panel("Note: Template files have been updated/added.\nExisting files were overwritten, but additional files in your project were preserved.",
+                       title="Update Complete", border_style="cyan", padding=(1, 2)))
+
 def main():
     app()
 
