@@ -815,6 +815,21 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             elif verbose:
                 console.print(f"Cleaned up: {zip_path.name}")
 
+    # Replace constitution-project with actual project name in constitution.md
+    constitution_file = project_path / ".specify" / "memory" / "constitution.md"
+    if constitution_file.exists():
+        project_name = project_path.name
+        try:
+            # Read the file content
+            content = constitution_file.read_text(encoding='utf-8')
+            # Replace constitution-project with actual project name
+            updated_content = content.replace('constitution-project', project_name)
+            # Write back the updated content
+            constitution_file.write_text(updated_content, encoding='utf-8')
+        except Exception as e:
+            if verbose and not tracker:
+                console.print(f"[yellow]Warning: Could not update constitution.md: {e}[/yellow]")
+
     return project_path
 
 
