@@ -83,11 +83,6 @@ echo -e "\n🤖 Installing CodeBuddy CLI..."
 run_command "npm install -g @tencent-ai/codebuddy-code@latest"
 echo "✅ Done"
 
-# Installing UV (Python package manager)
-echo -e "\n🐍 Installing UV - Python Package Manager..."
-run_command "pipx install uv"
-echo "✅ Done"
-
 # Installing DocFx (for documentation site)
 echo -e "\n📚 Installing DocFx..."
 run_command "dotnet tool update -g docfx"

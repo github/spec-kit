@@ -117,11 +117,11 @@ generate_commands() {
     case $ext in
       toml)
         body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
-        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckit.$name.$ext" ;;
+        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckitsmart.$name.$ext" ;;
       md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/speckitsmart.$name.$ext" ;;
       prompt.md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/speckitsmart.$name.$ext" ;;
     esac
   done
 }

@@ -1,6 +1,6 @@
 # Local Development Guide
 
-This guide shows how to iterate on the `specify` CLI locally without publishing a release or committing to `main` first.
+This guide shows how to iterate on the `speckitsmart` CLI locally without publishing a release or committing to `main` first.
 
 > Scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants. The CLI auto-selects based on OS unless you pass `--script sh|ps`.
 
@@ -31,58 +31,58 @@ python src/specify_cli/__init__.py init demo-project --script ps
 
 ## 3. Use Editable Install (Isolated Environment)
 
-Create an isolated environment using `uv` so dependencies resolve exactly like end users get them:
+Create an isolated environment using `venv` so dependencies resolve exactly like end users get them:
 
 ```bash
-# Create & activate virtual env (uv auto-manages .venv)
-uv venv
-source .venv/bin/activate  # or on Windows PowerShell: .venv\Scripts\Activate.ps1
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate  # Linux/Mac/Git Bash
+# or .venv\Scripts\activate  # Windows PowerShell
+# or .venv\Scripts\activate.bat  # Windows CMD
 
 # Install project in editable mode
-uv pip install -e .
+pip install -e .
 
 # Now 'specify' entrypoint is available
-specify --help
+speckitsmart --help
 ```
 
 Re-running after code edits requires no reinstall because of editable mode.
 
-## 4. Invoke with uvx Directly From Git (Current Branch)
+## 4. Invoke with pipx Directly From Git (Current Branch)
 
-`uvx` can run from a local path (or a Git ref) to simulate user flows:
+`pipx run` can run from a local path (or a Git ref) to simulate user flows:
 
 ```bash
-uvx --from . specify init demo-uvx --ai copilot --ignore-agent-tools --script sh
+# Run from local repository
+pipx run --spec /path/to/spec-kit-smart speckitsmart init test-project
+
+# Run from specific Git branch
+pipx run --spec git+https://github.com/veerabhadra-ponna/spec-kit-smart.git@feature-branch speckitsmart init test-project
 ```
 
-You can also point uvx at a specific branch without merging:
+### 4a. Absolute Path pipx (Run From Anywhere)
+
+If you're in another directory, use an absolute path:
 
 ```bash
-# Push your working branch first
-git push origin your-feature-branch
-uvx --from git+https://github.com/veerabhadra-ponna/spec-kit-smart.git@your-feature-branch specify init demo-branch-test --script ps
-```
-
-### 4a. Absolute Path uvx (Run From Anywhere)
-
-If you're in another directory, use an absolute path instead of `.`:
-
-```bash
-uvx --from /mnt/c/GitHub/spec-kit specify --help
-uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --ai copilot --ignore-agent-tools --script sh
+pipx run --spec /mnt/c/GitHub/spec-kit-smart speckitsmart --help
+pipx run --spec /mnt/c/GitHub/spec-kit-smart speckitsmart init demo-anywhere --ai copilot --ignore-agent-tools --script sh
 ```
 
 Set an environment variable for convenience:
 
 ```bash
-export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit
-uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai copilot --ignore-agent-tools --script ps
+export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit-smart
+pipx run --spec "$SPEC_KIT_SRC" speckitsmart init demo-env --ai copilot --ignore-agent-tools --script ps
 ```
 
 (Optional) Define a shell function:
 
 ```bash
-specify-dev() { uvx --from /mnt/c/GitHub/spec-kit specify "$@"; }
+specify-dev() { pipx run --spec /mnt/c/GitHub/spec-kit-smart specify "$@"; }
 # Then
 specify-dev --help
 ```
@@ -111,7 +111,8 @@ python -c "import specify_cli; print('Import OK')"
 Validate packaging before publishing:
 
 ```bash
-uv build
+pip install build
+python -m build
 ls dist/
 ```
 
@@ -133,8 +134,8 @@ Or copy only the modified CLI portion if you want a lighter sandbox.
 If you need to bypass TLS validation while experimenting:
 
 ```bash
-specify check --skip-tls
-specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
+speckitsmart check --skip-tls
+speckitsmart init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 ```
 
 (Use only for local experimentation.)
@@ -144,11 +145,10 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 | Action | Command |
 |--------|---------|
 | Run CLI directly | `python -m src.specify_cli --help` |
-| Editable install | `uv pip install -e .` then `specify ...` |
-| Local uvx run (repo root) | `uvx --from . specify ...` |
-| Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/spec-kit specify ...` |
-| Git branch uvx | `uvx --from git+URL@branch specify ...` |
-| Build wheel | `uv build` |
+| Editable install | `pip install -e .` then `speckitsmart ...` |
+| Local pipx run | `pipx run --spec /path/to/repo specify ...` |
+| Git branch pipx | `pipx run --spec git+URL@branch specify ...` |
+| Build wheel | `python -m build` |
 
 ## 11. Cleaning Up
 
@@ -162,10 +162,10 @@ rm -rf .venv dist build *.egg-info
 
 | Symptom | Fix |
 |---------|-----|
-| `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
+| `ModuleNotFoundError: typer` | Run `pip install -e .` after activating venv |
 | Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
 | Git step skipped | You passed `--no-git` or Git not installed |
-| Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
+| Wrong script type downloaded | Script type is auto-detected; pass `--script sh` or `--script ps` to override |
 | TLS errors on corporate network | Try `--skip-tls` (not for production) |
 
 ## 13. Next Steps

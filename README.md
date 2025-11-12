@@ -35,7 +35,7 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 
 **Real-World Use Cases:**
 
-- **Full Modernization**: A company has a 10-year-old Java 8 monolith with no documentation. Use `/speckit.analyze-project` to extract business logic, assess upgrade paths (Java 8 → Java 21 LTS or Java → Python with pros/cons), identify security risks, and generate a complete modernization plan with risk-weighted recommendations.
+- **Full Modernization**: A company has a 10-year-old Java 8 monolith with no documentation. Use `/speckitsmart.analyze-project` to extract business logic, assess upgrade paths (Java 8 → Java 21 LTS or Java → Python with pros/cons), identify security risks, and generate a complete modernization plan with risk-weighted recommendations.
 - **Targeted Migration**: A 3-year-old Node.js app needs to migrate from custom JWT to Okta without rewriting the entire application. Cross-cutting concern analysis identifies auth files, assesses blast radius (8% of codebase), and provides a 3-week migration plan with rollback strategy.
 
 #### 🎯 **Orchestrator Workflow with Seamless Resumption**
@@ -44,12 +44,12 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 
 **The Solution:** Single-command orchestration with automatic state persistence and zero-context-loss resumption.
 
-- **One-Command Workflow** - `/speckit.orchestrate <feature-description>` runs the entire spec-driven process from constitution to implementation
+- **One-Command Workflow** - `/speckitsmart.orchestrate <feature-description>` runs the entire spec-driven process from constitution to implementation
 - **Automatic State Persistence** - Saves progress to `.speckit-state.json` with phase tracking, task completion counts, and checkpoint data
-- **Seamless Resumption** - `/speckit.resume` restores full context after interruptions, chat limits, or end-of-day shutdowns
+- **Seamless Resumption** - `/speckitsmart.resume` restores full context after interruptions, chat limits, or end-of-day shutdowns
 - **Flexible Execution Modes** - Interactive (ask before each phase), auto-spec (automated planning with manual implementation), or full-auto
 
-**Real-World Use Case:** Developer starts implementing a complex authentication system. After 2 hours, hits Claude's chat limit at task 28 of 47. Next day, runs `/speckit.resume`, and work continues from task 29 with full context—no rework, no confusion.
+**Real-World Use Case:** Developer starts implementing a complex authentication system. After 2 hours, hits Claude's chat limit at task 28 of 47. Next day, runs `/speckitsmart.resume`, and work continues from task 29 with full context—no rework, no confusion.
 
 #### 🏢 **Corporate Guidelines System**
 
@@ -57,7 +57,7 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 
 **The Solution:** Customizable corporate guidelines with enforcement, compliance checking, and automated generation from existing corporate resources.
 
-- **AI-Powered Guideline Generation** - `/speckit.generate-guidelines` analyzes corporate documents (PDFs, standards, policies) and reference codebases to automatically extract and synthesize coding guidelines
+- **AI-Powered Guideline Generation** - `/speckitsmart.generate-guidelines` analyzes corporate documents (PDFs, standards, policies) and reference codebases to automatically extract and synthesize coding guidelines
 - **Three-Persona Analysis** - Standards Architect (documents) → Code Archeologist (codebases) → Technical Writer (synthesis) for comprehensive principle extraction
 - **Multi-Stack Guidelines** - Pre-built templates for React, Java, .NET, Node.js, Python, Go with tech stack auto-detection
 - **Compliance Enforcement** - Define mandatory libraries (internal auth SDKs), banned packages (security/licensing), architecture patterns
@@ -67,7 +67,7 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 - **Hierarchy System** - Constitution > Corporate Guidelines > Spec Kit Defaults ensures project-specific rules always win
 
 **Real-World Use Cases:**
-- **Guideline Generation**: A company has 3 coding standard PDFs and 5 reference Spring Boot projects. Run `/speckit.generate-guidelines` to automatically extract principles, detect patterns across codebases, and generate a unified `java-guidelines.md` with mandatory/banned libraries, architecture patterns, and security requirements.
+- **Guideline Generation**: A company has 3 coding standard PDFs and 5 reference Spring Boot projects. Run `/speckitsmart.generate-guidelines` to automatically extract principles, detect patterns across codebases, and generate a unified `java-guidelines.md` with mandatory/banned libraries, architecture patterns, and security requirements.
 - **AI-Generated Compliance**: A bank requires all projects to use their internal OAuth library, PostgreSQL with specific encryption, and specific folder structure. Guidelines ensure AI generates compliant code from day one, saving hours of rework and passing security reviews.
 
 #### 🌍 **Universal Cross-Platform Support**
@@ -94,7 +94,7 @@ This fork extends the [original Spec Kit](https://github.com/github/spec-kit) wi
 - **Conditional Logic** - Skips irrelevant questions (e.g., no Kubernetes questions for traditional server deployments)
 - **Smart Defaults** - Detects existing tech stack and suggests compatible upgrade paths
 
-**Real-World Use Case:** Junior developer joins team, needs to modernize a legacy app. Runs `/speckit.analyze-project`, answers 10 guided questions, and gets a complete modernization plan without reading documentation or attending training sessions.
+**Real-World Use Case:** Junior developer joins team, needs to modernize a legacy app. Runs `/speckitsmart.analyze-project`, answers 10 guided questions, and gets a complete modernization plan without reading documentation or attending training sessions.
 
 #### 🔧 **Custom Branching Strategies**
 
@@ -162,20 +162,24 @@ Choose your preferred installation method:
 Install once and use everywhere:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/veerabhadra-ponna/spec-kit-smart.git
+# From public GitHub
+pipx install git+https://github.com/veerabhadra-ponna/spec-kit-smart.git
+
+# From GitHub Enterprise (for corporate environments)
+pipx install git+https://github.company.com/yourorg/spec-kit-smart.git
 ```
 
 Then use the tool directly:
 
 ```bash
-specify init <PROJECT_NAME>
-specify check
+speckitsmart init <PROJECT_NAME>
+speckitsmart check
 ```
 
 To upgrade specify run:
 
 ```bash
-uv tool install specify-cli --force --from git+https://github.com/veerabhadra-ponna/spec-kit-smart.git
+pipx install --force git+https://github.com/veerabhadra-ponna/spec-kit-smart.git
 ```
 
 #### Option 2: One-time Usage
@@ -183,56 +187,77 @@ uv tool install specify-cli --force --from git+https://github.com/veerabhadra-po
 Run directly without installing:
 
 ```bash
-uvx --from git+https://github.com/veerabhadra-ponna/spec-kit-smart.git specify init <PROJECT_NAME>
+# From public GitHub
+pipx run --spec git+https://github.com/veerabhadra-ponna/spec-kit-smart.git speckitsmart init <PROJECT_NAME>
+
+# From GitHub Enterprise
+pipx run --spec git+https://github.company.com/yourorg/spec-kit-smart.git speckitsmart init <PROJECT_NAME>
+```
+
+#### Option 3: From Corporate Artifactory (Enterprise)
+
+If your company uses Artifactory PyPI mirror:
+
+```bash
+# One-time configuration (usually done by IT)
+pip config set global.index-url https://artifactory.company.com/artifactory/api/pypi/pypi-virtual/simple
+
+# Install
+pip install specify-cli
 ```
 
 **Benefits of persistent installation:**
 
 - Tool stays installed and available in PATH
 - No need to create shell aliases
-- Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
+- Better tool management with `pipx list`, `pipx upgrade`, `pipx uninstall`
 - Cleaner shell configuration
+- Works in corporate environments without UV approval
+
+**Cross-Platform Support:**
+
+All packages automatically include both Bash (`.sh`) and PowerShell (`.ps1`) scripts. Your AI agent's prompts intelligently select the correct script type based on your operating system - no manual configuration needed.
 
 ### 2. Establish project principles
 
-Launch your AI assistant in the project directory. The `/speckit.*` commands are available in the assistant.
+Launch your AI assistant in the project directory. The `/speckitsmart.*` commands are available in the assistant.
 
-Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
+Use the **`/speckitsmart.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
 
 ```bash
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
+/speckitsmart.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
 ```
 
 ### 3. Create the spec
 
-Use the **`/speckit.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Use the **`/speckitsmart.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+/speckitsmart.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
 ### 4. Create a technical implementation plan
 
-Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.
+Use the **`/speckitsmart.plan`** command to provide your tech stack and architecture choices.
 
 ```bash
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+/speckitsmart.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
 ### 5. Break down into tasks
 
-Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
+Use **`/speckitsmart.tasks`** to create an actionable task list from your implementation plan.
 
 ```bash
-/speckit.tasks
+/speckitsmart.tasks
 ```
 
 ### 6. Execute implementation
 
-Use **`/speckit.implement`** to execute all tasks and build your feature according to the plan.
+Use **`/speckitsmart.implement`** to execute all tasks and build your feature according to the plan.
 
 ```bash
-/speckit.implement
+/speckitsmart.implement
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
@@ -268,25 +293,25 @@ flowchart TD
 
 **Required Commands** (Red):
 
-- `/speckit.constitution` - Establish project principles
-- `/speckit.specify` - Define what to build
-- `/speckit.plan` - Create technical design
-- `/speckit.tasks` - Generate actionable tasks
-- `/speckit.implement` - Execute implementation
+- `/speckitsmart.constitution` - Establish project principles
+- `/speckitsmart.specify` - Define what to build
+- `/speckitsmart.plan` - Create technical design
+- `/speckitsmart.tasks` - Generate actionable tasks
+- `/speckitsmart.implement` - Execute implementation
 
 **Optional Commands** (Yellow):
 
-- `/speckit.clarify` - Resolve ambiguities (recommended before planning)
-- `/speckit.analyze` - Validate consistency (recommended before implementation)
-- `/speckit.checklist` - Quality validation (recommended after implementation)
+- `/speckitsmart.clarify` - Resolve ambiguities (recommended before planning)
+- `/speckitsmart.analyze` - Validate consistency (recommended before implementation)
+- `/speckitsmart.checklist` - Quality validation (recommended after implementation)
 
 **Alternative: Use Orchestrator** - Run the entire workflow with a single command:
 
 ```bash
-/speckit.orchestrate <feature-description>
+/speckitsmart.orchestrate <feature-description>
 ```
 
-Then use `/speckit.resume` to continue after chat limits or interruptions.
+Then use `/speckitsmart.resume` to continue after chat limits or interruptions.
 
 ## 🔄 Reverse Engineering & Modernization
 
@@ -298,7 +323,7 @@ Then use `/speckit.resume` to continue after chat limits or interruptions.
 
 ```bash
 # In your AI coding agent (Claude Code, GitHub Copilot, etc.)
-/speckit.analyze-project
+/speckitsmart.analyze-project
 ```
 
 When prompted, provide the project path:
@@ -467,7 +492,7 @@ The reverse engineering system uses **AI-guided analysis** with orchestration sc
 
 **Execution Flow:**
 
-1. `/speckit.analyze-project` command (AI agent)
+1. `/speckitsmart.analyze-project` command (AI agent)
 2. → User provides PROJECT_PATH and chooses ANALYSIS_SCOPE:
    - **[A] Full Application Modernization** - Comprehensive analysis of entire codebase
    - **[B] Cross-Cutting Concern Migration** - Targeted analysis of specific concern (9 types)
@@ -537,7 +562,7 @@ The reverse engineering system uses **AI-guided analysis** with orchestration sc
 
 1. Review `functional-spec.md` for features to preserve
 2. Use `stage-prompts/constitution-prompt.md` for principles
-3. Run `/speckit.constitution` → `/speckit.specify` → `/speckit.plan`
+3. Run `/speckitsmart.constitution` → `/speckitsmart.specify` → `/speckitsmart.plan`
 4. Reference `technical-spec.md` for target stack
 
 **Hybrid (Strangler Fig)**:
@@ -641,7 +666,7 @@ The `specify` command supports the following options:
 | `init`      | Initialize a new Specify project from the latest template      |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`) |
 
-### `specify init` Arguments & Options
+### `speckitsmart init` Arguments & Options
 
 | Argument/Option        | Type     | Description                                                                  |
 |------------------------|----------|------------------------------------------------------------------------------|
@@ -660,49 +685,49 @@ The `specify` command supports the following options:
 
 ```bash
 # Basic project initialization
-specify init my-project
+speckitsmart init my-project
 
 # Initialize with specific AI assistant
-specify init my-project --ai claude
+speckitsmart init my-project --ai claude
 
 # Initialize with Cursor support
-specify init my-project --ai cursor-agent
+speckitsmart init my-project --ai cursor-agent
 
 # Initialize with Windsurf support
-specify init my-project --ai windsurf
+speckitsmart init my-project --ai windsurf
 
 # Initialize with Amp support
-specify init my-project --ai amp
+speckitsmart init my-project --ai amp
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
-specify init my-project --ai copilot --script ps
+speckitsmart init my-project --ai copilot --script ps
 
 # Initialize in current directory
-specify init . --ai copilot
+speckitsmart init . --ai copilot
 # or use the --here flag
-specify init --here --ai copilot
+speckitsmart init --here --ai copilot
 
 # Force merge into current (non-empty) directory without confirmation
-specify init . --force --ai copilot
-# or 
-specify init --here --force --ai copilot
+speckitsmart init . --force --ai copilot
+# or
+speckitsmart init --here --force --ai copilot
 
 # Skip git initialization
-specify init my-project --ai gemini --no-git
+speckitsmart init my-project --ai gemini --no-git
 
 # Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
+speckitsmart init my-project --ai claude --debug
 
 # Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
+speckitsmart init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
-specify check
+speckitsmart check
 ```
 
 ### Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+After running `speckitsmart init`, your AI coding agent will have access to these slash commands for structured development:
 
 #### Orchestration Commands
 
@@ -710,17 +735,17 @@ After running `specify init`, your AI coding agent will have access to these sla
 
 | Command                  | Description                                                           |
 |--------------------------|-----------------------------------------------------------------------|
-| `/speckit.orchestrate`  | **Orchestrate the complete workflow** from feature description to implementation in a single command. Manages state, phase transitions, and provides interactive or automatic execution modes. |
-| `/speckit.resume`       | **Restore context and resume work** after chat limit or interruption. Loads all artifacts and continues from exact stopping point with zero context loss. |
+| `/speckitsmart.orchestrate`  | **Orchestrate the complete workflow** from feature description to implementation in a single command. Manages state, phase transitions, and provides interactive or automatic execution modes. |
+| `/speckitsmart.resume`       | **Restore context and resume work** after chat limit or interruption. Loads all artifacts and continues from exact stopping point with zero context loss. |
 
 **Quick Start with Orchestrator:**
 
 ```bash
 # Run entire workflow in one command
-/speckit.orchestrate Build a user authentication system with OAuth2 and JWT
+/speckitsmart.orchestrate Build a user authentication system with OAuth2 and JWT
 
 # Or resume after chat limit/interruption
-/speckit.resume
+/speckitsmart.resume
 ```
 
 See [Orchestrator Workflow Guide](#-orchestrator-workflow) for detailed usage.
@@ -731,11 +756,11 @@ Essential commands for the Spec-Driven Development workflow (can be used individ
 
 | Command                  | Description                                                           |
 |--------------------------|-----------------------------------------------------------------------|
-| `/speckit.constitution`  | Create or update project governing principles and development guidelines |
-| `/speckit.specify`       | Define what you want to build (requirements and user stories)        |
-| `/speckit.plan`          | Create technical implementation plans with your chosen tech stack     |
-| `/speckit.tasks`         | Generate actionable task lists for implementation                     |
-| `/speckit.implement`     | Execute all tasks to build the feature according to the plan         |
+| `/speckitsmart.constitution`  | Create or update project governing principles and development guidelines |
+| `/speckitsmart.specify`       | Define what you want to build (requirements and user stories)        |
+| `/speckitsmart.plan`          | Create technical implementation plans with your chosen tech stack     |
+| `/speckitsmart.tasks`         | Generate actionable task lists for implementation                     |
+| `/speckitsmart.implement`     | Execute all tasks to build the feature according to the plan         |
 
 #### Optional Commands
 
@@ -743,16 +768,16 @@ Additional commands for enhanced quality and validation:
 
 | Command                      | Description                                                           |
 |------------------------------|-----------------------------------------------------------------------|
-| `/speckit.clarify`           | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
-| `/speckit.analyze`           | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
-| `/speckit.checklist`         | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
-| `/speckit.generate-guidelines` | **NEW**: Generate or update corporate coding guidelines by analyzing corporate documents and reference codebases (EXPERIMENTAL v1.0.0-alpha) |
+| `/speckitsmart.clarify`           | Clarify underspecified areas (recommended before `/speckitsmart.plan`; formerly `/quizme`) |
+| `/speckitsmart.analyze`           | Cross-artifact consistency & coverage analysis (run after `/speckitsmart.tasks`, before `/speckitsmart.implement`) |
+| `/speckitsmart.checklist`         | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/speckitsmart.generate-guidelines` | **NEW**: Generate or update corporate coding guidelines by analyzing corporate documents and reference codebases (EXPERIMENTAL v1.0.0-alpha) |
 
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches. **Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands.** |
+| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches. **Must be set in the context of the agent you're working with prior to using `/speckitsmart.plan` or follow-up commands.** |
 
 ## 🎭 Orchestrator Workflow
 
@@ -764,7 +789,7 @@ The **Orchestrator** workflow simplifies the entire spec-driven development proc
 
 **Manual Workflow:** 7 separate commands, manual state tracking, context loss at chat limits.
 
-**Orchestrator Workflow:** `/speckit.orchestrate <feature-description>` - 1 command, automatic state management, seamless resumption.
+**Orchestrator Workflow:** `/speckitsmart.orchestrate <feature-description>` - 1 command, automatic state management, seamless resumption.
 
 ### Key Features
 
@@ -829,7 +854,7 @@ graph LR
 - Runs entire workflow to completion
 - Minimal user interaction required
 
-#### 4. **Context Restoration with `/speckit.resume`**
+#### 4. **Context Restoration with `/speckitsmart.resume`**
 
 Restores context after chat limit: loads all artifacts, identifies stopping point, and continues with zero duplicate work.
 
@@ -838,7 +863,7 @@ Restores context after chat limit: loads all artifacts, identifies stopping poin
 **Interactive Mode:**
 
 ```bash
-/speckit.orchestrate Build a user authentication system with OAuth2 and JWT
+/speckitsmart.orchestrate Build a user authentication system with OAuth2 and JWT
 ```
 
 Prompts at each phase for user confirmation and review.
@@ -846,7 +871,7 @@ Prompts at each phase for user confirmation and review.
 **Auto-Spec Mode:**
 
 ```bash
-/speckit.orchestrate --mode=auto-spec Create an analytics dashboard
+/speckitsmart.orchestrate --mode=auto-spec Create an analytics dashboard
 ```
 
 Runs constitution → specify → plan → tasks automatically, pauses before implementation for review.
@@ -854,12 +879,12 @@ Runs constitution → specify → plan → tasks automatically, pauses before im
 **Resume After Chat Limit:**
 
 ```bash
-/speckit.resume
+/speckitsmart.resume
 ```
 
 ```mermaid
 flowchart TD
-    NewChat[New Chat Session] --> Resume["/speckit.resume"]
+    NewChat[New Chat Session] --> Resume["/speckitsmart.resume"]
     Resume --> LoadState[Load State]
     LoadState --> LoadArtifacts[Load All Artifacts]
     LoadArtifacts --> Constitution[Constitution]
@@ -921,18 +946,18 @@ The orchestrator creates `.speckit-state.json` in your repository root:
 
 ### When to Use Orchestrator vs Individual Commands
 
-- **New features:** Use `/speckit.orchestrate`
-- **Multi-day workflows:** Use orchestrator + `/speckit.resume`
+- **New features:** Use `/speckitsmart.orchestrate`
+- **Multi-day workflows:** Use orchestrator + `/speckitsmart.resume`
 - **Learning:** Use individual commands
-- **Re-running phases:** Use individual commands (e.g., `/speckit.plan`)
-- **Token limits:** Use `/speckit.resume`
+- **Re-running phases:** Use individual commands (e.g., `/speckitsmart.plan`)
+- **Token limits:** Use `/speckitsmart.resume`
 
 ### Best Practices
 
 - **Commit frequently** during long workflows
 - **Review before implementation** using interactive or auto-spec mode
 - **Commit `.speckit-state.json`** for cross-machine work
-- **Use `/speckit.resume`** after token limits or errors
+- **Use `/speckitsmart.resume`** after token limits or errors
 
 ### Progress Visualization
 
@@ -982,20 +1007,20 @@ Error details: Module 'stripe' not found
 Your progress has been saved.
 
 To resume after fixing the issue:
-  /speckit.resume
+  /speckitsmart.resume
 
 To start over:
   rm .speckit-state.json
-  /speckit.orchestrate <feature-description>
+  /speckitsmart.orchestrate <feature-description>
 ```
 
-Simply fix the issue (e.g., `npm install stripe`) and run `/speckit.resume` to continue.
+Simply fix the issue (e.g., `npm install stripe`) and run `/speckitsmart.resume` to continue.
 
 ### Workflow Diagram (Orchestrator)
 
 ```mermaid
 flowchart TD
-    Start([/speckit.orchestrate]) --> Constitution
+    Start([/speckitsmart.orchestrate]) --> Constitution
     Constitution[Constitution] -->|State saved| Specify
     Constitution -.->|If missing| CreateConst[Create constitution]
     CreateConst --> Specify
@@ -1019,7 +1044,7 @@ flowchart TD
     Implement -.-> State
 
     State -.-> Resume
-    Resume["/speckit.resume"]
+    Resume["/speckitsmart.resume"]
     Resume -.-> Constitution
     Resume -.-> Specify
     Resume -.-> Clarify
@@ -1046,7 +1071,7 @@ flowchart TD
 One-command execution, automatic state management, zero context loss, flexible modes, cross-session continuity, error recovery, and progress transparency.
 
 ```bash
-/speckit.orchestrate <your-feature-description>
+/speckitsmart.orchestrate <your-feature-description>
 ```
 
 ## 🏢 Corporate Guidelines System
@@ -1072,7 +1097,7 @@ Corporate Guidelines enable you to specify:
 
 ```bash
 # In your AI coding agent (Claude Code, GitHub Copilot, etc.)
-/speckit.generate-guidelines /path/to/corporate-resources
+/speckitsmart.generate-guidelines /path/to/corporate-resources
 ```
 
 **Expected folder structure:**
@@ -1393,19 +1418,19 @@ If you encounter issues with an agent, please open an issue so we can refine the
 You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
 
 ```bash
-specify init <project_name>
+speckitsmart init <project_name>
 ```
 
 Or initialize in the current directory:
 
 ```bash
-specify init .
+speckitsmart init .
 # or use the --here flag
-specify init --here
+speckitsmart init --here
 # Skip confirmation when the directory already has files
-specify init . --force
+speckitsmart init . --force
 # or
-specify init --here --force
+speckitsmart init --here --force
 ```
 
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
@@ -1413,29 +1438,29 @@ specify init --here --force
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai claude
-specify init <project_name> --ai gemini
-specify init <project_name> --ai copilot
+speckitsmart init <project_name> --ai claude
+speckitsmart init <project_name> --ai gemini
+speckitsmart init <project_name> --ai copilot
 
 # Or in current directory:
-specify init . --ai claude
-specify init . --ai codex
+speckitsmart init . --ai claude
+speckitsmart init . --ai codex
 
 # or use --here flag
-specify init --here --ai claude
-specify init --here --ai codex
+speckitsmart init --here --ai claude
+speckitsmart init --here --ai codex
 
 # Force merge into a non-empty current directory
-specify init . --force --ai claude
+speckitsmart init . --force --ai claude
 
 # or
-specify init --here --force --ai claude
+speckitsmart init --here --force --ai claude
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, or Amazon Q Developer CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai claude --ignore-agent-tools
+speckitsmart init <project_name> --ai claude --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles
@@ -1444,19 +1469,19 @@ Go to the project folder and run your AI agent. In our example, we're using `cla
 
 ![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
 
-You will know that things are configured correctly if you see the `/speckit.constitution`, `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement` commands available.
+You will know that things are configured correctly if you see the `/speckitsmart.constitution`, `/speckitsmart.specify`, `/speckitsmart.plan`, `/speckitsmart.tasks`, and `/speckitsmart.implement` commands available.
 
-The first step should be establishing your project's governing principles using the `/speckit.constitution` command. This helps ensure consistent decision-making throughout all subsequent development phases:
+The first step should be establishing your project's governing principles using the `/speckitsmart.constitution` command. This helps ensure consistent decision-making throughout all subsequent development phases:
 
 ```text
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
+/speckitsmart.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
 ```
 
 This step creates or updates the `.specify/memory/constitution.md` file with your project's foundational guidelines that the AI agent will reference during specification, planning, and implementation phases.
 
 ### **STEP 2:** Create project specifications
 
-With your project principles established, you can now create the functional specifications. Use the `/speckit.specify` command and then provide the concrete requirements for the project you want to develop.
+With your project principles established, you can now create the functional specifications. Use the `/speckitsmart.specify` command and then provide the concrete requirements for the project you want to develop.
 
 >[!IMPORTANT]
 >Be as explicit as possible about *what* you are trying to build and *why*. **Do not focus on the tech stack at this point**.
@@ -1517,12 +1542,12 @@ You should run the structured clarification workflow **before** creating a techn
 
 Preferred order:
 
-1. Use `/speckit.clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
+1. Use `/speckitsmart.clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
 2. Optionally follow up with ad-hoc free-form refinement if something still feels vague.
 
 If you intentionally want to skip clarification (e.g., spike or exploratory prototype), explicitly state that so the agent doesn't block on missing clarifications.
 
-Example free-form refinement prompt (after `/speckit.clarify` if still needed):
+Example free-form refinement prompt (after `/speckitsmart.clarify` if still needed):
 
 ```text
 For each sample project or project that you create there should be a variable number of tasks between 5 and 15
@@ -1540,7 +1565,7 @@ It's important to use the interaction with Claude Code as an opportunity to clar
 
 ### **STEP 4:** Generate a plan
 
-You can now be specific about the tech stack and other technical requirements. You can use the `/speckit.plan` command that is built into the project template with a prompt like this:
+You can now be specific about the tech stack and other technical requirements. You can use the `/speckitsmart.plan` command that is built into the project template with a prompt like this:
 
 ```text
 We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use
@@ -1624,12 +1649,12 @@ You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.c
 >[!NOTE]
 >Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
 
-### **STEP 6:** Generate task breakdown with /speckit.tasks
+### **STEP 6:** Generate task breakdown with /speckitsmart.tasks
 
-With the implementation plan validated, you can now break down the plan into specific, actionable tasks that can be executed in the correct order. Use the `/speckit.tasks` command to automatically generate a detailed task breakdown from your implementation plan:
+With the implementation plan validated, you can now break down the plan into specific, actionable tasks that can be executed in the correct order. Use the `/speckitsmart.tasks` command to automatically generate a detailed task breakdown from your implementation plan:
 
 ```text
-/speckit.tasks
+/speckitsmart.tasks
 ```
 
 This step creates a `tasks.md` file in your feature specification directory that contains:
@@ -1641,17 +1666,17 @@ This step creates a `tasks.md` file in your feature specification directory that
 - **Test-driven development structure** - If tests are requested, test tasks are included and ordered to be written before implementation
 - **Checkpoint validation** - Each user story phase includes checkpoints to validate independent functionality
 
-The generated tasks.md provides a clear roadmap for the `/speckit.implement` command, ensuring systematic implementation that maintains code quality and allows for incremental delivery of user stories.
+The generated tasks.md provides a clear roadmap for the `/speckitsmart.implement` command, ensuring systematic implementation that maintains code quality and allows for incremental delivery of user stories.
 
 ### **STEP 7:** Implementation
 
-Once ready, use the `/speckit.implement` command to execute your implementation plan:
+Once ready, use the `/speckitsmart.implement` command to execute your implementation plan:
 
 ```text
-/speckit.implement
+/speckitsmart.implement
 ```
 
-The `/speckit.implement` command will:
+The `/speckitsmart.implement` command will:
 
 - Validate that all prerequisites are in place (constitution, spec, plan, and tasks)
 - Parse the task breakdown from `tasks.md`

@@ -75,7 +75,7 @@ This command restores full context when starting a new chat session after:
 
 #### **Option A: State File Exists (.speckit-state.json)**
 
-This is the primary resume path when using `/speckit.orchestrate`.
+This is the primary resume path when using `/speckitsmart.orchestrate`.
 
 ```bash
 # Check for orchestration state
@@ -103,7 +103,7 @@ fi
 
 #### **Option B: User Provided Feature Identifier**
 
-User ran: `/speckit.resume 001-user-auth` or `/speckit.resume user-auth`
+User ran: `/speckitsmart.resume 001-user-auth` or `/speckitsmart.resume user-auth`
 
 ```bash
 # Parse user argument
@@ -140,7 +140,7 @@ echo "✓ Found feature directory: $feature_dir"
 
 #### **Option C: Auto-Detect from Git Branch**
 
-User ran: `/speckit.resume` with no arguments and no state file.
+User ran: `/speckitsmart.resume` with no arguments and no state file.
 
 ```bash
 # Get current git branch
@@ -166,7 +166,7 @@ else
   echo ""
   echo "Options:"
   echo "  1. Switch to feature branch: git checkout <feature-branch>"
-  echo "  2. Specify feature explicitly: /speckit.resume <feature-identifier>"
+  echo "  2. Specify feature explicitly: /speckitsmart.resume <feature-identifier>"
   echo ""
   echo "Available features:"
   ls -1 specs/ | grep -E '^[0-9]+-' | sed 's/^/  - /'
@@ -346,7 +346,7 @@ else
   echo "❌ ERROR: Specification file not found: $spec_file"
   echo ""
   echo "Cannot resume without specification."
-  echo "Please run: /speckit.specify <feature-description>"
+  echo "Please run: /speckitsmart.specify <feature-description>"
   exit 1
 fi
 ```
@@ -746,28 +746,28 @@ Based on the phase, invoke the appropriate workflow:
 case "$phase" in
   "specify")
     echo "▶ Resuming specification creation..."
-    # Continue /speckit.specify workflow
+    # Continue /speckitsmart.specify workflow
     # (The actual implementation would invoke the specify command)
     ;;
 
   "clarify")
     echo "▶ Resuming clarification..."
-    # Continue /speckit.clarify workflow
+    # Continue /speckitsmart.clarify workflow
     ;;
 
   "plan")
     echo "▶ Resuming planning..."
-    # Continue /speckit.plan workflow
+    # Continue /speckitsmart.plan workflow
     ;;
 
   "tasks")
     echo "▶ Resuming task generation..."
-    # Continue /speckit.tasks workflow
+    # Continue /speckitsmart.tasks workflow
     ;;
 
   "analyze")
     echo "▶ Resuming analysis..."
-    # Continue /speckit.analyze workflow
+    # Continue /speckitsmart.analyze workflow
     ;;
 
   "implement")
@@ -812,7 +812,7 @@ case "$phase" in
     echo "✓ All design artifacts loaded"
     echo ""
 
-    # Continue /speckit.implement workflow from next task
+    # Continue /speckitsmart.implement workflow from next task
     # The implement command will:
     # - See tasks.md with some [X] completed
     # - Pick up from first [ ] uncompleted task
@@ -868,7 +868,7 @@ fi
 
 **Resume flow:**
 
-1. `/speckit.resume` with no args
+1. `/speckitsmart.resume` with no args
 2. Auto-detects from git branch: `001-user-auth`
 3. Loads:
 
@@ -898,7 +898,7 @@ fi
 
 **Resume flow:**
 
-1. `/speckit.resume`
+1. `/speckitsmart.resume`
 2. Auto-detects from branch
 3. Loads all artifacts
 4. Shows yesterday's progress summary
@@ -915,7 +915,7 @@ fi
 
 **Resume flow:**
 
-1. `/speckit.resume`
+1. `/speckitsmart.resume`
 2. Loads edited spec.md (detects changes via timestamp or git diff)
 3. Warns: "Spec has been modified since last run"
 4. Shows diff or change summary
@@ -941,7 +941,7 @@ fi
 
 1. `git clone <repo> && cd <repo>`
 2. `git checkout 001-user-auth`
-3. `/speckit.resume`
+3. `/speckitsmart.resume`
 4. Loads from filesystem (no state file needed)
 5. Auto-detects phase from tasks.md checkboxes
 6. Continues work
@@ -957,7 +957,7 @@ fi
 **Resume flow:**
 
 1. User fixes dependency (e.g., installs missing package)
-2. `/speckit.resume`
+2. `/speckitsmart.resume`
 3. Loads context, sees T030 still pending [ ]
 4. Asks: "Retry task T030? [Y/n/skip]"
 5. If Retry: Attempts T030 again
@@ -969,7 +969,7 @@ fi
 
 ## Integration with Orchestrator
 
-The `/speckit.resume` command works seamlessly with `/speckit.orchestrate`:
+The `/speckitsmart.resume` command works seamlessly with `/speckitsmart.orchestrate`:
 
 **Orchestrator creates state:**
 
@@ -984,7 +984,7 @@ The `/speckit.resume` command works seamlessly with `/speckit.orchestrate`:
 **Resume loads state:**
 
 ```bash
-/speckit.resume
+/speckitsmart.resume
 # → Reads .speckit-state.json
 # → Loads all artifacts from specs/001-user-auth
 # → Continues orchestration from current_phase
@@ -1052,7 +1052,7 @@ If NOT using orchestrator, resume still works by:
 ```bash
 # === NEW CHAT SESSION (no history) ===
 
-$ /speckit.resume
+$ /speckitsmart.resume
 
 ✓ Found orchestration state file
 Feature: user-auth (001)
@@ -1188,7 +1188,7 @@ Resume implementation? [Y/n/review]
 
 ## Summary
 
-The `/speckit.resume` command provides:
+The `/speckitsmart.resume` command provides:
 
 - ✅ **Complete context restoration** from artifacts (no chat history needed)
 - ✅ **Exact resume point identification** from task checkboxes
@@ -1203,8 +1203,8 @@ The `/speckit.resume` command provides:
 
 **Recommended workflow:**
 
-1. Start feature: `/speckit.orchestrate <description>`
+1. Start feature: `/speckitsmart.orchestrate <description>`
 2. Work until token limit or pause
-3. New chat: `/speckit.resume`
+3. New chat: `/speckitsmart.resume`
 4. Repeat step 3 as needed
 5. Complete feature with zero context loss

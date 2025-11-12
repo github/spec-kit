@@ -222,8 +222,8 @@ Optional phases in brackets are skippable based on user preference or context.
    1. Full auto - Run entire workflow to implementation (requires confirmation)
 
    Optional phases:
-   - Include /speckit.clarify for ambiguity resolution? [y/N]
-   - Include /speckit.analyze for consistency validation? [Y/n]
+   - Include /speckitsmart.clarify for ambiguity resolution? [y/N]
+   - Include /speckitsmart.analyze for consistency validation? [Y/n]
    - Pause before implementation for review? [Y/n]
    ```
 
@@ -258,7 +258,7 @@ if grep -q "\[PROJECT_NAME\]" memory/constitution.md || \
    grep -q "\[CONSTITUTION_VERSION\]" memory/constitution.md; then
 
   echo "⚠️  Constitution template found but not yet established"
-  echo "Running /speckit.constitution to fill in principles..."
+  echo "Running /speckitsmart.constitution to fill in principles..."
 
   # Extract principles from user input (if any)
   EXTRACTED_PRINCIPLES="<extracted from user input in smart parsing step>"
@@ -348,7 +348,7 @@ EXTRACTED_FEATURE="<functional description extracted from user input>"
 **Execution:**
 
 ```bash
-# Invoke /speckit.specify with extracted feature description
+# Invoke /speckitsmart.specify with extracted feature description
 # Pass: EXTRACTED_FEATURE (the WHAT and WHY)
 
 # The specify command will:
@@ -432,7 +432,7 @@ if [ "$clarification_count" -eq 0 ]; then
   # Update state: mark clarify as skipped
 else
   echo "Found $clarification_count clarification points"
-  # Invoke /speckit.clarify
+  # Invoke /speckitsmart.clarify
 fi
 ```
 
@@ -490,7 +490,7 @@ EXTRACTED_CONSTRAINTS="<technical constraints extracted from user input>"
 **Execution:**
 
 ```bash
-# Invoke /speckit.plan with extracted constraints (if any)
+# Invoke /speckitsmart.plan with extracted constraints (if any)
 # Pass: EXTRACTED_CONSTRAINTS as arguments
 # If no constraints extracted, plan enters INTERACTIVE MODE automatically
 
@@ -570,7 +570,7 @@ Continue to task generation? [Y/n]
 **Execution:**
 
 ```bash
-# Invoke /speckit.tasks
+# Invoke /speckitsmart.tasks
 # This will create tasks.md with:
 # - Phase 1: Setup
 # - Phase 2: Foundational
@@ -641,7 +641,7 @@ git commit -m "docs: generate task breakdown for $feature_name
 **Execution if not skipped:**
 
 ```bash
-# Invoke /speckit.analyze
+# Invoke /speckitsmart.analyze
 # This performs read-only validation:
 # - Duplication detection
 # - Ambiguity detection
@@ -717,7 +717,7 @@ fi
 │                                                     │
 │  Proceed with implementation? [y/N]                │
 │    'y': Start implementation                       │
-│    'n': Pause here (resume with /speckit.resume)  │
+│    'n': Pause here (resume with /speckitsmart.resume)  │
 │    'tasks': Review tasks.md before deciding       │
 └─────────────────────────────────────────────────────┘
 ```
@@ -731,7 +731,7 @@ fi
 **Execution:**
 
 ```bash
-# Invoke /speckit.implement
+# Invoke /speckitsmart.implement
 # This will:
 # 1. Check prerequisite checklists
 # 2. Load all design documents
@@ -795,7 +795,7 @@ If implementation fails:
       "tasks_total": 42,
       "failed_task": "[T016] Implement JWT validation",
       "error_message": "...",
-      "resume_hint": "Fix the error and run /speckit.resume to continue from task T016"
+      "resume_hint": "Fix the error and run /speckitsmart.resume to continue from task T016"
     }
   }
 }
@@ -945,11 +945,11 @@ echo ""
 echo "Your progress has been saved."
 echo ""
 echo "To resume after fixing the issue:"
-echo "  /speckit.resume"
+echo "  /speckitsmart.resume"
 echo ""
 echo "To start over:"
 echo "  rm .speckit-state.json"
-echo "  /speckit.orchestrate <feature-description>"
+echo "  /speckitsmart.orchestrate <feature-description>"
 ```
 
 ---
@@ -990,16 +990,16 @@ For long-running phases (plan, implement), show sub-progress:
 
 The orchestrator does NOT replace individual commands. Users can still run:
 
-- `/speckit.specify` - Direct specification creation
-- `/speckit.plan` - Direct planning
-- `/speckit.implement` - Direct implementation
+- `/speckitsmart.specify` - Direct specification creation
+- `/speckitsmart.plan` - Direct planning
+- `/speckitsmart.implement` - Direct implementation
 - etc.
 
 The orchestrator simply chains them together with state management.
 
 **When to use orchestrator vs individual commands:**
 
-- **Use `/speckit.orchestrate`** for new features start-to-finish
+- **Use `/speckitsmart.orchestrate`** for new features start-to-finish
 - **Use individual commands** for:
 
   - Re-running a single phase
@@ -1014,7 +1014,7 @@ The orchestrator simply chains them together with state management.
 ### Example 1: Interactive Full Workflow
 
 ```bash
-/speckit.orchestrate Add user authentication with OAuth2 and JWT tokens
+/speckitsmart.orchestrate Add user authentication with OAuth2 and JWT tokens
 ```
 
 **Workflow:**
@@ -1032,7 +1032,7 @@ The orchestrator simply chains them together with state management.
 ### Example 2: Auto-Spec Mode
 
 ```bash
-/speckit.orchestrate --mode=auto-spec Create analytics dashboard
+/speckitsmart.orchestrate --mode=auto-spec Create analytics dashboard
 ```
 
 **Workflow:**
@@ -1040,17 +1040,17 @@ The orchestrator simply chains them together with state management.
 1. Runs constitution → specify → plan → tasks automatically
 1. Pauses before implementation
 1. User reviews tasks.md
-1. User runs `/speckit.resume` to continue
+1. User runs `/speckitsmart.resume` to continue
 1. Implements and completes
 
 ### Example 3: Resume After Chat Limit
 
 ```bash
 # Original chat (reached token limit during implementation)
-/speckit.orchestrate Build payment processing system
+/speckitsmart.orchestrate Build payment processing system
 
 # New chat (restored context)
-/speckit.resume
+/speckitsmart.resume
 ```
 
 **Workflow:**
@@ -1137,7 +1137,7 @@ Add to `.gitignore` if you prefer local-only state:
   │  At any point, state is saved to:       │
   │  .speckit-state.json                    │
   │                                         │
-  │  Resume with: /speckit.resume           │
+  │  Resume with: /speckitsmart.resume           │
   └─────────────────────────────────────────┘
 ```
 
@@ -1155,4 +1155,4 @@ The orchestrator provides:
 - ✅ **Optional phases**: Skip clarify/analyze if not needed
 - ✅ **Integration**: Works alongside individual commands
 
-**Next:** See `/speckit.resume` for context restoration and seamless chat continuity.
+**Next:** See `/speckitsmart.resume` for context restoration and seamless chat continuity.

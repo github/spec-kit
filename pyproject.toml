@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-specify = "specify_cli:main"
+speckitsmart = "specify_cli:main"
 
 [build-system]
 requires = ["hatchling"]

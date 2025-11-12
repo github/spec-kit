@@ -10,18 +10,18 @@
 # ]
 # ///
 """
-Specify CLI - Setup tool for Specify projects
+Specify CLI - Setup tool for Spec Kit Smart projects
 
 Usage:
-    uvx specify-cli.py init <project-name>
-    uvx specify-cli.py init .
-    uvx specify-cli.py init --here
+    pipx run --spec specify-cli.py speckitsmart init <project-name>
+    pipx run --spec specify-cli.py speckitsmart init .
+    pipx run --spec specify-cli.py speckitsmart init --here
 
 Or install globally:
-    uv tool install --from specify-cli.py specify-cli
-    specify init <project-name>
-    specify init .
-    specify init --here
+    pipx install git+https://github.com/veerabhadra-ponna/spec-kit-smart.git
+    speckitsmart init <project-name>
+    speckitsmart init .
+    speckitsmart init --here
 """
 
 import os
@@ -157,15 +157,21 @@ SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
 BANNER = """
-███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
-██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
-███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝ 
-╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝  
-███████║██║     ███████╗╚██████╗██║██║        ██║   
-╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
+███████╗██████╗ ███████╗ ██████╗    ██╗  ██╗██╗████████╗
+██╔════╝██╔══██╗██╔════╝██╔════╝    ██║ ██╔╝██║╚══██╔══╝
+███████╗██████╔╝█████╗  ██║         █████╔╝ ██║   ██║
+╚════██║██╔═══╝ ██╔══╝  ██║         ██╔═██╗ ██║   ██║
+███████║██║     ███████╗╚██████╗    ██║  ██╗██║   ██║
+╚══════╝╚═╝     ╚══════╝ ╚═════╝    ╚═╝  ╚═╝╚═╝   ╚═╝
+███████╗███╗   ███╗ █████╗ ██████╗ ████████╗
+██╔════╝████╗ ████║██╔══██╗██╔══██╗╚══██╔══╝
+███████╗██╔████╔██║███████║██████╔╝   ██║
+╚════██║██║╚██╔╝██║██╔══██║██╔══██╗   ██║
+███████║██║ ╚═╝ ██║██║  ██║██║  ██║   ██║
+╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝
 """
 
-TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
+TAGLINE = "Enterprise Spec-Driven Development Toolkit"
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -358,8 +364,8 @@ class BannerGroup(TyperGroup):
 
 
 app = typer.Typer(
-    name="specify",
-    help="Setup tool for Specify spec-driven development projects",
+    name="speckitsmart",
+    help="Setup tool for Spec Kit Smart spec-driven development projects",
     add_completion=False,
     invoke_without_command=True,
     cls=BannerGroup,
@@ -559,8 +565,9 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
     return merged
 
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
+    # Changed to spec-kit-smart fork (unified packages with both sh and ps)
+    repo_owner = "veerabhadra-ponna"
+    repo_name = "spec-kit-smart"
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
@@ -591,7 +598,9 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         raise typer.Exit(1)
 
     assets = release_data.get("assets", [])
-    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
+    # Unified packages don't have -sh or -ps suffix, just version
+    # Pattern: spec-kit-template-{agent}-{version}.zip
+    pattern = f"spec-kit-template-{ai_assistant}-"
     matching_assets = [
         asset for asset in assets
         if pattern in asset["name"] and asset["name"].endswith(".zip")
@@ -866,7 +875,6 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, or q"),
-    script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -887,17 +895,17 @@ def init(
     6. Optionally set up AI assistant commands
     
     Examples:
-        specify init my-project
-        specify init my-project --ai claude
-        specify init my-project --ai copilot --no-git
-        specify init --ignore-agent-tools my-project
-        specify init . --ai claude         # Initialize in current directory
-        specify init .                     # Initialize in current directory (interactive AI selection)
-        specify init --here --ai claude    # Alternative syntax for current directory
-        specify init --here --ai codex
-        specify init --here --ai codebuddy
-        specify init --here
-        specify init --here --force  # Skip confirmation when current directory not empty
+        speckitsmart init my-project
+        speckitsmart init my-project --ai claude
+        speckitsmart init my-project --ai copilot --no-git
+        speckitsmart init --ignore-agent-tools my-project
+        speckitsmart init . --ai claude         # Initialize in current directory
+        speckitsmart init .                     # Initialize in current directory (interactive AI selection)
+        speckitsmart init --here --ai claude    # Alternative syntax for current directory
+        speckitsmart init --here --ai codex
+        speckitsmart init --here --ai codebuddy
+        speckitsmart init --here
+        speckitsmart init --here --force  # Skip confirmation when current directory not empty
     """
 
     show_banner()
@@ -995,21 +1003,8 @@ def init(
                 console.print(error_panel)
                 raise typer.Exit(1)
 
-    if script_type:
-        if script_type not in SCRIPT_TYPE_CHOICES:
-            console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
-            raise typer.Exit(1)
-        selected_script = script_type
-    else:
-        default_script = "ps" if os.name == "nt" else "sh"
-
-        if sys.stdin.isatty():
-            selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
-        else:
-            selected_script = default_script
-
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
-    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+    console.print(f"[cyan]Package includes:[/cyan] Both Bash and PowerShell scripts (auto-selected by AI prompts)")
 
     tracker = StepTracker("Initialize Specify Project")
 
@@ -1019,8 +1014,6 @@ def init(
     tracker.complete("precheck", "ok")
     tracker.add("ai-select", "Select AI assistant")
     tracker.complete("ai-select", f"{selected_ai}")
-    tracker.add("script-select", "Select script type")
-    tracker.complete("script-select", selected_script)
     for key, label in [
         ("fetch", "Fetch latest release"),
         ("download", "Download template"),
@@ -1044,7 +1037,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, "sh", here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1139,11 +1132,11 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
 
-    steps_lines.append("   2.1 [cyan]/speckit.constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/speckit.specify[/] - Create baseline specification")
-    steps_lines.append("   2.3 [cyan]/speckit.plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/speckit.implement[/] - Execute implementation")
+    steps_lines.append("   2.1 [cyan]/speckitsmart.constitution[/] - Establish project principles")
+    steps_lines.append("   2.2 [cyan]/speckitsmart.specify[/] - Create baseline specification")
+    steps_lines.append("   2.3 [cyan]/speckitsmart.plan[/] - Create implementation plan")
+    steps_lines.append("   2.4 [cyan]/speckitsmart.tasks[/] - Generate actionable tasks")
+    steps_lines.append("   2.5 [cyan]/speckitsmart.implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
@@ -1152,9 +1145,9 @@ def init(
     enhancement_lines = [
         "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
         "",
-        f"○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
-        f"○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
-        f"○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])"
+        f"○ [cyan]/speckitsmart.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckitsmart.plan[/] if used)",
+        f"○ [cyan]/speckitsmart.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckitsmart.tasks[/], before [cyan]/speckitsmart.implement[/])",
+        f"○ [cyan]/speckitsmart.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckitsmart.plan[/])"
     ]
     enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
     console.print()

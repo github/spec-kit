@@ -307,4 +307,4 @@ If this command fails partway through:
    - This is non-blocking - the plan is complete
    - Agent-specific files (CLAUDE.md, etc.) may not be updated
    - User can manually update or re-run the agent script later
-   - Proceed to `/speckit.tasks` - planning is complete
+   - Proceed to `/speckitsmart.tasks` - planning is complete

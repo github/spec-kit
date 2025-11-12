@@ -519,7 +519,7 @@ This validation step works in conjunction with Corporate Guidelines (section abo
 - Confirm the implementation follows the technical plan
 - Report final status with summary of completed work
 
-Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
+Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckitsmart.tasks` first to regenerate the task list.
 
 ## Error Recovery
 
@@ -564,7 +564,7 @@ If this command fails or is interrupted partway through:
    - Either:
      - Get user approval to proceed anyway
      - Fix the spec/plan issues identified in checklists
-     - Re-run `/speckit.specify` or `/speckit.plan` to address gaps
+     - Re-run `/speckitsmart.specify` or `/speckitsmart.plan` to address gaps
    - Do NOT silently ignore incomplete checklists
 
 6. **Environment/tooling issues**:

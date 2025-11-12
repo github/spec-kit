@@ -9,7 +9,7 @@ Please note that this project is released with a [Contributor Code of Conduct](C
 These are one time installations required to be able to test your changes locally as part of the pull request (PR) submission process.
 
 1. Install [Python 3.11+](https://www.python.org/downloads/)
-1. Install [uv](https://docs.astral.sh/uv/) for package management
+1. Install [pipx](https://pipx.pypa.io/stable/installation/) for package management (or use pip with virtual environments)
 1. Install [Git](https://git-scm.com/downloads)
 1. Have an [AI coding agent available](README.md#-supported-ai-agents)
 
@@ -31,8 +31,17 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 >If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
 1. Fork and clone the repository
-1. Configure and install the dependencies: `uv sync`
-1. Make sure the CLI works on your machine: `uv run specify --help`
+1. Configure and install the dependencies:
+   ```bash
+   # Create virtual environment
+   python -m venv .venv
+   source .venv/bin/activate  # Linux/Mac
+   # or .venv\Scripts\activate  # Windows
+
+   # Install in editable mode
+   pip install -e .
+   ```
+1. Make sure the CLI works on your machine: `speckitsmart --help`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant
@@ -52,14 +61,14 @@ Here are a few things you can do that will increase the likelihood of your pull 
 
 When working on spec-kit:
 
-1. Test changes with the `specify` CLI commands (`/speckit.specify`, `/speckit.plan`, `/speckit.tasks`) in your coding agent of choice
+1. Test changes with the `speckitsmart` CLI commands (`/speckitsmart.specify`, `/speckitsmart.plan`, `/speckitsmart.tasks`) in your coding agent of choice
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
 ### Testing template and command changes locally
 
-Running `uv run specify init` pulls released packages, which won’t include your local changes.  
+Running `speckitsmart init` after installing with `pip install -e .` pulls released packages, which won't include your local changes.
 To test your templates, commands, and other changes locally, follow these steps:
 
 1. **Create release packages**
@@ -117,7 +126,7 @@ When submitting AI-assisted contributions, please ensure they include:
 
 - **Clear disclosure of AI use** - You are transparent about AI use and degree to which you're using it for the contribution
 - **Human understanding and testing** - You've personally tested the changes and understand what they do
-- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals  
+- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals
 - **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
 - **Your own analysis** - Share your thoughts on the end-to-end developer experience
 

@@ -415,7 +415,7 @@ If this command fails partway through:
 3. **User story mapping errors**:
    - If tasks don't align with user stories from spec.md
    - Review spec.md to ensure user stories are clearly defined with priorities
-   - May need to update spec.md and re-run `/speckit.specify`
+   - May need to update spec.md and re-run `/speckitsmart.specify`
    - Or manually reorganize task phases to match stories
 
 4. **Dependency analysis unclear**:
