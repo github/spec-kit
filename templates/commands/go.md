@@ -27,12 +27,12 @@ This command implements **Kent Beck's "go" workflow** for Test-Driven Developmen
 1. **Verify Prerequisites**:
    - `CLAUDE.md` exists in project root (Kent Beck development guidelines)
    - `specs/[feature]/tasks.md` exists (task checklist)
-   - Git working directory is clean (no uncommitted changes)
+   - Git working directory has no uncommitted changes in spec files (tasks.md, plan.md, spec.md)
 
    **If missing**:
    - ERROR: "CLAUDE.md not found. Run `/speckit.init-tdd` first."
    - ERROR: "tasks.md not found. Run `/speckit.tasks` first."
-   - ERROR: "Uncommitted changes detected. Commit or stash first."
+   - WARN: "Uncommitted changes detected in spec files. Consider committing before TDD cycle."
 
 2. **Read Context Files**:
    ```bash
@@ -260,8 +260,7 @@ This command implements **Kent Beck's "go" workflow** for Test-Driven Developmen
    Implements task T014 for user story US1.
    UserService.register_user() creates new users with hashed passwords.
 
-   🤖 Generated with Claude Code
-   Co-Authored-By: Claude <noreply@anthropic.com>"
+   🤖 Generated with Claude Code"
    ```
 
    **Structural commit** (if refactoring was done):
@@ -273,8 +272,7 @@ This command implements **Kent Beck's "go" workflow** for Test-Driven Developmen
    Tidy First: moved SHA256 hashing logic to _hash_password() for clarity.
    No behavior changed. All tests still pass.
 
-   🤖 Generated with Claude Code
-   Co-Authored-By: Claude <noreply@anthropic.com>"
+   🤖 Generated with Claude Code"
    ```
 
 2. **Verify Commit**:

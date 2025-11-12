@@ -39,10 +39,10 @@ This command sets up **Kent Beck's Test-Driven Development workflow** in your pr
    - Repository must be initialized (`git init` already run)
    - Working directory should be clean (warn if not)
 
-3. **Detect Current Feature**:
-   - From git branch name (e.g., `001-user-auth`)
-   - From environment variable `SPECIFY_FEATURE`
-   - ERROR if cannot detect feature context
+3. **Detect Current Feature** (in priority order):
+   1. From git branch name (e.g., `001-user-auth`) - **checked first**
+   2. From environment variable `SPECIFY_FEATURE` - **fallback**
+   3. ERROR if cannot detect feature context from either method
 
 ### Phase 2: Load Context
 
@@ -191,8 +191,7 @@ This command sets up **Kent Beck's Test-Driven Development workflow** in your pr
    Added CLAUDE.md with project-specific TDD guidelines.
    Auto-populated from constitution.md and plan.md.
 
-   🤖 Generated with Claude Code
-   Co-Authored-By: Claude <noreply@anthropic.com>"
+   🤖 Generated with Claude Code"
    ```
 
 ### Phase 6: Report Success

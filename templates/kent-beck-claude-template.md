@@ -312,8 +312,7 @@ def test_calculate_total():
    Implements task T012 for user story US1.
    Added basic User class with email attribute.
 
-   🤖 Generated with Claude Code
-   Co-Authored-By: Claude <noreply@anthropic.com>"
+   🤖 Generated with Claude Code"
    ```
 
 10. **Mark task complete**:
@@ -354,9 +353,9 @@ def test_calculate_total():
 
 ### Code Conventions
 
-**Formatting**: [e.g., Black for Python, Prettier for TypeScript]
-**Linting**: [e.g., Pylint, ESLint]
-**Type Checking**: [e.g., mypy, TypeScript strict mode]
+**Formatting**: Black (Python), Prettier (TypeScript) <!-- Update based on your tech stack -->
+**Linting**: Pylint (Python), ESLint (JavaScript/TypeScript) <!-- Update based on your tech stack -->
+**Type Checking**: mypy (Python), TypeScript strict mode <!-- Update based on your tech stack -->
 
 ---
 
