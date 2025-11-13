@@ -402,7 +402,7 @@ Commands for implementing Kent Beck's Test-Driven Development methodology:
 
 ## 💬 User Testimonial
 
-> "Kent Beck의 TDD 블로그를 읽고 spec-kit에 적용해봤는데, 정말 효과적이었습니다. AI가 반복 코드를 만들거나 테스트를 약화시키는 것을 자동으로 감지해주니까, 코드 품질이 확 올라갔어요. Spec-Kit의 빠른 문서화와 Kent Beck의 엄격한 TDD를 결합하니까 정말 최고의 조합이더라구요!"
+> "After reading Kent Beck's TDD blog, I integrated it with spec-kit and found it incredibly effective. The automatic detection of AI warning signs—like repetitive code generation and test weakening—significantly improved code quality. Combining Spec-Kit's rapid documentation with Kent Beck's disciplined TDD creates a powerful development workflow."
 >
 > — JH Baek, Software Developer
 

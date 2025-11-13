@@ -10,8 +10,8 @@
 
 This file follows **Kent Beck's Test-Driven Development (TDD)** methodology. When implementing features:
 
-1. **Read the plan**: Check `plan.md` for architecture and design decisions
-2. **Find next test**: Look for the next unmarked test in `tasks.md`
+1. **Read the plan**: Check `specs/[feature]/plan.md` for architecture and design decisions
+2. **Find next test**: Look for the next unmarked test in `specs/[feature]/tasks.md`
 3. **Say "go"**: Use `/speckit.go` command to start TDD cycle
 4. **Follow the cycle**: Red → Green → Refactor → Commit
 

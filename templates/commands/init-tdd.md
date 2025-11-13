@@ -127,7 +127,7 @@ This command sets up **Kent Beck's Test-Driven Development workflow** in your pr
    ### Code Conventions
 
    **Python**:
-   - Formatting: Black (line length 100)
+   - Formatting: Black (line length 88, default)
    - Linting: Pylint, mypy strict mode
    - Type hints: Required for all functions
 
