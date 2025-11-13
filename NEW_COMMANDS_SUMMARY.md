@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes two new productivity commands added to the Spec-Kit toolkit, designed to optimize Claude Code's context management and conversation efficiency.
+This document describes two new productivity commands added to the Spec-Kit toolkit, designed to optimize AI agent context management and conversation efficiency.
 
 ## Commands Added
 

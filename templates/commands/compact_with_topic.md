@@ -157,7 +157,9 @@ Generate a compact, well-structured focus area that captures what matters:
 
 2. **Invoke /compact**:
 
-   Execute the Claude Code `/compact` command with the generated focus.
+   Execute the agent's `/compact` command with the generated focus.
+
+   > **Note:** The `/compact` command may not be available in all AI agents or environments. If `/compact` is not supported, manually summarize and condense the conversation using the generated focus area above, or consult your agent's documentation for equivalent compaction functionality.
 
 3. **Verify Compaction**:
 
