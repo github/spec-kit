@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/github/spec-kit/schemas/config.json",
+  "title": "Spec-Kit Project Configuration",
+  "description": "Team-shared configuration for Linear ticket format and workflow conventions",
+  "type": "object",
+  "required": ["linear_ticket_prefix"],
+  "properties": {
+    "linear_ticket_prefix": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,10}$",
+      "description": "Linear ticket ID prefix for the team (e.g., AFR, ASR, AUROR). Must be 2-10 uppercase letters.",
+      "examples": ["AFR", "ASR", "AUROR", "PROJ", "TEAM"]
+    },
+    "branch_format": {
+      "type": "string",
+      "default": "{prefix}-{number}-{description}",
+      "description": "Template for branch naming. Variables: {prefix}, {number}, {description}",
+      "examples": [
+        "{prefix}-{number}-{description}",
+        "{prefix}/{number}/{description}"
+      ]
+    },
+    "commit_format": {
+      "type": "string",
+      "default": "{prefix}-{number} {message}",
+      "description": "Template for commit message convention (documentation only, not enforced). Variables: {prefix}, {number}, {message}",
+      "examples": [
+        "{prefix}-{number} {message}",
+        "[{prefix}-{number}] {message}"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "linear_ticket_prefix": "AFR",
+      "branch_format": "{prefix}-{number}-{description}",
+      "commit_format": "{prefix}-{number} {message}"
+    },
+    {
+      "linear_ticket_prefix": "ASR"
+    },
+    {
+      "linear_ticket_prefix": "AUROR",
+      "branch_format": "{prefix}-{number}-{description}",
+      "commit_format": "{prefix}-{number} {message}"
+    }
+  ]
+}

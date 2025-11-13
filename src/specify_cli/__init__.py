@@ -1011,6 +1011,57 @@ def init(
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
+    # T002-T006: Linear Ticket Format Configuration
+    linear_prefix = None
+    if sys.stdin.isatty():
+        console.print()
+        console.print("[cyan]Linear Ticket Format Configuration[/cyan]")
+        console.print("[dim]Enter your Linear ticket prefix (e.g., AFR, ASR, PROJ) or press Enter for default (AUROR)[/dim]")
+
+        # T003: Validation function
+        def validate_prefix(prefix: str) -> tuple[bool, str]:
+            """Validate Linear ticket prefix."""
+            if not prefix:
+                return True, ""  # Empty allowed (use default)
+
+            if not prefix.isalpha():
+                return False, "Prefix must contain letters only (no numbers, hyphens, or special characters)"
+
+            if len(prefix) < 2:
+                return False, "Prefix must be at least 2 characters"
+
+            if len(prefix) > 10:
+                return False, "Prefix must be 10 characters or less"
+
+            return True, ""
+
+        # T004: Re-prompt logic for invalid input
+        while True:
+            try:
+                linear_prefix = input("Ticket prefix: ").strip().upper()
+
+                is_valid, error_message = validate_prefix(linear_prefix)
+                if is_valid:
+                    break
+
+                console.print(f"[red]{error_message}[/red]")
+                console.print("[dim]Please try again with a valid prefix (e.g., AFR, ASR, PROJ)[/dim]")
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[yellow]Using default prefix[/yellow]")
+                linear_prefix = ""
+                break
+
+        # Default handling
+        if not linear_prefix:
+            linear_prefix = "AUROR"
+            console.print(f"[dim]Using default: {linear_prefix}-XXX[/dim]")
+        else:
+            # T006: Confirmation message
+            console.print(f"[green]✓[/green] Linear ticket format set to: [cyan]{linear_prefix}-XXXX[/cyan]")
+    else:
+        # Non-interactive mode: default to AUROR
+        linear_prefix = "AUROR"
+
     tracker = StepTracker("Initialize Specify Project")
 
     sys._specify_tracker_active = True
@@ -1047,6 +1098,14 @@ def init(
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            # T005: Create config file with Linear ticket format
+            config_file = project_path / ".specify" / "config.json"
+            config_data = {
+                "linear_ticket_prefix": linear_prefix
+            }
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(json.dumps(config_data, indent=2) + "\n")
 
             if not no_git:
                 tracker.start("git")

@@ -24,6 +24,7 @@
 - [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
+- [🎫 Linear Ticket Configuration](#-linear-ticket-configuration)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
@@ -252,6 +253,167 @@ Additional commands for enhanced quality and validation:
 | Variable         | Description                                                                                    |
 |------------------|------------------------------------------------------------------------------------------------|
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>**Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+
+## 🎫 Linear Ticket Configuration
+
+Spec-Kit supports custom Linear ticket prefixes for different teams, allowing you to configure branch and spec directory naming to match your team's Linear workspace.
+
+### Configuration During Init
+
+When you run `specify init`, you'll be prompted to enter your team's Linear ticket prefix:
+
+```bash
+specify init my-project
+
+# When prompted:
+Ticket prefix: AFR
+✓ Linear ticket format set to: AFR-XXXX
+```
+
+**Default**: Press Enter without input to use the default `AUROR` prefix.
+
+This configuration is saved to `.specify/config.json` and shared across your team via git.
+
+### Multi-Team Examples
+
+Different teams can use their own prefixes:
+
+#### Auror Facial Recognition (AFR)
+```bash
+# Configuration
+Ticket prefix: AFR
+
+# Generated branches and specs
+AFR-1-add-detection-endpoint
+AFR-2-improve-accuracy
+AFR-3-fix-enrollment-bug
+
+# Commit messages
+AFR-1 Add detection endpoint
+AFR-2 Improve detection accuracy
+```
+
+#### Auror Subject Recognition (ASR)
+```bash
+# Configuration
+Ticket prefix: ASR
+
+# Generated branches and specs
+ASR-42-implement-logging
+ASR-43-add-metrics
+ASR-44-optimize-queries
+
+# Commit messages
+ASR-42 Implement logging system
+ASR-43 Add performance metrics
+```
+
+#### Default Team (AUROR)
+```bash
+# Configuration
+Ticket prefix: [Enter] # Uses default AUROR
+
+# Generated branches and specs
+AUROR-1-new-feature
+AUROR-2-bug-fix
+AUROR-3-refactor-core
+
+# Commit messages
+AUROR-1 Add new feature
+AUROR-2 Fix critical bug
+```
+
+### Branch Naming Convention
+
+After configuration, branches are automatically created with the format:
+
+```
+PREFIX-NUMBER-description
+```
+
+**Examples**:
+- `AFR-1-add-user-authentication`
+- `ASR-42-improve-detection`
+- `AUROR-123-refactor-api`
+
+Spec directories match the branch name exactly:
+```
+specs/AFR-1-add-user-authentication/
+specs/ASR-42-improve-detection/
+specs/AUROR-123-refactor-api/
+```
+
+### Commit Message Format
+
+Follow this convention for commits:
+
+```
+PREFIX-NUMBER Description
+```
+
+**Examples**:
+```bash
+git commit -m "AFR-1234 Add authentication endpoint"
+git commit -m "ASR-42 Update validation logic"
+git commit -m "AUROR-123 Fix type error in service"
+```
+
+**Note**: This format is a documentation convention and not programmatically enforced.
+
+### Backward Compatibility
+
+Spec-Kit maintains full backward compatibility with existing projects:
+
+- **Legacy projects** (without `.specify/config.json`) continue using the `001-feature-name` format
+- **Mixed repositories** can have both old (`001-`) and new (`AFR-1234-`) branches simultaneously
+- **No breaking changes** - existing workflows remain functional
+
+### Configuration File
+
+The configuration is stored in `.specify/config.json`:
+
+```json
+{
+  "linear_ticket_prefix": "AFR"
+}
+```
+
+**Git Status**: Committed (team-shared configuration)
+
+### Troubleshooting
+
+#### Branches still using `001-` format after configuration
+
+**Solution**:
+```bash
+# Verify config exists and is valid
+cat .specify/config.json
+# Should show: {"linear_ticket_prefix": "AFR"}
+
+# If missing, run specify init again or create manually:
+echo '{"linear_ticket_prefix":"AFR"}' > .specify/config.json
+git add .specify/config.json
+git commit -m "Configure Linear ticket format: AFR"
+```
+
+#### Invalid prefix format rejected
+
+**Error**: "Prefix must contain letters only"
+
+**Solution**: Use only uppercase letters (2-10 characters), no numbers or special characters:
+- ✅ Valid: `AFR`, `ASR`, `PROJ`, `TEAM`
+- ❌ Invalid: `AFR-123`, `afr`, `A`, `VERYLONGPREFIX123`
+
+#### Config file missing or corrupted
+
+**Solution**:
+```bash
+# Recreate config manually
+echo '{"linear_ticket_prefix":"YOUR_PREFIX"}' > .specify/config.json
+
+# Or run specify init in the current directory
+specify init . --force
+```
 
 ## 📚 Core Philosophy
 
