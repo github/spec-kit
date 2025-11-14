@@ -95,9 +95,29 @@ generate_commands() {
         { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckit.$name.$ext" ;;
       md)
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
-      prompt.md)
+      agent.md)
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
     esac
+  done
+}
+
+generate_copilot_prompts() {
+  local agents_dir=$1 prompts_dir=$2
+  mkdir -p "$prompts_dir"
+  
+  # Generate a .prompt.md file for each .agent.md file
+  for agent_file in "$agents_dir"/speckit.*.agent.md; do
+    [[ -f "$agent_file" ]] || continue
+    
+    local basename=$(basename "$agent_file" .agent.md)
+    local prompt_file="$prompts_dir/${basename}.prompt.md"
+    
+    # Create prompt file with agent frontmatter
+    cat > "$prompt_file" <<EOF
+---
+agent: ${basename}
+---
+EOF
   done
 }
 
@@ -146,8 +166,10 @@ build_variant() {
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
       [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md "$base_dir/GEMINI.md" ;;
     copilot)
-      mkdir -p "$base_dir/.github/prompts"
-      generate_commands copilot prompt.md "\$ARGUMENTS" "$base_dir/.github/prompts" "$script"
+      mkdir -p "$base_dir/.github/agents"
+      generate_commands copilot agent.md "\$ARGUMENTS" "$base_dir/.github/agents" "$script"
+      # Generate companion prompt files
+      generate_copilot_prompts "$base_dir/.github/agents" "$base_dir/.github/prompts"
       # Create VS Code workspace settings
       mkdir -p "$base_dir/.vscode"
       [[ -f templates/vscode-settings.json ]] && cp templates/vscode-settings.json "$base_dir/.vscode/settings.json"
