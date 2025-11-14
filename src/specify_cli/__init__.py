@@ -1223,6 +1223,217 @@ def init(
     console.print(enhancements_panel)
 
 @app.command()
+def summarize():
+    """Generate a comprehensive summary of an existing project."""
+    show_banner()
+    console.print("[bold]Analyzing project...[/bold]\n")
+
+    tracker = StepTracker("Project Analysis")
+
+    # Find repository root
+    try:
+        tracker.add("find-root", "Locate repository root")
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if result.returncode == 0:
+            repo_root = Path(result.stdout.strip())
+            tracker.complete("find-root", str(repo_root))
+        else:
+            # Fallback to current directory
+            repo_root = Path.cwd()
+            # Check for .specify directory
+            while repo_root != repo_root.parent:
+                if (repo_root / ".specify").exists():
+                    break
+                repo_root = repo_root.parent
+            else:
+                repo_root = Path.cwd()
+            tracker.complete("find-root", str(repo_root))
+    except Exception as e:
+        tracker.error("find-root", str(e))
+        console.print(tracker.render())
+        raise typer.Exit(1)
+
+    # Determine script type (prefer bash on Unix-like, PowerShell on Windows)
+    is_windows = sys.platform == "win32"
+    script_ext = "ps1" if is_windows else "sh"
+    script_dir = "powershell" if is_windows else "bash"
+
+    # Find script path (could be in installed location or development location)
+    script_name = f"generate-project-summary.{script_ext}"
+
+    # Try to find script in various locations, for both .ps1 and .sh
+    if is_windows:
+        possible_script_names = ["generate-project-summary.ps1", "generate-project-summary.sh"]
+    else:
+        possible_script_names = ["generate-project-summary.sh"]
+    possible_script_paths = []
+    for name in possible_script_names:
+        possible_script_paths.extend([
+            repo_root / ".specify" / "scripts" / name,
+            repo_root / "scripts" / script_dir / name,
+            Path(__file__).parent.parent.parent / "scripts" / script_dir / name,
+        ])
+
+    script_path = None
+    script_type = None
+    for path in possible_script_paths:
+        if path.exists():
+            script_path = path
+            if str(path).endswith('.ps1'):
+                script_type = 'ps1'
+            elif str(path).endswith('.sh'):
+                script_type = 'sh'
+            break
+
+    if not script_path:
+        tracker.error("find-script", f"Could not find {script_name} (.ps1 or .sh)")
+        console.print(tracker.render())
+        console.print(f"\n[red]Error: Analysis script not found. Tried:[/red]")
+        for path in possible_script_paths:
+            console.print(f"  - {path}")
+        raise typer.Exit(1)
+
+    tracker.add("run-script", f"Run analysis script ({script_path.name})")
+
+    # Run the script with --json flag
+    try:
+        if script_type == 'ps1':
+            cmd = ["pwsh", "-File", str(script_path), "-Json"]
+        elif script_type == 'sh':
+            cmd = ["/bin/bash", str(script_path), "--json"]
+        else:
+            tracker.error("run-script", f"Unknown script type for {script_path}")
+            console.print(tracker.render())
+            raise typer.Exit(1)
+
+        result = subprocess.run(
+            cmd,
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # Parse JSON output
+        data = json.loads(result.stdout)
+        tracker.complete("run-script", f"Found {len(data.get('LANGUAGES', []))} language(s)")
+
+    except subprocess.CalledProcessError as e:
+        tracker.error("run-script", f"Script failed: {e.stderr}")
+        console.print(tracker.render())
+        raise typer.Exit(1)
+    except json.JSONDecodeError as e:
+        tracker.error("run-script", f"Invalid JSON output: {e}")
+        console.print(tracker.render())
+        raise typer.Exit(1)
+
+    console.print(tracker.render())
+
+    # Display results
+    console.print("\n[bold cyan]📊 Project Summary[/bold cyan]\n")
+
+    # Project type
+    console.print(f"[bold]Project Type:[/bold] {data.get('PROJECT_TYPE', 'unknown')}")
+    console.print(f"[bold]Repository:[/bold] {data.get('REPO_ROOT', '')}\n")
+
+    # Languages
+    languages = data.get('LANGUAGES', [])
+    if languages:
+        console.print("[bold]Languages:[/bold]")
+        for lang in languages:
+            console.print(f"  • {lang}")
+        console.print()
+
+    # Configuration files
+    tech_files = data.get('TECH_FILES', [])
+    if tech_files:
+        console.print(f"[bold]Configuration Files:[/bold] ({len(tech_files)} found)")
+        # Show first 10, then truncate
+        for file in tech_files[:10]:
+            console.print(f"  • {file}")
+        if len(tech_files) > 10:
+            console.print(f"  ... and {len(tech_files) - 10} more")
+        console.print()
+
+    # Directories
+    directories = data.get('DIRECTORIES', [])
+    if directories:
+        console.print(f"[bold]Key Directories:[/bold] ({len(directories)} found)")
+        for dir in directories[:15]:
+            console.print(f"  • {dir}/")
+        if len(directories) > 15:
+            console.print(f"  ... and {len(directories) - 15} more")
+        console.print()
+
+    # Save summary
+    memory_dir = repo_root / ".specify" / "memory"
+    summary_file = memory_dir / "project-summary.md"
+
+    # Check if .specify exists
+    if not (repo_root / ".specify").exists():
+        console.print("[yellow]⚠️  .specify directory not found.[/yellow]")
+        console.print("[dim]Run 'specify init --here --ai <agent>' first to initialize spec-kit.[/dim]\n")
+    else:
+        # Ensure memory directory exists
+        memory_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate summary content (basic version for now)
+        from datetime import datetime
+        summary_content = f"""# Project Summary
+
+**Generated**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+**Repository**: {data.get('REPO_ROOT', '')}
+
+## Technology Stack
+
+### Languages
+{chr(10).join(f'- {lang}' for lang in languages) if languages else '- (none detected)'}
+
+### Configuration Files
+{(
+    chr(10).join(
+        [f'- `{file}`' for file in tech_files[:20]] +
+        ([f'- ... and {len(tech_files) - 20} more'] if len(tech_files) > 20 else [])
+    ) if tech_files else '- (none detected)'
+)}
+
+## Project Structure
+
+### Architecture Pattern
+{data.get('PROJECT_TYPE', 'unknown')}
+
+### Key Directories
+{chr(10).join(f'- `{dir}/`' for dir in directories) if directories else '- (none detected)'}
+
+## Notes
+
+This is a basic summary generated by `specify summarize`.
+For a more detailed analysis, use the `/speckit.summarize` command in your AI assistant.
+
+---
+
+*Generated by `specify summarize` - re-run this command to update the summary.*
+"""
+
+        summary_file.write_text(summary_content, encoding="utf-8")
+        console.print(f"[bold green]✅ Summary saved to:[/bold green] {summary_file}\n")
+
+    # Next steps
+    console.print("[bold]💡 Next Steps:[/bold]")
+    if not (repo_root / ".specify").exists():
+        console.print("  1. Run [cyan]specify init --here --ai <agent>[/cyan] to initialize spec-kit")
+    else:
+        console.print("  1. Review the generated summary")
+        console.print("  2. Run [cyan]/speckit.constitution[/cyan] in your AI assistant to define project principles")
+        console.print("  3. Start creating feature specs with [cyan]/speckit.specify[/cyan]")
+
+
+@app.command()
 def check():
     """Check that all required tools are installed."""
     show_banner()

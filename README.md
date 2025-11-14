@@ -160,6 +160,7 @@ The `specify` command supports the following options:
 | Command     | Description                                                    |
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
+| `summarize` | Generate a comprehensive summary of an existing project's technology stack, architecture, and code conventions |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`) |
 
 ### `specify init` Arguments & Options
@@ -219,6 +220,9 @@ specify init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
 specify check
+
+# Analyze existing project (for brownfield/existing codebases)
+specify summarize
 ```
 
 ### Available Slash Commands
@@ -243,6 +247,7 @@ Additional commands for enhanced quality and validation:
 
 | Command              | Description                                                           |
 |----------------------|-----------------------------------------------------------------------|
+| `/speckit.summarize` | Generate comprehensive summary of existing project (technology stack, architecture, code conventions) - ideal for brownfield projects |
 | `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`) |
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
