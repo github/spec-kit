@@ -174,6 +174,7 @@ The `specify` command supports the following options:
 | `--no-git`             | Flag     | Skip git repository initialization                                          |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one   |
 | `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation) |
+| `--preserve-constitution` | Flag  | Preserve existing memory/constitution.md file if it exists (useful when reinitializing) |
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                 |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                            |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)  |
@@ -211,6 +212,11 @@ specify init --here --ai copilot
 specify init . --force --ai copilot
 # or
 specify init --here --force --ai copilot
+
+# Preserve existing constitution.md when reinitializing
+specify init --here --preserve-constitution --ai claude
+# or
+specify init . --preserve-constitution --ai copilot
 
 # Skip git initialization
 specify init my-project --ai gemini --no-git
@@ -362,6 +368,9 @@ specify init . --force --ai claude
 
 # or
 specify init --here --force --ai claude
+
+# Preserve existing constitution.md when reinitializing
+specify init --here --preserve-constitution --ai claude
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, or Amazon Q Developer CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
