@@ -736,9 +736,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, preserve_constitution: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+    
+    Args:
+        preserve_constitution: If True, skip overwriting existing memory/constitution.md file
     """
     current_dir = Path.cwd()
 
@@ -820,6 +823,11 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                                         # Special handling for .vscode/settings.json - merge instead of overwrite
                                         if dest_file.name == "settings.json" and dest_file.parent.name == ".vscode":
                                             handle_vscode_settings(sub_item, dest_file, rel_path, verbose, tracker)
+                                        # Skip memory/constitution.md if preserve_constitution flag is set and file exists
+                                        elif preserve_constitution and dest_file.name == "constitution.md" and dest_file.parent.name == "memory" and dest_file.exists():
+                                            if verbose and not tracker:
+                                                console.print(f"[cyan]Preserving existing:[/cyan] {rel_path}")
+                                            continue
                                         else:
                                             shutil.copy2(sub_item, dest_file)
                             else:
@@ -939,6 +947,7 @@ def init(
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
+    preserve_constitution: bool = typer.Option(False, "--preserve-constitution", help="Preserve existing memory/constitution.md file if it exists (useful when reinitializing)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
@@ -966,6 +975,7 @@ def init(
         specify init --here --ai codebuddy
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+        specify init --here --preserve-constitution  # Keep existing constitution.md file
     """
 
     show_banner()
@@ -1112,7 +1122,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, preserve_constitution=preserve_constitution)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
