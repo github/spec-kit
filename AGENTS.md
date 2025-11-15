@@ -33,7 +33,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 |-------|-----------|---------|----------|-------------|
 | **Claude Code** | `.claude/commands/` | Markdown | `claude` | Anthropic's Claude Code CLI |
 | **Gemini CLI** | `.gemini/commands/` | TOML | `gemini` | Google's Gemini CLI |
-| **GitHub Copilot** | `.github/prompts/` | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code |
+| **GitHub Copilot** | `.github/agents/` | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code |
 | **Cursor** | `.cursor/commands/` | Markdown | `cursor-agent` | Cursor CLI |
 | **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | Alibaba's Qwen Code CLI |
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
@@ -46,6 +46,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amazon Q Developer CLI** | `.amazonq/prompts/` | Markdown | `q` | Amazon Q Developer CLI |
 | **Trae AI** | `.trae/workflows/` | Markdown | `trae` | Trae AI IDE-based Agent |
 | **Amp** | `.agents/commands/` | Markdown | `amp` | Amp CLI |
+| **SHAI** | `.shai/commands/` | Markdown | `shai` | SHAI CLI |
 
 
 ### Step-by-Step Integration Guide
@@ -344,6 +345,7 @@ Require a command-line tool to be installed:
 - **Amazon Q Developer CLI**: `q` CLI
 - **CodeBuddy CLI**: `codebuddy` CLI
 - **Amp**: `amp` CLI
+- **SHAI**: `shai` CLI
 
 ### IDE-Based Agents
 
@@ -356,11 +358,24 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI
+
+**Standard format:**
 
 ```markdown
 ---
 description: "Command description"
+---
+
+Command content with {SCRIPT} and $ARGUMENTS placeholders.
+```
+
+**GitHub Copilot Chat Mode format:**
+
+```markdown
+---
+description: "Command description"
+mode: speckit.command-name
 ---
 
 Command content with {SCRIPT} and $ARGUMENTS placeholders.
@@ -382,7 +397,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
 - **IDE agents**: Follow IDE-specific patterns:
-  - Copilot: `.github/prompts/`
+  - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
 
