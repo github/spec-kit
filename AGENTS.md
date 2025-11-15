@@ -44,8 +44,10 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Roo Code** | `.roo/rules/` | Markdown | N/A (IDE-based) | Roo Code IDE |
 | **CodeBuddy CLI** | `.codebuddy/commands/` | Markdown | `codebuddy` | CodeBuddy CLI |
 | **Amazon Q Developer CLI** | `.amazonq/prompts/` | Markdown | `q` | Amazon Q Developer CLI |
+| **Trae AI** | `.trae/workflows/` | Markdown | `trae` | Trae AI IDE-based Agent |
 | **Amp** | `.agents/commands/` | Markdown | `amp` | Amp CLI |
 | **SHAI** | `.shai/commands/` | Markdown | `shai` | SHAI CLI |
+
 
 ### Step-by-Step Integration Guide
 
@@ -58,6 +60,16 @@ Follow these steps to add a new agent (using a hypothetical new agent as an exam
 Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/__init__.py`. This is the **single source of truth** for all agent metadata:
 
 ```python
+AI_CHOICES = {
+    "copilot": "GitHub Copilot",
+    "claude": "Claude Code", 
+    "gemini": "Gemini CLI",
+    "cursor": "Cursor",
+    "qwen": "Qwen Code",
+    "opencode": "opencode",
+    "windsurf": "Windsurf",
+    "q": "Amazon Q Developer CLI",
+    "trae": "Trae AI"  # Add new agent here
 AGENT_CONFIG = {
     # ... existing agents ...
     "new-agent-cli": {  # Use the ACTUAL CLI tool name (what users type in terminal)
@@ -74,6 +86,22 @@ AGENT_CONFIG = {
 - ✅ Use `"cursor-agent"` because the CLI tool is literally called `cursor-agent`
 - ❌ Don't use `"cursor"` as a shortcut if the tool is `cursor-agent`
 
+```python
+agent_folder_map = {
+    "claude": ".claude/",
+    "gemini": ".gemini/",
+    "cursor": ".cursor/",
+    "qwen": ".qwen/",
+    "opencode": ".opencode/",
+    "codex": ".codex/",
+    "windsurf": ".windsurf/",  
+    "kilocode": ".kilocode/",
+    "auggie": ".auggie/",
+    "copilot": ".github/",
+    "q": ".amazonq/",
+    "trae": ".trae/" # Add new agent folder here
+}
+```
 This eliminates the need for special-case mappings throughout the codebase.
 
 **Field Explanations**:
@@ -109,7 +137,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 ##### Add to ALL_AGENTS array
 
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q trae)
 ```
 
 ##### Add case statement for directory structure
@@ -119,7 +147,10 @@ case $agent in
   # ... existing cases ...
   windsurf)
     mkdir -p "$base_dir/.windsurf/workflows"
-    generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
+    generate_commands windsurf md "$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
+  trae)
+    mkdir -p "$base_dir/.trae/workflows"
+    generate_commands trae md "$ARGUMENTS" "$base_dir/.trae/workflows" "$script" ;;
 esac
 ```
 
@@ -132,6 +163,8 @@ gh release create "$VERSION" \
   # ... existing packages ...
   .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-trae-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-trae-ps-"$VERSION".zip \
   # Add new agent packages here
 ```
 

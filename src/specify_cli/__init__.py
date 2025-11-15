@@ -208,6 +208,12 @@ AGENT_CONFIG = {
         "install_url": "https://ampcode.com/manual#install",
         "requires_cli": True,
     },
+    "trae-agent": {
+        "name": "Trae",
+        "folder": ".trae/",
+        "install_url": None,  # IDE-based, no CLI check needed
+        "requires_cli": False,
+    },
     "shai": {
         "name": "SHAI",
         "folder": ".shai/",
@@ -886,6 +892,59 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def extract_local_template(zip_path: Path, project_path: Path, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> Path:
+    """Extract a local template zip into project_path.
+
+    This mirrors the minimal behavior of download_and_extract_template but
+    uses a locally-provided zip file instead of downloading from GitHub.
+    """
+    if tracker:
+        tracker.start("extract", "Extract local template")
+    elif verbose:
+        console.print("Extracting local template...")
+
+    try:
+        if not is_current_dir:
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_contents = zip_ref.namelist()
+            if tracker:
+                tracker.start("zip-list")
+                tracker.complete("zip-list", f"{len(zip_contents)} entries")
+            elif verbose:
+                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
+
+            if is_current_dir:
+                # Extract into a temp dir first then merge to cwd to avoid
+                # accidental overwrites of working dir metadata.
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    zip_ref.extractall(temp_dir)
+                    for item in Path(temp_dir).iterdir():
+                        dest = Path.cwd() / item.name
+                        if item.is_dir():
+                            shutil.copytree(item, dest, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(item, dest)
+            else:
+                zip_ref.extractall(project_path)
+
+    except Exception as e:
+        if tracker:
+            tracker.error("extract", str(e))
+        else:
+            if verbose:
+                console.print(f"[red]Error extracting local template:[/red] {e}")
+        # Clean up partially created folder on error
+        if not is_current_dir and project_path.exists():
+            shutil.rmtree(project_path)
+        raise
+    else:
+        if tracker:
+            tracker.complete("extract")
+    return project_path
+
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -933,8 +992,9 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, or q"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, trae, codebuddy, amp, shai, or q"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+    template_file: str = typer.Option(None, "--template-file", help="Path to local template zip to use instead of downloading from GitHub"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -1112,7 +1172,16 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            if template_file:
+                zip_path = Path(template_file).expanduser()
+                if not zip_path.exists():
+                    tracker.error("fetch", f"Local template not found: {zip_path}")
+                    console.print(Panel(f"Local template file not found: [cyan]{zip_path}[/cyan]", title="Template Error", border_style="red"))
+                    raise typer.Exit(1)
+                # Use local template zip
+                extract_local_template(zip_path, project_path, here, verbose=False, tracker=tracker)
+            else:
+                download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1171,7 +1240,6 @@ def init(
         )
         console.print(git_error_panel)
 
-    # Agent folder security notice
     agent_config = AGENT_CONFIG.get(selected_ai)
     if agent_config:
         agent_folder = agent_config["folder"]
