@@ -134,21 +134,23 @@ check_existing_branches() {
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
     git fetch --all --prune 2>/dev/null || true
     
-    # Find all branches matching the pattern using git ls-remote (more reliable)
-    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-${short_name}$" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
+    # Find all feature branches using git ls-remote (check all branches, not just matching short-name)
+    local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
     
-    # Also check local branches
-    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
+    # Also check local branches (all feature branches)
+    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
     
-    # Check specs directory as well
+    # Check specs directory as well (all feature directories)
     local spec_dirs=""
     if [ -d "$specs_dir" ]; then
-        spec_dirs=$(find "$specs_dir" -maxdepth 1 -type d -name "[0-9]*-${short_name}" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
+        spec_dirs=$(find "$specs_dir" -maxdepth 1 -type d -name "[0-9]*-*" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
     fi
     
     # Combine all sources and get the highest number
     local max_num=0
     for num in $remote_branches $local_branches $spec_dirs; do
+        # Convert from potential octal (leading zeros) to decimal
+        num=$((10#$num))
         if [ "$num" -gt "$max_num" ]; then
             max_num=$num
         fi
