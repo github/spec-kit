@@ -101,7 +101,6 @@ function Get-HighestNumberFromBranches {
 
 function Get-NextBranchNumber {
     param(
-        [string]$ShortName,
         [string]$SpecsDir
     )
     
@@ -112,13 +111,13 @@ function Get-NextBranchNumber {
         # Ignore fetch errors
     }
     
-    # Find remote branches matching the pattern using git ls-remote
+    # Find ALL remote branches matching pattern ^\d{3}- using git ls-remote
     $remoteBranches = @()
     try {
         $remoteRefs = git ls-remote --heads origin 2>$null
         if ($remoteRefs) {
-            $remoteBranches = $remoteRefs | Where-Object { $_ -match "refs/heads/(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "refs/heads/(\d+)-") {
+            $remoteBranches = $remoteRefs | Where-Object { $_ -match "refs/heads/(\d{3})-" } | ForEach-Object {
+                if ($_ -match "refs/heads/(\d{3})-") {
                     [int]$matches[1]
                 }
             }
@@ -127,13 +126,13 @@ function Get-NextBranchNumber {
         # Ignore errors
     }
     
-    # Check local branches
+    # Check ALL local branches matching pattern ^\d{3}-
     $localBranches = @()
     try {
         $allBranches = git branch 2>$null
         if ($allBranches) {
-            $localBranches = $allBranches | Where-Object { $_ -match "^\*?\s*(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "(\d+)-") {
+            $localBranches = $allBranches | Where-Object { $_ -match "^\*?\s*(\d{3})-" } | ForEach-Object {
+                if ($_ -match "(\d{3})-") {
                     [int]$matches[1]
                 }
             }
@@ -142,12 +141,12 @@ function Get-NextBranchNumber {
         # Ignore errors
     }
     
-    # Check specs directory
+    # Check ALL specs directory folders matching pattern ^\d{3}-
     $specDirs = @()
     if (Test-Path $SpecsDir) {
         try {
-            $specDirs = Get-ChildItem -Path $SpecsDir -Directory | Where-Object { $_.Name -match "^(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_.Name -match "^(\d+)-") {
+            $specDirs = Get-ChildItem -Path $SpecsDir -Directory | Where-Object { $_.Name -match "^(\d{3})-" } | ForEach-Object {
+                if ($_.Name -match "^(\d{3})-") {
                     [int]$matches[1]
                 }
             }
@@ -254,7 +253,7 @@ if ($ShortName) {
 if ($Number -eq 0) {
     if ($hasGit) {
         # Check existing branches on remotes
-        $Number = Get-NextBranchNumber -ShortName $branchSuffix -SpecsDir $specsDir
+        $Number = Get-NextBranchNumber -SpecsDir $specsDir
     } else {
         # Fall back to local directory check
         $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
@@ -324,4 +323,3 @@ if ($Json) {
     Write-Output "HAS_GIT: $hasGit"
     Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
 }
-
