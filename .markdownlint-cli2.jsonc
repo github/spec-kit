@@ -20,5 +20,8 @@
     "MD050": {
       "style": "asterisk"
     }
-  }
+  },
+  "ignores": [
+    ".genreleases/"
+  ]
 }
