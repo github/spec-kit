@@ -84,6 +84,8 @@ See "Capability PR Workflow (Atomic PRs)" section below for detailed workflow.
 
 **CRITICAL**: Follow `~/.claude/instructions/standards/python/testing.md` for all test code.
 
+**Test Quality**: The `testing-quality-check` skill enforces context-sensitive quality standards (ratios, smells, refactoring patterns).
+
 **5-Layer Testing Standard**:
 - **Layer 1 (🔴 CI/CD)**: Pure pytest-style functions, 90% coverage, module mocking in conftest.py
 - **Layer 2 (🔴 TDD)**: This workflow enforces WHEN (outside-in order), standards define HOW (test patterns)

@@ -234,6 +234,7 @@ Phase 0-10: Feature Planning
 - Order: Contract→Integration→E2E→Unit strictly followed?
 - Real dependencies used? (actual DBs, not mocks)
 - Integration tests for: new libraries, contract changes, shared schemas?
+- Test quality: Context-sensitive ratios enforced (see testing-quality-check skill)
 - FORBIDDEN: Implementation before test, skipping RED phase
 
 **Observability**:

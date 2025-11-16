@@ -42,3 +42,5 @@ env/
 .claude
 .serena
 CLAUDE.md
+.specify
+specs
