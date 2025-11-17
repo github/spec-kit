@@ -258,3 +258,15 @@ Success criteria must be:
 - "Database can handle 1000 TPS" (implementation detail, use user-facing metric)
 - "React components render efficiently" (framework-specific)
 - "Redis cache hit rate above 80%" (technology-specific)
+
+## Sprint Integration
+
+If an active sprint exists (`sprints/active/sprint.md`), the feature will be automatically added to the sprint backlog. This provides seamless integration with sprint management without requiring manual linking.
+
+**Behavior**:
+- If active sprint exists → Feature added to `sprints/active/backlog.md`
+- If no active sprint → Feature created normally (backward compatible)
+- No user action required → Automatic and transparent
+
+**Manual Override**:
+If you don't want the feature in the current sprint, you can remove it from the backlog after creation.

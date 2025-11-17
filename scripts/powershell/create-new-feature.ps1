@@ -325,3 +325,28 @@ if ($Json) {
     Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
 }
 
+
+# Check if active sprint exists and optionally add feature to it
+function Add-ToActiveSprint {
+    param([string]$FeatureId)
+    
+    $activeSprint = Join-Path $repoRoot "sprints/active/sprint.md"
+    
+    if (Test-Path $activeSprint) {
+        $backlogFile = Join-Path $repoRoot "sprints/active/backlog.md"
+        if (Test-Path $backlogFile) {
+            # Add feature to backlog
+            "| $FeatureId | [Feature name from spec] | P1 | Not Started | | |" | Add-Content $backlogFile
+            
+            if (-not $Json) {
+                Write-Host ""
+                Write-Host "✅ Feature added to active sprint backlog" -ForegroundColor Green
+            }
+        }
+    }
+}
+
+# Call sprint check after feature creation
+if ($branchName) {
+    Add-ToActiveSprint $branchName
+}

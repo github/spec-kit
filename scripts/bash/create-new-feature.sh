@@ -303,3 +303,28 @@ else
     echo "FEATURE_NUM: $FEATURE_NUM"
     echo "SPECIFY_FEATURE environment variable set to: $BRANCH_NAME"
 fi
+
+# Check if active sprint exists and optionally add feature to it
+check_and_add_to_sprint() {
+    local feature_id="$1"
+    local active_sprint="$REPO_ROOT/sprints/active/sprint.md"
+    
+    if [ -f "$active_sprint" ]; then
+        # Active sprint exists - add feature to backlog
+        local backlog_file="$REPO_ROOT/sprints/active/backlog.md"
+        if [ -f "$backlog_file" ]; then
+            # Add feature to backlog
+            echo "| $feature_id | [Feature name from spec] | P1 | Not Started | | |" >> "$backlog_file"
+            
+            if [ "$JSON_MODE" = false ]; then
+                echo ""
+                echo "✅ Feature added to active sprint backlog"
+            fi
+        fi
+    fi
+}
+
+# Call sprint check after feature creation
+if [ -n "$BRANCH_NAME" ]; then
+    check_and_add_to_sprint "$BRANCH_NAME"
+fi
