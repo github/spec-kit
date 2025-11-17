@@ -77,7 +77,7 @@ You are managing **sprints** (time-boxed development cycles) to organize feature
 
 **Usage**: `/speckit.sprint add 001-feature-name 002-another-feature`
 
-**Arguments**: One or more feature IDs
+**Arguments**: One or more feature IDs (space-separated)
 
 **Process**:
 
@@ -85,23 +85,42 @@ You are managing **sprints** (time-boxed development cycles) to organize feature
    - Check `sprints/active/sprint.md`
    - If not found, error: "No active sprint. Use `/speckit.sprint start` first."
 
-2. **Validate feature IDs**:
-   - Check each feature exists in `specs/`
-   - Warn if feature doesn't exist
+2. **For each feature ID**:
+   
+   a. **Validate feature exists**:
+      - Check if `specs/[feature-id]/` directory exists
+      - If not found, warn: "Feature [feature-id] not found in specs/, skipping"
+      - Continue to next feature
+   
+   b. **Check if already in backlog**:
+      - Search `sprints/active/backlog.md` for feature ID
+      - If found, skip with message: "Feature [feature-id] already in sprint"
+   
+   c. **Extract feature name**:
+      - Read `specs/[feature-id]/spec.md`
+      - Find line matching `# Feature Specification: [NAME]`
+      - Extract feature name, or use "Unknown" if not found
+   
+   d. **Add to backlog.md**:
+      - Append to the features table:
+        ```markdown
+        | [feature-id] | [Feature Name] | P1 | Not Started | | |
+        ```
+      - If backlog has "No features added yet" message, replace it with the table header first
 
-3. **Update sprint.md**:
-   - Add features to "Features in Sprint" table
-   - Set status to "Not Started"
-   - Leave owner blank (can be filled manually)
+3. **Output summary**:
+   ```
+   ✅ Added 2 features to Sprint [NUMBER]:
+     - 001-feature-name: Feature Title
+     - 002-another-feature: Another Title
+   
+   Current sprint backlog: 5 features
+   ```
 
-4. **Update backlog.md**:
-   - Add feature to backlog list
-   - Include feature name from spec.md if available
-
-5. **Output**:
-   - Confirm features added
-   - Show updated feature count
-   - Display current sprint backlog
+**Example**:
+```bash
+/speckit.sprint add 001-auth 002-dashboard 003-api
+```
 
 ---
 

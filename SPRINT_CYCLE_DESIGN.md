@@ -134,12 +134,31 @@ This design introduces sprint/cycle management to Spec Kit while preserving all 
 ```
 
 **What it does**:
+- **Interactively checks** for near-complete features (In Progress/In Review/Blocked)
+  - Shows completion indicators (spec, plan, tasks exist)
+  - Highlights TODO/FIXME markers
+  - Prompts user to archive or keep in active specs/
 - Moves sprint from `active/` to `archive/sprint-NNN/`
 - **Moves completed feature specs** from `specs/` to `archive/sprint-NNN/specs/`
 - Generates high-level summary from completed features
 - Extracts key decisions and pivots
 - Creates retrospective template
 - Updates roadmap
+
+**Interactive Prompts**:
+```
+Feature: 004-api-gap-analysis
+Name: API Gap Analysis
+Current Status: In Progress
+
+Completion indicators:
+  ✅ Spec exists
+  ✅ Plan exists
+  ✅ Tasks exist
+  ⚠️  2 TODO/FIXME markers in spec
+
+Archive this feature as complete? (y/n/skip-all): _
+```
 
 **Output Structure**:
 ```
@@ -159,6 +178,7 @@ sprints/archive/sprint-001-foundation/
 - Keeps root `specs/` directory lightweight (only active work)
 - Self-contained sprint archives (specs + summary + decisions)
 - Clear separation between active and historical work
+- Catches nearly-complete features that should be archived
 
 ---
 

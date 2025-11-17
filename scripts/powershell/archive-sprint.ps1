@@ -65,6 +65,78 @@ $archivedDate = Get-Date -Format "yyyy-MM-dd"
 $specsArchiveDir = Join-Path $sprintArchiveDir "specs"
 New-Item -ItemType Directory -Path $specsArchiveDir -Force | Out-Null
 
+# Interactive check for near-complete features (if not in JSON mode)
+$nearCompleteFeatures = @()
+if (-not $Json -and (Test-Path $backlogFile)) {
+    Write-Host ""
+    Write-Host "Checking for near-complete features..." -ForegroundColor Cyan
+    Write-Host ""
+    
+    $backlogContent = Get-Content $backlogFile
+    
+    foreach ($line in $backlogContent) {
+        # Look for In Progress, In Review, or Blocked features
+        if ($line -match '\| ([0-9]+-[^\|]+) \|.*\| (In Progress|In Review|Blocked)') {
+            $featureId = $matches[1].Trim()
+            $currentStatus = $matches[2].Trim()
+            $specDir = Join-Path $specsDir $featureId
+            
+            if (Test-Path $specDir) {
+                $specFile = Join-Path $specDir "spec.md"
+                $featureName = "Unknown"
+                if (Test-Path $specFile) {
+                    $specContent = Get-Content $specFile -Raw
+                    if ($specContent -match '^# Feature Specification: (.+)$') {
+                        $featureName = $matches[1].Trim()
+                    }
+                }
+                
+                Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Gray
+                Write-Host "Feature: $featureId" -ForegroundColor Yellow
+                Write-Host "Name: $featureName"
+                Write-Host "Current Status: $currentStatus"
+                Write-Host ""
+                
+                # Check completion indicators
+                $hasSpec = Test-Path $specFile
+                $hasPlan = Test-Path (Join-Path $specDir "plan.md")
+                $hasTasks = Test-Path (Join-Path $specDir "tasks.md")
+                
+                Write-Host "Completion indicators:"
+                if ($hasSpec) { Write-Host "  ✅ Spec exists" -ForegroundColor Green } else { Write-Host "  ❌ Spec missing" -ForegroundColor Red }
+                if ($hasPlan) { Write-Host "  ✅ Plan exists" -ForegroundColor Green } else { Write-Host "  ❌ Plan missing" -ForegroundColor Red }
+                if ($hasTasks) { Write-Host "  ✅ Tasks exists" -ForegroundColor Green } else { Write-Host "  ❌ Tasks missing" -ForegroundColor Red }
+                
+                # Check for common incomplete markers
+                if ($hasSpec) {
+                    $todoCount = (Select-String -Path $specFile -Pattern "TODO|FIXME|XXX" -AllMatches).Matches.Count
+                    if ($todoCount -gt 0) {
+                        Write-Host "  ⚠️  $todoCount TODO/FIXME markers in spec" -ForegroundColor Yellow
+                    }
+                }
+                
+                Write-Host ""
+                $response = Read-Host "Archive this feature as complete? (y/n/skip-all)"
+                
+                switch ($response.ToLower()) {
+                    { $_ -in 'y', 'yes' } {
+                        $nearCompleteFeatures += $featureId
+                        Write-Host "  → Will archive $featureId" -ForegroundColor Green
+                    }
+                    'skip-all' {
+                        Write-Host "  → Skipping all remaining near-complete checks" -ForegroundColor Yellow
+                        break
+                    }
+                    default {
+                        Write-Host "  → Keeping $featureId in active specs/" -ForegroundColor Gray
+                    }
+                }
+                Write-Host ""
+            }
+        }
+    }
+}
+
 # Move completed features from specs directory to archive
 $completedFeatures = 0
 $featureList = ""
@@ -98,6 +170,26 @@ if ((Test-Path $specsDir) -and (Test-Path $backlogFile)) {
                 $featureList += "| $featureId | $featureName | ✅ Complete | [spec](./specs/$featureId/spec.md) |`n"
                 $completedFeatures++
             }
+        }
+    }
+    
+    # Also move near-complete features that user approved
+    foreach ($featureId in $nearCompleteFeatures) {
+        $specDir = Join-Path $specsDir $featureId
+        if (Test-Path $specDir) {
+            Move-Item $specDir $specsArchiveDir -Force
+            
+            $specFile = Join-Path $specsArchiveDir "$featureId/spec.md"
+            $featureName = "Unknown"
+            if (Test-Path $specFile) {
+                $specContent = Get-Content $specFile -Raw
+                if ($specContent -match '^# Feature Specification: (.+)$') {
+                    $featureName = $matches[1].Trim()
+                }
+            }
+            
+            $featureList += "| $featureId | $featureName | ✅ Complete | [spec](./specs/$featureId/spec.md) |`n"
+            $completedFeatures++
         }
     }
 }
