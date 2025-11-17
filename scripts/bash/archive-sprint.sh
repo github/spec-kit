@@ -70,21 +70,32 @@ START_DATE=$(grep "^**Duration**:" "$ACTIVE_DIR/sprint.md" | sed 's/.*: \([0-9-]
 END_DATE=$(grep "^**Duration**:" "$ACTIVE_DIR/sprint.md" | sed 's/.* - \([0-9-]*\) .*/\1/')
 ARCHIVED_DATE=$(date +%Y-%m-%d)
 
-# Count completed features from specs directory
+# Create specs directory in archive
+mkdir -p "$SPRINT_ARCHIVE_DIR/specs"
+
+# Move completed features from specs directory to archive
 COMPLETED_FEATURES=0
 FEATURE_LIST=""
-if [ -d "$REPO_ROOT/specs" ]; then
-    for spec_dir in "$REPO_ROOT/specs"/*; do
-        if [ -d "$spec_dir" ]; then
-            FEATURE_ID=$(basename "$spec_dir")
-            # Check if feature has completion marker or is referenced in backlog
-            if grep -q "$FEATURE_ID" "$ACTIVE_DIR/backlog.md" 2>/dev/null; then
+if [ -d "$REPO_ROOT/specs" ] && [ -f "$ACTIVE_DIR/backlog.md" ]; then
+    # Extract completed feature IDs from backlog (status: Done, Completed, or ✅)
+    while IFS= read -r line; do
+        if echo "$line" | grep -qE '\| [0-9]+-[^|]+ \|.*\| (Done|Completed|✅)'; then
+            FEATURE_ID=$(echo "$line" | sed 's/^| \([0-9]*-[^ |]*\) .*/\1/' | xargs)
+            SPEC_DIR="$REPO_ROOT/specs/$FEATURE_ID"
+            
+            if [ -d "$SPEC_DIR" ]; then
+                # Move spec to archive
+                mv "$SPEC_DIR" "$SPRINT_ARCHIVE_DIR/specs/"
+                
+                # Extract feature name
+                FEATURE_NAME=$(grep -m 1 "^# Feature Specification:" "$SPRINT_ARCHIVE_DIR/specs/$FEATURE_ID/spec.md" 2>/dev/null | sed 's/^# Feature Specification: //' || echo "Unknown")
+                
+                # Add to feature list with relative link
+                FEATURE_LIST="${FEATURE_LIST}| $FEATURE_ID | $FEATURE_NAME | ✅ Complete | [spec](./specs/$FEATURE_ID/spec.md) |\n"
                 COMPLETED_FEATURES=$((COMPLETED_FEATURES + 1))
-                FEATURE_NAME=$(grep -m 1 "^# Feature Specification:" "$spec_dir/spec.md" 2>/dev/null | sed 's/^# Feature Specification: //' || echo "Unknown")
-                FEATURE_LIST="${FEATURE_LIST}| $FEATURE_ID | $FEATURE_NAME | ✅ Complete | [spec](../../specs/$FEATURE_ID/spec.md) |\n"
             fi
         fi
-    done
+    done < "$ACTIVE_DIR/backlog.md"
 fi
 
 # Create features.md

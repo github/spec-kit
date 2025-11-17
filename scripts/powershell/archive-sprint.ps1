@@ -61,31 +61,43 @@ if ($sprintContent -match '\*\*Duration\*\*: (\d{4}-\d{2}-\d{2}) - (\d{4}-\d{2}-
 }
 $archivedDate = Get-Date -Format "yyyy-MM-dd"
 
-# Count completed features from specs directory
+# Create specs directory in archive
+$specsArchiveDir = Join-Path $sprintArchiveDir "specs"
+New-Item -ItemType Directory -Path $specsArchiveDir -Force | Out-Null
+
+# Move completed features from specs directory to archive
 $completedFeatures = 0
 $featureList = ""
 $specsDir = Join-Path $repoRoot "specs"
+$backlogFile = Join-Path $activeDir "backlog.md"
 
-if (Test-Path $specsDir) {
-    $backlogContent = ""
-    $backlogFile = Join-Path $activeDir "backlog.md"
-    if (Test-Path $backlogFile) {
-        $backlogContent = Get-Content $backlogFile -Raw
-    }
+if ((Test-Path $specsDir) -and (Test-Path $backlogFile)) {
+    $backlogContent = Get-Content $backlogFile
     
-    Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-        $featureId = $_.Name
-        if ($backlogContent -match $featureId) {
-            $completedFeatures++
-            $specFile = Join-Path $_.FullName "spec.md"
-            $featureName = "Unknown"
-            if (Test-Path $specFile) {
-                $specContent = Get-Content $specFile -Raw
-                if ($specContent -match '^# Feature Specification: (.+)$') {
-                    $featureName = $matches[1].Trim()
+    # Extract completed feature IDs from backlog (status: Done, Completed, or ✅)
+    $backlogContent | ForEach-Object {
+        if ($_ -match '\| ([0-9]+-[^\|]+) \|.*\| (Done|Completed|✅)') {
+            $featureId = $matches[1].Trim()
+            $specDir = Join-Path $specsDir $featureId
+            
+            if (Test-Path $specDir) {
+                # Move spec to archive
+                Move-Item $specDir $specsArchiveDir -Force
+                
+                # Extract feature name
+                $specFile = Join-Path $specsArchiveDir "$featureId/spec.md"
+                $featureName = "Unknown"
+                if (Test-Path $specFile) {
+                    $specContent = Get-Content $specFile -Raw
+                    if ($specContent -match '^# Feature Specification: (.+)$') {
+                        $featureName = $matches[1].Trim()
+                    }
                 }
+                
+                # Add to feature list with relative link
+                $featureList += "| $featureId | $featureName | ✅ Complete | [spec](./specs/$featureId/spec.md) |`n"
+                $completedFeatures++
             }
-            $featureList += "| $featureId | $featureName | ✅ Complete | [spec](../../specs/$featureId/spec.md) |`n"
         }
     }
 }

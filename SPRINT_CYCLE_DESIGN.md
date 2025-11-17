@@ -71,12 +71,15 @@ This design introduces sprint/cycle management to Spec Kit while preserving all 
 │   │   │   ├── summary.md            # High-level summary
 │   │   │   ├── decisions.md          # Key decisions & pivots
 │   │   │   ├── retrospective.md      # Retrospective notes
-│   │   │   └── features.md           # List of completed features
+│   │   │   ├── features.md           # List of completed features
+│   │   │   └── specs/                # Completed feature specs (moved from root)
+│   │   │       ├── 001-feature-name/
+│   │   │       └── 002-feature-name/
 │   │   ├── sprint-002-core-features/
 │   │   └── ...
 │   └── roadmap.md                    # Project-level roadmap
-├── specs/                            # Existing feature specs (unchanged)
-│   ├── 001-feature-name/
+├── specs/                            # Active/in-progress feature specs only
+│   ├── 015-current-feature/
 │   └── ...
 └── templates/
     ├── sprint-template.md            # NEW
@@ -132,6 +135,7 @@ This design introduces sprint/cycle management to Spec Kit while preserving all 
 
 **What it does**:
 - Moves sprint from `active/` to `archive/sprint-NNN/`
+- **Moves completed feature specs** from `specs/` to `archive/sprint-NNN/specs/`
 - Generates high-level summary from completed features
 - Extracts key decisions and pivots
 - Creates retrospective template
@@ -142,12 +146,19 @@ This design introduces sprint/cycle management to Spec Kit while preserving all 
 sprints/archive/sprint-001-foundation/
 ├── summary.md         - Executive summary with decisions and pivots
 ├── decisions.md       - Key decisions with full context
-├── features.md        - List of completed features with links
+├── features.md        - List of completed features with links to archived specs
 ├── retrospective.md   - Retrospective template (run /speckit.retrospective to fill)
 ├── sprint.md          - Original sprint plan
 ├── backlog.md         - Original backlog
-└── decisions.md       - Original decisions log
+└── specs/             - Completed feature specs (moved from root specs/)
+    ├── 001-feature-name/
+    └── 002-feature-name/
 ```
+
+**Benefits**:
+- Keeps root `specs/` directory lightweight (only active work)
+- Self-contained sprint archives (specs + summary + decisions)
+- Clear separation between active and historical work
 
 ---
 
