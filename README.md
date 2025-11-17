@@ -251,6 +251,21 @@ Additional commands for enhanced quality and validation:
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`) |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
+#### Sprint Management Commands
+
+Optional commands for Agile/Scrum workflows (organize features into time-boxed cycles):
+
+| Command                     | Description                                                           |
+|-----------------------------|-----------------------------------------------------------------------|
+| `/speckit.sprint start`     | Create new sprint with goals and timeline                            |
+| `/speckit.sprint add`       | Add features to active sprint backlog                                |
+| `/speckit.sprint status`    | View current sprint progress, blockers, and completion               |
+| `/speckit.archive`          | Archive completed sprint with summary and move specs to archive      |
+| `/speckit.retrospective`    | Conduct structured sprint retrospective                              |
+| `/speckit.roadmap`          | Generate project-level roadmap across all sprints                    |
+
+For detailed information about sprint management, see [SPRINT_CYCLE_DESIGN.md](SPRINT_CYCLE_DESIGN.md).
+
 ### Environment Variables
 
 | Variable         | Description                                                                                    |
