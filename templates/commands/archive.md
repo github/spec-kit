@@ -247,3 +247,27 @@ sprints/archive/sprint-001-foundation/
 - Archive is immutable - don't modify after creation
 
 {SCRIPT}
+
+## Script Integration
+
+The `/speckit.archive` command uses the `archive-sprint` script to handle:
+- Archive directory creation
+- File moving and copying
+- Feature spec scanning
+- Summary generation
+- Template processing
+
+**Script Location**:
+- Bash: `scripts/bash/archive-sprint.sh`
+- PowerShell: `scripts/powershell/archive-sprint.ps1`
+
+**Usage**:
+```bash
+# Bash
+./scripts/bash/archive-sprint.sh --json --summary "Custom summary text"
+
+# PowerShell
+./scripts/powershell/archive-sprint.ps1 -Json -Summary "Custom summary text"
+```
+
+{SCRIPT}

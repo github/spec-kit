@@ -200,3 +200,26 @@ After completing feature implementation:
 - Use `/speckit.archive` to manually archive without completing
 
 {SCRIPT}
+
+## Script Integration
+
+The `/speckit.sprint start` command uses the `create-sprint` script to handle:
+- Sprint number calculation
+- Directory creation
+- Template copying and variable replacement
+- File initialization
+
+**Script Location**:
+- Bash: `scripts/bash/create-sprint.sh`
+- PowerShell: `scripts/powershell/create-sprint.ps1`
+
+**Usage**:
+```bash
+# Bash
+./scripts/bash/create-sprint.sh --json --duration 2w "Sprint Name"
+
+# PowerShell
+./scripts/powershell/create-sprint.ps1 -Json -Duration 2w "Sprint Name"
+```
+
+{SCRIPT}
