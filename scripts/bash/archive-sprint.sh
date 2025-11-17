@@ -11,6 +11,7 @@ source "$SCRIPT_DIR/common.sh"
 
 JSON_MODE=false
 CUSTOM_SUMMARY=""
+ADDITIONAL_FEATURES=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -21,6 +22,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --summary)
             CUSTOM_SUMMARY="$2"
+            shift 2
+            ;;
+        --archive-features)
+            ADDITIONAL_FEATURES="$2"
             shift 2
             ;;
         *)
@@ -70,99 +75,15 @@ START_DATE=$(grep "^\*\*Duration\*\*:" "$ACTIVE_DIR/sprint.md" | sed 's/.*: \([0
 END_DATE=$(grep "^\*\*Duration\*\*:" "$ACTIVE_DIR/sprint.md" | sed 's/.* - \([0-9-]*\) .*/\1/')
 ARCHIVED_DATE=$(date +%Y-%m-%d)
 
+# Parse additional features to archive (comma or space separated)
+ADDITIONAL_FEATURES_ARRAY=()
+if [ -n "$ADDITIONAL_FEATURES" ]; then
+    # Convert comma-separated or space-separated list to array
+    IFS=', ' read -ra ADDITIONAL_FEATURES_ARRAY <<< "$ADDITIONAL_FEATURES"
+fi
+
 # Create specs directory in archive
 mkdir -p "$SPRINT_ARCHIVE_DIR/specs"
-
-# Interactive check for near-complete features (if not in JSON mode)
-NEAR_COMPLETE_FEATURES=()
-if [ "$JSON_MODE" = false ] && [ -f "$ACTIVE_DIR/backlog.md" ]; then
-    # Check if we're in an interactive terminal
-    if [ -t 0 ]; then
-        echo ""
-        echo "Checking for near-complete features..."
-        echo ""
-    
-    while IFS= read -r line; do
-        # Look for In Progress, In Review, or Blocked features
-        if echo "$line" | grep -qE '\| [0-9]+-[^|]+ \|.*\| (In Progress|In Review|Blocked)'; then
-            FEATURE_ID=$(echo "$line" | sed 's/^| \([0-9]*-[^ |]*\) .*/\1/' | xargs)
-            SPEC_DIR="$REPO_ROOT/specs/$FEATURE_ID"
-            
-            if [ -d "$SPEC_DIR" ]; then
-                FEATURE_NAME=$(grep -m 1 "^# Feature Specification:" "$SPEC_DIR/spec.md" 2>/dev/null | sed 's/^# Feature Specification: //' || echo "Unknown")
-                CURRENT_STATUS=$(echo "$line" | sed 's/.*| \([^|]*\) |[^|]*|[^|]*$/\1/' | xargs)
-                
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "Feature: $FEATURE_ID"
-                echo "Name: $FEATURE_NAME"
-                echo "Current Status: $CURRENT_STATUS"
-                echo ""
-                
-                # Check completion indicators
-                HAS_SPEC=false
-                HAS_PLAN=false
-                HAS_TASKS=false
-                
-                [ -f "$SPEC_DIR/spec.md" ] && HAS_SPEC=true
-                [ -f "$SPEC_DIR/plan.md" ] && HAS_PLAN=true
-                [ -f "$SPEC_DIR/tasks.md" ] && HAS_TASKS=true
-                
-                echo "Completion indicators:"
-                [ "$HAS_SPEC" = true ] && echo "  ✅ Spec exists" || echo "  ❌ Spec missing"
-                [ "$HAS_PLAN" = true ] && echo "  ✅ Plan exists" || echo "  ❌ Plan missing"
-                [ "$HAS_TASKS" = true ] && echo "  ✅ Tasks exist" || echo "  ❌ Tasks missing"
-                
-                # Check for common incomplete markers
-                if [ -f "$SPEC_DIR/spec.md" ]; then
-                    TODO_COUNT=$(grep -E "TODO|FIXME|XXX" "$SPEC_DIR/spec.md" 2>/dev/null | wc -l | xargs)
-                    if [ "$TODO_COUNT" -gt 0 ]; then
-                        echo "  ⚠️  $TODO_COUNT TODO/FIXME markers in spec"
-                    fi
-                fi
-                
-                echo ""
-                read -p "Archive this feature as complete? (y/n/skip-all): " response
-                
-                case "$response" in
-                    y|Y|yes|Yes)
-                        NEAR_COMPLETE_FEATURES+=("$FEATURE_ID")
-                        echo "  → Will archive $FEATURE_ID"
-                        ;;
-                    skip-all)
-                        echo "  → Skipping all remaining near-complete checks"
-                        break
-                        ;;
-                    *)
-                        echo "  → Keeping $FEATURE_ID in active specs/"
-                        ;;
-                esac
-                echo ""
-            fi
-        fi
-    done < "$ACTIVE_DIR/backlog.md"
-    else
-        # Non-interactive mode: auto-archive In Review features only
-        echo ""
-        echo "⚠️  Non-interactive mode detected"
-        echo "Auto-archiving 'In Review' features (run in terminal for interactive prompts)"
-        echo ""
-        
-        while IFS= read -r line; do
-            if echo "$line" | grep -qE '\| [0-9]+-[^|]+ \|.*\| In Review'; then
-                FEATURE_ID=$(echo "$line" | sed 's/^| \([0-9]*-[^ |]*\) .*/\1/' | xargs)
-                SPEC_DIR="$REPO_ROOT/specs/$FEATURE_ID"
-                
-                if [ -d "$SPEC_DIR" ]; then
-                    FEATURE_NAME=$(grep -m 1 "^# Feature Specification:" "$SPEC_DIR/spec.md" 2>/dev/null | sed 's/^# Feature Specification: //' || echo "Unknown")
-                    echo "  ✅ Auto-archiving: $FEATURE_ID - $FEATURE_NAME"
-                    NEAR_COMPLETE_FEATURES+=("$FEATURE_ID")
-                fi
-            fi
-        done < "$ACTIVE_DIR/backlog.md"
-        
-        echo ""
-    fi
-fi
 
 # Move completed features from specs directory to archive
 COMPLETED_FEATURES=0
@@ -188,8 +109,8 @@ if [ -d "$REPO_ROOT/specs" ] && [ -f "$ACTIVE_DIR/backlog.md" ]; then
         fi
     done < "$ACTIVE_DIR/backlog.md"
     
-    # Also move near-complete features that user approved
-    for FEATURE_ID in "${NEAR_COMPLETE_FEATURES[@]}"; do
+    # Also move additional features specified via --archive-features
+    for FEATURE_ID in "${ADDITIONAL_FEATURES_ARRAY[@]}"; do
         SPEC_DIR="$REPO_ROOT/specs/$FEATURE_ID"
         if [ -d "$SPEC_DIR" ]; then
             mv "$SPEC_DIR" "$SPRINT_ARCHIVE_DIR/specs/"
