@@ -66,8 +66,8 @@ cp "$ACTIVE_DIR/backlog.md" "$SPRINT_ARCHIVE_DIR/" 2>/dev/null || true
 cp "$ACTIVE_DIR/decisions.md" "$SPRINT_ARCHIVE_DIR/" 2>/dev/null || true
 
 # Extract dates from sprint.md
-START_DATE=$(grep "^**Duration**:" "$ACTIVE_DIR/sprint.md" | sed 's/.*: \([0-9-]*\) -.*/\1/')
-END_DATE=$(grep "^**Duration**:" "$ACTIVE_DIR/sprint.md" | sed 's/.* - \([0-9-]*\) .*/\1/')
+START_DATE=$(grep "^\*\*Duration\*\*:" "$ACTIVE_DIR/sprint.md" | sed 's/.*: \([0-9-]*\) -.*/\1/')
+END_DATE=$(grep "^\*\*Duration\*\*:" "$ACTIVE_DIR/sprint.md" | sed 's/.* - \([0-9-]*\) .*/\1/')
 ARCHIVED_DATE=$(date +%Y-%m-%d)
 
 # Create specs directory in archive
