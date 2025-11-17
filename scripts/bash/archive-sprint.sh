@@ -112,8 +112,10 @@ if [ "$JSON_MODE" = false ] && [ -f "$ACTIVE_DIR/backlog.md" ]; then
                 
                 # Check for common incomplete markers
                 if [ -f "$SPEC_DIR/spec.md" ]; then
-                    TODO_COUNT=$(grep -c "TODO\|FIXME\|XXX" "$SPEC_DIR/spec.md" 2>/dev/null || echo "0")
-                    [ "$TODO_COUNT" -gt 0 ] && echo "  ⚠️  $TODO_COUNT TODO/FIXME markers in spec"
+                    TODO_COUNT=$(grep -E "TODO|FIXME|XXX" "$SPEC_DIR/spec.md" 2>/dev/null | wc -l | xargs)
+                    if [ "$TODO_COUNT" -gt 0 ]; then
+                        echo "  ⚠️  $TODO_COUNT TODO/FIXME markers in spec"
+                    fi
                 fi
                 
                 echo ""
