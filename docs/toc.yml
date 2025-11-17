@@ -11,6 +11,8 @@
       href: quickstart.md
     - name: Existing Project Guide
       href: existing-project-guide.md
+    - name: Upgrade
+      href: upgrade.md
 
 # Development workflows
 - name: Development
