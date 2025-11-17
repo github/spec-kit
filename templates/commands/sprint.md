@@ -4,19 +4,60 @@ description: "Create and manage sprints - group features into time-boxed develop
 
 # Sprint Management Command
 
-You are managing **sprints** (time-boxed development cycles) to organize features, track progress, and maintain project visibility.
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+You **MUST** execute the sprint command based on the user input.
 
 ## Commands
 
-### `/speckit.sprint start` - Start New Sprint
+The user's input will be one of these commands. **Execute the corresponding action immediately:**
 
-**Usage**: `/speckit.sprint start "Sprint Name" --duration 2w`
+### `/speckit.sprint start "Sprint Name" --duration 2w`
 
-**Arguments**: 
-- Sprint name (required)
-- `--duration` (optional): Sprint duration (e.g., 1w, 2w, 3w)
+**Do this:**
 
-**Process**:
+1. Extract sprint name and duration from `$ARGUMENTS`
+2. Execute the create-sprint script:
+   ```bash
+   bash .specify/scripts/create-sprint.sh "Sprint Name" "2w"
+   ```
+3. Parse the script output and report success/failure to the user
+
+### `/speckit.sprint add <feature-ids>`
+
+**Do this:**
+
+1. Extract feature IDs from `$ARGUMENTS` (space-separated)
+2. For each feature ID:
+   - Check if `specs/<feature-id>/` exists
+   - Check if already in `sprints/active/backlog.md`
+   - If valid and not duplicate, extract feature name from `specs/<feature-id>/spec.md`
+   - Append to backlog: `| <feature-id> | <name> | P1 | Not Started | | |`
+3. Report which features were added and which were skipped
+
+### `/speckit.sprint status`
+
+**Do this:**
+
+1. Read `sprints/active/sprint.md` to get sprint info
+2. Read `sprints/active/backlog.md` to count features by status
+3. Calculate completion percentage
+4. Display formatted status with progress and blockers
+
+### `/speckit.sprint complete`
+
+**Do this:**
+
+1. Execute the archive-sprint script:
+   ```bash
+   bash .specify/scripts/archive-sprint.sh
+   ```
+2. Answer any interactive prompts about near-complete features
+3. Parse the script output and report success/failure to the user
 
 1. **Check for active sprint**:
    - If `sprints/active/sprint.md` exists, warn user and ask to complete it first

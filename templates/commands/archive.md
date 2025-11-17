@@ -4,27 +4,74 @@ description: "Archive completed sprint with high-level summary, extract key deci
 
 # Sprint Archive Command
 
-You are archiving a **completed sprint** to preserve knowledge, document decisions, and prepare for retrospective.
+## User Input
 
-## Purpose
+```text
+$ARGUMENTS
+```
 
-Archive the current sprint by:
-1. Generating high-level summary from completed features
-2. Extracting key decisions from feature specs
-3. Documenting pivots and course corrections
-4. Creating retrospective template
-5. Moving sprint to archive directory
+You **MUST** execute the sprint archive process.
 
-## Prerequisites
-
-- Active sprint exists in `sprints/active/`
-- Sprint has at least one completed feature (recommended)
-
-## Input
-
-**Arguments**: `$ARGUMENTS` (optional custom summary text)
+**IMPORTANT**: When prompting for near-complete features, ask about **ONE feature at a time** and wait for the user's response before showing the next feature. This is similar to how `/speckit.clarify` works - sequential questions, not all at once.
 
 ## Process
+
+**Do this:**
+
+1. **Check for near-complete features** (In Progress/In Review/Blocked):
+   
+   a. Read `sprints/active/backlog.md`
+   
+   b. For each feature with status "In Progress", "In Review", or "Blocked":
+      - Check if `specs/<feature-id>/` exists
+      - Check if `specs/<feature-id>/spec.md` exists
+      - Check if `specs/<feature-id>/planning/plan.md` exists
+      - Check if `specs/<feature-id>/planning/tasks.md` exists
+      - Count TODO/FIXME/XXX markers in spec.md
+   
+   c. **Ask the user** for each near-complete feature **ONE AT A TIME**:
+      ```
+      Feature: <feature-id>
+      Name: <feature-name>
+      Status: <current-status>
+      
+      Completion indicators:
+        ✅ Spec exists
+        ✅ Plan exists
+        ✅ Tasks exist
+        ⚠️  2 TODO markers
+      
+      Should this feature be archived as complete? (y/n/skip-all)
+      ```
+   
+   d. **WAIT for user response** before showing the next feature
+   
+   e. If user responds "skip-all", stop asking and proceed to step 2
+   
+   f. Collect feature IDs where user answered "y"
+
+2. **Execute archive script** with collected decisions:
+   
+   Build the command with approved features:
+   ```bash
+   bash .specify/scripts/archive-sprint.sh --archive-features "005-api-lambda-implementation,007-deploy-frontend-aws"
+   ```
+   
+   Or if no additional features:
+   ```bash
+   bash .specify/scripts/archive-sprint.sh
+   ```
+   
+   The script will:
+   - Archive features marked "Done/Completed/✅" automatically
+   - Archive features from --archive-features parameter (if provided)
+   - Move specs to archive directory
+   - Generate summary, decisions, features.md, retrospective.md
+
+3. **Report results** to the user:
+   - Number of features archived
+   - Archive location
+   - Next steps (retrospective, new sprint)
 
 ### Step 1: Verify Active Sprint
 
