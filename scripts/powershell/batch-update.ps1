@@ -162,7 +162,7 @@ function Invoke-SpecifyUpdate {
         [string]$ProjectDirectory
     )
     
-    Write-Info "Running 'specify update' in: $ProjectDirectory"
+    Write-Info "Running 'specify init --here --force --ai copilot --script ps' in: $ProjectDirectory"
     
     if (-not (Test-Path $ProjectDirectory)) {
         Write-WarningMsg "Directory does not exist: $ProjectDirectory"
@@ -178,20 +178,20 @@ function Invoke-SpecifyUpdate {
             return $false
         }
         
-        & specify update --ai copilot --script ps
+        & specify init --here --force --ai copilot --script ps
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "Successfully ran specify update in $ProjectDirectory"
+            Write-Success "Successfully ran specify init --here --force --ai copilot --script ps in $ProjectDirectory"
             Pop-Location
             return $true
         } else {
-            Write-Err "Failed to run specify update in $ProjectDirectory"
+            Write-Err "Failed to run specify init --here --force --ai copilot --script ps in $ProjectDirectory"
             Pop-Location
             return $false
         }
     }
     catch {
-        Write-Err "Exception occurred while running specify update in $ProjectDirectory : $_"
+        Write-Err "Exception occurred while running specify init --here --force --ai copilot --script ps in $ProjectDirectory : $_"
         Pop-Location
         return $false
     }

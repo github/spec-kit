@@ -138,8 +138,8 @@ invoke_specify_update() {
         return 1
     fi
     
-    # Run specify update
-    if specify update --ai copilot --script ps; then
+    # Run specify init
+    if specify init --here --force --ai copilot --script ps; then
         log_success "Successfully ran specify update in $project_directory"
         cd "$original_dir"
         return 0
