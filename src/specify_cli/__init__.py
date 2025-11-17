@@ -1228,6 +1228,20 @@ def init(
     console.print()
     console.print(enhancements_panel)
 
+    sprint_lines = [
+        "Optional commands for Agile/Scrum sprint management [bright_black](organize features into time-boxed cycles)[/bright_black]",
+        "",
+        f"○ [cyan]/speckit.sprint start[/] [bright_black]\"Sprint Name\" --duration 2w[/bright_black] - Create new sprint with goals and timeline",
+        f"○ [cyan]/speckit.sprint add[/] [bright_black]<feature-ids>[/bright_black] - Add features to active sprint backlog",
+        f"○ [cyan]/speckit.sprint status[/] - View current sprint progress, blockers, and completion",
+        f"○ [cyan]/speckit.archive[/] - Archive completed sprint with summary and move specs to archive",
+        f"○ [cyan]/speckit.retrospective[/] - Conduct structured sprint retrospective",
+        f"○ [cyan]/speckit.roadmap[/] - Generate project-level roadmap across all sprints"
+    ]
+    sprint_panel = Panel("\n".join(sprint_lines), title="Sprint Management Commands", border_style="magenta", padding=(1,2))
+    console.print()
+    console.print(sprint_panel)
+
 @app.command()
 def check():
     """Check that all required tools are installed."""
