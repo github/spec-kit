@@ -76,9 +76,11 @@ mkdir -p "$SPRINT_ARCHIVE_DIR/specs"
 # Interactive check for near-complete features (if not in JSON mode)
 NEAR_COMPLETE_FEATURES=()
 if [ "$JSON_MODE" = false ] && [ -f "$ACTIVE_DIR/backlog.md" ]; then
-    echo ""
-    echo "Checking for near-complete features..."
-    echo ""
+    # Check if we're in an interactive terminal
+    if [ -t 0 ]; then
+        echo ""
+        echo "Checking for near-complete features..."
+        echo ""
     
     while IFS= read -r line; do
         # Look for In Progress, In Review, or Blocked features
@@ -138,6 +140,28 @@ if [ "$JSON_MODE" = false ] && [ -f "$ACTIVE_DIR/backlog.md" ]; then
             fi
         fi
     done < "$ACTIVE_DIR/backlog.md"
+    else
+        # Non-interactive mode: auto-archive In Review features only
+        echo ""
+        echo "⚠️  Non-interactive mode detected"
+        echo "Auto-archiving 'In Review' features (run in terminal for interactive prompts)"
+        echo ""
+        
+        while IFS= read -r line; do
+            if echo "$line" | grep -qE '\| [0-9]+-[^|]+ \|.*\| In Review'; then
+                FEATURE_ID=$(echo "$line" | sed 's/^| \([0-9]*-[^ |]*\) .*/\1/' | xargs)
+                SPEC_DIR="$REPO_ROOT/specs/$FEATURE_ID"
+                
+                if [ -d "$SPEC_DIR" ]; then
+                    FEATURE_NAME=$(grep -m 1 "^# Feature Specification:" "$SPEC_DIR/spec.md" 2>/dev/null | sed 's/^# Feature Specification: //' || echo "Unknown")
+                    echo "  ✅ Auto-archiving: $FEATURE_ID - $FEATURE_NAME"
+                    NEAR_COMPLETE_FEATURES+=("$FEATURE_ID")
+                fi
+            fi
+        done < "$ACTIVE_DIR/backlog.md"
+        
+        echo ""
+    fi
 fi
 
 # Move completed features from specs directory to archive
