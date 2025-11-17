@@ -1,12 +1,18 @@
 # Quick Start Guide
 
-This guide will help you get started with Spec-Driven Development using Spec Kit.
+This guide will help you get started with Spec-Driven Development using Spec Kit for **new projects**.
 
+> **Already have a project?** See the [Existing Project Guide](existing-project-guide.md) for a streamlined workflow.
+>
 > NEW: All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
 
 ## The 4-Step Process
 
 ### 1. Install Specify
+
+Create a new project directory and set up Spec-Kit with your preferred AI coding agent.
+
+> For detailed installation options, see the [Installation Guide](installation.md).
 
 Initialize your project depending on the coding agent you're using:
 
@@ -23,6 +29,8 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 ### 2. Create the Spec
 
+Define your feature requirements in plain language—describe what users need and why, without worrying about implementation details or technical requirements. This should clearly state the goal in user-centric terms.
+
 Use the `/speckit.specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
@@ -30,6 +38,8 @@ Use the `/speckit.specify` command to describe what you want to build. Focus on 
 ```
 
 ### 3. Create a Technical Implementation Plan
+
+Translate your spec into concrete technical decisions—frameworks, databases, and architecture patterns.
 
 Use the `/speckit.plan` command to provide your tech stack and architecture choices.
 
@@ -39,11 +49,26 @@ Use the `/speckit.plan` command to provide your tech stack and architecture choi
 
 ### 4. Break Down and Implement
 
-Use `/speckit.tasks` to create an actionable task list, then ask your agent to implement the feature.
+Generate a step-by-step task list from your plan, then execute those tasks to build your feature.
+
+Use `/speckit.tasks` to create an actionable task list, then prompt your agent with `/speckit.implement` to execute the tasks.
+
+---
 
 ## Detailed Example: Building Taskify
 
 Here's a complete example of building a team productivity platform:
+
+### Step 0: Establish Project Principles (Recommended)
+
+Before creating features, use `/speckit.constitution` to define your project's governing principles:
+
+```text
+/speckit.constitution Establish core principles for this project:
+- Test-first development is mandatory - tests written and approved before implementation
+- API response times must stay under 200ms
+- Real integration tests over mocks - use actual database instances for testing
+```
 
 ### Step 1: Define Requirements with `/speckit.specify`
 
@@ -102,10 +127,11 @@ Read through it with an eye on determining whether or not there is a sequence of
 to be doing that are obvious from reading this. Because I don't know if there's enough here.
 ```
 
-Finally, implement the solution:
+Finally, generate tasks and implement the solution:
 
 ```text
-implement specs/002-create-taskify/plan.md
+/speckit.tasks
+/speckit.implement 002-create-taskify
 ```
 
 ## Key Principles
@@ -118,6 +144,7 @@ implement specs/002-create-taskify/plan.md
 
 ## Next Steps
 
-- Read the complete methodology for in-depth guidance
-- Check out more examples in the repository
-- Explore the source code on GitHub
+- **Adding features to existing projects?** Use the [Existing Project Guide](existing-project-guide.md)
+- **Deep dive:** Read the [complete methodology](../spec-driven.md) for in-depth guidance
+- **Local development:** See [Local Development Guide](local-development.md) for CLI development workflows
+- **Troubleshooting:** Check the main [README troubleshooting section](../README.md#-troubleshooting)
