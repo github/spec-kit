@@ -23,7 +23,7 @@ The user's input will be one of these commands. **Execute the corresponding acti
 1. Extract sprint name and duration from `$ARGUMENTS`
 2. Execute the create-sprint script:
    ```bash
-   bash .specify/scripts/create-sprint.sh "Sprint Name" "2w"
+   bash .specify/scripts/bash/create-sprint.sh "Sprint Name" "2w"
    ```
 3. Parse the script output and report success/failure to the user
 
@@ -54,7 +54,7 @@ The user's input will be one of these commands. **Execute the corresponding acti
 
 1. Execute the archive-sprint script:
    ```bash
-   bash .specify/scripts/archive-sprint.sh
+   bash .specify/scripts/bash/archive-sprint.sh
    ```
 2. Answer any interactive prompts about near-complete features
 3. Parse the script output and report success/failure to the user
