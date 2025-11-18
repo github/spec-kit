@@ -77,7 +77,7 @@ To test your templates, commands, and other changes locally, follow these steps:
 
 2. **Copy the relevant package to your test project**
 
-   ```
+   ```bash
    cp -r .genreleases/sdd-copilot-package-sh/. <path-to-test-project>/
    ```
 
