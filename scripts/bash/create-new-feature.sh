@@ -303,3 +303,65 @@ else
     echo "FEATURE_NUM: $FEATURE_NUM"
     echo "SPECIFY_FEATURE environment variable set to: $BRANCH_NAME"
 fi
+
+# Check if active sprint exists and optionally add feature to it
+check_and_add_to_sprint() {
+    local feature_id="$1"
+    local feature_desc="$2"
+    local active_sprint="$REPO_ROOT/.specify/sprints/active/sprint.md"
+    
+    # Truncate description if longer than 50 characters
+    if [ ${#feature_desc} -gt 50 ]; then
+        feature_desc="${feature_desc:0:47}..."
+    fi
+    
+    # Get owner from git config
+    local owner=""
+    if git config user.name >/dev/null 2>&1; then
+        owner=$(git config user.name)
+    fi
+    
+    if [ -f "$active_sprint" ]; then
+        # Add feature to backlog.md
+        local backlog_file="$REPO_ROOT/.specify/sprints/active/backlog.md"
+        if [ -f "$backlog_file" ]; then
+            # Check if backlog has placeholder text
+            if grep -q "No features added yet" "$backlog_file"; then
+                # Replace placeholder with table header and feature
+                sed -i.bak '/No features added yet/d' "$backlog_file"
+                sed -i.bak '/## Features/a\
+\
+| Feature ID | Feature Name | Priority | Status | Owner | Notes |\
+|------------|--------------|----------|--------|-------|-------|\
+| '"$feature_id"' | '"$feature_desc"' | P1 | Not Started | '"$owner"' | |
+' "$backlog_file"
+                rm -f "$backlog_file.bak"
+            else
+                # Append to existing table
+                sed -i.bak '/^| [0-9]/a\
+| '"$feature_id"' | '"$feature_desc"' | P1 | Not Started | '"$owner"' | |
+' "$backlog_file"
+                rm -f "$backlog_file.bak"
+            fi
+        fi
+        
+        # Add feature to sprint.md "Features in Sprint" section
+        # Just add after the table separator
+        if grep -q "^|--" "$active_sprint"; then
+            sed -i.bak '/^|--.*|--.*|--/a\
+| '"$feature_id"' | '"$feature_desc"' | P1 | Not Started | '"$owner"' | |
+' "$active_sprint"
+            rm -f "$active_sprint.bak"
+        fi
+        
+        if [ "$JSON_MODE" = false ]; then
+            echo ""
+            echo "✅ Feature added to active sprint"
+        fi
+    fi
+}
+
+# Call sprint check after feature creation
+if [ -n "$BRANCH_NAME" ]; then
+    check_and_add_to_sprint "$BRANCH_NAME" "$FEATURE_DESCRIPTION"
+fi
