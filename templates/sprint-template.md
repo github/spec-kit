@@ -7,20 +7,40 @@
 
 ## Sprint Goal
 
-[High-level goal for this sprint - what are we trying to achieve? This should be a clear, measurable objective that the team can rally around.]
+<!--
+Defined during sprint creation via /speckit.sprint start
+Prompt: "What is the high-level goal for this sprint? What are you trying to achieve?"
+
+Example: "Enable users to authenticate and access personalized dashboards with role-based permissions"
+-->
+
+[To be defined - use /speckit.sprint start to set sprint goal]
 
 ## Success Criteria
 
 <!--
-Define 3-5 measurable outcomes that indicate sprint success.
-These should be specific, testable, and aligned with the sprint goal.
+Defined during sprint creation via /speckit.sprint start
+Prompt: "What are 3-5 measurable outcomes that indicate sprint success?"
+
+Examples:
+- [ ] Users can authenticate via OIDC with <2s login time
+- [ ] API response time < 200ms for all endpoints
+- [ ] Zero critical security vulnerabilities in security scan
+- [ ] 90% code coverage on new features
+- [ ] All acceptance tests passing in staging environment
 -->
 
-- [ ] [Measurable outcome 1 - e.g., "Users can authenticate via OIDC"]
-- [ ] [Measurable outcome 2 - e.g., "API response time < 200ms"]
-- [ ] [Measurable outcome 3 - e.g., "Zero critical security vulnerabilities"]
+- [ ] [To be defined - use /speckit.sprint start to set success criteria]
 
 ## Capacity & Velocity
+
+<!--
+Example:
+- **Team Size**: 3 developers
+- **Sprint Duration**: 10 working days
+- **Estimated Capacity**: 8 features
+- **Previous Sprint Velocity**: 7 features (if available)
+-->
 
 - **Team Size**: [NUMBER] developers
 - **Sprint Duration**: [NUMBER] working days
@@ -32,11 +52,14 @@ These should be specific, testable, and aligned with the sprint goal.
 <!--
 List all features planned for this sprint.
 Features should be prioritized (P1 = must have, P2 = should have, P3 = nice to have)
+
+Example:
+| 001-user-auth | User Authentication | P1 | In Progress | @alice | OIDC integration |
+| 002-dashboard-ui | Dashboard UI | P2 | Not Started | @bob | Depends on 001 |
 -->
 
 | Feature ID | Feature Name | Priority | Status | Owner | Notes |
 |------------|--------------|----------|--------|-------|-------|
-| | | | | | |
 
 **Status Legend**: Not Started | In Progress | Blocked | In Review | Complete
 
@@ -45,37 +68,48 @@ Features should be prioritized (P1 = must have, P2 = should have, P3 = nice to h
 <!--
 Document dependencies between features and external dependencies.
 This helps identify potential blockers early.
+
+Examples:
+### Internal Dependencies
+- [Feature 003-api] depends on [Feature 001-auth] - API needs auth middleware
+- [Feature 004-ui] depends on [Feature 002-design] - UI needs design system
+
+### External Dependencies
+- AWS Cognito setup - Required for auth implementation (ETA: Week 1)
+- Design system approval - Needed before UI components (Blocked)
 -->
 
 ### Internal Dependencies
-- [Feature 003-api] depends on [Feature 001-auth] - API needs auth middleware
-- [Feature X] depends on [Feature Y] - [Reason]
+[Document internal dependencies here]
 
 ### External Dependencies
-- AWS Cognito setup - Required for auth implementation
-- Design system approval - Needed before UI components
-- [External dependency] - [Description and status]
+[Document external dependencies here]
 
 ## Risks & Mitigation
 
 <!--
 Identify potential risks and how to mitigate them.
 Update this section as new risks emerge during the sprint.
--->
 
+Example:
 | Risk | Likelihood | Impact | Mitigation Strategy |
 |------|------------|--------|---------------------|
 | OIDC integration complexity | Medium | High | Spike task in first 2 days, fallback to simpler auth |
 | Design system delays | Low | Medium | Use placeholder components, refactor later |
-| [Risk description] | [H/M/L] | [H/M/L] | [Strategy] |
+| Third-party API downtime | Low | High | Implement circuit breaker, cache responses |
+-->
+
+| Risk | Likelihood | Impact | Mitigation Strategy |
+|------|------------|--------|---------------------|
 
 ## Sprint Backlog
 
 <!--
 Detailed breakdown of work items for the sprint.
 This is more granular than the features table above.
--->
+Weeks are auto-generated based on sprint duration.
 
+Example:
 ### Week 1
 - [ ] Setup OIDC provider configuration
 - [ ] Implement authentication middleware
@@ -87,12 +121,31 @@ This is more granular than the features table above.
 - [ ] Add role-based access control
 - [ ] Complete security review
 - [ ] Deploy to staging
+-->
+
+[SPRINT_BACKLOG_WEEKS]
 
 ## Daily Progress
 
 <!--
 Track daily progress, blockers, and next steps.
 This provides a historical record of the sprint.
+
+Example:
+### 2025-01-15 - Day 1
+**Completed**:
+- Setup OIDC provider configuration
+- Created authentication middleware skeleton
+
+**Blocked**:
+- Waiting on AWS Cognito credentials
+
+**Next**:
+- Complete authentication middleware
+- Start login UI components
+
+**Notes**:
+- Team decided to use JWT tokens instead of sessions
 -->
 
 ### [DATE] - Day 1
@@ -110,18 +163,6 @@ This provides a historical record of the sprint.
 
 ---
 
-### [DATE] - Day 2
-**Completed**:
-- [What was finished today]
-
-**Blocked**:
-- [Any blockers encountered]
-
-**Next**:
-- [What's planned for tomorrow]
-
----
-
 [Continue for each day of the sprint]
 
 ## Decisions Made During Sprint
@@ -130,6 +171,19 @@ This provides a historical record of the sprint.
 Document key decisions made during the sprint.
 This will be extracted during sprint archival.
 Format: Decision title, context, options, choice, rationale
+
+Example:
+### Decision 1: Use JWT for Authentication
+**Date**: 2025-01-15
+**Context**: Need to choose authentication token format
+**Options Considered**:
+1. Session cookies - Simple but requires server state
+2. JWT tokens - Stateless but larger payload
+
+**Decision**: JWT tokens
+**Rationale**: Better scalability, works with mobile apps
+**Impact**: Need to implement token refresh logic
+**Related Features**: 001-auth, 003-api
 -->
 
 ### Decision 1: [Title]
@@ -146,8 +200,7 @@ Format: Decision title, context, options, choice, rationale
 
 ---
 
-### Decision 2: [Title]
-[Same structure as above]
+[Continue for additional decisions]
 
 ---
 

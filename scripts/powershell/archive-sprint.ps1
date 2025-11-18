@@ -7,15 +7,40 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Function to find repository root by searching for project markers
+function Find-RepoRoot {
+    param([string]$StartDir)
+    
+    $dir = $StartDir
+    while ($dir -ne [System.IO.Path]::GetPathRoot($dir)) {
+        if ((Test-Path (Join-Path $dir ".git")) -or (Test-Path (Join-Path $dir ".specify"))) {
+            return $dir
+        }
+        $dir = Split-Path -Parent $dir
+    }
+    return $null
+}
+
 # Get script directory and repo root
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
+
+# Try git first, then fall back to searching for markers
+try {
+    $repoRoot = git rev-parse --show-toplevel 2>$null
+    if (-not $repoRoot) { throw }
+} catch {
+    $repoRoot = Find-RepoRoot $scriptDir
+    if (-not $repoRoot) {
+        Write-Error "Could not determine repository root. Please run this script from within the repository."
+        exit 1
+    }
+}
 
 # Source common functions
 . (Join-Path $scriptDir "common.ps1")
 
 # Check if active sprint exists
-$activeDir = Join-Path $repoRoot "sprints/active"
+$activeDir = Join-Path $repoRoot ".specify/sprints/active"
 $sprintFile = Join-Path $activeDir "sprint.md"
 
 if (-not (Test-Path $sprintFile)) {
@@ -37,7 +62,7 @@ if ($sprintContent -match '^# Sprint (\d+): (.+)$') {
 $sprintSlug = $sprintName.ToLower() -replace '[^a-z0-9]+', '-' -replace '^-|-$', ''
 
 # Create archive directory
-$archiveDir = Join-Path $repoRoot "sprints/archive"
+$archiveDir = Join-Path $repoRoot ".specify/sprints/archive"
 $sprintArchiveDir = Join-Path $archiveDir "sprint-$sprintNumber-$sprintSlug"
 
 if (Test-Path $sprintArchiveDir) {
@@ -211,7 +236,7 @@ $featureList
 $featuresContent | Set-Content (Join-Path $sprintArchiveDir "features.md")
 
 # Create summary.md from template
-$summaryTemplate = Join-Path $repoRoot "templates/sprint-summary-template.md"
+$summaryTemplate = Join-Path $repoRoot ".specify/templates/sprint-summary-template.md"
 $summaryFile = Join-Path $sprintArchiveDir "summary.md"
 
 if (Test-Path $summaryTemplate) {
@@ -270,7 +295,7 @@ if ((Test-Path $decisionsFile) -and ((Get-Item $decisionsFile).Length -gt 0)) {
 }
 
 # Create retrospective template
-$retroTemplate = Join-Path $repoRoot "templates/retrospective-template.md"
+$retroTemplate = Join-Path $repoRoot ".specify/templates/retrospective-template.md"
 $retroFile = Join-Path $sprintArchiveDir "retrospective.md"
 
 if (Test-Path $retroTemplate) {

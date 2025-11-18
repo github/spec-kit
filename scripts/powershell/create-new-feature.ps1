@@ -328,25 +328,81 @@ if ($Json) {
 
 # Check if active sprint exists and optionally add feature to it
 function Add-ToActiveSprint {
-    param([string]$FeatureId)
+    param(
+        [string]$FeatureId,
+        [string]$FeatureDesc
+    )
     
-    $activeSprint = Join-Path $repoRoot "sprints/active/sprint.md"
+    # Truncate description if longer than 50 characters
+    if ($FeatureDesc.Length -gt 50) {
+        $FeatureDesc = $FeatureDesc.Substring(0, 47) + "..."
+    }
+    
+    # Get owner from git config
+    $owner = ""
+    try {
+        $owner = git config user.name 2>$null
+    } catch {}
+    
+    $activeSprint = Join-Path $repoRoot ".specify/sprints/active/sprint.md"
     
     if (Test-Path $activeSprint) {
-        $backlogFile = Join-Path $repoRoot "sprints/active/backlog.md"
+        # Add to backlog.md
+        $backlogFile = Join-Path $repoRoot ".specify/sprints/active/backlog.md"
         if (Test-Path $backlogFile) {
-            # Add feature to backlog
-            "| $FeatureId | [Feature name from spec] | P1 | Not Started | | |" | Add-Content $backlogFile
+            $content = Get-Content $backlogFile -Raw
             
-            if (-not $Json) {
-                Write-Host ""
-                Write-Host "✅ Feature added to active sprint backlog" -ForegroundColor Green
+            # Check if backlog has placeholder text
+            if ($content -match "No features added yet") {
+                # Replace placeholder with table header and feature
+                $content = $content -replace "No features added yet.*?\n", ""
+                $tableHeader = @"
+
+| Feature ID | Feature Name | Priority | Status | Owner | Notes |
+|------------|--------------|----------|--------|-------|-------|
+| $FeatureId | $FeatureDesc | P1 | Not Started | $owner | |
+
+"@
+                $content = $content -replace "(## Features)", "`$1$tableHeader"
+                $content | Set-Content $backlogFile -NoNewline
+            } else {
+                # Append to existing table (after first feature row)
+                $lines = Get-Content $backlogFile
+                $insertIndex = -1
+                for ($i = 0; $i -lt $lines.Count; $i++) {
+                    if ($lines[$i] -match '^\| [0-9]') {
+                        $insertIndex = $i + 1
+                        break
+                    }
+                }
+                if ($insertIndex -gt 0) {
+                    $newLine = "| $FeatureId | $FeatureDesc | P1 | Not Started | $owner | |"
+                    $lines = $lines[0..($insertIndex-1)] + $newLine + $lines[$insertIndex..($lines.Count-1)]
+                    $lines | Set-Content $backlogFile
+                }
             }
+        }
+        
+        # Add to sprint.md "Features in Sprint" section - just add after separator
+        $sprintContent = Get-Content $activeSprint
+        $newFeature = "| $FeatureId | $FeatureDesc | P1 | Not Started | $owner | |"
+        
+        for ($i = 0; $i -lt $sprintContent.Count; $i++) {
+            if ($sprintContent[$i] -match '^\|--') {
+                $sprintContent = $sprintContent[0..$i] + $newFeature + $sprintContent[($i+1)..($sprintContent.Count-1)]
+                $sprintContent | Set-Content $activeSprint
+                break
+            }
+        }
+        
+        if (-not $Json) {
+            Write-Host ""
+            Write-Host "✅ Feature added to active sprint" -ForegroundColor Green
         }
     }
 }
 
 # Call sprint check after feature creation
 if ($branchName) {
-    Add-ToActiveSprint $branchName
+    Add-ToActiveSprint $branchName $featureDescription
 }

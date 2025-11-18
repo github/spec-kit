@@ -21,15 +21,45 @@ The user's input will be one of these commands. **Execute the corresponding acti
 **Do this:**
 
 1. Extract sprint name and duration from `$ARGUMENTS`
-2. Execute the create-sprint script:
+
+2. **Ask for Sprint Goal** (interactive):
+   - Ask: "What is the high-level goal for this sprint? What are you trying to achieve?"
+   - Wait for user response
+   - Store response as `SPRINT_GOAL`
+   - Example: "Enable users to authenticate and access personalized dashboards with role-based permissions"
+
+3. **Ask for Success Criteria** (interactive):
+   - Ask: "What are 3-5 measurable outcomes that indicate sprint success? Provide them as a list."
+   - Wait for user response
+   - Store response as list of criteria
+   - Format as pipe-separated string: `criterion1|criterion2|criterion3`
+   - Example: `Users can authenticate via OIDC with <2s login time|API response time < 200ms|Zero critical security vulnerabilities`
+
+4. Execute the create-sprint script with goal and criteria:
    ```bash
    # Bash
-   bash .specify/scripts/bash/create-sprint.sh "Sprint Name" "2w"
+   bash .specify/scripts/bash/create-sprint.sh --duration "2w" --goal "$SPRINT_GOAL" --criteria "$CRITERIA_STRING" "Sprint Name"
    
    # PowerShell
-   pwsh .specify/scripts/powershell/create-sprint.ps1 "Sprint Name" "2w"
+   pwsh .specify/scripts/powershell/create-sprint.ps1 -Duration "2w" -Goal "$SPRINT_GOAL" -Criteria "$CRITERIA_STRING" "Sprint Name"
    ```
-3. Parse the script output and report success/failure to the user
+   
+   Note: The criteria string should be pipe-separated (|) for multiple criteria
+
+5. Report success to the user:
+   ```
+   ✅ Sprint [NUMBER] created: [NAME]
+   Duration: [START_DATE] - [END_DATE] ([DURATION])
+   
+   Goal: [SPRINT_GOAL]
+   
+   Success Criteria:
+   [List of criteria]
+   
+   Next steps:
+   - Add features: /speckit.sprint add <feature-id>
+   - View status: /speckit.sprint status
+   ```
 
 ### `/speckit.sprint add <feature-ids>`
 

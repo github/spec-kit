@@ -2,9 +2,33 @@
 
 set -e
 
-# Get the directory where this script is located
+# Function to find the repository root by searching for existing project markers
+find_repo_root() {
+    local dir="$1"
+    while [ "$dir" != "/" ]; do
+        if [ -d "$dir/.git" ] || [ -d "$dir/.specify" ]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+# Resolve repository root. Prefer git information when available, but fall back
+# to searching for repository markers so the workflow still functions in repositories that
+# were initialised with --no-git.
 SCRIPT_DIR="$(unset CDPATH && cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+if git rev-parse --show-toplevel >/dev/null 2>&1; then
+    REPO_ROOT=$(git rev-parse --show-toplevel)
+else
+    REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
+    if [ -z "$REPO_ROOT" ]; then
+        echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
+        exit 1
+    fi
+fi
 
 # Source common functions
 source "$SCRIPT_DIR/common.sh"
@@ -35,7 +59,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Check if active sprint exists
-ACTIVE_DIR="$REPO_ROOT/sprints/active"
+ACTIVE_DIR="$REPO_ROOT/.specify/sprints/active"
 if [ ! -f "$ACTIVE_DIR/sprint.md" ]; then
     echo "Error: No active sprint found at $ACTIVE_DIR" >&2
     echo "Create a sprint with '/speckit.sprint start' first" >&2
@@ -55,7 +79,7 @@ fi
 SPRINT_SLUG=$(echo "$SPRINT_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
 
 # Create archive directory
-ARCHIVE_DIR="$REPO_ROOT/sprints/archive"
+ARCHIVE_DIR="$REPO_ROOT/.specify/sprints/archive"
 SPRINT_ARCHIVE_DIR="$ARCHIVE_DIR/sprint-$SPRINT_NUMBER-$SPRINT_SLUG"
 
 if [ -d "$SPRINT_ARCHIVE_DIR" ]; then
@@ -137,7 +161,7 @@ $(echo -e "$FEATURE_LIST")
 FEATURES
 
 # Create summary.md from template
-SUMMARY_TEMPLATE="$REPO_ROOT/templates/sprint-summary-template.md"
+SUMMARY_TEMPLATE="$REPO_ROOT/.specify/templates/sprint-summary-template.md"
 SUMMARY_FILE="$SPRINT_ARCHIVE_DIR/summary.md"
 
 if [ -f "$SUMMARY_TEMPLATE" ]; then
@@ -193,7 +217,7 @@ DECISIONS
 fi
 
 # Create retrospective template
-RETRO_TEMPLATE="$REPO_ROOT/templates/retrospective-template.md"
+RETRO_TEMPLATE="$REPO_ROOT/.specify/templates/retrospective-template.md"
 RETRO_FILE="$SPRINT_ARCHIVE_DIR/retrospective.md"
 
 if [ -f "$RETRO_TEMPLATE" ]; then
