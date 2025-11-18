@@ -75,7 +75,7 @@ Examples:
 - [Feature 004-ui] depends on [Feature 002-design] - UI needs design system
 
 ### External Dependencies
-- AWS Cognito setup - Required for auth implementation (ETA: Week 1)
+- Third-party API setup - Required for auth implementation (ETA: Week 1)
 - Design system approval - Needed before UI components (Blocked)
 -->
 
@@ -138,7 +138,7 @@ Example:
 - Created authentication middleware skeleton
 
 **Blocked**:
-- Waiting on AWS Cognito credentials
+- Waiting on third-party service credentials
 
 **Next**:
 - Complete authentication middleware
