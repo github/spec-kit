@@ -54,12 +54,20 @@ You **MUST** execute the sprint archive process.
    
    Build the command with approved features:
    ```bash
+   # Bash
    bash .specify/scripts/bash/archive-sprint.sh --archive-features "005-api-lambda-implementation,007-deploy-frontend-aws"
+   
+   # PowerShell
+   pwsh .specify/scripts/powershell/archive-sprint.ps1 -ArchiveFeatures "005-api-lambda-implementation,007-deploy-frontend-aws"
    ```
    
    Or if no additional features:
    ```bash
+   # Bash
    bash .specify/scripts/bash/archive-sprint.sh
+   
+   # PowerShell
+   pwsh .specify/scripts/powershell/archive-sprint.ps1
    ```
    
    The script will:
