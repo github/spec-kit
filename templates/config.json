@@ -1,0 +1,9 @@
+{
+  "progress": {
+    "autoTracking": false,
+    "updateOnTaskComplete": true,
+    "updateOnPhaseComplete": true
+  },
+  "version": "1.0"
+}
+
