@@ -36,9 +36,7 @@ Features should be prioritized (P1 = must have, P2 = should have, P3 = nice to h
 
 | Feature ID | Feature Name | Priority | Status | Owner | Notes |
 |------------|--------------|----------|--------|-------|-------|
-| 001-auth   | Authentication Foundation | P1 | Not Started | @user | Blocking for other features |
-| 002-ui     | UI Component Library | P1 | Not Started | @user | |
-| 003-api    | REST API Layer | P2 | Not Started | @user | Depends on 001-auth |
+| | | | | | |
 
 **Status Legend**: Not Started | In Progress | Blocked | In Review | Complete
 
