@@ -162,6 +162,8 @@ The `specify` command supports the following options:
 |-------------|----------------------------------------------------------------|
 | `init`      | Initialize a new Specify project from the latest template      |
 | `check`     | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`, `shai`) |
+| `config`    | Manage Specify project configuration (progress tracking settings, etc.) |
+| `version`   | Display version and system information                         |
 
 ### `specify init` Arguments & Options
 
@@ -223,6 +225,12 @@ specify init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
 specify check
+
+# View and manage configuration
+specify config                    # Show current configuration
+specify config --auto-tracking    # Enable auto-tracking
+specify config --no-auto-tracking  # Disable auto-tracking
+specify config --get progress.autoTracking  # Get specific setting
 ```
 
 ### Available Slash Commands

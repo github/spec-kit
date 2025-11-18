@@ -122,11 +122,15 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 8. Progress tracking and error handling:
    - Report progress after each completed task
+   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
+   - **Auto-tracking (optional)**: Check `.specify/config.json` for `progress.autoTracking` setting:
+     - If `autoTracking: true`: After each completed task, update PROGRESS.md and STATUS.md files using the same logic as `/speckit.progress` command
+     - If `autoTracking: false` or config missing: Skip automatic progress file updates (user can run `/speckit.progress` manually)
+     - Progress files location: FEATURE_DIR/PROGRESS.md and FEATURE_DIR/STATUS.md
    - Halt execution if any non-parallel task fails
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
 
 9. Completion validation:
    - Verify all required tasks are completed

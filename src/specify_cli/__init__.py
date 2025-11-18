@@ -1349,6 +1349,208 @@ def version():
     console.print(panel)
     console.print()
 
+def _get_config_path(project_path: Path = None) -> Path:
+    """Get the path to .specify/config.json file."""
+    if project_path is None:
+        project_path = Path.cwd()
+    return project_path / ".specify" / "config.json"
+
+def _load_config(project_path: Path = None) -> dict:
+    """Load configuration from .specify/config.json, return default if not exists."""
+    config_path = _get_config_path(project_path)
+    default_config = {
+        "progress": {
+            "autoTracking": False,
+            "updateOnTaskComplete": True,
+            "updateOnPhaseComplete": True
+        },
+        "version": "1.0"
+    }
+    
+    if not config_path.exists():
+        return default_config
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            user_config = json.load(f)
+            # Merge with defaults to ensure all keys exist
+            merged = default_config.copy()
+            if "progress" in user_config:
+                merged["progress"].update(user_config["progress"])
+            if "version" in user_config:
+                merged["version"] = user_config["version"]
+            return merged
+    except (json.JSONDecodeError, IOError) as e:
+        console.print(f"[yellow]Warning:[/yellow] Could not read config file: {e}")
+        console.print("[dim]Using default configuration[/dim]")
+        return default_config
+
+def _save_config(config: dict, project_path: Path = None) -> bool:
+    """Save configuration to .specify/config.json."""
+    config_path = _get_config_path(project_path)
+    config_dir = config_path.parent
+    
+    try:
+        # Ensure .specify directory exists
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2)
+            f.write('\n')
+        return True
+    except IOError as e:
+        console.print(f"[red]Error:[/red] Could not write config file: {e}")
+        return False
+
+@app.command()
+def config(
+    show: bool = typer.Option(False, "--show", "-s", help="Show current configuration"),
+    get: str = typer.Option(None, "--get", "-g", help="Get a specific configuration value (e.g., 'progress.autoTracking')"),
+    set_key: str = typer.Option(None, "--set", help="Set a configuration key (e.g., 'progress.autoTracking')"),
+    set_value: str = typer.Option(None, help="Value for --set (true/false for booleans)"),
+    auto_tracking: bool = typer.Option(False, "--auto-tracking/--no-auto-tracking", help="Enable or disable auto-tracking"),
+    project_path: str = typer.Option(None, "--project", "-p", help="Project path (default: current directory)"),
+):
+    """
+    Manage Specify project configuration.
+    
+    View or modify settings for progress tracking and other features.
+    
+    Examples:
+        specify config --show                    # Show current configuration
+        specify config --get progress.autoTracking  # Get specific setting
+        specify config --auto-tracking true      # Enable auto-tracking
+        specify config --set progress.autoTracking false  # Set specific setting
+    """
+    show_banner()
+    
+    # Determine project path
+    if project_path:
+        proj_path = Path(project_path).resolve()
+        if not proj_path.exists():
+            console.print(f"[red]Error:[/red] Project path does not exist: {project_path}")
+            raise typer.Exit(1)
+    else:
+        proj_path = Path.cwd()
+    
+    # Check if this is a Specify project
+    specify_dir = proj_path / ".specify"
+    if not specify_dir.exists():
+        console.print("[yellow]Warning:[/yellow] This doesn't appear to be a Specify project.")
+        console.print("[dim]Configuration will be created in current directory[/dim]\n")
+    
+    # Load current config
+    current_config = _load_config(proj_path)
+    
+    # Handle different operations
+    # Check if --auto-tracking or --no-auto-tracking was explicitly used
+    # Typer sets the flag to True if --auto-tracking, False if --no-auto-tracking
+    # We need to detect if user actually used the flag (not just default False)
+    import sys
+    auto_tracking_used = "--auto-tracking" in sys.argv or "--no-auto-tracking" in sys.argv
+    
+    if auto_tracking_used:
+        # Quick set for auto-tracking
+        current_config["progress"]["autoTracking"] = auto_tracking
+        if _save_config(current_config, proj_path):
+            status = "enabled" if auto_tracking else "disabled"
+            console.print(f"[green]✓[/green] Auto-tracking {status}")
+            console.print(f"[dim]Configuration saved to: {_get_config_path(proj_path)}[/dim]")
+        else:
+            raise typer.Exit(1)
+        return
+    
+    if set_key and set_value is not None:
+        # Set specific key
+        keys = set_key.split('.')
+        config_ref = current_config
+        for key in keys[:-1]:
+            if key not in config_ref:
+                config_ref[key] = {}
+            config_ref = config_ref[key]
+        
+        # Convert value based on type
+        final_key = keys[-1]
+        if isinstance(config_ref.get(final_key), bool):
+            # Boolean conversion
+            if set_value.lower() in ('true', '1', 'yes', 'on'):
+                config_ref[final_key] = True
+            elif set_value.lower() in ('false', '0', 'no', 'off'):
+                config_ref[final_key] = False
+            else:
+                console.print(f"[red]Error:[/red] Invalid boolean value: {set_value}")
+                console.print("[dim]Use: true, false, 1, 0, yes, no, on, off[/dim]")
+                raise typer.Exit(1)
+        elif isinstance(config_ref.get(final_key), int):
+            try:
+                config_ref[final_key] = int(set_value)
+            except ValueError:
+                console.print(f"[red]Error:[/red] Invalid integer value: {set_value}")
+                raise typer.Exit(1)
+        else:
+            config_ref[final_key] = set_value
+        
+        if _save_config(current_config, proj_path):
+            console.print(f"[green]✓[/green] Set {set_key} = {config_ref[final_key]}")
+            console.print(f"[dim]Configuration saved to: {_get_config_path(proj_path)}[/dim]")
+        else:
+            raise typer.Exit(1)
+        return
+    
+    if get:
+        # Get specific key
+        keys = get.split('.')
+        value = current_config
+        try:
+            for key in keys:
+                value = value[key]
+            console.print(f"[cyan]{get}:[/cyan] {value}")
+        except KeyError:
+            console.print(f"[red]Error:[/red] Configuration key not found: {get}")
+            raise typer.Exit(1)
+        return
+    
+    # Default: show all configuration
+    config_table = Table(show_header=False, box=None, padding=(0, 2))
+    config_table.add_column("Setting", style="cyan", justify="left")
+    config_table.add_column("Value", style="white", justify="left")
+    
+    # Progress settings
+    config_table.add_row("", "")
+    config_table.add_row("[bold]Progress Tracking[/bold]", "")
+    config_table.add_row("  autoTracking", str(current_config["progress"]["autoTracking"]))
+    config_table.add_row("  updateOnTaskComplete", str(current_config["progress"]["updateOnTaskComplete"]))
+    config_table.add_row("  updateOnPhaseComplete", str(current_config["progress"]["updateOnPhaseComplete"]))
+    
+    # Version
+    config_table.add_row("", "")
+    config_table.add_row("[bold]Version[/bold]", current_config.get("version", "1.0"))
+    
+    config_panel = Panel(
+        config_table,
+        title="[bold cyan]Specify Configuration[/bold cyan]",
+        border_style="cyan",
+        padding=(1, 2)
+    )
+    
+    console.print(config_panel)
+    console.print()
+    
+    # Show file location
+    config_file = _get_config_path(proj_path)
+    if config_file.exists():
+        console.print(f"[dim]Configuration file: {config_file}[/dim]")
+    else:
+        console.print(f"[dim]Configuration file: {config_file} (using defaults)[/dim]")
+    
+    console.print()
+    console.print("[bold]Usage examples:[/bold]")
+    console.print("  [cyan]specify config --auto-tracking[/cyan]  # Enable auto-tracking")
+    console.print("  [cyan]specify config --no-auto-tracking[/cyan]  # Disable auto-tracking")
+    console.print("  [cyan]specify config --get progress.autoTracking[/cyan]  # Get specific setting")
+    console.print("  [cyan]specify config --set progress.autoTracking true[/cyan]  # Set specific setting")
+    console.print()
+
 def main():
     app()
 
