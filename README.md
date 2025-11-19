@@ -151,7 +151,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
 | [Amp](https://ampcode.com/) | ✅ | |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai) | ✅ | |
-| Antigravity (agy) | ✅ | |
+| [Antigravity (agy)](https://antigravity.google/) | ✅ | |
 
 ## 🔧 Specify CLI Reference
 

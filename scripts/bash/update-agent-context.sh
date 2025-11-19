@@ -73,7 +73,7 @@ CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
-AGY_FILE="$REPO_ROOT/.agent/workflows/specify-rules.md"
+AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"

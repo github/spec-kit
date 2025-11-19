@@ -58,7 +58,7 @@ $CODEBUDDY_FILE = Join-Path $REPO_ROOT 'CODEBUDDY.md'
 $AMP_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
 $SHAI_FILE     = Join-Path $REPO_ROOT 'SHAI.md'
 $Q_FILE        = Join-Path $REPO_ROOT 'AGENTS.md'
-$AGY_FILE      = Join-Path $REPO_ROOT '.agent/workflows/specify-rules.md'
+$AGY_FILE      = Join-Path $REPO_ROOT '.agent/rules/specify-rules.md'
 
 $TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
 
