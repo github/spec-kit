@@ -71,6 +71,7 @@ AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
+KIRO_FILE="$REPO_ROOT/.kiro/prompts/specify-prompts.md"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
 
@@ -619,6 +620,9 @@ update_specific_agent() {
         amp)
             update_agent_file "$AMP_FILE" "Amp"
             ;;
+        kiro)
+            update_agent_file "$KIRO_FILE" "Kiro CLI"
+            ;;
         shai)
             update_agent_file "$SHAI_FILE" "SHAI"
             ;;
@@ -689,6 +693,11 @@ update_all_existing_agents() {
 
     if [[ -f "$CODEBUDDY_FILE" ]]; then
         update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
+        found_agent=true
+    fi
+
+    if [[ -f "$KIRO_FILE" ]]; then
+        update_agent_file "$KIRO_FILE" "Kiro CLI"
         found_agent=true
     fi
 
