@@ -134,24 +134,24 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 ## 🤖 Supported AI Agents
 
-| Agent                                                                                | Support | Notes                                                                                                                                     |
-|--------------------------------------------------------------------------------------|---------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| [Claude Code](https://www.anthropic.com/claude-code)                                 | ✅ |                                                                                                                                           |
-| [GitHub Copilot](https://code.visualstudio.com/)                                     | ✅ |                                                                                                                                           |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | ✅ |                                                                                                                                           |
-| [Cursor](https://cursor.sh/)                                                         | ✅ |                                                                                                                                           |
-| [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | ✅ |                                                                                                                                           |
-| [opencode](https://opencode.ai/)                                                     | ✅ |                                                                                                                                           |
-| [Windsurf](https://windsurf.com/)                                                    | ✅ |                                                                                                                                           |
-| [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | ✅ |                                                                                                                                           |
-| [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | ✅ |                                                                                                                                           |
-| [CodeBuddy CLI](https://www.codebuddy.ai/cli)                                        | ✅ |                                                                                                                                           |
-| [Roo Code](https://roocode.com/)                                                     | ✅ |                                                                                                                                           |
-| [Codex CLI](https://github.com/openai/codex)                                         | ✅ |                                                                                                                                           |
+| Agent                                                     | Support | Notes                                             |
+|-----------------------------------------------------------|---------|---------------------------------------------------|
+| [Claude Code](https://www.anthropic.com/claude-code)      | ✅ |                                                   |
+| [GitHub Copilot](https://code.visualstudio.com/)          | ✅ |                                                   |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | ✅ |                                                   |
+| [Cursor](https://cursor.sh/)                              | ✅ |                                                   |
+| [Qwen Code](https://github.com/QwenLM/qwen-code)          | ✅ |                                                   |
+| [opencode](https://opencode.ai/)                          | ✅ |                                                   |
+| [Windsurf](https://windsurf.com/)                         | ✅ |                                                   |
+| [Kilo Code](https://github.com/Kilo-Org/kilocode)         | ✅ |                                                   |
+| [Auggie CLI](https://docs.augmentcode.com/cli/overview)   | ✅ |                                                   |
+| [CodeBuddy CLI](https://www.codebuddy.ai/cli)             | ✅ |                                                   |
+| [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
+| [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
-| [Amp](https://ampcode.com/)                                                          | ✅ |                                                                                                                                           |
-| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | ✅ |                                                                                                                                           |
-| [JetBrains AI](https://www.jetbrains.com/ai-ides/)                                          | ✅ | Works through Claude Agent integration, so make sure to select claude in init option and select Claude Agent in AI Chat                   |
+| [Amp](https://ampcode.com/) | ✅ | |
+| [SHAI (OVHcloud)](https://github.com/ovh/shai) | ✅ | | |
+| [JetBrains AI](https://www.jetbrains.com/ai-ides/) | ✅ | Works through Claude Agent integration, so make sure to select claude in init option and select Claude Agent in AI Chat |
 
 ## 🔧 Specify CLI Reference
 
