@@ -149,6 +149,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Roo Code](https://roocode.com/)                          | ✅ |                                                   |
 | [Codex CLI](https://github.com/openai/codex)              | ✅ |                                                   |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
+| [Kiro CLI](https://kiro.dev/) | ✅ | Upgrade replacement for Amazon Q Developer CLI with full custom prompt support |
 | [Amp](https://ampcode.com/) | ✅ | |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai) | ✅ | |
 
@@ -364,7 +365,7 @@ specify init . --force --ai claude
 specify init --here --force --ai claude
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, or Amazon Q Developer CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Kiro CLI, or Amazon Q Developer CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools
