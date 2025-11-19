@@ -139,9 +139,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 5.6 **Load Specialized Agents**:
    - Scan `.claude/agents/speckit/*.md` for available agents
-   - For each agent, extract metadata: name, description, capabilities
-   - Build agent registry mapping file patterns/capabilities to agents
-   - Log detected agents with their specializations
+   - For each agent, extract metadata: name, description, capabilities, model
+   - Build agent registry mapping file patterns/capabilities to agents with model info
+   - Log detected agents with their specializations and configured model (e.g., "backend-coder: haiku")
 
 6. Execute implementation following the task plan:
    - **Phase-by-phase execution**: Complete each phase before moving to the next
@@ -172,17 +172,19 @@ You **MUST** consider the user input before proceeding (if not empty).
       - Extract file paths from task description
       - Match paths against agent registry built in step 5.6
       - Select best-matching agent based on file patterns and capabilities
+      - Extract `model:` field from selected agent metadata (e.g., `model: haiku` from backend-coder.md)
       - If multiple agents match, split task into subtasks (one per agent)
       - If no agent matches, implement directly (no delegation)
 
    2. **Context Preparation** (what to pass to the agent):
+      - **Agent Model**: Capture the `model:` field from selected agent (REQUIRED for Task tool parameter)
       - **Task Description**: Full task text from tasks.md (ID, description, files affected)
       - **Task Plan**: Load task-plans/T{number}-*.md if exists (implementation steps, gotchas, patterns)
       - **Previous Results**: Load task-results/ for dependent tasks (T{number-1}, dependencies from plan)
       - **Domain Patterns**: Reference relevant CLAUDE.md patterns (backend/CLAUDE.md, frontend/CLAUDE.md, etc.)
       - **Feature Context**: Brief summary from spec.md and plan.md (what feature we're building)
 
-   3. **Agent Invocation** (use Task tool):
+   4. **Agent Invocation** (use Task tool):
       ```
       Prompt template:
       "Implement the following task for feature {feature-name}:
@@ -214,9 +216,10 @@ You **MUST** consider the user input before proceeding (if not empty).
       Report any deviations or issues discovered."
 
       subagent_type: {selected-agent-name}  // e.g., "backend-coder", "frontend-coder"
+      model: {agent-model}  // Extract from agent metadata (e.g., "haiku", "sonnet") - MUST RESPECT agent config
       ```
 
-   4. **Result Handling**:
+   5. **Result Handling**:
       - Wait for agent completion
       - Generate task-results/T{number}-result.md based on agent report
       - Mark task complete in tasks.md with result reference
