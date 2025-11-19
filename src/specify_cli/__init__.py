@@ -214,6 +214,12 @@ AGENT_CONFIG = {
         "install_url": "https://github.com/ovh/shai",
         "requires_cli": True,
     },
+     "joycode": {
+        "name": "joycode",
+        "folder": ".joycode/",
+        "install_url":  None,  # IDE-based
+        "requires_cli": False,
+    },
 }
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
