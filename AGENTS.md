@@ -46,6 +46,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amazon Q Developer CLI** | `.amazonq/prompts/` | Markdown | `q` | Amazon Q Developer CLI |
 | **Amp** | `.agents/commands/` | Markdown | `amp` | Amp CLI |
 | **SHAI** | `.shai/commands/` | Markdown | `shai` | SHAI CLI |
+| **Trae**     | `.trae/rules/`| Markdown | N/A (IDE-based) | Trae IDE |
 
 ### Step-by-Step Integration Guide
 

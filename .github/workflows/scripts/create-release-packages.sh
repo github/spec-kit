@@ -208,6 +208,9 @@ build_variant() {
     shai)
       mkdir -p "$base_dir/.shai/commands"
       generate_commands shai md "\$ARGUMENTS" "$base_dir/.shai/commands" "$script" ;;
+    trae)
+      mkdir -p "$base_dir/.trae/commands"
+      generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/commands" "$script" ;;
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
       generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
@@ -217,7 +220,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai trae q)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {

@@ -335,6 +335,10 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".agents/commands"
             Generate-Commands -Agent 'amp' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'trae' {
+            $cmdDir = Join-Path $baseDir ".trae/commands"
+            Generate-Commands -Agent 'trae' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         'q' {
             $cmdDir = Join-Path $baseDir ".amazonq/prompts"
             Generate-Commands -Agent 'q' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
@@ -348,7 +352,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'trae', 'q')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {
