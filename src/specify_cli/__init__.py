@@ -736,36 +736,66 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, template_path: Path = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
     current_dir = Path.cwd()
 
-    if tracker:
-        tracker.start("fetch", "contacting GitHub API")
-    try:
-        zip_path, meta = download_template_from_github(
-            ai_assistant,
-            current_dir,
-            script_type=script_type,
-            verbose=verbose and tracker is None,
-            show_progress=(tracker is None),
-            client=client,
-            debug=debug,
-            github_token=github_token
-        )
-        if tracker:
-            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
-            tracker.add("download", "Download template")
-            tracker.complete("download", meta['filename'])
-    except Exception as e:
-        if tracker:
-            tracker.error("fetch", str(e))
+    if template_path:
+        template_path = template_path.resolve()
+        if not template_path.exists():
+            error_msg = f"Template path does not exist: {template_path}"
+            if tracker:
+                tracker.error("fetch", error_msg)
+            else:
+                console.print(f"[red]Error:[/red] {error_msg}")
+            raise FileNotFoundError(error_msg)
+        if template_path.is_dir():
+            # Search for template ZIP file in the directory
+            pattern = f"spec-kit-template-{ai_assistant}-{script_type}-*.zip"
+            matching_files = list(template_path.glob(pattern))
+            if not matching_files:
+                error_msg = f"No template file matching '{pattern}' found in {template_path}"
+                if tracker:
+                    tracker.error("fetch", error_msg)
+                else:
+                    console.print(f"[red]Error:[/red] {error_msg}")
+                raise FileNotFoundError(error_msg)
+            # Use the first matching file (should be only one per agent/script combination)
+            zip_path = matching_files[0]
+            if verbose and not tracker:
+                console.print(f"[cyan]Using local template:[/cyan] {zip_path.name}")
         else:
-            if verbose:
-                console.print(f"[red]Error downloading template:[/red] {e}")
-        raise
+            # Direct file path provided
+            zip_path = template_path
+            if verbose and not tracker:
+                console.print(f"[cyan]Using local template:[/cyan] {zip_path}")
+    else:
+        if tracker:
+            tracker.start("fetch", "contacting GitHub API")
+        try:
+            zip_path, meta = download_template_from_github(
+                ai_assistant,
+                current_dir,
+                script_type=script_type,
+                verbose=verbose and tracker is None,
+                show_progress=(tracker is None),
+                client=client,
+                debug=debug,
+                github_token=github_token
+            )
+            if tracker:
+                tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
+                tracker.add("download", "Download template")
+                tracker.complete("download", meta['filename'])
+        except Exception as e:
+            if tracker:
+                tracker.error("fetch", str(e))
+            else:
+                if verbose:
+                    console.print(f"[red]Error downloading template:[/red] {e}")
+            raise
 
     if tracker:
         tracker.add("extract", "Extract template")
@@ -877,7 +907,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             tracker.add("cleanup", "Remove temporary archive")
 
         if zip_path.exists():
-            zip_path.unlink()
+            if not template_path:
+                zip_path.unlink()
             if tracker:
                 tracker.complete("cleanup")
             elif verbose:
@@ -942,6 +973,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    template_path: Path = typer.Option(None, "--template-path", help="Path to a local template zip file or directory containing template files instead of downloading from GitHub", exists=True, resolve_path=True),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -1112,7 +1144,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, template_path=template_path)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
