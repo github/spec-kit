@@ -9,6 +9,8 @@
       href: installation.md
     - name: Quick Start
       href: quickstart.md
+    - name: Existing Project Guide
+      href: existing-project-guide.md
     - name: Upgrade
       href: upgrade.md
 
