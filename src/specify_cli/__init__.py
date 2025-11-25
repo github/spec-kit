@@ -196,7 +196,7 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
-    "joycdode":  {
+    "joycode":  {
         "name": "JoyCode",
         "folder": ".joycode/",
         "install_url": None,  # IDE-based
