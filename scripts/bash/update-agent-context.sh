@@ -640,90 +640,105 @@ update_specific_agent() {
 update_all_existing_agents() {
     local found_agent=false
     # Track processed files to avoid duplicate processing when multiple variables point to the same file
-    declare -A processed_files
+    # Using regular array for bash 3.2 compatibility (associative arrays require bash 4.0+)
+    local processed_files=()
+    
+    # Helper function to check if a file has been processed (bash 3.2 compatible)
+    file_already_processed() {
+        local file_path="$1"
+        local processed_file
+        if [[ ${#processed_files[@]} -gt 0 ]]; then
+            for processed_file in "${processed_files[@]}"; do
+                if [[ "$processed_file" == "$file_path" ]]; then
+                    return 0  # File already processed
+                fi
+            done
+        fi
+        return 1  # File not yet processed
+    }
     
     # Check each possible agent file and update if it exists
-    if [[ -f "$CLAUDE_FILE" ]] && [[ -z "${processed_files[$CLAUDE_FILE]}" ]]; then
+    if [[ -f "$CLAUDE_FILE" ]] && ! file_already_processed "$CLAUDE_FILE"; then
         update_agent_file "$CLAUDE_FILE" "Claude Code"
-        processed_files["$CLAUDE_FILE"]=1
+        processed_files+=("$CLAUDE_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$GEMINI_FILE" ]] && [[ -z "${processed_files[$GEMINI_FILE]}" ]]; then
+    if [[ -f "$GEMINI_FILE" ]] && ! file_already_processed "$GEMINI_FILE"; then
         update_agent_file "$GEMINI_FILE" "Gemini CLI"
-        processed_files["$GEMINI_FILE"]=1
+        processed_files+=("$GEMINI_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$COPILOT_FILE" ]] && [[ -z "${processed_files[$COPILOT_FILE]}" ]]; then
+    if [[ -f "$COPILOT_FILE" ]] && ! file_already_processed "$COPILOT_FILE"; then
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-        processed_files["$COPILOT_FILE"]=1
+        processed_files+=("$COPILOT_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$CURSOR_FILE" ]] && [[ -z "${processed_files[$CURSOR_FILE]}" ]]; then
+    if [[ -f "$CURSOR_FILE" ]] && ! file_already_processed "$CURSOR_FILE"; then
         update_agent_file "$CURSOR_FILE" "Cursor IDE"
-        processed_files["$CURSOR_FILE"]=1
+        processed_files+=("$CURSOR_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$QWEN_FILE" ]] && [[ -z "${processed_files[$QWEN_FILE]}" ]]; then
+    if [[ -f "$QWEN_FILE" ]] && ! file_already_processed "$QWEN_FILE"; then
         update_agent_file "$QWEN_FILE" "Qwen Code"
-        processed_files["$QWEN_FILE"]=1
+        processed_files+=("$QWEN_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$AGENTS_FILE" ]] && [[ -z "${processed_files[$AGENTS_FILE]}" ]]; then
+    if [[ -f "$AGENTS_FILE" ]] && ! file_already_processed "$AGENTS_FILE"; then
         update_agent_file "$AGENTS_FILE" "Codex/opencode"
-        processed_files["$AGENTS_FILE"]=1
+        processed_files+=("$AGENTS_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$WINDSURF_FILE" ]] && [[ -z "${processed_files[$WINDSURF_FILE]}" ]]; then
+    if [[ -f "$WINDSURF_FILE" ]] && ! file_already_processed "$WINDSURF_FILE"; then
         update_agent_file "$WINDSURF_FILE" "Windsurf"
-        processed_files["$WINDSURF_FILE"]=1
+        processed_files+=("$WINDSURF_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$KILOCODE_FILE" ]] && [[ -z "${processed_files[$KILOCODE_FILE]}" ]]; then
+    if [[ -f "$KILOCODE_FILE" ]] && ! file_already_processed "$KILOCODE_FILE"; then
         update_agent_file "$KILOCODE_FILE" "Kilo Code"
-        processed_files["$KILOCODE_FILE"]=1
+        processed_files+=("$KILOCODE_FILE")
         found_agent=true
     fi
 
-    if [[ -f "$AUGGIE_FILE" ]] && [[ -z "${processed_files[$AUGGIE_FILE]}" ]]; then
+    if [[ -f "$AUGGIE_FILE" ]] && ! file_already_processed "$AUGGIE_FILE"; then
         update_agent_file "$AUGGIE_FILE" "Auggie CLI"
-        processed_files["$AUGGIE_FILE"]=1
+        processed_files+=("$AUGGIE_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$ROO_FILE" ]] && [[ -z "${processed_files[$ROO_FILE]}" ]]; then
+    if [[ -f "$ROO_FILE" ]] && ! file_already_processed "$ROO_FILE"; then
         update_agent_file "$ROO_FILE" "Roo Code"
-        processed_files["$ROO_FILE"]=1
+        processed_files+=("$ROO_FILE")
         found_agent=true
     fi
 
-    if [[ -f "$CODEBUDDY_FILE" ]] && [[ -z "${processed_files[$CODEBUDDY_FILE]}" ]]; then
+    if [[ -f "$CODEBUDDY_FILE" ]] && ! file_already_processed "$CODEBUDDY_FILE"; then
         update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
-        processed_files["$CODEBUDDY_FILE"]=1
+        processed_files+=("$CODEBUDDY_FILE")
         found_agent=true
     fi
 
-    if [[ -f "$SHAI_FILE" ]] && [[ -z "${processed_files[$SHAI_FILE]}" ]]; then
+    if [[ -f "$SHAI_FILE" ]] && ! file_already_processed "$SHAI_FILE"; then
         update_agent_file "$SHAI_FILE" "SHAI"
-        processed_files["$SHAI_FILE"]=1
+        processed_files+=("$SHAI_FILE")
         found_agent=true
     fi
 
-    if [[ -f "$Q_FILE" ]] && [[ -z "${processed_files[$Q_FILE]}" ]]; then
+    if [[ -f "$Q_FILE" ]] && ! file_already_processed "$Q_FILE"; then
         update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
-        processed_files["$Q_FILE"]=1
+        processed_files+=("$Q_FILE")
         found_agent=true
     fi
     
-    if [[ -f "$BOB_FILE" ]] && [[ -z "${processed_files[$BOB_FILE]}" ]]; then
+    if [[ -f "$BOB_FILE" ]] && ! file_already_processed "$BOB_FILE"; then
         update_agent_file "$BOB_FILE" "IBM Bob"
-        processed_files["$BOB_FILE"]=1
+        processed_files+=("$BOB_FILE")
         found_agent=true
     fi
     
