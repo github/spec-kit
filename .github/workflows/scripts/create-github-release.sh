@@ -48,5 +48,7 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-q-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-joycode-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-joycode-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-bob-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-bob-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \
   --notes-file release_notes.md

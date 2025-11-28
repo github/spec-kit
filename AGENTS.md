@@ -47,6 +47,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amp** | `.agents/commands/` | Markdown | `amp` | Amp CLI |
 | **SHAI** | `.shai/commands/` | Markdown | `shai` | SHAI CLI |
 | **JoyCode**     | `.joycode/commands/`| Markdown | N/A (IDE-based) | JoyCode IDE |
+| **IBM Bob** | `.bob/commands/` | Markdown | N/A (IDE-based) | IBM Bob IDE |
 
 ### Step-by-Step Integration Guide
 
@@ -321,12 +322,13 @@ Work within integrated development environments:
 
 - **GitHub Copilot**: Built into VS Code/compatible editors
 - **Windsurf**: Built into Windsurf IDE
+- **IBM Bob**: Built into IBM Bob IDE
 
 ## Command File Formats
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
 
 **Standard format:**
 
