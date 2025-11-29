@@ -347,7 +347,8 @@ create_new_agent_file() {
     done
     
     # Convert \n sequences to actual newlines
-    newline=$(printf '\n')
+    # Use printf -v to assign without command substitution (which strips trailing newlines)
+    printf -v newline '\n'
     sed -i.bak2 "s/\\\\n/${newline}/g" "$temp_file"
     
     # Clean up backup files
