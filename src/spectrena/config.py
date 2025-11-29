@@ -243,6 +243,19 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
             elif key in (readchar.key.ESCAPE, "\x1b"):
                 return -1
 
+    # Show intro message before format selection
+    console.clear()
+    intro_panel = Panel(
+        "[cyan]Spectrena Configuration Wizard[/cyan]\n\n"
+        "This wizard will help you configure how spec IDs are generated.\n"
+        "Spec IDs are used to uniquely identify features and track them through\n"
+        "the development lifecycle.",
+        border_style="cyan",
+        padding=(1, 2)
+    )
+    console.print(intro_panel)
+    console.print()
+
     choice = select_menu(FORMAT_OPTIONS, "Spec ID Format")
     if choice == -1:
         return config
@@ -251,6 +264,19 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
 
     if "{component}" in config.spec_id.template:
         console.clear()
+        components_panel = Panel(
+            "[cyan]Component Configuration[/cyan]\n\n"
+            "Components help organize specs by functional area or architectural layer.\n\n"
+            "[bold]Examples:[/]\n"
+            "  • CORE, API, UI, DB\n"
+            "  • AUTH, BILLING, REPORTING\n"
+            "  • FRONTEND, BACKEND, INFRA\n\n"
+            "[dim]Enter component names separated by commas, or press Enter to skip.[/]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+        console.print(components_panel)
+        console.print()
         comp_input = console.input("[bold]Components (comma-separated):[/] ")
         if comp_input.strip():
             config.spec_id.components = [
@@ -259,6 +285,19 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
 
     if "{project}" in config.spec_id.template:
         console.clear()
+        project_panel = Panel(
+            "[cyan]Project Prefix Configuration[/cyan]\n\n"
+            "A project prefix helps distinguish specs when working with multiple projects\n"
+            "or microservices in the same repository.\n\n"
+            "[bold]Examples:[/]\n"
+            "  • MYAPP, WEBUI, API\n"
+            "  • ACME, PORTAL, ADMIN\n\n"
+            "[dim]Enter a short project identifier, or press Enter to skip.[/]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+        console.print(project_panel)
+        console.print()
         project = console.input("[bold]Project prefix:[/] ")
         if project.strip():
             config.spec_id.project = project.strip().upper()
