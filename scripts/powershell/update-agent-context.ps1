@@ -47,20 +47,20 @@ $NEW_PLAN = $IMPL_PLAN
 $CLAUDE_FILE   = Join-Path $REPO_ROOT 'CLAUDE.md'
 $GEMINI_FILE   = Join-Path $REPO_ROOT 'GEMINI.md'
 $COPILOT_FILE  = Join-Path $REPO_ROOT '.github/agents/copilot-instructions.md'
-$CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/specify-rules.mdc'
+$CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/spectrena-rules.mdc'
 $QWEN_FILE     = Join-Path $REPO_ROOT 'QWEN.md'
 $AGENTS_FILE   = Join-Path $REPO_ROOT 'AGENTS.md'
-$WINDSURF_FILE = Join-Path $REPO_ROOT '.windsurf/rules/specify-rules.md'
-$KILOCODE_FILE = Join-Path $REPO_ROOT '.kilocode/rules/specify-rules.md'
-$AUGGIE_FILE   = Join-Path $REPO_ROOT '.augment/rules/specify-rules.md'
-$ROO_FILE      = Join-Path $REPO_ROOT '.roo/rules/specify-rules.md'
+$WINDSURF_FILE = Join-Path $REPO_ROOT '.windsurf/rules/spectrena-rules.md'
+$KILOCODE_FILE = Join-Path $REPO_ROOT '.kilocode/rules/spectrena-rules.md'
+$AUGGIE_FILE   = Join-Path $REPO_ROOT '.augment/rules/spectrena-rules.md'
+$ROO_FILE      = Join-Path $REPO_ROOT '.roo/rules/spectrena-rules.md'
 $CODEBUDDY_FILE = Join-Path $REPO_ROOT 'CODEBUDDY.md'
 $AMP_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
 $SHAI_FILE     = Join-Path $REPO_ROOT 'SHAI.md'
 $Q_FILE        = Join-Path $REPO_ROOT 'AGENTS.md'
 $BOB_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
 
-$TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
+$TEMPLATE_FILE = Join-Path $REPO_ROOT '.spectrena/templates/agent-file-template.md'
 
 # Parsed plan data placeholders
 $script:NEW_LANG = ''
@@ -114,7 +114,7 @@ function Validate-Environment {
     }
     if (-not (Test-Path $TEMPLATE_FILE)) {
         Write-Err "Template file not found at $TEMPLATE_FILE"
-        Write-Info 'Run specify init to scaffold .specify/templates, or add agent-file-template.md there.'
+        Write-Info 'Run spectrena init to scaffold .spectrena/templates, or add agent-file-template.md there.'
         exit 1
     }
 }
