@@ -228,7 +228,8 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
             for i, (name, _, example) in enumerate(options):
                 prefix = "▶" if i == selected else " "
                 style = "bold cyan" if i == selected else ""
-                table.add_row(prefix, f"[{style}]{name}[/]", f"→ {example}")
+                formatted_name = f"[{style}]{name}[/]" if style else name
+                table.add_row(prefix, formatted_name, f"→ {example}")
             console.print(Panel(table, title=title, border_style="cyan"))
             console.print("\n[dim]↑/↓ navigate • Enter select[/]")
 
