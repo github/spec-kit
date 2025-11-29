@@ -1171,6 +1171,34 @@ def init(
         "--github-token",
         help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)",
     ),
+    from_discovery: bool = typer.Option(
+        False,
+        "--from-discovery",
+        help="Load configuration from .spectrena/discovery.md",
+    ),
+    spec_format: str | None = typer.Option(
+        None,
+        "--spec-format",
+        "-f",
+        help="Spec ID format: simple, component, project, or full",
+    ),
+    components: str | None = typer.Option(
+        None,
+        "--components",
+        "-c",
+        help="Comma-separated component names",
+    ),
+    project_prefix: str | None = typer.Option(
+        None,
+        "--project-prefix",
+        "-p",
+        help="Project prefix for spec IDs",
+    ),
+    skip_config: bool = typer.Option(
+        False,
+        "--skip-config",
+        help="Skip configuration wizard",
+    ),
 ):
     """
     Initialize a new Spectrena project from the latest template.
@@ -1425,6 +1453,44 @@ def init(
             pass
 
     console.print(tracker.render())
+
+    # Initialize Spectrena configuration
+    from spectrena.config import Config, run_config_wizard
+    from spectrena.discover import load_discovery_recommendations
+
+    config = Config()
+
+    if from_discovery:
+        # Load recommendations from .spectrena/discovery.md
+        recs = load_discovery_recommendations(project_path / ".spectrena" / "discovery.md")
+        if recs.get("template"):
+            config.spec_id.template = recs["template"]
+        if recs.get("components"):
+            config.spec_id.components = recs["components"]
+        console.print("[cyan]✓ Loaded configuration from discovery.md[/cyan]")
+    elif spec_format or components or project_prefix:
+        # Apply explicit config options
+        FORMAT_MAP = {
+            "simple": "{NNN}-{slug}",
+            "component": "{component}-{NNN}-{slug}",
+            "project": "{project}-{NNN}-{slug}",
+            "full": "{project}-{component}-{NNN}-{slug}",
+        }
+        if spec_format:
+            config.spec_id.template = FORMAT_MAP.get(spec_format, spec_format)
+        if components:
+            config.spec_id.components = [c.strip().upper() for c in components.split(",")]
+        if project_prefix:
+            config.spec_id.project = project_prefix.upper()
+        console.print("[cyan]✓ Applied configuration options[/cyan]")
+    elif not skip_config:
+        # Run interactive config wizard
+        console.print("\n[bold]Configuring Spectrena...[/bold]\n")
+        config = run_config_wizard(project_path)
+
+    # Save configuration
+    config.save(project_path)
+
     console.print("\n[bold green]Project ready.[/bold green]")
 
     # Show git error details if initialization failed
