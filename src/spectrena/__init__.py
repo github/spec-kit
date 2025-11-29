@@ -33,7 +33,7 @@ import shutil
 import shlex
 import json
 from pathlib import Path
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, TypedDict, Optional
 
 import typer
 import httpx
@@ -54,6 +54,11 @@ import truststore
 from datetime import datetime, timezone
 
 from spectrena.new import new as new_spec
+from spectrena.plan import plan_init
+from spectrena.doctor import doctor as doctor_cmd
+from spectrena.context import update_context
+from spectrena.discover import add_discover_command
+from spectrena.commands import add_config_command
 
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
@@ -492,6 +497,10 @@ app = typer.Typer(
     invoke_without_command=True,
     cls=BannerGroup,
 )
+
+# Add discover and config commands
+add_discover_command(app)
+add_config_command(app)
 
 
 def show_banner():
@@ -1664,7 +1673,47 @@ def register_spec(
     asyncio.run(_register())
 
 
-@app.command(name="new")(new_spec)
+# Register commands
+@app.command(name="new")
+def new_command(
+    description: str = typer.Argument(..., help="Feature description"),
+    component: str = typer.Option(None, "-c", "--component", help="Component (e.g., CORE, API, UI)"),
+    number: int = typer.Option(None, "-n", "--number", help="Override spec number"),
+    no_branch: bool = typer.Option(False, "--no-branch", help="Skip git branch creation"),
+    no_lineage: bool = typer.Option(False, "--no-lineage", help="Skip lineage registration"),
+):
+    """Create a new spec with auto-generated ID."""
+    new_spec(description, component, number, no_branch, no_lineage)
+
+
+@app.command(name="plan-init")
+def plan_init_command(
+    spec_dir: Optional[Path] = typer.Argument(None, help="Spec directory (auto-detected if not provided)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing plan files"),
+):
+    """Initialize planning phase for a spec."""
+    plan_init(spec_dir, force)
+
+
+@app.command(name="doctor")
+def doctor_command(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show additional diagnostic info"),
+    check_optional: bool = typer.Option(False, "--all", "-a", help="Also check optional dependencies"),
+):
+    """Check system for required dependencies."""
+    doctor_cmd(verbose, check_optional)
+
+
+@app.command(name="update-context")
+def update_context_command(
+    agent_file: Path = typer.Option(Path("CLAUDE.md"), "--file", "-f", help="Agent context file to update"),
+    spec_dir: Optional[Path] = typer.Option(None, "--spec", "-s", help="Spec directory containing plan.md"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show changes without writing"),
+):
+    """Update agent context file with tech stack from plan.md."""
+    update_context(agent_file, spec_dir, dry_run)
+
+
 def main():
     app()
 

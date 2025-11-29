@@ -15,7 +15,7 @@ dependencies = [
 
 [project.scripts]
 spectrena = "spectrena:main"
-spectrena-sw = "spectrena.worktrees:main"
+sw = "spectrena.worktrees:main"
 spectrena-mcp = "spectrena.lineage.server:main"
 
 [project.optional-dependencies]
