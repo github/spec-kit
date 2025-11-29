@@ -18,10 +18,10 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}Spectrena Test Runner${NC}"
 echo "================================"
 
-# Check if pytest is installed
-if ! command -v pytest &> /dev/null; then
-    echo -e "${YELLOW}pytest not found. Installing test dependencies...${NC}"
-    pip install -e ".[dev]"
+# Check if uv is installed
+if ! command -v uv &> /dev/null; then
+    echo -e "${YELLOW}uv not found. Please install uv first: https://docs.astral.sh/uv/${NC}"
+    exit 1
 fi
 
 # Parse arguments
@@ -52,10 +52,10 @@ done
 echo ""
 if [ -z "$TEST_SELECTION" ]; then
     echo "Running all tests..."
-    pytest "${ARGS[@]}"
+    uv run pytest "${ARGS[@]}"
 else
     echo "Running selected tests: $TEST_SELECTION"
-    pytest $TEST_SELECTION "${ARGS[@]}"
+    uv run pytest $TEST_SELECTION "${ARGS[@]}"
 fi
 
 # Summary

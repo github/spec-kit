@@ -1743,8 +1743,8 @@ def register_spec(
 @app.command(name="new")
 def new_command(
     description: str = typer.Argument(..., help="Feature description"),
-    component: str = typer.Option(None, "-c", "--component", help="Component (e.g., CORE, API, UI)"),
-    number: int = typer.Option(None, "-n", "--number", help="Override spec number"),
+    component: Optional[str] = typer.Option(None, "-c", "--component", help="Component (e.g., CORE, API, UI)"),
+    number: Optional[int] = typer.Option(None, "-n", "--number", help="Override spec number"),
     no_branch: bool = typer.Option(False, "--no-branch", help="Skip git branch creation"),
     no_lineage: bool = typer.Option(False, "--no-lineage", help="Skip lineage registration"),
 ):
