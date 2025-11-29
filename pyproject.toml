@@ -1,24 +1,31 @@
 [project]
-name = "specify-cli"
-version = "0.0.22"
-description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
+name = "spectrena"
+version = "1.0.0"
+description = "Spec-Driven Development (SDD) backed by Serena, with added configuration and lineage tracking."
 requires-python = ">=3.11"
 dependencies = [
-    "typer",
-    "rich",
-    "httpx[socks]",
-    "platformdirs",
-    "readchar",
-    "truststore>=0.10.4",
+  "typer",
+  "rich",
+  "httpx",
+  "platformdirs",
+  "readchar",
+  "truststore",
+  "gitpython>=3.1.45",
 ]
 
 [project.scripts]
-specify = "specify_cli:main"
+spectrena = "spectrena:main"
+spectrena-sw = "spectrena.worktrees:main"
+spectrena-mcp = "spectrena.lineage.server:main"
+
+[project.optional-dependencies]
+lineage = ["fastmcp"]
+lineage-surreal = ["fastmcp", "surrealdb"]
+dev = ["pytest", "ruff"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/specify_cli"]
-
+packages = ["src/spectrena"]
