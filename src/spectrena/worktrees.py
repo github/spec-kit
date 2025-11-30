@@ -53,9 +53,11 @@ def parse_mermaid_deps(path: Path) -> dict[str, list[str]]:
         deps[spec].append(dep)
 
     # Also capture standalone nodes (no deps)
-    for match in re.finditer(r'^\s+(\S+-\d+-\S+)\s*$', content, re.MULTILINE):
+    # Match various spec ID formats: CORE-001-slug, CORE-001, 001-slug, etc.
+    for match in re.finditer(r'^\s+(\S+)\s*$', content, re.MULTILINE):
         spec = match.group(1)
-        if spec not in deps:
+        # Skip the "graph TD" line and other non-spec lines
+        if spec not in ("graph", "TD", "LR") and spec not in deps:
             deps[spec] = []
 
     return deps

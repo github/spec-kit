@@ -19,15 +19,15 @@ class TestWorktreesHelpers:
 
     def test_extract_spec_id_simple(self):
         """Test extracting spec ID from branch name."""
-        # extract_spec_id returns first two parts: NNN-slug
-        assert extract_spec_id("spec/001-user-auth") == "001-user"
-        assert extract_spec_id("spec/042-api-integration") == "042-api"
+        # extract_spec_id now returns full spec ID (without spec/ prefix)
+        assert extract_spec_id("spec/001-user-auth") == "001-user-auth"
+        assert extract_spec_id("spec/042-api-integration") == "042-api-integration"
 
     def test_extract_spec_id_component(self):
         """Test extracting spec ID with component."""
-        # For component format: COMPONENT-NNN
-        assert extract_spec_id("spec/CORE-001-user-auth") == "CORE-001"
-        assert extract_spec_id("spec/API-042-rest-endpoints") == "API-042"
+        # Returns full spec ID including component and slug
+        assert extract_spec_id("spec/CORE-001-user-auth") == "CORE-001-user-auth"
+        assert extract_spec_id("spec/API-042-rest-endpoints") == "API-042-rest-endpoints"
 
     def test_get_spec_branches(self, git_repo, temp_dir):
         """Test getting all spec branches."""
@@ -51,24 +51,24 @@ class TestWorktreesHelpers:
         assert deps == {}
 
     def test_load_dependencies_valid(self, temp_dir):
-        """Test loading valid dependencies file."""
-        # Create .spectrena directory
-        spectrena_dir = temp_dir / ".spectrena"
-        spectrena_dir.mkdir()
-        deps_file = spectrena_dir / "dependencies.txt"
-        deps_file.write_text("""# Dependencies
-CORE-002: CORE-001
-API-001: CORE-001, CORE-002
-UI-001: API-001
-
-# Comments are ignored
+        """Test loading valid dependencies file (Mermaid format)."""
+        # Create deps.mermaid file
+        deps_file = temp_dir / "deps.mermaid"
+        deps_file.write_text("""graph TD
+    CORE-001
+    CORE-002 --> CORE-001
+    API-001 --> CORE-001
+    API-001 --> CORE-002
+    UI-001 --> API-001
 """)
 
         os.chdir(temp_dir)
         deps = load_dependencies()
 
+        assert deps["CORE-001"] == []
         assert deps["CORE-002"] == ["CORE-001"]
-        assert deps["API-001"] == ["CORE-001", "CORE-002"]
+        assert "CORE-001" in deps["API-001"]
+        assert "CORE-002" in deps["API-001"]
         assert deps["UI-001"] == ["API-001"]
 
     @pytest.mark.skip(reason="Git signing issues in test environment")
@@ -105,12 +105,11 @@ class TestDependencyGraph:
 
     def test_simple_dependency_chain(self, temp_dir):
         """Test simple linear dependency chain."""
-        spectrena_dir = temp_dir / ".spectrena"
-        spectrena_dir.mkdir()
-        deps_file = spectrena_dir / "dependencies.txt"
-        deps_file.write_text("""
-SPEC-002: SPEC-001
-SPEC-003: SPEC-002
+        deps_file = temp_dir / "deps.mermaid"
+        deps_file.write_text("""graph TD
+    SPEC-001
+    SPEC-002 --> SPEC-001
+    SPEC-003 --> SPEC-002
 """)
 
         os.chdir(temp_dir)
@@ -120,14 +119,17 @@ SPEC-003: SPEC-002
         assert "SPEC-002" in deps["SPEC-003"]
         # SPEC-002 depends on SPEC-001
         assert "SPEC-001" in deps["SPEC-002"]
+        # SPEC-001 has no dependencies
+        assert deps["SPEC-001"] == []
 
     def test_multi_dependency(self, temp_dir):
         """Test spec with multiple dependencies."""
-        spectrena_dir = temp_dir / ".spectrena"
-        spectrena_dir.mkdir()
-        deps_file = spectrena_dir / "dependencies.txt"
-        deps_file.write_text("""
-SPEC-003: SPEC-001, SPEC-002
+        deps_file = temp_dir / "deps.mermaid"
+        deps_file.write_text("""graph TD
+    SPEC-001
+    SPEC-002
+    SPEC-003 --> SPEC-001
+    SPEC-003 --> SPEC-002
 """)
 
         os.chdir(temp_dir)
@@ -139,20 +141,21 @@ SPEC-003: SPEC-001, SPEC-002
 
     def test_no_dependencies(self, temp_dir):
         """Test spec with no dependencies (root)."""
-        spectrena_dir = temp_dir / ".spectrena"
-        spectrena_dir.mkdir()
-        deps_file = spectrena_dir / "dependencies.txt"
-        deps_file.write_text("""
-# SPEC-001 has no dependencies
-SPEC-002: SPEC-001
+        deps_file = temp_dir / "deps.mermaid"
+        deps_file.write_text("""graph TD
+    SPEC-001
+    SPEC-002 --> SPEC-001
 """)
 
         os.chdir(temp_dir)
         deps = load_dependencies()
 
-        # SPEC-001 not in dependencies (it's a root)
-        assert "SPEC-001" not in deps
+        # SPEC-001 has no dependencies (is a root)
+        assert "SPEC-001" in deps
+        assert deps["SPEC-001"] == []
+        # SPEC-002 depends on SPEC-001
         assert "SPEC-002" in deps
+        assert deps["SPEC-002"] == ["SPEC-001"]
 
 
 class TestWorktreeOperations:
