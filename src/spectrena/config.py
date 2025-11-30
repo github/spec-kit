@@ -249,12 +249,13 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
         "[cyan]Spectrena Configuration Wizard[/cyan]\n\n"
         "This wizard will help you configure how spec IDs are generated.\n"
         "Spec IDs are used to uniquely identify features and track them through\n"
-        "the development lifecycle.",
+        "the development lifecycle.\n\n"
+        "[dim]Press Enter to continue...[/]",
         border_style="cyan",
         padding=(1, 2)
     )
     console.print(intro_panel)
-    console.print()
+    _ = console.input("")  # Wait for Enter
 
     choice = select_menu(FORMAT_OPTIONS, "Spec ID Format")
     if choice == -1:
