@@ -926,18 +926,15 @@ def copy_local_templates(
                 content = re.sub(r'/?scripts/', '.spectrena/scripts/', content)
                 content = re.sub(r'/?templates/', '.spectrena/templates/', content)
 
-                # Replace /speckit. with /spectrena. for slash command references
-                content = content.replace('/speckit.', '/spectrena.')
-
                 # For markdown-based agents, use $ARGUMENTS
                 # For TOML-based (gemini, qwen), would need different handling
                 if ai_assistant in ["claude", "copilot", "cursor-agent", "opencode", "windsurf", "codex", "kilocode", "auggie", "roo", "codebuddy", "amp", "shai", "q", "bob"]:
                     content = content.replace("{ARGS}", "$ARGUMENTS")
-                    output_file = commands_dest / f"speckit.{cmd_file.stem}.md"
+                    output_file = commands_dest / f"spectrena.{cmd_file.stem}.md"
                 else:
                     # For TOML-based agents, skip for now or use basic format
                     content = content.replace("{ARGS}", "{{args}}")
-                    output_file = commands_dest / f"speckit.{cmd_file.stem}.toml"
+                    output_file = commands_dest / f"spectrena.{cmd_file.stem}.toml"
 
                 output_file.write_text(content)
 
