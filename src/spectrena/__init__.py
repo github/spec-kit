@@ -61,7 +61,7 @@ from spectrena.discover import add_discover_command
 from spectrena.commands import add_config_command
 
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-client = httpx.Client(verify=ssl_context)
+cl = httpx.Client(verify=ssl_context)
 
 
 class AgentConfig(TypedDict):
@@ -127,9 +127,13 @@ def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str)
             lines.append("This repository doesn't have any releases yet.")
             lines.append("")
             lines.append("[bold]To fix this:[/bold]")
-            lines.append("  • Create a GitHub release in the rghsoftware/spectrena repository")
+            lines.append(
+                "  • Create a GitHub release in the rghsoftware/spectrena repository"
+            )
             lines.append("  • Or wait for a release to be published")
-            lines.append("  • The release must include template assets for your selected AI agent")
+            lines.append(
+                "  • The release must include template assets for your selected AI agent"
+            )
         else:
             lines.append("[bold]Resource not found[/bold]")
             lines.append("The requested resource does not exist.")
@@ -867,7 +871,9 @@ def copy_local_templates(
                     shutil.copy2(item, dest_file)
 
             if verbose and not tracker:
-                console.print(f"[cyan]Copied:[/cyan] templates/ → .spectrena/templates/")
+                console.print(
+                    f"[cyan]Copied:[/cyan] templates/ → .spectrena/templates/"
+                )
 
         # Generate agent commands
         commands_src = repo_root / "templates" / "commands"
@@ -922,13 +928,29 @@ def copy_local_templates(
                 # This means: optional leading slash + memory/ → .spectrena/memory/
                 # We use regex to avoid cascading replacements
                 import re
-                content = re.sub(r'/?memory/', '.spectrena/memory/', content)
-                content = re.sub(r'/?scripts/', '.spectrena/scripts/', content)
-                content = re.sub(r'/?templates/', '.spectrena/templates/', content)
+
+                content = re.sub(r"/?memory/", ".spectrena/memory/", content)
+                content = re.sub(r"/?scripts/", ".spectrena/scripts/", content)
+                content = re.sub(r"/?templates/", ".spectrena/templates/", content)
 
                 # For markdown-based agents, use $ARGUMENTS
                 # For TOML-based (gemini, qwen), would need different handling
-                if ai_assistant in ["claude", "copilot", "cursor-agent", "opencode", "windsurf", "codex", "kilocode", "auggie", "roo", "codebuddy", "amp", "shai", "q", "bob"]:
+                if ai_assistant in [
+                    "claude",
+                    "copilot",
+                    "cursor-agent",
+                    "opencode",
+                    "windsurf",
+                    "codex",
+                    "kilocode",
+                    "auggie",
+                    "roo",
+                    "codebuddy",
+                    "amp",
+                    "shai",
+                    "q",
+                    "bob",
+                ]:
                     content = content.replace("{ARGS}", "$ARGUMENTS")
                     output_file = commands_dest / f"spectrena.{cmd_file.stem}.md"
                 else:
@@ -1391,6 +1413,36 @@ def ensure_executable_scripts(
                 console.print(f"  - {f}")
 
 
+GITHUB_RELEASE_URL = "https://github.com/rghsoftware/spectrena/releases/latest/download"
+
+
+def download_template(agent: str) -> Path | None:
+    """Download agent template from GitHub releases."""
+    import urllib.request
+    import tempfile
+
+    # Get latest version or use specified
+    package_name = f"spectrena-template-{agent}"
+
+    # Try latest release
+    url = f"{GITHUB_RELEASE_URL}/{package_name}.zip"
+
+    console.print(f"[dim]Downloading {package_name}...[/dim]")
+
+    try:
+        tmp_dir = Path(tempfile.mkdtemp())
+        zip_path = tmp_dir / f"{package_name}.zip"
+
+        urllib.request.urlretrieve(url, zip_path)
+
+        return zip_path
+
+    except Exception as e:
+        console.print(f"[red]Failed to download template: {e}[/red]")
+        console.print("[dim]Falling back to bundled templates[/dim]")
+        return None
+
+
 @app.command()
 def init(
     project_name: str | None = typer.Argument(
@@ -1734,7 +1786,9 @@ def init(
 
     if from_discovery:
         # Load recommendations from .spectrena/discovery.md
-        recs = load_discovery_recommendations(project_path / ".spectrena" / "discovery.md")
+        recs = load_discovery_recommendations(
+            project_path / ".spectrena" / "discovery.md"
+        )
         if recs.get("template"):
             config.spec_id.template = recs["template"]
         if recs.get("components"):
@@ -1751,7 +1805,9 @@ def init(
         if spec_format:
             config.spec_id.template = FORMAT_MAP.get(spec_format, spec_format)
         if components:
-            config.spec_id.components = [c.strip().upper() for c in components.split(",")]
+            config.spec_id.components = [
+                c.strip().upper() for c in components.split(",")
+            ]
         if project_prefix:
             config.spec_id.project = project_prefix.upper()
         console.print("[cyan]✓ Applied configuration options[/cyan]")
@@ -1833,9 +1889,7 @@ def init(
     )
     steps_lines.append("")
     steps_lines.append("   [dim]Phase 0+: Development Workflow[/dim]")
-    steps_lines.append(
-        "   [cyan]/spectrena.specify[/] - Create feature specification"
-    )
+    steps_lines.append("   [cyan]/spectrena.specify[/] - Create feature specification")
     steps_lines.append("   [cyan]/spectrena.plan[/] - Create implementation plan")
     steps_lines.append("   [cyan]/spectrena.tasks[/] - Generate actionable tasks")
     steps_lines.append("   [cyan]/spectrena.implement[/] - Execute implementation")
@@ -2023,10 +2077,18 @@ def register_spec(
 @app.command(name="new")
 def new_command(
     description: str = typer.Argument(..., help="Feature description"),
-    component: Optional[str] = typer.Option(None, "-c", "--component", help="Component (e.g., CORE, API, UI)"),
-    number: Optional[int] = typer.Option(None, "-n", "--number", help="Override spec number"),
-    no_branch: bool = typer.Option(False, "--no-branch", help="Skip git branch creation"),
-    no_lineage: bool = typer.Option(False, "--no-lineage", help="Skip lineage registration"),
+    component: Optional[str] = typer.Option(
+        None, "-c", "--component", help="Component (e.g., CORE, API, UI)"
+    ),
+    number: Optional[int] = typer.Option(
+        None, "-n", "--number", help="Override spec number"
+    ),
+    no_branch: bool = typer.Option(
+        False, "--no-branch", help="Skip git branch creation"
+    ),
+    no_lineage: bool = typer.Option(
+        False, "--no-lineage", help="Skip lineage registration"
+    ),
 ):
     """Create a new spec with auto-generated ID."""
     new_spec(description, component, number, no_branch, no_lineage)
@@ -2034,8 +2096,12 @@ def new_command(
 
 @app.command(name="plan-init")
 def plan_init_command(
-    spec_dir: Optional[Path] = typer.Argument(None, help="Spec directory (auto-detected if not provided)"),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing plan files"),
+    spec_dir: Optional[Path] = typer.Argument(
+        None, help="Spec directory (auto-detected if not provided)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite existing plan files"
+    ),
 ):
     """Initialize planning phase for a spec."""
     plan_init(spec_dir, force)
@@ -2043,8 +2109,12 @@ def plan_init_command(
 
 @app.command(name="doctor")
 def doctor_command(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show additional diagnostic info"),
-    check_optional: bool = typer.Option(False, "--all", "-a", help="Also check optional dependencies"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show additional diagnostic info"
+    ),
+    check_optional: bool = typer.Option(
+        False, "--all", "-a", help="Also check optional dependencies"
+    ),
 ):
     """Check system for required dependencies."""
     doctor_cmd(verbose, check_optional)
@@ -2052,9 +2122,15 @@ def doctor_command(
 
 @app.command(name="update-context")
 def update_context_command(
-    agent_file: Path = typer.Option(Path("CLAUDE.md"), "--file", "-f", help="Agent context file to update"),
-    spec_dir: Optional[Path] = typer.Option(None, "--spec", "-s", help="Spec directory containing plan.md"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show changes without writing"),
+    agent_file: Path = typer.Option(
+        Path("CLAUDE.md"), "--file", "-f", help="Agent context file to update"
+    ),
+    spec_dir: Optional[Path] = typer.Option(
+        None, "--spec", "-s", help="Spec directory containing plan.md"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Show changes without writing"
+    ),
 ):
     """Update agent context file with tech stack from plan.md."""
     update_context(agent_file, spec_dir, dry_run)
