@@ -211,10 +211,10 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
     config = Config()
 
     FORMAT_OPTIONS = [
-        ("simple", "{NNN}-{slug}", "001-feature-name"),
-        ("component", "{component}-{NNN}-{slug}", "CORE-001-feature-name"),
-        ("project", "{project}-{NNN}-{slug}", "MYAPP-001-feature-name"),
-        ("full", "{project}-{component}-{NNN}-{slug}", "MYAPP-CORE-001-feature"),
+        ("simple", "{NNN}-{slug}", "001-feature-name", "Basic numbering - good for small projects"),
+        ("component", "{component}-{NNN}-{slug}", "CORE-001-feature-name", "Organize by component (e.g., API, UI, DB)"),
+        ("project", "{project}-{NNN}-{slug}", "MYAPP-001-feature-name", "Add project prefix for multi-project repos"),
+        ("full", "{project}-{component}-{NNN}-{slug}", "MYAPP-CORE-001-feature", "Both project and component organization"),
     ]
 
     def select_menu(options, title):
@@ -223,13 +223,14 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
             console.clear()
             table = Table.grid(padding=(0, 2))
             table.add_column(width=3)
-            table.add_column()
+            table.add_column(width=12)
+            table.add_column(style="dim", width=30)
             table.add_column(style="dim")
-            for i, (name, _, example) in enumerate(options):
+            for i, (name, _, example, description) in enumerate(options):
                 prefix = "▶" if i == selected else " "
                 style = "bold cyan" if i == selected else ""
                 formatted_name = f"[{style}]{name}[/]" if style else name
-                table.add_row(prefix, formatted_name, f"→ {example}")
+                table.add_row(prefix, formatted_name, description, f"→ {example}")
             console.print(Panel(table, title=title, border_style="cyan"))
             console.print("\n[dim]↑/↓ navigate • Enter select[/]")
 
@@ -267,12 +268,15 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
         console.clear()
         components_panel = Panel(
             "[cyan]Component Configuration[/cyan]\n\n"
-            "Components help organize specs by functional area or architectural layer.\n\n"
-            "[bold]Examples:[/]\n"
-            "  • CORE, API, UI, DB\n"
-            "  • AUTH, BILLING, REPORTING\n"
-            "  • FRONTEND, BACKEND, INFRA\n\n"
-            "[dim]Enter component names separated by commas, or press Enter to skip.[/]",
+            "[bold]What is a component?[/]\n"
+            "A component is a logical part of your application that groups related features.\n"
+            "Think of it as a module, layer, or functional area of your system.\n\n"
+            "[bold]Common approaches:[/]\n"
+            "  • By architecture layer: CORE, API, UI, DB\n"
+            "  • By feature domain: AUTH, BILLING, REPORTING, NOTIFICATIONS\n"
+            "  • By service: FRONTEND, BACKEND, INFRA, MOBILE\n\n"
+            "[bold]Note:[/] You can define components now or add them later to .spectrena/config.yml\n"
+            "[dim]Press Enter without typing to skip (components won't be used in spec IDs)[/]",
             border_style="cyan",
             padding=(1, 2)
         )
@@ -288,12 +292,15 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
         console.clear()
         project_panel = Panel(
             "[cyan]Project Prefix Configuration[/cyan]\n\n"
-            "A project prefix helps distinguish specs when working with multiple projects\n"
-            "or microservices in the same repository.\n\n"
-            "[bold]Examples:[/]\n"
-            "  • MYAPP, WEBUI, API\n"
-            "  • ACME, PORTAL, ADMIN\n\n"
-            "[dim]Enter a short project identifier, or press Enter to skip.[/]",
+            "[bold]What is a project prefix?[/]\n"
+            "A short identifier that represents your entire project or application.\n"
+            "Useful in monorepos or when managing multiple related projects.\n\n"
+            "[bold]When to use:[/]\n"
+            "  • Monorepo with multiple apps (e.g., WEBUI, MOBILEAPP, ADMINPANEL)\n"
+            "  • Multiple microservices in one repo (e.g., USERS, PAYMENTS, CATALOG)\n"
+            "  • Organization prefix for open source (e.g., ACME, MYORG)\n\n"
+            "[bold]Examples:[/] MYAPP, WEBUI, ACME\n"
+            "[dim]Press Enter without typing to skip[/]",
             border_style="cyan",
             padding=(1, 2)
         )
