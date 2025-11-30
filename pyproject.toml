@@ -22,3 +22,21 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
 
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "typer.*",
+    "rich.*",
+    "httpx.*",
+    "readchar.*",
+    "truststore.*",
+    "platformdirs.*",
+]
+ignore_missing_imports = true
+
