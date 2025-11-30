@@ -2,9 +2,7 @@
 
 **Spec-driven development with lineage tracking for AI-assisted coding.**
 
-Spectrena extends [spec-kit](https://github.com/github/spec-kit) with
-configurable spec IDs, discovery phases, parallel development via git worktrees,
-and full traceability from specs → tasks → code.
+Spectrena extends [spec-kit](https://github.com/github/spec-kit) with configurable spec IDs, discovery phases, parallel development via git worktrees, and full traceability from specs → tasks → code.
 
 ## Quick Start
 
@@ -27,37 +25,49 @@ spectrena new -c CORE "User authentication"
 
 ## What It Does
 
-| Feature                   | Description                                                      |
-| ------------------------- | ---------------------------------------------------------------- |
+| Feature | Description |
+|---------|-------------|
 | **Configurable Spec IDs** | `{component}-{NNN}-{slug}` patterns with per-component numbering |
-| **Discovery Phase**       | Explore ideas before committing to architecture                  |
-| **Parallel Development**  | Git worktrees with dependency-aware task selection               |
-| **Lineage Tracking**      | Trace specs → plans → tasks → code changes                       |
-| **Serena Integration**    | Automatic code change recording with symbol-level tracking       |
-| **AI-Native Workflow**    | MCP tools + slash commands for Claude Code                       |
+| **Discovery Phase** | Explore ideas before committing to architecture |
+| **Parallel Development** | Git worktrees with dependency-aware task selection |
+| **Lineage Tracking** | Trace specs → plans → tasks → code changes |
+| **Serena Integration** | Automatic code change recording with symbol-level tracking |
+| **AI-Native Workflow** | MCP tools + slash commands for Claude Code |
 
 ## Installation
 
-**Basic install:**
+### From Git (recommended during development)
 
 ```bash
+# Install from GitHub
+uv tool install "git+https://github.com/rghsoftware/spectrena"
+
+# With lineage tracking
+uv tool install "git+https://github.com/rghsoftware/spectrena[lineage-surreal]"
+
+# One-off execution without installing
+uvx --from "git+https://github.com/rghsoftware/spectrena" spectrena --help
+```
+
+### From PyPI (when published)
+
+```bash
+# Basic install
 uv tool install spectrena
-```
 
-**With lineage tracking (recommended):**
-
-```bash
+# With lineage tracking (recommended)
 uv tool install spectrena[lineage-surreal]
 ```
 
-**With Serena fork (full traceability):**
+### With Serena Fork (full traceability)
 
 ```bash
-uv tool install spectrena[lineage-surreal]
-uv tool install serena-lineage
+# Install both Spectrena and the Serena fork
+uv tool install "git+https://github.com/rghsoftware/spectrena[lineage-surreal]"
+uv tool install "git+https://github.com/rghsoftware/serena-lineage"
 ```
 
-**Verify installation:**
+### Verify Installation
 
 ```bash
 spectrena --help
@@ -69,7 +79,7 @@ spectrena-mcp --help
 
 After `spectrena init`, your project will have:
 
-```text
+```
 my-project/
 ├── .spectrena/              # Internal state
 │   ├── config.yml           # Project configuration (commit this)
@@ -85,7 +95,7 @@ my-project/
 │       └── plan.md
 ├── deps.mermaid             # Dependency graph (Mermaid format)
 ├── AGENTS.md                # Multi-agent support documentation
-├── CLAUDE.md                # Agent context
+├── CLAUDE.md                # Claude-specific agent context
 └── .mcp.json                # MCP server config
 ```
 
@@ -101,67 +111,67 @@ my-project/
 
 **What to commit vs ignore:**
 
-| Path                      | Commit? | Reason                                 |
-| ------------------------- | ------- | -------------------------------------- |
-| `.spectrena/config.yml`   | ✅ Yes  | Project configuration, share with team |
-| `.spectrena/discovery.md` | ✅ Yes  | Exploration context, useful history    |
-| `.spectrena/lineage/`     | ❌ No   | Local database state                   |
-| `templates/`              | ✅ Yes  | User-customized templates              |
-| `specs/`                  | ✅ Yes  | The whole point!                       |
-| `deps.mermaid`            | ✅ Yes  | Dependency graph                       |
-| AGENTS.md                 | ✅ Yes  | Multi-agent support documentation      |
-| `CLAUDE.md`               | ✅ Yes  | Agent context                          |
-| `.mcp.json`               | ✅ Yes  | MCP configuration                      |
+| Path | Commit? | Reason |
+|------|---------|--------|
+| `.spectrena/config.yml` | ✅ Yes | Project configuration, share with team |
+| `.spectrena/discovery.md` | ✅ Yes | Exploration context, useful history |
+| `.spectrena/lineage/` | ❌ No | Local database state |
+| `templates/` | ✅ Yes | User-customized templates |
+| `specs/` | ✅ Yes | The whole point! |
+| `deps.mermaid` | ✅ Yes | Dependency graph |
+| `AGENTS.md` | ✅ Yes | Multi-agent support documentation |
+| `CLAUDE.md` | ✅ Yes | Claude-specific agent context |
+| `.mcp.json` | ✅ Yes | MCP configuration |
 
 ## CLI Commands
 
 ### Core Commands
 
-| Command                            | Description                       |
-| ---------------------------------- | --------------------------------- |
-| `spectrena init`                   | Initialize project with wizard    |
-| `spectrena init --from-discovery`  | Use discovery.md recommendations  |
+| Command | Description |
+|---------|-------------|
+| `spectrena init` | Initialize project with wizard |
+| `spectrena init --from-discovery` | Use discovery.md recommendations |
 | `spectrena discover "description"` | Generate discovery doc (Phase -2) |
-| `spectrena new "description"`      | Create new spec + branch          |
-| `spectrena new -c CORE "desc"`     | Create spec with component        |
-| `spectrena plan-init`              | Initialize plan artifacts         |
-| `spectrena doctor`                 | Check dependencies                |
-| `spectrena config --show`          | Display configuration             |
-| `spectrena config --migrate`       | Migrate existing specs            |
+| `spectrena new "description"` | Create new spec + branch |
+| `spectrena new -c CORE "desc"` | Create spec with component |
+| `spectrena plan-init` | Initialize plan artifacts |
+| `spectrena doctor` | Check dependencies |
+| `spectrena config --show` | Display configuration |
+| `spectrena config --migrate` | Migrate existing specs |
 
 ### Worktree Commands (`sw`)
 
-| Command              | Description                    |
-| -------------------- | ------------------------------ |
-| `sw list`            | List spec branches with status |
-| `sw ready`           | Show specs with deps satisfied |
-| `sw create <branch>` | Create worktree for spec       |
-| `sw open <branch>`   | Open in new terminal           |
-| `sw merge <branch>`  | Merge and cleanup              |
-| `sw status`          | Show active worktrees          |
+| Command | Description |
+|---------|-------------|
+| `sw list` | List spec branches with status |
+| `sw ready` | Show specs with deps satisfied |
+| `sw create <branch>` | Create worktree for spec |
+| `sw open <branch>` | Open in new terminal |
+| `sw merge <branch>` | Merge and cleanup |
+| `sw status` | Show active worktrees |
 
 ### Dependency Commands (`sw dep`)
 
-| Command                 | Description            |
-| ----------------------- | ---------------------- |
-| `sw dep add X Y`        | X depends on Y         |
-| `sw dep rm X Y`         | Remove dependency      |
-| `sw dep check`          | Validate graph         |
-| `sw dep show`           | ASCII visualization    |
-| `sw dep show --mermaid` | Raw Mermaid output     |
-| `sw dep sync`           | Sync file ↔ lineage DB |
+| Command | Description |
+|---------|-------------|
+| `sw dep add X Y` | X depends on Y |
+| `sw dep rm X Y` | Remove dependency |
+| `sw dep check` | Validate graph |
+| `sw dep show` | ASCII visualization |
+| `sw dep show --mermaid` | Raw Mermaid output |
+| `sw dep sync` | Sync file ↔ lineage DB |
 
 **AI-assisted:** Use `/spectrena.deps` in Claude Code for automatic analysis.
 
 ## Slash Commands (Claude Code)
 
-| Command                        | Description                           |
-| ------------------------------ | ------------------------------------- |
-| `/spectrena.specify "Feature"` | Create new spec                       |
-| `/spectrena.clarify`           | Refine current spec                   |
-| `/spectrena.plan`              | Generate implementation plan          |
-| `/spectrena.tasks`             | Break plan into tasks                 |
-| `/spectrena.deps`              | Analyze and generate dependency graph |
+| Command | Description |
+|---------|-------------|
+| `/spectrena.specify "Feature"` | Create new spec |
+| `/spectrena.clarify` | Refine current spec |
+| `/spectrena.plan` | Generate implementation plan |
+| `/spectrena.tasks` | Break plan into tasks |
+| `/spectrena.deps` | Analyze and generate dependency graph |
 
 ## Configuration
 
@@ -172,7 +182,7 @@ spec_id:
   template: "{component}-{NNN}-{slug}"
   padding: 3
   components: [CORE, API, UI, INFRA]
-  numbering_source: "directory" # or "database"
+  numbering_source: "directory"  # or "database"
 
 spectrena:
   enabled: true
@@ -189,7 +199,6 @@ workflow:
 Dependencies use **Mermaid format** for Claude-native generation:
 
 **`deps.mermaid`:**
-
 ```mermaid
 graph TD
     CORE-001-user-auth
@@ -203,7 +212,6 @@ Generate automatically with `/spectrena.deps` or manually with `sw dep add`.
 ## MCP Integration
 
 **`.mcp.json`:**
-
 ```json
 {
   "mcpServers": {
@@ -220,15 +228,15 @@ Generate automatically with `/spectrena.deps` or manually with `sw dep add`.
 
 **Available MCP tools:**
 
-| Tool                              | Description                       |
-| --------------------------------- | --------------------------------- |
-| `phase_get()`                     | Get current phase and active task |
-| `task_start(task_id)`             | Begin working on a task           |
-| `task_complete(task_id, minutes)` | Mark task done                    |
-| `task_context(task_id)`           | Get full context                  |
-| `ready_specs()`                   | List unblocked specs              |
-| `dep_graph_analyze()`             | Get specs for dependency analysis |
-| `dep_graph_save(mermaid)`         | Save dependency graph             |
+| Tool | Description |
+|------|-------------|
+| `phase_get()` | Get current phase and active task |
+| `task_start(task_id)` | Begin working on a task |
+| `task_complete(task_id, minutes)` | Mark task done |
+| `task_context(task_id)` | Get full context |
+| `ready_specs()` | List unblocked specs |
+| `dep_graph_analyze()` | Get specs for dependency analysis |
+| `dep_graph_save(mermaid)` | Save dependency graph |
 
 ## Lineage Tracking
 
@@ -240,7 +248,6 @@ When enabled, Spectrena tracks:
 - **Code changes** → file, symbol, task context (via Serena)
 
 **Query examples:**
-
 ```bash
 # What breaks if CORE-001 slips?
 spectrena impact CORE-001
@@ -298,7 +305,6 @@ spectrena plan-init specs/CORE-001-user-auth
 ```
 
 Or in Claude Code:
-
 ```
 /spectrena.plan
 /spectrena.tasks
@@ -334,31 +340,26 @@ pytest
 
 ## Architecture
 
-```mermaid
-graph TB
-    subgraph CLI["CLI Layer (Pure Python)"]
-        discover["discover"]
-        new["new"]
-        planinit["plan-init"]
-        swdep["sw dep"]
-    end
-
-
-    subgraph MCP["MCP Servers"]
-        spectrenamcp["spectrena-mcp<br/>(spec/task mgmt)"]
-        serenamcp["serena-mcp<br/>(semantic editing)"]
-    end
-
-    subgraph Data["Data Layer"]
-        lineage[".spectrena/lineage<br/>(SurrealDB)"]
-    end
-
-    CLI -->|communicates with| MCP
-    MCP -->|reads/writes| Data
-
-    style CLI fill:#f9f9f9,stroke:#333
-    style MCP fill:#f0f0f0,stroke:#333
-    style Data fill:#e8e8e8,stroke:#333
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         SPECTRENA                               │
+├─────────────────────────────────────────────────────────────────┤
+│  CLI Layer (pure Python)                                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
+│  │ discover │  │   new    │  │plan-init │  │  sw dep  │        │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
+│                                                                 │
+│  MCP Servers                                                    │
+│  ┌────────────────────────┐    ┌────────────────────────┐      │
+│  │    spectrena-mcp       │    │    serena-mcp          │      │
+│  │  (spec/task mgmt)      │    │  (semantic editing)    │      │
+│  └───────────┬────────────┘    └───────────┬────────────┘      │
+│              └──────────┬──────────────────┘                    │
+│                         ▼                                       │
+│  Data Layer  ┌─────────────────────────────────────────────┐   │
+│              │ .spectrena/lineage (SurrealDB)               │   │
+│              └─────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## License
