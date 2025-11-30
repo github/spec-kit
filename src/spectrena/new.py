@@ -128,11 +128,13 @@ def create_spec_directory(
     # Create spec.md from template
     spec_file = spec_dir / "spec.md"
 
-    template_path = Path.cwd() / ".spectrena" / "templates" / "spec.md"
-    if template_path.exists():
-        content = template_path.read_text()
-    else:
-        content = DEFAULT_SPEC_TEMPLATE
+    template_path = Path.cwd() / "templates" / "spec-template.md"
+    if not template_path.exists():
+        console.print("[red]Template not found: templates/spec-template.md[/red]")
+        console.print("[dim]Run 'spectrena init' to create project structure[/dim]")
+        raise typer.Exit(1)
+
+    content = template_path.read_text()
 
     # Fill placeholders
     content = content.replace("{FEATURE_TITLE}", description)
@@ -186,46 +188,6 @@ async def register_in_lineage(spec_id: str, title: str, component: str | None):
         pass  # Lineage not installed
     except Exception as e:
         console.print(f"[yellow]Lineage registration failed: {e}[/yellow]")
-
-
-# Default template if .spectrena/templates/spec.md doesn't exist
-DEFAULT_SPEC_TEMPLATE = """# Specification: {FEATURE_TITLE}
-
-**Spec ID**: {SPEC_ID}
-**Component**: {COMPONENT}
-**Weight**: {WEIGHT}
-**Created**: {DATE}
-
----
-
-## Problem Statement
-
-What problem does this solve?
-
-## User Stories
-
-### US-001: [Title]
-**As a** [user type]
-**I want** [goal]
-**So that** [benefit]
-
-## Technical Approach
-
-How will this be implemented?
-
-## Dependencies
-
-- None
-
-## Open Questions
-
-- [ ] Question 1?
-
-## Out of Scope
-
-- Not included in this spec
-"""
-
 
 # =============================================================================
 # CLI COMMAND
