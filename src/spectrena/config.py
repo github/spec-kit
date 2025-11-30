@@ -275,8 +275,8 @@ def run_config_wizard(project_dir: Optional[Path] = None) -> Config:
             "  • By architecture layer: CORE, API, UI, DB\n"
             "  • By feature domain: AUTH, BILLING, REPORTING, NOTIFICATIONS\n"
             "  • By service: FRONTEND, BACKEND, INFRA, MOBILE\n\n"
-            "[bold]Note:[/] You can define components now or add them later to .spectrena/config.yml\n"
-            "[dim]Press Enter without typing to skip (components won't be used in spec IDs)[/]",
+            "[bold]Note:[/] Components can be discovered during project exploration or added later\n"
+            "[dim]Press Enter to define components later (via discover or .spectrena/config.yml)[/]",
             border_style="cyan",
             padding=(1, 2)
         )
