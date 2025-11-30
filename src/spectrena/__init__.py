@@ -748,8 +748,8 @@ def download_template_from_github(
     debug: bool = False,
     github_token: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
+    repo_owner = "rghsoftware"
+    repo_name = "spectrena"
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
