@@ -100,12 +100,13 @@ def plan_init(
         console.print(f"[yellow]⚠ plan.md exists (use --force to overwrite)[/yellow]")
     else:
         template_path = Path.cwd() / "templates" / "plan-template.md"
-        if template_path.exists():
-            plan_md.write_text(template_path.read_text())
-            console.print("[green]✓ Created plan.md[/green]")
-        else:
-            plan_md.write_text("# Technical Plan\n\n## Tech Stack\n\n## Architecture\n\n## Tasks\n")
-            console.print("[green]✓ Created plan.md (minimal)[/green]")
+        if not template_path.exists():
+            console.print("[red]Template not found: templates/plan-template.md[/red]")
+            console.print("[dim]Run 'spectrena init' to create project structure[/dim]")
+            raise typer.Exit(1)
+
+        plan_md.write_text(template_path.read_text())
+        console.print("[green]✓ Created plan.md[/green]")
 
     # Create supporting files
     files_to_create = [
