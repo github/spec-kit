@@ -753,6 +753,240 @@ def merge_json_files(
     return merged
 
 
+def find_spectrena_repo() -> Path | None:
+    """Find the spectrena repository root by looking for pyproject.toml with name='spectrena'."""
+    current = Path(__file__).resolve().parent
+
+    # Walk up the directory tree
+    for parent in [current] + list(current.parents):
+        pyproject = parent / "pyproject.toml"
+        if pyproject.exists():
+            try:
+                content = pyproject.read_text()
+                # Simple check for spectrena project
+                if 'name = "spectrena"' in content or "name='spectrena'" in content:
+                    return parent
+            except Exception:
+                continue
+
+    return None
+
+
+def copy_local_templates(
+    project_path: Path,
+    ai_assistant: str,
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    tracker: StepTracker | None = None,
+    verbose: bool = True,
+) -> Path:
+    """Copy templates from local spectrena repository for development.
+
+    This is a simplified version for development that:
+    1. Finds the spectrena repository
+    2. Copies memory/, scripts/, and templates/ to .spectrena/
+    3. Creates basic agent commands
+
+    Returns project_path.
+    """
+    # Find repository root
+    if tracker:
+        tracker.start("fetch", "locating spectrena repository")
+
+    repo_root = find_spectrena_repo()
+    if not repo_root:
+        error_msg = (
+            "Could not find spectrena repository.\n"
+            "--local-templates requires running from within the spectrena repository."
+        )
+        if tracker:
+            tracker.error("fetch", "repo not found")
+        raise Exception(error_msg)
+
+    if tracker:
+        tracker.complete("fetch", f"found at {repo_root.name}")
+        tracker.add("download", "Prepare local templates")
+        tracker.start("download")
+    elif verbose:
+        console.print(f"[cyan]Using local repository:[/cyan] {repo_root}")
+
+    # Create temporary directory structure
+    temp_dir = tempfile.mkdtemp(prefix="spectrena-local-")
+    temp_path = Path(temp_dir)
+    spec_dir = temp_path / ".spectrena"
+    spec_dir.mkdir(parents=True)
+
+    try:
+        # Copy memory/ if it exists
+        memory_src = repo_root / "memory"
+        if memory_src.exists():
+            shutil.copytree(memory_src, spec_dir / "memory")
+            if verbose and not tracker:
+                console.print(f"[cyan]Copied:[/cyan] memory/ → .spectrena/memory/")
+
+        # Copy appropriate scripts variant
+        scripts_src = repo_root / "scripts"
+        if scripts_src.exists():
+            scripts_dest = spec_dir / "scripts"
+            scripts_dest.mkdir(parents=True)
+
+            # Copy variant-specific directory
+            if script_type == "sh":
+                bash_src = scripts_src / "bash"
+                if bash_src.exists():
+                    shutil.copytree(bash_src, scripts_dest / "bash")
+            elif script_type == "ps":
+                ps_src = scripts_src / "powershell"
+                if ps_src.exists():
+                    shutil.copytree(ps_src, scripts_dest / "powershell")
+
+            # Copy any top-level script files
+            for item in scripts_src.iterdir():
+                if item.is_file():
+                    shutil.copy2(item, scripts_dest / item.name)
+
+            if verbose and not tracker:
+                console.print(f"[cyan]Copied:[/cyan] scripts/ → .spectrena/scripts/")
+
+        # Copy templates/ (excluding commands and vscode-settings.json)
+        templates_src = repo_root / "templates"
+        if templates_src.exists():
+            templates_dest = spec_dir / "templates"
+            templates_dest.mkdir(parents=True)
+
+            for item in templates_src.rglob("*"):
+                if item.is_file():
+                    # Skip command templates and vscode-settings.json
+                    if "commands" in item.parts or item.name == "vscode-settings.json":
+                        continue
+
+                    rel_path = item.relative_to(templates_src)
+                    dest_file = templates_dest / rel_path
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, dest_file)
+
+            if verbose and not tracker:
+                console.print(f"[cyan]Copied:[/cyan] templates/ → .spectrena/templates/")
+
+        # Generate agent commands
+        commands_src = repo_root / "templates" / "commands"
+        if commands_src.exists():
+            agent_config = AGENT_CONFIG.get(ai_assistant, {})
+            agent_folder = agent_config.get("folder", f".{ai_assistant}/")
+
+            # Determine command directory based on agent
+            if ai_assistant == "claude":
+                commands_dest = temp_path / ".claude" / "commands"
+            elif ai_assistant == "copilot":
+                commands_dest = temp_path / ".github" / "agents"
+            elif ai_assistant == "cursor-agent":
+                commands_dest = temp_path / ".cursor" / "commands"
+            elif ai_assistant == "gemini":
+                commands_dest = temp_path / ".gemini" / "commands"
+            elif ai_assistant == "qwen":
+                commands_dest = temp_path / ".qwen" / "commands"
+            elif ai_assistant == "opencode":
+                commands_dest = temp_path / ".opencode" / "command"
+            elif ai_assistant == "windsurf":
+                commands_dest = temp_path / ".windsurf" / "workflows"
+            elif ai_assistant == "codex":
+                commands_dest = temp_path / ".codex" / "prompts"
+            elif ai_assistant == "kilocode":
+                commands_dest = temp_path / ".kilocode" / "workflows"
+            elif ai_assistant == "auggie":
+                commands_dest = temp_path / ".augment" / "commands"
+            elif ai_assistant == "roo":
+                commands_dest = temp_path / ".roo" / "commands"
+            elif ai_assistant == "codebuddy":
+                commands_dest = temp_path / ".codebuddy" / "commands"
+            elif ai_assistant == "amp":
+                commands_dest = temp_path / ".agents" / "commands"
+            elif ai_assistant == "shai":
+                commands_dest = temp_path / ".shai" / "commands"
+            elif ai_assistant == "q":
+                commands_dest = temp_path / ".amazonq" / "prompts"
+            elif ai_assistant == "bob":
+                commands_dest = temp_path / ".bob" / "commands"
+            else:
+                commands_dest = temp_path / agent_folder.strip("/") / "commands"
+
+            commands_dest.mkdir(parents=True, exist_ok=True)
+
+            # Simple command generation - just copy and do basic substitutions
+            for cmd_file in commands_src.glob("*.md"):
+                content = cmd_file.read_text()
+
+                # Basic path rewriting - match bash script behavior
+                # The bash script uses: sed -E -e 's@(/?)memory/@.spectrena/memory/@g'
+                # This means: optional leading slash + memory/ → .spectrena/memory/
+                # We use regex to avoid cascading replacements
+                import re
+                content = re.sub(r'/?memory/', '.spectrena/memory/', content)
+                content = re.sub(r'/?scripts/', '.spectrena/scripts/', content)
+                content = re.sub(r'/?templates/', '.spectrena/templates/', content)
+
+                # For markdown-based agents, use $ARGUMENTS
+                # For TOML-based (gemini, qwen), would need different handling
+                if ai_assistant in ["claude", "copilot", "cursor-agent", "opencode", "windsurf", "codex", "kilocode", "auggie", "roo", "codebuddy", "amp", "shai", "q", "bob"]:
+                    content = content.replace("{ARGS}", "$ARGUMENTS")
+                    output_file = commands_dest / f"speckit.{cmd_file.stem}.md"
+                else:
+                    # For TOML-based agents, skip for now or use basic format
+                    content = content.replace("{ARGS}", "{{args}}")
+                    output_file = commands_dest / f"speckit.{cmd_file.stem}.toml"
+
+                output_file.write_text(content)
+
+            if verbose and not tracker:
+                console.print(f"[cyan]Generated:[/cyan] commands for {ai_assistant}")
+
+        if tracker:
+            tracker.complete("download", "local templates prepared")
+
+        # Now extract to project directory (similar to download_and_extract_template)
+        if tracker:
+            tracker.add("extract", "Copy to project")
+            tracker.start("extract")
+
+        if not is_current_dir:
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        # Copy all items from temp directory to project
+        for item in temp_path.iterdir():
+            dest_path = project_path / item.name
+            if item.is_dir():
+                if dest_path.exists():
+                    # Merge directories
+                    if verbose and not tracker:
+                        console.print(f"[yellow]Merging:[/yellow] {item.name}")
+                    for sub_item in item.rglob("*"):
+                        if sub_item.is_file():
+                            rel_path = sub_item.relative_to(item)
+                            dest_file = dest_path / rel_path
+                            dest_file.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(sub_item, dest_file)
+                else:
+                    shutil.copytree(item, dest_path)
+            else:
+                shutil.copy2(item, dest_path)
+
+        if tracker:
+            tracker.complete("extract", f"{len(list(temp_path.iterdir()))} items")
+        elif verbose:
+            console.print("[cyan]Local templates copied to project[/cyan]")
+
+    finally:
+        # Cleanup temp directory
+        if tracker:
+            tracker.add("cleanup", "Remove temporary files")
+        shutil.rmtree(temp_path, ignore_errors=True)
+        if tracker:
+            tracker.complete("cleanup")
+
+    return project_path
+
+
 def download_template_from_github(
     ai_assistant: str,
     download_dir: Path,
@@ -902,10 +1136,25 @@ def download_and_extract_template(
     client: httpx.Client | None = None,
     debug: bool = False,
     github_token: str | None = None,
+    local_templates: bool = False,
 ) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+
+    If local_templates=True, copies from local repository instead of downloading.
     """
+    # Use local templates if requested
+    if local_templates:
+        return copy_local_templates(
+            project_path,
+            ai_assistant,
+            script_type,
+            is_current_dir,
+            tracker=tracker,
+            verbose=verbose,
+        )
+
+    # Otherwise, download from GitHub
     current_dir = Path.cwd()
 
     if tracker:
@@ -1215,6 +1464,11 @@ def init(
         "--skip-config",
         help="Skip configuration wizard",
     ),
+    local_templates: bool = typer.Option(
+        False,
+        "--local-templates",
+        help="Use templates from local repository instead of downloading from GitHub (for development)",
+    ),
 ):
     """
     Initialize a new Spectrena project from the latest template.
@@ -1222,7 +1476,7 @@ def init(
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant
-    3. Download the appropriate template from GitHub
+    3. Download the appropriate template from GitHub (or use local templates with --local-templates)
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
@@ -1239,6 +1493,7 @@ def init(
         spectrena init --here --ai codebuddy
         spectrena init --here
         spectrena init --here --force  # Skip confirmation when current directory not empty
+        spectrena init my-project --local-templates  # Use local repository (for development)
     """
 
     show_banner()
@@ -1416,6 +1671,7 @@ def init(
                 client=local_client,
                 debug=debug,
                 github_token=github_token,
+                local_templates=local_templates,
             )
 
             ensure_executable_scripts(project_path, tracker=tracker)
