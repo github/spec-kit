@@ -1,6 +1,6 @@
 [project]
 name = "spectrena"
-version = "1.0.0"
+version = "0.1.0"
 description = "Spec-Driven Development (SDD) backed by Serena, with added configuration and lineage tracking."
 requires-python = ">=3.11"
 dependencies = [
