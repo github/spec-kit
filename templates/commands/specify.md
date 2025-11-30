@@ -8,9 +8,6 @@ handoffs:
     agent: spectrena.clarify
     prompt: Clarify specification requirements
     send: true
-scripts:
-  sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
-  ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
 ## User Input

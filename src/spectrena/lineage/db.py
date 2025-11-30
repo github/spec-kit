@@ -420,4 +420,72 @@ def create_mcp_server():
         """Get task completion velocity."""
         return await db.get_velocity(days)
 
+    @mcp.tool()
+    async def dep_graph_analyze() -> dict[str, object]:
+        """
+        Analyze all specs and return suggested dependency graph.
+        
+        Call this when user asks to analyze or create dependency graph.
+        Returns all specs for Claude to analyze and generate Mermaid graph.
+        """
+        from pathlib import Path
+        
+        specs_dir = Path.cwd() / "specs"
+        specs = []
+        
+        if not specs_dir.exists():
+            return {
+                "specs": [],
+                "instruction": "No specs directory found. Run 'spectrena init' first."
+            }
+        
+        for spec_dir in sorted(specs_dir.iterdir()):
+            if not spec_dir.is_dir():
+                continue
+            spec_md = spec_dir / "spec.md"
+            if spec_md.exists():
+                content = spec_md.read_text()
+                # Extract just the first 1000 chars for analysis
+                specs.append({
+                    "id": spec_dir.name,
+                    "content": content[:1000]
+                })
+        
+        return {
+            "specs": specs,
+            "count": len(specs),
+            "instruction": "Analyze these specs and determine dependencies. Output a Mermaid graph where SPEC-ID --> DEPENDENCY-ID means 'spec depends on dependency'."
+        }
+    
+    @mcp.tool()
+    async def dep_graph_save(mermaid_graph: str) -> dict[str, object]:
+        """
+        Save a Mermaid dependency graph to deps.mermaid.
+        
+        Args:
+            mermaid_graph: The Mermaid graph content (without ```mermaid fences)
+        """
+        from pathlib import Path
+        
+        deps_file = Path.cwd() / "deps.mermaid"
+        
+        # Ensure it starts with graph TD
+        if not mermaid_graph.strip().startswith("graph"):
+            mermaid_graph = "graph TD\n" + mermaid_graph
+        
+        deps_file.write_text(mermaid_graph.strip() + "\n")
+        
+        # Count edges for confirmation
+        edge_count = mermaid_graph.count("-->")
+        
+        # Also sync to lineage DB if enabled
+        # TODO: Parse and store edges in database
+        
+        return {
+            "status": "saved",
+            "path": str(deps_file),
+            "edge_count": edge_count,
+            "message": f"Saved dependency graph with {edge_count} edges to {deps_file}"
+        }
+
     return mcp

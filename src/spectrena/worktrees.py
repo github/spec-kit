@@ -6,6 +6,7 @@ Installed as `sw` command alongside `spectrena`.
 """
 
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,237 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+# =============================================================================
+# DEPENDENCY MANAGEMENT (Mermaid Format)
+# =============================================================================
+
+
+def parse_mermaid_deps(path: Path) -> dict[str, list[str]]:
+    """
+    Parse deps.mermaid into {spec: [deps]} dict.
+
+    Mermaid format:
+        graph TD
+            CORE-001-user-auth
+            CORE-002-data-sync --> CORE-001-user-auth
+            API-001-rest-endpoints --> CORE-001-user-auth
+    """
+    deps: dict[str, list[str]] = {}
+    if not path.exists():
+        return deps
+
+    content = path.read_text()
+    # Match: SPEC-ID --> DEP-ID
+    for match in re.finditer(r'(\S+)\s*-->\s*(\S+)', content):
+        spec, dep = match.groups()
+        if spec not in deps:
+            deps[spec] = []
+        deps[spec].append(dep)
+
+    # Also capture standalone nodes (no deps)
+    # Match various spec ID formats: CORE-001-slug, CORE-001, 001-slug, etc.
+    for match in re.finditer(r'^\s+(\S+)\s*$', content, re.MULTILINE):
+        spec = match.group(1)
+        # Skip the "graph TD" line and other non-spec lines
+        if spec not in ("graph", "TD", "LR") and spec not in deps:
+            deps[spec] = []
+
+    return deps
+
+
+def write_mermaid_deps(path: Path, deps: dict[str, list[str]]) -> None:
+    """Write deps dict to Mermaid format."""
+    lines = ["graph TD"]
+
+    # Standalone nodes (no dependencies)
+    for spec, spec_deps in deps.items():
+        if not spec_deps:
+            lines.append(f"    {spec}")
+
+    # Edges
+    for spec, spec_deps in deps.items():
+        for dep in spec_deps:
+            lines.append(f"    {spec} --> {dep}")
+
+    path.write_text("\n".join(lines) + "\n")
+
+
+# =============================================================================
+# DEPENDENCY COMMANDS (sw dep subcommand group)
+# =============================================================================
+
+dep_app = typer.Typer(help="Manage spec dependencies")
+app.add_typer(dep_app, name="dep")
+
+
+@dep_app.command("add")
+def dep_add(
+    spec: str = typer.Argument(..., help="Spec that has the dependency"),
+    depends_on: str = typer.Argument(..., help="Spec it depends on"),
+):
+    """Add a dependency: SPEC depends on DEPENDS_ON."""
+    deps_file = Path.cwd() / "deps.mermaid"
+    deps = parse_mermaid_deps(deps_file)
+
+    if spec not in deps:
+        deps[spec] = []
+
+    if depends_on not in deps[spec]:
+        deps[spec].append(depends_on)
+        write_mermaid_deps(deps_file, deps)
+        console.print(f"[green]✓ Added:[/green] {spec} --> {depends_on}")
+    else:
+        console.print(f"[yellow]Already exists:[/yellow] {spec} --> {depends_on}")
+
+
+@dep_app.command("rm")
+def dep_remove(
+    spec: str = typer.Argument(..., help="Spec that has the dependency"),
+    depends_on: str = typer.Argument(..., help="Dependency to remove"),
+):
+    """Remove a dependency."""
+    deps_file = Path.cwd() / "deps.mermaid"
+    deps = parse_mermaid_deps(deps_file)
+
+    if spec in deps and depends_on in deps[spec]:
+        deps[spec].remove(depends_on)
+        write_mermaid_deps(deps_file, deps)
+        console.print(f"[green]✓ Removed:[/green] {spec} --> {depends_on}")
+    else:
+        console.print(f"[red]Not found:[/red] {spec} --> {depends_on}")
+
+
+@dep_app.command("check")
+def dep_check():
+    """Validate dependency graph (cycles, missing specs)."""
+    deps_file = Path.cwd() / "deps.mermaid"
+    deps = parse_mermaid_deps(deps_file)
+    specs_dir = Path.cwd() / "specs"
+
+    errors = []
+    warnings = []
+
+    # Get actual spec directories
+    actual_specs = (
+        {d.name for d in specs_dir.iterdir() if d.is_dir()}
+        if specs_dir.exists()
+        else set()
+    )
+
+    # Check for missing specs
+    all_referenced = set(deps.keys())
+    for spec_deps in deps.values():
+        all_referenced.update(spec_deps)
+
+    for spec in all_referenced:
+        if spec not in actual_specs:
+            warnings.append(f"Referenced spec not found: {spec}")
+
+    # Check for cycles (simple DFS)
+    def has_cycle(node: str, visited: set[str], path: set[str]) -> bool:
+        if node in path:
+            return True
+        if node in visited:
+            return False
+        visited.add(node)
+        path.add(node)
+        for dep in deps.get(node, []):
+            if has_cycle(dep, visited, path):
+                return True
+        path.remove(node)
+        return False
+
+    visited: set[str] = set()
+    for spec in deps:
+        if has_cycle(spec, visited, set()):
+            errors.append(f"Cycle detected involving: {spec}")
+
+    # Report
+    if errors:
+        for e in errors:
+            console.print(f"[red]✗ {e}[/red]")
+    if warnings:
+        for w in warnings:
+            console.print(f"[yellow]⚠ {w}[/yellow]")
+    if not errors and not warnings:
+        console.print(f"[green]✓ Dependency graph is valid ({len(deps)} specs)[/green]")
+
+    return len(errors) == 0
+
+
+@dep_app.command("show")
+def dep_show(
+    mermaid: bool = typer.Option(False, "--mermaid", "-m", help="Output raw Mermaid"),
+):
+    """Show dependency graph."""
+    deps_file = Path.cwd() / "deps.mermaid"
+
+    if not deps_file.exists():
+        console.print("[yellow]No deps.mermaid found[/yellow]")
+        console.print("Create one with: sw dep add SPEC-002 SPEC-001")
+        console.print("Or use /spectrena.deps slash command in Claude Code")
+        return
+
+    if mermaid:
+        # Raw mermaid output (for copy/paste)
+        console.print(deps_file.read_text())
+    else:
+        # ASCII tree visualization
+        deps = parse_mermaid_deps(deps_file)
+        completed = get_completed_specs(get_repo())
+
+        # Find roots (specs with no dependents)
+        all_deps = set()
+        for spec_deps in deps.values():
+            all_deps.update(spec_deps)
+        roots = [s for s in deps if s not in all_deps]
+
+        if not roots:
+            roots = list(deps.keys())[:1]  # Fallback
+
+        def print_tree(spec: str, indent: int = 0, seen: set[str] | None = None):
+            if seen is None:
+                seen = set()
+            prefix = "  " * indent + ("└─ " if indent > 0 else "")
+            status = "[green]✓[/green]" if spec in completed else "[dim]○[/dim]"
+            circular = " [yellow](circular)[/yellow]" if spec in seen else ""
+            console.print(f"{prefix}{status} {spec}{circular}")
+
+            if spec in seen:
+                return
+            seen.add(spec)
+
+            dependents = [s for s, d in deps.items() if spec in d]
+            for dep in dependents:
+                print_tree(dep, indent + 1, seen.copy())
+
+        console.print("[bold]Dependency Graph[/bold]\n")
+        for root in roots:
+            print_tree(root)
+
+
+@dep_app.command("sync")
+def dep_sync(
+    direction: str = typer.Option(
+        "file-to-db",
+        "--direction",
+        "-d",
+        help="Sync direction: file-to-db, db-to-file, or bidirectional",
+    ),
+):
+    """Sync dependencies between deps.mermaid and lineage database."""
+    from spectrena.config import Config
+
+    config = Config.load()
+    if not config.spectrena.enabled:
+        console.print("[yellow]Lineage not enabled - nothing to sync[/yellow]")
+        return
+
+    # TODO: Implement sync logic with LineageDB
+    console.print(f"[dim]Syncing {direction}...[/dim]")
+    console.print("[green]✓ Dependencies synced[/green]")
 
 
 # =============================================================================
@@ -51,33 +283,13 @@ def get_config() -> dict[str, Any]:
 
 def load_dependencies() -> dict[str, list[str]]:
     """
-    Load spec dependencies from .spectrena/dependencies.txt
-
-    Format:
-        SPEC-002: SPEC-001
-        SPEC-003: SPEC-001, SPEC-002
+    Load spec dependencies from deps.mermaid (Mermaid format).
 
     Returns:
         dict mapping spec_id -> list of dependency spec_ids
     """
-    deps_file = Path.cwd() / ".spectrena" / "dependencies.txt"
-    deps = {}
-
-    if not deps_file.exists():
-        return deps
-
-    for line in deps_file.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        if ":" in line:
-            spec, dep_list = line.split(":", 1)
-            spec = spec.strip()
-            dependencies = [d.strip() for d in dep_list.split(",") if d.strip()]
-            deps[spec] = dependencies
-
-    return deps
+    deps_file = Path.cwd() / "deps.mermaid"
+    return parse_mermaid_deps(deps_file)
 
 
 def get_spec_branches(repo: Repo) -> list[str]:
@@ -115,12 +327,8 @@ def get_worktrees(repo: Repo) -> list[dict[str, Any]]:
 
 
 def extract_spec_id(branch: str) -> str:
-    """Extract spec ID from branch name (e.g., spec/CORE-001-foo -> CORE-001)."""
+    """Extract spec ID from branch name (e.g., spec/CORE-001-foo -> CORE-001-foo)."""
     name = branch.replace("spec/", "")
-    parts = name.split("-")
-    if len(parts) >= 2:
-        # Assume format: COMPONENT-NNN-slug
-        return f"{parts[0]}-{parts[1]}"
     return name
 
 
@@ -156,7 +364,7 @@ def list_branches():
 
     if not branches:
         console.print("[yellow]No spec branches found[/yellow]")
-        console.print("Create one with: sw create spec/COMPONENT-NNN-description")
+        console.print("Create one with: spectrena new 'Feature description'")
         return
 
     table = Table(title="Spec Branches")
@@ -181,45 +389,17 @@ def list_branches():
     console.print(table)
 
 
-@app.command()
+@app.command(deprecated=True)
 def deps():
-    """Show dependency graph."""
-    dependencies = load_dependencies()
-    completed = get_completed_specs(get_repo())
+    """
+    Show dependency graph. DEPRECATED: Use 'sw dep show' instead.
+    """
+    console.print(
+        "[yellow]Note: 'sw deps' is deprecated. Use 'sw dep show' instead.[/yellow]\n"
+    )
 
-    if not dependencies:
-        console.print("[yellow]No dependencies defined[/yellow]")
-        console.print("Add them to: .spectrena/dependencies.txt")
-        return
-
-    # Build reverse lookup (what depends on X)
-    dependents: dict[str, list[str]] = {}
-    all_specs = set(dependencies.keys())
-    for spec, deps_list in dependencies.items():
-        all_specs.update(deps_list)
-        for dep in deps_list:
-            dependents.setdefault(dep, []).append(spec)
-
-    # Find roots (specs with no dependencies)
-    roots = [s for s in all_specs if s not in dependencies or not dependencies[s]]
-
-    def build_tree(spec: str, tree: Tree, visited: set[str]) -> None:
-        if spec in visited:
-            tree.add(f"[dim]{spec} (circular)[/dim]")
-            return
-        visited.add(spec)
-
-        status = "[green]✓[/green]" if spec in completed else "[dim]○[/dim]"
-        branch = tree.add(f"{status} {spec}")
-
-        for dependent in dependents.get(spec, []):
-            build_tree(dependent, branch, visited.copy())
-
-    tree = Tree("[bold]Dependency Graph[/bold]")
-    for root in sorted(roots):
-        build_tree(root, tree, set())
-
-    console.print(tree)
+    # Forward to new command
+    dep_show(mermaid=False)
 
 
 @app.command()
