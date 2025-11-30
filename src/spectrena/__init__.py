@@ -1033,7 +1033,7 @@ def download_template_from_github(
         raise typer.Exit(1)
 
     assets = release_data.get("assets", [])
-    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
+    pattern = f"spectrena-template-{ai_assistant}-{script_type}"
     matching_assets = [
         asset
         for asset in assets
@@ -1932,8 +1932,8 @@ def version():
             pass
 
     # Fetch latest template release version
-    repo_owner = "github"
-    repo_name = "spec-kit"
+    repo_owner = "rghsoftware"
+    repo_name = "spectrena"
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
     template_version = "unknown"

@@ -92,11 +92,11 @@ generate_commands() {
     case $ext in
       toml)
         body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
-        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckit.$name.$ext" ;;
+        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/spectrena.$name.$ext" ;;
       md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/spectrena.$name.$ext" ;;
       agent.md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/spectrena.$name.$ext" ;;
     esac
   done
 }
@@ -104,9 +104,9 @@ generate_commands() {
 generate_copilot_prompts() {
   local agents_dir=$1 prompts_dir=$2
   mkdir -p "$prompts_dir"
-  
+
   # Generate a .prompt.md file for each .agent.md file
-  for agent_file in "$agents_dir"/speckit.*.agent.md; do
+  for agent_file in "$agents_dir"/spectrena.*.agent.md; do
     [[ -f "$agent_file" ]] || continue
     
     local basename=$(basename "$agent_file" .agent.md)
@@ -215,8 +215,8 @@ build_variant() {
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
   esac
-  ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
-  echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
+  ( cd "$base_dir" && zip -r "../spectrena-template-${agent}-${script}-${NEW_VERSION}.zip" . )
+  echo "Created $GENRELEASES_DIR/spectrena-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
@@ -266,5 +266,5 @@ for agent in "${AGENT_LIST[@]}"; do
 done
 
 echo "Archives in $GENRELEASES_DIR:"
-ls -1 "$GENRELEASES_DIR"/spec-kit-template-*-"${NEW_VERSION}".zip
+ls -1 "$GENRELEASES_DIR"/spectrena-template-*-"${NEW_VERSION}".zip
 
