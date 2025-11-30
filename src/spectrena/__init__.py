@@ -117,10 +117,26 @@ def _parse_rate_limit_headers(headers: httpx.Headers) -> dict[str, Any]:
 
 def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str) -> str:
     """Format a user-friendly error message with rate-limit information."""
-    rate_info = _parse_rate_limit_headers(headers)
-
     lines = [f"GitHub API returned status {status_code} for {url}"]
     lines.append("")
+
+    # Handle 404 specifically (no releases exist)
+    if status_code == 404:
+        if "/releases/latest" in url:
+            lines.append("[bold]No releases found[/bold]")
+            lines.append("This repository doesn't have any releases yet.")
+            lines.append("")
+            lines.append("[bold]To fix this:[/bold]")
+            lines.append("  • Create a GitHub release in the rghsoftware/spectrena repository")
+            lines.append("  • Or wait for a release to be published")
+            lines.append("  • The release must include template assets for your selected AI agent")
+        else:
+            lines.append("[bold]Resource not found[/bold]")
+            lines.append("The requested resource does not exist.")
+        return "\n".join(lines)
+
+    # For other errors, show rate limit information
+    rate_info = _parse_rate_limit_headers(headers)
 
     if rate_info:
         lines.append("[bold]Rate Limit Information:[/bold]")
