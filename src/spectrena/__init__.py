@@ -1549,16 +1549,24 @@ def init(
         step_num += 1
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
-
+    steps_lines.append("")
+    steps_lines.append("   [dim]Phase -2: Exploration[/dim]")
     steps_lines.append(
-        "   2.1 [cyan]/spectrena.constitution[/] - Establish project principles"
+        "   [cyan]/spectrena.discover[/] - Explore project idea before committing to architecture"
     )
+    steps_lines.append("")
+    steps_lines.append("   [dim]Phase -1: Foundation[/dim]")
     steps_lines.append(
-        "   2.2 [cyan]/spectrena.specify[/] - Create baseline specification"
+        "   [cyan]/spectrena.constitution[/] - Establish project principles"
     )
-    steps_lines.append("   2.3 [cyan]/spectrena.plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/spectrena.tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/spectrena.implement[/] - Execute implementation")
+    steps_lines.append("")
+    steps_lines.append("   [dim]Phase 0+: Development Workflow[/dim]")
+    steps_lines.append(
+        "   [cyan]/spectrena.specify[/] - Create feature specification"
+    )
+    steps_lines.append("   [cyan]/spectrena.plan[/] - Create implementation plan")
+    steps_lines.append("   [cyan]/spectrena.tasks[/] - Generate actionable tasks")
+    steps_lines.append("   [cyan]/spectrena.implement[/] - Execute implementation")
 
     steps_panel = Panel(
         "\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1, 2)
