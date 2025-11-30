@@ -1,31 +1,57 @@
 # Security Policy
 
-Thanks for helping make GitHub safe for everyone.
-
-GitHub takes the security of our software products and services seriously, including all of the open source code repositories managed through our GitHub organizations, such as [GitHub](https://github.com/GitHub).
-
-Even though [open source repositories are outside of the scope of our bug bounty program](https://bounty.github.com/index.html#scope) and therefore not eligible for bounty rewards, we will ensure that your finding gets passed along to the appropriate maintainers for remediation.
-
 ## Reporting Security Issues
 
-If you believe you have found a security vulnerability in any GitHub-owned repository, please report it to us through coordinated disclosure.
+If you believe you have found a security vulnerability in Spectrena, please report it through coordinated disclosure.
 
 **Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
 
-Instead, please send an email to opensource-security[@]github.com.
+Instead, please use GitHub's private vulnerability reporting feature:
+1. Go to the [Security tab](https://github.com/rghsoftware/spectrena/security) of the repository
+2. Click "Report a vulnerability"
+3. Fill out the form with details
 
-Please include as much of the information listed below as you can to help us better understand and resolve the issue:
+Alternatively, you can email: security@rghsoftware.com
 
-- The type of issue (e.g., buffer overflow, SQL injection, or cross-site scripting)
-- Full paths of source file(s) related to the manifestation of the issue
+## What to Include
+
+Please include as much of the following information as possible:
+
+- The type of issue (e.g., command injection, path traversal, information disclosure)
+- Full paths of source file(s) related to the issue
 - The location of the affected source code (tag/branch/commit or direct URL)
 - Any special configuration required to reproduce the issue
 - Step-by-step instructions to reproduce the issue
 - Proof-of-concept or exploit code (if possible)
-- Impact of the issue, including how an attacker might exploit the issue
+- Impact of the issue, including how an attacker might exploit it
 
 This information will help us triage your report more quickly.
 
-## Policy
+## Scope
 
-See [GitHub's Safe Harbor Policy](https://docs.github.com/en/site-policy/security-policies/github-bug-bounty-program-legal-safe-harbor#1-safe-harbor-terms)
+Security issues in the following areas are in scope:
+
+- **CLI commands** (`spectrena`, `sw`)
+- **MCP server** (`spectrena-mcp`)
+- **Lineage database** handling
+- **File operations** (spec creation, template handling)
+- **Git operations** (worktree management, branch creation)
+- **Configuration parsing** (YAML, Mermaid)
+
+## Out of Scope
+
+- Issues in dependencies (report to the upstream project)
+- Issues requiring physical access to the machine
+- Social engineering attacks
+- Denial of service attacks
+
+## Response Timeline
+
+We aim to:
+- Acknowledge receipt within 48 hours
+- Provide an initial assessment within 7 days
+- Release a fix within 30 days for critical issues
+
+## Acknowledgments
+
+We appreciate responsible disclosure and will acknowledge security researchers who report valid vulnerabilities (unless they prefer to remain anonymous).
