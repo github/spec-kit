@@ -15,13 +15,13 @@ dependencies = [
 
 [project.scripts]
 spectrena = "spectrena:main"
-spectrena-sw = "spectrena.worktrees:main"
+sw = "spectrena.worktrees:main"
 spectrena-mcp = "spectrena.lineage.server:main"
 
 [project.optional-dependencies]
 lineage = ["fastmcp"]
 lineage-surreal = ["fastmcp", "surrealdb"]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "pytest-cov", "ruff"]
 
 [build-system]
 requires = ["hatchling"]
