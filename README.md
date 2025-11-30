@@ -270,16 +270,26 @@ spectrena init --from-discovery
 
 ### 3. Create Specs
 
+**Option A: Two-step (CLI + Claude)**
 ```bash
+# Step 1: Create scaffold (brief title is fine)
 spectrena new -c CORE "User authentication"
-# Creates specs/CORE-001-user-auth/ with spec.md template
+# Creates specs/CORE-001-user-auth/ with template
 ```
 
-Or in Claude Code:
+Then in Claude Code:
+```
+# Step 2: Generate detailed content (Claude asks clarifying questions)
+/spectrena.specify
+```
 
+**Option B: One-step (Claude only)**
 ```
-/spectrena.specify "OAuth integration" --component CORE
+/spectrena.specify "User authentication" -c CORE
+# Claude asks clarifying questions, then generates full spec
 ```
+
+Brief descriptions are fine - Claude will ask 2-3 clarifying questions if needed.
 
 ### 4. Plan & Implement
 

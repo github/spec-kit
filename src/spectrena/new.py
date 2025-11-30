@@ -195,19 +195,27 @@ async def register_in_lineage(spec_id: str, title: str, component: str | None):
 
 
 def new(
-    description: str,
-    component: str | None = None,
-    number: int | None = None,
-    no_branch: bool = False,
-    no_lineage: bool = False,
+    description: str = typer.Argument(
+        ...,
+        help="Brief title for the spec (becomes ID slug). Detail added via /spectrena.specify"
+    ),
+    component: str | None = typer.Option(
+        None, "-c", "--component",
+        help="Component (e.g., CORE, API, UI)"
+    ),
+    number: int | None = typer.Option(None, "-n", "--number", help="Override spec number"),
+    no_branch: bool = typer.Option(False, "--no-branch", help="Skip git branch creation"),
+    no_lineage: bool = typer.Option(False, "--no-lineage", help="Skip lineage registration"),
 ):
     """
-    Create a new spec with auto-generated ID.
+    Create a new spec scaffold with auto-generated ID.
+
+    This creates the directory structure and template. For detailed content,
+    run /spectrena.specify in Claude Code - it will ask clarifying questions.
 
     Examples:
-        spectrena new "User authentication"
         spectrena new -c CORE "User authentication"
-        spectrena new -c API -n 5 "REST endpoints"
+        spectrena new -c API "REST endpoints"
     """
     import asyncio
 
@@ -250,9 +258,10 @@ def new(
         asyncio.run(register_in_lineage(spec_id, description, component))
 
     # Summary
-    console.print("\n[bold green]✓ Spec created successfully[/bold green]")
-    console.print(f"\n  Edit: {spec_dir / 'spec.md'}")
-    console.print(f"  Branch: spec/{spec_id}")
-    console.print("\n  Next steps:")
-    console.print(f"    git checkout spec/{spec_id}")
-    console.print(f"    # or: sw create {spec_id}")
+    console.print(f"\n[bold green]✓ Spec scaffold created[/bold green]")
+    console.print(f"\n  [cyan]{spec_dir / 'spec.md'}[/cyan]")
+    console.print(f"  Branch: [dim]spec/{spec_id}[/dim]")
+
+    console.print(f"\n[bold]Next:[/bold] Generate detailed content")
+    console.print(f"  In Claude Code: [cyan]/spectrena.specify[/cyan]")
+    console.print(f"  Claude will ask clarifying questions if needed")
