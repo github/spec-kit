@@ -51,7 +51,7 @@ def get_config() -> dict[str, Any]:
 
 def load_dependencies() -> dict[str, list[str]]:
     """
-    Load spec dependencies from .specify/dependencies.txt
+    Load spec dependencies from .spectrena/dependencies.txt
 
     Format:
         SPEC-002: SPEC-001
@@ -60,7 +60,7 @@ def load_dependencies() -> dict[str, list[str]]:
     Returns:
         dict mapping spec_id -> list of dependency spec_ids
     """
-    deps_file = Path.cwd() / ".specify" / "dependencies.txt"
+    deps_file = Path.cwd() / ".spectrena" / "dependencies.txt"
     deps = {}
 
     if not deps_file.exists():
@@ -189,7 +189,7 @@ def deps():
 
     if not dependencies:
         console.print("[yellow]No dependencies defined[/yellow]")
-        console.print("Add them to: .specify/dependencies.txt")
+        console.print("Add them to: .spectrena/dependencies.txt")
         return
 
     # Build reverse lookup (what depends on X)

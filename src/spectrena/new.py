@@ -128,7 +128,7 @@ def create_spec_directory(
     # Create spec.md from template
     spec_file = spec_dir / "spec.md"
 
-    template_path = Path.cwd() / ".specify" / "templates" / "spec.md"
+    template_path = Path.cwd() / ".spectrena" / "templates" / "spec.md"
     if template_path.exists():
         content = template_path.read_text()
     else:
@@ -188,7 +188,7 @@ async def register_in_lineage(spec_id: str, title: str, component: str | None):
         console.print(f"[yellow]Lineage registration failed: {e}[/yellow]")
 
 
-# Default template if .specify/templates/spec.md doesn't exist
+# Default template if .spectrena/templates/spec.md doesn't exist
 DEFAULT_SPEC_TEMPLATE = """# Specification: {FEATURE_TITLE}
 
 **Spec ID**: {SPEC_ID}

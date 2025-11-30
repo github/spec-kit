@@ -52,10 +52,10 @@ class TestWorktreesHelpers:
 
     def test_load_dependencies_valid(self, temp_dir):
         """Test loading valid dependencies file."""
-        # Create .specify directory
-        specify_dir = temp_dir / ".specify"
-        specify_dir.mkdir()
-        deps_file = specify_dir / "dependencies.txt"
+        # Create .spectrena directory
+        spectrena_dir = temp_dir / ".spectrena"
+        spectrena_dir.mkdir()
+        deps_file = spectrena_dir / "dependencies.txt"
         deps_file.write_text("""# Dependencies
 CORE-002: CORE-001
 API-001: CORE-001, CORE-002
@@ -105,9 +105,9 @@ class TestDependencyGraph:
 
     def test_simple_dependency_chain(self, temp_dir):
         """Test simple linear dependency chain."""
-        specify_dir = temp_dir / ".specify"
-        specify_dir.mkdir()
-        deps_file = specify_dir / "dependencies.txt"
+        spectrena_dir = temp_dir / ".spectrena"
+        spectrena_dir.mkdir()
+        deps_file = spectrena_dir / "dependencies.txt"
         deps_file.write_text("""
 SPEC-002: SPEC-001
 SPEC-003: SPEC-002
@@ -123,9 +123,9 @@ SPEC-003: SPEC-002
 
     def test_multi_dependency(self, temp_dir):
         """Test spec with multiple dependencies."""
-        specify_dir = temp_dir / ".specify"
-        specify_dir.mkdir()
-        deps_file = specify_dir / "dependencies.txt"
+        spectrena_dir = temp_dir / ".spectrena"
+        spectrena_dir.mkdir()
+        deps_file = spectrena_dir / "dependencies.txt"
         deps_file.write_text("""
 SPEC-003: SPEC-001, SPEC-002
 """)
@@ -139,9 +139,9 @@ SPEC-003: SPEC-001, SPEC-002
 
     def test_no_dependencies(self, temp_dir):
         """Test spec with no dependencies (root)."""
-        specify_dir = temp_dir / ".specify"
-        specify_dir.mkdir()
-        deps_file = specify_dir / "dependencies.txt"
+        spectrena_dir = temp_dir / ".spectrena"
+        spectrena_dir.mkdir()
+        deps_file = spectrena_dir / "dependencies.txt"
         deps_file.write_text("""
 # SPEC-001 has no dependencies
 SPEC-002: SPEC-001
