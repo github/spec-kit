@@ -40,8 +40,9 @@ function Get-CurrentBranch {
         $highest = 0
         
         Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-            if ($_.Name -match '^(\d{3})-') {
-                $num = [int]$matches[1]
+            # Support both formats: 001-name or feature/001-name
+            if ($_.Name -match '^(([a-z]+/)?(\d{3,}))-') {
+                $num = [int]$matches[3]
                 if ($num -gt $highest) {
                     $highest = $num
                     $latestFeature = $_.Name
@@ -79,9 +80,13 @@ function Test-FeatureBranch {
         return $true
     }
     
-    if ($Branch -notmatch '^[0-9]{3}-') {
+    # Support both simple format (001-name) and prefixed format (feature/001-name)
+    if ($Branch -notmatch '^([a-z]+/)?[0-9]{3,}-') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name"
+        Write-Output "Feature branches should be named like:"
+        Write-Output "  - 001-feature-name"
+        Write-Output "  - feature/001-feature-name"
+        Write-Output "  - bugfix/042-fix-name"
         return $false
     }
     return $true
@@ -92,11 +97,61 @@ function Get-FeatureDir {
     Join-Path $RepoRoot "specs/$Branch"
 }
 
+# Find feature directory by numeric prefix instead of exact branch match
+# This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
+# Also handles branch names with prefixes like feature/004-name or bugfix/042-fix
+function Find-FeatureDirByPrefix {
+    param(
+        [string]$RepoRoot,
+        [string]$BranchName
+    )
+    
+    $specsDir = Join-Path $RepoRoot "specs"
+    
+    # Extract numeric prefix from branch (e.g., "004" from "004-whatever" or "feature/004-whatever")
+    # Pattern: optional prefix (feature/, bugfix/, etc.) followed by at least 3 digits
+    if ($BranchName -notmatch '^(([a-z]+/)?(\d{3,}))-') {
+        # If branch doesn't have numeric prefix, fall back to exact match
+        return (Join-Path $specsDir $BranchName)
+    }
+    
+    $number = $matches[3]  # Just the numeric part
+    
+    # Search for directories in specs/ that contain this number
+    # Could be in format: 004-name or feature/004-name or bugfix/004-name
+    $matchedDirs = @()
+    
+    if (Test-Path $specsDir) {
+        Get-ChildItem -Path $specsDir -Directory | Where-Object {
+            # Check if directory name contains our number and matches the pattern
+            $_.Name -match "^(([a-z]+/)?$number)-"
+        } | ForEach-Object {
+            $matchedDirs += $_.Name
+        }
+    }
+    
+    # Handle results
+    if ($matchedDirs.Count -eq 0) {
+        # No match found - return the branch name path (will fail later with clear error)
+        return (Join-Path $specsDir $BranchName)
+    } elseif ($matchedDirs.Count -eq 1) {
+        # Exactly one match - perfect!
+        return (Join-Path $specsDir $matchedDirs[0])
+    } else {
+        # Multiple matches - this shouldn't happen with proper naming convention
+        Write-Warning "ERROR: Multiple spec directories found with number '$number': $($matchedDirs -join ', ')"
+        Write-Warning "Please ensure only one spec directory exists per numeric prefix."
+        return (Join-Path $specsDir $BranchName)  # Return something to avoid breaking the script
+    }
+}
+
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
     $hasGit = Test-HasGit
-    $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+    
+    # Use prefix-based lookup to support multiple branches per spec and branch prefixes
+    $featureDir = Find-FeatureDirByPrefix -RepoRoot $repoRoot -BranchName $currentBranch
     
     [PSCustomObject]@{
         REPO_ROOT     = $repoRoot
