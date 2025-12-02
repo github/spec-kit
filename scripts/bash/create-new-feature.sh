@@ -67,6 +67,29 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
+# Sanitize branch name for use as directory name
+# Replaces filesystem-forbidden and problematic characters with safe alternatives
+sanitize_branch_name() {
+    local branch="$1"
+
+    # Replace problematic characters:
+    # / → - (prevents nesting on all platforms, Windows forbidden)
+    # \ → - (Windows forbidden)
+    # : → - (Windows forbidden, macOS translated)
+    # * → - (Windows forbidden, shell wildcard)
+    # ? → - (Windows forbidden, shell wildcard)
+    # " → - (Windows forbidden)
+    # < → - (Windows forbidden, shell redirect)
+    # > → - (Windows forbidden, shell redirect)
+    # | → - (Windows forbidden, shell pipe)
+    echo "$branch" | sed \
+        -e 's/[\/\\:*?"<>|]/-/g' \
+        -e 's/  */-/g' \
+        -e 's/^[. -]*//' \
+        -e 's/[. -]*$//' \
+        -e 's/--*/-/g'
+}
+
 # Function to find the repository root by searching for existing project markers
 find_repo_root() {
     local dir="$1"
@@ -255,34 +278,60 @@ if [ -z "$BRANCH_NUMBER" ]; then
     fi
 fi
 
-FEATURE_NUM=$(printf "%03d" "$BRANCH_NUMBER")
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
-
-# GitHub enforces a 244-byte limit on branch names
-# Validate and truncate if necessary
-MAX_BRANCH_LENGTH=244
-if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
-    # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
-    
-    # Truncate suffix at word boundary if possible
-    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
-    # Remove trailing hyphen if truncation created one
-    TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
-    
-    ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
-    
-    >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
-    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
-    >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
-fi
-
-if [ "$HAS_GIT" = true ]; then
-    git checkout -b "$BRANCH_NAME"
+# Check if SPECIFY_USE_CURRENT_BRANCH is set
+if [[ -n "${SPECIFY_USE_CURRENT_BRANCH:-}" ]]; then
+    if [ "$HAS_GIT" = true ]; then
+        # Use current branch name
+        branch_name_output=$(git rev-parse --abbrev-ref HEAD 2>&1)
+        branch_name_status=$?
+        if [[ $branch_name_status -ne 0 || "$branch_name_output" == "HEAD" ]]; then
+            >&2 echo "[specify] Error: Cannot determine current branch name"
+            exit 1
+        fi
+        # Sanitize branch name for filesystem compatibility
+        original_branch="$branch_name_output"
+        BRANCH_NAME=$(sanitize_branch_name "$branch_name_output")
+        FEATURE_NUM="N/A"
+        if [[ "$original_branch" != "$BRANCH_NAME" ]]; then
+            >&2 echo "[specify] Using current branch: $original_branch (sanitized to: $BRANCH_NAME)"
+        else
+            >&2 echo "[specify] Using current branch: $BRANCH_NAME"
+        fi
+    else
+        >&2 echo "[specify] Error: SPECIFY_USE_CURRENT_BRANCH requires a git repository"
+        exit 1
+    fi
 else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    # Normal mode: generate new branch name and create it
+    FEATURE_NUM=$(printf "%03d" "$BRANCH_NUMBER")
+    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+
+    # GitHub enforces a 244-byte limit on branch names
+    # Validate and truncate if necessary
+    MAX_BRANCH_LENGTH=244
+    if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
+        # Calculate how much we need to trim from suffix
+        # Account for: feature number (3) + hyphen (1) = 4 chars
+        MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
+
+        # Truncate suffix at word boundary if possible
+        TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
+        # Remove trailing hyphen if truncation created one
+        TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
+
+        ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
+        BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+
+        >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
+        >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
+        >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
+    fi
+
+    if [ "$HAS_GIT" = true ]; then
+        git checkout -b "$BRANCH_NAME"
+    else
+        >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    fi
 fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
