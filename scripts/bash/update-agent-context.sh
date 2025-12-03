@@ -398,15 +398,15 @@ update_existing_agent_file() {
     # Check if sections exist in the file
     local has_active_technologies=0
     local has_recent_changes=0
-
+    
     if grep -q "^## Active Technologies" "$target_file" 2>/dev/null; then
         has_active_technologies=1
     fi
-
+    
     if grep -q "^## Recent Changes" "$target_file" 2>/dev/null; then
         has_recent_changes=1
     fi
-
+    
     # Process file line by line
     local in_tech_section=false
     local in_changes_section=false
@@ -414,7 +414,7 @@ update_existing_agent_file() {
     local changes_entries_added=false
     local existing_changes_count=0
     local file_ended=false
-
+    
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Handle Active Technologies section
         if [[ "$line" == "## Active Technologies" ]]; then
@@ -476,7 +476,7 @@ update_existing_agent_file() {
         printf '%s\n' "${new_tech_entries[@]}" >> "$temp_file"
         tech_entries_added=true
     fi
-
+    
     # If sections don't exist, add them at the end of the file
     if [[ $has_active_technologies -eq 0 ]] && [[ ${#new_tech_entries[@]} -gt 0 ]]; then
         echo "" >> "$temp_file"
@@ -484,7 +484,7 @@ update_existing_agent_file() {
         printf '%s\n' "${new_tech_entries[@]}" >> "$temp_file"
         tech_entries_added=true
     fi
-
+    
     if [[ $has_recent_changes -eq 0 ]] && [[ -n "$new_change_entry" ]]; then
         echo "" >> "$temp_file"
         echo "## Recent Changes" >> "$temp_file"
@@ -723,12 +723,12 @@ update_all_existing_agents() {
         update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
         found_agent=true
     fi
-
+    
     if [[ -f "$BOB_FILE" ]]; then
         update_agent_file "$BOB_FILE" "IBM Bob"
         found_agent=true
     fi
-
+    
     # If no agent files exist, create a default Claude file
     if [[ "$found_agent" == false ]]; then
         log_info "No existing agent files found, creating default Claude file..."

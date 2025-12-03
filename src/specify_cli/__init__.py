@@ -68,7 +68,7 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
 def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
     """Extract and parse GitHub rate-limit headers."""
     info = {}
-
+    
     # Standard GitHub rate-limit headers
     if "X-RateLimit-Limit" in headers:
         info["limit"] = headers.get("X-RateLimit-Limit")
@@ -81,7 +81,7 @@ def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
             info["reset_epoch"] = reset_epoch
             info["reset_time"] = reset_time
             info["reset_local"] = reset_time.astimezone()
-
+    
     # Retry-After header (seconds or HTTP-date)
     if "Retry-After" in headers:
         retry_after = headers.get("Retry-After")
@@ -90,16 +90,16 @@ def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
         except ValueError:
             # HTTP-date format - not implemented, just store as string
             info["retry_after"] = retry_after
-
+    
     return info
 
 def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str) -> str:
     """Format a user-friendly error message with rate-limit information."""
     rate_info = _parse_rate_limit_headers(headers)
-
+    
     lines = [f"GitHub API returned status {status_code} for {url}"]
     lines.append("")
-
+    
     if rate_info:
         lines.append("[bold]Rate Limit Information:[/bold]")
         if "limit" in rate_info:
@@ -112,14 +112,14 @@ def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str)
         if "retry_after_seconds" in rate_info:
             lines.append(f"  • Retry after: {rate_info['retry_after_seconds']} seconds")
         lines.append("")
-
+    
     # Add troubleshooting guidance
     lines.append("[bold]Troubleshooting Tips:[/bold]")
     lines.append("  • If you're on a shared CI or corporate environment, you may be rate-limited.")
     lines.append("  • Consider using a GitHub token via --github-token or the GH_TOKEN/GITHUB_TOKEN")
     lines.append("    environment variable to increase rate limits.")
     lines.append("  • Authenticated requests have a limit of 5,000/hour vs 60/hour for unauthenticated.")
-
+    
     return "\n".join(lines)
 
 # Agent configuration with name, folder, install URL, and CLI tool requirement
@@ -489,11 +489,11 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
 
 def check_tool(tool: str, tracker: StepTracker = None) -> bool:
     """Check if a tool is installed. Optionally update tracker.
-
+    
     Args:
         tool: Name of the tool to check
         tracker: Optional StepTracker to update with results
-
+        
     Returns:
         True if tool is found, False otherwise
     """
@@ -509,13 +509,13 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
             return True
     
     found = shutil.which(tool) is not None
-
+    
     if tracker:
         if found:
             tracker.complete(tool, "available")
         else:
             tracker.error(tool, "not found")
-
+    
     return found
 
 def is_git_repo(path: Path = None) -> bool:
@@ -540,11 +540,11 @@ def is_git_repo(path: Path = None) -> bool:
 
 def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Optional[str]]:
     """Initialize a git repository in the specified path.
-
+    
     Args:
         project_path: Path to initialize git repository in
         quiet: if True suppress console output (tracker handles status)
-
+    
     Returns:
         Tuple of (success: bool, error_message: Optional[str])
     """
@@ -566,7 +566,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Option
             error_msg += f"\nError: {e.stderr.strip()}"
         elif e.stdout:
             error_msg += f"\nOutput: {e.stdout.strip()}"
-
+        
         if not quiet:
             console.print(f"[red]Error initializing git repository:[/red] {e}")
         return False, error_msg
@@ -1058,7 +1058,7 @@ def init(
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
-            ai_choices,
+            ai_choices, 
             "Choose your AI assistant:", 
             "copilot"
         )
@@ -1293,9 +1293,9 @@ def version():
     """Display version and system information."""
     import platform
     import importlib.metadata
-
+    
     show_banner()
-
+    
     # Get CLI version from package metadata
     cli_version = "unknown"
     try:
@@ -1311,15 +1311,15 @@ def version():
                     cli_version = data.get("project", {}).get("version", "unknown")
         except Exception:
             pass
-
+    
     # Fetch latest template release version
     repo_owner = "github"
     repo_name = "spec-kit"
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-
+    
     template_version = "unknown"
     release_date = "unknown"
-
+    
     try:
         response = client.get(
             api_url,
