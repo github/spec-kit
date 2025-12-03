@@ -33,56 +33,67 @@ Specify supports multiple AI agents by generating agent-specific command files a
 |-------|-----------|---------|----------|-------------|
 | **Claude Code** | `.claude/commands/` | Markdown | `claude` | Anthropic's Claude Code CLI |
 | **Gemini CLI** | `.gemini/commands/` | TOML | `gemini` | Google's Gemini CLI |
-| **GitHub Copilot** | `.github/prompts/` | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code |
+| **GitHub Copilot** | `.github/agents/` | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code |
 | **Cursor** | `.cursor/commands/` | Markdown | `cursor-agent` | Cursor CLI |
 | **Qwen Code** | `.qwen/commands/` | TOML | `qwen` | Alibaba's Qwen Code CLI |
 | **opencode** | `.opencode/command/` | Markdown | `opencode` | opencode CLI |
+| **Codex CLI** | `.codex/commands/` | Markdown | `codex` | Codex CLI |
 | **Windsurf** | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows |
+| **Kilo Code** | `.kilocode/rules/` | Markdown | N/A (IDE-based) | Kilo Code IDE |
+| **Auggie CLI** | `.augment/rules/` | Markdown | `auggie` | Auggie CLI |
+| **Roo Code** | `.roo/rules/` | Markdown | N/A (IDE-based) | Roo Code IDE |
+| **CodeBuddy CLI** | `.codebuddy/commands/` | Markdown | `codebuddy` | CodeBuddy CLI |
+| **Qoder CLI** | `.qoder/commands/` | Markdown | `qoder` | Qoder CLI |
+| **Amazon Q Developer CLI** | `.amazonq/prompts/` | Markdown | `q` | Amazon Q Developer CLI |
+| **Amp** | `.agents/commands/` | Markdown | `amp` | Amp CLI |
+| **SHAI** | `.shai/commands/` | Markdown | `shai` | SHAI CLI |
+| **IBM Bob** | `.bob/commands/` | Markdown | N/A (IDE-based) | IBM Bob IDE |
 
 ### Step-by-Step Integration Guide
 
-Follow these steps to add a new agent (using Windsurf as an example):
+Follow these steps to add a new agent (using a hypothetical new agent as an example):
 
-#### 1. Update AI_CHOICES Constant
+#### 1. Add to AGENT_CONFIG
 
-Add the new agent to the `AI_CHOICES` dictionary in `src/specify_cli/__init__.py`:
+**IMPORTANT**: Use the actual CLI tool name as the key, not a shortened version.
+
+Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/__init__.py`. This is the **single source of truth** for all agent metadata:
 
 ```python
-AI_CHOICES = {
-    "copilot": "GitHub Copilot",
-    "claude": "Claude Code", 
-    "gemini": "Gemini CLI",
-    "cursor": "Cursor",
-    "qwen": "Qwen Code",
-    "opencode": "opencode",
-    "windsurf": "Windsurf"  # Add new agent here
+AGENT_CONFIG = {
+    # ... existing agents ...
+    "new-agent-cli": {  # Use the ACTUAL CLI tool name (what users type in terminal)
+        "name": "New Agent Display Name",
+        "folder": ".newagent/",  # Directory for agent files
+        "install_url": "https://example.com/install",  # URL for installation docs (or None if IDE-based)
+        "requires_cli": True,  # True if CLI tool required, False for IDE-based agents
+    },
 }
 ```
 
-Also update the `agent_folder_map` in the same file to include the new agent's folder for the security notice:
+**Key Design Principle**: The dictionary key should match the actual executable name that users install. For example:
 
-```python
-agent_folder_map = {
-    "claude": ".claude/",
-    "gemini": ".gemini/",
-    "cursor": ".cursor/",
-    "qwen": ".qwen/",
-    "opencode": ".opencode/",
-    "codex": ".codex/",
-    "windsurf": ".windsurf/",  # Add new agent folder here
-    "kilocode": ".kilocode/",
-    "auggie": ".auggie/",
-    "copilot": ".github/"
-}
-```
+- ✅ Use `"cursor-agent"` because the CLI tool is literally called `cursor-agent`
+- ❌ Don't use `"cursor"` as a shortcut if the tool is `cursor-agent`
+
+This eliminates the need for special-case mappings throughout the codebase.
+
+**Field Explanations**:
+
+- `name`: Human-readable display name shown to users
+- `folder`: Directory where agent-specific files are stored (relative to project root)
+- `install_url`: Installation documentation URL (set to `None` for IDE-based agents)
+- `requires_cli`: Whether the agent requires a CLI tool check during initialization
 
 #### 2. Update CLI Help Text
 
-Update all help text and examples to include the new agent:
+Update the `--ai` parameter help text in the `init()` command to include the new agent:
 
-- Command option help: `--ai` parameter description
-- Function docstrings and examples
-- Error messages with agent lists
+```python
+ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, new-agent-cli, or q"),
+```
+
+Also update any function docstrings, examples, and error messages that list available agents.
 
 #### 3. Update README Documentation
 
@@ -97,12 +108,14 @@ Update the **Supported AI Agents** section in `README.md` to include the new age
 
 Modify `.github/workflows/scripts/create-release-packages.sh`:
 
-##### Add to ALL_AGENTS array:
+##### Add to ALL_AGENTS array
+
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor qwen opencode windsurf)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
 ```
 
-##### Add case statement for directory structure:
+##### Add case statement for directory structure
+
 ```bash
 case $agent in
   # ... existing cases ...
@@ -126,14 +139,16 @@ gh release create "$VERSION" \
 
 #### 5. Update Agent Context Scripts
 
-##### Bash script (`scripts/bash/update-agent-context.sh`):
+##### Bash script (`scripts/bash/update-agent-context.sh`)
 
 Add file variable:
+
 ```bash
 WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 ```
 
 Add to case statement:
+
 ```bash
 case "$AGENT_TYPE" in
   # ... existing cases ...
@@ -146,14 +161,16 @@ case "$AGENT_TYPE" in
 esac
 ```
 
-##### PowerShell script (`scripts/powershell/update-agent-context.ps1`):
+##### PowerShell script (`scripts/powershell/update-agent-context.ps1`)
 
 Add file variable:
+
 ```powershell
 $windsurfFile = Join-Path $repoRoot '.windsurf/rules/specify-rules.md'
 ```
 
 Add to switch statement:
+
 ```powershell
 switch ($AgentType) {
     # ... existing cases ...
@@ -186,27 +203,135 @@ elif selected_ai == "windsurf":
         agent_tool_missing = True
 ```
 
-**Note**: Skip CLI checks for IDE-based agents (Copilot, Windsurf).
+**Note**: CLI tool checks are now handled automatically based on the `requires_cli` field in AGENT_CONFIG. No additional code changes needed in the `check()` or `init()` commands - they automatically loop through AGENT_CONFIG and check tools as needed.
+
+## Important Design Decisions
+
+### Using Actual CLI Tool Names as Keys
+
+**CRITICAL**: When adding a new agent to AGENT_CONFIG, always use the **actual executable name** as the dictionary key, not a shortened or convenient version.
+
+**Why this matters:**
+
+- The `check_tool()` function uses `shutil.which(tool)` to find executables in the system PATH
+- If the key doesn't match the actual CLI tool name, you'll need special-case mappings throughout the codebase
+- This creates unnecessary complexity and maintenance burden
+
+**Example - The Cursor Lesson:**
+
+❌ **Wrong approach** (requires special-case mapping):
+
+```python
+AGENT_CONFIG = {
+    "cursor": {  # Shorthand that doesn't match the actual tool
+        "name": "Cursor",
+        # ...
+    }
+}
+
+# Then you need special cases everywhere:
+cli_tool = agent_key
+if agent_key == "cursor":
+    cli_tool = "cursor-agent"  # Map to the real tool name
+```
+
+✅ **Correct approach** (no mapping needed):
+
+```python
+AGENT_CONFIG = {
+    "cursor-agent": {  # Matches the actual executable name
+        "name": "Cursor",
+        # ...
+    }
+}
+
+# No special cases needed - just use agent_key directly!
+```
+
+**Benefits of this approach:**
+
+- Eliminates special-case logic scattered throughout the codebase
+- Makes the code more maintainable and easier to understand
+- Reduces the chance of bugs when adding new agents
+- Tool checking "just works" without additional mappings
+
+#### 7. Update Devcontainer files (Optional)
+
+For agents that have VS Code extensions or require CLI installation, update the devcontainer configuration files:
+
+##### VS Code Extension-based Agents
+
+For agents available as VS Code extensions, add them to `.devcontainer/devcontainer.json`:
+
+```json
+{
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // ... existing extensions ...
+        // [New Agent Name]
+        "[New Agent Extension ID]"
+      ]
+    }
+  }
+}
+```
+
+##### CLI-based Agents
+
+For agents that require CLI tools, add installation commands to `.devcontainer/post-create.sh`:
+
+```bash
+#!/bin/bash
+
+# Existing installations...
+
+echo -e "\n🤖 Installing [New Agent Name] CLI..."
+# run_command "npm install -g [agent-cli-package]@latest" # Example for node-based CLI
+# or other installation instructions (must be non-interactive and compatible with Linux Debian "Trixie" or later)...
+echo "✅ Done"
+
+```
+
+**Quick Tips:**
+
+- **Extension-based agents**: Add to the `extensions` array in `devcontainer.json`
+- **CLI-based agents**: Add installation scripts to `post-create.sh`
+- **Hybrid agents**: May require both extension and CLI installation
+- **Test thoroughly**: Ensure installations work in the devcontainer environment
 
 ## Agent Categories
 
 ### CLI-Based Agents
+
 Require a command-line tool to be installed:
+
 - **Claude Code**: `claude` CLI
 - **Gemini CLI**: `gemini` CLI  
 - **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
+- **Amazon Q Developer CLI**: `q` CLI
+- **CodeBuddy CLI**: `codebuddy` CLI
+- **Qoder CLI**: `qoder` CLI
+- **Amp**: `amp` CLI
+- **SHAI**: `shai` CLI
 
 ### IDE-Based Agents
+
 Work within integrated development environments:
+
 - **GitHub Copilot**: Built into VS Code/compatible editors
 - **Windsurf**: Built into Windsurf IDE
+- **IBM Bob**: Built into IBM Bob IDE
 
 ## Command File Formats
 
 ### Markdown Format
-Used by: Claude, Cursor, opencode, Windsurf
+
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+
+**Standard format:**
 
 ```markdown
 ---
@@ -216,7 +341,19 @@ description: "Command description"
 Command content with {SCRIPT} and $ARGUMENTS placeholders.
 ```
 
+**GitHub Copilot Chat Mode format:**
+
+```markdown
+---
+description: "Command description"
+mode: speckit.command-name
+---
+
+Command content with {SCRIPT} and $ARGUMENTS placeholders.
+```
+
 ### TOML Format
+
 Used by: Gemini, Qwen
 
 ```toml
@@ -231,13 +368,14 @@ Command content with {SCRIPT} and {{args}} placeholders.
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
 - **IDE agents**: Follow IDE-specific patterns:
-  - Copilot: `.github/prompts/`
+  - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
 
 ## Argument Patterns
 
 Different agents use different argument placeholders:
+
 - **Markdown/prompt-based**: `$ARGUMENTS`
 - **TOML-based**: `{{args}}`
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
@@ -253,19 +391,22 @@ Different agents use different argument placeholders:
 
 ## Common Pitfalls
 
-1. **Forgetting update scripts**: Both bash and PowerShell scripts must be updated
-2. **Missing CLI checks**: Only add for agents that actually have CLI tools
-3. **Wrong argument format**: Use correct placeholder format for each agent type
-4. **Directory naming**: Follow agent-specific conventions exactly
-5. **Help text inconsistency**: Update all user-facing text consistently
+1. **Using shorthand keys instead of actual CLI tool names**: Always use the actual executable name as the AGENT_CONFIG key (e.g., `"cursor-agent"` not `"cursor"`). This prevents the need for special-case mappings throughout the codebase.
+2. **Forgetting update scripts**: Both bash and PowerShell scripts must be updated when adding new agents.
+3. **Incorrect `requires_cli` value**: Set to `True` only for agents that actually have CLI tools to check; set to `False` for IDE-based agents.
+4. **Wrong argument format**: Use correct placeholder format for each agent type (`$ARGUMENTS` for Markdown, `{{args}}` for TOML).
+5. **Directory naming**: Follow agent-specific conventions exactly (check existing agents for patterns).
+6. **Help text inconsistency**: Update all user-facing text consistently (help strings, docstrings, README, error messages).
 
 ## Future Considerations
 
 When adding new agents:
+
 - Consider the agent's native command/workflow patterns
 - Ensure compatibility with the Spec-Driven Development process
 - Document any special requirements or limitations
 - Update this guide with lessons learned
+- Verify the actual CLI tool name before adding to AGENT_CONFIG
 
 ---
 
