@@ -2,16 +2,24 @@
 
 This guide will help you get started with Spec-Driven Development using Spec Kit.
 
-> NEW: All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
+> [!NOTE]
+> All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
 
-## The 4-Step Process
+## The 6-Step Process
 
-### 1. Install Specify
+> [!TIP]
+> **Context Awareness**: Spec Kit commands automatically detect the active feature based on your current Git branch (e.g., `001-feature-name`). To switch between different specifications, simply switch Git branches.
 
-Initialize your project depending on the coding agent you're using:
+### Step 1: Install Specify
+
+**In your terminal**, run the `specify` CLI command to initialize your project:
 
 ```bash
+# Create a new project directory
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+
+# OR initialize in the current directory
+uvx --from git+https://github.com/github/spec-kit.git specify init .
 ```
 
 Pick script type explicitly (optional):
@@ -21,31 +29,71 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script sh  # Force POSIX shell
 ```
 
-### 2. Create the Spec
+### Step 2: Define Your Constitution
 
-Use the `/speckit.specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+**In your AI Agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
 
-```bash
+```markdown
+/speckit.constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
+```
+
+### Step 3: Create the Spec
+
+**In the chat**, use the `/speckit.specify` slash command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+
+```markdown
 /speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
-### 3. Create a Technical Implementation Plan
+### Step 4: Refine the Spec
 
-Use the `/speckit.plan` command to provide your tech stack and architecture choices.
+**In the chat**, use the `/speckit.clarify` slash command to identify and resolve ambiguities in your specification. You can provide specific focus areas as arguments.
 
 ```bash
+/speckit.clarify Focus on security and performance requirements.
+```
+
+### Step 5: Create a Technical Implementation Plan
+
+**In the chat**, use the `/speckit.plan` slash command to provide your tech stack and architecture choices.
+
+```markdown
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 4. Break Down and Implement
+### Step 6: Break Down and Implement
 
-Use `/speckit.tasks` to create an actionable task list, then ask your agent to implement the feature.
+**In the chat**, use the `/speckit.tasks` slash command to create an actionable task list.
+
+```markdown
+/speckit.tasks
+```
+
+Optionally, validate the plan with `/speckit.analyze`:
+
+```markdown
+/speckit.analyze
+```
+
+Then, use the `/speckit.implement` slash command to execute the plan.
+
+```markdown
+/speckit.implement
+```
 
 ## Detailed Example: Building Taskify
 
 Here's a complete example of building a team productivity platform:
 
-### Step 1: Define Requirements with `/speckit.specify`
+### Step 1: Define Constitution
+
+Initialize the project's constitution to set ground rules:
+
+```markdown
+/speckit.constitution Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
+```
+
+### Step 2: Define Requirements with `/speckit.specify`
 
 ```text
 Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
@@ -54,58 +102,51 @@ let's call it "Create Taskify," let's have multiple users but the users will be 
 I want five users in two different categories, one product manager and four engineers. Let's create three
 different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
 "In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
-first testing thing to ensure that our basic features are set up. For each task in the UI for a task card,
-you should be able to change the current status of the task between the different columns in the Kanban work board.
-You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task
-card, assign one of the valid users. When you first launch Taskify, it's going to give you a list of the five users to pick
-from. There will be no password required. When you click on a user, you go into the main view, which displays the list of
-projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns.
-You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are
-assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly
-see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can
-delete any comments that you made, but you can't delete comments anybody else made.
+first testing thing to ensure that our basic features are set up.
 ```
 
-### Step 2: Refine the Specification
+### Step 3: Refine the Specification
 
-After the initial specification is created, clarify any missing requirements:
+Use the `/speckit.clarify` command to interactively resolve any ambiguities in your specification. You can also provide specific details you want to ensure are included.
 
-```text
-For each sample project or project that you create there should be a variable number of tasks between 5 and 15
-tasks for each one randomly distributed into different states of completion. Make sure that there's at least
-one task in each stage of completion.
+```bash
+/speckit.clarify I want to clarify the task card details. For each task in the UI for a task card, you should be able to change the current status of the task between the different columns in the Kanban work board. You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task card, assign one of the valid users.
 ```
 
-Also validate the specification checklist:
+You can continue to refine the spec with more details using `/speckit.clarify`:
 
-```text
-Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
+```bash
+/speckit.clarify When you first launch Taskify, it's going to give you a list of the five users to pick from. There will be no password required. When you click on a user, you go into the main view, which displays the list of projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns. You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can delete any comments that you made, but you can't delete comments anybody else made.
 ```
 
-### Step 3: Generate Technical Plan with `/speckit.plan`
+### Step 4: Validate the Spec
+
+Validate the specification checklist using the `/speckit.checklist` command:
+
+```bash
+/speckit.checklist
+```
+
+### Step 5: Generate Technical Plan with `/speckit.plan`
 
 Be specific about your tech stack and technical requirements:
 
-```text
-We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use
-Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API,
-tasks API, and a notifications API.
+```bash
+/speckit.plan We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API, tasks API, and a notifications API.
 ```
 
-### Step 4: Validate and Implement
+### Step 6: Validate and Implement
 
-Have your AI agent audit the implementation plan:
+Have your AI agent audit the implementation plan using `/speckit.analyze`:
 
-```text
-Now I want you to go and audit the implementation plan and the implementation detail files.
-Read through it with an eye on determining whether or not there is a sequence of tasks that you need
-to be doing that are obvious from reading this. Because I don't know if there's enough here.
+```bash
+/speckit.analyze
 ```
 
 Finally, implement the solution:
 
-```text
-implement specs/002-create-taskify/plan.md
+```bash
+/speckit.implement
 ```
 
 ## Key Principles
@@ -118,6 +159,6 @@ implement specs/002-create-taskify/plan.md
 
 ## Next Steps
 
-- Read the complete methodology for in-depth guidance
-- Check out more examples in the repository
-- Explore the source code on GitHub
+- Read the [complete methodology](../spec-driven.md) for in-depth guidance
+- Check out [more examples](../templates) in the repository
+- Explore the [source code on GitHub](https://github.com/github/spec-kit)
