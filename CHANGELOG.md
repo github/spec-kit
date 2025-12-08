@@ -7,6 +7,82 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Borgesoft Fork
+
+### Added
+
+- **New Script: `import-existing-product.sh`**: Creates a new feature branch for importing an existing product baseline
+  - Supports `--json` flag for JSON output format
+  - Supports `--version <name>` for custom version naming (default: "import-baseline")
+  - Supports `--no-branch` to skip git branch creation
+  - Creates directory structure with `analysis/` and `checklists/` subdirectories
+  - Creates placeholder analysis files: `architecture.md`, `entities.md`, `features.md`
+  - Automatically determines next sequential branch number from specs/ and git branches
+  - Sets `SPECIFY_FEATURE` environment variable for session persistence
+
+- **New Command: `import.md`**: Analyze existing codebase and generate product specification
+  - Bootstraps speckit workflow for existing projects
+  - Product documentation integration (vision, personas, journeys, MVP definition)
+  - Domain discovery and separation for multi-team development
+  - Generates `spec.md`, `analysis/architecture.md`, `analysis/entities.md`, `analysis/features.md`, `analysis/domains.md`
+  - Creates checklists directory structure
+
+- **New Command: `iterate.md`**: Transform feature ideas into Linear issues with TDD workflow
+  - Creates parent User Story issue with TDD labels (`epic`, `user-story`, `tdd`)
+  - Generates TDD-ordered subtasks: `[TEST]` → `[IMPL]` → `[REFACTOR]`
+  - Supports 3-level hierarchy for complex test breakdowns
+  - Creates task registry mapping task IDs to Linear issue IDs
+  - TDD labels: `tdd-red`, `tdd-green`, `tdd-refactor`
+
+### Changed
+
+- **`create-new-feature.sh`**: Simplified `check_existing_branches` function
+  - Now checks ALL branches globally instead of filtering by short name pattern
+  - Uses existing `get_highest_from_branches` and `get_highest_from_specs` helper functions
+  - Improved code maintainability by removing redundant branch matching logic
+
+- **`implement.md`**: Major update with Linear integration and strict TDD enforcement
+  - **Linear Project Sync**: Fetches issues from Linear project, maps to tasks.md task IDs
+  - **Linear Status Updates**: Updates issue status in real-time (Backlog → Todo → In Progress → Done)
+  - **Git Workflow**: Creates phase branches and Pull Requests for each phase
+  - **Mandatory Test Execution**: Runs test suite after EVERY task - no exceptions
+  - **Acceptance Criteria Results**: Updates Linear issue descriptions with test results
+  - **Test Gates**: Blocks task completion on test failures
+  - **TDD Cycle Enforcement**: RED (failing tests) → GREEN (pass tests) → REFACTOR (keep green)
+  - **Phase Completion**: Full test suite run, PR ready for review, Epic status update
+  - **Final Test Gate**: ALL tests must pass with coverage threshold (default 80%)
+
+- **`tasks.md`**: Updated with strict TDD task generation
+  - **TDD Task Markers**: `[TEST]`, `[IMPL]`, `[REFACTOR]` markers on all tasks
+  - **TDD Order Enforcement**: Test tasks MUST come before implementation tasks
+  - **Updated Format**: `- [ ] [TaskID] [TDD] [P?] [Story?] Description with file path`
+  - **TDD Phase Structure**: Setup (test framework) → Foundational → User Stories (TDD pairs) → Polish
+  - **TDD Validation**: Confirms every [IMPL] has preceding [TEST], test framework in Phase 1
+
+- **`taskstoissues.md`**: Complete rewrite for Linear integration with TDD workflow
+  - **Migration from GitHub to Linear**: Uses Linear MCP server
+  - **Hierarchical Issue Creation**: Feature Epic → Phase Epics → Task Issues
+  - **TDD Labels**: Creates and assigns `tdd-red`, `tdd-green`, `tdd-refactor` labels
+  - **Acceptance Criteria Sections**: Every issue has AC and AC Results placeholders
+  - **Task Registry**: Creates Linear Issue Registry table in tasks.md
+  - **Dependency Tracking**: Documents task dependencies in issue descriptions
+
+- **`plan.md`**: Updated with domain-aware planning
+  - **Domain Context Loading**: Parses `analysis/domains.md` for domain boundaries
+  - **Target Domain Analysis**: Identifies primary/secondary domains for features
+  - **Cross-Domain Contracts**: Requires contracts for cross-domain dependencies
+  - **Domain Boundaries Section**: Documents entity ownership and consumer access
+  - **Phase 2 Domain Validation**: Validates no shared ownership, contracts defined
+  - **Domain-Organized Outputs**: Groups data-model.md and contracts by domain
+
+### Fixed
+
+- **`create-new-feature.sh`**: Added octal conversion fix for branch numbers
+  - Branch numbers like `010` are now correctly interpreted as decimal `10` instead of octal `8`
+  - Uses `$((10#$BRANCH_NUMBER))` for explicit base-10 interpretation
+
+---
+
 ## [0.0.22] - 2025-11-07
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.

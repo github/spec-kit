@@ -1,11 +1,15 @@
 <div align="center">
     <img src="./media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
-    <h1>🌱 Spec Kit</h1>
-    <h3><em>Build high-quality software faster.</em></h3>
+    <h1>🌱 Spec Kit (Borgesoft Fork)</h1>
+    <h3><em>Build high-quality software faster with TDD and Linear integration.</em></h3>
 </div>
 
 <p align="center">
     <strong>An open source toolkit that allows you to focus on product scenarios and predictable outcomes instead of vibe coding every piece from scratch.</strong>
+</p>
+
+<p align="center">
+    <em>This fork adds Linear integration, strict TDD enforcement, and domain-aware planning for multi-team development.</em>
 </p>
 
 <p align="center">
@@ -19,6 +23,7 @@
 
 ## Table of Contents
 
+- [🆕 Fork Enhancements](#-fork-enhancements)
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get Started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
@@ -35,6 +40,75 @@
 - [💬 Support](#-support)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
+
+## 🆕 Fork Enhancements
+
+This fork extends the original spec-kit with several powerful features for enterprise development:
+
+### Linear Integration
+
+Full integration with [Linear](https://linear.app) for project management:
+
+- **`/speckit.taskstoissues`** - Convert tasks.md into Linear issues with hierarchical structure
+- **`/speckit.iterate`** - Transform feature ideas directly into Linear User Stories
+- **`/speckit.implement`** - Real-time Linear status updates during implementation
+
+**Issue Hierarchy**:
+```
+Feature Epic [epic, feature, tdd]
+├── Phase Epic [epic, phase]
+│   ├── [TEST] Task [test, tdd-red]
+│   ├── [IMPL] Task [implementation, tdd-green]
+│   └── [REFACTOR] Task [refactor, tdd-refactor]
+```
+
+### Strict TDD Enforcement
+
+Test-Driven Development is now mandatory, not optional:
+
+- **TDD Task Markers**: `[TEST]`, `[IMPL]`, `[REFACTOR]` on every task
+- **Mandatory Test Execution**: Tests run after EVERY task - no exceptions
+- **Test Gates**: Task completion blocked until tests pass
+- **Coverage Threshold**: Default 80% minimum coverage
+- **Acceptance Criteria Results**: Test results recorded in Linear issue descriptions
+
+**TDD Cycle**:
+1. **RED**: Write failing tests first (`[TEST]` tasks)
+2. **GREEN**: Implement to pass tests (`[IMPL]` tasks)
+3. **REFACTOR**: Clean up while keeping tests green (`[REFACTOR]` tasks)
+
+### Domain-Aware Planning
+
+Support for multi-team development with clear domain boundaries:
+
+- **`/speckit.import`** - Analyze existing codebases and discover domains
+- **`/speckit.plan`** - Domain-aware planning with cross-domain contract requirements
+- **Domain Separation**: Clear bounded contexts for parallel team work
+- **Contract Enforcement**: Cross-domain dependencies require explicit API contracts
+
+**Generated Domain Artifacts**:
+- `analysis/domains.md` - Domain separation analysis
+- `analysis/architecture.md` - Architecture details
+- `analysis/entities.md` - Data model by domain
+- `analysis/features.md` - Feature inventory by domain
+
+### New Commands Summary
+
+| Command | Description |
+|---------|-------------|
+| `/speckit.import` | Analyze existing codebase and generate product specification with domain discovery |
+| `/speckit.iterate` | Transform feature ideas into Linear issues with TDD workflow |
+
+### Updated Commands
+
+| Command | Enhancements |
+|---------|--------------|
+| `/speckit.implement` | Linear sync, mandatory tests, test gates, PR workflow |
+| `/speckit.tasks` | TDD markers, strict test-first ordering |
+| `/speckit.taskstoissues` | Linear migration, TDD labels, hierarchical issues |
+| `/speckit.plan` | Domain context, cross-domain contracts |
+
+For detailed documentation of all changes, see [FORK_CHANGES.md](./FORK_CHANGES.md).
 
 ## 🤔 What is Spec-Driven Development?
 
@@ -254,9 +328,26 @@ Essential commands for the Spec-Driven Development workflow:
 | ----------------------- | ------------------------------------------------------------------------ |
 | `/speckit.constitution` | Create or update project governing principles and development guidelines |
 | `/speckit.specify`      | Define what you want to build (requirements and user stories)            |
-| `/speckit.plan`         | Create technical implementation plans with your chosen tech stack        |
-| `/speckit.tasks`        | Generate actionable task lists for implementation                        |
-| `/speckit.implement`    | Execute all tasks to build the feature according to the plan             |
+| `/speckit.plan`         | Create technical implementation plans with domain-aware context          |
+| `/speckit.tasks`        | Generate TDD-ordered task lists with `[TEST]`, `[IMPL]`, `[REFACTOR]` markers |
+| `/speckit.implement`    | Execute tasks with Linear sync, mandatory tests, and PR workflow         |
+
+#### Linear Integration Commands (Fork Feature)
+
+Commands for Linear project management integration:
+
+| Command                  | Description                                                              |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `/speckit.iterate`       | Transform feature ideas into Linear User Story issues with TDD workflow  |
+| `/speckit.taskstoissues` | Convert tasks.md into hierarchical Linear issues with TDD labels         |
+
+#### Existing Codebase Commands (Fork Feature)
+
+Commands for working with existing projects:
+
+| Command           | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `/speckit.import` | Analyze existing codebase and generate product spec with domain discovery |
 
 #### Optional Commands
 
@@ -324,6 +415,15 @@ Our research and experimentation focus on:
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
+
+### For Linear Integration (Fork Feature)
+
+To use the Linear integration commands (`/speckit.iterate`, `/speckit.taskstoissues`, `/speckit.implement` with Linear sync):
+
+- **Linear account** with API access
+- **Linear MCP Server** configured in your AI agent
+  - Configure the `mcp__linear-server` tools in your agent's MCP settings
+  - Required tools: `list_projects`, `list_teams`, `create_issue`, `list_issues`, `update_issue`, `create_comment`, `list_issue_labels`, `create_issue_label`
 
 If you encounter issues with an agent, please open an issue so we can refine the integration.
 
