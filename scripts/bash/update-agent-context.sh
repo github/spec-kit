@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, JoyCode, CodeBuddy CLI, Amp, SHAI, or Amazon Q Developer CLI
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|bob
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|bob|qoder
 # Leave empty to update all existing agent files
 
 set -e
@@ -70,6 +70,7 @@ KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
 AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
+QODER_FILE="$REPO_ROOT/QODER.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
@@ -618,6 +619,9 @@ update_specific_agent() {
         codebuddy)
             update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
             ;;
+        qoder)
+            update_agent_file "$QODER_FILE" "Qoder CLI"
+            ;;
         amp)
             update_agent_file "$AMP_FILE" "Amp"
             ;;
@@ -635,7 +639,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|joycode|q|bob"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder|joycode"
             exit 1
             ;;
     esac
@@ -708,6 +712,10 @@ update_all_existing_agents() {
     if [[ -f "$JOYCODE_FILE" ]]; then
         update_agent_file "$JOYCODE_FILE" "JoyCode"
         found_agent=true
+         
+    if [[ -f "$QODER_FILE" ]]; then
+        update_agent_file "$QODER_FILE" "Qoder CLI"
+        found_agent=true
     fi
 
     if [[ -f "$Q_FILE" ]]; then
@@ -744,7 +752,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder]"
 }
 
 #==============================================================================
