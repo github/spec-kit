@@ -226,11 +226,7 @@ build_variant() {
 }
 
 # Determine agent list
-<<<<<<< HEAD
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q agy)
-=======
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
->>>>>>> upstream/main
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q agy bob qoder)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {

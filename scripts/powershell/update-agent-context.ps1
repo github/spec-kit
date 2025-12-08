@@ -391,7 +391,6 @@ function Update-SpecificAgent {
         'agy'      { Update-AgentFile -TargetFile $AGY_FILE      -AgentName 'Antigravity' }
         'bob'      { Update-AgentFile -TargetFile $BOB_FILE      -AgentName 'IBM Bob' }
         default { Write-Err "Unknown agent type '$Type'"; Write-Err 'Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|qoder'; return $false }
->>>>>>> upstream/main
     }
 }
 

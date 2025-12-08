@@ -634,15 +634,12 @@ update_specific_agent() {
         agy)
             update_agent_file "$AGY_FILE" "Antigravity"
             ;;
-        *)
-            log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|agy"
         bob)
             update_agent_file "$BOB_FILE" "IBM Bob"
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|agy|bob|qoder"
             exit 1
             ;;
     esac
