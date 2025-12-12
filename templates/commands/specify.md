@@ -13,6 +13,8 @@ scripts:
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
+**IMPORTANT: The entire specification document MUST be written entirely in Korean.**
+
 ## User Input
 
 ```text
