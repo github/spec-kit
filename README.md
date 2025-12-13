@@ -151,7 +151,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Amazon Q Developer CLI [does not support](https://github.com/aws/amazon-q-developer-cli/issues/3064) custom arguments for slash commands. |
 | [Amp](https://ampcode.com/) | ✅ | |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai) | ✅ | | |
-| [JetBrains AI](https://www.jetbrains.com/ai-ides/) | ✅ | Works through Claude Agent integration, so make sure to select claude in init option and select Claude Agent in AI Chat |
+| [JetBrains AI](https://www.jetbrains.com/ai-ides/) | ✅ | Works through Claude Agent integration. Select `claude` in when initializing the project. |
 
 ## 🔧 Specify CLI Reference
 
