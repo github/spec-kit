@@ -1178,7 +1178,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
-    spec_dir: str = typer.Option("specs", "--spec-dir", help="Custom directory path for specifications (default: specs, relative to project root)"),
+    spec_dir: str = typer.Option(os.getenv("SPECIFY_SPEC_DIR", "specs"), "--spec-dir", help="Custom directory path for specifications (default: specs, relative to project root)"),
 ):
     """
     Initialize a new Specify project from the latest template.
