@@ -47,9 +47,10 @@ class TestSpecDirIntegration:
         
         assert result.exit_code == 0
         mock_download.assert_called_once()
-        # Check that specs/ is used by default
+        # Check that the correct default spec dir is used (environment variable or fallback)
         call_args = mock_download.call_args
-        assert call_args.kwargs['spec_dir'] == 'specs'
+        expected_default = os.getenv("SPECIFY_SPEC_DIR", "specs") if os.getenv("SPECIFY_SPEC_DIR") and os.getenv("SPECIFY_SPEC_DIR").strip() else "specs"
+        assert call_args.kwargs['spec_dir'] == expected_default
 
     @patch('specify_cli.download_and_extract_template')
     @patch('specify_cli.check_tool')
