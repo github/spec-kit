@@ -124,9 +124,12 @@ function Get-NextBranchNumber {
     return $maxNum + 1
 }
 
+# Import helper functions
+. "$PSScriptRoot/common.ps1"
+
 function ConvertTo-CleanBranchName {
     param([string]$Name)
-    
+
     return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
@@ -149,7 +152,8 @@ try {
 
 Set-Location $repoRoot
 
-$specsDir = Join-Path $repoRoot 'specs'
+$specDirName = Get-SpecDir
+$specsDir = Join-Path $repoRoot $specDirName
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 # Function to generate branch name with stop word filtering and length filtering

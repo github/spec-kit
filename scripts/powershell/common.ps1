@@ -33,7 +33,8 @@ function Get-CurrentBranch {
     
     # For non-git repos, try to find the latest feature directory
     $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
+    $specDirName = Get-SpecDir
+    $specsDir = Join-Path $repoRoot $specDirName
     
     if (Test-Path $specsDir) {
         $latestFeature = ""
@@ -87,9 +88,17 @@ function Test-FeatureBranch {
     return $true
 }
 
+function Get-SpecDir {
+    if ($env:SPECIFY_SPEC_DIR) {
+        return $env:SPECIFY_SPEC_DIR
+    }
+    return "specs"
+}
+
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    $specDir = Get-SpecDir
+    Join-Path $RepoRoot "$specDir/$Branch"
 }
 
 function Get-FeaturePathsEnv {

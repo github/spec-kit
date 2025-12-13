@@ -22,3 +22,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+]
+

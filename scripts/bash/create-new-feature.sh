@@ -67,6 +67,14 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
+# Resolve repository root. Prefer git information when available, but fall back
+# to searching for repository markers so the workflow still functions in repositories that
+# were initialised with --no-git.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source helper functions
+source "$SCRIPT_DIR/common.sh"
+
 # Function to find the repository root by searching for existing project markers
 find_repo_root() {
     local dir="$1"
@@ -85,6 +93,7 @@ get_highest_from_specs() {
     local specs_dir="$1"
     local highest=0
     
+  # Check local specs directory first
     if [ -d "$specs_dir" ]; then
         for dir in "$specs_dir"/*; do
             [ -d "$dir" ] || continue
@@ -95,6 +104,44 @@ get_highest_from_specs() {
                 highest=$number
             fi
         done
+    fi
+
+    # If git is available, also check remote and local branches for the highest number
+    if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+        # Get the short name from directory name if not already set
+        if [ -z "$short_name" ] && [ -d "$specs_dir" ]; then
+            # Extract short name from the specs directory context if needed
+            short_name=$(basename "$PWD" | sed 's/^[0-9]*-//' | sed 's/[^a-z0-9-]//g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+        fi
+
+        if [ -n "$short_name" ]; then
+            # Fetch all remotes to get latest branch info (suppress errors if no remotes)
+            git fetch --all --prune 2>/dev/null || true
+
+            # Find all branches matching the pattern using git ls-remote (more reliable)
+            local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-${short_name}$" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
+
+            # Also check local branches
+            local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
+
+            # Check spec directory as well (using dynamic spec directory)
+            local spec_dirs=""
+            if command -v get_spec_dir >/dev/null 2>&1; then
+                local spec_dir_name=$(get_spec_dir)
+                local SPECS_DIR="$REPO_ROOT/$spec_dir_name"
+                if [ -d "$SPECS_DIR" ]; then
+                    spec_dirs=$(find "$SPECS_DIR" -maxdepth 1 -type d -name "[0-9]*-${short_name}" 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/-.*//' | sort -n)
+                fi
+            fi
+
+            # Combine all numbers and find the highest
+            local all_numbers="$remote_branches $local_branches $spec_dirs"
+            for num in $all_numbers; do
+                if [ -n "$num" ] && [ "$num" -gt "$highest" ]; then
+                    highest=$num
+                fi
+            done
+        fi
     fi
     
     echo "$highest"
@@ -159,7 +206,6 @@ clean_branch_name() {
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialised with --no-git.
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)
     HAS_GIT=true
@@ -174,7 +220,8 @@ fi
 
 cd "$REPO_ROOT"
 
-SPECS_DIR="$REPO_ROOT/specs"
+SPEC_DIR_NAME=$(get_spec_dir)
+SPECS_DIR="$REPO_ROOT/$SPEC_DIR_NAME"
 mkdir -p "$SPECS_DIR"
 
 # Function to generate branch name with stop word filtering and length filtering
