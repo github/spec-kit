@@ -276,10 +276,10 @@ Additional commands for enhanced quality and validation:
 
 ### Environment Variables
 
-| Variable          | Description                                                                                                                                                                                                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
-| `SPECIFY_SPEC_DIR`  | Override the default specification directory name. Set to a custom directory (e.g., `docs/specs`) to use a different directory path for specifications instead of the default `specs/`.                                                   |
+| Variable | Description |
+| --- | --- |
+| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches. <br/> **Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+| `SPECIFY_SPEC_DIR` | Override the default specification directory name. Set to a custom directory (e.g., `docs/specs`) to use a different directory path for specifications instead of the default `specs/`. |
 
 ## 📚 Core Philosophy
 
