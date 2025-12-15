@@ -13,8 +13,6 @@ scripts:
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
-**IMPORTANT: The entire specification document MUST be written entirely in Korean.**
-
 ## User Input
 
 ```text
@@ -201,13 +199,21 @@ Given that feature description, do this:
 
 ## General Guidelines
 
+### Language Requirements
+
+**ALL specification content MUST be written in Korean (한글)**
+- Section headings should remain in English for template compatibility
+- All descriptions, requirements, scenarios, and criteria must be in Korean
+- Technical terms can be kept in English when appropriate (e.g., API, OAuth, JWT)
+
 ## Quick Guidelines
 
 - Focus on **WHAT** users need and **WHY**.
 - Avoid HOW to implement (no tech stack, APIs, code structure).
 - Written for business stakeholders, not developers.
 - DO NOT create any checklists that are embedded in the spec. That will be a separate command.
-
+- **Write all content in Korean (한글)** - only section headings remain in English
+ 
 ### Section Requirements
 
 - **Mandatory sections**: Must be completed for every feature
