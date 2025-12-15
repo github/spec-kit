@@ -248,6 +248,24 @@ fi
 
 # Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
 FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+
+# Validate that the prefix number is not already in use by another spec
+# This prevents collisions when --number option is explicitly provided
+for existing_dir in "$SPECS_DIR"/*; do
+    [ -d "$existing_dir" ] || continue
+    existing_name=$(basename "$existing_dir")
+    existing_prefix=$(echo "$existing_name" | grep -o '^[0-9]\{3\}' || echo "")
+    if [ "$existing_prefix" = "$FEATURE_NUM" ]; then
+        # Check if it's a different feature (not just a retry of the same feature)
+        existing_suffix="${existing_name#*-}"
+        if [ "$existing_suffix" != "$BRANCH_SUFFIX" ]; then
+            echo "Error: Prefix $FEATURE_NUM is already used by '$existing_name'" >&2
+            echo "Hint: Remove --number option to auto-detect the next available number" >&2
+            exit 1
+        fi
+    fi
+done
+
 BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 
 # GitHub enforces a 244-byte limit on branch names
