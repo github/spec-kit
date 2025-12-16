@@ -1,10 +1,10 @@
 # AGENTS.md
 
-## About Spec Kit and Specify
+## About SpecLite
 
-**GitHub Spec Kit** is a comprehensive toolkit for implementing Spec-Driven Development (SDD) - a methodology that emphasizes creating clear specifications before implementation. The toolkit includes templates, scripts, and workflows that guide development teams through a structured approach to building software.
+**SpecLite** is a comprehensive toolkit for implementing Spec-Driven Development (SDD) - a methodology that emphasizes creating clear specifications before implementation. The toolkit includes templates, scripts, and workflows that guide development teams through a structured approach to building software.
 
-**Specify CLI** is the command-line interface that bootstraps projects with the Spec Kit framework. It sets up the necessary directory structures, templates, and AI agent integrations to support the Spec-Driven Development workflow.
+**SpecLite CLI** is the command-line interface that bootstraps projects with the SpecLite framework. It sets up the necessary directory structures, templates, and AI agent integrations to support the Spec-Driven Development workflow.
 
 The toolkit supports multiple AI coding assistants, allowing teams to use their preferred tools while maintaining consistent project structure and development practices.
 
@@ -12,15 +12,15 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ## General practices
 
-- Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
+- Any changes to `__init__.py` for the SpecLite CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
 
 ## Adding New Agent Support
 
-This section explains how to add support for new AI agents/assistants to the Specify CLI. Use this guide as a reference when integrating new AI tools into the Spec-Driven Development workflow.
+This section explains how to add support for new AI agents/assistants to the SpecLite CLI. Use this guide as a reference when integrating new AI tools into the Spec-Driven Development workflow.
 
 ### Overview
 
-Specify supports multiple AI agents by generating agent-specific command files and directory structures when initializing projects. Each agent has its own conventions for:
+SpecLite supports multiple AI agents by generating agent-specific command files and directory structures when initializing projects. Each agent has its own conventions for:
 
 - **Command file formats** (Markdown, TOML, etc.)
 - **Directory structures** (`.claude/commands/`, `.windsurf/workflows/`, etc.)
@@ -29,25 +29,13 @@ Specify supports multiple AI agents by generating agent-specific command files a
 
 ### Current Supported Agents
 
-| Agent                      | Directory              | Format   | CLI Tool        | Description                 |
-| -------------------------- | ---------------------- | -------- | --------------- | --------------------------- |
-| **Claude Code**            | `.claude/commands/`    | Markdown | `claude`        | Anthropic's Claude Code CLI |
-| **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
-| **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
-| **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
-| **Qwen Code**              | `.qwen/commands/`      | TOML     | `qwen`          | Alibaba's Qwen Code CLI     |
-| **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
-| **Codex CLI**              | `.codex/commands/`     | Markdown | `codex`         | Codex CLI                   |
-| **Windsurf**               | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows      |
-| **Kilo Code**              | `.kilocode/rules/`     | Markdown | N/A (IDE-based) | Kilo Code IDE               |
-| **Auggie CLI**             | `.augment/rules/`      | Markdown | `auggie`        | Auggie CLI                  |
-| **Roo Code**               | `.roo/rules/`          | Markdown | N/A (IDE-based) | Roo Code IDE                |
-| **CodeBuddy CLI**          | `.codebuddy/commands/` | Markdown | `codebuddy`     | CodeBuddy CLI               |
-| **Qoder CLI**              | `.qoder/commands/`     | Markdown | `qoder`         | Qoder CLI                   |
-| **Amazon Q Developer CLI** | `.amazonq/prompts/`    | Markdown | `q`             | Amazon Q Developer CLI      |
-| **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
-| **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
-| **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| Agent              | Directory             | Format   | CLI Tool        | Description                 |
+| ------------------ | --------------------- | -------- | --------------- | --------------------------- |
+| **Claude Code**    | `.claude/commands/`   | Markdown | `claude`        | Anthropic's Claude Code CLI |
+| **Codex CLI**      | `.codex/prompts/`     | Markdown | `codex`         | OpenAI's Codex CLI          |
+| **Cursor**         | `.cursor/commands/`   | Markdown | `cursor-agent`  | Cursor CLI                  |
+| **Gemini CLI**     | `.gemini/commands/`   | TOML     | `gemini`        | Google's Gemini CLI         |
+| **GitHub Copilot** | `.github/agents/`     | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
 
 ### Step-by-Step Integration Guide
 
@@ -57,7 +45,7 @@ Follow these steps to add a new agent (using a hypothetical new agent as an exam
 
 **IMPORTANT**: Use the actual CLI tool name as the key, not a shortened version.
 
-Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/__init__.py`. This is the **single source of truth** for all agent metadata:
+Add the new agent to the `AGENT_CONFIG` dictionary in `src/speclite_cli/__init__.py`. This is the **single source of truth** for all agent metadata:
 
 ```python
 AGENT_CONFIG = {
@@ -90,7 +78,7 @@ This eliminates the need for special-case mappings throughout the codebase.
 Update the `--ai` parameter help text in the `init()` command to include the new agent:
 
 ```python
-ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, new-agent-cli, or q"),
+ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, codex, or new-agent-cli"),
 ```
 
 Also update any function docstrings, examples, and error messages that list available agents.
@@ -111,7 +99,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 ##### Add to ALL_AGENTS array
 
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
+ALL_AGENTS=(claude gemini copilot cursor-agent codex)
 ```
 
 ##### Add case statement for directory structure
@@ -119,9 +107,9 @@ ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
 ```bash
 case $agent in
   # ... existing cases ...
-  windsurf)
-    mkdir -p "$base_dir/.windsurf/workflows"
-    generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
+  new-agent)
+    mkdir -p "$base_dir/.newagent/commands"
+    generate_commands new-agent md "\$ARGUMENTS" "$base_dir/.newagent/commands" "$script" ;;
 esac
 ```
 
@@ -132,8 +120,8 @@ Modify `.github/workflows/scripts/create-github-release.sh` to include the new a
 ```bash
 gh release create "$VERSION" \
   # ... existing packages ...
-  .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
-  .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
+  .genreleases/speclite-template-new-agent-sh-"$VERSION".zip \
+  .genreleases/speclite-template-new-agent-ps-"$VERSION".zip \
   # Add new agent packages here
 ```
 
@@ -144,7 +132,7 @@ gh release create "$VERSION" \
 Add file variable:
 
 ```bash
-WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
+NEWAGENT_FILE="$REPO_ROOT/.newagent/rules/speclite-rules.md"
 ```
 
 Add to case statement:
@@ -152,10 +140,10 @@ Add to case statement:
 ```bash
 case "$AGENT_TYPE" in
   # ... existing cases ...
-  windsurf) update_agent_file "$WINDSURF_FILE" "Windsurf" ;;
+  new-agent) update_agent_file "$NEWAGENT_FILE" "New Agent" ;;
   "")
     # ... existing checks ...
-    [ -f "$WINDSURF_FILE" ] && update_agent_file "$WINDSURF_FILE" "Windsurf";
+    [ -f "$NEWAGENT_FILE" ] && update_agent_file "$NEWAGENT_FILE" "New Agent";
     # Update default creation condition
     ;;
 esac
@@ -166,7 +154,7 @@ esac
 Add file variable:
 
 ```powershell
-$windsurfFile = Join-Path $repoRoot '.windsurf/rules/specify-rules.md'
+$newAgentFile = Join-Path $repoRoot '.newagent/rules/speclite-rules.md'
 ```
 
 Add to switch statement:
@@ -174,11 +162,11 @@ Add to switch statement:
 ```powershell
 switch ($AgentType) {
     # ... existing cases ...
-    'windsurf' { Update-AgentFile $windsurfFile 'Windsurf' }
+    'new-agent' { Update-AgentFile $newAgentFile 'New Agent' }
     '' {
         foreach ($pair in @(
             # ... existing pairs ...
-            @{file=$windsurfFile; name='Windsurf'}
+            @{file=$newAgentFile; name='New Agent'}
         )) {
             if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
         }
@@ -193,13 +181,13 @@ For agents that require CLI tools, add checks in the `check()` command and agent
 
 ```python
 # In check() command
-tracker.add("windsurf", "Windsurf IDE (optional)")
-windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
+tracker.add("new-agent", "New Agent CLI (optional)")
+new_agent_ok = check_tool_for_tracker("new-agent", "https://example.com/", tracker)
 
 # In init validation (only if CLI tool required)
-elif selected_ai == "windsurf":
-    if not check_tool("windsurf", "Install from: https://windsurf.com/"):
-        console.print("[red]Error:[/red] Windsurf CLI is required for Windsurf projects")
+elif selected_ai == "new-agent":
+    if not check_tool("new-agent", "Install from: https://example.com/"):
+        console.print("[red]Error:[/red] New Agent CLI is required for New Agent projects")
         agent_tool_missing = True
 ```
 
@@ -307,29 +295,21 @@ echo "✅ Done"
 Require a command-line tool to be installed:
 
 - **Claude Code**: `claude` CLI
-- **Gemini CLI**: `gemini` CLI
+- **Codex CLI**: `codex` CLI
 - **Cursor**: `cursor-agent` CLI
-- **Qwen Code**: `qwen` CLI
-- **opencode**: `opencode` CLI
-- **Amazon Q Developer CLI**: `q` CLI
-- **CodeBuddy CLI**: `codebuddy` CLI
-- **Qoder CLI**: `qoder` CLI
-- **Amp**: `amp` CLI
-- **SHAI**: `shai` CLI
+- **Gemini CLI**: `gemini` CLI
 
 ### IDE-Based Agents
 
 Work within integrated development environments:
 
 - **GitHub Copilot**: Built into VS Code/compatible editors
-- **Windsurf**: Built into Windsurf IDE
-- **IBM Bob**: Built into IBM Bob IDE
 
 ## Command File Formats
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+Used by: Claude, Codex, Cursor, GitHub Copilot
 
 **Standard format:**
 
@@ -346,7 +326,7 @@ Command content with {SCRIPT} and $ARGUMENTS placeholders.
 ```markdown
 ---
 description: "Command description"
-mode: speckit.command-name
+mode: sl.command-name
 ---
 
 Command content with {SCRIPT} and $ARGUMENTS placeholders.
@@ -354,7 +334,7 @@ Command content with {SCRIPT} and $ARGUMENTS placeholders.
 
 ### TOML Format
 
-Used by: Gemini, Qwen
+Used by: Gemini
 
 ```toml
 description = "Command description"
@@ -370,7 +350,6 @@ Command content with {SCRIPT} and {{args}} placeholders.
 - **IDE agents**: Follow IDE-specific patterns:
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
-  - Windsurf: `.windsurf/workflows/`
 
 ## Argument Patterns
 
@@ -384,7 +363,7 @@ Different agents use different argument placeholders:
 ## Testing New Agent Integration
 
 1. **Build test**: Run package creation script locally
-2. **CLI test**: Test `specify init --ai <agent>` command
+2. **CLI test**: Test `speclite init --ai <agent>` command
 3. **File generation**: Verify correct directory structure and files
 4. **Command validation**: Ensure generated commands work with the agent
 5. **Context update**: Test agent context update scripts
