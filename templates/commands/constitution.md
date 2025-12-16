@@ -14,6 +14,16 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Language Requirements
+
+**ALL user interaction and reporting MUST be in Korean (한글)**
+- Questions to the user must be in Korean
+- Sync Impact Report must be in Korean
+- Final summary to the user must be in Korean
+- The constitution file itself remains in English (it's a technical template)
+- Technical terms and identifiers remain in English
+- Comments in the constitution can be in Korean if added for clarification
+
 ## Outline
 
 You are updating the project constitution at `/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.

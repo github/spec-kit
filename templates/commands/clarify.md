@@ -17,6 +17,15 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Language Requirements
+
+**ALL clarification content MUST be written in Korean (한글)**
+- Section headings in the spec file should remain in English for template compatibility
+- All questions, answers, clarifications, and spec updates must be in Korean
+- Technical terms can be kept in English when appropriate (e.g., API, OAuth, JWT)
+- Quality dimension markers and status labels can remain in English (e.g., Clear, Partial, Missing)
+- Markdown table headers and content should be in Korean
+
 ## Outline
 
 Goal: Detect and reduce ambiguity or missing decision points in the active feature specification and record the clarifications directly in the spec file.
