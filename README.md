@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/github/speclite/actions/workflows/release.yml"><img src="https://github.com/github/speclite/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
-    <a href="https://github.com/github/speclite/stargazers"><img src="https://img.shields.io/github/stars/github/speclite?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/speclite/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/speclite" alt="License"/></a>
-    <a href="https://github.github.io/speclite/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
+    <a href="https://github.com/BretJohnson/speclite/actions/workflows/release.yml"><img src="https://github.com/BretJohnson/speclite/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
+    <a href="https://github.com/BretJohnson/speclite/stargazers"><img src="https://img.shields.io/github/stars/BretJohnson/speclite?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/BretJohnson/speclite/blob/main/LICENSE"><img src="https://img.shields.io/github/license/BretJohnson/speclite" alt="License"/></a>
+    <a href="https://bretjohnson.github.io/speclite/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
 </p>
 
 ---
@@ -51,7 +51,7 @@ Choose your preferred installation method:
 Install once and use everywhere:
 
 ```bash
-uv tool install speclite-cli --from git+https://github.com/github/speclite.git
+uv tool install speclite-cli --from git+https://github.com/BretJohnson/speclite.git
 ```
 
 Then use the tool directly:
@@ -72,7 +72,7 @@ speclite check
 To upgrade SpecLite, see the [Upgrade Guide](./docs/upgrade.md) for detailed instructions. Quick upgrade:
 
 ```bash
-uv tool install speclite-cli --force --from git+https://github.com/github/speclite.git
+uv tool install speclite-cli --force --from git+https://github.com/BretJohnson/speclite.git
 ```
 
 #### Option 2: One-time Usage
@@ -80,7 +80,7 @@ uv tool install speclite-cli --force --from git+https://github.com/github/specli
 Run directly without installing:
 
 ```bash
-uvx --from git+https://github.com/github/speclite.git speclite init <PROJECT_NAME>
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <PROJECT_NAME>
 ```
 
 **Benefits of persistent installation:**
@@ -618,7 +618,7 @@ rm gcm-linux_amd64.2.6.1.deb
 
 ## 💬 Support
 
-For support, please open a [GitHub issue](https://github.com/github/speclite/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
+For support, please open a [GitHub issue](https://github.com/BretJohnson/speclite/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
 ## 🙏 Acknowledgements
 

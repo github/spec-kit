@@ -56,6 +56,24 @@ from datetime import datetime, timezone
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
+DEFAULT_TEMPLATE_REPO = "BretJohnson/speclite"
+
+def _template_repo() -> tuple[str, str]:
+    """Return (owner, repo) for template releases."""
+    repo = (os.getenv("SPECLITE_TEMPLATE_REPO") or DEFAULT_TEMPLATE_REPO).strip()
+    if not repo or "/" not in repo:
+        raise ValueError(
+            f"Invalid SPECLITE_TEMPLATE_REPO value: {repo!r}. Expected format 'owner/repo'."
+        )
+    owner, name = repo.split("/", 1)
+    owner = owner.strip()
+    name = name.strip()
+    if not owner or not name:
+        raise ValueError(
+            f"Invalid SPECLITE_TEMPLATE_REPO value: {repo!r}. Expected format 'owner/repo'."
+        )
+    return owner, name
+
 def _github_token(cli_token: str | None = None) -> str | None:
     """Return sanitized GitHub token (cli arg takes precedence) or None."""
     return ((cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN") or "").strip()) or None
@@ -563,8 +581,7 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
     return merged
 
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "speclite"
+    repo_owner, repo_name = _template_repo()
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
@@ -1234,8 +1251,7 @@ def version():
             pass
     
     # Fetch latest template release version
-    repo_owner = "github"
-    repo_name = "speclite"
+    repo_owner, repo_name = _template_repo()
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
     template_version = "unknown"
@@ -1293,4 +1309,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
