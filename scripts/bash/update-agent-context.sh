@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
+#    - Supports: Claude Code, Gemini CLI, GitHub Copilot, Cursor, Codex CLI
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|bob|qoder
+# Agent types: claude|gemini|copilot|cursor-agent|codex
 # Leave empty to update all existing agent files
 
 set -e
@@ -58,26 +58,15 @@ eval $(get_feature_paths)
 NEW_PLAN="$IMPL_PLAN"  # Alias for compatibility with existing code
 AGENT_TYPE="${1:-}"
 
-# Agent-specific file paths  
+# Agent-specific file paths
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/agents/copilot-instructions.md"
-CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
-QWEN_FILE="$REPO_ROOT/QWEN.md"
-AGENTS_FILE="$REPO_ROOT/AGENTS.md"
-WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
-KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
-AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
-ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
-CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
-QODER_FILE="$REPO_ROOT/QODER.md"
-AMP_FILE="$REPO_ROOT/AGENTS.md"
-SHAI_FILE="$REPO_ROOT/SHAI.md"
-Q_FILE="$REPO_ROOT/AGENTS.md"
-BOB_FILE="$REPO_ROOT/AGENTS.md"
+CURSOR_FILE="$REPO_ROOT/.cursor/rules/speclite-rules.mdc"
+CODEX_FILE="$REPO_ROOT/AGENTS.md"
 
 # Template file
-TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
+TEMPLATE_FILE="$REPO_ROOT/.speclite/templates/agent-file-template.md"
 
 # Global variables for parsed plan data
 NEW_LANG=""
@@ -127,7 +116,7 @@ validate_environment() {
         if [[ "$HAS_GIT" == "true" ]]; then
             log_info "Make sure you're on a feature branch"
         else
-            log_info "Set SPECIFY_FEATURE environment variable or create a feature first"
+            log_info "Set SPECLITE_FEATURE environment variable or create a feature first"
         fi
         exit 1
     fi
@@ -137,7 +126,7 @@ validate_environment() {
         log_error "No plan.md found at $NEW_PLAN"
         log_info "Make sure you're working on a feature with a corresponding spec directory"
         if [[ "$HAS_GIT" != "true" ]]; then
-            log_info "Use: export SPECIFY_FEATURE=your-feature-name or create a new feature first"
+            log_info "Use: export SPECLITE_FEATURE=your-feature-name or create a new feature first"
         fi
         exit 1
     fi
@@ -580,7 +569,7 @@ update_agent_file() {
 
 update_specific_agent() {
     local agent_type="$1"
-    
+
     case "$agent_type" in
         claude)
             update_agent_file "$CLAUDE_FILE" "Claude Code"
@@ -594,48 +583,12 @@ update_specific_agent() {
         cursor-agent)
             update_agent_file "$CURSOR_FILE" "Cursor IDE"
             ;;
-        qwen)
-            update_agent_file "$QWEN_FILE" "Qwen Code"
-            ;;
-        opencode)
-            update_agent_file "$AGENTS_FILE" "opencode"
-            ;;
         codex)
-            update_agent_file "$AGENTS_FILE" "Codex CLI"
-            ;;
-        windsurf)
-            update_agent_file "$WINDSURF_FILE" "Windsurf"
-            ;;
-        kilocode)
-            update_agent_file "$KILOCODE_FILE" "Kilo Code"
-            ;;
-        auggie)
-            update_agent_file "$AUGGIE_FILE" "Auggie CLI"
-            ;;
-        roo)
-            update_agent_file "$ROO_FILE" "Roo Code"
-            ;;
-        codebuddy)
-            update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
-            ;;
-        qoder)
-            update_agent_file "$QODER_FILE" "Qoder CLI"
-            ;;
-        amp)
-            update_agent_file "$AMP_FILE" "Amp"
-            ;;
-        shai)
-            update_agent_file "$SHAI_FILE" "SHAI"
-            ;;
-        q)
-            update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
-            ;;
-        bob)
-            update_agent_file "$BOB_FILE" "IBM Bob"
+            update_agent_file "$CODEX_FILE" "Codex CLI"
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|codex"
             exit 1
             ;;
     esac
@@ -643,83 +596,33 @@ update_specific_agent() {
 
 update_all_existing_agents() {
     local found_agent=false
-    
+
     # Check each possible agent file and update if it exists
     if [[ -f "$CLAUDE_FILE" ]]; then
         update_agent_file "$CLAUDE_FILE" "Claude Code"
         found_agent=true
     fi
-    
+
     if [[ -f "$GEMINI_FILE" ]]; then
         update_agent_file "$GEMINI_FILE" "Gemini CLI"
         found_agent=true
     fi
-    
+
     if [[ -f "$COPILOT_FILE" ]]; then
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
         found_agent=true
     fi
-    
+
     if [[ -f "$CURSOR_FILE" ]]; then
         update_agent_file "$CURSOR_FILE" "Cursor IDE"
         found_agent=true
     fi
-    
-    if [[ -f "$QWEN_FILE" ]]; then
-        update_agent_file "$QWEN_FILE" "Qwen Code"
-        found_agent=true
-    fi
-    
-    if [[ -f "$AGENTS_FILE" ]]; then
-        update_agent_file "$AGENTS_FILE" "Codex/opencode"
-        found_agent=true
-    fi
-    
-    if [[ -f "$WINDSURF_FILE" ]]; then
-        update_agent_file "$WINDSURF_FILE" "Windsurf"
-        found_agent=true
-    fi
-    
-    if [[ -f "$KILOCODE_FILE" ]]; then
-        update_agent_file "$KILOCODE_FILE" "Kilo Code"
+
+    if [[ -f "$CODEX_FILE" ]]; then
+        update_agent_file "$CODEX_FILE" "Codex CLI"
         found_agent=true
     fi
 
-    if [[ -f "$AUGGIE_FILE" ]]; then
-        update_agent_file "$AUGGIE_FILE" "Auggie CLI"
-        found_agent=true
-    fi
-    
-    if [[ -f "$ROO_FILE" ]]; then
-        update_agent_file "$ROO_FILE" "Roo Code"
-        found_agent=true
-    fi
-
-    if [[ -f "$CODEBUDDY_FILE" ]]; then
-        update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
-        found_agent=true
-    fi
-
-    if [[ -f "$SHAI_FILE" ]]; then
-        update_agent_file "$SHAI_FILE" "SHAI"
-        found_agent=true
-    fi
-
-    if [[ -f "$QODER_FILE" ]]; then
-        update_agent_file "$QODER_FILE" "Qoder CLI"
-        found_agent=true
-    fi
-
-    if [[ -f "$Q_FILE" ]]; then
-        update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
-        found_agent=true
-    fi
-    
-    if [[ -f "$BOB_FILE" ]]; then
-        update_agent_file "$BOB_FILE" "IBM Bob"
-        found_agent=true
-    fi
-    
     # If no agent files exist, create a default Claude file
     if [[ "$found_agent" == false ]]; then
         log_info "No existing agent files found, creating default Claude file..."
@@ -744,7 +647,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|codex]"
 }
 
 #==============================================================================

@@ -1,4 +1,4 @@
-# Spec Kit
+# SpecLite
 
 *Build high-quality software faster.*
 
@@ -60,8 +60,8 @@ Our research and experimentation focus on:
 
 ## Contributing
 
-Please see our [Contributing Guide](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md) for information on how to contribute to this project.
+Please see our [Contributing Guide](https://github.com/BretJohnson/speclite/blob/main/CONTRIBUTING.md) for information on how to contribute to this project.
 
 ## Support
 
-For support, please check our [Support Guide](https://github.com/github/spec-kit/blob/main/SUPPORT.md) or open an issue on GitHub.
+For support, please check our [Support Guide](https://github.com/BretJohnson/speclite/blob/main/SUPPORT.md) or open an issue on GitHub.

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli) or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [Codex CLI](https://github.com/openai/codex), [Cursor](https://cursor.sh/), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [GitHub Copilot](https://code.visualstudio.com/)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -15,26 +15,27 @@
 The easiest way to get started is to initialize a new project:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <PROJECT_NAME>
 ```
 
 Or initialize in the current directory:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init .
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init .
 # or use the --here flag
-uvx --from git+https://github.com/github/spec-kit.git specify init --here
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init --here
 ```
 
-### Specify AI Agent
+### Select AI Agent
 
 You can proactively specify your AI agent during initialization:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai gemini
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai codebuddy
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai claude
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai gemini
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai copilot
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai cursor-agent
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai codex
 ```
 
 ### Specify Script Type (Shell vs PowerShell)
@@ -50,8 +51,8 @@ Auto behavior:
 Force a specific script type:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script sh
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --script sh
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --script ps
 ```
 
 ### Ignore Agent Tools Check
@@ -59,18 +60,18 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 If you prefer to get the templates without checking for the right tools:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude --ignore-agent-tools
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai claude --ignore-agent-tools
 ```
 
 ## Verification
 
 After initialization, you should see the following commands available in your AI agent:
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans  
-- `/speckit.tasks` - Break down into actionable tasks
+- `/sl.specify` - Create specifications
+- `/sl.plan` - Generate implementation plans
+- `/sl.tasks` - Break down into actionable tasks
 
-The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
+The `.speclite/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ## Troubleshooting
 

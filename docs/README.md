@@ -1,6 +1,6 @@
 # Documentation
 
-This folder contains the documentation source files for Spec Kit, built using [DocFX](https://dotnet.github.io/docfx/).
+This folder contains the documentation source files for SpecLite, built using [DocFX](https://dotnet.github.io/docfx/).
 
 ## Building Locally
 

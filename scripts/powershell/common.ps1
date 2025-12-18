@@ -16,9 +16,9 @@ function Get-RepoRoot {
 }
 
 function Get-CurrentBranch {
-    # First check if SPECIFY_FEATURE environment variable is set
-    if ($env:SPECIFY_FEATURE) {
-        return $env:SPECIFY_FEATURE
+    # First check if SPECLITE_FEATURE environment variable is set
+    if ($env:SPECLITE_FEATURE) {
+        return $env:SPECLITE_FEATURE
     }
     
     # Then check git if available
@@ -75,7 +75,7 @@ function Test-FeatureBranch {
     
     # For non-git repos, we can't enforce branch naming but still provide output
     if (-not $HasGit) {
-        Write-Warning "[specify] Warning: Git repository not detected; skipped branch validation"
+        Write-Warning "[speclite] Warning: Git repository not detected; skipped branch validation"
         return $true
     }
     

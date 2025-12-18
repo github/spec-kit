@@ -3,18 +3,18 @@
 
 <#
 .SYNOPSIS
-    Build Spec Kit template release archives for each supported AI assistant and script type.
+    Build SpecLite template release archives for each supported AI assistant and script type.
 
 .DESCRIPTION
     create-release-packages.ps1 (workflow-local)
-    Build Spec Kit template release archives for each supported AI assistant and script type.
-    
+    Build SpecLite template release archives for each supported AI assistant and script type.
+
 .PARAMETER Version
     Version string with leading 'v' (e.g., v0.2.0)
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, q, bob, qoder
+    Valid agents: claude, gemini, copilot, cursor-agent, codex
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -60,10 +60,10 @@ New-Item -ItemType Directory -Path $GenReleasesDir -Force | Out-Null
 
 function Rewrite-Paths {
     param([string]$Content)
-    
-    $Content = $Content -replace '(/?)\bmemory/', '.specify/memory/'
-    $Content = $Content -replace '(/?)\bscripts/', '.specify/scripts/'
-    $Content = $Content -replace '(/?)\btemplates/', '.specify/templates/'
+
+    $Content = $Content -replace '(/?)\bmemory/', '.speclite/memory/'
+    $Content = $Content -replace '(/?)\bscripts/', '.speclite/scripts/'
+    $Content = $Content -replace '(/?)\btemplates/', '.speclite/templates/'
     return $Content
 }
 
@@ -160,7 +160,7 @@ function Generate-Commands {
         $body = Rewrite-Paths -Content $body
         
         # Generate output file based on extension
-        $outputFile = Join-Path $OutputDir "speckit.$name.$Extension"
+        $outputFile = Join-Path $OutputDir "sl.$name.$Extension"
         
         switch ($Extension) {
             'toml' {
@@ -183,10 +183,10 @@ function Generate-CopilotPrompts {
         [string]$AgentsDir,
         [string]$PromptsDir
     )
-    
+
     New-Item -ItemType Directory -Path $PromptsDir -Force | Out-Null
-    
-    $agentFiles = Get-ChildItem -Path "$AgentsDir/speckit.*.agent.md" -File -ErrorAction SilentlyContinue
+
+    $agentFiles = Get-ChildItem -Path "$AgentsDir/sl.*.agent.md" -File -ErrorAction SilentlyContinue
     
     foreach ($agentFile in $agentFiles) {
         $basename = $agentFile.Name -replace '\.agent\.md$', ''
@@ -212,46 +212,46 @@ function Build-Variant {
     New-Item -ItemType Directory -Path $baseDir -Force | Out-Null
     
     # Copy base structure but filter scripts by variant
-    $specDir = Join-Path $baseDir ".specify"
+    $specDir = Join-Path $baseDir ".speclite"
     New-Item -ItemType Directory -Path $specDir -Force | Out-Null
-    
+
     # Copy memory directory
     if (Test-Path "memory") {
         Copy-Item -Path "memory" -Destination $specDir -Recurse -Force
-        Write-Host "Copied memory -> .specify"
+        Write-Host "Copied memory -> .speclite"
     }
-    
+
     # Only copy the relevant script variant directory
     if (Test-Path "scripts") {
         $scriptsDestDir = Join-Path $specDir "scripts"
         New-Item -ItemType Directory -Path $scriptsDestDir -Force | Out-Null
-        
+
         switch ($Script) {
             'sh' {
                 if (Test-Path "scripts/bash") {
                     Copy-Item -Path "scripts/bash" -Destination $scriptsDestDir -Recurse -Force
-                    Write-Host "Copied scripts/bash -> .specify/scripts"
+                    Write-Host "Copied scripts/bash -> .speclite/scripts"
                 }
             }
             'ps' {
                 if (Test-Path "scripts/powershell") {
                     Copy-Item -Path "scripts/powershell" -Destination $scriptsDestDir -Recurse -Force
-                    Write-Host "Copied scripts/powershell -> .specify/scripts"
+                    Write-Host "Copied scripts/powershell -> .speclite/scripts"
                 }
             }
         }
-        
+
         # Copy any script files that aren't in variant-specific directories
         Get-ChildItem -Path "scripts" -File -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination $scriptsDestDir -Force
         }
     }
-    
+
     # Copy templates (excluding commands directory and vscode-settings.json)
     if (Test-Path "templates") {
         $templatesDestDir = Join-Path $specDir "templates"
         New-Item -ItemType Directory -Path $templatesDestDir -Force | Out-Null
-        
+
         Get-ChildItem -Path "templates" -Recurse -File | Where-Object {
             $_.FullName -notmatch 'templates[/\\]commands[/\\]' -and $_.Name -ne 'vscode-settings.json'
         } | ForEach-Object {
@@ -261,7 +261,7 @@ function Build-Variant {
             New-Item -ItemType Directory -Path $destFileDir -Force | Out-Null
             Copy-Item -Path $_.FullName -Destination $destFile -Force
         }
-        Write-Host "Copied templates -> .specify/templates"
+        Write-Host "Copied templates -> .speclite/templates"
     }
     
     # Generate agent-specific command files
@@ -280,11 +280,11 @@ function Build-Variant {
         'copilot' {
             $agentsDir = Join-Path $baseDir ".github/agents"
             Generate-Commands -Agent 'copilot' -Extension 'agent.md' -ArgFormat '$ARGUMENTS' -OutputDir $agentsDir -ScriptVariant $Script
-            
+
             # Generate companion prompt files
             $promptsDir = Join-Path $baseDir ".github/prompts"
             Generate-CopilotPrompts -AgentsDir $agentsDir -PromptsDir $promptsDir
-            
+
             # Create VS Code workspace settings
             $vscodeDir = Join-Path $baseDir ".vscode"
             New-Item -ItemType Directory -Path $vscodeDir -Force | Out-Null
@@ -296,67 +296,20 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".cursor/commands"
             Generate-Commands -Agent 'cursor-agent' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
-        'qwen' {
-            $cmdDir = Join-Path $baseDir ".qwen/commands"
-            Generate-Commands -Agent 'qwen' -Extension 'toml' -ArgFormat '{{args}}' -OutputDir $cmdDir -ScriptVariant $Script
-            if (Test-Path "agent_templates/qwen/QWEN.md") {
-                Copy-Item -Path "agent_templates/qwen/QWEN.md" -Destination (Join-Path $baseDir "QWEN.md")
-            }
-        }
-        'opencode' {
-            $cmdDir = Join-Path $baseDir ".opencode/command"
-            Generate-Commands -Agent 'opencode' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'windsurf' {
-            $cmdDir = Join-Path $baseDir ".windsurf/workflows"
-            Generate-Commands -Agent 'windsurf' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
         'codex' {
             $cmdDir = Join-Path $baseDir ".codex/prompts"
             Generate-Commands -Agent 'codex' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
-        'kilocode' {
-            $cmdDir = Join-Path $baseDir ".kilocode/workflows"
-            Generate-Commands -Agent 'kilocode' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'auggie' {
-            $cmdDir = Join-Path $baseDir ".augment/commands"
-            Generate-Commands -Agent 'auggie' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'roo' {
-            $cmdDir = Join-Path $baseDir ".roo/commands"
-            Generate-Commands -Agent 'roo' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'codebuddy' {
-            $cmdDir = Join-Path $baseDir ".codebuddy/commands"
-            Generate-Commands -Agent 'codebuddy' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'amp' {
-            $cmdDir = Join-Path $baseDir ".agents/commands"
-            Generate-Commands -Agent 'amp' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'q' {
-            $cmdDir = Join-Path $baseDir ".amazonq/prompts"
-            Generate-Commands -Agent 'q' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'bob' {
-            $cmdDir = Join-Path $baseDir ".bob/commands"
-            Generate-Commands -Agent 'bob' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
-        'qoder' {
-            $cmdDir = Join-Path $baseDir ".qoder/commands"
-            Generate-Commands -Agent 'qoder' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
-        }
     }
-    
+
     # Create zip archive
-    $zipFile = Join-Path $GenReleasesDir "spec-kit-template-${Agent}-${Script}-${Version}.zip"
+    $zipFile = Join-Path $GenReleasesDir "speclite-template-${Agent}-${Script}-${Version}.zip"
     Compress-Archive -Path "$baseDir/*" -DestinationPath $zipFile -Force
     Write-Host "Created $zipFile"
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qoder')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'codex')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {
@@ -419,6 +372,6 @@ foreach ($agent in $AgentList) {
 }
 
 Write-Host "`nArchives in ${GenReleasesDir}:"
-Get-ChildItem -Path $GenReleasesDir -Filter "spec-kit-template-*-${Version}.zip" | ForEach-Object {
+Get-ChildItem -Path $GenReleasesDir -Filter "speclite-template-*-${Version}.zip" | ForEach-Object {
     Write-Host "  $($_.Name)"
 }
