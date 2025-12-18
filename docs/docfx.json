@@ -56,16 +56,15 @@
     "cleanupCacheHistory": false,
     "disableGitFeatures": false,
     "globalMetadata": {
-      "_appTitle": "Spec Kit Documentation",
-      "_appName": "Spec Kit",
-      "_appFooter": "Spec Kit - A specification-driven development toolkit",
+      "_appTitle": "SpecLite Documentation",
+      "_appName": "SpecLite",
+      "_appFooter": "SpecLite - A specification-driven development toolkit",
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {
-        "repo": "https://github.com/github/spec-kit",
+        "repo": "https://github.com/BretJohnson/speclite",
         "branch": "main"
       }
     }
   }
 }
-
