@@ -16,15 +16,15 @@ VERSION="$1"
 VERSION_NO_V=${VERSION#v}
 
 gh release create "$VERSION" \
-  .genreleases/speclite-template-copilot-sh-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-copilot-ps-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-claude-sh-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-claude-ps-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-gemini-sh-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-gemini-ps-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-cursor-agent-sh-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-cursor-agent-ps-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-codex-sh-"$VERSION_NO_V".zip \
-  .genreleases/speclite-template-codex-ps-"$VERSION_NO_V".zip \
+  .genreleases/speclite-template-copilot-sh-"$VERSION".zip \
+  .genreleases/speclite-template-copilot-ps-"$VERSION".zip \
+  .genreleases/speclite-template-claude-sh-"$VERSION".zip \
+  .genreleases/speclite-template-claude-ps-"$VERSION".zip \
+  .genreleases/speclite-template-gemini-sh-"$VERSION".zip \
+  .genreleases/speclite-template-gemini-ps-"$VERSION".zip \
+  .genreleases/speclite-template-cursor-agent-sh-"$VERSION".zip \
+  .genreleases/speclite-template-cursor-agent-ps-"$VERSION".zip \
+  .genreleases/speclite-template-codex-sh-"$VERSION".zip \
+  .genreleases/speclite-template-codex-ps-"$VERSION".zip \
   --title "SpecLite Templates - $VERSION_NO_V" \
   --notes-file release_notes.md
