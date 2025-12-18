@@ -19,8 +19,8 @@ You can execute the CLI via the module entrypoint without installing anything:
 
 ```bash
 # From repo root
-PYTHONPATH=src python -m speclite_cli --help
-PYTHONPATH=src python -m speclite_cli init demo-project --ai claude --ignore-agent-tools --script sh
+python -m src.speclite_cli --help
+python -m src.speclite_cli init demo-project --ai claude --ignore-agent-tools --script sh
 ```
 
 If you prefer invoking the script file style (uses shebang):
@@ -41,11 +41,16 @@ source .venv/bin/activate  # or on Windows PowerShell: .venv\Scripts\Activate.ps
 # Install project in editable mode
 uv pip install -e .
 
-# Now 'speclite' entrypoint is available
+# Now 'speclite' entrypoint is available, from any directory, as along as the virtual environment is active
 speclite --help
 ```
 
 Re-running after code edits requires no reinstall because of editable mode.
+
+To deactivate the virtual environment:
+```bash
+deactivate
+```
 
 ## 4. Invoke with uvx Directly From Git (Current Branch)
 
@@ -103,7 +108,7 @@ On Windows you will instead use the `.ps1` scripts (no chmod needed).
 Currently no enforced lint config is bundled, but you can quickly sanity check importability:
 
 ```bash
-PYTHONPATH=src python -c "import speclite_cli; print('Import OK')"
+python -c "import speclite_cli; print('Import OK')"
 ```
 
 ## 7. Build a Wheel Locally (Optional)
@@ -123,7 +128,7 @@ When testing `init --here` in a dirty directory, create a temp workspace:
 
 ```bash
 mkdir /tmp/speclite-test && cd /tmp/speclite-test
-PYTHONPATH=src python -m speclite_cli init --here --ai claude --ignore-agent-tools --script sh  # if repo copied here
+python -m src.speclite_cli init --here --ai claude --ignore-agent-tools --script sh  # if repo copied here
 ```
 
 Or copy only the modified CLI portion if you want a lighter sandbox.
@@ -143,7 +148,7 @@ speclite init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 
 | Action | Command |
 |--------|---------|
-| Run CLI directly | `PYTHONPATH=src python -m speclite_cli --help` |
+| Run CLI directly | `python -m src.speclite_cli --help` |
 | Editable install | `uv pip install -e .` then `speclite ...` |
 | Local uvx run (repo root) | `uvx --from . speclite ...` |
 | Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/speclite speclite ...` |
