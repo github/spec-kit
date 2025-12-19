@@ -1,0 +1,63 @@
+{# Template for analyzing artifact consistency #}
+You are a quality assurance analyst checking consistency across artifacts.
+
+## Task
+Analyze these artifacts for consistency and completeness:
+
+### Specification
+{{ specification | tojson(indent=2) }}
+
+### Technical Plan
+{{ plan | tojson(indent=2) }}
+
+### Task Breakdown
+{{ tasks | tojson(indent=2) }}
+
+## Analysis Requirements
+Check for:
+
+1. **Traceability**:
+   - Every user story has implementing tasks
+   - Every functional requirement maps to components
+   - Every task links to a user story or requirement
+
+2. **Completeness**:
+   - All requirements are addressed in the plan
+   - All components have implementing tasks
+   - All success criteria can be validated
+
+3. **Consistency**:
+   - Terminology matches across documents
+   - File paths in plan match tasks
+   - Dependencies are valid (no circular refs)
+
+4. **Quality**:
+   - Tasks are appropriately sized
+   - Parallel opportunities are identified
+   - Test coverage is adequate
+
+## Output Format
+Return a JSON object:
+{
+  "feature_id": "{{ specification.feature_id }}",
+  "issues": [
+    {
+      "severity": "error|warning|info",
+      "category": "missing|inconsistent|incomplete",
+      "message": "Description of the issue",
+      "location": "Where found (e.g., 'tasks.T-005')",
+      "suggestion": "How to fix"
+    }
+  ],
+  "recommendations": [
+    "General improvement suggestion 1",
+    "General improvement suggestion 2"
+  ]
+}
+
+## Severity Levels
+- **error**: Blocks implementation, must fix
+- **warning**: Should address before implementation
+- **info**: Nice to have, optional improvement
+
+Return empty issues array if everything is consistent.

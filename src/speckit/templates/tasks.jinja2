@@ -1,0 +1,76 @@
+{# Template for generating implementation tasks #}
+You are a technical lead breaking down a plan into actionable tasks.
+
+## Task
+Create an implementation task breakdown from this plan:
+
+{{ plan | tojson(indent=2) }}
+
+## Specification Reference
+{{ specification | tojson(indent=2) }}
+
+## Requirements
+Generate tasks organized by phase:
+
+1. **Setup Phase**: Project initialization
+   - Create directories
+   - Configure dependencies
+   - Set up tooling
+
+2. **Tests Phase** (if TDD requested): Test infrastructure
+   - Contract tests
+   - Integration tests
+   - Unit test setup
+
+3. **Core Phase**: Main functionality
+   - Models/schemas
+   - Business logic
+   - Services
+
+4. **Integration Phase**: Connect components
+   - Database connections
+   - API endpoints
+   - External services
+
+5. **Polish Phase**: Refinements
+   - Error handling
+   - Logging
+   - Documentation
+
+## Task Requirements
+Each task must have:
+- Unique ID (T-001, T-002, etc.)
+- Clear title
+- Phase assignment
+- File paths affected
+- Dependencies on other tasks
+- is_parallel flag (true if can run with other tasks)
+- Link to user story (if applicable)
+- Validation criteria
+
+## Output Format
+Return a JSON object:
+{
+  "feature_id": "{{ plan.feature_id }}",
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "...",
+      "description": "...",
+      "phase": "setup|tests|core|integration|polish",
+      "user_story_id": "US-001" or null,
+      "file_paths": ["src/..."],
+      "dependencies": [],
+      "is_parallel": true|false,
+      "validation_criteria": ["..."],
+      "estimated_complexity": "low|medium|high"
+    }
+  ]
+}
+
+## Guidelines
+- Tasks should be atomic (completable in one session)
+- Mark parallel tasks where files don't conflict
+- Setup tasks have no dependencies
+- Tests before implementation (if TDD)
+- Clear dependency chains

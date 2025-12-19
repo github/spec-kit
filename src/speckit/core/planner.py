@@ -1,0 +1,97 @@
+"""
+Technical planning for spec-kit.
+
+This module provides tools to generate technical implementation plans
+from feature specifications.
+"""
+
+from datetime import datetime
+from typing import Optional
+
+from speckit.llm import LiteLLMProvider
+from speckit.schemas import Constitution, Specification, TechStack, TechnicalPlan
+from speckit.storage.base import StorageBase
+from speckit.templates import render_template
+
+
+class TechnicalPlanner:
+    """
+    Generates technical implementation plans from specifications.
+
+    The plan includes technology stack, architecture, components,
+    file structure, and risk assessment.
+    """
+
+    def __init__(self, llm: LiteLLMProvider, storage: StorageBase):
+        """
+        Initialize technical planner.
+
+        Args:
+            llm: LLM provider for generation
+            storage: Storage backend for persistence
+        """
+        self.llm = llm
+        self.storage = storage
+
+    def plan(
+        self,
+        specification: Specification,
+        constitution: Optional[Constitution] = None,
+        tech_stack: Optional[TechStack] = None,
+    ) -> TechnicalPlan:
+        """
+        Generate a technical plan from a specification.
+
+        Args:
+            specification: Specification to plan for
+            constitution: Optional project constitution for constraints
+            tech_stack: Optional technology constraints
+
+        Returns:
+            Generated TechnicalPlan model
+        """
+        # Render prompt template
+        prompt = render_template(
+            "plan.jinja2",
+            specification=specification.model_dump(),
+            constitution=constitution.model_dump() if constitution else None,
+            tech_stack=tech_stack.model_dump() if tech_stack else None,
+        )
+
+        # Generate plan using structured output
+        plan = self.llm.complete_structured(
+            prompt=prompt,
+            response_model=TechnicalPlan,
+            system="You are a software architect creating technical implementation plans.",
+        )
+
+        # Ensure feature_id is set correctly
+        plan.feature_id = specification.feature_id
+        plan.created_at = datetime.now()
+
+        return plan
+
+    async def plan_async(
+        self,
+        specification: Specification,
+        constitution: Optional[Constitution] = None,
+        tech_stack: Optional[TechStack] = None,
+    ) -> TechnicalPlan:
+        """Async version of plan()."""
+        prompt = render_template(
+            "plan.jinja2",
+            specification=specification.model_dump(),
+            constitution=constitution.model_dump() if constitution else None,
+            tech_stack=tech_stack.model_dump() if tech_stack else None,
+        )
+
+        plan = await self.llm.complete_structured_async(
+            prompt=prompt,
+            response_model=TechnicalPlan,
+            system="You are a software architect creating technical implementation plans.",
+        )
+
+        plan.feature_id = specification.feature_id
+        plan.created_at = datetime.now()
+
+        return plan
