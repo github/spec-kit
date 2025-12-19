@@ -143,7 +143,7 @@ For detailed step-by-step instructions, see our [comprehensive guide](./spec-dri
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | ✅      |       |
 | [GitHub Copilot](https://code.visualstudio.com/)          | ✅      |       |
 
-SpecLite currently supports fewer AI agents than [Spec Kit](https://github.com/github/spec-kit?tab=readme-ov-file#-supported-ai-agents) just to simplify testing. If the agent you want to use isn't listed, open an issue requesting it be added.
+SpecLite currently supports a focused set of AI agents, fewer than [Spec Kit](https://github.com/github/spec-kit?tab=readme-ov-file#-supported-ai-agents), to keep testing simple. If the agent you want to use isn't listed, open an issue requesting it be added.
 
 ## 🔧 SpecLite CLI Reference
 
@@ -275,14 +275,12 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 This README is the primary documentation entry point. The links below take you to the supporting guides in `docs/`.
 
-- **[Docs Overview](./docs/README.md)** - How the docs are organized and how to navigate them
 - **[Documentation Home](./docs/index.md)** - Entry point for the docs collection
 - **[Installation](./docs/installation.md)** - Prerequisites and setup
 - **[Quickstart](./docs/quickstart.md)** - Fast path to your first SpecLite project
 - **[Upgrade Guide](./docs/upgrade.md)** - Updating the CLI and templates
 - **[Local Development](./docs/local-development.md)** - Contributing and working on the CLI
 - **[Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
-- **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
 

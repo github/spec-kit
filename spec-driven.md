@@ -74,7 +74,7 @@ The key is treating specifications as the source of truth, with code as the gene
 
 The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking workflow:
 
-### The `/speckit.specify` Command
+### The `/sl.specify` Command
 
 This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
 
@@ -83,7 +83,7 @@ This command transforms a simple feature description (the user-prompt) into a co
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
 4. **Directory Structure**: Creates the proper `.speclite/changes/[branch-name]/` structure for all related documents
 
-### The `/speckit.plan` Command
+### The `/sl.plan` Command
 
 Once a feature specification exists, this command creates a comprehensive implementation plan:
 
@@ -93,7 +93,7 @@ Once a feature specification exists, this command creates a comprehensive implem
 4. **Detailed Documentation**: Generates supporting documents for data models, API contracts, and test scenarios
 5. **Quickstart Validation**: Produces a quickstart guide capturing key validation scenarios
 
-### The `/speckit.tasks` Command
+### The `/sl.tasks` Command
 
 After a plan is created, this command analyzes the plan and related design documents to generate an executable task list:
 
@@ -121,7 +121,7 @@ Total: ~12 hours of documentation work
 
 ```bash
 # Step 1: Create the feature specification (5 minutes)
-/speckit.specify Real-time chat system with message history and user presence
+/sl.specify Real-time chat system with message history and user presence
 
 # This automatically:
 # - Creates branch "003-chat-system"
@@ -129,10 +129,10 @@ Total: ~12 hours of documentation work
 # - Populates it with structured requirements
 
 # Step 2: Generate implementation plan (5 minutes)
-/speckit.plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
+/sl.plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
 
 # Step 3: Generate executable tasks (5 minutes)
-/speckit.tasks
+/sl.tasks
 
 # This automatically creates:
 # - .speclite/changes/003-chat-system/plan.md
@@ -284,7 +284,7 @@ The constitution defines nine articles that shape every aspect of the developmen
 Every feature must begin as a standalone library—no exceptions. This forces modular design from the start:
 
 ```text
-Every feature in Specify MUST begin its existence as a standalone library.
+Every feature in SpecLite MUST begin its existence as a standalone library.
 No feature shall be implemented directly within application code without
 first being abstracted into a reusable library component.
 ```
