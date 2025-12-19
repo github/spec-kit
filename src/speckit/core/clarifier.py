@@ -53,10 +53,10 @@ class ClarificationEngine:
         Returns:
             Tuple of (updated spec with clarifications_needed, questions list)
         """
-        # Render prompt template
+        # Render prompt template (use mode='json' for datetime serialization)
         prompt = render_template(
             "clarify.jinja2",
-            specification=specification.model_dump(),
+            specification=specification.model_dump(mode="json"),
             max_questions=max_questions,
         )
 
@@ -83,7 +83,7 @@ class ClarificationEngine:
         """Async version of clarify()."""
         prompt = render_template(
             "clarify.jinja2",
-            specification=specification.model_dump(),
+            specification=specification.model_dump(mode="json"),
             max_questions=max_questions,
         )
 

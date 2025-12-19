@@ -50,11 +50,11 @@ class TaskGenerator:
         Returns:
             Generated TaskBreakdown model
         """
-        # Render prompt template
+        # Render prompt template (use mode='json' for datetime serialization)
         prompt = render_template(
             "tasks.jinja2",
-            plan=plan.model_dump(),
-            specification=specification.model_dump() if specification else {},
+            plan=plan.model_dump(mode="json"),
+            specification=specification.model_dump(mode="json") if specification else {},
         )
 
         # Generate tasks using structured output
@@ -82,8 +82,8 @@ class TaskGenerator:
         """Async version of generate()."""
         prompt = render_template(
             "tasks.jinja2",
-            plan=plan.model_dump(),
-            specification=specification.model_dump() if specification else {},
+            plan=plan.model_dump(mode="json"),
+            specification=specification.model_dump(mode="json") if specification else {},
         )
 
         breakdown = await self.llm.complete_structured_async(

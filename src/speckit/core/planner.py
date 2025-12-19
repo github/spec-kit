@@ -50,12 +50,12 @@ class TechnicalPlanner:
         Returns:
             Generated TechnicalPlan model
         """
-        # Render prompt template
+        # Render prompt template (use mode='json' for datetime serialization)
         prompt = render_template(
             "plan.jinja2",
-            specification=specification.model_dump(),
-            constitution=constitution.model_dump() if constitution else None,
-            tech_stack=tech_stack.model_dump() if tech_stack else None,
+            specification=specification.model_dump(mode="json"),
+            constitution=constitution.model_dump(mode="json") if constitution else None,
+            tech_stack=tech_stack.model_dump(mode="json") if tech_stack else None,
         )
 
         # Generate plan using structured output
@@ -80,9 +80,9 @@ class TechnicalPlanner:
         """Async version of plan()."""
         prompt = render_template(
             "plan.jinja2",
-            specification=specification.model_dump(),
-            constitution=constitution.model_dump() if constitution else None,
-            tech_stack=tech_stack.model_dump() if tech_stack else None,
+            specification=specification.model_dump(mode="json"),
+            constitution=constitution.model_dump(mode="json") if constitution else None,
+            tech_stack=tech_stack.model_dump(mode="json") if tech_stack else None,
         )
 
         plan = await self.llm.complete_structured_async(

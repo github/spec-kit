@@ -54,12 +54,12 @@ class ConsistencyAnalyzer:
         Returns:
             AnalysisReport with issues and recommendations
         """
-        # Render prompt template
+        # Render prompt template (use mode='json' for datetime serialization)
         prompt = render_template(
             "analyze.jinja2",
-            specification=specification.model_dump(),
-            plan=plan.model_dump(),
-            tasks=tasks.model_dump(),
+            specification=specification.model_dump(mode="json"),
+            plan=plan.model_dump(mode="json"),
+            tasks=tasks.model_dump(mode="json"),
         )
 
         # Generate analysis using structured output
@@ -88,9 +88,9 @@ class ConsistencyAnalyzer:
         """Async version of analyze()."""
         prompt = render_template(
             "analyze.jinja2",
-            specification=specification.model_dump(),
-            plan=plan.model_dump(),
-            tasks=tasks.model_dump(),
+            specification=specification.model_dump(mode="json"),
+            plan=plan.model_dump(mode="json"),
+            tasks=tasks.model_dump(mode="json"),
         )
 
         report = await self.llm.complete_structured_async(
