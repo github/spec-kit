@@ -441,4 +441,4 @@ After upgrading:
 - **Test new slash commands:** Run `/sl.constitution` or another command to verify everything works
 - **Review release notes:** Check [GitHub Releases](https://github.com/BretJohnson/speclite/releases) for new features and breaking changes
 - **Update workflows:** If new commands were added, update your team's development workflows
-- **Check documentation:** Visit [github.io/speclite](https://github.github.io/speclite/) for updated guides
+- **Check documentation:** Review the guides in [README](../README.md#-documentation) and the docs folder for updated instructions

@@ -12,7 +12,6 @@
     <a href="https://github.com/BretJohnson/speclite/actions/workflows/release.yml"><img src="https://github.com/BretJohnson/speclite/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
     <a href="https://github.com/BretJohnson/speclite/stargazers"><img src="https://img.shields.io/github/stars/BretJohnson/speclite?style=social" alt="GitHub stars"/></a>
     <a href="https://github.com/BretJohnson/speclite/blob/main/LICENSE"><img src="https://img.shields.io/github/license/BretJohnson/speclite" alt="License"/></a>
-    <a href="https://bretjohnson.github.io/speclite/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
 </p>
 
 ---
@@ -28,7 +27,7 @@
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
-- [📖 Learn More](#-learn-more)
+- [📚 Documentation](#-documentation)
 - [📋 Detailed Process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [👥 Maintainers](#-maintainers)
@@ -272,9 +271,17 @@ Spec-Driven Development is a structured process that emphasizes:
 
 If you encounter issues with an agent, please open an issue so we can refine the integration.
 
-## 📖 Learn More
+## 📚 Documentation
 
-- **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+This README is the primary documentation entry point. The links below take you to the supporting guides in `docs/`.
+
+- **[Docs Overview](./docs/README.md)** - How the docs are organized and how to navigate them
+- **[Documentation Home](./docs/index.md)** - Entry point for the docs collection
+- **[Installation](./docs/installation.md)** - Prerequisites and setup
+- **[Quickstart](./docs/quickstart.md)** - Fast path to your first SpecLite project
+- **[Upgrade Guide](./docs/upgrade.md)** - Updating the CLI and templates
+- **[Local Development](./docs/local-development.md)** - Contributing and working on the CLI
+- **[Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
