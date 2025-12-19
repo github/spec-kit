@@ -78,10 +78,10 @@ The SDD methodology is significantly enhanced through three powerful commands th
 
 This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
 
-1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003)
+1. **Automatic Feature Numbering**: Scans existing change specs to determine the next feature number (e.g., 001, 002, 003)
 2. **Branch Creation**: Generates a semantic branch name from your description and creates it automatically
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
-4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
+4. **Directory Structure**: Creates the proper `.speclite/changes/[branch-name]/` structure for all related documents
 
 ### The `/speckit.plan` Command
 
@@ -125,7 +125,7 @@ Total: ~12 hours of documentation work
 
 # This automatically:
 # - Creates branch "003-chat-system"
-# - Generates specs/003-chat-system/spec.md
+# - Generates .speclite/changes/003-chat-system/spec.md
 # - Populates it with structured requirements
 
 # Step 2: Generate implementation plan (5 minutes)
@@ -135,12 +135,12 @@ Total: ~12 hours of documentation work
 /speckit.tasks
 
 # This automatically creates:
-# - specs/003-chat-system/plan.md
-# - specs/003-chat-system/research.md (WebSocket library comparisons)
-# - specs/003-chat-system/data-model.md (Message and User schemas)
-# - specs/003-chat-system/contracts/ (WebSocket events, REST endpoints)
-# - specs/003-chat-system/quickstart.md (Key validation scenarios)
-# - specs/003-chat-system/tasks.md (Task list derived from the plan)
+# - .speclite/changes/003-chat-system/plan.md
+# - .speclite/changes/003-chat-system/research.md (WebSocket library comparisons)
+# - .speclite/changes/003-chat-system/data-model.md (Message and User schemas)
+# - .speclite/changes/003-chat-system/contracts/ (WebSocket events, REST endpoints)
+# - .speclite/changes/003-chat-system/quickstart.md (Key validation scenarios)
+# - .speclite/changes/003-chat-system/tasks.md (Task list derived from the plan)
 ```
 
 In 15 minutes, you have:

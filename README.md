@@ -408,7 +408,7 @@ delete any comments that you made, but you can't delete comments anybody else ma
 
 After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
 
-Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
+Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `.speclite/changes/001-create-taskify` directory. The top-level `specs/` directory is reserved for living specs (future).
 
 The produced specification should contain a set of user stories and functional requirements, as defined in the template.
 
@@ -424,7 +424,7 @@ At this stage, your project folder contents should resemble the following:
     │  ├── create-new-feature.sh
     │  ├── setup-plan.sh
     │  └── update-claude-md.sh
-    ├── specs
+    ├── changes
     │  └── 001-create-taskify
     │      └── spec.md
     └── templates
@@ -477,29 +477,30 @@ The output of this step will include a number of implementation detail documents
 ```text
 .
 ├── CLAUDE.md
-├── memory
-│  └── constitution.md
-├── scripts
-│  ├── check-prerequisites.sh
-│  ├── common.sh
-│  ├── create-new-feature.sh
-│  ├── setup-plan.sh
-│  └── update-claude-md.sh
-├── specs
-│  └── 001-create-taskify
-│      ├── contracts
-│      │  ├── api-spec.json
-│      │  └── signalr-spec.md
-│      ├── data-model.md
-│      ├── plan.md
-│      ├── quickstart.md
-│      ├── research.md
-│      └── spec.md
-└── templates
-    ├── CLAUDE-template.md
-    ├── plan-template.md
-    ├── spec-template.md
-    └── tasks-template.md
+├── .speclite
+│  ├── changes
+│  │  └── 001-create-taskify
+│  │     ├── contracts
+│  │     │  ├── api-spec.json
+│  │     │  └── signalr-spec.md
+│  │     ├── data-model.md
+│  │     ├── plan.md
+│  │     ├── quickstart.md
+│  │     ├── research.md
+│  │     └── spec.md
+│  ├── memory
+│  │  └── constitution.md
+│  ├── scripts
+│  │  ├── check-prerequisites.sh
+│  │  ├── common.sh
+│  │  ├── create-new-feature.sh
+│  │  ├── setup-plan.sh
+│  │  └── update-claude-md.sh
+│  └── templates
+│     ├── CLAUDE-template.md
+│     ├── plan-template.md
+│     ├── spec-template.md
+│     └── tasks-template.md
 ```
 
 Check the `research.md` document to ensure that the right tech stack is used, based on your instructions. You can ask Claude Code to refine it if any of the components stand out, or even have it check the locally-installed version of the platform/framework you want to use (e.g., .NET).

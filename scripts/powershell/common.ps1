@@ -33,13 +33,13 @@ function Get-CurrentBranch {
     
     # For non-git repos, try to find the latest feature directory
     $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
+    $changeSpecsDir = Join-Path $repoRoot ".speclite/changes"
     
-    if (Test-Path $specsDir) {
+    if (Test-Path $changeSpecsDir) {
         $latestFeature = ""
         $highest = 0
         
-        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+        Get-ChildItem -Path $changeSpecsDir -Directory | ForEach-Object {
             if ($_.Name -match '^(\d{3})-') {
                 $num = [int]$matches[1]
                 if ($num -gt $highest) {
@@ -89,7 +89,7 @@ function Test-FeatureBranch {
 
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    Join-Path $RepoRoot ".speclite/changes/$Branch"
 }
 
 function Get-FeaturePathsEnv {
@@ -134,4 +134,3 @@ function Test-DirHasFiles {
         return $false
     }
 }
-

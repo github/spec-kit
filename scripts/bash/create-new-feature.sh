@@ -80,13 +80,13 @@ find_repo_root() {
     return 1
 }
 
-# Function to get highest number from specs directory
+# Function to get highest number from change specs directory
 get_highest_from_specs() {
-    local specs_dir="$1"
+    local change_specs_dir="$1"
     local highest=0
     
-    if [ -d "$specs_dir" ]; then
-        for dir in "$specs_dir"/*; do
+    if [ -d "$change_specs_dir" ]; then
+        for dir in "$change_specs_dir"/*; do
             [ -d "$dir" ] || continue
             dirname=$(basename "$dir")
             number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
@@ -128,7 +128,7 @@ get_highest_from_branches() {
 
 # Function to check existing branches (local and remote) and return next available number
 check_existing_branches() {
-    local specs_dir="$1"
+    local change_specs_dir="$1"
 
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
     git fetch --all --prune 2>/dev/null || true
@@ -136,8 +136,8 @@ check_existing_branches() {
     # Get highest number from ALL branches (not just matching short name)
     local highest_branch=$(get_highest_from_branches)
 
-    # Get highest number from ALL specs (not just matching short name)
-    local highest_spec=$(get_highest_from_specs "$specs_dir")
+    # Get highest number from ALL change specs (not just matching short name)
+    local highest_spec=$(get_highest_from_specs "$change_specs_dir")
 
     # Take the maximum of both
     local max_num=$highest_branch
@@ -174,8 +174,8 @@ fi
 
 cd "$REPO_ROOT"
 
-SPECS_DIR="$REPO_ROOT/specs"
-mkdir -p "$SPECS_DIR"
+CHANGE_SPECS_DIR="$REPO_ROOT/.speclite/changes"
+mkdir -p "$CHANGE_SPECS_DIR"
 
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
@@ -238,10 +238,10 @@ fi
 if [ -z "$BRANCH_NUMBER" ]; then
     if [ "$HAS_GIT" = true ]; then
         # Check existing branches on remotes
-        BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
+        BRANCH_NUMBER=$(check_existing_branches "$CHANGE_SPECS_DIR")
     else
         # Fall back to local directory check
-        HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+        HIGHEST=$(get_highest_from_specs "$CHANGE_SPECS_DIR")
         BRANCH_NUMBER=$((HIGHEST + 1))
     fi
 fi
@@ -277,7 +277,7 @@ else
     >&2 echo "[speclite] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
 
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+FEATURE_DIR="$CHANGE_SPECS_DIR/$BRANCH_NAME"
 mkdir -p "$FEATURE_DIR"
 
 TEMPLATE="$REPO_ROOT/.speclite/templates/spec-template.md"

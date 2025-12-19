@@ -59,12 +59,12 @@ Running `speclite init --here --force` will update:
 
 These files are **never touched** by the upgrade—the template packages don't even contain them:
 
-- ✅ **Your specifications** (`specs/001-my-feature/spec.md`, etc.) - **CONFIRMED SAFE**
-- ✅ **Your implementation plans** (`specs/001-my-feature/plan.md`, `tasks.md`, etc.) - **CONFIRMED SAFE**
+- ✅ **Your change specifications** (`.speclite/changes/001-my-feature/spec.md`, etc.) - **CONFIRMED SAFE**
+- ✅ **Your implementation plans** (`.speclite/changes/001-my-feature/plan.md`, `tasks.md`, etc.) - **CONFIRMED SAFE**
 - ✅ **Your source code** - **CONFIRMED SAFE**
 - ✅ **Your git history** - **CONFIRMED SAFE**
 
-The `specs/` directory is completely excluded from template packages and will never be modified during upgrades.
+The `.speclite/changes/` directory is completely excluded from template packages and will never be modified during upgrades.
 
 ### Update command
 
@@ -94,7 +94,7 @@ Proceed? [y/N]
 
 With `--force`, it skips the confirmation and proceeds immediately.
 
-**Important: Your `specs/` directory is always safe.** The `--force` flag only affects template files (commands, scripts, templates, memory). Your feature specifications, plans, and tasks in `specs/` are never included in upgrade packages and cannot be overwritten.
+**Important: Your `.speclite/changes/` directory is always safe.** The `--force` flag only affects template files (commands, scripts, templates, memory). Your feature specifications, plans, and tasks in `.speclite/changes/` are never included in upgrade packages and cannot be overwritten.
 
 ---
 
@@ -270,7 +270,7 @@ export SPECLITE_FEATURE="001-my-feature"
 $env:SPECLITE_FEATURE = "001-my-feature"
 ```
 
-This tells SpecLite which feature directory to use when creating specs, plans, and tasks.
+This tells SpecLite which change spec directory to use when creating plans and tasks.
 
 **Why this matters:** Without git, SpecLite can't detect your current branch name to determine the active feature. The environment variable provides that context manually.
 
@@ -340,7 +340,7 @@ Only SpecLite infrastructure files:
 
 **What stays untouched:**
 
-- Your `specs/` directory (specifications, plans, tasks)
+- Your `.speclite/changes/` directory (specifications, plans, tasks)
 - Your source code files
 - Your `.git/` directory and git history
 - Any other files not part of SpecLite templates
