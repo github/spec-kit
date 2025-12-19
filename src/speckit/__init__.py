@@ -27,6 +27,7 @@ from speckit.schemas import (
     TechStack,
     ArchitectureComponent,
     TechnicalPlan,
+    Phase,
     Task,
     TaskBreakdown,
     ClarificationQuestion,
@@ -34,7 +35,7 @@ from speckit.schemas import (
 )
 from speckit.llm import LiteLLMProvider, LLMResponse
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     # Main class
     "SpecKit",
@@ -56,6 +57,7 @@ __all__ = [
     "TechStack",
     "ArchitectureComponent",
     "TechnicalPlan",
+    "Phase",
     "Task",
     "TaskBreakdown",
     "ClarificationQuestion",

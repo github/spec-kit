@@ -432,11 +432,13 @@ class TechnicalPlan(BaseModel):
 class Task(BaseModel):
     """Atomic implementation task."""
 
-    id: str  # e.g., "T-001"
+    id: str  # e.g., "T001"
     title: str
     description: str = ""
-    phase: PhaseType
+    phase: str  # Dynamic phase name (e.g., "Setup", "US1", "Foundational")
+    phase_label: str = ""  # Display label for the phase (e.g., "User Story 1 - Auth")
     status: TaskStatus = TaskStatus.PENDING
+    priority: str = "P2"  # P1 = critical, P2 = important, P3 = nice to have
 
     # Traceability
     user_story_id: Optional[str] = None  # Links to UserStory.id
@@ -445,35 +447,101 @@ class Task(BaseModel):
     # Execution details
     file_paths: list[str] = Field(default_factory=list)  # Files to create/modify
     dependencies: list[str] = Field(default_factory=list)  # Task IDs that must complete first
+    dependency_reasons: dict[str, str] = Field(default_factory=dict)  # task_id -> reason
     is_parallel: bool = False  # Can run with other parallel tasks
 
     # Validation
     validation_criteria: list[str] = Field(default_factory=list)
     estimated_complexity: str = "medium"  # "low", "medium", "high"
 
-    def to_markdown(self) -> str:
-        """Export task to Markdown format."""
+    def to_markdown(self, include_details: bool = True) -> str:
+        """Export task to Markdown format.
+
+        Args:
+            include_details: If True, includes multi-line format with description,
+                           files, dependencies. If False, returns single line.
+        """
         checkbox = "[x]" if self.status == TaskStatus.COMPLETED else "[ ]"
         parallel_marker = "[P] " if self.is_parallel else ""
         story_marker = f"[{self.user_story_id}] " if self.user_story_id else ""
-        return f"- {checkbox} {self.id} {parallel_marker}{story_marker}{self.title}"
+        phase_marker = f"[{self.phase}] " if self.phase else ""
+
+        # Basic line
+        line = f"- {checkbox} {self.id} {parallel_marker}{phase_marker}{story_marker}{self.title}"
+
+        if not include_details:
+            return line
+
+        # Multi-line format with metadata
+        lines = [line]
+
+        if self.description:
+            lines.append(f"  > Description: {self.description}")
+
+        if self.file_paths:
+            lines.append(f"  > Files: {', '.join(self.file_paths)}")
+
+        if self.dependencies:
+            dep_parts = []
+            for dep_id in self.dependencies:
+                reason = self.dependency_reasons.get(dep_id, "")
+                if reason:
+                    dep_parts.append(f"{dep_id} ({reason})")
+                else:
+                    dep_parts.append(dep_id)
+            lines.append(f"  > Depends: {', '.join(dep_parts)}")
+
+        if self.priority:
+            lines.append(f"  > Priority: {self.priority}")
+
+        return "\n".join(lines)
+
+
+class Phase(BaseModel):
+    """Implementation phase containing related tasks."""
+
+    id: str  # e.g., "phase-1", "us1"
+    number: int  # Display order (1, 2, 3...)
+    name: str  # e.g., "Setup", "User Story 1 - Authentication"
+    purpose: str = ""  # Brief description of what this phase accomplishes
+    is_mvp: bool = False  # True if this phase is part of MVP
+    checkpoint: str = ""  # Validation checkpoint at end of phase
+    user_story_id: Optional[str] = None  # Link to user story if applicable
+    priority: str = ""  # P1, P2, P3 if user story phase
+
+    def to_markdown_header(self) -> str:
+        """Generate phase header in Markdown format."""
+        mvp_marker = " 🎯 MVP" if self.is_mvp else ""
+        priority_marker = f" (Priority: {self.priority})" if self.priority else ""
+        return f"## Phase {self.number}: {self.name}{priority_marker}{mvp_marker}"
 
 
 class TaskBreakdown(BaseModel):
     """Complete task breakdown for a feature."""
 
     feature_id: str
+    feature_name: str = ""  # Display name for the feature
     created_at: datetime = Field(default_factory=datetime.now)
     tasks: list[Task] = Field(default_factory=list)
+    phases: list[Phase] = Field(default_factory=list)
+
+    # Input/prerequisites info
+    input_docs: str = ""  # e.g., "Design documents from `/specs/001-feature/`"
+    prerequisites: list[str] = Field(default_factory=list)  # e.g., ["plan.md", "spec.md"]
+    tests_requested: bool = False  # Whether tests were explicitly requested
 
     # Dependency management
     dependency_graph: dict[str, list[str]] = Field(
         default_factory=dict
     )  # task_id -> dependent_task_ids
 
-    def get_tasks_by_phase(self, phase: PhaseType) -> list[Task]:
+    # Execution strategy
+    implementation_strategy: str = ""  # MVP First, Incremental, etc.
+    parallel_opportunities: list[str] = Field(default_factory=list)
+
+    def get_tasks_by_phase(self, phase_id: str) -> list[Task]:
         """Get all tasks in a specific phase."""
-        return [task for task in self.tasks if task.phase == phase]
+        return [task for task in self.tasks if task.phase == phase_id]
 
     def get_tasks_by_status(self, status: TaskStatus) -> list[Task]:
         """Get all tasks with a specific status."""
@@ -508,35 +576,175 @@ class TaskBreakdown(BaseModel):
         return counts
 
     def to_markdown(self) -> str:
-        """Export task breakdown to Markdown format."""
+        """Export task breakdown to Markdown format matching tasks-template.md."""
         lines = [
-            f"# Tasks: {self.feature_id}",
-            "",
-            f"**Created**: {self.created_at.isoformat()}",
+            f"# Tasks: {self.feature_name or self.feature_id}",
             "",
         ]
 
-        # Group by phase
-        for phase in PhaseType:
-            phase_tasks = self.get_tasks_by_phase(phase)
-            if phase_tasks:
-                lines.extend([f"## Phase: {phase.value.title()}", ""])
-                for task in phase_tasks:
-                    lines.append(task.to_markdown())
+        # Input and prerequisites
+        if self.input_docs:
+            lines.append(f"**Input**: {self.input_docs}")
+        if self.prerequisites:
+            lines.append(f"**Prerequisites**: {', '.join(self.prerequisites)}")
+        if not self.tests_requested:
+            lines.append(
+                "**Tests**: Not explicitly requested - basic unit tests included "
+                "for critical functionality."
+            )
+        lines.append("")
+
+        # Task format documentation
+        lines.extend([
+            "**Organization**: Tasks are grouped by implementation phase to enable incremental delivery.",
+            "",
+            "## Format: `[ID] [P?] [Phase] Summary`",
+            "",
+            "Each task uses multi-line format with description block:",
+            "",
+            "```markdown",
+            "- [ ] T001 [P] [LABEL] Task summary (brief, actionable title)",
+            "  > Description: 2-4 sentences explaining what to implement.",
+            "  > Files: path/to/file1.py, path/to/file2.tsx",
+            "  > Depends: T000 (reason for dependency)",
+            "  > Priority: P1",
+            "```",
+            "",
+            "---",
+            "",
+        ])
+
+        # Phases and tasks
+        for phase in sorted(self.phases, key=lambda p: p.number):
+            lines.append(phase.to_markdown_header())
+            lines.append("")
+
+            if phase.purpose:
+                lines.append(f"**Purpose**: {phase.purpose}")
                 lines.append("")
 
-        # Progress summary
+            # Get tasks for this phase
+            phase_tasks = self.get_tasks_by_phase(phase.id)
+
+            # Separate into test tasks and implementation tasks
+            test_tasks = [t for t in phase_tasks if "test" in t.title.lower()]
+            impl_tasks = [t for t in phase_tasks if "test" not in t.title.lower()]
+
+            # Test tasks section (if any and tests requested)
+            if test_tasks and self.tests_requested:
+                lines.append("### Tests (OPTIONAL - only if tests requested) ⚠️")
+                lines.append("")
+                lines.append("> **NOTE: Write these tests FIRST, ensure they FAIL before implementation**")
+                lines.append("")
+                for task in test_tasks:
+                    lines.append(task.to_markdown())
+                    lines.append("")
+
+            # Implementation tasks section
+            if impl_tasks:
+                if test_tasks and self.tests_requested:
+                    lines.append(f"### Implementation for {phase.name}")
+                    lines.append("")
+                for task in impl_tasks:
+                    lines.append(task.to_markdown())
+                    lines.append("")
+
+            # Non-test tasks that weren't in impl_tasks
+            if not test_tasks:
+                for task in phase_tasks:
+                    lines.append(task.to_markdown())
+                    lines.append("")
+
+            # Checkpoint
+            if phase.checkpoint:
+                lines.append(f"**Checkpoint**: {phase.checkpoint}")
+                lines.append("")
+
+            lines.append("---")
+            lines.append("")
+
+        # Dependencies & Execution Order section
+        lines.extend([
+            "## Dependencies & Execution Order",
+            "",
+            "### Phase Dependencies",
+            "",
+        ])
+
+        for phase in sorted(self.phases, key=lambda p: p.number):
+            phase_tasks = self.get_tasks_by_phase(phase.id)
+            deps = set()
+            for task in phase_tasks:
+                for dep in task.dependencies:
+                    # Find which phase the dependency belongs to
+                    for t in self.tasks:
+                        if t.id == dep and t.phase != phase.id:
+                            deps.add(t.phase)
+            if deps:
+                lines.append(f"- **{phase.name}**: Depends on {', '.join(deps)}")
+            else:
+                lines.append(f"- **{phase.name}**: No dependencies - can start immediately")
+        lines.append("")
+
+        # Parallel opportunities
+        if self.parallel_opportunities:
+            lines.extend(["### Parallel Opportunities", ""])
+            for opp in self.parallel_opportunities:
+                lines.append(f"- {opp}")
+            lines.append("")
+
+        # Implementation strategy
+        if self.implementation_strategy:
+            lines.extend([
+                "## Implementation Strategy",
+                "",
+                self.implementation_strategy,
+                "",
+            ])
+
+        # Summary table
         progress = self.get_progress()
-        total = sum(progress.values())
+        total = len(self.tasks)
         completed = progress.get("completed", 0)
-        lines.extend(
-            [
-                "## Progress",
-                "",
-                f"**Completed**: {completed}/{total} ({100*completed//total if total else 0}%)",
-                "",
-            ]
-        )
+
+        lines.extend([
+            "---",
+            "",
+            "## Summary",
+            "",
+            "| Metric | Value |",
+            "|--------|-------|",
+            f"| **Total Tasks** | {total} |",
+            f"| **Completed Tasks** | {completed} |",
+            f"| **Remaining Tasks** | {total - completed} |",
+        ])
+
+        # Count tasks by priority
+        p1_count = len([t for t in self.tasks if t.priority == "P1"])
+        p2_count = len([t for t in self.tasks if t.priority == "P2"])
+        p3_count = len([t for t in self.tasks if t.priority == "P3"])
+        parallel_count = len([t for t in self.tasks if t.is_parallel])
+
+        lines.extend([
+            f"| **P1 (Critical)** | {p1_count} |",
+            f"| **P2 (Important)** | {p2_count} |",
+            f"| **P3 (Nice to have)** | {p3_count} |",
+            f"| **Parallel Opportunities** | {parallel_count} tasks marked [P] |",
+            "",
+        ])
+
+        # Notes
+        lines.extend([
+            "---",
+            "",
+            "## Notes",
+            "",
+            "- [P] tasks = different files, no dependencies within phase",
+            "- Each phase should be independently testable where possible",
+            "- Commit after each task or logical group",
+            "- Stop at any checkpoint to validate progress",
+            "",
+        ])
 
         return "\n".join(lines)
 

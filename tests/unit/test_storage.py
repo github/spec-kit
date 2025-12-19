@@ -189,22 +189,47 @@ class TestTasksStorage:
     @pytest.fixture
     def tasks(self):
         """Create test task breakdown."""
+        from speckit.schemas import Phase
+
         return TaskBreakdown(
             feature_id="001-test",
+            feature_name="Test Feature",
+            phases=[
+                Phase(
+                    id="setup",
+                    number=1,
+                    name="Setup",
+                    purpose="Project initialization",
+                    checkpoint="Setup complete",
+                ),
+                Phase(
+                    id="core",
+                    number=2,
+                    name="Core Implementation",
+                    purpose="Main functionality",
+                    checkpoint="Core complete",
+                ),
+            ],
             tasks=[
                 Task(
                     id="T001",
                     title="Setup project",
-                    phase=PhaseType.SETUP,
+                    phase="setup",
+                    priority="P1",
                     status=TaskStatus.COMPLETED,
+                    description="Initialize the project structure",
+                    file_paths=["pyproject.toml"],
                 ),
                 Task(
                     id="T002",
                     title="Implement feature",
-                    phase=PhaseType.CORE,
+                    phase="core",
+                    priority="P1",
                     status=TaskStatus.PENDING,
                     user_story_id="US1",
                     is_parallel=True,
+                    description="Implement the main feature",
+                    file_paths=["src/main.py"],
                 ),
             ],
         )
