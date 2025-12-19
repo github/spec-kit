@@ -1,24 +1,127 @@
 [project]
-name = "specify-cli"
-version = "0.0.22"
-description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
+name = "speckit-ai"
+version = "0.1.0"
+description = "A Python library for spec-driven development with universal LLM support via LiteLLM."
+readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "spec-kit Contributors"},
+]
+keywords = ["llm", "ai", "specification", "development", "workflow", "litellm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
-    "typer",
-    "rich",
+    # CLI and formatting
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    # LLM integration
+    "litellm>=1.0.0",
+    "instructor>=1.0.0",
+    # Data validation and config
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    # Templates and config files
+    "jinja2>=3.0.0",
+    "pyyaml>=6.0.0",
+    # HTTP client (for specify_cli compatibility)
     "httpx[socks]",
     "platformdirs",
     "readchar",
     "truststore>=0.10.4",
 ]
 
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+]
+all = [
+    "speckit-ai[mcp,dev]",
+]
+
 [project.scripts]
 specify = "specify_cli:main"
+speckit = "speckit.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/suportly/spec-kit"
+Documentation = "https://github.com/suportly/spec-kit#readme"
+Repository = "https://github.com/suportly/spec-kit"
+Issues = "https://github.com/suportly/spec-kit/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/specify_cli"]
+packages = ["src/specify_cli", "src/speckit"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # raise without from inside except
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["speckit", "specify_cli"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra -q"
+
+[tool.coverage.run]
+source = ["src/speckit"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
 

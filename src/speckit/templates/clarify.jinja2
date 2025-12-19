@@ -1,0 +1,35 @@
+{# Template for identifying clarification questions #}
+You are a senior analyst reviewing a feature specification for ambiguities.
+
+## Task
+Analyze this specification and identify areas needing clarification:
+
+{{ specification | tojson(indent=2) }}
+
+## Requirements
+Identify up to {{ max_questions }} critical questions where:
+1. Requirements are ambiguous or could be interpreted multiple ways
+2. Edge cases are not addressed
+3. User flows have gaps
+4. Technical constraints are unclear
+5. Success criteria are not measurable
+
+## Output Format
+Return a JSON array of questions:
+[
+  {
+    "id": "CQ-001",
+    "question": "The specific question to ask",
+    "context": "Why this needs clarification",
+    "options": ["Suggested answer 1", "Suggested answer 2", "Suggested answer 3"]
+  }
+]
+
+## Guidelines
+- Questions should be specific and actionable
+- Provide 2-4 reasonable options per question
+- Focus on decisions that affect implementation
+- Don't ask about implementation details (that's for planning)
+- Prioritize by impact on the feature
+
+Return an empty array [] if the specification is sufficiently clear.
