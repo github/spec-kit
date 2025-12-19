@@ -134,12 +134,6 @@ Use **`/sl.implement`** to execute all tasks and build your feature according to
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
-## 📽️ Video Overview
-
-Want to see SpecLite in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
-
-[![SpecLite video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
-
 ## 🤖 Supported AI Agents
 
 | Agent                                                     | Support | Notes |
@@ -149,6 +143,8 @@ Want to see SpecLite in action? Watch our [video overview](https://www.youtube.c
 | [Cursor](https://cursor.sh/)                              | ✅      |       |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | ✅      |       |
 | [GitHub Copilot](https://code.visualstudio.com/)          | ✅      |       |
+
+SpecLite currently supports fewer AI agents than [Spec Kit](https://github.com/github/spec-kit?tab=readme-ov-file#-supported-ai-agents) just to simplify testing. If the agent you want to use isn't listed, open an issue requesting it be added.
 
 ## 🔧 SpecLite CLI Reference
 
@@ -266,32 +262,6 @@ Spec-Driven Development is a structured process that emphasizes:
 | **Creative Exploration**                 | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul>                         |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul>                                                                |
 
-## 🎯 Experimental Goals
-
-Our research and experimentation focus on:
-
-### Technology independence
-
-- Create applications using diverse technology stacks
-- Validate the hypothesis that Spec-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
-
-### Enterprise constraints
-
-- Demonstrate mission-critical application development
-- Incorporate organizational constraints (cloud providers, tech stacks, engineering practices)
-- Support enterprise design systems and compliance requirements
-
-### User-centric development
-
-- Build applications for different user cohorts and preferences
-- Support various development approaches (from vibe-coding to AI-native development)
-
-### Creative & iterative processes
-
-- Validate the concept of parallel implementation exploration
-- Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks
-
 ## 🔧 Prerequisites
 
 - **Linux/macOS/Windows**
@@ -332,8 +302,6 @@ speclite init . --force
 speclite init --here --force
 ```
 
-![SpecLite CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
-
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
@@ -364,9 +332,7 @@ speclite init <project_name> --ai claude --ignore-agent-tools
 
 ### **STEP 1:** Establish project principles
 
-Go to the project folder and run your AI agent. In our example, we're using `claude`.
-
-![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
+Go to the project folder and run your AI agent.
 
 You will know that things are configured correctly if you see the `/sl.constitution`, `/sl.specify`, `/sl.plan`, `/sl.tasks`, and `/sl.implement` commands available.
 
