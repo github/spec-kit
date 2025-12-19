@@ -16,6 +16,7 @@ VERSION="$1"
 VERSION_NO_V=${VERSION#v}
 
 gh release create "$VERSION" \
+  .genreleases/speclite-template-core-"$VERSION".zip \
   .genreleases/speclite-template-copilot-sh-"$VERSION".zip \
   .genreleases/speclite-template-copilot-ps-"$VERSION".zip \
   .genreleases/speclite-template-claude-sh-"$VERSION".zip \

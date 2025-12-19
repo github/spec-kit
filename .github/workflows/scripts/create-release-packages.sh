@@ -127,31 +127,6 @@ build_variant() {
   echo "Building $agent ($script) package..."
   mkdir -p "$base_dir"
 
-  # Copy base structure but filter scripts by variant
-  SPEC_DIR="$base_dir/.speclite"
-  mkdir -p "$SPEC_DIR"
-
-  [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .speclite"; }
-
-  # Only copy the relevant script variant directory
-  if [[ -d scripts ]]; then
-    mkdir -p "$SPEC_DIR/scripts"
-    case $script in
-      sh)
-        [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .speclite/scripts"; }
-        # Copy any script files that aren't in variant-specific directories
-        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
-        ;;
-      ps)
-        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .speclite/scripts"; }
-        # Copy any script files that aren't in variant-specific directories
-        find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
-        ;;
-    esac
-  fi
-
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .speclite/templates"; }
-
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent): $ARGUMENTS
   #   * TOML (gemini): {{args}}
@@ -183,6 +158,30 @@ build_variant() {
   esac
   ( cd "$base_dir" && zip -r "../speclite-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/speclite-template-${agent}-${script}-${NEW_VERSION}.zip"
+}
+
+build_core() {
+  local base_dir="$GENRELEASES_DIR/sdd-core-package"
+  echo "Building core package..."
+  mkdir -p "$base_dir"
+
+  SPEC_DIR="$base_dir/.speclite"
+  mkdir -p "$SPEC_DIR"
+
+  [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .speclite"; }
+
+  if [[ -d scripts ]]; then
+    mkdir -p "$SPEC_DIR/scripts"
+    [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .speclite/scripts"; }
+    [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .speclite/scripts"; }
+    # Copy any script files that aren't in variant-specific directories
+    find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
+  fi
+
+  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .speclite/templates"; }
+
+  ( cd "$base_dir" && zip -r "../speclite-template-core-${NEW_VERSION}.zip" . )
+  echo "Created $GENRELEASES_DIR/speclite-template-core-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
@@ -225,6 +224,8 @@ fi
 echo "Agents: ${AGENT_LIST[*]}"
 echo "Scripts: ${SCRIPT_LIST[*]}"
 
+build_core
+
 for agent in "${AGENT_LIST[@]}"; do
   for script in "${SCRIPT_LIST[@]}"; do
     build_variant "$agent" "$script"
@@ -233,4 +234,3 @@ done
 
 echo "Archives in $GENRELEASES_DIR:"
 ls -1 "$GENRELEASES_DIR"/speclite-template-*-"${NEW_VERSION}".zip
-

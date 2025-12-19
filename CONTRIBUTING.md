@@ -75,9 +75,10 @@ To test your templates, commands, and other changes locally, follow these steps:
    ./.github/workflows/scripts/create-release-packages.sh v1.0.0
    ```
 
-2. **Copy the relevant package to your test project**
+2. **Copy the relevant packages to your test project**
 
    ```bash
+   cp -r .genreleases/sdd-core-package/. <path-to-test-project>/
    cp -r .genreleases/sdd-copilot-package-sh/. <path-to-test-project>/
    ```
 

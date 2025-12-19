@@ -580,7 +580,7 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
 
     return merged
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", template_name: str | None = None, verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
     repo_owner, repo_name = _template_repo()
     if client is None:
         client = httpx.Client(verify=ssl_context)
@@ -613,7 +613,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         raise typer.Exit(1)
 
     assets = release_data.get("assets", [])
-    pattern = f"speclite-template-{ai_assistant}-{script_type}"
+    pattern = template_name or f"speclite-template-{ai_assistant}-{script_type}"
     matching_assets = [
         asset for asset in assets
         if pattern in asset["name"] and asset["name"].endswith(".zip")
@@ -694,15 +694,29 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     return zip_path, metadata
 
 def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
-    """Download the latest release and extract it to create a new project.
+    """Download the latest release templates and extract them to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
     current_dir = Path.cwd()
+    zip_paths: list[Path] = []
 
     if tracker:
         tracker.start("fetch", "contacting GitHub API")
     try:
-        zip_path, meta = download_template_from_github(
+        core_zip, core_meta = download_template_from_github(
+            "core",
+            current_dir,
+            script_type=script_type,
+            template_name="speclite-template-core",
+            verbose=verbose and tracker is None,
+            show_progress=(tracker is None),
+            client=client,
+            debug=debug,
+            github_token=github_token
+        )
+        zip_paths.append(core_zip)
+
+        agent_zip, agent_meta = download_template_from_github(
             ai_assistant,
             current_dir,
             script_type=script_type,
@@ -712,107 +726,116 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             debug=debug,
             github_token=github_token
         )
+        zip_paths.append(agent_zip)
         if tracker:
-            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
-            tracker.add("download", "Download template")
-            tracker.complete("download", meta['filename'])
+            total_size = core_meta["size"] + agent_meta["size"]
+            tracker.complete("fetch", f"release {agent_meta['release']} ({total_size:,} bytes)")
+            tracker.add("download", "Download templates")
+            tracker.complete("download", f"{core_meta['filename']}, {agent_meta['filename']}")
     except Exception as e:
         if tracker:
             tracker.error("fetch", str(e))
         else:
             if verbose:
                 console.print(f"[red]Error downloading template:[/red] {e}")
+        for path in zip_paths:
+            if path.exists():
+                path.unlink()
         raise
 
     if tracker:
-        tracker.add("extract", "Extract template")
+        tracker.add("extract", "Extract templates")
         tracker.start("extract")
     elif verbose:
-        console.print("Extracting template...")
+        console.print("Extracting templates...")
 
     try:
         if not is_current_dir:
             project_path.mkdir(parents=True)
 
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_contents = zip_ref.namelist()
-            if tracker:
-                tracker.start("zip-list")
-                tracker.complete("zip-list", f"{len(zip_contents)} entries")
-            elif verbose:
-                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
+        def extract_zip(zip_path: Path) -> None:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_contents = zip_ref.namelist()
+                if tracker:
+                    tracker.start("zip-list")
+                    tracker.complete("zip-list", f"{len(zip_contents)} entries")
+                elif verbose:
+                    console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
 
-            if is_current_dir:
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir)
-                    zip_ref.extractall(temp_path)
+                if is_current_dir:
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_path = Path(temp_dir)
+                        zip_ref.extractall(temp_path)
 
-                    extracted_items = list(temp_path.iterdir())
+                        extracted_items = list(temp_path.iterdir())
+                        if tracker:
+                            tracker.start("extracted-summary")
+                            tracker.complete("extracted-summary", f"temp {len(extracted_items)} items")
+                        elif verbose:
+                            console.print(f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]")
+
+                        source_dir = temp_path
+                        if len(extracted_items) == 1 and extracted_items[0].is_dir() and not extracted_items[0].name.startswith("."):
+                            source_dir = extracted_items[0]
+                            if tracker:
+                                tracker.add("flatten", "Flatten nested directory")
+                                tracker.complete("flatten")
+                            elif verbose:
+                                console.print(f"[cyan]Found nested directory structure[/cyan]")
+
+                        for item in source_dir.iterdir():
+                            dest_path = project_path / item.name
+                            if item.is_dir():
+                                if dest_path.exists():
+                                    if verbose and not tracker:
+                                        console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
+                                    for sub_item in item.rglob('*'):
+                                        if sub_item.is_file():
+                                            rel_path = sub_item.relative_to(item)
+                                            dest_file = dest_path / rel_path
+                                            dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                            # Special handling for .vscode/settings.json - merge instead of overwrite
+                                            if dest_file.name == "settings.json" and dest_file.parent.name == ".vscode":
+                                                handle_vscode_settings(sub_item, dest_file, rel_path, verbose, tracker)
+                                            else:
+                                                shutil.copy2(sub_item, dest_file)
+                                else:
+                                    shutil.copytree(item, dest_path)
+                            else:
+                                if dest_path.exists() and verbose and not tracker:
+                                    console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
+                                shutil.copy2(item, dest_path)
+                        if verbose and not tracker:
+                            console.print(f"[cyan]Template files merged into current directory[/cyan]")
+                else:
+                    zip_ref.extractall(project_path)
+
+                    extracted_items = list(project_path.iterdir())
                     if tracker:
                         tracker.start("extracted-summary")
-                        tracker.complete("extracted-summary", f"temp {len(extracted_items)} items")
+                        tracker.complete("extracted-summary", f"{len(extracted_items)} top-level items")
                     elif verbose:
-                        console.print(f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]")
+                        console.print(f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]")
+                        for item in extracted_items:
+                            console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
 
-                    source_dir = temp_path
-                    if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                        source_dir = extracted_items[0]
+                    if len(extracted_items) == 1 and extracted_items[0].is_dir() and not extracted_items[0].name.startswith("."):
+                        nested_dir = extracted_items[0]
+                        temp_move_dir = project_path.parent / f"{project_path.name}_temp"
+
+                        shutil.move(str(nested_dir), str(temp_move_dir))
+
+                        project_path.rmdir()
+
+                        shutil.move(str(temp_move_dir), str(project_path))
                         if tracker:
                             tracker.add("flatten", "Flatten nested directory")
                             tracker.complete("flatten")
                         elif verbose:
-                            console.print(f"[cyan]Found nested directory structure[/cyan]")
+                            console.print(f"[cyan]Flattened nested directory structure[/cyan]")
 
-                    for item in source_dir.iterdir():
-                        dest_path = project_path / item.name
-                        if item.is_dir():
-                            if dest_path.exists():
-                                if verbose and not tracker:
-                                    console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
-                                for sub_item in item.rglob('*'):
-                                    if sub_item.is_file():
-                                        rel_path = sub_item.relative_to(item)
-                                        dest_file = dest_path / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        # Special handling for .vscode/settings.json - merge instead of overwrite
-                                        if dest_file.name == "settings.json" and dest_file.parent.name == ".vscode":
-                                            handle_vscode_settings(sub_item, dest_file, rel_path, verbose, tracker)
-                                        else:
-                                            shutil.copy2(sub_item, dest_file)
-                            else:
-                                shutil.copytree(item, dest_path)
-                        else:
-                            if dest_path.exists() and verbose and not tracker:
-                                console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
-                            shutil.copy2(item, dest_path)
-                    if verbose and not tracker:
-                        console.print(f"[cyan]Template files merged into current directory[/cyan]")
-            else:
-                zip_ref.extractall(project_path)
-
-                extracted_items = list(project_path.iterdir())
-                if tracker:
-                    tracker.start("extracted-summary")
-                    tracker.complete("extracted-summary", f"{len(extracted_items)} top-level items")
-                elif verbose:
-                    console.print(f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]")
-                    for item in extracted_items:
-                        console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
-
-                if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                    nested_dir = extracted_items[0]
-                    temp_move_dir = project_path.parent / f"{project_path.name}_temp"
-
-                    shutil.move(str(nested_dir), str(temp_move_dir))
-
-                    project_path.rmdir()
-
-                    shutil.move(str(temp_move_dir), str(project_path))
-                    if tracker:
-                        tracker.add("flatten", "Flatten nested directory")
-                        tracker.complete("flatten")
-                    elif verbose:
-                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
+        for zip_path in zip_paths:
+            extract_zip(zip_path)
 
     except Exception as e:
         if tracker:
@@ -831,14 +854,17 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             tracker.complete("extract")
     finally:
         if tracker:
-            tracker.add("cleanup", "Remove temporary archive")
+            tracker.add("cleanup", "Remove temporary archives")
 
-        if zip_path.exists():
-            zip_path.unlink()
-            if tracker:
-                tracker.complete("cleanup")
-            elif verbose:
-                console.print(f"Cleaned up: {zip_path.name}")
+        cleaned = 0
+        for path in zip_paths:
+            if path.exists():
+                path.unlink()
+                cleaned += 1
+                if not tracker and verbose:
+                    console.print(f"Cleaned up: {path.name}")
+        if tracker:
+            tracker.complete("cleanup", f"{cleaned} file(s)")
 
     return project_path
 
@@ -1047,8 +1073,8 @@ def init(
     tracker.complete("script-select", selected_script)
     for key, label in [
         ("fetch", "Fetch latest release"),
-        ("download", "Download template"),
-        ("extract", "Extract template"),
+        ("download", "Download templates"),
+        ("extract", "Extract templates"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
