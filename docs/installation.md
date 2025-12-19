@@ -26,9 +26,9 @@ uvx --from git+https://github.com/BretJohnson/speclite.git speclite init .
 uvx --from git+https://github.com/BretJohnson/speclite.git speclite init --here
 ```
 
-### Select AI Agent
+### Select AI Agent(s)
 
-You can proactively specify your AI agent during initialization:
+You can proactively specify your AI agent(s) during initialization (comma-separated):
 
 ```bash
 uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai claude
@@ -36,6 +36,7 @@ uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <projec
 uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai copilot
 uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai cursor-agent
 uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai codex
+uvx --from git+https://github.com/BretJohnson/speclite.git speclite init <project_name> --ai claude,codex
 ```
 
 ### Specify Script Type (Shell vs PowerShell)

@@ -9,7 +9,7 @@
 | What to Upgrade | Command | When to Use |
 |----------------|---------|-------------|
 | **CLI Tool Only** | `uv tool install speclite-cli --force --from git+https://github.com/BretJohnson/speclite.git` | Get latest CLI features without touching project files |
-| **Project Files** | `speclite init --here --force --ai <your-agent>` | Update slash commands, templates, and scripts in your project |
+| **Project Files** | `speclite init --here --force --ai <your-agent(s)>` | Update slash commands, templates, and scripts in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
 
 ---
@@ -71,10 +71,10 @@ The `.speclite/changes/` directory is completely excluded from template packages
 Run this inside your project directory:
 
 ```bash
-speclite init --here --force --ai <your-agent>
+speclite init --here --force --ai <your-agent(s)>
 ```
 
-Replace `<your-agent>` with your AI assistant. Refer to this list of [Supported AI Agents](../README.md#-supported-ai-agents)
+Replace `<your-agent(s)>` with your AI assistant(s), comma-separated. Refer to this list of [Supported AI Agents](../README.md#-supported-ai-agents)
 
 **Example:**
 

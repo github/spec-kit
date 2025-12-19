@@ -1,6 +1,6 @@
 [project]
 name = "speclite-cli"
-version = "0.0.2"
+version = "0.0.3"
 description = "SpecLite CLI. A lightweight tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [

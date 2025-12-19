@@ -60,9 +60,9 @@ Then use the tool directly:
 speclite init <PROJECT_NAME>
 
 # Or initialize in existing project
-speclite init . --ai claude
+speclite init . --ai claude,codex
 # or
-speclite init --here --ai claude
+speclite init --here --ai claude,codex
 
 # Check installed tools
 speclite check
@@ -161,7 +161,7 @@ The `speclite` command supports the following options:
 | Argument/Option        | Type     | Description                                                                                        |
 | ---------------------- | -------- | -------------------------------------------------------------------------------------------------- |
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory) |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, or `codex`                     |
+| `--ai`                 | Option   | AI assistant(s) to use (comma-separated): `claude`, `gemini`, `copilot`, `cursor-agent`, or `codex` |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                        |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                    |
 | `--no-git`             | Flag     | Skip git repository initialization                                                                 |
@@ -177,8 +177,9 @@ The `speclite` command supports the following options:
 # Basic project initialization
 speclite init my-project
 
-# Initialize with specific AI assistant
+# Initialize with specific AI assistant(s)
 speclite init my-project --ai claude
+speclite init my-project --ai claude,codex
 
 # Initialize with Cursor support
 speclite init my-project --ai cursor-agent
@@ -307,12 +308,13 @@ speclite init . --force
 speclite init --here --force
 ```
 
-You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
+You will be prompted to select the AI agent(s) you are using. You can also proactively specify them directly in the terminal (comma-separated):
 
 ```bash
 speclite init <project_name> --ai claude
 speclite init <project_name> --ai gemini
 speclite init <project_name> --ai copilot
+speclite init <project_name> --ai claude,codex
 
 # Or in current directory:
 speclite init . --ai claude
@@ -329,7 +331,7 @@ speclite init . --force --ai claude
 speclite init --here --force --ai claude
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, or Codex CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have the required CLIs for your selected agents (Claude Code, Gemini CLI, Cursor CLI, or Codex CLI). If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 speclite init <project_name> --ai claude --ignore-agent-tools
