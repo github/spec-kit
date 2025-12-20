@@ -1,63 +1,273 @@
 ---
-description: Complete project setup - runs setup-hooks, agents, and constitution in sequence
+description: Complete project setup - configures hooks, skills, agents, and constitution in one command
 scripts:
-  sh: echo "Setup orchestrator - no script needed"
-  ps: echo "Setup orchestrator - no script needed"
+  sh: scripts/bash/setup-hooks.sh --json
+  ps: scripts/powershell/setup-hooks.ps1 -Json
 ---
 
 # SpecKit Project Setup
 
-You are the **Setup Orchestrator**. Your job is to run the complete initial setup for a SpecKit project by executing the following commands in sequence.
+You are the **Setup Orchestrator**. Complete the full initial setup for this SpecKit project in **3 phases**.
 
-## Setup Sequence
+## User Input
 
-Execute these commands in order, waiting for each to complete before proceeding:
+```text
+$ARGUMENTS
+```
 
-### Step 1: Setup Hooks and Skills
-
-Run the `/speckit.setup-hooks` command to:
-- Detect project frameworks and technologies
-- Create Claude Code skills for detected frameworks
-- Configure hooks for the project
-
-**Action**: Execute `/speckit.setup-hooks` now.
-
-After completion, proceed to Step 2.
+Consider any user preferences from the input above.
 
 ---
 
-### Step 2: Configure Project Agents
+## Phase 1: Detect Project & Configure Hooks/Skills
 
-Run the `/speckit.agents` command to:
-- Set up specialized agents for the project
-- Configure agent skills and tools
-- Create agent workflow structure
+### Step 1.1: Run Detection Script
 
-**Action**: Execute `/speckit.agents` now.
+Run `{SCRIPT}` from repo root and parse the JSON output:
 
-After completion, proceed to Step 3.
+```json
+{
+  "PROJECT_TYPE": "node-typescript | python | rust | go | java-maven | scala-sbt | ...",
+  "DETECTED_TOOLS": ["npm", "typescript", "jest", ...],
+  "DETECTED_FRAMEWORKS": [
+    {"name": "react", "docs_url": "https://react.dev"},
+    {"name": "next", "docs_url": "https://nextjs.org/docs"}
+  ],
+  "CLAUDE_DIR": "/path/to/.claude",
+  "SKILLS_DIR": "/path/to/.claude/skills",
+  "HOOKS_DIR": "/path/to/.claude/hooks"
+}
+```
+
+### Step 1.2: Create Skills for Detected Frameworks
+
+For each detected framework, create a skill folder structure:
+
+```
+.claude/skills/{framework}-architecture/
+├── SKILL.md           # Quick reference (trigger phrases, core patterns)
+└── references/        # Detailed docs
+    ├── patterns.md    # Common patterns
+    └── best-practices.md
+```
+
+**SKILL.md format:**
+```markdown
+---
+name: {Framework} Architecture
+description: "Best practices and patterns for {Framework} development"
+triggers: ["{framework}", "{framework} pattern", "{framework} best practice"]
+---
+
+# {Framework} Architecture Skill
+
+## Quick Reference
+| Pattern | When to Use |
+|---------|-------------|
+| ... | ... |
+
+## See Also
+- references/patterns.md
+- references/best-practices.md
+```
+
+Use WebFetch on `docs_url` to gather framework-specific patterns and best practices.
+
+### Step 1.3: Configure Hooks
+
+Create `.claude/settings.local.json` with hooks based on PROJECT_TYPE:
+
+**For Node/TypeScript projects:**
+```json
+{
+  "hooks": {
+    "SessionStart": [{"command": "npm install"}],
+    "PostToolUse": [
+      {"event": "Edit", "command": "npx prettier --write $FILE_PATH"}
+    ],
+    "Stop": [{"command": "npm test"}]
+  }
+}
+```
+
+**For Python projects:**
+```json
+{
+  "hooks": {
+    "SessionStart": [{"command": "pip install -r requirements.txt"}],
+    "PostToolUse": [
+      {"event": "Edit", "command": "ruff format $FILE_PATH"}
+    ],
+    "Stop": [{"command": "pytest"}]
+  }
+}
+```
+
+Adapt for other project types (Rust: cargo, Go: go mod, etc.)
 
 ---
 
-### Step 3: Establish Constitution
+## Phase 2: Create Project Agents
 
-Run the `/speckit.constitution` command to:
-- Define project principles and values
-- Establish coding standards
-- Create the project constitution document
+### Step 2.1: Create Agents Directory
 
-**Action**: Execute `/speckit.constitution` now.
+```bash
+mkdir -p .claude/agents/speckit
+```
+
+### Step 2.2: Create Workflow Agents
+
+Create these agent files in `.claude/agents/speckit/`:
+
+**researcher.md:**
+```markdown
+---
+name: researcher
+tools: Read, Glob, Grep, WebFetch, WebSearch
+model: sonnet
+skills: {detected-framework-skills}
+---
+
+# Researcher Agent
+
+Expert at exploring codebases and gathering technical information.
+
+## Responsibilities
+- Search codebase for patterns and implementations
+- Research external documentation
+- Analyze dependencies and architecture
+- Provide detailed technical reports
+```
+
+**planner.md:**
+```markdown
+---
+name: planner
+tools: Read, Glob, Grep, Write, Edit
+model: sonnet
+skills: {detected-framework-skills}
+---
+
+# Planner Agent
+
+Decomposes complex tasks into actionable implementation steps.
+
+## Responsibilities
+- Break down features into tasks
+- Identify dependencies between tasks
+- Estimate complexity and order of execution
+- Create detailed implementation plans
+```
+
+**backend-coder.md:**
+```markdown
+---
+name: backend-coder
+tools: Read, Glob, Grep, Bash, Edit, Write
+model: sonnet
+skills: {detected-framework-skills}
+---
+
+# Backend Coder Agent
+
+Implements backend services, APIs, and data layers.
+
+## Responsibilities
+- Implement API endpoints
+- Database operations and migrations
+- Business logic implementation
+- Integration with external services
+```
+
+**frontend-coder.md:**
+```markdown
+---
+name: frontend-coder
+tools: Read, Glob, Grep, Bash, Edit, Write
+model: sonnet
+skills: {detected-framework-skills}
+---
+
+# Frontend Coder Agent
+
+Implements user interfaces and frontend logic.
+
+## Responsibilities
+- Component implementation
+- State management
+- Styling and responsive design
+- User interaction handling
+```
+
+**tester.md:**
+```markdown
+---
+name: tester
+tools: Read, Glob, Grep, Bash, Edit, Write
+model: sonnet
+skills: {detected-framework-skills}
+---
+
+# Tester Agent
+
+Creates and maintains test suites.
+
+## Responsibilities
+- Write unit tests
+- Write integration tests
+- Test coverage analysis
+- Fix failing tests
+```
+
+Replace `{detected-framework-skills}` with the actual skill names created in Phase 1.
 
 ---
 
-## Completion
+## Phase 3: Initialize Constitution
 
-After all three steps are complete, summarize what was set up:
+### Step 3.1: Load Constitution Template
 
-1. **Skills & Hooks**: List the frameworks detected and skills created
-2. **Agents**: List the agents configured
-3. **Constitution**: Confirm the constitution was established
+Read `.specify/memory/constitution.md` template.
 
-Then inform the user that setup is complete and they can now use:
-- `/speckit.specify` to create a feature specification
-- `/speckit.plan` to create an implementation plan
+### Step 3.2: Gather Project Information
+
+Analyze the project to fill constitution placeholders:
+- **PROJECT_NAME**: From package.json, Cargo.toml, pyproject.toml, or directory name
+- **PROJECT_PURPOSE**: Infer from README or ask user
+- **CORE_PRINCIPLES**: Based on detected frameworks and project type
+
+### Step 3.3: Create Constitution
+
+Write the filled constitution to `.specify/memory/constitution.md` with:
+- Project name and purpose
+- 3-5 core principles based on the project type
+- Governance section with versioning policy
+- Ratification date (today)
+
+---
+
+## Completion Summary
+
+After all phases complete, output a summary:
+
+```markdown
+## SpecKit Setup Complete
+
+### Phase 1: Hooks & Skills
+- Project Type: {PROJECT_TYPE}
+- Detected Frameworks: {list}
+- Skills Created: {list of .claude/skills/ folders}
+- Hooks Configured: SessionStart, PostToolUse, Stop
+
+### Phase 2: Agents
+- Created: researcher, planner, backend-coder, frontend-coder, tester
+- Location: .claude/agents/speckit/
+
+### Phase 3: Constitution
+- Created: .specify/memory/constitution.md
+- Principles: {count} core principles defined
+
+### Next Steps
+1. Run `/speckit.specify` to create your first feature specification
+2. Run `/speckit.plan` to create an implementation plan
+```
