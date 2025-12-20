@@ -740,6 +740,59 @@ Content includes:
 - Refactoring techniques (Extract Method, Extract Class, Strangler Fig, etc.)
 - Prioritization framework
 
+### Architecture Patterns Skill (.claude/skills/architecture-patterns/)
+
+Copy from `.specify/templates/skills/architecture-patterns/` if available, otherwise create:
+
+```
+.claude/skills/architecture-patterns/
+├── SKILL.md
+└── references/
+    ├── implementations.md
+    └── ddd-patterns.md
+```
+
+Content includes:
+- Clean Architecture, Hexagonal Architecture, DDD patterns
+- Layer separation and dependency rules
+- Production-ready code examples
+- Aggregate design, value objects, domain events
+
+### Microservices Patterns Skill (.claude/skills/microservices-patterns/)
+
+Copy from `.specify/templates/skills/microservices-patterns/` if available, otherwise create:
+
+```
+.claude/skills/microservices-patterns/
+├── SKILL.md
+└── references/
+    ├── resilience-patterns.md
+    └── data-patterns.md
+```
+
+Content includes:
+- Service decomposition strategies
+- Communication patterns (sync/async)
+- Resilience patterns (Circuit Breaker, Bulkhead, Retry)
+- Data patterns (Saga, Event Sourcing, CQRS, Outbox)
+
+### Architecture Decision Records Skill (.claude/skills/architecture-decision-records/)
+
+Copy from `.specify/templates/skills/architecture-decision-records/` if available, otherwise create:
+
+```
+.claude/skills/architecture-decision-records/
+├── SKILL.md
+└── references/
+    ├── templates.md
+    └── examples.md
+```
+
+Content includes:
+- ADR templates (MADR, lightweight, Y-statement, RFC)
+- Real-world examples
+- Decision process and review checklist
+
 ## Step 1.11: Make Hook Scripts Executable
 
 ```bash
@@ -847,7 +900,7 @@ description: |
   Invoke for: /design (after spec-analyzer), architecture decisions.
 tools: Read, Glob, Grep, Write
 model: sonnet
-skills: {framework}-architecture, {language}-standards
+skills: {framework}-architecture, {language}-standards, architecture-patterns, microservices-patterns, architecture-decision-records
 ---
 
 # Designer
@@ -1156,6 +1209,7 @@ description: |
   Invoke for: /breakdown, task planning, sprint organization.
 tools: Read, Glob, Grep
 model: haiku
+skills: architecture-decision-records
 ---
 
 # Planner
@@ -1399,7 +1453,7 @@ After all phases complete, output:
 - **Skills Created**:
   - Framework: {framework}-architecture (×N)
   - Language: {language}-standards
-  - Universal: code-review, tech-debt
+  - Universal: code-review, tech-debt, architecture-patterns, microservices-patterns, architecture-decision-records
   - Tools: testing-skill, linting-skill
 - **Hooks Configured**:
   - SessionStart: {install_command}
@@ -1442,6 +1496,9 @@ After all phases complete, output:
 │   ├── linting-skill/
 │   ├── code-review/
 │   ├── tech-debt/
+│   ├── architecture-patterns/
+│   ├── microservices-patterns/
+│   ├── architecture-decision-records/
 │   ├── {framework}-architecture/ (×N)
 │   └── {language}-standards/
 └── agents/speckit/
