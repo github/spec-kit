@@ -13,6 +13,46 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+---
+
+## CRITICAL RULES (READ FIRST)
+
+**YOU MUST FOLLOW THESE RULES - NO EXCEPTIONS:**
+
+### Rule 1: ALWAYS Use Task Tool for Implementation
+```
+For EVERY task that involves writing code:
+→ YOU MUST use the Task tool to invoke a specialized agent
+→ NEVER implement code directly in the main conversation
+→ The agent handles the implementation in its isolated context
+```
+
+### Rule 2: ALWAYS Update tasks.md Immediately
+```
+After EACH task completion (success or failure):
+→ YOU MUST update tasks.md with [X] or [~] checkbox
+→ YOU MUST append result reference [📊 Result](task-results/T###-result.md)
+→ DO NOT batch updates - update ONE task at a time
+```
+
+### Rule 3: ALWAYS Create Result Files
+```
+After EACH task implementation:
+→ YOU MUST create task-results/T{number}-result.md
+→ Include: status, files changed, deviations, lessons learned
+→ This informs the next task's agent
+```
+
+### Rule 4: Minimal Context Loading
+```
+DO NOT load all context upfront:
+→ Load ONLY tasks.md and plan.md initially
+→ Let agents load their own context via skills
+→ Pass task-specific context to each agent
+```
+
+---
+
 ## Outline
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
@@ -48,15 +88,12 @@ You **MUST** consider the user input before proceeding (if not empty).
      - Display the table showing all checklists passed
      - Automatically proceed to step 3
 
-3. Load and analyze the implementation context:
-   - **REQUIRED**: Read tasks.md for the complete task list and execution plan
-   - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
-   - **IF EXISTS**: Read data-model.md for entities and relationships
-   - **IF EXISTS**: Read contracts/ for API specifications and test requirements
-   - **IF EXISTS**: Read research.md for technical decisions and constraints
-   - **IF EXISTS**: Read quickstart.md for integration scenarios
-   - **IF EXISTS**: Scan task-plans/ directory for task implementation guides (created by /speckit.breakdown)
-   - **IF EXISTS**: Scan task-results/ directory for previous implementation results
+3. **Minimal Context Loading** (per Rule 4):
+   - **REQUIRED**: Read tasks.md - parse phases, task IDs, completion status
+   - **REQUIRED**: Read plan.md - extract tech stack summary (1-2 lines per tech)
+   - **SCAN ONLY** (don't read yet): List files in task-plans/ and task-results/
+   - **DO NOT** read data-model.md, contracts/, research.md upfront
+   - **Agents will load** their own context via skills and targeted reads
 
 4. **Project Setup Verification**:
    - **REQUIRED**: Create/verify ignore files based on actual project setup:
@@ -157,80 +194,82 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Verify dependencies**: Ensure all required files/services from Dependencies section exist
    - **Follow exact file paths**: Use file paths from "Codebase Impact Analysis" section for accuracy
 
-7. Implementation execution rules:
-   - **Setup first**: Initialize project structure, dependencies, configuration
-   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
-   - **Core development**: Implement models, services, CLI commands, endpoints
-   - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+7. **Task Execution Loop** (MANDATORY - per Rule 1):
 
-   **CRITICAL: Delegate Tasks to Specialized Agents** (MANDATORY when agents are available):
+   **FOR EACH incomplete task in current phase, execute this exact sequence:**
 
-   **For EACH task in the implementation phase**:
+   ### Step 7.1: Select Agent (REQUIRED)
 
-   1. **Agent Selection**:
-      - Extract file paths from task description
-      - Match paths against agent registry built in step 5.6
-      - Select best-matching agent based on file patterns and capabilities
-      - Extract `model:` field from selected agent metadata (e.g., `model: haiku` from backend-coder.md)
-      - If multiple agents match, split task into subtasks (one per agent)
-      - If no agent matches, implement directly (no delegation)
+   | File Pattern | Agent | Model |
+   |--------------|-------|-------|
+   | `backend/**`, `server/**`, `api/**` | backend-coder | sonnet |
+   | `frontend/**`, `src/components/**`, `*.tsx` | frontend-coder | sonnet |
+   | `*.test.*`, `*_test.*`, `tests/**` | tester | sonnet |
+   | UI design tasks | frontend-designer | sonnet |
+   | No match | implementer | sonnet |
 
-   2. **Context Preparation** (what to pass to the agent):
-      - **Agent Model**: Capture the `model:` field from selected agent (REQUIRED for Task tool parameter)
-      - **Task Description**: Full task text from tasks.md (ID, description, files affected)
-      - **Task Plan**: Load task-plans/T{number}-*.md if exists (implementation steps, gotchas, patterns)
-      - **Previous Results**: Load task-results/ for dependent tasks (T{number-1}, dependencies from plan)
-      - **Domain Patterns**: Reference relevant CLAUDE.md patterns (backend/CLAUDE.md, frontend/CLAUDE.md, etc.)
-      - **Feature Context**: Brief summary from spec.md and plan.md (what feature we're building)
+   ### Step 7.2: Load Task Context (ONLY what agent needs)
 
-   4. **Agent Invocation** (use Task tool):
-      ```
-      Prompt template:
-      "Implement the following task for feature {feature-name}:
+   ```
+   1. Read task-plans/T{number}-*.md IF EXISTS
+   2. Read task-results/T{number-1}-result.md for previous task context
+   3. Extract file paths from task description
+   ```
 
-      **Task**: {task-id} - {task-description}
+   ### Step 7.3: Invoke Agent (YOU MUST USE Task TOOL)
 
-      **Files to modify**: {file-paths}
+   **MANDATORY Task tool invocation:**
 
-      [IF task plan exists]
-      **Implementation Steps** (from task plan):
-      {steps from task-plans/T{number}-*.md}
+   ```yaml
+   Task:
+     subagent_type: "{agent-name}"  # e.g., "backend-coder"
+     model: "{agent-model}"         # from agent frontmatter, default: sonnet
+     prompt: |
+       ## Task: T{number}
+       {task-description}
 
-      **Existing Patterns to Follow**:
-      {code snippets from task plan}
+       ## Files
+       {file-paths from task}
 
-      **Gotchas**:
-      {special considerations from task plan}
-      [END IF]
+       ## Implementation Steps
+       {from task-plans/T{number}-*.md or "Follow standard patterns"}
 
-      [IF previous task results exist]
-      **Context from Previous Tasks**:
-      {deviations, lessons learned, TODOs from task-results/}
-      [END IF]
+       ## Previous Task Context
+       {from task-results/T{number-1}-result.md or "First task in phase"}
 
-      **Domain Patterns** (from {domain}/CLAUDE.md):
-      {relevant patterns for this task type}
+       ## Instructions
+       1. Implement the task following the steps above
+       2. Use project skills for patterns (your skills: field)
+       3. Report: files created/modified, issues found, deviations
+   ```
 
-      Follow the implementation steps exactly. Use the existing patterns as reference. Pay attention to gotchas.
-      Report any deviations or issues discovered."
+   ### Step 7.4: After Agent Returns (IMMEDIATELY - per Rule 2 & 3)
 
-      subagent_type: {selected-agent-name}  // e.g., "backend-coder", "frontend-coder"
-      model: {agent-model}  // Extract from agent metadata (e.g., "haiku", "sonnet") - MUST RESPECT agent config
-      ```
+   **YOU MUST do these 3 things IMMEDIATELY after agent completes:**
 
-   5. **Result Handling**:
-      - Wait for agent completion
-      - Generate task-results/T{number}-result.md based on agent report
-      - Mark task complete in tasks.md with result reference
-      - Proceed to next task in phase
+   ```
+   1. CREATE task-results/T{number}-result.md:
+      ---
+      Status: ✅ Complete | ⚠️ Partial | ❌ Failed
+      Files Changed:
+        - {file}: {what changed}
+      Deviations: {if any}
+      Lessons: {what worked/didn't}
+      ---
 
-   **Task plan prioritization**:
-   - **If task plan exists**: It supersedes generic implementation approach - follow plan exactly
-   - **Reference code first**: Look at "Existing Patterns to Follow" code snippets before writing new code
-   - **Copy/adapt pattern**: Adapt existing patterns from codebase rather than implementing from scratch
-   - **Gotchas prevent bugs**: Special considerations often reveal hidden requirements (GraalVM reflection, type safety, async patterns, etc.)
-   - **Use line references**: File:line references in plans point to exact existing implementations to follow
+   2. UPDATE tasks.md - find the task line and change:
+      FROM: - [ ] T{number} {description}
+      TO:   - [X] T{number} {description} [📊 Result](task-results/T{number}-result.md)
+
+   3. LOG progress:
+      "✅ T{number} complete. {N} tasks remaining in phase."
+   ```
+
+   ### Step 7.5: Continue or Pause
+
+   - After every 3 tasks: Ask user "Continue? (yes/no/skip phase)"
+   - If task failed: Ask user "Task T{N} failed. Retry/Skip/Stop?"
+   - After phase complete: Show summary, ask about next phase
 
 8. Progress tracking and error handling:
    - Report progress after each completed task
