@@ -73,7 +73,39 @@ triggers: ["{framework}", "{framework} pattern", "{framework} best practice"]
 
 Use WebFetch on `docs_url` to gather framework-specific patterns and best practices.
 
-### Step 1.3: Configure Hooks
+### Step 1.4: Create Universal Skills (Always Created)
+
+Create these skills for every project:
+
+**Code Review Skill** (`.claude/skills/code-review/`):
+```
+.claude/skills/code-review/
+├── SKILL.md
+└── references/
+    ├── review-checklist.md
+    └── security-review.md
+```
+
+Copy from `.specify/templates/skills/code-review/` if available, or create with:
+- Review checklist (correctness, security, performance, maintainability)
+- Security review patterns (OWASP Top 10, language-specific)
+- Quality gates and thresholds
+
+**Tech Debt Skill** (`.claude/skills/tech-debt/`):
+```
+.claude/skills/tech-debt/
+├── SKILL.md
+└── references/
+    ├── debt-patterns.md
+    └── refactoring-strategies.md
+```
+
+Copy from `.specify/templates/skills/tech-debt/` if available, or create with:
+- Debt categories (design, code, test, doc, dependency, infrastructure)
+- Common debt patterns and indicators
+- Refactoring strategies and prioritization
+
+### Step 1.5: Configure Hooks
 
 Create `.claude/settings.local.json` with hooks based on PROJECT_TYPE:
 
@@ -219,6 +251,27 @@ Creates and maintains test suites.
 - Fix failing tests
 ```
 
+**reviewer.md:**
+```markdown
+---
+name: reviewer
+tools: Read, Glob, Grep, Bash
+model: sonnet
+skills: code-review, tech-debt, {detected-framework-skills}
+---
+
+# Code Reviewer Agent
+
+Analyzes code quality and identifies technical debt.
+
+## Responsibilities
+- Review code for quality issues
+- Identify security vulnerabilities
+- Detect technical debt patterns
+- Provide refactoring recommendations
+- Generate code health reports
+```
+
 Replace `{detected-framework-skills}` with the actual skill names created in Phase 1.
 
 ---
@@ -256,11 +309,12 @@ After all phases complete, output a summary:
 ### Phase 1: Hooks & Skills
 - Project Type: {PROJECT_TYPE}
 - Detected Frameworks: {list}
-- Skills Created: {list of .claude/skills/ folders}
+- Framework Skills: {list of framework-specific skills}
+- Universal Skills: code-review, tech-debt
 - Hooks Configured: SessionStart, PostToolUse, Stop
 
 ### Phase 2: Agents
-- Created: researcher, planner, backend-coder, frontend-coder, tester
+- Created: researcher, planner, backend-coder, frontend-coder, tester, reviewer
 - Location: .claude/agents/speckit/
 
 ### Phase 3: Constitution
@@ -270,4 +324,5 @@ After all phases complete, output a summary:
 ### Next Steps
 1. Run `/speckit.specify` to create your first feature specification
 2. Run `/speckit.plan` to create an implementation plan
+3. Run `/speckit.review` before/after implementation for quality checks
 ```
