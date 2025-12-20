@@ -1,0 +1,666 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix specify: <https://github.com/github/spec-kit#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# ============================================================================
+# Specify Domain Ontology
+# Spec-Driven Development Toolkit
+# ============================================================================
+
+specify: a owl:Ontology ;
+    rdfs:label "Specify Domain Ontology" ;
+    rdfs:comment "Complete domain model for spec-kit: spec-driven development toolkit" ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:created "2025-12-20"^^xsd:date ;
+    dcterms:creator "spec-kit contributors" .
+
+# ============================================================================
+# Core Entities
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Project and Repository
+# ----------------------------------------------------------------------------
+
+specify:Project a owl:Class ;
+    rdfs:label "Project" ;
+    rdfs:comment "Software project using spec-driven development methodology" .
+
+specify:Repository a owl:Class ;
+    rdfs:label "Repository" ;
+    rdfs:comment "Git repository containing the project source code" .
+
+specify:Constitution a owl:Class ;
+    rdfs:label "Constitution" ;
+    rdfs:comment "Project governing principles and development guidelines" .
+
+# ----------------------------------------------------------------------------
+# Feature Development
+# ----------------------------------------------------------------------------
+
+specify:Feature a owl:Class ;
+    rdfs:label "Feature" ;
+    rdfs:comment "A feature being developed in the project" .
+
+specify:Specification a owl:Class ;
+    rdfs:label "Specification" ;
+    rdfs:comment "Feature specification document defining requirements" .
+
+specify:Plan a owl:Class ;
+    rdfs:label "Plan" ;
+    rdfs:comment "Implementation plan with technical architecture" .
+
+specify:TaskList a owl:Class ;
+    rdfs:label "TaskList" ;
+    rdfs:comment "Collection of tasks for implementing a feature" .
+
+specify:Task a owl:Class ;
+    rdfs:label "Task" ;
+    rdfs:comment "Individual work item in the implementation" .
+
+# ----------------------------------------------------------------------------
+# Requirements and Testing
+# ----------------------------------------------------------------------------
+
+specify:UserStory a owl:Class ;
+    rdfs:label "UserStory" ;
+    rdfs:comment "User journey describing feature from user perspective" .
+
+specify:AcceptanceCriteria a owl:Class ;
+    rdfs:label "AcceptanceCriteria" ;
+    rdfs:comment "Testable conditions for feature acceptance (Given-When-Then)" .
+
+specify:FunctionalRequirement a owl:Class ;
+    rdfs:label "FunctionalRequirement" ;
+    rdfs:comment "Specific functional capability the feature must provide" .
+
+specify:SuccessCriteria a owl:Class ;
+    rdfs:label "SuccessCriteria" ;
+    rdfs:comment "Measurable outcome defining feature success" .
+
+specify:Checklist a owl:Class ;
+    rdfs:label "Checklist" ;
+    rdfs:comment "Quality validation checklist for a feature" .
+
+specify:ChecklistItem a owl:Class ;
+    rdfs:label "ChecklistItem" ;
+    rdfs:comment "Individual item in a quality checklist" .
+
+# ----------------------------------------------------------------------------
+# AI Agents and Tools
+# ----------------------------------------------------------------------------
+
+specify:Agent a owl:Class ;
+    rdfs:label "Agent" ;
+    rdfs:comment "AI coding assistant used in the development process" .
+
+specify:SlashCommand a owl:Class ;
+    rdfs:label "SlashCommand" ;
+    rdfs:comment "Workflow command executed by AI agent" .
+
+specify:Tool a owl:Class ;
+    rdfs:label "Tool" ;
+    rdfs:comment "External tool required for development (git, ggen, cargo)" .
+
+# ----------------------------------------------------------------------------
+# Templates and Documentation
+# ----------------------------------------------------------------------------
+
+specify:Template a owl:Class ;
+    rdfs:label "Template" ;
+    rdfs:comment "Template for generating specifications, plans, or tasks" .
+
+specify:Contract a owl:Class ;
+    rdfs:label "Contract" ;
+    rdfs:comment "API or interface contract (OpenAPI, GraphQL, etc.)" .
+
+specify:DataModel a owl:Class ;
+    rdfs:label "DataModel" ;
+    rdfs:comment "Domain data model for the feature" .
+
+specify:Ontology a owl:Class ;
+    rdfs:label "Ontology" ;
+    rdfs:comment "RDF ontology compiled by ggen into code" .
+
+# ----------------------------------------------------------------------------
+# Version Control
+# ----------------------------------------------------------------------------
+
+specify:Branch a owl:Class ;
+    rdfs:label "Branch" ;
+    rdfs:comment "Git branch for feature development" .
+
+specify:Commit a owl:Class ;
+    rdfs:label "Commit" ;
+    rdfs:comment "Git commit in the repository" .
+
+specify:PullRequest a owl:Class ;
+    rdfs:label "PullRequest" ;
+    rdfs:comment "Pull request for merging feature branch" .
+
+# ============================================================================
+# Enumerations
+# ============================================================================
+
+specify:FeatureStatus a owl:Class ;
+    rdfs:label "FeatureStatus" ;
+    rdfs:comment "Status of feature development" .
+
+specify:DraftStatus a specify:FeatureStatus ;
+    rdfs:label "Draft" .
+
+specify:PlanningStatus a specify:FeatureStatus ;
+    rdfs:label "Planning" .
+
+specify:InProgressStatus a specify:FeatureStatus ;
+    rdfs:label "In Progress" .
+
+specify:InReviewStatus a specify:FeatureStatus ;
+    rdfs:label "In Review" .
+
+specify:CompletedStatus a specify:FeatureStatus ;
+    rdfs:label "Completed" .
+
+specify:TaskStatus a owl:Class ;
+    rdfs:label "TaskStatus" ;
+    rdfs:comment "Status of individual task" .
+
+specify:PendingTask a specify:TaskStatus ;
+    rdfs:label "Pending" .
+
+specify:InProgressTask a specify:TaskStatus ;
+    rdfs:label "In Progress" .
+
+specify:CompletedTask a specify:TaskStatus ;
+    rdfs:label "Completed" .
+
+specify:BlockedTask a specify:TaskStatus ;
+    rdfs:label "Blocked" .
+
+specify:Priority a owl:Class ;
+    rdfs:label "Priority" ;
+    rdfs:comment "Priority level for user stories and tasks" .
+
+specify:P1Priority a specify:Priority ;
+    rdfs:label "P1" ;
+    rdfs:comment "Highest priority - critical for MVP" .
+
+specify:P2Priority a specify:Priority ;
+    rdfs:label "P2" ;
+    rdfs:comment "High priority - important for launch" .
+
+specify:P3Priority a specify:Priority ;
+    rdfs:label "P3" ;
+    rdfs:comment "Medium priority - enhancement" .
+
+specify:P4Priority a specify:Priority ;
+    rdfs:label "P4" ;
+    rdfs:comment "Low priority - nice to have" .
+
+# ============================================================================
+# Properties - Project
+# ============================================================================
+
+specify:projectName a rdf:Property ;
+    rdfs:domain specify:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Name of the project" .
+
+specify:projectDescription a rdf:Property ;
+    rdfs:domain specify:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "description" ;
+    rdfs:comment "Description of the project" .
+
+specify:projectVersion a rdf:Property ;
+    rdfs:domain specify:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "version" ;
+    rdfs:comment "Current version of the project" .
+
+specify:projectRepository a rdf:Property ;
+    rdfs:domain specify:Project ;
+    rdfs:range specify:Repository ;
+    rdfs:label "repository" ;
+    rdfs:comment "Git repository for this project" .
+
+specify:projectConstitution a rdf:Property ;
+    rdfs:domain specify:Project ;
+    rdfs:range specify:Constitution ;
+    rdfs:label "constitution" ;
+    rdfs:comment "Governing principles for this project" .
+
+specify:projectAgent a rdf:Property ;
+    rdfs:domain specify:Project ;
+    rdfs:range specify:Agent ;
+    rdfs:label "agent" ;
+    rdfs:comment "AI agent used in this project" .
+
+specify:projectCreatedAt a rdf:Property ;
+    rdfs:domain specify:Project ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "createdAt" ;
+    rdfs:comment "When the project was created" .
+
+# ============================================================================
+# Properties - Repository
+# ============================================================================
+
+specify:repositoryUrl a rdf:Property ;
+    rdfs:domain specify:Repository ;
+    rdfs:range xsd:anyURI ;
+    rdfs:label "url" ;
+    rdfs:comment "URL of the git repository" .
+
+specify:repositoryPath a rdf:Property ;
+    rdfs:domain specify:Repository ;
+    rdfs:range xsd:string ;
+    rdfs:label "path" ;
+    rdfs:comment "Local file system path to repository" .
+
+specify:repositoryDefaultBranch a rdf:Property ;
+    rdfs:domain specify:Repository ;
+    rdfs:range xsd:string ;
+    rdfs:label "defaultBranch" ;
+    rdfs:comment "Default branch name (main/master)" .
+
+# ============================================================================
+# Properties - Feature
+# ============================================================================
+
+specify:featureName a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Short descriptive name of the feature" .
+
+specify:featureNumber a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range xsd:integer ;
+    rdfs:label "number" ;
+    rdfs:comment "Sequential feature number" .
+
+specify:featureBranch a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range specify:Branch ;
+    rdfs:label "branch" ;
+    rdfs:comment "Git branch for this feature" .
+
+specify:featureSpecification a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range specify:Specification ;
+    rdfs:label "specification" ;
+    rdfs:comment "Specification document for this feature" .
+
+specify:featurePlan a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range specify:Plan ;
+    rdfs:label "plan" ;
+    rdfs:comment "Implementation plan for this feature" .
+
+specify:featureTaskList a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range specify:TaskList ;
+    rdfs:label "taskList" ;
+    rdfs:comment "Task list for implementing this feature" .
+
+specify:featureStatus a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range specify:FeatureStatus ;
+    rdfs:label "status" ;
+    rdfs:comment "Current status of the feature" .
+
+specify:featureCreatedAt a rdf:Property ;
+    rdfs:domain specify:Feature ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "createdAt" ;
+    rdfs:comment "When the feature was created" .
+
+# ============================================================================
+# Properties - Specification
+# ============================================================================
+
+specify:specFilePath a rdf:Property ;
+    rdfs:domain specify:Specification ;
+    rdfs:range xsd:string ;
+    rdfs:label "filePath" ;
+    rdfs:comment "File path to spec.md" .
+
+specify:specUserStory a rdf:Property ;
+    rdfs:domain specify:Specification ;
+    rdfs:range specify:UserStory ;
+    rdfs:label "userStory" ;
+    rdfs:comment "User story in this specification" .
+
+specify:specFunctionalRequirement a rdf:Property ;
+    rdfs:domain specify:Specification ;
+    rdfs:range specify:FunctionalRequirement ;
+    rdfs:label "functionalRequirement" ;
+    rdfs:comment "Functional requirement in this specification" .
+
+specify:specSuccessCriteria a rdf:Property ;
+    rdfs:domain specify:Specification ;
+    rdfs:range specify:SuccessCriteria ;
+    rdfs:label "successCriteria" ;
+    rdfs:comment "Success criteria for this feature" .
+
+specify:specAssumption a rdf:Property ;
+    rdfs:domain specify:Specification ;
+    rdfs:range xsd:string ;
+    rdfs:label "assumption" ;
+    rdfs:comment "Assumption made in the specification" .
+
+# ============================================================================
+# Properties - UserStory
+# ============================================================================
+
+specify:storyTitle a rdf:Property ;
+    rdfs:domain specify:UserStory ;
+    rdfs:range xsd:string ;
+    rdfs:label "title" ;
+    rdfs:comment "Brief title of the user story" .
+
+specify:storyDescription a rdf:Property ;
+    rdfs:domain specify:UserStory ;
+    rdfs:range xsd:string ;
+    rdfs:label "description" ;
+    rdfs:comment "Plain language description of user journey" .
+
+specify:storyPriority a rdf:Property ;
+    rdfs:domain specify:UserStory ;
+    rdfs:range specify:Priority ;
+    rdfs:label "priority" ;
+    rdfs:comment "Priority level of this story" .
+
+specify:storyAcceptanceCriteria a rdf:Property ;
+    rdfs:domain specify:UserStory ;
+    rdfs:range specify:AcceptanceCriteria ;
+    rdfs:label "acceptanceCriteria" ;
+    rdfs:comment "Acceptance criteria for this story" .
+
+specify:storyIndependentTest a rdf:Property ;
+    rdfs:domain specify:UserStory ;
+    rdfs:range xsd:string ;
+    rdfs:label "independentTest" ;
+    rdfs:comment "How this story can be tested independently" .
+
+# ============================================================================
+# Properties - AcceptanceCriteria
+# ============================================================================
+
+specify:criteriaGiven a rdf:Property ;
+    rdfs:domain specify:AcceptanceCriteria ;
+    rdfs:range xsd:string ;
+    rdfs:label "given" ;
+    rdfs:comment "Initial state (Given)" .
+
+specify:criteriaWhen a rdf:Property ;
+    rdfs:domain specify:AcceptanceCriteria ;
+    rdfs:range xsd:string ;
+    rdfs:label "when" ;
+    rdfs:comment "Action taken (When)" .
+
+specify:criteriaThen a rdf:Property ;
+    rdfs:domain specify:AcceptanceCriteria ;
+    rdfs:range xsd:string ;
+    rdfs:label "then" ;
+    rdfs:comment "Expected outcome (Then)" .
+
+# ============================================================================
+# Properties - Plan
+# ============================================================================
+
+specify:planFilePath a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range xsd:string ;
+    rdfs:label "filePath" ;
+    rdfs:comment "File path to plan.md" .
+
+specify:planLanguage a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range xsd:string ;
+    rdfs:label "language" ;
+    rdfs:comment "Programming language (Python, Rust, TypeScript)" .
+
+specify:planVersion a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range xsd:string ;
+    rdfs:label "version" ;
+    rdfs:comment "Language/framework version" .
+
+specify:planDependency a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range xsd:string ;
+    rdfs:label "dependency" ;
+    rdfs:comment "Primary dependency or framework" .
+
+specify:planStorage a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range xsd:string ;
+    rdfs:label "storage" ;
+    rdfs:comment "Storage mechanism (PostgreSQL, files, etc.)" .
+
+specify:planDataModel a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range specify:DataModel ;
+    rdfs:label "dataModel" ;
+    rdfs:comment "Data model for this plan" .
+
+specify:planContract a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range specify:Contract ;
+    rdfs:label "contract" ;
+    rdfs:comment "API or interface contract" .
+
+specify:planOntology a rdf:Property ;
+    rdfs:domain specify:Plan ;
+    rdfs:range specify:Ontology ;
+    rdfs:label "ontology" ;
+    rdfs:comment "RDF ontology for code generation" .
+
+# ============================================================================
+# Properties - Task
+# ============================================================================
+
+specify:taskDescription a rdf:Property ;
+    rdfs:domain specify:Task ;
+    rdfs:range xsd:string ;
+    rdfs:label "description" ;
+    rdfs:comment "Description of the task" .
+
+specify:taskStatus a rdf:Property ;
+    rdfs:domain specify:Task ;
+    rdfs:range specify:TaskStatus ;
+    rdfs:label "status" ;
+    rdfs:comment "Current status of the task" .
+
+specify:taskFilePath a rdf:Property ;
+    rdfs:domain specify:Task ;
+    rdfs:range xsd:string ;
+    rdfs:label "filePath" ;
+    rdfs:comment "File path where implementation occurs" .
+
+specify:taskDependsOn a rdf:Property ;
+    rdfs:domain specify:Task ;
+    rdfs:range specify:Task ;
+    rdfs:label "dependsOn" ;
+    rdfs:comment "Task that must be completed first" .
+
+specify:taskParallel a rdf:Property ;
+    rdfs:domain specify:Task ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "parallel" ;
+    rdfs:comment "Can be executed in parallel with other tasks" .
+
+specify:taskEstimate a rdf:Property ;
+    rdfs:domain specify:Task ;
+    rdfs:range xsd:string ;
+    rdfs:label "estimate" ;
+    rdfs:comment "Estimated effort or complexity" .
+
+# ============================================================================
+# Properties - Agent
+# ============================================================================
+
+specify:agentName a rdf:Property ;
+    rdfs:domain specify:Agent ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Display name of the AI agent" .
+
+specify:agentKey a rdf:Property ;
+    rdfs:domain specify:Agent ;
+    rdfs:range xsd:string ;
+    rdfs:label "key" ;
+    rdfs:comment "Unique identifier key (claude, copilot, etc.)" .
+
+specify:agentFolder a rdf:Property ;
+    rdfs:domain specify:Agent ;
+    rdfs:range xsd:string ;
+    rdfs:label "folder" ;
+    rdfs:comment "Configuration folder (.claude/, .github/)" .
+
+specify:agentInstallUrl a rdf:Property ;
+    rdfs:domain specify:Agent ;
+    rdfs:range xsd:anyURI ;
+    rdfs:label "installUrl" ;
+    rdfs:comment "Installation documentation URL" .
+
+specify:agentRequiresCli a rdf:Property ;
+    rdfs:domain specify:Agent ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "requiresCli" ;
+    rdfs:comment "Whether agent requires CLI installation" .
+
+# ============================================================================
+# Properties - SlashCommand
+# ============================================================================
+
+specify:commandName a rdf:Property ;
+    rdfs:domain specify:SlashCommand ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Command name (specify, plan, tasks, implement)" .
+
+specify:commandDescription a rdf:Property ;
+    rdfs:domain specify:SlashCommand ;
+    rdfs:range xsd:string ;
+    rdfs:label "description" ;
+    rdfs:comment "What the command does" .
+
+specify:commandScript a rdf:Property ;
+    rdfs:domain specify:SlashCommand ;
+    rdfs:range xsd:string ;
+    rdfs:label "script" ;
+    rdfs:comment "Script executed by this command" .
+
+specify:commandHandoff a rdf:Property ;
+    rdfs:domain specify:SlashCommand ;
+    rdfs:range specify:SlashCommand ;
+    rdfs:label "handoff" ;
+    rdfs:comment "Next recommended command in workflow" .
+
+# ============================================================================
+# Properties - Tool
+# ============================================================================
+
+specify:toolName a rdf:Property ;
+    rdfs:domain specify:Tool ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Tool name (git, ggen, cargo)" .
+
+specify:toolCommand a rdf:Property ;
+    rdfs:domain specify:Tool ;
+    rdfs:range xsd:string ;
+    rdfs:label "command" ;
+    rdfs:comment "CLI command name" .
+
+specify:toolRequired a rdf:Property ;
+    rdfs:domain specify:Tool ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "required" ;
+    rdfs:comment "Whether tool is required for spec-driven development" .
+
+specify:toolInstallUrl a rdf:Property ;
+    rdfs:domain specify:Tool ;
+    rdfs:range xsd:anyURI ;
+    rdfs:label "installUrl" ;
+    rdfs:comment "Installation documentation URL" .
+
+# ============================================================================
+# Properties - Checklist
+# ============================================================================
+
+specify:checklistName a rdf:Property ;
+    rdfs:domain specify:Checklist ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Name of the checklist (ux, security, test)" .
+
+specify:checklistItem a rdf:Property ;
+    rdfs:domain specify:Checklist ;
+    rdfs:range specify:ChecklistItem ;
+    rdfs:label "item" ;
+    rdfs:comment "Item in this checklist" .
+
+specify:itemDescription a rdf:Property ;
+    rdfs:domain specify:ChecklistItem ;
+    rdfs:range xsd:string ;
+    rdfs:label "description" ;
+    rdfs:comment "Description of the checklist item" .
+
+specify:itemCompleted a rdf:Property ;
+    rdfs:domain specify:ChecklistItem ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "completed" ;
+    rdfs:comment "Whether this item is completed" .
+
+# ============================================================================
+# Properties - Branch
+# ============================================================================
+
+specify:branchName a rdf:Property ;
+    rdfs:domain specify:Branch ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Full branch name (001-user-auth)" .
+
+specify:branchCommit a rdf:Property ;
+    rdfs:domain specify:Branch ;
+    rdfs:range specify:Commit ;
+    rdfs:label "commit" ;
+    rdfs:comment "Commit in this branch" .
+
+specify:branchPullRequest a rdf:Property ;
+    rdfs:domain specify:Branch ;
+    rdfs:range specify:PullRequest ;
+    rdfs:label "pullRequest" ;
+    rdfs:comment "Pull request for this branch" .
+
+# ============================================================================
+# Properties - Ontology (for ggen)
+# ============================================================================
+
+specify:ontologyFilePath a rdf:Property ;
+    rdfs:domain specify:Ontology ;
+    rdfs:range xsd:string ;
+    rdfs:label "filePath" ;
+    rdfs:comment "Path to .ttl ontology file" .
+
+specify:ontologyNamespace a rdf:Property ;
+    rdfs:domain specify:Ontology ;
+    rdfs:range xsd:anyURI ;
+    rdfs:label "namespace" ;
+    rdfs:comment "RDF namespace for the ontology" .
+
+specify:ontologyCompiledTo a rdf:Property ;
+    rdfs:domain specify:Ontology ;
+    rdfs:range xsd:string ;
+    rdfs:label "compiledTo" ;
+    rdfs:comment "Target language for compilation (Python, TypeScript, Rust)" .
