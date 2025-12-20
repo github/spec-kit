@@ -639,18 +639,15 @@ class TaskBreakdown(BaseModel):
                 for task in test_tasks:
                     lines.append(task.to_markdown())
                     lines.append("")
-
-            # Implementation tasks section
-            if impl_tasks:
-                if test_tasks and self.tests_requested:
+                # Implementation tasks section (separate header when tests present)
+                if impl_tasks:
                     lines.append(f"### Implementation for {phase.name}")
                     lines.append("")
-                for task in impl_tasks:
-                    lines.append(task.to_markdown())
-                    lines.append("")
-
-            # Non-test tasks that weren't in impl_tasks
-            if not test_tasks:
+                    for task in impl_tasks:
+                        lines.append(task.to_markdown())
+                        lines.append("")
+            else:
+                # No test tasks - render all phase tasks directly
                 for task in phase_tasks:
                     lines.append(task.to_markdown())
                     lines.append("")

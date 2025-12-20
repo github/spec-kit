@@ -182,6 +182,38 @@ class ConsistencyAnalyzer:
                     )
                 )
 
+        # Check: No duplicate task IDs
+        task_id_counts: dict[str, int] = {}
+        for task in tasks.tasks:
+            task_id_counts[task.id] = task_id_counts.get(task.id, 0) + 1
+        duplicate_ids = [tid for tid, count in task_id_counts.items() if count > 1]
+        if duplicate_ids:
+            issues.append(
+                AnalysisIssue(
+                    severity="error",
+                    category="inconsistent",
+                    message=f"Duplicate task IDs found: {', '.join(duplicate_ids)}",
+                    location="tasks",
+                    suggestion="Ensure all task IDs are unique",
+                )
+            )
+
+        # Check: No duplicate phase IDs
+        phase_id_counts: dict[str, int] = {}
+        for phase in tasks.phases:
+            phase_id_counts[phase.id] = phase_id_counts.get(phase.id, 0) + 1
+        duplicate_phase_ids = [pid for pid, count in phase_id_counts.items() if count > 1]
+        if duplicate_phase_ids:
+            issues.append(
+                AnalysisIssue(
+                    severity="warning",
+                    category="inconsistent",
+                    message=f"Duplicate phase IDs found: {', '.join(duplicate_phase_ids)}",
+                    location="tasks.phases",
+                    suggestion="Ensure all phase IDs are unique",
+                )
+            )
+
         return issues
 
     def _has_circular_dependencies(self, tasks: TaskBreakdown) -> bool:

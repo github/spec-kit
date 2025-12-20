@@ -35,7 +35,7 @@ from speckit.schemas import (
 )
 from speckit.llm import LiteLLMProvider, LLMResponse
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __all__ = [
     # Main class
     "SpecKit",

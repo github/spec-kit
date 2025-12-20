@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from speckit.llm import LiteLLMProvider
-from speckit.schemas import Specification, TaskBreakdown, TechnicalPlan
+from speckit.schemas import Phase, Specification, Task, TaskBreakdown, TechnicalPlan
 from speckit.storage.base import StorageBase
 from speckit.templates import render_template
 
@@ -68,6 +68,10 @@ class TaskGenerator:
         breakdown.feature_id = plan.feature_id
         breakdown.created_at = datetime.now()
 
+        # Deduplicate tasks and phases (LLM may generate duplicates)
+        breakdown.tasks = self._deduplicate_tasks(breakdown.tasks)
+        breakdown.phases = self._deduplicate_phases(breakdown.phases)
+
         # Build dependency graph
         breakdown.dependency_graph = self._build_dependency_graph(breakdown)
 
@@ -94,9 +98,34 @@ class TaskGenerator:
 
         breakdown.feature_id = plan.feature_id
         breakdown.created_at = datetime.now()
+
+        # Deduplicate tasks and phases (LLM may generate duplicates)
+        breakdown.tasks = self._deduplicate_tasks(breakdown.tasks)
+        breakdown.phases = self._deduplicate_phases(breakdown.phases)
+
         breakdown.dependency_graph = self._build_dependency_graph(breakdown)
 
         return breakdown
+
+    def _deduplicate_tasks(self, tasks: list[Task]) -> list[Task]:
+        """Remove duplicate tasks by ID, keeping the first occurrence."""
+        seen_ids: set[str] = set()
+        unique_tasks: list[Task] = []
+        for task in tasks:
+            if task.id not in seen_ids:
+                seen_ids.add(task.id)
+                unique_tasks.append(task)
+        return unique_tasks
+
+    def _deduplicate_phases(self, phases: list[Phase]) -> list[Phase]:
+        """Remove duplicate phases by ID, keeping the first occurrence."""
+        seen_ids: set[str] = set()
+        unique_phases: list[Phase] = []
+        for phase in phases:
+            if phase.id not in seen_ids:
+                seen_ids.add(phase.id)
+                unique_phases.append(phase)
+        return unique_phases
 
     def _build_dependency_graph(self, breakdown: TaskBreakdown) -> dict[str, list[str]]:
         """Build a dependency graph from task dependencies."""
