@@ -1,0 +1,69 @@
+# ggen Configuration for Spec-Driven Development
+# This configuration enables ontology-driven code generation for your project
+# Learn more: https://crates.io/crates/ggen
+
+[project]
+name = "spec-kit-codegen"
+version = "0.1.0"
+description = "Ontology-driven code generation for Spec-Driven Development"
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
+
+[generation]
+# Directory containing RDF ontology files (.ttl, .rdf, .owl)
+ontology_dir = "schema/"
+
+# Directory containing Tera templates for code generation
+templates_dir = "templates/ggen/"
+
+# Output directory for generated code
+output_dir = "src/generated/"
+
+# Enable incremental sync (preserve manual edits marked with // MANUAL)
+incremental = true
+
+# Overwrite existing files (set to false to preserve manual changes)
+overwrite = false
+
+[sync]
+# Enable automatic sync
+enabled = true
+
+# Trigger sync on: "save" | "commit" | "manual"
+on_change = "manual"
+
+# Validate generated code after sync
+validate_after = true
+
+# Conflict handling: "fail" | "warn" | "ignore"
+conflict_mode = "warn"
+
+[rdf]
+# Supported RDF formats
+formats = ["turtle", "rdf-xml", "n-triples"]
+
+# Default RDF format for new ontologies
+default_format = "turtle"
+
+# Base URI for your ontology (customize this)
+base_uri = "https://example.com/ontology#"
+
+# Strict RDF validation
+strict_validation = false
+
+[templates]
+# Cache compiled Tera templates for faster generation
+enable_caching = true
+
+# Auto-reload templates when they change
+auto_reload = true
+
+[output]
+# Code formatter to use: "default" | "rustfmt" | "prettier" | "black"
+formatting = "default"
+
+# Maximum line length for generated code
+line_length = 100
+
+# Indentation width (spaces)
+indent = 2

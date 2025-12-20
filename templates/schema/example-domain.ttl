@@ -1,0 +1,166 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix spec: <https://example.com/spec-kit#> .
+
+# Ontology definition
+spec: a owl:Ontology ;
+    rdfs:label "Spec-Kit Example Domain Ontology" ;
+    rdfs:comment "Example domain model for demonstrating ggen integration with spec-kit" ;
+    owl:versionInfo "1.0.0" .
+
+# ============================================================================
+# Project Management Domain Model
+# ============================================================================
+
+# Classes
+# ----------------------------------------------------------------------------
+
+spec:Project a owl:Class ;
+    rdfs:label "Project" ;
+    rdfs:comment "Represents a project that contains tasks and team members" .
+
+spec:Task a owl:Class ;
+    rdfs:label "Task" ;
+    rdfs:comment "Represents a task within a project" .
+
+spec:User a owl:Class ;
+    rdfs:label "User" ;
+    rdfs:comment "Represents a user who can be assigned to tasks" .
+
+spec:Comment a owl:Class ;
+    rdfs:label "Comment" ;
+    rdfs:comment "Represents a comment on a task" .
+
+spec:TaskStatus a owl:Class ;
+    rdfs:label "TaskStatus" ;
+    rdfs:comment "Enumeration of possible task statuses" .
+
+# Properties
+# ----------------------------------------------------------------------------
+
+# Project properties
+spec:projectName a rdf:Property ;
+    rdfs:domain spec:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "The name of the project" .
+
+spec:projectDescription a rdf:Property ;
+    rdfs:domain spec:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "description" ;
+    rdfs:comment "Description of the project" .
+
+spec:projectCreatedAt a rdf:Property ;
+    rdfs:domain spec:Project ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "createdAt" ;
+    rdfs:comment "Timestamp when the project was created" .
+
+# Task properties
+spec:taskTitle a rdf:Property ;
+    rdfs:domain spec:Task ;
+    rdfs:range xsd:string ;
+    rdfs:label "title" ;
+    rdfs:comment "The title of the task" .
+
+spec:taskDescription a rdf:Property ;
+    rdfs:domain spec:Task ;
+    rdfs:range xsd:string ;
+    rdfs:label "description" ;
+    rdfs:comment "Detailed description of the task" .
+
+spec:taskStatus a rdf:Property ;
+    rdfs:domain spec:Task ;
+    rdfs:range spec:TaskStatus ;
+    rdfs:label "status" ;
+    rdfs:comment "Current status of the task" .
+
+spec:taskAssignee a rdf:Property ;
+    rdfs:domain spec:Task ;
+    rdfs:range spec:User ;
+    rdfs:label "assignee" ;
+    rdfs:comment "User assigned to this task" .
+
+spec:taskProject a rdf:Property ;
+    rdfs:domain spec:Task ;
+    rdfs:range spec:Project ;
+    rdfs:label "project" ;
+    rdfs:comment "Project this task belongs to" .
+
+spec:taskCreatedAt a rdf:Property ;
+    rdfs:domain spec:Task ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "createdAt" ;
+    rdfs:comment "Timestamp when the task was created" .
+
+spec:taskUpdatedAt a rdf:Property ;
+    rdfs:domain spec:Task ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "updatedAt" ;
+    rdfs:comment "Timestamp when the task was last updated" .
+
+# User properties
+spec:userName a rdf:Property ;
+    rdfs:domain spec:User ;
+    rdfs:range xsd:string ;
+    rdfs:label "name" ;
+    rdfs:comment "Full name of the user" .
+
+spec:userEmail a rdf:Property ;
+    rdfs:domain spec:User ;
+    rdfs:range xsd:string ;
+    rdfs:label "email" ;
+    rdfs:comment "Email address of the user" .
+
+spec:userRole a rdf:Property ;
+    rdfs:domain spec:User ;
+    rdfs:range xsd:string ;
+    rdfs:label "role" ;
+    rdfs:comment "Role of the user (e.g., 'engineer', 'product_manager')" .
+
+# Comment properties
+spec:commentText a rdf:Property ;
+    rdfs:domain spec:Comment ;
+    rdfs:range xsd:string ;
+    rdfs:label "text" ;
+    rdfs:comment "The text content of the comment" .
+
+spec:commentAuthor a rdf:Property ;
+    rdfs:domain spec:Comment ;
+    rdfs:range spec:User ;
+    rdfs:label "author" ;
+    rdfs:comment "User who authored the comment" .
+
+spec:commentTask a rdf:Property ;
+    rdfs:domain spec:Comment ;
+    rdfs:range spec:Task ;
+    rdfs:label "task" ;
+    rdfs:comment "Task this comment belongs to" .
+
+spec:commentCreatedAt a rdf:Property ;
+    rdfs:domain spec:Comment ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "createdAt" ;
+    rdfs:comment "Timestamp when the comment was created" .
+
+# Task Status Enumeration
+# ----------------------------------------------------------------------------
+
+spec:TodoStatus a spec:TaskStatus ;
+    rdfs:label "To Do" ;
+    rdfs:comment "Task has not been started" .
+
+spec:InProgressStatus a spec:TaskStatus ;
+    rdfs:label "In Progress" ;
+    rdfs:comment "Task is currently being worked on" .
+
+spec:InReviewStatus a spec:TaskStatus ;
+    rdfs:label "In Review" ;
+    rdfs:comment "Task is being reviewed" .
+
+spec:DoneStatus a spec:TaskStatus ;
+    rdfs:label "Done" ;
+    rdfs:comment "Task has been completed" .

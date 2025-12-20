@@ -1272,6 +1272,13 @@ def check():
     tracker.add("code-insiders", "Visual Studio Code Insiders")
     code_insiders_ok = check_tool("code-insiders", tracker=tracker)
 
+    # Check build tools
+    tracker.add("cargo", "Rust package manager (cargo)")
+    cargo_ok = check_tool("cargo", tracker=tracker)
+
+    tracker.add("ggen", "Ontology-driven code generator (ggen)")
+    ggen_ok = check_tool("ggen", tracker=tracker)
+
     console.print(tracker.render())
 
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
@@ -1281,6 +1288,14 @@ def check():
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+
+    if not cargo_ok:
+        console.print("[dim]Tip: Install Rust and cargo to use ggen for ontology-driven code generation[/dim]")
+        console.print("[dim]     Visit: https://rustup.rs/[/dim]")
+
+    if not ggen_ok and cargo_ok:
+        console.print("[dim]Tip: Install ggen with: cargo install ggen[/dim]")
+        console.print("[dim]     Visit: https://crates.io/crates/ggen[/dim]")
 
 @app.command()
 def version():

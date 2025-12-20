@@ -1,0 +1,97 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix spec: <https://example.com/spec-kit#> .
+@prefix ggen: <https://ggen.io/ns#> .
+
+# ============================================================================
+# SPARQL CONSTRUCT Rules for Inference
+# ============================================================================
+# These rules materialize implicit relationships before code generation
+# This demonstrates how ggen can infer new triples from existing data
+
+# Rule 1: Infer task assignments
+# If a task has an assignee, infer that the user is assigned to the task
+spec:TaskAssignmentRule a ggen:ConstructQuery ;
+    ggen:query """
+        PREFIX spec: <https://example.com/spec-kit#>
+        CONSTRUCT {
+            ?user spec:assignedTask ?task .
+        }
+        WHERE {
+            ?task spec:taskAssignee ?user .
+        }
+    """ ;
+    rdfs:label "Task Assignment Inference" ;
+    rdfs:comment "Infer bidirectional task-user assignment relationship" .
+
+# Rule 2: Infer project membership
+# If a task belongs to a project and has an assignee, infer project membership
+spec:ProjectMembershipRule a ggen:ConstructQuery ;
+    ggen:query """
+        PREFIX spec: <https://example.com/spec-kit#>
+        CONSTRUCT {
+            ?user spec:projectMember ?project .
+        }
+        WHERE {
+            ?task spec:taskProject ?project .
+            ?task spec:taskAssignee ?user .
+        }
+    """ ;
+    rdfs:label "Project Membership Inference" ;
+    rdfs:comment "Infer project membership from task assignments" .
+
+# Rule 3: Infer task count per project
+# Calculate metadata about projects based on their tasks
+spec:ProjectMetadataRule a ggen:ConstructQuery ;
+    ggen:query """
+        PREFIX spec: <https://example.com/spec-kit#>
+        CONSTRUCT {
+            ?project spec:hasTaskCount ?count .
+        }
+        WHERE {
+            ?project a spec:Project .
+            {
+                SELECT ?project (COUNT(?task) as ?count)
+                WHERE {
+                    ?task spec:taskProject ?project .
+                }
+                GROUP BY ?project
+            }
+        }
+    """ ;
+    rdfs:label "Project Metadata Inference" ;
+    rdfs:comment "Calculate task counts for each project" .
+
+# Rule 4: Infer user activity
+# If a user has commented on a task, infer that they are active on that task
+spec:UserActivityRule a ggen:ConstructQuery ;
+    ggen:query """
+        PREFIX spec: <https://example.com/spec-kit#>
+        CONSTRUCT {
+            ?user spec:activeOnTask ?task .
+        }
+        WHERE {
+            ?comment spec:commentAuthor ?user .
+            ?comment spec:commentTask ?task .
+        }
+    """ ;
+    rdfs:label "User Activity Inference" ;
+    rdfs:comment "Infer user activity from comment authorship" .
+
+# Rule 5: Infer overdue tasks (example with date comparison)
+# This is a placeholder - actual implementation would require current date
+spec:OverdueTaskRule a ggen:ConstructQuery ;
+    ggen:query """
+        PREFIX spec: <https://example.com/spec-kit#>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+        CONSTRUCT {
+            ?task spec:isOverdue "true"^^xsd:boolean .
+        }
+        WHERE {
+            ?task a spec:Task .
+            ?task spec:taskDueDate ?dueDate .
+            FILTER(?dueDate < NOW())
+        }
+    """ ;
+    rdfs:label "Overdue Task Inference" ;
+    rdfs:comment "Mark tasks as overdue based on due date" .

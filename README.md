@@ -319,11 +319,18 @@ Our research and experimentation focus on:
 
 ## 🔧 Prerequisites
 
+### Required
+
 - **Linux/macOS/Windows**
-- [Supported](#-supported-ai-agents) AI coding agent.
+- [Supported](#-supported-ai-agents) AI coding agent
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
+
+### Optional
+
+- [Rust and cargo](https://rustup.rs/) - For ontology-driven code generation with ggen
+- [ggen](https://crates.io/crates/ggen) - Transform RDF ontologies into typed code (`cargo install ggen`)
 
 If you encounter issues with an agent, please open an issue so we can refine the integration.
 
@@ -331,6 +338,56 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
+
+## 🔄 Code Generation with ggen (Optional)
+
+Spec-Kit now supports optional integration with [ggen](https://crates.io/crates/ggen), an ontology-driven code generator that transforms RDF ontologies into typed code.
+
+### Why use ggen with Spec-Kit?
+
+- **Domain Modeling**: Define your domain once in RDF, generate code for multiple languages (Python, TypeScript, Rust, etc.)
+- **Semantic Validation**: Catch domain violations at generation time using OWL constraints
+- **Type Safety**: Generate strongly-typed data models that match your specification
+- **Deterministic Builds**: Same ontology + templates = identical output every time
+- **Inference**: Use SPARQL CONSTRUCT queries to materialize implicit relationships
+
+### Quick Setup
+
+1. Install Rust and cargo:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+2. Install ggen:
+   ```bash
+   cargo install ggen
+   ```
+
+3. Initialize ggen in your project:
+   ```bash
+   # From your spec-kit project root
+   cp templates/ggen.toml .
+   cp -r templates/schema .
+   cp -r templates/ggen .
+   ```
+
+4. Generate code from the example ontology:
+   ```bash
+   ggen sync
+   ```
+
+### Integration with Spec-Driven Development
+
+ggen fits into your workflow between planning and implementation:
+
+1. **Specify** (`/speckit.specify`) - Define what to build
+2. **Model** (new) - Create RDF ontology from your specification
+3. **Plan** (`/speckit.plan`) - Define technical approach
+4. **Generate** (new) - Run `ggen sync` to create data models
+5. **Tasks** (`/speckit.tasks`) - Break down implementation
+6. **Implement** (`/speckit.implement`) - Build with generated types
+
+See the [ggen integration guide](./templates/ggen/README.md) for detailed documentation and examples.
 
 ---
 
