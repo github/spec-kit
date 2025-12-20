@@ -658,8 +658,10 @@ Check each agent:
 
 ## Model Selection Guide
 
-| Agent | Model | Reason |
-|-------|-------|--------|
+### Default Model Assignment
+
+| Agent | Default | Reason |
+|-------|---------|--------|
 | spec-analyzer | haiku | Fast document parsing |
 | designer | sonnet | Architecture reasoning |
 | implementer | sonnet | Complex coding |
@@ -668,6 +670,78 @@ Check each agent:
 | planner | haiku | Quick task breakdown |
 | backend-coder | sonnet | Complex backend logic |
 | frontend-coder | sonnet | UI/state complexity |
+
+### When to Use Opus
+
+Opus should be used for **critical or complex tasks**. Add `model: opus` when:
+
+| Scenario | Why Opus |
+|----------|----------|
+| Architecture decisions (10+ components) | Complex trade-off reasoning |
+| Security-critical features | Nuanced vulnerability detection |
+| Major refactoring | Understanding deep interdependencies |
+| Cross-system integration | Synthesizing large context |
+| Performance optimization | Subtle bottleneck analysis |
+
+### Adaptive Model Selection (Orchestrator Logic)
+
+The orchestrator can dynamically select models based on task complexity:
+
+```markdown
+## Model Selection Rules (for orchestrator)
+
+When invoking agents via Task tool, select model based on:
+
+1. **Use haiku** when:
+   - Task is exploration/research only
+   - Simple file parsing
+   - Quick task breakdown
+   - Estimated changes < 3 files
+
+2. **Use sonnet** (default) when:
+   - Standard feature implementation
+   - Moderate complexity (3-10 files)
+   - Typical design decisions
+   - Regular testing tasks
+
+3. **Use opus** when:
+   - Feature marked as "critical" or "complex"
+   - Architecture-level changes (10+ files)
+   - Security-sensitive code (auth, crypto, payments)
+   - Cross-domain integration
+   - User explicitly requests thorough analysis
+```
+
+### Agent Frontmatter with Adaptive Model
+
+Agents can specify a default and a complex-mode model:
+
+```yaml
+---
+name: designer
+description: |
+  Creates technical designs and architecture.
+  Use when: designing solutions, architecture decisions.
+tools: Read, Glob, Grep, Write
+model: sonnet  # Default for standard features
+# Orchestrator may override to opus for complex architecture
+skills: {framework}-architecture, {language}-standards
+---
+```
+
+### Cost/Speed Tradeoffs
+
+| Model | Relative Cost | Speed | Best For |
+|-------|---------------|-------|----------|
+| haiku | $ | ~2s | Research, parsing, simple tasks |
+| sonnet | $$ | ~5s | Most coding, design, testing |
+| opus | $$$$ | ~15s | Critical architecture, security |
+
+**Recommendation**: Start with sonnet defaults. Promote to opus only for:
+- Features tagged `priority: critical`
+- Security/auth/payment features
+- Architecture redesigns
+- When sonnet produces suboptimal results
 
 ## Success Criteria
 
