@@ -44,3 +44,4 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+.claude-flow/
