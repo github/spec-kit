@@ -1290,12 +1290,18 @@ def check():
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
     if not cargo_ok:
-        console.print("[dim]Tip: Install Rust and cargo to use ggen for ontology-driven code generation[/dim]")
-        console.print("[dim]     Visit: https://rustup.rs/[/dim]")
+        console.print("[yellow]⚠ Cargo is required for ontology-driven development[/yellow]")
+        console.print("[dim]  Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh[/dim]")
+        console.print("[dim]  Visit: https://rustup.rs/[/dim]")
 
     if not ggen_ok and cargo_ok:
-        console.print("[dim]Tip: Install ggen with: cargo install ggen[/dim]")
-        console.print("[dim]     Visit: https://crates.io/crates/ggen[/dim]")
+        console.print("[yellow]⚠ ggen is required for compiling ontologies to code[/yellow]")
+        console.print("[dim]  Install: cargo install ggen[/dim]")
+        console.print("[dim]  Visit: https://crates.io/crates/ggen[/dim]")
+
+    if not ggen_ok and not cargo_ok:
+        console.print("[yellow]⚠ Modern spec-driven development requires ontology compilation[/yellow]")
+        console.print("[dim]  Without ggen, you'll need to hand-code data models (not recommended)[/dim]")
 
 @app.command()
 def version():

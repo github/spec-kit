@@ -319,18 +319,13 @@ Our research and experimentation focus on:
 
 ## 🔧 Prerequisites
 
-### Required
-
 - **Linux/macOS/Windows**
 - [Supported](#-supported-ai-agents) AI coding agent
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
-
-### Optional
-
-- [Rust and cargo](https://rustup.rs/) - For ontology-driven code generation with ggen
-- [ggen](https://crates.io/crates/ggen) - Transform RDF ontologies into typed code (`cargo install ggen`)
+- **[Rust and cargo](https://rustup.rs/)** - Required for ontology-driven code generation
+- **[ggen](https://crates.io/crates/ggen)** - Transform RDF ontologies into typed code (`cargo install ggen`)
 
 If you encounter issues with an agent, please open an issue so we can refine the integration.
 
@@ -339,17 +334,32 @@ If you encounter issues with an agent, please open an issue so we can refine the
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
-## 🔄 Code Generation with ggen (Optional)
+## 🧬 Ontology as Source Code
 
-Spec-Kit now supports optional integration with [ggen](https://crates.io/crates/ggen), an ontology-driven code generator that transforms RDF ontologies into typed code.
+**In modern software development, you don't hand-code data models.** Your domain ontology in RDF is the authoritative source, and [ggen](https://crates.io/crates/ggen) compiles it into type-safe implementations across any language.
 
-### Why use ggen with Spec-Kit?
+Think of it this way:
+- **2010**: Manually writing HTML for every page
+- **2020**: Components and templates generate HTML
+- **2030**: Ontologies generate entire type systems
 
-- **Domain Modeling**: Define your domain once in RDF, generate code for multiple languages (Python, TypeScript, Rust, etc.)
-- **Semantic Validation**: Catch domain violations at generation time using OWL constraints
-- **Type Safety**: Generate strongly-typed data models that match your specification
-- **Deterministic Builds**: Same ontology + templates = identical output every time
-- **Inference**: Use SPARQL CONSTRUCT queries to materialize implicit relationships
+### Why Ontology-Driven Development Won
+
+Hand-coding domain models introduced systematic failures:
+- **Drift**: Specs and code diverge over time
+- **Inconsistency**: Same concept implemented differently across services/languages
+- **No Inference**: Implicit relationships require manual duplication
+- **Single Language Lock-in**: Rewrite for each target language
+
+**Ontology-driven development solved this:**
+
+- **Single Source of Truth**: RDF ontology defines reality once
+- **Deterministic Compilation**: Same ontology → identical code, always
+- **Semantic Inference**: SPARQL materializes implicit knowledge
+- **Multi-language Native**: One ontology → Python, TypeScript, Rust, Java, C#, Go
+- **Machine + Human Readable**: Both compilers and domain experts understand RDF
+
+Just as you wouldn't hand-write assembly when you have a compiler, you don't hand-write data models when you have ontologies.
 
 ### Quick Setup
 
@@ -376,18 +386,23 @@ Spec-Kit now supports optional integration with [ggen](https://crates.io/crates/
    ggen sync
    ```
 
-### Integration with Spec-Driven Development
+### The Modern Development Workflow
 
-ggen fits into your workflow between planning and implementation:
+This is how software is built with Spec-Kit:
 
-1. **Specify** (`/speckit.specify`) - Define what to build
-2. **Model** (new) - Create RDF ontology from your specification
-3. **Plan** (`/speckit.plan`) - Define technical approach
-4. **Generate** (new) - Run `ggen sync` to create data models
-5. **Tasks** (`/speckit.tasks`) - Break down implementation
-6. **Implement** (`/speckit.implement`) - Build with generated types
+1. **Specify** (`/speckit.specify`) - Capture requirements and user stories
+2. **Model** - Formalize domain knowledge in RDF ontology (compile target)
+3. **Plan** (`/speckit.plan`) - Choose architecture and target runtimes
+4. **Compile** - Run `ggen sync` to generate type systems for all targets
+5. **Tasks** (`/speckit.tasks`) - Break down business logic implementation
+6. **Implement** (`/speckit.implement`) - Write logic against generated types
+7. **Evolve** - Modify ontology, recompile, types update automatically
 
-See the [ggen integration guide](./templates/ggen/README.md) for detailed documentation and examples.
+**The ontology is your source code. Generated classes are build artifacts.**
+
+When your domain understanding changes, you update the ontology and recompile - just like changing a header file and rebuilding. No manual synchronization, no drift, no translation errors.
+
+See the [ggen documentation](./templates/ggen/README.md) organized by the [Diátaxis framework](https://diataxis.fr/).
 
 ---
 
