@@ -129,9 +129,9 @@ ggen validate .specify/specs/013-feature-name/feature.ttl
 
 ```bash
 # Regenerate spec.md from feature.ttl
-ggen render .specify/templates/spec.tera \
-            .specify/specs/013-feature-name/feature.ttl \
-            > .specify/specs/013-feature-name/spec.md
+ggen sync
+# Reads configuration from ggen.toml in feature directory
+# Outputs generated artifacts as configured
 
 # Or use cargo make target
 cargo make speckit-render
@@ -162,9 +162,9 @@ vim .specify/specs/013-feature-name/spec.md  # NEVER DO THIS
 vim .specify/specs/013-feature-name/feature.ttl
 
 # 2. Regenerate markdown
-ggen render .specify/templates/spec.tera \
-            .specify/specs/013-feature-name/feature.ttl \
-            > .specify/specs/013-feature-name/spec.md
+ggen sync
+# Reads configuration from ggen.toml in feature directory
+# Outputs generated artifacts as configured
 ```
 
 ## RDF Templates Reference
@@ -260,14 +260,12 @@ ggen parse-spec .specify/specs/NNN-feature/spec.md \
 # 2. Validate the generated RDF
 ggen validate .specify/specs/NNN-feature/feature.ttl
 
-# 3. Regenerate markdown to verify
-ggen render .specify/templates/spec.tera \
-            .specify/specs/NNN-feature/feature.ttl \
-            > .specify/specs/NNN-feature/spec-regenerated.md
+# 3. Set up ggen.toml and regenerate markdown to verify
+cd .specify/specs/NNN-feature
+ggen sync
 
 # 4. Compare original vs regenerated
-diff .specify/specs/NNN-feature/spec.md \
-     .specify/specs/NNN-feature/spec-regenerated.md
+diff spec.md generated/spec.md
 ```
 
 ## Troubleshooting
@@ -294,12 +292,21 @@ diff .specify/specs/NNN-feature/spec.md \
 
 ---
 
-**Problem**: `ggen render` command not found
+**Problem**: `ggen sync` command not found
 
-**Solution**: Build ggen CLI:
+**Solution**: Install ggen CLI:
 ```bash
-cargo make build
-./target/release/ggen render --help
+# Install from crates.io (when published)
+cargo install ggen
+
+# Or install from source
+git clone https://github.com/seanchatmangpt/ggen.git
+cd ggen
+cargo install --path crates/ggen-cli
+
+# Verify installation
+ggen --version
+ggen sync --help
 ```
 
 ## Further Reading
