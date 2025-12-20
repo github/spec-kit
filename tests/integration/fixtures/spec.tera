@@ -1,0 +1,13 @@
+# Feature Specification
+
+{% for row in results %}
+## {{ row.featureName }}
+
+**Description**: {{ row.featureDescription }}
+
+**Priority**: {{ row.priority }}
+
+{% endfor %}
+
+---
+*Generated via ggen sync*

@@ -1,0 +1,23 @@
+[project]
+name = "test-feature"
+version = "0.1.0"
+
+[[generation]]
+query = """
+PREFIX : <http://spec-kit.io/ontology#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?featureName ?featureDescription ?priority
+WHERE {
+  ?feature a :Feature ;
+           :featureName ?featureName ;
+           :featureDescription ?featureDescription ;
+           :priority ?priority .
+}
+"""
+template = "spec.tera"
+output = "spec.md"
+
+[[generation.sources]]
+path = "feature-content.ttl"
+format = "turtle"

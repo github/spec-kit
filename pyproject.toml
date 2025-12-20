@@ -17,6 +17,14 @@ dependencies = [
 #   Install via: cargo install ggen
 #   Or from source: https://github.com/seanchatmangpt/ggen
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "testcontainers>=4.0.0",
+    "rdflib>=7.0.0",
+]
+
 [project.scripts]
 specify = "specify_cli:main"
 

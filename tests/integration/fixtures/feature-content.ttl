@@ -1,0 +1,45 @@
+@prefix : <http://spec-kit.io/ontology#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+:Feature001 a :Feature ;
+    :featureName "User Authentication" ;
+    :featureDescription "Add user authentication to the application" ;
+    :priority "P1" ;
+    :createdDate "2025-12-20"^^xsd:date .
+
+:Requirement001 a :FunctionalRequirement ;
+    :requirementId "FR-001" ;
+    :requirementText "System SHALL allow users to register with email and password" ;
+    :belongsToFeature :Feature001 ;
+    :priority "P1" .
+
+:Requirement002 a :FunctionalRequirement ;
+    :requirementId "FR-002" ;
+    :requirementText "System SHALL allow users to login with credentials" ;
+    :belongsToFeature :Feature001 ;
+    :priority "P1" .
+
+:UserStory001 a :UserStory ;
+    :userStoryId "US-001" ;
+    :asA "new user" ;
+    :iWantTo "register for an account" ;
+    :soThat "I can access protected features" ;
+    :belongsToFeature :Feature001 ;
+    :priority "P1" ;
+    :acceptanceCriteria "User can create account with valid email" ;
+    :acceptanceCriteria "Password must be at least 8 characters" ;
+    :acceptanceCriteria "User receives confirmation email" .
+
+:SuccessCriterion001 a :SuccessCriterion ;
+    :criterionText "Users can complete registration in under 2 minutes" ;
+    :belongsToFeature :Feature001 ;
+    :measurementType "Time" ;
+    :targetValue "120"^^xsd:integer .
+
+:SuccessCriterion002 a :SuccessCriterion ;
+    :criterionText "95% of registration attempts succeed" ;
+    :belongsToFeature :Feature001 ;
+    :measurementType "Percentage" ;
+    :targetValue "95"^^xsd:integer .
