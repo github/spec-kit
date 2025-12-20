@@ -32,7 +32,7 @@ All specifications in ggen are **deterministic transformations** from RDF/Turtle
 ### Key Principles
 
 1. **TTL files are the source of truth** - Edit these, never the markdown
-2. **Markdown files are generated artifacts** - Created via `ggen render`, never manually edited
+2. **Markdown files are generated artifacts** - Created via `ggen sync`, never manually edited
 3. **SHACL shapes enforce constraints** - Validation happens before generation
 4. **Idempotent transformations** - Running twice produces zero changes
 5. **Cryptographic provenance** - Receipts prove spec.md = μ(ontology)
@@ -178,7 +178,7 @@ vim specs/005-ttl-shacl-validation/ontology/feature-content.ttl
 #### Step 1.3: Validate TTL Against SHACL Shapes
 
 ```bash
-# Run SHACL validation (automatic in ggen render, or manual)
+# Run SHACL validation (automatic in ggen sync, or manual)
 cd specs/005-ttl-shacl-validation
 ggen validate ontology/feature-content.ttl --shapes ontology/spec-kit-schema.ttl
 ```
@@ -202,22 +202,24 @@ ggen validate ontology/feature-content.ttl --shapes ontology/spec-kit-schema.ttl
 #### Step 1.4: Generate Spec Markdown
 
 ```bash
-# Generate spec.md from feature-content.ttl using ggen render
+# Generate spec.md from feature-content.ttl using ggen sync
 cd specs/005-ttl-shacl-validation
-ggen render templates/spec.tera ontology/feature-content.ttl > generated/spec.md
+ggen sync
 ```
 
 **What this does:**
 1. **μ₁ (Normalization)**: Validates ontology/feature-content.ttl against SHACL shapes
-2. **μ₂ (Extraction)**: Executes SPARQL query from ggen.toml to extract data
-3. **μ₃ (Emission)**: Applies spec.tera template to SPARQL results
+2. **μ₂ (Extraction)**: Executes SPARQL queries from ggen.toml to extract data
+3. **μ₃ (Emission)**: Applies Tera templates (spec.tera, plan.tera, tasks.tera) to SPARQL results
 4. **μ₄ (Canonicalization)**: Formats markdown (line endings, whitespace)
 5. **μ₅ (Receipt)**: Generates cryptographic hash (stored in .ggen/receipts/)
+
+**Note:** `ggen sync` reads `ggen.toml` configuration to determine which templates to render and outputs to generate. All generation rules are defined in the `[[generation]]` sections of `ggen.toml`.
 
 **Generated file header:**
 ```markdown
 <!-- Generated from feature-content.ttl - DO NOT EDIT MANUALLY -->
-<!-- Regenerate with: ggen render templates/spec.tera ontology/feature-content.ttl > generated/spec.md -->
+<!-- Regenerate with: ggen sync -->
 
 # Feature Specification: Add TTL validation command to ggen CLI
 
@@ -353,7 +355,7 @@ vim specs/005-ttl-shacl-validation/ontology/plan.ttl
 ```bash
 # Generate plan.md from plan.ttl
 cd specs/005-ttl-shacl-validation
-ggen render templates/plan.tera ontology/plan.ttl > generated/plan.md
+ggen sync
 ```
 
 **Generated output:**
@@ -463,7 +465,7 @@ vim specs/005-ttl-shacl-validation/ontology/tasks.ttl
 ```bash
 # Generate tasks.md from tasks.ttl
 cd specs/005-ttl-shacl-validation
-ggen render templates/tasks.tera ontology/tasks.ttl > generated/tasks.md
+ggen sync
 ```
 
 **Generated output:**
@@ -505,9 +507,9 @@ sk:PriorityShape a sh:NodeShape ;
 
 ### Validation Workflow
 
-1. **Automatic validation during ggen render:**
+1. **Automatic validation during ggen sync:**
    ```bash
-   ggen render templates/spec.tera ontology/feature-content.ttl > generated/spec.md
+   ggen sync
    # ↑ Automatically validates against ontology/spec-kit-schema.ttl before rendering
    ```
 
@@ -695,7 +697,7 @@ cp .specify/templates/rdf-helpers/plan.ttl.template specs/005-ttl-shacl-validati
 
 **Symptom:**
 ```bash
-$ ggen render templates/spec.tera ontology/feature-content.ttl > generated/spec.md
+$ ggen sync
 ✗ SHACL validation failed: :us-001 priority "HIGH" not in ("P1", "P2", "P3")
 ```
 
@@ -806,7 +808,7 @@ ggen validate ontology/feature-content.ttl --shapes ontology/spec-kit-schema.ttl
 
 **Step 4: Generate spec.md**
 ```bash
-ggen render templates/spec.tera ontology/feature-content.ttl > generated/spec.md
+ggen sync
 ```
 
 **Step 5: Verify generated markdown**

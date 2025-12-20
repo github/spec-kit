@@ -136,3 +136,39 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Report final status with summary of completed work
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
+
+## RDF-First Architecture Considerations
+
+When working with RDF-first specifications, ensure artifacts are up-to-date before implementation:
+
+1. **Pre-Implementation Sync**:
+   - Before loading tasks.md, plan.md, or other artifacts, verify they're generated from TTL sources:
+     ```bash
+     cd FEATURE_DIR
+     ggen sync
+     ```
+   - This ensures markdown artifacts reflect the latest TTL source changes
+
+2. **Artifact Loading Order**:
+   - TTL sources in `ontology/` are the source of truth
+   - Generated markdown in `generated/` are derived artifacts
+   - Always load from `generated/` after running `ggen sync`
+
+3. **Implementation Tracking**:
+   - Task completion updates should ideally update TTL sources (task.ttl)
+   - After marking tasks complete, run `ggen sync` to regenerate tasks.md
+   - This maintains consistency between RDF sources and markdown views
+
+4. **Validation**:
+   - Verify generated artifacts exist and are current:
+     - `generated/spec.md` - Feature specification
+     - `generated/plan.md` - Implementation plan
+     - `generated/tasks.md` - Task breakdown
+   - If any are missing or outdated, run `ggen sync` before proceeding
+
+5. **Evidence Collection**:
+   - Implementation evidence (logs, test results, screenshots) should be stored in `evidence/`
+   - Consider capturing evidence metadata in TTL format for queryability
+   - See `/docs/RDF_WORKFLOW_GUIDE.md` for complete details
+
+**NOTE:** For backward compatibility with markdown-only projects, the standard workflow above still applies. RDF-first projects benefit from the additional sync step to ensure artifact consistency.

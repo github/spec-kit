@@ -89,7 +89,28 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 **Output**: data-model.md, /contracts/*, quickstart.md, agent-specific file
 
+### Phase 2: Generate Markdown Artifacts from TTL Sources
+
+1. **Generate plan artifacts from TTL sources**:
+   - After creating TTL planning files (plan.ttl, plan-decision.ttl, assumption.ttl), run `ggen sync` to generate markdown:
+     ```bash
+     cd FEATURE_DIR
+     ggen sync
+     ```
+   - This will read `ggen.toml` configuration and generate `generated/plan.md` from `ontology/plan.ttl` and related TTL files
+   - Verify the generated markdown file exists and is properly formatted
+
+2. **Report completion with**:
+   - Branch name
+   - TTL source paths (`ontology/plan.ttl`, `ontology/plan-decision.ttl`, etc. - source of truth)
+   - Generated markdown path (`generated/plan.md` - derived artifact)
+   - Research findings and design artifacts
+   - Readiness for next phase (`/speckit.tasks`)
+
+**NOTE:** The TTL files are the source of truth; markdown is generated via `ggen sync`.
+
 ## Key rules
 
 - Use absolute paths
 - ERROR on gate failures or unresolved clarifications
+- TTL files in ontology/ are source of truth, markdown in generated/ are derived artifacts

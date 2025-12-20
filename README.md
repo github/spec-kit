@@ -320,10 +320,30 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS/Windows**
-- [Supported](#-supported-ai-agents) AI coding agent.
+- [Supported](#-supported-ai-agents) AI coding agent
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
+- **[ggen v6](https://github.com/seanchatmangpt/ggen)** - RDF-first code generation engine
+
+### Installing ggen
+
+ggen is required for RDF-first specification workflows. Install via cargo:
+
+```bash
+# Install from crates.io (when published)
+cargo install ggen
+
+# Or install from source
+git clone https://github.com/seanchatmangpt/ggen.git
+cd ggen
+cargo install --path crates/ggen-cli
+
+# Verify installation
+ggen --version  # Should show v6.x.x or higher
+```
+
+**What is ggen?** ggen v6 is an ontology-driven code generation engine that transforms RDF/Turtle specifications into markdown artifacts via deterministic transformations (`spec.md = μ(feature.ttl)`). It uses SHACL validation, SPARQL queries, and Tera templates configured in `ggen.toml` files.
 
 If you encounter issues with an agent, please open an issue so we can refine the integration.
 

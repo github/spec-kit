@@ -138,3 +138,24 @@ Every task MUST strictly follow this format:
   - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
 - **Final Phase**: Polish & Cross-Cutting Concerns
+
+## Generate Markdown Artifacts from TTL Sources
+
+After creating task TTL files (task.ttl, etc.), generate markdown artifacts:
+
+1. **Generate tasks.md from TTL sources**:
+   ```bash
+   cd FEATURE_DIR
+   ggen sync
+   ```
+   - This will read `ggen.toml` configuration and generate `generated/tasks.md` from `ontology/task.ttl`
+   - Verify the generated markdown file exists and is properly formatted
+
+2. **Report completion with**:
+   - Branch name
+   - TTL source path (`ontology/task.ttl` - source of truth)
+   - Generated markdown path (`generated/tasks.md` - derived artifact)
+   - Task count summary and parallel opportunities
+   - Readiness for next phase (`/speckit.implement`)
+
+**NOTE:** The TTL files are the source of truth; markdown is generated via `ggen sync`.

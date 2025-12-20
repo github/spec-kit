@@ -182,3 +182,35 @@ Behavior rules:
 - If quota reached with unresolved high-impact categories remaining, explicitly flag them under Deferred with rationale.
 
 Context for prioritization: {ARGS}
+
+## RDF-First Architecture Integration
+
+When working with RDF-first specifications:
+
+1. **Source of Truth**: The TTL files in `ontology/feature-content.ttl` are the source of truth, not the generated markdown files.
+
+2. **Update Workflow**:
+   - Load and parse the TTL file instead of markdown for analysis
+   - Apply clarifications by updating TTL triples (using appropriate RDF predicates)
+   - After each clarification, regenerate markdown from TTL:
+     ```bash
+     cd FEATURE_DIR
+     ggen sync
+     ```
+   - Verify the generated `generated/spec.md` reflects the clarifications
+
+3. **Clarification Recording**:
+   - Clarifications should be recorded as RDF triples in the TTL file
+   - Use appropriate predicates from the spec-kit ontology schema
+   - Maintain provenance by adding metadata about when clarifications were added
+
+4. **Validation**:
+   - Run SHACL validation after TTL updates to ensure data integrity
+   - Verify generated markdown matches expected output
+   - Check that all clarifications are properly reflected in the ontology
+
+5. **Backward Compatibility**:
+   - If working with markdown-only specs (legacy), follow the markdown update workflow above
+   - For new RDF-first specs, always update TTL sources
+
+**NOTE:** See `/docs/RDF_WORKFLOW_GUIDE.md` for complete details on working with TTL sources and ggen sync.

@@ -1,7 +1,7 @@
 [project]
 name = "specify-cli"
-version = "0.0.22"
-description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
+version = "0.0.23"
+description = "Specify CLI, part of GitHub Spec Kit with RDF-first architecture. A tool to bootstrap your projects for Spec-Driven Development (SDD) using ggen v6 ontology-driven transformations."
 requires-python = ">=3.11"
 dependencies = [
     "typer",
@@ -11,6 +11,11 @@ dependencies = [
     "readchar",
     "truststore>=0.10.4",
 ]
+
+# External system dependencies (must be installed separately):
+# - ggen v6: RDF-first code generation engine
+#   Install via: cargo install ggen
+#   Or from source: https://github.com/seanchatmangpt/ggen
 
 [project.scripts]
 specify = "specify_cli:main"

@@ -80,3 +80,18 @@ If the user supplies partial updates (e.g., only one principle revision), still 
 If critical info missing (e.g., ratification date truly unknown), insert `TODO(<FIELD_NAME>): explanation` and include in the Sync Impact Report under deferred items.
 
 Do not create a new template; always operate on the existing `/memory/constitution.md` file.
+
+## RDF-First Architecture Considerations
+
+**Note:** The constitution currently operates on markdown templates at the project level (`/memory/constitution.md`). For RDF-first workflows at the feature level:
+
+- Feature specifications, plans, and tasks use TTL sources (`.ttl` files in `ontology/` directories)
+- These TTL files are the source of truth
+- Markdown artifacts are generated via `ggen sync` which reads `ggen.toml` configuration
+- See `/docs/RDF_WORKFLOW_GUIDE.md` for complete RDF workflow details
+
+Future consideration: The constitution itself could be stored as TTL and rendered to markdown using the same ggen sync workflow, enabling:
+- SHACL validation of constitutional constraints
+- SPARQL queries for principle extraction
+- Version-controlled ontology evolution
+- Cryptographic provenance via receipts
