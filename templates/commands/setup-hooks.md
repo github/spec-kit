@@ -1,5 +1,5 @@
 ---
-description: Configure Claude Code skills and hooks for the current project to automate tests, linters, and setup tasks.
+description: Configure Claude Code skills and hooks for the current project to automate tests, linters, setup tasks, and generate architecture/best practices skills from framework documentation.
 scripts:
   sh: scripts/bash/setup-hooks.sh --json
   ps: scripts/powershell/setup-hooks.ps1 -Json
@@ -20,10 +20,19 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 - **SessionStart**: Automatic dependency installation when Claude starts
 - **PostToolUse**: Auto-formatting and linting after file edits
 - **Stop**: Run tests and checks before session ends
+- **Architecture Skills**: Best practices and patterns from detected frameworks
+- **Coding Guidelines**: Framework-specific coding standards fetched from official docs
 
 1. Run `{SCRIPT}` from repo root and parse the JSON output containing:
-   - `PROJECT_TYPE`: Detected project type (node, python, rust, go, java, dotnet, ruby, php, generic)
+   - `PROJECT_TYPE`: Detected project type (node, node-typescript, python, rust, go, java-maven, java-gradle, scala-sbt, scala-mill, dotnet, ruby, php, generic)
    - `DETECTED_TOOLS`: List of detected tools (package managers, test runners, linters)
+   - `DETECTED_FRAMEWORKS`: List of detected frameworks with their documentation URLs:
+     ```json
+     [
+       {"name": "react", "docs_url": "https://react.dev", "github_url": "https://github.com/facebook/react"},
+       {"name": "next", "docs_url": "https://nextjs.org/docs", "github_url": "https://github.com/vercel/next.js"}
+     ]
+     ```
    - `CLAUDE_DIR`: Path to `.claude/` directory
    - `SETTINGS_FILE`: Path to `.claude/settings.json`
    - `SKILLS_DIR`: Path to `.claude/skills/` directory
@@ -39,7 +48,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
      - Custom hook requests (e.g., "add a hook to run eslint")
 
 3. **Review Detected Configuration**:
-   - Present the detected project type and tools to user
+   - Present the detected project type, tools, and frameworks to user
    - Show what hooks and skills will be created
    - Ask for confirmation before proceeding
 
@@ -52,13 +61,21 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    ├── Linter: eslint
    └── Formatter: prettier
 
+   Detected Frameworks:
+   ├── react (https://react.dev)
+   ├── next (https://nextjs.org/docs)
+   └── tailwind (https://tailwindcss.com/docs)
+
    Proposed Hooks:
    ├── SessionStart: npm install
    ├── PostToolUse[Edit|Write]: prettier --write
    └── Stop: npm test
 
    Proposed Skills:
-   └── testing-skill: Run and write tests with jest
+   ├── testing-skill: Run and write tests with jest
+   ├── react-architecture: React patterns and best practices
+   ├── nextjs-patterns: Next.js App Router conventions
+   └── tailwind-guidelines: Tailwind CSS utility patterns
 
    Proceed with setup? (yes/no/customize)
    ```
@@ -89,6 +106,11 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    - `hooks/session-setup.sh`: `go mod download`
    - `hooks/auto-format.sh`: `gofmt -w` on edited files
    - `hooks/pre-commit-checks.sh`: `go test ./...` and `go vet`
+
+   **For Scala projects (sbt/Mill)**:
+   - `hooks/session-setup.sh`: `sbt compile` or `mill compile`
+   - `hooks/auto-format.sh`: `scalafmt` on edited files
+   - `hooks/pre-commit-checks.sh`: `sbt test` or `mill test`
 
    **For generic projects**:
    - `hooks/session-setup.sh`: Display project status (git status, recent changes)
@@ -141,7 +163,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    }
    ```
 
-7. **Generate Skills** (optional, based on project):
+7. **Generate Skills** (based on detected tools and frameworks):
 
    **Testing Skill** (`.claude/skills/testing-skill/SKILL.md`):
    ```yaml
@@ -175,16 +197,167 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    [Generated based on detected linter/formatter]
    ```
 
-8. **Make Hook Scripts Executable**:
-   - Run `chmod +x` on all generated hook scripts
-   - Verify scripts are valid bash
+8. **Generate Framework Architecture Skills** (CRITICAL - for each detected framework):
 
-9. **Validation and Testing**:
-   - Dry-run the SessionStart hook to verify it works
-   - Check that the settings.json is valid JSON
-   - Verify skill files have valid YAML frontmatter
+   For EACH framework in `DETECTED_FRAMEWORKS`, create a skill by fetching documentation:
 
-10. **Report Completion**:
+   **Step 8.1: Fetch Framework Documentation**
+
+   For each framework, use WebFetch to retrieve best practices:
+
+   - **Primary source**: Fetch the `docs_url` from the framework entry
+   - **Fallback**: If docs_url fails, fetch the README from `github_url`
+   - **Key pages to fetch** (append to docs_url):
+     - `/getting-started` or `/introduction`
+     - `/best-practices` or `/patterns`
+     - `/architecture` or `/project-structure`
+     - `/api-reference` (for key APIs)
+
+   **Step 8.2: Extract Key Information**
+
+   From the fetched documentation, extract:
+   - **Architecture patterns**: Recommended project structure, component organization
+   - **Best practices**: Do's and don'ts, common pitfalls
+   - **Coding conventions**: Naming conventions, file organization
+   - **Performance tips**: Optimization strategies
+   - **Security guidelines**: Common vulnerabilities to avoid
+
+   **Step 8.3: Create Framework Skill**
+
+   Create `.claude/skills/{framework}-architecture/SKILL.md`:
+
+   ```yaml
+   ---
+   name: {framework}-architecture
+   description: Architecture patterns, best practices, and coding guidelines for {Framework Name}. Activate when building features, reviewing code, or making architectural decisions with {Framework Name}.
+   ---
+
+   # {Framework Name} Architecture & Best Practices
+
+   > Generated from official documentation: {docs_url}
+   > Last updated: {current_date}
+
+   ## Project Structure
+
+   [Recommended directory structure from docs]
+
+   ## Core Patterns
+
+   [Key architectural patterns: components, hooks, state management, etc.]
+
+   ## Best Practices
+
+   ### Do's
+   [List of recommended practices]
+
+   ### Don'ts
+   [Common anti-patterns to avoid]
+
+   ## Coding Conventions
+
+   [Naming conventions, file organization, import patterns]
+
+   ## Performance Guidelines
+
+   [Optimization tips, lazy loading, memoization patterns]
+
+   ## Security Considerations
+
+   [XSS prevention, input validation, authentication patterns]
+
+   ## Common Patterns
+
+   ### [Pattern 1 Name]
+   ```{language}
+   // Example code
+   ```
+
+   ### [Pattern 2 Name]
+   ```{language}
+   // Example code
+   ```
+
+   ## References
+
+   - [Official Documentation]({docs_url})
+   - [GitHub Repository]({github_url})
+   ```
+
+   **Example Skills to Generate**:
+
+   | Framework | Skill Name | Key Content |
+   |-----------|------------|-------------|
+   | React | react-architecture | Component patterns, hooks rules, state management |
+   | Next.js | nextjs-patterns | App Router, Server Components, data fetching |
+   | Vue | vue-architecture | Composition API, reactivity, component design |
+   | Django | django-patterns | MTV pattern, ORM best practices, security |
+   | FastAPI | fastapi-architecture | Dependency injection, async patterns, Pydantic |
+   | Spring | spring-patterns | IoC, annotations, layered architecture |
+   | Scala/ZIO | zio-patterns | Effect system, error handling, resource management |
+   | Rust/Axum | axum-patterns | Handler patterns, extractors, error handling |
+
+9. **Generate Language-Specific Best Practices Skill**:
+
+   Based on `PROJECT_TYPE`, create a general coding standards skill:
+
+   **For TypeScript projects** (`.claude/skills/typescript-standards/SKILL.md`):
+   ```yaml
+   ---
+   name: typescript-standards
+   description: TypeScript coding standards and type safety best practices. Activate when writing or reviewing TypeScript code.
+   ---
+
+   # TypeScript Coding Standards
+
+   ## Type Safety
+
+   - Prefer `unknown` over `any`
+   - Use strict mode (`"strict": true` in tsconfig)
+   - Define explicit return types for public APIs
+   - Use discriminated unions for complex types
+
+   ## Naming Conventions
+
+   - PascalCase for types, interfaces, classes, enums
+   - camelCase for variables, functions, methods
+   - SCREAMING_SNAKE_CASE for constants
+   - Prefix interfaces with `I` only if project convention
+
+   ## Code Organization
+
+   - One component/class per file
+   - Group imports: external, internal, relative
+   - Export types separately from implementations
+
+   ## Error Handling
+
+   - Use Result/Either patterns for expected errors
+   - Throw only for unexpected errors
+   - Always type catch blocks: `catch (error: unknown)`
+   ```
+
+   **For Python projects** (`.claude/skills/python-standards/SKILL.md`):
+   - PEP 8 style guide
+   - Type hints best practices
+   - Async/await patterns
+   - Error handling with context managers
+
+   **For Scala projects** (`.claude/skills/scala-standards/SKILL.md`):
+   - Functional programming patterns
+   - Effect systems (ZIO, Cats Effect)
+   - Implicits and type classes
+   - Error handling with Either/Option
+
+10. **Make Hook Scripts Executable**:
+    - Run `chmod +x` on all generated hook scripts
+    - Verify scripts are valid bash
+
+11. **Validation and Testing**:
+    - Dry-run the SessionStart hook to verify it works
+    - Check that the settings.json is valid JSON
+    - Verify skill files have valid YAML frontmatter
+
+12. **Report Completion**:
     - List all created files
     - Show a summary of configured hooks and skills
     - Provide instructions for testing:
@@ -196,17 +369,28 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
       ├── .claude/hooks/session-setup.sh
       ├── .claude/hooks/auto-format.sh
       ├── .claude/hooks/pre-commit-checks.sh
-      └── .claude/skills/testing-skill/SKILL.md
+      ├── .claude/skills/testing-skill/SKILL.md
+      ├── .claude/skills/linting-skill/SKILL.md
+      ├── .claude/skills/react-architecture/SKILL.md      (if React detected)
+      ├── .claude/skills/nextjs-patterns/SKILL.md         (if Next.js detected)
+      └── .claude/skills/typescript-standards/SKILL.md    (if TypeScript detected)
+
+      Framework Skills Generated:
+      ├── react-architecture: React patterns and best practices
+      ├── nextjs-patterns: Next.js App Router conventions
+      └── typescript-standards: TypeScript coding standards
 
       To test your setup:
       1. Start a new Claude Code session in this project
       2. The SessionStart hook will run automatically
       3. Edit a file to trigger the PostToolUse hook
       4. Use /clear to reset and re-trigger SessionStart
+      5. Skills will auto-activate based on your task context
 
       Next steps:
       - Customize hooks in .claude/hooks/ as needed
-      - Add more skills in .claude/skills/
+      - Review generated architecture skills for accuracy
+      - Add project-specific patterns to skills
       - Review .claude/settings.json for advanced options
       ```
 
