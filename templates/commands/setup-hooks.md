@@ -107,6 +107,16 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    - `hooks/auto-format.sh`: `gofmt -w` on edited files
    - `hooks/pre-commit-checks.sh`: `go test ./...` and `go vet`
 
+   **For Java projects (Maven)**:
+   - `hooks/session-setup.sh`: `mvn dependency:resolve` or `mvn compile`
+   - `hooks/auto-format.sh`: `google-java-format -i` on edited files
+   - `hooks/pre-commit-checks.sh`: `mvn test` and `mvn checkstyle:check`
+
+   **For Java projects (Gradle)**:
+   - `hooks/session-setup.sh`: `./gradlew build -x test` or `gradle build -x test`
+   - `hooks/auto-format.sh`: `google-java-format -i` on edited files
+   - `hooks/pre-commit-checks.sh`: `./gradlew test` and `./gradlew check`
+
    **For Scala projects (sbt/Mill)**:
    - `hooks/session-setup.sh`: `sbt compile` or `mill compile`
    - `hooks/auto-format.sh`: `scalafmt` on edited files
@@ -440,6 +450,14 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    - Async/await patterns
    - Context managers for resource handling
    - references/conventions.md with detailed PEP 8
+
+   **For Java projects** (`.claude/skills/java-standards/`):
+   - Google Java Style Guide essentials
+   - Enterprise patterns (Spring DI, layered architecture)
+   - Optional and null-safety patterns
+   - Collection handling best practices
+   - references/spring-patterns.md for Spring Boot projects
+   - references/enterprise-patterns.md for general Java
 
    **For Scala projects** (`.claude/skills/scala-standards/`):
    - Functional programming core principles
