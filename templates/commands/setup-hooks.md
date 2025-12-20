@@ -199,7 +199,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 
 8. **Generate Framework Architecture Skills** (CRITICAL - for each detected framework):
 
-   For EACH framework in `DETECTED_FRAMEWORKS`, create a skill by fetching documentation:
+   For EACH framework in `DETECTED_FRAMEWORKS`, create a skill following the official Anthropic skill structure.
 
    **Step 8.1: Fetch Framework Documentation**
 
@@ -222,65 +222,148 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    - **Performance tips**: Optimization strategies
    - **Security guidelines**: Common vulnerabilities to avoid
 
-   **Step 8.3: Create Framework Skill**
+   **Step 8.3: Create Framework Skill Directory Structure**
+
+   Create the skill folder with the following structure:
+   ```
+   .claude/skills/{framework}-architecture/
+   ├── SKILL.md              (required - lean instructions)
+   ├── references/
+   │   ├── patterns.md       (detailed architectural patterns)
+   │   ├── best-practices.md (do's, don'ts, anti-patterns)
+   │   └── examples.md       (code examples and snippets)
+   └── assets/               (optional - templates, configs)
+   ```
+
+   **Step 8.4: Create SKILL.md** (keep it lean - context is precious)
 
    Create `.claude/skills/{framework}-architecture/SKILL.md`:
 
    ```yaml
    ---
    name: {framework}-architecture
-   description: Architecture patterns, best practices, and coding guidelines for {Framework Name}. Activate when building features, reviewing code, or making architectural decisions with {Framework Name}.
+   description: |
+     Build and architect {Framework Name} applications following official best practices.
+     Use when: building features, reviewing code, making architecture decisions,
+     or when user mentions "{framework}", "design", "architecture", or "best practices".
    ---
 
-   # {Framework Name} Architecture & Best Practices
+   # {Framework Name} Architecture
 
-   > Generated from official documentation: {docs_url}
+   > Auto-generated from official documentation. See references/ for detailed patterns.
+
+   ## Core Principles
+
+   [3-5 bullet points of essential architectural principles]
+
+   ## Quick Reference
+
+   | Aspect | Recommendation |
+   |--------|----------------|
+   | Project Structure | [one-liner] |
+   | State Management | [one-liner] |
+   | Error Handling | [one-liner] |
+   | Testing | [one-liner] |
+
+   ## Critical Don'ts
+
+   - [Anti-pattern 1 - brief]
+   - [Anti-pattern 2 - brief]
+   - [Anti-pattern 3 - brief]
+
+   ## When to Load References
+
+   - For detailed patterns: `Read references/patterns.md`
+   - For best practices: `Read references/best-practices.md`
+   - For code examples: `Read references/examples.md`
+
+   ## External Resources
+
+   - [Official Docs]({docs_url})
+   - [GitHub]({github_url})
+   ```
+
+   **Step 8.5: Create references/patterns.md** (detailed architecture)
+
+   ```markdown
+   # {Framework Name} Architectural Patterns
+
+   > Generated from: {docs_url}
    > Last updated: {current_date}
 
    ## Project Structure
 
-   [Recommended directory structure from docs]
+   [Recommended directory structure with explanations]
 
    ## Core Patterns
 
-   [Key architectural patterns: components, hooks, state management, etc.]
+   ### [Pattern 1: e.g., Component Composition]
+   [Detailed explanation with rationale]
 
-   ## Best Practices
+   ```{language}
+   // Example implementation
+   ```
 
-   ### Do's
-   [List of recommended practices]
+   ### [Pattern 2: e.g., State Management]
+   [Detailed explanation]
 
-   ### Don'ts
-   [Common anti-patterns to avoid]
+   ```{language}
+   // Example implementation
+   ```
 
-   ## Coding Conventions
+   [Continue for all major patterns...]
+   ```
 
-   [Naming conventions, file organization, import patterns]
+   **Step 8.6: Create references/best-practices.md**
+
+   ```markdown
+   # {Framework Name} Best Practices
+
+   ## Do's ✓
+
+   ### [Practice 1]
+   [Why and how]
+
+   ### [Practice 2]
+   [Why and how]
+
+   ## Don'ts ✗
+
+   ### [Anti-pattern 1]
+   [Why it's bad and what to do instead]
+
+   ### [Anti-pattern 2]
+   [Why it's bad and what to do instead]
 
    ## Performance Guidelines
 
-   [Optimization tips, lazy loading, memoization patterns]
+   [Optimization strategies specific to this framework]
 
    ## Security Considerations
 
-   [XSS prevention, input validation, authentication patterns]
+   [Security best practices for this framework]
+   ```
+
+   **Step 8.7: Create references/examples.md**
+
+   ```markdown
+   # {Framework Name} Code Examples
 
    ## Common Patterns
 
-   ### [Pattern 1 Name]
+   ### [Example 1: Basic Setup]
    ```{language}
-   // Example code
+   // Complete working example
    ```
 
-   ### [Pattern 2 Name]
+   ### [Example 2: Advanced Pattern]
    ```{language}
-   // Example code
+   // Complete working example
    ```
 
-   ## References
+   ## Templates
 
-   - [Official Documentation]({docs_url})
-   - [GitHub Repository]({github_url})
+   [Reusable code templates for common scenarios]
    ```
 
    **Example Skills to Generate**:
@@ -298,55 +381,84 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 
 9. **Generate Language-Specific Best Practices Skill**:
 
-   Based on `PROJECT_TYPE`, create a general coding standards skill:
+   Based on `PROJECT_TYPE`, create a language coding standards skill with the same structure:
 
-   **For TypeScript projects** (`.claude/skills/typescript-standards/SKILL.md`):
+   ```
+   .claude/skills/{language}-standards/
+   ├── SKILL.md
+   └── references/
+       ├── conventions.md
+       ├── patterns.md
+       └── anti-patterns.md
+   ```
+
+   **For TypeScript projects** (`.claude/skills/typescript-standards/`):
+
+   `SKILL.md`:
    ```yaml
    ---
    name: typescript-standards
-   description: TypeScript coding standards and type safety best practices. Activate when writing or reviewing TypeScript code.
+   description: |
+     TypeScript coding standards and type safety best practices.
+     Use when: writing TypeScript code, reviewing PRs, or when user asks about
+     "types", "type safety", "TypeScript conventions", or "strict mode".
    ---
 
-   # TypeScript Coding Standards
+   # TypeScript Standards
 
-   ## Type Safety
+   ## Core Rules
 
-   - Prefer `unknown` over `any`
-   - Use strict mode (`"strict": true` in tsconfig)
+   - Prefer `unknown` over `any` - narrowing is safer than casting
+   - Enable `"strict": true` in tsconfig - no exceptions
    - Define explicit return types for public APIs
    - Use discriminated unions for complex types
 
-   ## Naming Conventions
+   ## Quick Reference
 
-   - PascalCase for types, interfaces, classes, enums
-   - camelCase for variables, functions, methods
-   - SCREAMING_SNAKE_CASE for constants
-   - Prefix interfaces with `I` only if project convention
+   | Element | Convention |
+   |---------|------------|
+   | Types/Interfaces | PascalCase |
+   | Variables/Functions | camelCase |
+   | Constants | SCREAMING_SNAKE_CASE |
+   | Files | kebab-case.ts |
 
-   ## Code Organization
+   ## Critical Don'ts
 
-   - One component/class per file
-   - Group imports: external, internal, relative
-   - Export types separately from implementations
+   - Never use `any` without explicit justification
+   - Never ignore TypeScript errors with `@ts-ignore`
+   - Never use non-null assertion `!` without validation
 
-   ## Error Handling
+   ## References
 
-   - Use Result/Either patterns for expected errors
-   - Throw only for unexpected errors
-   - Always type catch blocks: `catch (error: unknown)`
+   - For detailed conventions: `Read references/conventions.md`
+   - For advanced patterns: `Read references/patterns.md`
    ```
 
-   **For Python projects** (`.claude/skills/python-standards/SKILL.md`):
-   - PEP 8 style guide
-   - Type hints best practices
+   **For Python projects** (`.claude/skills/python-standards/`):
+   - PEP 8 style guide essentials
+   - Type hints best practices (PEP 484, 585)
    - Async/await patterns
-   - Error handling with context managers
+   - Context managers for resource handling
+   - references/conventions.md with detailed PEP 8
 
-   **For Scala projects** (`.claude/skills/scala-standards/SKILL.md`):
-   - Functional programming patterns
-   - Effect systems (ZIO, Cats Effect)
-   - Implicits and type classes
-   - Error handling with Either/Option
+   **For Scala projects** (`.claude/skills/scala-standards/`):
+   - Functional programming core principles
+   - Effect systems patterns (ZIO, Cats Effect)
+   - Implicits and type classes usage
+   - Error handling with Either/Option/Try
+   - references/fp-patterns.md with detailed examples
+
+   **For Rust projects** (`.claude/skills/rust-standards/`):
+   - Ownership and borrowing rules
+   - Error handling with Result/Option
+   - Trait-based design patterns
+   - Memory safety best practices
+
+   **For Go projects** (`.claude/skills/go-standards/`):
+   - Effective Go principles
+   - Error handling patterns
+   - Interface design
+   - Concurrency with goroutines/channels
 
 10. **Make Hook Scripts Executable**:
     - Run `chmod +x` on all generated hook scripts
@@ -366,31 +478,51 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 
       Created files:
       ├── .claude/settings.json
-      ├── .claude/hooks/session-setup.sh
-      ├── .claude/hooks/auto-format.sh
-      ├── .claude/hooks/pre-commit-checks.sh
-      ├── .claude/skills/testing-skill/SKILL.md
-      ├── .claude/skills/linting-skill/SKILL.md
-      ├── .claude/skills/react-architecture/SKILL.md      (if React detected)
-      ├── .claude/skills/nextjs-patterns/SKILL.md         (if Next.js detected)
-      └── .claude/skills/typescript-standards/SKILL.md    (if TypeScript detected)
+      ├── .claude/hooks/
+      │   ├── session-setup.sh
+      │   ├── auto-format.sh
+      │   └── pre-commit-checks.sh
+      ├── .claude/skills/testing-skill/
+      │   └── SKILL.md
+      ├── .claude/skills/linting-skill/
+      │   └── SKILL.md
+      ├── .claude/skills/react-architecture/    (if React detected)
+      │   ├── SKILL.md
+      │   └── references/
+      │       ├── patterns.md
+      │       ├── best-practices.md
+      │       └── examples.md
+      ├── .claude/skills/nextjs-patterns/       (if Next.js detected)
+      │   ├── SKILL.md
+      │   └── references/...
+      └── .claude/skills/typescript-standards/  (if TypeScript)
+          ├── SKILL.md
+          └── references/
+              ├── conventions.md
+              └── patterns.md
 
-      Framework Skills Generated:
+      Skills Generated (with references/):
       ├── react-architecture: React patterns and best practices
       ├── nextjs-patterns: Next.js App Router conventions
       └── typescript-standards: TypeScript coding standards
+
+      How Skills Work:
+      - Claude auto-activates skills based on your task context
+      - SKILL.md provides quick guidance (context-efficient)
+      - references/ contains detailed docs loaded on-demand
+      - Skills are model-invoked, not user-invoked
 
       To test your setup:
       1. Start a new Claude Code session in this project
       2. The SessionStart hook will run automatically
       3. Edit a file to trigger the PostToolUse hook
-      4. Use /clear to reset and re-trigger SessionStart
-      5. Skills will auto-activate based on your task context
+      4. Ask Claude to "design a React component" to see skill activation
+      5. Use /clear to reset and re-trigger SessionStart
 
       Next steps:
       - Customize hooks in .claude/hooks/ as needed
-      - Review generated architecture skills for accuracy
-      - Add project-specific patterns to skills
+      - Review generated skills for project-specific accuracy
+      - Add your own patterns to references/ folders
       - Review .claude/settings.json for advanced options
       ```
 
