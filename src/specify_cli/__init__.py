@@ -24,34 +24,34 @@ Or install globally:
     specify init --here
 """
 
+import json
 import os
+import shlex
+import shutil
+import ssl
 import subprocess
 import sys
-import zipfile
 import tempfile
-import shutil
-import shlex
-import json
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
-import typer
 import httpx
-from rich.console import Console
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.text import Text
-from rich.live import Live
-from rich.align import Align
-from rich.table import Table
-from rich.tree import Tree
-from typer.core import TyperGroup
 
 # For cross-platform keyboard input
 import readchar
-import ssl
 import truststore
-from datetime import datetime, timezone
+import typer
+from rich.align import Align
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+from rich.text import Text
+from rich.tree import Tree
+from typer.core import TyperGroup
 
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
@@ -228,7 +228,11 @@ AGENT_CONFIG = {
     },
 }
 
-SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
+SCRIPT_TYPE_CHOICES = {
+    "sh": "POSIX Shell (bash/zsh)",
+    "fish": "Fish Shell",
+    "ps": "PowerShell"
+}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
@@ -480,6 +484,41 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
                 console.print(f"[red]Error output:[/red] {e.stderr}")
             raise
         return None
+
+
+def detect_shell() -> str:
+    """Detect the current shell environment.
+    
+    Returns:
+        Shell type identifier: 'fish', 'sh' (for bash/zsh), or 'ps' (PowerShell)
+    """
+    # Check for PowerShell first (Windows)
+    if os.name == "nt" or "POWERSHELL" in os.environ.get("PSModulePath", "").upper():
+        return "ps"
+    
+    # Check SHELL environment variable (Unix-like systems)
+    shell_path = os.environ.get("SHELL", "")
+    if "fish" in shell_path:
+        return "fish"
+    elif "bash" in shell_path or "zsh" in shell_path or "sh" in shell_path:
+        return "sh"
+    
+    # Fallback: try to detect from process name
+    try:
+        import psutil
+        parent = psutil.Process().parent()
+        if parent:
+            parent_name = parent.name().lower()
+            if "fish" in parent_name:
+                return "fish"
+            elif "pwsh" in parent_name or "powershell" in parent_name:
+                return "ps"
+    except ImportError:
+        pass
+    
+    # Default fallback based on OS
+    return "ps" if os.name == "nt" else "sh"
+
 
 def check_tool(tool: str, tracker: StepTracker = None) -> bool:
     """Check if a tool is installed. Optionally update tracker.
@@ -946,7 +985,11 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, bob, or qoder "),
-    script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+    script_type: str = typer.Option(
+        None,
+        "--script",
+        help="Script type: sh, fish, or ps (auto-detected if not specified)"
+    ),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -1081,7 +1124,8 @@ def init(
             raise typer.Exit(1)
         selected_script = script_type
     else:
-        default_script = "ps" if os.name == "nt" else "sh"
+        # Auto-detect shell type based on current environment
+        default_script = detect_shell()
 
         if sys.stdin.isatty():
             selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
@@ -1090,6 +1134,7 @@ def init(
 
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+    console.print(f"[dim]Detected shell:[/dim] {os.environ.get('SHELL', 'unknown')}")
 
     tracker = StepTracker("Initialize Specify Project")
 
@@ -1285,8 +1330,8 @@ def check():
 @app.command()
 def version():
     """Display version and system information."""
-    import platform
     import importlib.metadata
+    import platform
     
     show_banner()
     
