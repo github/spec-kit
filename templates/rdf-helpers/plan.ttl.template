@@ -1,0 +1,133 @@
+# Implementation Plan Template - Copy this pattern for complete implementation plans
+# Replace FEATURE-NAME with actual feature name (e.g., 001-feature-name)
+# Replace PLACEHOLDERS with actual content
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Plan Instance
+:plan a sk:Plan ;
+    sk:featureBranch "FEATURE-NAME" ;
+    sk:featureName "FEATURE NAME - Full description of what this feature does" ;
+    sk:planCreated "YYYY-MM-DD"^^xsd:date ;
+    sk:planStatus "Draft" ;  # Draft, In Progress, Approved, Complete
+    sk:architecturePattern "ARCHITECTURE PATTERN - e.g., 'Event-driven microservices with CQRS'" ;
+    sk:hasTechnology :tech-001, :tech-002, :tech-003 ;
+    sk:hasProjectStructure :struct-001, :struct-002 ;
+    sk:hasPhase :phase-setup, :phase-foundation, :phase-001 ;
+    sk:hasDecision :decision-001, :decision-002 ;
+    sk:hasRisk :risk-001, :risk-002 ;
+    sk:hasDependency :dep-001 .
+
+# Technology Stack
+:tech-001 a sk:Technology ;
+    sk:techName "TECH NAME - e.g., 'Rust 1.75+'" ;
+    sk:techVersion "VERSION - e.g., '1.75+'" ;
+    sk:techPurpose "PURPOSE - Why this technology was chosen and what it does" .
+
+:tech-002 a sk:Technology ;
+    sk:techName "TECH NAME - e.g., 'Oxigraph'" ;
+    sk:techVersion "VERSION - e.g., '0.3'" ;
+    sk:techPurpose "PURPOSE - RDF store for ontology processing" .
+
+:tech-003 a sk:Technology ;
+    sk:techName "TECH NAME - e.g., 'Tera'" ;
+    sk:techVersion "VERSION - e.g., '1.19'" ;
+    sk:techPurpose "PURPOSE - Template engine for code generation" .
+
+# Project Structure
+:struct-001 a sk:ProjectStructure ;
+    sk:structurePath "PATH - e.g., 'crates/ggen-core/src/'" ;
+    sk:structurePurpose "PURPOSE - Core domain logic and types" ;
+    sk:structureNotes "NOTES - Optional: Additional context about this directory" .
+
+:struct-002 a sk:ProjectStructure ;
+    sk:structurePath "PATH - e.g., 'crates/ggen-cli/src/'" ;
+    sk:structurePurpose "PURPOSE - CLI interface and commands" .
+
+# Implementation Phases
+:phase-setup a sk:Phase ;
+    sk:phaseId "phase-setup" ;
+    sk:phaseName "Setup" ;
+    sk:phaseOrder 1 ;
+    sk:phaseDescription "DESCRIPTION - Initial project setup, configuration, dependencies" ;
+    sk:phaseDeliverables "DELIVERABLES - What must be completed: project structure, Cargo.toml, basic CI" .
+
+:phase-foundation a sk:Phase ;
+    sk:phaseId "phase-foundation" ;
+    sk:phaseName "Foundation" ;
+    sk:phaseOrder 2 ;
+    sk:phaseDescription "DESCRIPTION - Core types, error handling, foundational modules" ;
+    sk:phaseDeliverables "DELIVERABLES - Result types, error hierarchy, configuration loading" .
+
+:phase-001 a sk:Phase ;
+    sk:phaseId "phase-001" ;
+    sk:phaseName "PHASE NAME - e.g., 'RDF Processing'" ;
+    sk:phaseOrder 3 ;
+    sk:phaseDescription "DESCRIPTION - What gets built in this phase" ;
+    sk:phaseDeliverables "DELIVERABLES - Specific outputs: RDF parser, SPARQL engine, validation" .
+
+# Technical Decisions (link to plan-decision.ttl.template for details)
+:decision-001 a sk:PlanDecision ;
+    sk:decisionId "DEC-001" ;
+    sk:decisionTitle "DECISION TITLE - e.g., 'RDF Store Selection'" ;
+    sk:decisionChoice "CHOSEN OPTION - What was decided" ;
+    sk:decisionRationale "RATIONALE - Why this option was chosen" ;
+    sk:alternativesConsidered "ALTERNATIVES - Other options evaluated" ;
+    sk:tradeoffs "TRADEOFFS - What we gain and lose" ;
+    sk:revisitCriteria "WHEN TO REVISIT - Conditions for reconsideration" .
+
+:decision-002 a sk:PlanDecision ;
+    sk:decisionId "DEC-002" ;
+    sk:decisionTitle "DECISION TITLE - e.g., 'Error Handling Strategy'" ;
+    sk:decisionChoice "CHOSEN OPTION - e.g., 'Result<T, E> with custom error types'" ;
+    sk:decisionRationale "RATIONALE - Type safety, composability, idiomatic Rust" ;
+    sk:alternativesConsidered "ALTERNATIVES - anyhow, thiserror crate" ;
+    sk:tradeoffs "TRADEOFFS - More boilerplate, but better type safety" ;
+    sk:revisitCriteria "WHEN TO REVISIT - If error handling becomes too verbose" .
+
+# Risks & Mitigation
+:risk-001 a sk:Risk ;
+    sk:riskId "RISK-001" ;
+    sk:riskDescription "RISK DESCRIPTION - What could go wrong" ;
+    sk:riskImpact "high" ;  # high, medium, low
+    sk:riskLikelihood "medium" ;  # high, medium, low
+    sk:mitigationStrategy "MITIGATION - How to prevent or handle this risk" .
+
+:risk-002 a sk:Risk ;
+    sk:riskId "RISK-002" ;
+    sk:riskDescription "RISK DESCRIPTION - e.g., 'SPARQL query performance degrades with large ontologies'" ;
+    sk:riskImpact "medium" ;
+    sk:riskLikelihood "high" ;
+    sk:mitigationStrategy "MITIGATION - e.g., 'Add caching layer, profile early, set 1M triple limit'" .
+
+# Dependencies (external requirements)
+:dep-001 a sk:Dependency ;
+    sk:dependencyName "DEPENDENCY NAME - e.g., 'Spec-Kit Schema Ontology'" ;
+    sk:dependencyType "external" ;  # external, internal, library
+    sk:dependencyStatus "available" ;  # available, in-progress, blocked
+    sk:dependencyNotes "NOTES - Where to find it, what version, any setup required" .
+
+# VALIDATION RULES:
+# - All dates must be in YYYY-MM-DD format with ^^xsd:date
+# - phaseOrder must be sequential integers
+# - riskImpact/riskLikelihood must be "high", "medium", or "low"
+# - dependencyStatus must be "available", "in-progress", or "blocked"
+# - planStatus must be "Draft", "In Progress", "Approved", or "Complete"
+
+# EXAMPLES:
+# See plan-decision.ttl.template for decision examples
+# See task.ttl.template for linking tasks to phases
+
+# WORKFLOW:
+# 1. Copy this template to ontology/plan.ttl
+# 2. Replace FEATURE-NAME prefix throughout
+# 3. Fill in plan metadata (branch, name, date, status)
+# 4. Define technology stack (what you'll use)
+# 5. Define project structure (directories and files)
+# 6. Define phases (logical groupings of work)
+# 7. Document key decisions (architecture, tech choices)
+# 8. Identify risks and mitigation strategies
+# 9. List dependencies (external requirements)
+# 10. Generate plan.md: ggen render templates/plan.tera ontology/plan.ttl > generated/plan.md

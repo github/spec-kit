@@ -1,0 +1,23 @@
+# Assumption Template - Copy this pattern for each assumption
+# Replace NNN with assumption number (001, 002, etc.)
+# Replace PLACEHOLDERS with actual content
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Assumption Instance
+:assume-NNN a sk:Assumption ;
+    sk:description "ASSUMPTION DESCRIPTION - State the assumption being made about context, constraints, or environment" .
+
+# Link to feature (add to feature's hasAssumption list)
+:feature-name sk:hasAssumption :assume-NNN .
+
+# EXAMPLES:
+# :assume-001 a sk:Assumption ;
+#     sk:description "Users have modern browsers with JavaScript enabled (no IE11 support required)" .
+#
+# :assume-002 a sk:Assumption ;
+#     sk:description "Data retention policies comply with GDPR (90-day retention for user activity logs)" .
+#
+# :assume-003 a sk:Assumption ;
+#     sk:description "System operates in single geographic region (US-East) with <100ms latency" .

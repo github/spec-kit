@@ -1,0 +1,29 @@
+# Functional Requirement Template - Copy for each requirement
+# Replace NNN with requirement number (001, 002, etc.)
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Functional Requirement Instance
+:fr-NNN a sk:FunctionalRequirement ;
+    sk:requirementId "FR-NNN" ;  # MUST match pattern: ^FR-[0-9]{3}$ (SHACL validated)
+    sk:description "System MUST/SHOULD [capability description]" ;
+    sk:category "CATEGORY NAME" .  # Optional: group related requirements
+
+# Link to feature (add to feature's hasFunctionalRequirement list)
+:feature-name sk:hasFunctionalRequirement :fr-NNN .
+
+# EXAMPLES:
+# :fr-001 a sk:FunctionalRequirement ;
+#     sk:requirementId "FR-001" ;
+#     sk:description "System MUST allow users to create albums with a user-provided name and auto-generated creation date" .
+#
+# :fr-002 a sk:FunctionalRequirement ;
+#     sk:requirementId "FR-002" ;
+#     sk:category "Album Management" ;
+#     sk:description "System MUST display albums in a main list view with album name and creation date visible" .
+
+# VALIDATION RULES (enforced by SHACL):
+# - requirementId MUST match pattern: FR-001, FR-002, etc. (not REQ-1, R-001)
+# - description is required
+# - category is optional

@@ -1,0 +1,149 @@
+# Tasks Template - Copy this pattern for complete task breakdown
+# Replace FEATURE-NAME with actual feature name (e.g., 001-feature-name)
+# Replace PLACEHOLDERS with actual content
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Tasks Instance
+:tasks a sk:Tasks ;
+    sk:featureBranch "FEATURE-NAME" ;
+    sk:featureName "FEATURE NAME - Full description of what this feature does" ;
+    sk:tasksCreated "YYYY-MM-DD"^^xsd:date ;
+    sk:totalTasks NNN ;  # Integer: total number of tasks (e.g., 25)
+    sk:estimatedEffort "EFFORT ESTIMATE - e.g., '2-3 weeks' or '40-60 hours'" ;
+    sk:hasPhase :phase-setup, :phase-foundation, :phase-001 .
+
+# Phase: Setup (foundational tasks, run first)
+:phase-setup a sk:Phase ;
+    sk:phaseId "phase-setup" ;
+    sk:phaseName "Setup" ;
+    sk:phaseOrder 1 ;
+    sk:phaseDescription "Initial project setup, configuration, dependencies" ;
+    sk:phaseDeliverables "Project structure, Cargo.toml, basic CI" ;
+    sk:hasTask :task-001, :task-002, :task-003 .
+
+:task-001 a sk:Task ;
+    sk:taskId "T001" ;
+    sk:taskOrder 1 ;
+    sk:taskDescription "Create project structure per implementation plan" ;
+    sk:filePath "." ;  # Current directory (multiple files)
+    sk:parallelizable "false"^^xsd:boolean ;  # Must run first
+    sk:belongsToPhase :phase-setup .
+
+:task-002 a sk:Task ;
+    sk:taskId "T002" ;
+    sk:taskOrder 2 ;
+    sk:taskDescription "Configure Cargo.toml with dependencies (see plan.ttl tech stack)" ;
+    sk:filePath "Cargo.toml" ;
+    sk:parallelizable "false"^^xsd:boolean ;
+    sk:belongsToPhase :phase-setup ;
+    sk:dependencies "T001" ;  # Depends on project structure
+    sk:taskNotes "Add: oxigraph 0.3, tera 1.19, etc. (from plan.ttl)" .
+
+:task-003 a sk:Task ;
+    sk:taskId "T003" ;
+    sk:taskOrder 3 ;
+    sk:taskDescription "Set up basic CI pipeline (GitHub Actions)" ;
+    sk:filePath ".github/workflows/ci.yml" ;
+    sk:parallelizable "true"^^xsd:boolean ;  # Can run in parallel with other setup
+    sk:belongsToPhase :phase-setup .
+
+# Phase: Foundation (core types and infrastructure)
+:phase-foundation a sk:Phase ;
+    sk:phaseId "phase-foundation" ;
+    sk:phaseName "Foundation" ;
+    sk:phaseOrder 2 ;
+    sk:phaseDescription "Core types, error handling, foundational modules" ;
+    sk:phaseDeliverables "Result types, error hierarchy, configuration loading" ;
+    sk:hasTask :task-004, :task-005 .
+
+:task-004 a sk:Task ;
+    sk:taskId "T004" ;
+    sk:taskOrder 4 ;
+    sk:taskDescription "Define error types (use Result<T, E> pattern)" ;
+    sk:filePath "src/error.rs" ;
+    sk:parallelizable "true"^^xsd:boolean ;
+    sk:belongsToPhase :phase-foundation ;
+    sk:dependencies "T002" ;  # Needs dependencies configured
+    sk:taskNotes "Follow constitutional rule: NO unwrap/expect in production code" .
+
+:task-005 a sk:Task ;
+    sk:taskId "T005" ;
+    sk:taskOrder 5 ;
+    sk:taskDescription "Create core domain types" ;
+    sk:filePath "src/types.rs" ;
+    sk:parallelizable "true"^^xsd:boolean ;
+    sk:belongsToPhase :phase-foundation ;
+    sk:dependencies "T004" .
+
+# Phase: User Story Implementation (map to user stories from feature.ttl)
+:phase-001 a sk:Phase ;
+    sk:phaseId "phase-us1" ;
+    sk:phaseName "User Story 1 - STORY TITLE" ;
+    sk:phaseOrder 3 ;
+    sk:phaseDescription "DESCRIPTION - What this user story accomplishes" ;
+    sk:phaseDeliverables "DELIVERABLES - Specific outputs for this story" ;
+    sk:hasTask :task-006, :task-007 .
+
+:task-006 a sk:Task ;
+    sk:taskId "T006" ;
+    sk:taskOrder 6 ;
+    sk:taskDescription "TASK DESCRIPTION - Implement specific feature component" ;
+    sk:filePath "src/feature.rs" ;
+    sk:parallelizable "true"^^xsd:boolean ;
+    sk:belongsToPhase :phase-001 ;
+    sk:relatedToStory :us-001 ;  # Link to user story from feature.ttl
+    sk:dependencies "T004, T005" .
+
+:task-007 a sk:Task ;
+    sk:taskId "T007" ;
+    sk:taskOrder 7 ;
+    sk:taskDescription "Write Chicago TDD tests for feature (state-based, real collaborators)" ;
+    sk:filePath "tests/feature_tests.rs" ;
+    sk:parallelizable "true"^^xsd:boolean ;
+    sk:belongsToPhase :phase-001 ;
+    sk:relatedToStory :us-001 ;
+    sk:dependencies "T006" ;
+    sk:taskNotes "80%+ coverage, AAA pattern, verify observable behavior" .
+
+# VALIDATION RULES (enforced by SHACL shapes):
+# - taskId must match format TNNN (T001, T002, etc.)
+# - taskOrder must be unique within entire task list
+# - taskDescription should be specific and actionable
+# - filePath must be present for implementation tasks
+# - parallelizable true only if task has no incomplete dependencies
+# - dependencies must reference valid taskId values
+# - All dates must be in YYYY-MM-DD format with ^^xsd:date
+# - phaseOrder must be sequential integers
+
+# TASK ORGANIZATION PATTERNS:
+# 1. Setup Phase (T001-T00N): Project structure, config, CI
+# 2. Foundation Phase (T00N+1-T0NN): Core types, errors, utils
+# 3. User Story Phases (T0NN+1-TNNN): One phase per user story (P1, then P2, then P3)
+# 4. Polish Phase (TNNN+1-TNNN+N): Documentation, optimization, final tests
+
+# DEPENDENCY GUIDELINES:
+# - Sequential tasks: dependencies="T001, T002"
+# - Parallel tasks: parallelizable="true" with no dependencies or completed dependencies
+# - Phase dependencies: All foundation tasks depend on setup tasks
+# - Story dependencies: All story tasks depend on foundation tasks
+
+# LINKING TO PLAN:
+# - belongsToPhase links to :phase-NNN in plan.ttl
+# - relatedToStory links to :us-NNN in feature.ttl
+# - Use same phase IDs across plan.ttl and tasks.ttl
+
+# WORKFLOW:
+# 1. Copy this template to ontology/tasks.ttl
+# 2. Replace FEATURE-NAME prefix throughout
+# 3. Fill in tasks metadata (branch, name, date, total, effort)
+# 4. Define phases (match phases from plan.ttl)
+# 5. Create tasks for Setup phase (project structure, config, CI)
+# 6. Create tasks for Foundation phase (errors, core types, utils)
+# 7. Create tasks for each user story (from feature.ttl, ordered by priority)
+# 8. Create tasks for Polish phase (docs, optimization, final tests)
+# 9. Set parallelizable based on dependencies (false if must run sequentially)
+# 10. Set dependencies using comma-separated task IDs (e.g., "T001, T002")
+# 11. Generate tasks.md: ggen render templates/tasks.tera ontology/tasks.ttl > generated/tasks.md

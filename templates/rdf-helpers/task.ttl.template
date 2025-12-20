@@ -1,0 +1,56 @@
+# Task Template - Copy this pattern for each implementation task
+# Replace NNN with task number (001, 002, etc.)
+# Replace PLACEHOLDERS with actual content
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Task Instance
+:task-NNN a sk:Task ;
+    sk:taskId "TNNN" ;  # Task ID (T001, T002, etc.)
+    sk:taskOrder NNN ;  # Integer: 1, 2, 3... (execution order)
+    sk:taskDescription "TASK DESCRIPTION - Clear action with exact file path" ;
+    sk:filePath "path/to/file.ext" ;  # Exact file to create/modify
+    sk:parallelizable "true"^^xsd:boolean ;  # true if can run in parallel, false if sequential
+    sk:belongsToPhase :phase-NNN ;  # Link to phase
+    sk:relatedToStory :us-NNN ;  # Optional: Link to user story if applicable
+    sk:dependencies "T001, T002" ;  # Optional: Comma-separated list of task IDs this depends on
+    sk:taskNotes "OPTIONAL NOTES - Additional context or implementation hints" .
+
+# Link to phase (add to phase's hasTasks list)
+:phase-NNN sk:hasTask :task-NNN .
+
+# VALIDATION RULES (enforced by task checklist format):
+# - taskId must match format TNNN (T001, T002, etc.)
+# - taskOrder must be unique within phase
+# - taskDescription should be specific and actionable
+# - filePath must be present for implementation tasks
+# - parallelizable true only if task has no incomplete dependencies
+
+# EXAMPLES:
+# :task-001 a sk:Task ;
+#     sk:taskId "T001" ;
+#     sk:taskOrder 1 ;
+#     sk:taskDescription "Create project structure per implementation plan" ;
+#     sk:filePath "." ;
+#     sk:parallelizable "false"^^xsd:boolean ;
+#     sk:belongsToPhase :phase-setup .
+#
+# :task-005 a sk:Task ;
+#     sk:taskId "T005" ;
+#     sk:taskOrder 5 ;
+#     sk:taskDescription "Implement authentication middleware" ;
+#     sk:filePath "src/middleware/auth.py" ;
+#     sk:parallelizable "true"^^xsd:boolean ;
+#     sk:belongsToPhase :phase-foundation ;
+#     sk:dependencies "T001, T002" ;
+#     sk:taskNotes "Use JWT tokens, bcrypt for password hashing" .
+#
+# :task-012 a sk:Task ;
+#     sk:taskId "T012" ;
+#     sk:taskOrder 12 ;
+#     sk:taskDescription "Create User model" ;
+#     sk:filePath "src/models/user.py" ;
+#     sk:parallelizable "true"^^xsd:boolean ;
+#     sk:belongsToPhase :phase-us1 ;
+#     sk:relatedToStory :us-001 .

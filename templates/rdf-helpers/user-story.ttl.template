@@ -1,0 +1,39 @@
+# User Story Template - Copy this pattern for each user story
+# Replace NNN with story number (001, 002, etc.)
+# Replace PLACEHOLDERS with actual content
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# User Story Instance
+:us-NNN a sk:UserStory ;
+    sk:storyIndex NNN ;  # Integer: 1, 2, 3...
+    sk:title "TITLE (2-8 words describing the story)" ;
+    sk:priority "P1" ;  # MUST be exactly: "P1", "P2", or "P3" (SHACL validated)
+    sk:description "USER STORY DESCRIPTION - What the user wants to accomplish and why" ;
+    sk:priorityRationale "RATIONALE - Why this priority level was chosen, business justification" ;
+    sk:independentTest "TEST CRITERIA - How to verify this story independently, acceptance criteria" ;
+    sk:hasAcceptanceScenario :us-NNN-as-001, :us-NNN-as-002 .  # Link to scenarios (min 1 required)
+
+# Acceptance Scenario 1
+:us-NNN-as-001 a sk:AcceptanceScenario ;
+    sk:scenarioIndex 1 ;
+    sk:given "INITIAL STATE - The context or preconditions before the action" ;
+    sk:when "ACTION - The specific action or event that triggers the behavior" ;
+    sk:then "OUTCOME - The expected result or state after the action" .
+
+# Acceptance Scenario 2 (add more as needed)
+:us-NNN-as-002 a sk:AcceptanceScenario ;
+    sk:scenarioIndex 2 ;
+    sk:given "INITIAL STATE 2" ;
+    sk:when "ACTION 2" ;
+    sk:then "OUTCOME 2" .
+
+# Link to feature (add to feature's hasUserStory list)
+:feature-name sk:hasUserStory :us-NNN .
+
+# VALIDATION RULES (enforced by SHACL):
+# - priority MUST be "P1", "P2", or "P3" (not "HIGH", "LOW", etc.)
+# - storyIndex MUST be a positive integer
+# - MUST have at least one acceptance scenario (sk:hasAcceptanceScenario min 1)
+# - title, description, priorityRationale, independentTest are required strings

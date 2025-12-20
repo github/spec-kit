@@ -1,0 +1,29 @@
+# Plan Decision Template - Copy this pattern for each architectural/technical decision
+# Replace NNN with decision number (001, 002, etc.)
+# Replace PLACEHOLDERS with actual content
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Decision Instance
+:decision-NNN a sk:PlanDecision ;
+    sk:decisionId "DEC-NNN" ;
+    sk:decisionTitle "DECISION TITLE (e.g., 'Choice of RDF Store')" ;
+    sk:decisionChoice "CHOSEN OPTION - What was decided" ;
+    sk:decisionRationale "RATIONALE - Why this option was chosen, business/technical justification" ;
+    sk:alternativesConsidered "ALTERNATIVES - Other options evaluated and why they were rejected" ;
+    sk:tradeoffs "TRADEOFFS - What we gain and what we lose with this decision" ;
+    sk:revisitCriteria "WHEN TO REVISIT - Conditions that might trigger reconsideration of this decision" .
+
+# Link to plan (add to plan's hasDecision list)
+:plan sk:hasDecision :decision-NNN .
+
+# EXAMPLES:
+# :decision-001 a sk:PlanDecision ;
+#     sk:decisionId "DEC-001" ;
+#     sk:decisionTitle "RDF Store Selection" ;
+#     sk:decisionChoice "Oxigraph embedded store" ;
+#     sk:decisionRationale "Zero external dependencies, fast startup, sufficient for <1M triples, Rust native" ;
+#     sk:alternativesConsidered "Apache Jena (JVM overhead), Blazegraph (deprecated), GraphDB (commercial)" ;
+#     sk:tradeoffs "Gain: simplicity, speed. Lose: scalability beyond 1M triples, no SPARQL federation" ;
+#     sk:revisitCriteria "Dataset grows beyond 500K triples or requires distributed queries" .

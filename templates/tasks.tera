@@ -1,0 +1,150 @@
+{# Tasks Template - Renders task breakdown from RDF ontology #}
+{# Generates tasks.md from tasks.ttl using SPARQL query results #}
+
+{%- set tasks_metadata = sparql_results | first -%}
+
+# Implementation Tasks: {{ tasks_metadata.featureName }}
+
+**Branch**: `{{ tasks_metadata.featureBranch }}`
+**Created**: {{ tasks_metadata.tasksCreated }}
+**Total Tasks**: {{ tasks_metadata.totalTasks }}
+**Estimated Effort**: {{ tasks_metadata.estimatedEffort }}
+
+---
+
+## Task Organization
+
+Tasks are organized by user story to enable independent implementation and testing.
+
+{%- set phases = sparql_results | filter(attribute="phaseId") | unique(attribute="phaseId") | sort(attribute="phaseOrder") %}
+
+{%- for phase in phases %}
+
+## Phase {{ phase.phaseOrder }}: {{ phase.phaseName }}
+
+{%- if phase.phaseDescription %}
+{{ phase.phaseDescription }}
+{%- endif %}
+
+{%- if phase.userStoryId %}
+**User Story**: {{ phase.userStoryId }} - {{ phase.userStoryTitle }}
+**Independent Test**: {{ phase.userStoryTest }}
+{%- endif %}
+
+### Tasks
+
+{%- set phase_tasks = sparql_results | filter(attribute="phaseId", value=phase.phaseId) | filter(attribute="taskId") | sort(attribute="taskOrder") %}
+
+{%- for task in phase_tasks %}
+- [ ] {{ task.taskId }}{% if task.parallelizable == "true" %} [P]{% endif %}{% if task.userStoryId %} [{{ task.userStoryId }}]{% endif %} {{ task.taskDescription }}{% if task.filePath %} in {{ task.filePath }}{% endif %}
+{%- if task.taskNotes %}
+  - *Note*: {{ task.taskNotes }}
+{%- endif %}
+{%- if task.dependencies %}
+  - *Depends on*: {{ task.dependencies }}
+{%- endif %}
+{%- endfor %}
+
+{%- if phase.phaseCheckpoint %}
+
+**Phase Checkpoint**: {{ phase.phaseCheckpoint }}
+{%- endif %}
+
+---
+
+{%- endfor %}
+
+## Task Dependencies
+
+{%- set dependencies = sparql_results | filter(attribute="dependencyFrom") | unique(attribute="dependencyFrom") %}
+{%- if dependencies | length > 0 %}
+
+```mermaid
+graph TD
+{%- for dep in dependencies %}
+    {{ dep.dependencyFrom }} --> {{ dep.dependencyTo }}
+{%- endfor %}
+```
+
+{%- else %}
+*No explicit task dependencies defined. Tasks within each phase can be executed in parallel where marked [P].*
+{%- endif %}
+
+---
+
+## Parallel Execution Opportunities
+
+{%- set parallel_tasks = sparql_results | filter(attribute="parallelizable", value="true") | unique(attribute="taskId") %}
+{%- if parallel_tasks | length > 0 %}
+
+The following tasks can be executed in parallel (marked with [P]):
+
+{%- for task in parallel_tasks %}
+- {{ task.taskId }}: {{ task.taskDescription }}
+{%- endfor %}
+
+**Total Parallel Tasks**: {{ parallel_tasks | length }}
+**Potential Speed-up**: ~{{ (parallel_tasks | length / 2) | round }}x with 2 developers
+
+{%- else %}
+*No explicitly parallelizable tasks marked. Review task independence to identify parallel opportunities.*
+{%- endif %}
+
+---
+
+## Implementation Strategy
+
+### MVP Scope (Minimum Viable Product)
+
+Focus on completing **Phase 2** (first user story) to deliver core value:
+
+{%- set mvp_phase = sparql_results | filter(attribute="phaseOrder", value="2") | first %}
+{%- if mvp_phase %}
+- {{ mvp_phase.phaseName }}
+- {{ mvp_phase.userStoryTitle }}
+{%- else %}
+- Complete Setup (Phase 1) and first user story (Phase 2)
+{%- endif %}
+
+### Incremental Delivery
+
+1. **Sprint 1**: Setup + MVP (Phases 1-2)
+2. **Sprint 2**: Next priority user story (Phase 3)
+3. **Sprint 3+**: Remaining user stories + polish
+
+### Task Execution Format
+
+Each task follows this format:
+```
+- [ ] TaskID [P?] [StoryID?] Description with file path
+```
+
+- **TaskID**: Sequential identifier (T001, T002, etc.)
+- **[P]**: Optional - Task can be parallelized
+- **[StoryID]**: User story this task belongs to
+- **Description**: Clear action with exact file path
+
+---
+
+## Progress Tracking
+
+**Overall Progress**: 0 / {{ tasks_metadata.totalTasks }} tasks completed (0%)
+
+{%- for phase in phases %}
+**{{ phase.phaseName }}**: 0 / {{ phase.taskCount }} tasks completed
+{%- endfor %}
+
+---
+
+## Checklist Format Validation
+
+✅ All tasks follow required format:
+- Checkbox prefix: `- [ ]`
+- Task ID: Sequential (T001, T002, T003...)
+- Optional markers: [P] for parallelizable, [StoryID] for user story
+- Clear description with file path
+
+---
+
+**Generated with**: [ggen v6](https://github.com/seanchatmangpt/ggen) ontology-driven task system
+**Constitutional Equation**: `tasks.md = μ(tasks.ttl)`
