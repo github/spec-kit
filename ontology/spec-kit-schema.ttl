@@ -1,0 +1,717 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2001/XMLSchema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix shacl: <http://www.w3.org/ns/shacl#> .
+@prefix sk: <http://github.com/github/spec-kit#> .
+
+# ============================================================================
+# Spec-Kit Ontology Schema
+# ============================================================================
+# Purpose: RDF vocabulary for Spec-Driven Development (SDD) methodology
+# Based on: GitHub Spec-Kit v0.0.22
+# Transformation: Markdown templates → RDF + SHACL + Tera templates
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Core Classes
+# ----------------------------------------------------------------------------
+
+sk:Feature a owl:Class ;
+    rdfs:label "Feature"@en ;
+    rdfs:comment "Complete feature specification with branch, user stories, requirements, and success criteria"@en .
+
+sk:UserStory a owl:Class ;
+    rdfs:label "User Story"@en ;
+    rdfs:comment "Prioritized user journey describing feature value with acceptance scenarios"@en .
+
+sk:AcceptanceScenario a owl:Class ;
+    rdfs:label "Acceptance Scenario"@en ;
+    rdfs:comment "Testable Given-When-Then acceptance criterion for a user story"@en .
+
+sk:FunctionalRequirement a owl:Class ;
+    rdfs:label "Functional Requirement"@en ;
+    rdfs:comment "Specific system capability requirement (FR-XXX pattern)"@en .
+
+sk:SuccessCriterion a owl:Class ;
+    rdfs:label "Success Criterion"@en ;
+    rdfs:comment "Measurable, technology-agnostic outcome metric (SC-XXX pattern)"@en .
+
+sk:Entity a owl:Class ;
+    rdfs:label "Entity"@en ;
+    rdfs:comment "Key domain entity with attributes and relationships"@en .
+
+sk:EdgeCase a owl:Class ;
+    rdfs:label "Edge Case"@en ;
+    rdfs:comment "Boundary condition or error scenario requiring special handling"@en .
+
+sk:Dependency a owl:Class ;
+    rdfs:label "Dependency"@en ;
+    rdfs:comment "External dependency with version constraints"@en .
+
+sk:Assumption a owl:Class ;
+    rdfs:label "Assumption"@en ;
+    rdfs:comment "Documented assumption about feature scope or environment"@en .
+
+sk:ImplementationPlan a owl:Class ;
+    rdfs:label "Implementation Plan"@en ;
+    rdfs:comment "Technical plan with tech stack, architecture, and phases"@en .
+
+sk:Task a owl:Class ;
+    rdfs:label "Task"@en ;
+    rdfs:comment "Actionable implementation task with dependencies and file paths"@en .
+
+sk:TechnicalContext a owl:Class ;
+    rdfs:label "Technical Context"@en ;
+    rdfs:comment "Technical environment: language, dependencies, storage, testing"@en .
+
+sk:ResearchDecision a owl:Class ;
+    rdfs:label "Research Decision"@en ;
+    rdfs:comment "Technology decision with rationale and alternatives"@en .
+
+sk:DataModel a owl:Class ;
+    rdfs:label "Data Model"@en ;
+    rdfs:comment "Entity data model with fields, validation, state transitions"@en .
+
+sk:Contract a owl:Class ;
+    rdfs:label "Contract"@en ;
+    rdfs:comment "API contract specification (OpenAPI, GraphQL, etc.)"@en .
+
+sk:Clarification a owl:Class ;
+    rdfs:label "Clarification"@en ;
+    rdfs:comment "Structured clarification question with options and user response"@en .
+
+# ----------------------------------------------------------------------------
+# Datatype Properties (Metadata)
+# ----------------------------------------------------------------------------
+
+sk:featureBranch a owl:DatatypeProperty ;
+    rdfs:label "feature branch"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Git branch name in NNN-feature-name format"@en .
+
+sk:featureName a owl:DatatypeProperty ;
+    rdfs:label "feature name"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Human-readable feature name"@en .
+
+sk:created a owl:DatatypeProperty ;
+    rdfs:label "created date"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range xsd:date ;
+    rdfs:comment "Feature creation date"@en .
+
+sk:status a owl:DatatypeProperty ;
+    rdfs:label "status"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Feature status (Draft, In Progress, Complete, etc.)"@en .
+
+sk:userInput a owl:DatatypeProperty ;
+    rdfs:label "user input"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Original user description from /speckit.specify command"@en .
+
+# ----------------------------------------------------------------------------
+# User Story Properties
+# ----------------------------------------------------------------------------
+
+sk:storyIndex a owl:DatatypeProperty ;
+    rdfs:label "story index"@en ;
+    rdfs:domain sk:UserStory ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Sequential story number for ordering"@en .
+
+sk:title a owl:DatatypeProperty ;
+    rdfs:label "title"@en ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Brief title (2-8 words)"@en .
+
+sk:priority a owl:DatatypeProperty ;
+    rdfs:label "priority"@en ;
+    rdfs:domain sk:UserStory ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Priority level: P1 (critical), P2 (important), P3 (nice-to-have)"@en .
+
+sk:description a owl:DatatypeProperty ;
+    rdfs:label "description"@en ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Plain language description"@en .
+
+sk:priorityRationale a owl:DatatypeProperty ;
+    rdfs:label "priority rationale"@en ;
+    rdfs:domain sk:UserStory ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Why this priority level was assigned"@en .
+
+sk:independentTest a owl:DatatypeProperty ;
+    rdfs:label "independent test"@en ;
+    rdfs:domain sk:UserStory ;
+    rdfs:range xsd:string ;
+    rdfs:comment "How to test this story independently for MVP delivery"@en .
+
+# ----------------------------------------------------------------------------
+# Acceptance Scenario Properties
+# ----------------------------------------------------------------------------
+
+sk:scenarioIndex a owl:DatatypeProperty ;
+    rdfs:label "scenario index"@en ;
+    rdfs:domain sk:AcceptanceScenario ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Scenario number within user story"@en .
+
+sk:given a owl:DatatypeProperty ;
+    rdfs:label "given"@en ;
+    rdfs:domain sk:AcceptanceScenario ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Initial state/precondition"@en .
+
+sk:when a owl:DatatypeProperty ;
+    rdfs:label "when"@en ;
+    rdfs:domain sk:AcceptanceScenario ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Action or event trigger"@en .
+
+sk:then a owl:DatatypeProperty ;
+    rdfs:label "then"@en ;
+    rdfs:domain sk:AcceptanceScenario ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Expected outcome or postcondition"@en .
+
+# ----------------------------------------------------------------------------
+# Requirement Properties
+# ----------------------------------------------------------------------------
+
+sk:requirementId a owl:DatatypeProperty ;
+    rdfs:label "requirement ID"@en ;
+    rdfs:domain sk:FunctionalRequirement ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Requirement identifier (FR-001 format)"@en .
+
+sk:category a owl:DatatypeProperty ;
+    rdfs:label "category"@en ;
+    rdfs:domain sk:FunctionalRequirement ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Requirement category (e.g., Configuration, Validation, Pipeline)"@en .
+
+# ----------------------------------------------------------------------------
+# Success Criterion Properties
+# ----------------------------------------------------------------------------
+
+sk:criterionId a owl:DatatypeProperty ;
+    rdfs:label "criterion ID"@en ;
+    rdfs:domain sk:SuccessCriterion ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Success criterion identifier (SC-001 format)"@en .
+
+sk:measurable a owl:DatatypeProperty ;
+    rdfs:label "measurable"@en ;
+    rdfs:domain sk:SuccessCriterion ;
+    rdfs:range xsd:boolean ;
+    rdfs:comment "Whether criterion has quantifiable metric"@en .
+
+sk:metric a owl:DatatypeProperty ;
+    rdfs:label "metric"@en ;
+    rdfs:domain sk:SuccessCriterion ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Measurement dimension (e.g., time, accuracy, throughput)"@en .
+
+sk:target a owl:DatatypeProperty ;
+    rdfs:label "target"@en ;
+    rdfs:domain sk:SuccessCriterion ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Target value or threshold (e.g., '< 2 minutes')"@en .
+
+# ----------------------------------------------------------------------------
+# Entity Properties
+# ----------------------------------------------------------------------------
+
+sk:entityName a owl:DatatypeProperty ;
+    rdfs:label "entity name"@en ;
+    rdfs:domain sk:Entity ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Entity name (PascalCase)"@en .
+
+sk:definition a owl:DatatypeProperty ;
+    rdfs:label "definition"@en ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Conceptual definition without implementation"@en .
+
+sk:keyAttributes a owl:DatatypeProperty ;
+    rdfs:label "key attributes"@en ;
+    rdfs:domain sk:Entity ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Key attributes described conceptually"@en .
+
+# ----------------------------------------------------------------------------
+# Edge Case Properties
+# ----------------------------------------------------------------------------
+
+sk:scenario a owl:DatatypeProperty ;
+    rdfs:label "scenario"@en ;
+    rdfs:domain sk:EdgeCase ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Boundary condition or error scenario description"@en .
+
+sk:expectedBehavior a owl:DatatypeProperty ;
+    rdfs:label "expected behavior"@en ;
+    rdfs:domain sk:EdgeCase ;
+    rdfs:range xsd:string ;
+    rdfs:comment "How system should handle this edge case"@en .
+
+# ----------------------------------------------------------------------------
+# Implementation Plan Properties
+# ----------------------------------------------------------------------------
+
+sk:language a owl:DatatypeProperty ;
+    rdfs:label "language"@en ;
+    rdfs:domain sk:TechnicalContext ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Programming language and version (e.g., Python 3.11)"@en .
+
+sk:primaryDependencies a owl:DatatypeProperty ;
+    rdfs:label "primary dependencies"@en ;
+    rdfs:domain sk:TechnicalContext ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Key frameworks/libraries (e.g., FastAPI, UIKit)"@en .
+
+sk:storage a owl:DatatypeProperty ;
+    rdfs:label "storage"@en ;
+    rdfs:domain sk:TechnicalContext ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Storage technology (e.g., PostgreSQL, files, N/A)"@en .
+
+sk:testing a owl:DatatypeProperty ;
+    rdfs:label "testing"@en ;
+    rdfs:domain sk:TechnicalContext ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Testing framework (e.g., pytest, cargo test)"@en .
+
+sk:targetPlatform a owl:DatatypeProperty ;
+    rdfs:label "target platform"@en ;
+    rdfs:domain sk:TechnicalContext ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Deployment platform (e.g., Linux server, iOS 15+)"@en .
+
+sk:projectType a owl:DatatypeProperty ;
+    rdfs:label "project type"@en ;
+    rdfs:domain sk:TechnicalContext ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Architecture type (single, web, mobile)"@en .
+
+# ----------------------------------------------------------------------------
+# Task Properties
+# ----------------------------------------------------------------------------
+
+sk:taskId a owl:DatatypeProperty ;
+    rdfs:label "task ID"@en ;
+    rdfs:domain sk:Task ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Task identifier (T001 format)"@en .
+
+sk:taskDescription a owl:DatatypeProperty ;
+    rdfs:label "task description"@en ;
+    rdfs:domain sk:Task ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Concrete actionable task with file paths"@en .
+
+sk:parallel a owl:DatatypeProperty ;
+    rdfs:label "parallel"@en ;
+    rdfs:domain sk:Task ;
+    rdfs:range xsd:boolean ;
+    rdfs:comment "Can run in parallel with other [P] tasks"@en .
+
+sk:userStoryRef a owl:DatatypeProperty ;
+    rdfs:label "user story reference"@en ;
+    rdfs:domain sk:Task ;
+    rdfs:range xsd:string ;
+    rdfs:comment "User story this task belongs to (US1, US2, etc.)"@en .
+
+sk:phase a owl:DatatypeProperty ;
+    rdfs:label "phase"@en ;
+    rdfs:domain sk:Task ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Implementation phase (Setup, Foundational, User Story N)"@en .
+
+sk:filePath a owl:DatatypeProperty ;
+    rdfs:label "file path"@en ;
+    rdfs:domain sk:Task ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Exact file path for implementation"@en .
+
+# ----------------------------------------------------------------------------
+# Clarification Properties
+# ----------------------------------------------------------------------------
+
+sk:question a owl:DatatypeProperty ;
+    rdfs:label "question"@en ;
+    rdfs:domain sk:Clarification ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Clarification question text"@en .
+
+sk:context a owl:DatatypeProperty ;
+    rdfs:label "context"@en ;
+    rdfs:domain sk:Clarification ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Relevant spec section or background"@en .
+
+sk:optionA a owl:DatatypeProperty ;
+    rdfs:label "option A"@en ;
+    rdfs:domain sk:Clarification ;
+    rdfs:range xsd:string .
+
+sk:optionB a owl:DatatypeProperty ;
+    rdfs:label "option B"@en ;
+    rdfs:domain sk:Clarification ;
+    rdfs:range xsd:string .
+
+sk:optionC a owl:DatatypeProperty ;
+    rdfs:label "option C"@en ;
+    rdfs:domain sk:Clarification ;
+    rdfs:range xsd:string .
+
+sk:userResponse a owl:DatatypeProperty ;
+    rdfs:label "user response"@en ;
+    rdfs:domain sk:Clarification ;
+    rdfs:range xsd:string ;
+    rdfs:comment "User's selected or custom answer"@en .
+
+# ----------------------------------------------------------------------------
+# Object Properties (Relationships)
+# ----------------------------------------------------------------------------
+
+sk:hasUserStory a owl:ObjectProperty ;
+    rdfs:label "has user story"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:UserStory ;
+    rdfs:comment "Feature contains user stories"@en .
+
+sk:hasAcceptanceScenario a owl:ObjectProperty ;
+    rdfs:label "has acceptance scenario"@en ;
+    rdfs:domain sk:UserStory ;
+    rdfs:range sk:AcceptanceScenario ;
+    rdfs:comment "User story defines acceptance scenarios"@en .
+
+sk:hasFunctionalRequirement a owl:ObjectProperty ;
+    rdfs:label "has functional requirement"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:FunctionalRequirement ;
+    rdfs:comment "Feature specifies functional requirements"@en .
+
+sk:hasSuccessCriterion a owl:ObjectProperty ;
+    rdfs:label "has success criterion"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:SuccessCriterion ;
+    rdfs:comment "Feature defines success criteria"@en .
+
+sk:hasEntity a owl:ObjectProperty ;
+    rdfs:label "has entity"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:Entity ;
+    rdfs:comment "Feature involves key entities"@en .
+
+sk:hasEdgeCase a owl:ObjectProperty ;
+    rdfs:label "has edge case"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:EdgeCase ;
+    rdfs:comment "Feature identifies edge cases"@en .
+
+sk:hasDependency a owl:ObjectProperty ;
+    rdfs:label "has dependency"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:Dependency ;
+    rdfs:comment "Feature depends on external dependencies"@en .
+
+sk:hasAssumption a owl:ObjectProperty ;
+    rdfs:label "has assumption"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:Assumption ;
+    rdfs:comment "Feature documents assumptions"@en .
+
+sk:hasImplementationPlan a owl:ObjectProperty ;
+    rdfs:label "has implementation plan"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:ImplementationPlan ;
+    rdfs:comment "Feature has technical implementation plan"@en .
+
+sk:hasTask a owl:ObjectProperty ;
+    rdfs:label "has task"@en ;
+    rdfs:domain sk:ImplementationPlan ;
+    rdfs:range sk:Task ;
+    rdfs:comment "Implementation plan breaks down into tasks"@en .
+
+sk:hasTechnicalContext a owl:ObjectProperty ;
+    rdfs:label "has technical context"@en ;
+    rdfs:domain sk:ImplementationPlan ;
+    rdfs:range sk:TechnicalContext ;
+    rdfs:comment "Plan specifies technical environment"@en .
+
+sk:hasClarification a owl:ObjectProperty ;
+    rdfs:label "has clarification"@en ;
+    rdfs:domain sk:Feature ;
+    rdfs:range sk:Clarification ;
+    rdfs:comment "Feature requires clarifications"@en .
+
+# ============================================================================
+# SHACL Validation Shapes
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Feature Shape
+# ----------------------------------------------------------------------------
+
+sk:FeatureShape a shacl:NodeShape ;
+    shacl:targetClass sk:Feature ;
+    shacl:property [
+        shacl:path sk:featureBranch ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:pattern "^[0-9]{3}-[a-z0-9-]+$" ;
+        shacl:description "Feature branch must match NNN-feature-name format"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:featureName ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 5 ;
+        shacl:description "Feature name required (at least 5 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:created ;
+        shacl:datatype xsd:date ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:description "Creation date required"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:status ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:in ("Draft" "In Progress" "Complete" "Deprecated") ;
+        shacl:description "Status must be Draft, In Progress, Complete, or Deprecated"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:hasUserStory ;
+        shacl:class sk:UserStory ;
+        shacl:minCount 1 ;
+        shacl:description "Feature must have at least one user story"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:hasFunctionalRequirement ;
+        shacl:class sk:FunctionalRequirement ;
+        shacl:minCount 1 ;
+        shacl:description "Feature must have at least one functional requirement"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:hasSuccessCriterion ;
+        shacl:class sk:SuccessCriterion ;
+        shacl:minCount 1 ;
+        shacl:description "Feature must have at least one success criterion"@en ;
+    ] .
+
+# ----------------------------------------------------------------------------
+# User Story Shape
+# ----------------------------------------------------------------------------
+
+sk:UserStoryShape a shacl:NodeShape ;
+    shacl:targetClass sk:UserStory ;
+    shacl:property [
+        shacl:path sk:storyIndex ;
+        shacl:datatype xsd:integer ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minInclusive 1 ;
+        shacl:description "Story index required (positive integer)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:title ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 5 ;
+        shacl:maxLength 100 ;
+        shacl:description "Story title required (5-100 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:priority ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:in ("P1" "P2" "P3") ;
+        shacl:description "Priority must be P1, P2, or P3"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:description ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 20 ;
+        shacl:description "Description required (at least 20 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:priorityRationale ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 10 ;
+        shacl:description "Priority rationale required (at least 10 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:independentTest ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 10 ;
+        shacl:description "Independent test description required (at least 10 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:hasAcceptanceScenario ;
+        shacl:class sk:AcceptanceScenario ;
+        shacl:minCount 1 ;
+        shacl:description "User story must have at least one acceptance scenario"@en ;
+    ] .
+
+# ----------------------------------------------------------------------------
+# Acceptance Scenario Shape
+# ----------------------------------------------------------------------------
+
+sk:AcceptanceScenarioShape a shacl:NodeShape ;
+    shacl:targetClass sk:AcceptanceScenario ;
+    shacl:property [
+        shacl:path sk:scenarioIndex ;
+        shacl:datatype xsd:integer ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minInclusive 1 ;
+        shacl:description "Scenario index required (positive integer)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:given ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 5 ;
+        shacl:description "Given clause required (at least 5 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:when ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 5 ;
+        shacl:description "When clause required (at least 5 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:then ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 5 ;
+        shacl:description "Then clause required (at least 5 characters)"@en ;
+    ] .
+
+# ----------------------------------------------------------------------------
+# Functional Requirement Shape
+# ----------------------------------------------------------------------------
+
+sk:FunctionalRequirementShape a shacl:NodeShape ;
+    shacl:targetClass sk:FunctionalRequirement ;
+    shacl:property [
+        shacl:path sk:requirementId ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:pattern "^FR-[0-9]{3}$" ;
+        shacl:description "Requirement ID must match FR-XXX format"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:category ;
+        shacl:datatype xsd:string ;
+        shacl:maxCount 1 ;
+        shacl:description "Optional category for grouping requirements"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:description ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 15 ;
+        shacl:description "Requirement description required (at least 15 characters)"@en ;
+    ] .
+
+# ----------------------------------------------------------------------------
+# Success Criterion Shape
+# ----------------------------------------------------------------------------
+
+sk:SuccessCriterionShape a shacl:NodeShape ;
+    shacl:targetClass sk:SuccessCriterion ;
+    shacl:property [
+        shacl:path sk:criterionId ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:pattern "^SC-[0-9]{3}$" ;
+        shacl:description "Criterion ID must match SC-XXX format"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:measurable ;
+        shacl:datatype xsd:boolean ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:description "Measurable flag required"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:description ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 15 ;
+        shacl:description "Success criterion description required (at least 15 characters)"@en ;
+    ] .
+
+# ----------------------------------------------------------------------------
+# Task Shape
+# ----------------------------------------------------------------------------
+
+sk:TaskShape a shacl:NodeShape ;
+    shacl:targetClass sk:Task ;
+    shacl:property [
+        shacl:path sk:taskId ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:pattern "^T[0-9]{3}$" ;
+        shacl:description "Task ID must match TXXX format"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:taskDescription ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:minLength 10 ;
+        shacl:description "Task description required (at least 10 characters)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:parallel ;
+        shacl:datatype xsd:boolean ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:description "Parallel flag required (indicates if task can run in parallel)"@en ;
+    ] ;
+    shacl:property [
+        shacl:path sk:phase ;
+        shacl:datatype xsd:string ;
+        shacl:minCount 1 ;
+        shacl:maxCount 1 ;
+        shacl:description "Implementation phase required"@en ;
+    ] .
+
+# ============================================================================
+# End of Spec-Kit Ontology Schema
+# ============================================================================
