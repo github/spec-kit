@@ -1,0 +1,44 @@
+# Success Criterion Template - Copy for each measurable outcome
+# Replace NNN with criterion number (001, 002, etc.)
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Success Criterion Instance (Measurable)
+:sc-NNN a sk:SuccessCriterion ;
+    sk:criterionId "SC-NNN" ;  # MUST match pattern: ^SC-[0-9]{3}$ (SHACL validated)
+    sk:description "DESCRIPTION of what success looks like" ;
+    sk:measurable true ;  # Boolean: true or false
+    sk:metric "METRIC NAME - What is being measured" ;  # Required if measurable=true
+    sk:target "TARGET VALUE - The goal or threshold (e.g., < 30 seconds, >= 90%)" .  # Required if measurable=true
+
+# Success Criterion Instance (Non-Measurable)
+:sc-NNN a sk:SuccessCriterion ;
+    sk:criterionId "SC-NNN" ;
+    sk:description "QUALITATIVE DESCRIPTION of success" ;
+    sk:measurable false .  # No metric/target needed
+
+# Link to feature (add to feature's hasSuccessCriterion list)
+:feature-name sk:hasSuccessCriterion :sc-NNN .
+
+# EXAMPLES:
+# :sc-001 a sk:SuccessCriterion ;
+#     sk:criterionId "SC-001" ;
+#     sk:measurable true ;
+#     sk:metric "Time to create album and add photos" ;
+#     sk:target "< 30 seconds for 10 photos" ;
+#     sk:description "Users can create an album and add 10 photos in under 30 seconds" .
+#
+# :sc-002 a sk:SuccessCriterion ;
+#     sk:criterionId "SC-002" ;
+#     sk:measurable true ;
+#     sk:metric "Task completion rate" ;
+#     sk:target ">= 90%" ;
+#     sk:description "90% of users successfully organize photos into albums without assistance on first attempt" .
+
+# VALIDATION RULES (enforced by SHACL):
+# - criterionId MUST match pattern: SC-001, SC-002, etc. (not C-001, SUCCESS-1)
+# - description is required
+# - measurable is required (boolean)
+# - If measurable=true, metric and target are recommended

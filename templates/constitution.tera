@@ -1,0 +1,210 @@
+{# Constitution Template - Renders project constitution from RDF ontology #}
+{# Generates constitution.md from constitution.ttl using SPARQL query results #}
+
+{%- set const_metadata = sparql_results | first -%}
+
+# {{ const_metadata.projectName }} Constitution
+
+**Version**: {{ const_metadata.constitutionVersion }}
+**Ratified**: {{ const_metadata.ratificationDate }}
+**Last Amended**: {{ const_metadata.lastAmendedDate }}
+
+---
+
+## Core Principles
+
+{%- set principles = sparql_results | filter(attribute="principleIndex") | unique(attribute="principleIndex") | sort(attribute="principleIndex") %}
+
+{%- for principle in principles %}
+
+### {{ principle.principleIndex }}. {{ principle.principleName }}
+
+{{ principle.principleDescription }}
+
+**Rationale**: {{ principle.principleRationale }}
+
+{%- if principle.principleExamples %}
+
+**Examples**:
+{{ principle.principleExamples }}
+{%- endif %}
+
+{%- if principle.principleViolations %}
+
+**Common Violations to Avoid**:
+{{ principle.principleViolations }}
+{%- endif %}
+
+---
+
+{%- endfor %}
+
+## Build & Quality Standards
+
+{%- set build_standards = sparql_results | filter(attribute="buildStandardId") | unique(attribute="buildStandardId") %}
+{%- if build_standards | length > 0 %}
+
+{%- for standard in build_standards %}
+
+### {{ standard.buildStandardName }}
+
+{{ standard.buildStandardDescription }}
+
+**Required Tool**: `{{ standard.buildCommand }}`
+
+**SLO**: {{ standard.buildSLO }}
+
+{%- if standard.buildRationale %}
+**Why**: {{ standard.buildRationale }}
+{%- endif %}
+
+{%- endfor %}
+
+{%- else %}
+
+### cargo make Protocol
+
+**NEVER use direct cargo commands** - ALWAYS use `cargo make`
+
+- `cargo make check` - Compilation (<5s timeout)
+- `cargo make test` - All tests with timeouts
+- `cargo make lint` - Clippy with timeouts
+
+**Rationale**: Prevents hanging, enforces SLOs, integrated with hooks
+
+---
+
+{%- endif %}
+
+## Workflow Rules
+
+{%- set workflow_rules = sparql_results | filter(attribute="workflowRuleId") | unique(attribute="workflowRuleId") %}
+{%- if workflow_rules | length > 0 %}
+
+{%- for rule in workflow_rules %}
+
+### {{ rule.workflowRuleName }}
+
+{{ rule.workflowRuleDescription }}
+
+{%- if rule.workflowRuleExample %}
+
+**Example**:
+```
+{{ rule.workflowRuleExample }}
+```
+{%- endif %}
+
+{%- if rule.workflowRuleEnforcement %}
+**Enforcement**: {{ rule.workflowRuleEnforcement }}
+{%- endif %}
+
+---
+
+{%- endfor %}
+
+{%- else %}
+
+### Error Handling Rule
+
+**Production Code**: NO `unwrap()` / `expect()` - Use `Result<T, E>`
+**Test/Bench Code**: `unwrap()` / `expect()` ALLOWED
+
+### Chicago TDD Rule
+
+**State-based testing with real collaborators** - tests verify behavior, not implementation
+
+### Concurrent Execution Rule
+
+**"1 MESSAGE = ALL RELATED OPERATIONS"** - Batch all operations for 2.8-4.4x speed improvement
+
+---
+
+{%- endif %}
+
+## Governance
+
+### Amendment Procedure
+
+{%- if const_metadata.amendmentProcedure %}
+{{ const_metadata.amendmentProcedure }}
+{%- else %}
+1. Propose amendment via pull request to `constitution.ttl`
+2. Document rationale and impact analysis
+3. Require approval from project maintainers
+4. Update version according to semantic versioning
+5. Regenerate `constitution.md` from `constitution.ttl`
+{%- endif %}
+
+### Versioning Policy
+
+{%- if const_metadata.versioningPolicy %}
+{{ const_metadata.versioningPolicy }}
+{%- else %}
+- **MAJOR**: Backward incompatible principle changes or removals
+- **MINOR**: New principles added or material expansions
+- **PATCH**: Clarifications, wording fixes, non-semantic refinements
+{%- endif %}
+
+### Compliance Review
+
+{%- if const_metadata.complianceReview %}
+{{ const_metadata.complianceReview }}
+{%- else %}
+Constitution compliance is reviewed:
+- Before each feature merge (via `/speckit.finish`)
+- During architectural decisions (via `/speckit.plan`)
+- In code reviews (enforced by git hooks)
+- Violations require either code changes or constitution amendments (explicit)
+{%- endif %}
+
+---
+
+## Prohibited Patterns (Zero Tolerance)
+
+{%- set prohibited = sparql_results | filter(attribute="prohibitedPattern") | unique(attribute="prohibitedPattern") %}
+{%- if prohibited | length > 0 %}
+
+{%- for pattern in prohibited %}
+- **{{ pattern.prohibitedPattern }}**: {{ pattern.prohibitedReason }}
+{%- endfor %}
+
+{%- else %}
+
+1. Direct cargo commands (use `cargo make`)
+2. `unwrap()`/`expect()` in production code
+3. Ignoring Andon signals (RED/YELLOW)
+4. Using `--no-verify` to bypass git hooks
+5. Manual editing of generated `.md` files
+6. Saving working files to root directory
+7. Multiple sequential messages (batch operations)
+
+{%- endif %}
+
+---
+
+## Key Associations (Mental Models)
+
+{%- set associations = sparql_results | filter(attribute="associationKey") | unique(attribute="associationKey") %}
+{%- if associations | length > 0 %}
+
+{%- for assoc in associations %}
+- **{{ assoc.associationKey }}** = {{ assoc.associationValue }}
+{%- endfor %}
+
+{%- else %}
+
+- **Types** = invariants = compile-time guarantees
+- **Zero-cost** = generics/macros/const generics
+- **Ownership** = explicit = memory safety
+- **Tests** = observable outputs = behavior verification
+- **TTL** = source of truth (edit this)
+- **Markdown** = generated artifact (never edit manually)
+- **Constitutional Equation** = spec.md = μ(feature.ttl)
+
+{%- endif %}
+
+---
+
+**Generated with**: [ggen v6](https://github.com/seanchatmangpt/ggen) ontology-driven constitution system
+**Constitutional Equation**: `constitution.md = μ(constitution.ttl)`

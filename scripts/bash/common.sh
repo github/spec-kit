@@ -133,21 +133,38 @@ get_feature_paths() {
         has_git_repo="true"
     fi
 
-    # Use prefix-based lookup to support multiple branches per spec
-    local feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch")
+    # Use exact match if SPECIFY_FEATURE is set, otherwise use prefix-based lookup
+    local feature_dir
+    if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
+        feature_dir="$repo_root/specs/$SPECIFY_FEATURE"
+    else
+        feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch")
+    fi
 
+    # Output variable assignments (no comments - they break eval)
     cat <<EOF
 REPO_ROOT='$repo_root'
 CURRENT_BRANCH='$current_branch'
 HAS_GIT='$has_git_repo'
 FEATURE_DIR='$feature_dir'
-FEATURE_SPEC='$feature_dir/spec.md'
-IMPL_PLAN='$feature_dir/plan.md'
-TASKS='$feature_dir/tasks.md'
+FEATURE_SPEC_TTL='$feature_dir/ontology/feature-content.ttl'
+IMPL_PLAN_TTL='$feature_dir/ontology/plan.ttl'
+TASKS_TTL='$feature_dir/ontology/tasks.ttl'
+FEATURE_SPEC='$feature_dir/generated/spec.md'
+IMPL_PLAN='$feature_dir/generated/plan.md'
+TASKS='$feature_dir/generated/tasks.md'
+FEATURE_SPEC_LEGACY='$feature_dir/spec.md'
+IMPL_PLAN_LEGACY='$feature_dir/plan.md'
+TASKS_LEGACY='$feature_dir/tasks.md'
 RESEARCH='$feature_dir/research.md'
 DATA_MODEL='$feature_dir/data-model.md'
 QUICKSTART='$feature_dir/quickstart.md'
 CONTRACTS_DIR='$feature_dir/contracts'
+ONTOLOGY_DIR='$feature_dir/ontology'
+GENERATED_DIR='$feature_dir/generated'
+TEMPLATES_DIR='$feature_dir/templates'
+SCHEMA_TTL='$feature_dir/ontology/spec-kit-schema.ttl'
+GGEN_CONFIG='$feature_dir/ggen.toml'
 EOF
 }
 

@@ -1,0 +1,23 @@
+# Edge Case Template - Copy this pattern for each edge case
+# Replace NNN with edge case number (001, 002, etc.)
+# Replace PLACEHOLDERS with actual content
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Edge Case Instance
+:edge-NNN a sk:EdgeCase ;
+    sk:scenario "EDGE CASE SCENARIO - Describe the unusual or boundary condition" ;
+    sk:expectedBehavior "EXPECTED BEHAVIOR - How the system should handle this edge case" .
+
+# Link to feature (add to feature's hasEdgeCase list)
+:feature-name sk:hasEdgeCase :edge-NNN .
+
+# EXAMPLES:
+# :edge-001 a sk:EdgeCase ;
+#     sk:scenario "User inputs empty string for required field" ;
+#     sk:expectedBehavior "System displays validation error: 'This field is required' and prevents form submission" .
+#
+# :edge-002 a sk:EdgeCase ;
+#     sk:scenario "Network connection lost during file upload" ;
+#     sk:expectedBehavior "System retries upload automatically (max 3 attempts) and shows progress to user" .

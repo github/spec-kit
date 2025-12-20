@@ -1,0 +1,187 @@
+{# Plan Template - Renders implementation plan from RDF ontology #}
+{# Generates plan.md from plan.ttl using SPARQL query results #}
+
+{%- set plan_metadata = sparql_results | first -%}
+
+# Implementation Plan: {{ plan_metadata.featureName }}
+
+**Branch**: `{{ plan_metadata.featureBranch }}`
+**Created**: {{ plan_metadata.planCreated }}
+**Status**: {{ plan_metadata.planStatus }}
+
+---
+
+## Technical Context
+
+**Architecture Pattern**: {{ plan_metadata.architecturePattern }}
+
+**Technology Stack**:
+{%- for row in sparql_results %}
+{%- if row.techName %}
+- {{ row.techName }}{% if row.techVersion %} ({{ row.techVersion }}){% endif %}{% if row.techPurpose %} - {{ row.techPurpose }}{% endif %}
+{%- endif %}
+{%- endfor %}
+
+**Key Dependencies**:
+{%- set dependencies = sparql_results | filter(attribute="dependencyName") | unique(attribute="dependencyName") %}
+{%- for dep in dependencies %}
+- {{ dep.dependencyName }}{% if dep.dependencyVersion %} ({{ dep.dependencyVersion }}){% endif %}{% if dep.dependencyReason %} - {{ dep.dependencyReason }}{% endif %}
+{%- endfor %}
+
+---
+
+## Constitution Check
+
+{%- set const_checks = sparql_results | filter(attribute="principleId") | unique(attribute="principleId") %}
+{%- if const_checks | length > 0 %}
+
+{%- for check in const_checks %}
+### {{ check.principleId }}: {{ check.principleName }}
+
+**Status**: {% if check.compliant == "true" %}✅ COMPLIANT{% else %}❌ VIOLATION{% endif %}
+
+{{ check.principleDescription }}
+
+**Compliance Notes**: {{ check.complianceNotes }}
+
+{%- endfor %}
+
+{%- else %}
+*No constitution checks defined yet.*
+{%- endif %}
+
+---
+
+## Research & Decisions
+
+{%- set decisions = sparql_results | filter(attribute="decisionId") | unique(attribute="decisionId") %}
+{%- if decisions | length > 0 %}
+
+{%- for decision in decisions %}
+### {{ decision.decisionId }}: {{ decision.decisionTitle }}
+
+**Decision**: {{ decision.decisionChoice }}
+
+**Rationale**: {{ decision.decisionRationale }}
+
+**Alternatives Considered**: {{ decision.alternativesConsidered }}
+
+**Trade-offs**: {{ decision.tradeoffs }}
+
+{%- endfor %}
+
+{%- else %}
+*No research decisions documented yet.*
+{%- endif %}
+
+---
+
+## Data Model
+
+{%- set entities = sparql_results | filter(attribute="entityName") | unique(attribute="entityName") %}
+{%- if entities | length > 0 %}
+
+{%- for entity in entities %}
+### {{ entity.entityName }}
+
+{{ entity.entityDefinition }}
+
+**Attributes**:
+{%- if entity.entityAttributes %}
+{{ entity.entityAttributes }}
+{%- else %}
+*Not defined*
+{%- endif %}
+
+**Relationships**:
+{%- if entity.entityRelationships %}
+{{ entity.entityRelationships }}
+{%- else %}
+*None*
+{%- endif %}
+
+{%- endfor %}
+
+{%- else %}
+*No data model defined yet.*
+{%- endif %}
+
+---
+
+## API Contracts
+
+{%- set contracts = sparql_results | filter(attribute="contractId") | unique(attribute="contractId") %}
+{%- if contracts | length > 0 %}
+
+{%- for contract in contracts %}
+### {{ contract.contractId }}: {{ contract.contractEndpoint }}
+
+**Method**: {{ contract.contractMethod }}
+
+**Description**: {{ contract.contractDescription }}
+
+**Request**:
+```
+{{ contract.contractRequest }}
+```
+
+**Response**:
+```
+{{ contract.contractResponse }}
+```
+
+{%- if contract.contractValidation %}
+**Validation**: {{ contract.contractValidation }}
+{%- endif %}
+
+{%- endfor %}
+
+{%- else %}
+*No API contracts defined yet.*
+{%- endif %}
+
+---
+
+## Project Structure
+
+{%- if plan_metadata.projectStructure %}
+```
+{{ plan_metadata.projectStructure }}
+```
+{%- else %}
+*Project structure to be defined during implementation.*
+{%- endif %}
+
+---
+
+## Quality Gates
+
+{%- set gates = sparql_results | filter(attribute="gateId") | unique(attribute="gateId") %}
+{%- if gates | length > 0 %}
+
+{%- for gate in gates %}
+- **{{ gate.gateId }}**: {{ gate.gateDescription }} (Checkpoint: {{ gate.gateCheckpoint }})
+{%- endfor %}
+
+{%- else %}
+1. All tests pass (cargo make test)
+2. No clippy warnings (cargo make lint)
+3. Code coverage ≥ 80%
+4. All SHACL validations pass
+5. Constitution compliance verified
+{%- endif %}
+
+---
+
+## Implementation Notes
+
+{%- if plan_metadata.implementationNotes %}
+{{ plan_metadata.implementationNotes }}
+{%- else %}
+*Implementation will follow constitutional principles and SPARC methodology.*
+{%- endif %}
+
+---
+
+**Generated with**: [ggen v6](https://github.com/seanchatmangpt/ggen) ontology-driven planning system
+**Constitutional Equation**: `plan.md = μ(plan.ttl)`

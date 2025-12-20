@@ -1,0 +1,35 @@
+# Entity Template - Copy for each key domain entity
+# Entities represent the core data objects in the system
+
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix : <http://github.com/github/spec-kit/examples/FEATURE-NAME#> .
+
+# Entity Instance
+:entity-name a sk:Entity ;
+    sk:entityName "ENTITY NAME (capitalized, singular form)" ;
+    sk:definition "DEFINITION - What this entity represents in the domain" ;
+    sk:keyAttributes "ATTRIBUTE LIST - Key properties, fields, or metadata (comma-separated)" .
+
+# Link to feature (add to feature's hasEntity list)
+:feature-name sk:hasEntity :entity-name .
+
+# EXAMPLES:
+# :album a sk:Entity ;
+#     sk:entityName "Album" ;
+#     sk:definition "A container for organizing photos by date, event, or theme" ;
+#     sk:keyAttributes "name (user-provided), creation date (auto-generated), display order (user-customizable), photo count" .
+#
+# :photo a sk:Entity ;
+#     sk:entityName "Photo" ;
+#     sk:definition "An image file stored locally with metadata for display and organization" ;
+#     sk:keyAttributes "file path, thumbnail image, full-size image, upload date, parent album reference" .
+
+# VALIDATION RULES:
+# - entityName is required (string)
+# - definition is required (string)
+# - keyAttributes is optional but recommended (comma-separated list)
+
+# NAMING CONVENTIONS:
+# - Use lowercase-hyphen-separated URIs (:photo-album)
+# - Use singular form for entity names ("Album" not "Albums")
+# - List attributes with types/constraints in parentheses where helpful
