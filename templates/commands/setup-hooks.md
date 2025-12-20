@@ -425,13 +425,13 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    ## Critical Don'ts
 
    - Never use `any` without explicit justification
-   - Never ignore TypeScript errors with `@ts-ignore`
-   - Never use non-null assertion `!` without validation
+   - Never ignore TypeScript errors with @ts-ignore
+   - Never use non-null assertion operator without validation
 
    ## References
 
-   - For detailed conventions: `Read references/conventions.md`
-   - For advanced patterns: `Read references/patterns.md`
+   - For detailed conventions: Read references/conventions.md
+   - For advanced patterns: Read references/patterns.md
    ```
 
    **For Python projects** (`.claude/skills/python-standards/`):
