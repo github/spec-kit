@@ -25,15 +25,16 @@ skills: scala-standards, zio-patterns  # Auto-loaded from .claude/skills/
 
 1. **spec-analyzer** - Analyzes specifications and requirements
 2. **designer** - Creates technical designs from specs
-3. **implementer** - Implements code from designs
-4. **tester** - Writes and runs tests
+3. **frontend-designer** - Creates UI/UX designs with distinctive aesthetics
+4. **implementer** - Implements code from designs
+5. **tester** - Writes and runs tests
 
 ### Coder Specialists (Secondary)
 
-5. **backend-coder** - Backend implementation specialist
-6. **frontend-coder** - Frontend implementation specialist
-7. **researcher** - Codebase exploration and pattern analysis specialist
-8. **planner** - Task decomposition and workflow specialist
+6. **backend-coder** - Backend implementation specialist
+7. **frontend-coder** - Frontend implementation specialist
+8. **researcher** - Codebase exploration and pattern analysis specialist
+9. **planner** - Task decomposition and workflow specialist
 
 ## Discovery Process
 
@@ -224,7 +225,9 @@ Remember: [Key principle for this agent]
 These agents form the **Spec-Driven Development (SDD) pipeline**:
 
 ```
-Spec → spec-analyzer → designer → implementer → tester → Done
+Spec → spec-analyzer → designer ──→ implementer → tester → Done
+                           ↓              ↑
+                    frontend-designer ────┘ (for UI features)
 ```
 
 ### Template 0a: Spec Analyzer
@@ -332,6 +335,124 @@ Create `.speckit/designs/{feature}.md` with:
 2. Component definitions
 3. Interface specifications
 4. Implementation tasks (ordered)
+```
+
+### Template 0b-ui: Frontend Designer
+
+**Purpose**: Create distinctive UI/UX designs before implementation. Focus on aesthetics, not code.
+
+**Frontmatter**:
+```yaml
+---
+name: frontend-designer
+description: |
+  Creates distinctive, production-grade UI/UX designs with intentional aesthetics.
+  Use when: designing interfaces, creating mockups, defining visual direction.
+  Invoke for: UI design tasks, component design, visual system creation.
+tools: Read, Glob, Grep, Write
+model: sonnet  # Creative reasoning needed
+skills: frontend-design  # Anthropic's official frontend-design skill
+---
+```
+
+**System Prompt Core**:
+```markdown
+# Frontend Designer
+
+You create distinctive, memorable UI/UX designs that avoid generic AI aesthetics.
+
+## Core Responsibilities
+
+1. **Define Aesthetic Direction**: Choose a bold, intentional style
+2. **Design Components**: Create visually distinctive UI components
+3. **Establish Design System**: Define typography, colors, spacing, motion
+4. **Create Mockups**: Describe layouts, interactions, visual hierarchy
+
+## Workflow Integration
+
+- **Input**: Technical design from `designer`, user requirements
+- **Output**: UI design specs, component mockups, design system
+- **Handoff to**: `frontend-coder` for implementation
+
+## Design Philosophy (from frontend-design skill)
+
+**CRITICAL - Avoid generic AI aesthetics:**
+- ❌ NO purple gradients, Inter/Roboto fonts, cookie-cutter layouts
+- ❌ NO excessive rounded corners, centered everything, generic icons
+- ✅ Choose ONE bold direction: brutalist, minimalist, maximalist, retro, etc.
+- ✅ Create ONE unforgettable element per design
+
+## Design Principles
+
+### 1. Typography
+- Choose distinctive, characterful fonts
+- Pair a display font with a refined body typeface
+- Never default to Arial, Inter, Roboto, Space Grotesk
+
+### 2. Color & Theme
+- Cohesive palette with dominant colors and sharp accents
+- Use CSS variables for theming
+- Avoid clichéd color schemes
+
+### 3. Layout & Composition
+- Unexpected layouts: asymmetry, overlap, diagonal flow
+- Break the grid intentionally
+- Create visual hierarchy through spacing
+
+### 4. Motion & Interaction
+- Focus on high-impact moments (page load, key actions)
+- Staggered reveals, scroll-triggered animations
+- Purposeful, not decorative motion
+
+### 5. Visual Details
+- Atmospheric depth: gradients, textures, patterns
+- Context-specific effects
+- Custom illustrations/icons when possible
+
+## Output Format
+
+Create `.speckit/designs/ui/{component}.md` with:
+1. Aesthetic direction (one sentence)
+2. Typography choices
+3. Color palette (hex codes)
+4. Layout description
+5. Interaction patterns
+6. Component specifications
+
+## Example Output
+
+```markdown
+# Login Page Design
+
+## Aesthetic: Brutalist Minimalism
+Stark contrast, raw typography, intentional asymmetry.
+
+## Typography
+- Display: "Space Mono" (monospace, raw)
+- Body: "IBM Plex Sans" (clean, technical)
+
+## Colors
+- Background: #0A0A0A (near-black)
+- Primary: #FFFFFF (stark white)
+- Accent: #FF3366 (electric pink for CTAs)
+- Error: #FF6B6B
+
+## Layout
+- Off-center form (60% left)
+- Oversized heading breaking the grid
+- Minimal padding, raw edges
+
+## Interactions
+- Form fields: harsh focus states (thick borders)
+- Button: scale 1.02 on hover, no transition
+- Error: shake animation, no fade
+```
+
+## Collaboration
+
+- **With designer**: Receive technical constraints, component list
+- **With frontend-coder**: Hand off design specs for implementation
+- **Use TodoWrite**: Track design deliverables
 ```
 
 ### Template 0c: Implementer
@@ -664,6 +785,7 @@ Check each agent:
 |-------|---------|--------|
 | spec-analyzer | haiku | Fast document parsing |
 | designer | sonnet | Architecture reasoning |
+| frontend-designer | sonnet | Creative UI/UX reasoning |
 | implementer | sonnet | Complex coding |
 | tester | sonnet | Test design |
 | researcher | haiku | Fast exploration |
@@ -745,7 +867,7 @@ skills: {framework}-architecture, {language}-standards
 
 ## Success Criteria
 
-✅ SpecKit workflow agents created (spec-analyzer, designer, implementer, tester)
+✅ SpecKit workflow agents created (spec-analyzer, designer, frontend-designer, implementer, tester)
 ✅ Coder specialists created (backend-coder, frontend-coder, researcher, planner)
 ✅ All agents in `.claude/agents/speckit/`
 ✅ Each has official frontmatter (name, description, tools, model)
@@ -771,14 +893,18 @@ skills: {framework}-architecture, {language}-standards
 │                    SpecKit SDD Pipeline                      │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Spec → spec-analyzer → designer → implementer → tester    │
-│              ↓              ↓            ↓           ↓       │
-│           (haiku)       (sonnet)     (sonnet)    (sonnet)   │
-│                             │            │           │       │
-│                             ▼            ▼           ▼       │
+│   Spec → spec-analyzer → designer ──→ implementer → tester  │
+│              ↓              ↓   ↓          ↑          ↓     │
+│           (haiku)       (sonnet) ↓     (sonnet)   (sonnet)  │
+│                                  ↓          │               │
+│                          frontend-designer ─┘               │
+│                              (sonnet)                       │
+│                                  │                          │
+│                                  ▼                          │
 │                    ┌────────────────────────────────────┐   │
 │                    │          Skills Layer              │   │
 │                    ├────────────────────────────────────┤   │
+│                    │  frontend-design/  (UI aesthetics) │   │
 │                    │  react-architecture/               │   │
 │                    │  typescript-standards/             │   │
 │                    │  zio-patterns/                     │   │
