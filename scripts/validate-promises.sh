@@ -19,13 +19,14 @@ NC='\033[0m' # No Color
 ERRORS=0
 WARNINGS=0
 
-# Promise 1: No "ggen render" references should remain
+# Promise 1: No "ggen render" references should remain (excluding validation report)
 echo "📝 Promise 1: Checking for 'ggen render' references..."
-if grep -r "ggen render" --include="*.md" --include="*.py" --include="*.toml" --exclude-dir=".git" . 2>/dev/null; then
+if grep -r "ggen render" --include="*.md" --include="*.py" --include="*.toml" \
+        --exclude="VALIDATION_REPORT.md" --exclude-dir=".git" . 2>/dev/null; then
     echo -e "${RED}❌ FAILED: Found 'ggen render' references${NC}"
     ((ERRORS++))
 else
-    echo -e "${GREEN}✓ PASSED: No 'ggen render' references found${NC}"
+    echo -e "${GREEN}✓ PASSED: No 'ggen render' references found (excluding validation report)${NC}"
 fi
 echo ""
 
