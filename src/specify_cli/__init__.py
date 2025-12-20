@@ -32,8 +32,10 @@ import tempfile
 import shutil
 import shlex
 import json
+import re
 from pathlib import Path
 from typing import Optional, Tuple
+import importlib.resources
 
 import typer
 import httpx
@@ -231,6 +233,237 @@ AGENT_CONFIG = {
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
+
+def get_bundled_path() -> Optional[Path]:
+    """Get the path to bundled templates/scripts if they exist.
+
+    Returns the path to the bundled resources directory, or None if not bundled.
+    """
+    try:
+        # Try to find bundled resources in the package
+        pkg_path = Path(__file__).parent
+        bundled_path = pkg_path / "bundled"
+        if bundled_path.exists() and (bundled_path / "templates").exists():
+            return bundled_path
+        return None
+    except Exception:
+        return None
+
+def _rewrite_paths_for_bundled(content: str) -> str:
+    """Rewrite paths in template content for bundled templates."""
+    # Same logic as create-release-packages.sh rewrite_paths
+    # Match: (optional /)memory/ or scripts/ or templates/
+    # But NOT when already prefixed with .specify (e.g., ".specify/scripts/")
+    # Match at: start of line, after whitespace, after backtick, after quote
+    for path in ['memory', 'scripts', 'templates']:
+        # Match at start of string or line
+        content = re.sub(rf'^(/?){path}/', rf'.specify/{path}/', content, flags=re.MULTILINE)
+        # Match after whitespace, backtick, or quotes
+        content = re.sub(rf'(?<=[\s`"\'])(/?){path}/', rf'.specify/{path}/', content)
+    return content
+
+def build_template_from_bundled(
+    ai_assistant: str,
+    script_type: str,
+    target_dir: Path,
+    bundled_path: Path,
+    verbose: bool = True,
+    tracker: "StepTracker" = None
+) -> bool:
+    """Build template structure from bundled templates (similar to create-release-packages.sh).
+
+    Args:
+        ai_assistant: The AI assistant to build for (claude, copilot, etc.)
+        script_type: Script type (sh or ps)
+        target_dir: Directory to build the template into
+        bundled_path: Path to bundled resources
+        verbose: Whether to print verbose output
+        tracker: Optional step tracker for progress
+
+    Returns:
+        True if build succeeded, False otherwise
+    """
+    templates_dir = bundled_path / "templates"
+    scripts_dir = bundled_path / "scripts"
+    memory_dir = bundled_path / "memory"
+    agent_templates_dir = bundled_path / "agent_templates"
+
+    if not templates_dir.exists():
+        return False
+
+    try:
+        # Create .specify directory structure
+        specify_dir = target_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy memory
+        if memory_dir.exists():
+            shutil.copytree(memory_dir, specify_dir / "memory", dirs_exist_ok=True)
+
+        # Copy scripts based on variant
+        if scripts_dir.exists():
+            scripts_dest = specify_dir / "scripts"
+            scripts_dest.mkdir(parents=True, exist_ok=True)
+
+            if script_type == "sh":
+                bash_dir = scripts_dir / "bash"
+                if bash_dir.exists():
+                    shutil.copytree(bash_dir, scripts_dest / "bash", dirs_exist_ok=True)
+            elif script_type == "ps":
+                ps_dir = scripts_dir / "powershell"
+                if ps_dir.exists():
+                    shutil.copytree(ps_dir, scripts_dest / "powershell", dirs_exist_ok=True)
+
+            # Copy any root-level script files
+            for f in scripts_dir.iterdir():
+                if f.is_file():
+                    shutil.copy2(f, scripts_dest / f.name)
+
+        # Copy templates (except commands/ and vscode-settings.json)
+        templates_dest = specify_dir / "templates"
+        templates_dest.mkdir(parents=True, exist_ok=True)
+        for item in templates_dir.iterdir():
+            if item.name != "commands" and item.name != "vscode-settings.json":
+                if item.is_file():
+                    shutil.copy2(item, templates_dest / item.name)
+                elif item.is_dir():
+                    shutil.copytree(item, templates_dest / item.name, dirs_exist_ok=True)
+
+        # Generate agent-specific commands
+        commands_source = templates_dir / "commands"
+        if not commands_source.exists():
+            return False
+
+        # Determine argument format and output directory based on agent
+        arg_format = "$ARGUMENTS"
+        file_ext = "md"
+
+        agent_dirs = {
+            "claude": (".claude/commands", "md", "$ARGUMENTS"),
+            "gemini": (".gemini/commands", "toml", "{{args}}"),
+            "copilot": (".github/agents", "agent.md", "$ARGUMENTS"),
+            "cursor-agent": (".cursor/commands", "md", "$ARGUMENTS"),
+            "qwen": (".qwen/commands", "toml", "{{args}}"),
+            "opencode": (".opencode/command", "md", "$ARGUMENTS"),
+            "windsurf": (".windsurf/workflows", "md", "$ARGUMENTS"),
+            "codex": (".codex/prompts", "md", "$ARGUMENTS"),
+            "kilocode": (".kilocode/workflows", "md", "$ARGUMENTS"),
+            "auggie": (".augment/commands", "md", "$ARGUMENTS"),
+            "roo": (".roo/commands", "md", "$ARGUMENTS"),
+            "codebuddy": (".codebuddy/commands", "md", "$ARGUMENTS"),
+            "amp": (".agents/commands", "md", "$ARGUMENTS"),
+            "shai": (".shai/commands", "md", "$ARGUMENTS"),
+            "q": (".amazonq/prompts", "md", "$ARGUMENTS"),
+            "qoder": (".qoder/commands", "md", "$ARGUMENTS"),
+            "bob": (".bob/commands", "md", "$ARGUMENTS"),
+        }
+
+        if ai_assistant not in agent_dirs:
+            return False
+
+        cmd_dir, file_ext, arg_format = agent_dirs[ai_assistant]
+        output_dir = target_dir / cmd_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Process each command template
+        script_variant = script_type
+        for template_file in commands_source.glob("*.md"):
+            name = template_file.stem
+            content = template_file.read_text(encoding="utf-8")
+
+            # Normalize line endings
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
+
+            # Extract description from frontmatter
+            description = ""
+            desc_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+            if desc_match:
+                description = desc_match.group(1).strip()
+
+            # Extract script command for this variant
+            script_command = ""
+            script_pattern = rf'^\s*{script_variant}:\s*(.+)$'
+            script_match = re.search(script_pattern, content, re.MULTILINE)
+            if script_match:
+                script_command = script_match.group(1).strip()
+
+            # Replace {SCRIPT} placeholder
+            content = content.replace("{SCRIPT}", script_command)
+
+            # Remove scripts: and agent_scripts: sections from frontmatter
+            # (simplified version - remove entire lines containing these sections)
+            lines = content.split("\n")
+            filtered_lines = []
+            skip_section = False
+            for line in lines:
+                if re.match(r'^scripts:\s*$', line) or re.match(r'^agent_scripts:\s*$', line):
+                    skip_section = True
+                    continue
+                if skip_section and line.startswith("  "):
+                    continue
+                if skip_section and (line.startswith("---") or (line and not line.startswith(" "))):
+                    skip_section = False
+                if not skip_section:
+                    filtered_lines.append(line)
+            content = "\n".join(filtered_lines)
+
+            # Apply substitutions
+            content = content.replace("{ARGS}", arg_format)
+            content = content.replace("__AGENT__", ai_assistant)
+            content = _rewrite_paths_for_bundled(content)
+
+            # Write output file
+            if file_ext == "toml":
+                # Escape backslashes for TOML
+                content = content.replace("\\", "\\\\")
+                output_content = f'description = "{description}"\n\nprompt = """\n{content}\n"""\n'
+                output_file = output_dir / f"speckit.{name}.toml"
+            elif file_ext == "agent.md":
+                output_file = output_dir / f"speckit.{name}.agent.md"
+                output_content = content
+            else:
+                output_file = output_dir / f"speckit.{name}.md"
+                output_content = content
+
+            output_file.write_text(output_content, encoding="utf-8")
+
+        # Handle copilot-specific prompt files
+        if ai_assistant == "copilot":
+            prompts_dir = target_dir / ".github" / "prompts"
+            prompts_dir.mkdir(parents=True, exist_ok=True)
+            for agent_file in output_dir.glob("speckit.*.agent.md"):
+                basename = agent_file.stem.replace(".agent", "")
+                prompt_file = prompts_dir / f"{basename}.prompt.md"
+                prompt_file.write_text(f"---\nagent: {basename}\n---\n", encoding="utf-8")
+
+            # Create VS Code settings
+            vscode_dir = target_dir / ".vscode"
+            vscode_dir.mkdir(parents=True, exist_ok=True)
+            vscode_settings = templates_dir / "vscode-settings.json"
+            if vscode_settings.exists():
+                shutil.copy2(vscode_settings, vscode_dir / "settings.json")
+
+        # Copy agent-specific files (like GEMINI.md, QWEN.md)
+        if agent_templates_dir.exists():
+            agent_specific_dir = agent_templates_dir / ai_assistant
+            if agent_specific_dir.exists():
+                for f in agent_specific_dir.iterdir():
+                    if f.is_file():
+                        shutil.copy2(f, target_dir / f.name)
+
+        if tracker:
+            tracker.complete("bundled", "templates built from package")
+        elif verbose:
+            console.print("[green]✓[/green] Built templates from bundled package")
+
+        return True
+
+    except Exception as e:
+        if tracker:
+            tracker.error("bundled", str(e))
+        elif verbose:
+            console.print(f"[yellow]Warning:[/yellow] Could not build from bundled templates: {e}")
+        return False
 
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -748,12 +981,58 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, force_download: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+
+    If bundled templates are available (installed with the package), they are used first.
+    Falls back to GitHub download if bundled templates are not available or force_download is True.
     """
     current_dir = Path.cwd()
 
+    # Try bundled templates first (unless force_download is set)
+    bundled_path = get_bundled_path()
+    if bundled_path and not force_download:
+        if tracker:
+            tracker.add("bundled", "Build from bundled templates")
+            tracker.start("bundled", "checking bundled templates")
+
+        # Create project directory if needed
+        if not is_current_dir:
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        # Try to build from bundled templates
+        if build_template_from_bundled(
+            ai_assistant,
+            script_type,
+            project_path,
+            bundled_path,
+            verbose=verbose and tracker is None,
+            tracker=tracker
+        ):
+            if tracker:
+                # Skip GitHub-related steps since we used bundled templates
+                tracker.skip("fetch", "using bundled templates")
+                tracker.skip("download", "using bundled templates")
+                tracker.skip("extract", "using bundled templates")
+                tracker.skip("zip-list", "using bundled templates")
+                tracker.skip("extracted-summary", "using bundled templates")
+                tracker.skip("cleanup", "no download needed")
+            elif verbose:
+                console.print("[green]✓[/green] Templates built from bundled package")
+            return project_path
+
+        # Bundled build failed, fall back to GitHub
+        if tracker:
+            tracker.error("bundled", "failed, falling back to GitHub")
+        elif verbose:
+            console.print("[yellow]Bundled templates failed, falling back to GitHub download...[/yellow]")
+
+        # Clean up if we created the directory
+        if not is_current_dir and project_path.exists():
+            shutil.rmtree(project_path)
+
+    # Fall back to GitHub download
     if tracker:
         tracker.start("fetch", "contacting GitHub API")
     try:
@@ -951,21 +1230,22 @@ def init(
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force downloading templates from GitHub even if bundled templates are available"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
 ):
     """
     Initialize a new Specify project from the latest template.
-    
+
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant
-    3. Download the appropriate template from GitHub
+    3. Use bundled templates if available, or download from GitHub
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
-    
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
@@ -978,6 +1258,7 @@ def init(
         specify init --here --ai codebuddy
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+        specify init --here --force-download  # Force GitHub download instead of bundled templates
     """
 
     show_banner()
@@ -1102,6 +1383,7 @@ def init(
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
     for key, label in [
+        ("bundled", "Build from bundled templates"),
         ("fetch", "Fetch latest release"),
         ("download", "Download template"),
         ("extract", "Extract template"),
@@ -1124,7 +1406,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, force_download=force_download)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 

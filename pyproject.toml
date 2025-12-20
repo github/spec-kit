@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.0.22"
+version = "0.0.23"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [
@@ -21,4 +21,18 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
+
+# Include bundled templates and scripts in the package
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "specify_cli/bundled/templates"
+"scripts" = "specify_cli/bundled/scripts"
+"memory" = "specify_cli/bundled/memory"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/templates",
+    "/scripts",
+    "/memory",
+]
 
