@@ -1,12 +1,12 @@
 # ggen: Ontology Compiler for Spec-Kit
 
-**ggen compiles RDF ontologies into type-safe code.** Just as you wouldn't hand-write assembly when you have a compiler, you don't hand-write data models when you have ontologies.
+**ggen compiles RDF ontologies into type-safe code** across any programming language.
 
 This documentation follows the [Diátaxis framework](https://diataxis.fr/):
-- **[Tutorial](#tutorial)**: Learn by building your first ontology-driven project
+- **[Tutorial](#tutorial)**: Learn by building your first ontology compilation
 - **[How-To Guides](#how-to-guides)**: Solve specific problems
 - **[Reference](#reference)**: Technical specifications and API
-- **[Explanation](#explanation)**: Understanding ontology-driven development
+- **[Explanation](#explanation)**: Understanding ontology compilation
 
 ---
 
@@ -17,7 +17,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/):
 ### Prerequisites
 
 ```bash
-# Install Rust (if not already installed)
+# Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Install ggen
@@ -111,7 +111,7 @@ class Task:
 
 ### What Just Happened?
 
-You defined your domain in RDF (the ontology), and ggen **compiled** it into Python. When your domain understanding changes, you modify the `.ttl` file and recompile - the generated code updates automatically.
+You defined your domain in RDF (the ontology), and ggen compiled it into Python. When your domain understanding changes, you modify the `.ttl` file and recompile - the generated code updates automatically.
 
 **Next**: Try changing the ontology (add a `due_date` property) and run `ggen sync` again. Notice the generated code updates instantly.
 
@@ -378,58 +378,13 @@ Available in all templates:
 
 ## Explanation
 
-### Why Ontology-Driven Development?
+### Ontology Compilation
 
-**Traditional development had a fundamental problem: the map was not the territory.**
+An ontology is a formal, machine-readable definition of your domain that compiles into executable code. The RDF ontology is your source file, and generated classes are build artifacts.
 
-You write specifications in English, then translate them to code. Weeks later, the spec and code diverge. Different services implement the same concept differently. Adding a new language means rewriting everything.
+### The Compilation Process
 
-**The root cause**: You had multiple sources of truth that could (and did) drift apart.
-
-### The Ontology as Compiler Input
-
-An ontology is not documentation - it's **executable knowledge**. It's a formal, machine-readable definition of your domain that can be compiled into code, just like C compiles to assembly.
-
-Consider this evolution:
-
-**Era 1: Hand-written assembly**
-```asm
-MOV AX, 1
-ADD AX, 2
-```
-
-**Era 2: Compiled from C**
-```c
-int result = 1 + 2;
-```
-
-**Era 3: Compiled from Ontology**
-```turtle
-task:Task a rdfs:Class ;
-    rdfs:comment "A work item" .
-```
-
-Each level raises the abstraction, letting you express intent more clearly while the compiler handles the translation.
-
-### Why RDF/OWL Specifically?
-
-**Expressiveness**: RDF isn't just "fancy JSON" - it supports:
-- **Open-world reasoning**: New facts can be added without breaking existing knowledge
-- **Inference**: Derive new facts from existing ones (SPARQL CONSTRUCT)
-- **Semantic validation**: OWL constraints catch domain violations before runtime
-- **Schema evolution**: Deprecate properties, add new ones, migrate gradually
-
-**Interoperability**: RDF is a W3C standard. Your ontology works with:
-- Triple stores (Virtuoso, Blazegraph, GraphDB)
-- Reasoners (Pellet, HermiT, ELK)
-- Knowledge graphs (Wikidata, DBpedia)
-- Academic domain ontologies (FOAF, Dublin Core, Schema.org)
-
-**Future-proof**: Unlike proprietary schemas, RDF has been stable for 20+ years and is the foundation of the semantic web.
-
-### The Compilation Model
-
-When you run `ggen sync`, this happens:
+When you run `ggen sync`:
 
 1. **Load**: Parse RDF ontology (Turtle/RDF-XML/N-Triples)
 2. **Infer**: Execute SPARQL CONSTRUCT queries to materialize implicit knowledge
@@ -441,42 +396,34 @@ When you run `ggen sync`, this happens:
 
 This is deterministic - same ontology always produces identical output.
 
-### Comparison to Other Approaches
+### RDF and OWL Capabilities
 
-| Approach | Single Source of Truth? | Multi-language? | Inference? | Semantic Validation? |
-|----------|------------------------|-----------------|------------|---------------------|
-| **Hand-coding** | ❌ No (specs drift) | ❌ Manual rewrites | ❌ Manual duplication | ❌ Runtime only |
-| **OpenAPI/Swagger** | ⚠️ Per-API | ✅ Via codegen | ❌ No | ⚠️ Basic |
-| **Protocol Buffers** | ⚠️ Per-service | ✅ Via protoc | ❌ No | ⚠️ Type-level only |
-| **GraphQL Schema** | ⚠️ Per-API | ✅ Via codegen | ❌ No | ⚠️ Type-level only |
-| **JSON Schema** | ⚠️ Per-API | ⚠️ Limited | ❌ No | ⚠️ Validation only |
-| **ggen + RDF** | ✅ **One ontology** | ✅ **Any language** | ✅ **SPARQL** | ✅ **OWL constraints** |
+**RDF** (Resource Description Framework) provides:
+- **Open-world reasoning**: New facts can be added without breaking existing knowledge
+- **Inference**: Derive new facts from existing ones (SPARQL CONSTRUCT)
+- **Schema evolution**: Deprecate properties, add new ones, migrate gradually
 
-### The 2030 Perspective
+**OWL** (Web Ontology Language) adds:
+- **Semantic validation**: Constraints catch domain violations before runtime
+- **Cardinality**: Specify min/max occurrences of properties
+- **Relationship semantics**: Symmetric, transitive, inverse properties
 
-By 2030, hand-coding data models will seem as archaic as:
-- Writing HTML for every page (instead of component templates)
-- Manual memory management (instead of garbage collection)
-- Writing assembly (instead of compiling from high-level languages)
+### Interoperability
 
-Future developers will look at legacy codebases and ask: *"Wait, you manually maintained separate type definitions for Python, TypeScript, AND Java? And they got out of sync? Why didn't you just compile from an ontology?"*
+RDF is a W3C standard. Your ontology works with:
+- Triple stores (Virtuoso, Blazegraph, GraphDB)
+- Reasoners (Pellet, HermiT, ELK)
+- Knowledge graphs (Wikidata, DBpedia)
+- Domain ontologies (FOAF, Dublin Core, Schema.org)
 
-**The answer**: We do now.
+### When to Use Ontology Compilation
 
-### When NOT to Use Ontology-Driven Development
-
-Ontology compilation adds value when you have:
+Ontology compilation provides value when:
 - ✅ Complex domain models shared across services
 - ✅ Multiple target languages/platforms
 - ✅ Need for semantic validation and inference
 - ✅ Long-lived systems that evolve over time
-
-It may be overkill for:
-- ❌ Simple CRUD apps with 3-5 tables
-- ❌ Single-language, single-service projects
-- ❌ Prototypes you'll throw away in a week
-
-But if you're building systems of record that will live for years and need to integrate with other systems - ontology-driven development is the only sustainable approach.
+- ✅ Integration with knowledge graphs or triple stores
 
 ---
 

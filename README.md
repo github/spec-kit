@@ -336,30 +336,17 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 ## 🧬 Ontology as Source Code
 
-**In modern software development, you don't hand-code data models.** Your domain ontology in RDF is the authoritative source, and [ggen](https://crates.io/crates/ggen) compiles it into type-safe implementations across any language.
+Your domain ontology in RDF is the authoritative source. [ggen](https://crates.io/crates/ggen) compiles it into type-safe implementations across any language.
 
-Think of it this way:
-- **2010**: Manually writing HTML for every page
-- **2020**: Components and templates generate HTML
-- **2030**: Ontologies generate entire type systems
+### Ontology-Driven Development
 
-### Why Ontology-Driven Development Won
+Software systems are defined in RDF ontologies and compiled into executable code:
 
-Hand-coding domain models introduced systematic failures:
-- **Drift**: Specs and code diverge over time
-- **Inconsistency**: Same concept implemented differently across services/languages
-- **No Inference**: Implicit relationships require manual duplication
-- **Single Language Lock-in**: Rewrite for each target language
-
-**Ontology-driven development solved this:**
-
-- **Single Source of Truth**: RDF ontology defines reality once
+- **Single Source of Truth**: RDF ontology defines your domain model
 - **Deterministic Compilation**: Same ontology → identical code, always
 - **Semantic Inference**: SPARQL materializes implicit knowledge
 - **Multi-language Native**: One ontology → Python, TypeScript, Rust, Java, C#, Go
 - **Machine + Human Readable**: Both compilers and domain experts understand RDF
-
-Just as you wouldn't hand-write assembly when you have a compiler, you don't hand-write data models when you have ontologies.
 
 ### Quick Setup
 
@@ -381,14 +368,14 @@ Just as you wouldn't hand-write assembly when you have a compiler, you don't han
    cp -r templates/ggen .
    ```
 
-4. Generate code from the example ontology:
+4. Compile your ontology:
    ```bash
    ggen sync
    ```
 
-### The Modern Development Workflow
+### The Development Workflow
 
-This is how software is built with Spec-Kit:
+Software is built with Spec-Kit through this process:
 
 1. **Specify** (`/speckit.specify`) - Capture requirements and user stories
 2. **Model** - Formalize domain knowledge in RDF ontology (compile target)
@@ -400,7 +387,7 @@ This is how software is built with Spec-Kit:
 
 **The ontology is your source code. Generated classes are build artifacts.**
 
-When your domain understanding changes, you update the ontology and recompile - just like changing a header file and rebuilding. No manual synchronization, no drift, no translation errors.
+When your domain understanding changes, you update the ontology and recompile. Types update automatically across all target languages.
 
 See the [ggen documentation](./templates/ggen/README.md) organized by the [Diátaxis framework](https://diataxis.fr/).
 
