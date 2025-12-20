@@ -1,0 +1,21 @@
+[package]
+name = "ggen"
+version = "5.0.0"
+edition = "2021"
+description = "CLI wrapper for ggen ontology compiler"
+authors = ["spec-kit contributors"]
+license = "MIT"
+
+[[bin]]
+name = "ggen"
+path = "src/main.rs"
+
+[dependencies]
+ggen = "5.0.0"
+ggen-cli-lib = "5.0.1"
+ggen-config = "5.0.1"
+ggen-core = "5.0.1"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
