@@ -195,6 +195,7 @@ The templates include comprehensive checklists that act as "unit tests" for the 
 
 ```markdown
 ### Requirement Completeness
+
 - [ ] No [NEEDS CLARIFICATION] markers remain
 - [ ] Requirements are testable and unambiguous
 - [ ] Success criteria are measurable
@@ -208,10 +209,14 @@ The implementation plan template enforces architectural principles through phase
 
 ```markdown
 ### Phase -1: Pre-Implementation Gates
+
 #### Simplicity Gate (Article VII)
+
 - [ ] Using ≤3 projects?
 - [ ] No future-proofing?
+
 #### Anti-Abstraction Gate (Article VIII)
+
 - [ ] Using framework directly?
 - [ ] Single model representation?
 ```
@@ -347,15 +352,19 @@ The implementation plan template operationalizes these articles through concrete
 
 ```markdown
 ### Phase -1: Pre-Implementation Gates
+
 #### Simplicity Gate (Article VII)
+
 - [ ] Using ≤3 projects?
 - [ ] No future-proofing?
 
 #### Anti-Abstraction Gate (Article VIII)
+
 - [ ] Using framework directly?
 - [ ] Single model representation?
 
 #### Integration-First Gate (Article IX)
+
 - [ ] Contracts defined?
 - [ ] Contract tests written?
 ```
