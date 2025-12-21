@@ -1,0 +1,53 @@
+# Configuration Reference
+
+This document provides a comprehensive reference of all configuration options available in Spec-Kit.
+
+{% set current_category = "" %}
+{% for row in results %}
+{% if row.category != current_category %}
+{% set current_category = row.category %}
+
+## {{ current_category | default(value="General") }}
+
+{% endif %}
+### `{{ row.configName }}`
+
+**Type:** `{{ row.configType }}`
+**Required:** {% if row.configRequired == "true" or row.configRequired == true %}Yes{% else %}No{% endif %}
+
+{{ row.configDescription }}
+
+{% if row.configDefault %}
+**Default Value:** `{{ row.configDefault }}`
+
+{% endif %}
+{% if row.examples %}
+**Examples:**
+
+```
+{{ row.examples }}
+```
+
+{% endif %}
+---
+
+{% endfor %}
+
+## Environment Variables
+
+Configuration options can be set via environment variables by prefixing the option name with `SPEC_KIT_` and converting to uppercase.
+
+For example:
+- `spec-kit option-name` → `SPEC_KIT_OPTION_NAME`
+
+## Configuration File
+
+You can also configure Spec-Kit using a configuration file. The default location is `~/.spec-kit/config.toml`.
+
+## Validation
+
+All configuration values are validated against their declared types. Invalid configurations will cause Spec-Kit to fail with a descriptive error message.
+
+---
+
+*Last updated: {{ now() | date(format="%Y-%m-%d") }}*

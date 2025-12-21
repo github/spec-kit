@@ -1,0 +1,223 @@
+# ============================================================================
+# Spec-Kit Documentation Transformation Configuration
+# ============================================================================
+# Configuration for ggen v6 transformations of documentation from RDF to Markdown
+# Implements the constitutional equation: documentation.md = μ(documentation.ttl)
+#
+# Usage: ggen sync --config docs/ggen.toml
+# ============================================================================
+
+[metadata]
+name = "spec-kit-documentation"
+description = "RDF-to-Markdown transformations for Spec-Kit documentation"
+version = "1.0"
+schema_files = [
+  "ontology/spec-kit-schema.ttl",
+  "ontology/spec-kit-docs-extension.ttl"
+]
+
+[validation]
+shacl_shapes = [
+  "ontology/spec-kit-docs-extension.ttl"
+]
+fail_on_warning = true
+
+# ============================================================================
+# TRANSFORMATIONS - Documentation Specifications
+# ============================================================================
+
+[[transformations.specs]]
+name = "project-overview"
+description = "Generate README.md from overview guide RDF"
+input_files = ["docs/overview.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "README.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "rdf-workflow"
+description = "Generate RDF_WORKFLOW_GUIDE.md from workflow guide RDF"
+input_files = ["docs/rdf-workflow.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "docs/RDF_WORKFLOW_GUIDE.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "specification-driven-philosophy"
+description = "Generate spec-driven.md from philosophy principles RDF"
+input_files = ["memory/philosophy.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/principle-query.rq"
+template = "templates/philosophy.tera"
+output_file = "spec-driven.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "installation-guide"
+description = "Generate installation.md from installation guide RDF"
+input_files = ["docs/installation.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "docs/installation.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "quickstart-guide"
+description = "Generate quickstart.md from quickstart guide RDF"
+input_files = ["docs/quickstart.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "docs/quickstart.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "development-guide"
+description = "Generate local-development.md from development guide RDF"
+input_files = ["docs/development.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "docs/local-development.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "agents-guide"
+description = "Generate AGENTS.md from agents configuration RDF"
+input_files = ["docs/agents.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/config-query.rq"
+template = "templates/configuration-reference.tera"
+output_file = "AGENTS.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "contributing-guide"
+description = "Generate CONTRIBUTING.md from contributing guide RDF"
+input_files = ["docs/contributing.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "CONTRIBUTING.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "upgrade-guide"
+description = "Generate upgrade.md from upgrade guide RDF"
+input_files = ["docs/upgrade.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "docs/upgrade.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "changelog"
+description = "Generate CHANGELOG.md from changelog RDF"
+input_files = ["memory/changelog.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/changelog-query.rq"
+template = "templates/changelog.tera"
+output_file = "CHANGELOG.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "ggen-integration-readme"
+description = "Generate GGEN_RDF_README.md from ggen integration guide RDF"
+input_files = ["docs/ggen-integration.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "docs/GGEN_RDF_README.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "code-of-conduct"
+description = "Generate CODE_OF_CONDUCT.md from governance RDF"
+input_files = ["docs/code-of-conduct.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "CODE_OF_CONDUCT.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "security-policy"
+description = "Generate SECURITY.md from security policy RDF"
+input_files = ["docs/security-policy.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "SECURITY.md"
+deterministic = true
+
+[[transformations.specs]]
+name = "support-guide"
+description = "Generate SUPPORT.md from support guide RDF"
+input_files = ["docs/support.ttl"]
+schema_files = ["ontology/spec-kit-schema.ttl", "ontology/spec-kit-docs-extension.ttl"]
+sparql_query = "sparql/guide-query.rq"
+template = "templates/guide.tera"
+output_file = "SUPPORT.md"
+deterministic = true
+
+# ============================================================================
+# TRANSFORMATION PIPELINE SETTINGS
+# ============================================================================
+
+[pipeline]
+# Five-stage transformation pipeline (μ₁ through μ₅)
+stages = ["normalize", "extract", "emit", "canonicalize", "receipt"]
+
+# μ₁ Normalization: Load RDF and validate SHACL shapes
+[pipeline.normalize]
+enabled = true
+fail_on_validation_error = true
+
+# μ₂ Extraction: Execute SPARQL queries against RDF
+[pipeline.extract]
+enabled = true
+timeout_seconds = 30
+
+# μ₃ Emission: Render Tera templates with SPARQL results
+[pipeline.emit]
+enabled = true
+template_engine = "tera"
+
+# μ₄ Canonicalization: Format markdown (line endings, whitespace)
+[pipeline.canonicalize]
+enabled = true
+line_ending = "lf"
+trim_trailing_whitespace = true
+ensure_final_newline = true
+
+# μ₅ Receipt: Generate SHA256 hash proving spec.md = μ(documentation.ttl)
+[pipeline.receipt]
+enabled = true
+hash_algorithm = "sha256"
+write_manifest = true
+
+# ============================================================================
+# OPTIONS
+# ============================================================================
+
+[options]
+# Continue on individual transformation failures (instead of failing fast)
+continue_on_error = false
+
+# Validate all input RDF files upfront
+validate_inputs = true
+
+# Generate inline comments in output markdown showing source RDF
+include_source_comments = false
+
+# Maximum number of parallel transformation tasks
+max_parallel = 4
+
+# Verbose output for debugging
+verbose = false

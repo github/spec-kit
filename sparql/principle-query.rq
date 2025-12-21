@@ -1,0 +1,26 @@
+# Query to extract constitutional principles for rendering
+# Returns principles ordered by index for deterministic rendering
+
+PREFIX sk: <http://github.com/github/spec-kit#>
+
+SELECT DISTINCT
+  ?principle
+  ?principleId
+  ?principleIndex
+  ?title
+  ?description
+  ?rationale
+  ?examples
+  ?violations
+WHERE {
+  ?principle a sk:Principle .
+  ?principle sk:principleId ?principleId .
+  ?principle sk:principleIndex ?principleIndex .
+  ?principle sk:documentTitle ?title .
+  ?principle sk:documentDescription ?description .
+  ?principle sk:rationale ?rationale .
+
+  OPTIONAL { ?principle sk:examples ?examples }
+  OPTIONAL { ?principle sk:violations ?violations }
+}
+ORDER BY ?principleIndex

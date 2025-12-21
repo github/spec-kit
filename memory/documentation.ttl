@@ -1,0 +1,308 @@
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# ============================================================================
+# Spec-Kit Documentation Metadata & Structure
+# ============================================================================
+# Root container for all project documentation following the constitutional
+# equation: documentation.md = μ(documentation.ttl)
+#
+# This file serves as the source of truth for all documentation in the
+# spec-kit project. Markdown artifacts are deterministically generated
+# from this RDF using ggen v6 transformations.
+# ============================================================================
+
+# Main documentation container
+sk:SpecKitDocumentation
+  a sk:DocumentationMetadata ;
+  rdfs:label "Spec-Kit Documentation" ;
+  dcterms:description "Complete documentation for the Spec-Kit project, implemented as RDF for source-of-truth semantics"@en ;
+  dcterms:created "2025-12-21"^^xsd:date ;
+  dcterms:modified "2025-12-21"^^xsd:date ;
+  dcterms:language "en" ;
+  rdfs:comment "This RDF graph contains all documentation for spec-kit. Markdown versions are generated artifacts." ;
+
+  # Documentation structure
+  sk:hasGuide sk:ProjectOverviewGuide ;
+  sk:hasGuide sk:RDFWorkflowGuide ;
+  sk:hasGuide sk:InstallationGuide ;
+  sk:hasGuide sk:QuickStartGuide ;
+  sk:hasGuide sk:DevelopmentGuide ;
+  sk:hasGuide sk:AgentsGuide ;
+  sk:hasGuide sk:ContributingGuide ;
+
+  # Philosophy and principles
+  sk:hasGuide sk:SpecDrivenPhilosophy ;
+
+  # Changelog
+  sk:hasGuide sk:ProjectChangelog ;
+
+  # Governance and support
+  sk:hasGuide sk:GovernanceGuide ;
+  sk:hasGuide sk:SupportGuide ;
+  sk:hasGuide sk:CodeOfConductGuide ;
+  sk:hasGuide sk:SecurityPolicyGuide ;
+  .
+
+# ============================================================================
+# CORE GUIDES
+# ============================================================================
+
+sk:ProjectOverviewGuide
+  a sk:Guide ;
+  rdfs:label "Project Overview Guide" ;
+  sk:documentTitle "Spec-Kit: Specification-Driven Development Toolkit"@en ;
+  sk:documentDescription "Complete overview of the Spec-Kit project, its philosophy, key features, and getting started guide"@en ;
+  sk:documentVersion "0.0.23" ;
+  sk:createdDate "2024-01-15T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Project stakeholders, developers, and users new to spec-driven development"@en ;
+  sk:purpose "Provide comprehensive overview of Spec-Kit capabilities and quick-start guide for new users"@en ;
+  sk:category "Overview" ;
+  sk:guideSections "What is Spec-Kit, Key Features, Quick Start, Installation, Architecture Overview, Next Steps" ;
+  .
+
+sk:RDFWorkflowGuide
+  a sk:Guide ;
+  rdfs:label "RDF Workflow Guide" ;
+  sk:documentTitle "RDF-First Workflow Guide"@en ;
+  sk:documentDescription "Complete guide to the RDF-first development workflow with Turtle ontologies and ggen v6"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-06-01T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Developers implementing spec-driven development with RDF"@en ;
+  sk:purpose "Guide developers through the complete RDF-first development workflow including specification writing, validation, and transformation"@en ;
+  sk:category "Workflow" ;
+  sk:guideSections "Workflow Overview, Phase 1: Specification, Phase 2: Validation, Phase 3: Transformation, Best Practices" ;
+  sk:documentLinks sk:ProjectOverviewGuide ;
+  .
+
+sk:InstallationGuide
+  a sk:Guide ;
+  rdfs:label "Installation Guide" ;
+  sk:documentTitle "Installation & Setup"@en ;
+  sk:documentDescription "Step-by-step installation instructions for Spec-Kit and its dependencies"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-01-20T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Users setting up Spec-Kit for the first time"@en ;
+  sk:prerequisites "Basic familiarity with command line, Python 3.10+, Git"@en ;
+  sk:purpose "Enable users to install and configure Spec-Kit with all required dependencies"@en ;
+  sk:category "Getting Started" ;
+  sk:guideSections "Prerequisites, Installation Steps, Verification, Troubleshooting" ;
+  .
+
+sk:QuickStartGuide
+  a sk:Guide ;
+  rdfs:label "Quick Start Guide" ;
+  sk:documentTitle "Quick Start"@en ;
+  sk:documentDescription "Fast-track guide to create your first specification-driven project in minutes"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-02-01T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Developers eager to start with Spec-Kit immediately"@en ;
+  sk:prerequisites "Spec-Kit installed, basic understanding of specifications"@en ;
+  sk:purpose "Get users up and running with a complete example in under 30 minutes"@en ;
+  sk:category "Getting Started" ;
+  sk:guideSections "5-Minute Setup, Your First Feature, Running Transformations, Next Steps" ;
+  sk:documentLinks sk:InstallationGuide ;
+  sk:documentLinks sk:ProjectOverviewGuide ;
+  .
+
+sk:DevelopmentGuide
+  a sk:Guide ;
+  rdfs:label "Local Development Guide" ;
+  sk:documentTitle "Local Development Setup"@en ;
+  sk:documentDescription "Guide for developers contributing to Spec-Kit itself, including environment setup and testing"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-02-15T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Contributors to the Spec-Kit project"@en ;
+  sk:prerequisites "Python, Git, familiarity with development workflows"@en ;
+  sk:purpose "Enable developers to set up local development environment and run tests"@en ;
+  sk:category "Development" ;
+  sk:guideSections "Clone Repository, Environment Setup, Running Tests, Development Workflow" ;
+  sk:documentLinks sk:ContributingGuide ;
+  .
+
+sk:AgentsGuide
+  a sk:Guide ;
+  rdfs:label "AI Agents Integration Guide" ;
+  sk:documentTitle "AI Agent Integration & Configuration"@en ;
+  sk:documentDescription "Complete guide to integrating and configuring AI assistants (Claude, Copilot, Gemini, etc.) with Spec-Kit"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-04-01T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Users setting up AI-assisted development workflows"@en ;
+  sk:purpose "Guide users through configuring their preferred AI assistants with Spec-Kit"@en ;
+  sk:category "Configuration" ;
+  sk:guideSections "Supported Agents, Agent Setup, Configuration, API Keys, Troubleshooting" ;
+  .
+
+sk:ContributingGuide
+  a sk:Guide ;
+  rdfs:label "Contributing Guide" ;
+  sk:documentTitle "Contributing to Spec-Kit"@en ;
+  sk:documentDescription "Guidelines for contributing to the Spec-Kit project including code style, PR process, and governance"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-02-20T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Project contributors"@en ;
+  sk:purpose "Establish clear guidelines for contributing code and documentation to Spec-Kit"@en ;
+  sk:category "Governance" ;
+  sk:guideSections "Getting Started Contributing, Development Setup, Creating Pull Requests, Review Process, Code Standards" ;
+  sk:documentLinks sk:CodeOfConductGuide ;
+  .
+
+sk:SpecDrivenPhilosophy
+  a sk:Guide ;
+  rdfs:label "Specification-Driven Development Philosophy" ;
+  sk:documentTitle "Specification-Driven Development (SDD)"@en ;
+  sk:documentDescription "Core philosophy and principles behind specification-driven development methodology"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-01-10T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Teams adopting specification-driven methodology"@en ;
+  sk:purpose "Explain the philosophy, principles, and benefits of SDD methodology"@en ;
+  sk:category "Philosophy" ;
+  sk:guideSections "What is SDD, Core Principles, Benefits, Constitutional Equation, Comparison with Other Methodologies" ;
+  .
+
+sk:ProjectChangelog
+  a sk:Changelog ;
+  rdfs:label "Project Changelog" ;
+  sk:documentTitle "Changelog"@en ;
+  sk:documentDescription "Version history and release notes for all Spec-Kit versions"@en ;
+  sk:maintenanceStatus "Current" ;
+  sk:documentVersion "0.0.23" ;
+  sk:createdDate "2024-01-01T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:audience "Users tracking version history and release information"@en ;
+  sk:category "Release Notes" ;
+  .
+
+# ============================================================================
+# GOVERNANCE & POLICIES
+# ============================================================================
+
+sk:GovernanceGuide
+  a sk:Governance ;
+  rdfs:label "Project Governance" ;
+  sk:documentTitle "Project Governance & Structure"@en ;
+  sk:documentDescription "Governance structure, decision-making processes, and project organization"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-03-01T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Contributors and stakeholders"@en ;
+  sk:category "Governance" ;
+  .
+
+sk:SupportGuide
+  a sk:Guide ;
+  rdfs:label "Support Guide" ;
+  sk:documentTitle "Getting Support"@en ;
+  sk:documentDescription "How to get help, ask questions, and report issues"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-03-01T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Spec-Kit users seeking support"@en ;
+  sk:category "Support" ;
+  .
+
+sk:CodeOfConductGuide
+  a sk:Governance ;
+  rdfs:label "Code of Conduct" ;
+  sk:documentTitle "Code of Conduct"@en ;
+  sk:documentDescription "Community standards and code of conduct for respectful interaction"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-01-01T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "All community members"@en ;
+  sk:category "Governance" ;
+  .
+
+sk:SecurityPolicyGuide
+  a sk:Governance ;
+  rdfs:label "Security Policy" ;
+  sk:documentTitle "Security Policy"@en ;
+  sk:documentDescription "Security policy and guidelines for reporting security vulnerabilities"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-03-15T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Security researchers and community members"@en ;
+  sk:category "Security" ;
+  .
+
+# ============================================================================
+# DOCUMENTATION CATEGORIES
+# ============================================================================
+
+sk:GettingStartedCategory
+  a sk:DocumentationCategory ;
+  rdfs:label "Getting Started" ;
+  rdfs:comment "Guides to help new users get up and running with Spec-Kit" ;
+  .
+
+sk:WorkflowCategory
+  a sk:DocumentationCategory ;
+  rdfs:label "Workflow" ;
+  rdfs:comment "Documentation on development workflows and methodologies" ;
+  .
+
+sk:ConfigurationCategory
+  a sk:DocumentationCategory ;
+  rdfs:label "Configuration" ;
+  rdfs:comment "Configuration guides and reference documentation" ;
+  .
+
+sk:DevelopmentCategory
+  a sk:DocumentationCategory ;
+  rdfs:label "Development" ;
+  rdfs:comment "Documentation for contributing developers" ;
+  .
+
+sk:PhilosophyCategory
+  a sk:DocumentationCategory ;
+  rdfs:label "Philosophy" ;
+  rdfs:comment "Core principles and philosophical foundations" ;
+  .
+
+sk:GovernanceCategory
+  a sk:DocumentationCategory ;
+  rdfs:label "Governance" ;
+  rdfs:comment "Governance, policies, and community standards" ;
+  .
+
+sk:ReleaseNotesCategory
+  a sk:DocumentationCategory ;
+  rdfs:label "Release Notes" ;
+  rdfs:comment "Version history and changelog information" ;
+  .

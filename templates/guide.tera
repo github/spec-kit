@@ -1,0 +1,52 @@
+# {{ results[0].title }}
+
+{% if results[0].description %}
+{{ results[0].description }}
+
+{% endif %}
+{% if results[0].purpose %}
+## Purpose
+
+{{ results[0].purpose }}
+
+{% endif %}
+{% if results[0].audience %}
+## Intended Audience
+
+{{ results[0].audience }}
+
+{% endif %}
+{% if results[0].prerequisites %}
+## Prerequisites
+
+{{ results[0].prerequisites }}
+
+{% endif %}
+{% if results[0].sections %}
+## Contents
+
+{% set section_list = results[0].sections | split(pat=", ") %}
+{% for section in section_list %}
+- {{ section }}
+{% endfor %}
+
+{% endif %}
+{% if results[0].relatedDocs %}
+## Related Documentation
+
+{% set related = results[0].relatedDocs | split(pat="|") %}
+{% for doc in related %}
+- [{{ doc }}]({{ doc | replace(from=" ", to="-") | lowercase }}.md)
+{% endfor %}
+
+{% endif %}
+## Guide Content
+
+This guide provides comprehensive documentation on {{ results[0].title | lowercase }}.
+
+For more information, please refer to the [main documentation](index.md).
+
+---
+
+*Last updated: {{ now() | date(format="%Y-%m-%d") }}*
+*Status: {{ results[0].status | default(value="Current") }}*
