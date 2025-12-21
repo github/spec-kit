@@ -149,7 +149,7 @@ AGENT_CONFIG = {
         "requires_cli": False,
     },
     "antigravity": {
-        "name": "Antigravity",
+        "name": "Antigravity IDE",
         "folder": ".agent/",
         "install_url": None,
         "requires_cli": False,

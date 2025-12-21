@@ -596,7 +596,7 @@ update_specific_agent() {
             update_agent_file "$CURSOR_FILE" "Cursor IDE"
             ;;
         antigravity)
-            update_agent_file "$ANTIGRAVITY_FILE" "Antigravity"
+            update_agent_file "$ANTIGRAVITY_FILE" "Antigravity IDE"
             ;;
         qwen)
             update_agent_file "$QWEN_FILE" "Qwen Code"
@@ -670,7 +670,7 @@ update_all_existing_agents() {
     fi
     
     if [[ -f "$ANTIGRAVITY_FILE" ]]; then
-        update_agent_file "$ANTIGRAVITY_FILE" "Antigravity"
+        update_agent_file "$ANTIGRAVITY_FILE" "Antigravity IDE"
         found_agent=true
     fi
     

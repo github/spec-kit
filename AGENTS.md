@@ -35,7 +35,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
 | **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
 | **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
-| **Antigravity**            | `.agent/workflows/`    | Markdown | `antigravity`   | Google's Antigravity IDE    |
+| **Antigravity IDE**        | `.agent/workflows/`    | Markdown | N/A (IDE-based) | Google's Antigravity IDE    |
 | **Qwen Code**              | `.qwen/commands/`      | TOML     | `qwen`          | Alibaba's Qwen Code CLI     |
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
 | **Codex CLI**              | `.codex/commands/`     | Markdown | `codex`         | Codex CLI                   |
@@ -310,7 +310,6 @@ Require a command-line tool to be installed:
 - **Claude Code**: `claude` CLI
 - **Gemini CLI**: `gemini` CLI
 - **Cursor**: `cursor-agent` CLI
-- **Antigravity**: `antigravity` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
 - **Amazon Q Developer CLI**: `q` CLI
