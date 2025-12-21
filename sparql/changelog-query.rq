@@ -1,0 +1,32 @@
+# Query to extract changelog releases and changes for rendering
+# Returns releases and their changes ordered by version (descending)
+
+PREFIX sk: <http://github.com/github/spec-kit#>
+
+SELECT DISTINCT
+  ?release
+  ?versionNumber
+  ?releaseDate
+  ?breakingChanges
+  ?deprecatedFeatures
+  ?changeId
+  ?changeType
+  ?changeDescription
+WHERE {
+  ?changelog a sk:Changelog .
+  ?changelog sk:hasRelease ?release .
+
+  ?release sk:versionNumber ?versionNumber .
+  ?release sk:releaseDate ?releaseDate .
+
+  OPTIONAL { ?release sk:breakingChanges ?breakingChanges }
+  OPTIONAL { ?release sk:deprecatedFeatures ?deprecatedFeatures }
+
+  OPTIONAL {
+    ?release sk:hasChange ?change .
+    ?change sk:changeType ?changeType .
+    ?change sk:changeDescription ?changeDescription .
+    BIND(CONCAT(?versionNumber, "-", ?changeType) AS ?changeId)
+  }
+}
+ORDER BY DESC(?versionNumber) ?changeType

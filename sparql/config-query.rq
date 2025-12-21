@@ -1,0 +1,29 @@
+# Query to extract configuration options for rendering
+# Returns all configuration options grouped by category
+
+PREFIX sk: <http://github.com/github/spec-kit#>
+
+SELECT DISTINCT
+  ?config
+  ?configName
+  ?configDescription
+  ?configType
+  ?configDefault
+  ?configRequired
+  ?examples
+  ?category
+WHERE {
+  ?config a sk:ConfigurationOption .
+  ?config sk:configName ?configName .
+  ?config sk:configDescription ?configDescription .
+  ?config sk:configType ?configType .
+
+  OPTIONAL { ?config sk:configDefault ?configDefault }
+  OPTIONAL { ?config sk:configRequired ?configRequired }
+  OPTIONAL { ?config sk:configExamples ?examples }
+  OPTIONAL {
+    ?config sk:inCategory ?categoryObj .
+    ?categoryObj rdfs:label ?category .
+  }
+}
+ORDER BY ?category ?configName

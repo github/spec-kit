@@ -1,0 +1,72 @@
+# Changelog
+
+All notable changes to Spec-Kit are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+{% set current_version = "" %}
+{% for row in results %}
+{% if row.versionNumber != current_version %}
+{% if current_version != "" %}
+
+{% endif %}
+{% set current_version = row.versionNumber %}
+
+## [{{ row.versionNumber }}] - {{ row.releaseDate | date(format="%Y-%m-%d") }}
+
+{% if row.breakingChanges == "true" or row.breakingChanges == true %}
+⚠️ **BREAKING CHANGES** - Please review breaking changes below before upgrading.
+
+{% endif %}
+{% if row.deprecatedFeatures %}
+**Deprecated Features:**
+{{ row.deprecatedFeatures }}
+
+{% endif %}
+{% endif %}
+{% if row.changeType == "Added" %}
+### Added
+
+- {{ row.changeDescription }}
+{% elif row.changeType == "Fixed" %}
+### Fixed
+
+- {{ row.changeDescription }}
+{% elif row.changeType == "Changed" %}
+### Changed
+
+- {{ row.changeDescription }}
+{% elif row.changeType == "Deprecated" %}
+### Deprecated
+
+- {{ row.changeDescription }}
+{% elif row.changeType == "Removed" %}
+### Removed
+
+- {{ row.changeDescription }}
+{% elif row.changeType == "Security" %}
+### Security
+
+- {{ row.changeDescription }}
+{% endif %}
+{% endfor %}
+
+---
+
+## Versioning
+
+Spec-Kit uses [Semantic Versioning](https://semver.org/):
+- **MAJOR** version for incompatible API changes
+- **MINOR** version for backwards-compatible functionality additions
+- **PATCH** version for backwards-compatible bug fixes
+
+## For More Information
+
+- [Contributing](CONTRIBUTING.md) - How to contribute to Spec-Kit
+- [Spec-Kit Philosophy](spec-driven.md) - Core principles and methodology
+- [Installation Guide](docs/installation.md) - Getting started
+
+---
+
+*Last updated: {{ now() | date(format="%Y-%m-%d") }}*
