@@ -1361,6 +1361,12 @@ def version():
     console.print(panel)
     console.print()
 
+# Import and register DSPy commands
+from specify_cli.dspy_commands import get_dspy_app
+
+app.add_typer(get_dspy_app(), name="dspy")
+
+
 def main():
     app()
 

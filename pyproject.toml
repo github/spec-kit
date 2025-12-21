@@ -10,6 +10,7 @@ dependencies = [
     "platformdirs",
     "readchar",
     "truststore>=0.10.4",
+    "dspy>=2.5.0",
 ]
 
 # External system dependencies (must be installed separately):
