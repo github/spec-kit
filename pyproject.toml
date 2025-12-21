@@ -32,6 +32,10 @@ otel = [
     "opentelemetry-exporter-otlp>=0.41b0",
     "opentelemetry-instrumentation>=0.41b0",
 ]
+# SPIFF Workflow engine for BPMN execution
+spiff = [
+    "spiffworkflow>=0.1.0",
+]
 # Development: code quality and linting
 dev = [
     "ruff>=0.1.0",
