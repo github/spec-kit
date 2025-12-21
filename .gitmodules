@@ -1,0 +1,3 @@
+[submodule "vendors/uvmgr"]
+	path = vendors/uvmgr
+	url = https://github.com/seanchatmangpt/uvmgr
