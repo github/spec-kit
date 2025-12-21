@@ -1,0 +1,28 @@
+# Query to extract workflow phases and steps for rendering
+# Returns phases and steps in correct order for procedural documentation
+
+PREFIX sk: <http://github.com/github/spec-kit#>
+
+SELECT DISTINCT
+  ?phase
+  ?phaseId
+  ?phaseName
+  ?phaseDescription
+  ?step
+  ?stepId
+  ?stepIndex
+  ?stepDescription
+WHERE {
+  ?phase a sk:WorkflowPhase .
+  ?phase sk:phaseId ?phaseId .
+  ?phase sk:phaseName ?phaseName .
+  ?phase sk:phaseDescription ?phaseDescription .
+
+  OPTIONAL {
+    ?phase sk:hasStep ?step .
+    ?step sk:stepId ?stepId .
+    ?step sk:stepIndex ?stepIndex .
+    ?step sk:stepDescription ?stepDescription .
+  }
+}
+ORDER BY ?phaseId ?stepIndex

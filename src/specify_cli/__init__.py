@@ -1282,12 +1282,869 @@ def check():
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
+# =============================================================================
+# Process Mining Commands (pm4py)
+# =============================================================================
+
+pm_app = typer.Typer(
+    name="pm",
+    help="Process mining commands using pm4py",
+    add_completion=False,
+)
+
+app.add_typer(pm_app, name="pm")
+
+
+def _load_event_log(file_path: Path, case_id: str = "case:concept:name", activity: str = "concept:name", timestamp: str = "time:timestamp"):
+    """Load an event log from file (XES or CSV)."""
+    import pm4py
+
+    suffix = file_path.suffix.lower()
+
+    if suffix == ".xes":
+        return pm4py.read_xes(str(file_path))
+    elif suffix == ".csv":
+        import pandas as pd
+        df = pd.read_csv(file_path)
+        # Format as event log
+        df = pm4py.format_dataframe(df, case_id=case_id, activity_key=activity, timestamp_key=timestamp)
+        return pm4py.convert_to_event_log(df)
+    else:
+        raise ValueError(f"Unsupported file format: {suffix}. Use .xes or .csv")
+
+
+def _save_model(model, output_path: Path, model_type: str = "petri"):
+    """Save a process model to file."""
+    import pm4py
+
+    suffix = output_path.suffix.lower()
+
+    if model_type == "petri":
+        net, im, fm = model
+        if suffix == ".pnml":
+            pm4py.write_pnml(net, im, fm, str(output_path))
+        elif suffix in [".png", ".svg"]:
+            pm4py.save_vis_petri_net(net, im, fm, str(output_path))
+        else:
+            raise ValueError(f"Unsupported output format for Petri net: {suffix}")
+    elif model_type == "bpmn":
+        if suffix == ".bpmn":
+            pm4py.write_bpmn(model, str(output_path))
+        elif suffix in [".png", ".svg"]:
+            pm4py.save_vis_bpmn(model, str(output_path))
+        else:
+            raise ValueError(f"Unsupported output format for BPMN: {suffix}")
+    elif model_type == "tree":
+        if suffix in [".png", ".svg"]:
+            pm4py.save_vis_process_tree(model, str(output_path))
+        else:
+            raise ValueError(f"Unsupported output format for process tree: {suffix}")
+
+
+@pm_app.command("discover")
+def pm_discover(
+    input_file: Path = typer.Argument(..., help="Input event log file (.xes or .csv)"),
+    output: Path = typer.Option(None, "--output", "-o", help="Output file for the discovered model (.pnml, .bpmn, .png, .svg)"),
+    algorithm: str = typer.Option("inductive", "--algorithm", "-a", help="Discovery algorithm: alpha, alpha_plus, heuristic, inductive, ilp"),
+    noise_threshold: float = typer.Option(0.0, "--noise", "-n", help="Noise threshold for inductive miner (0.0-1.0)"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+):
+    """
+    Discover a process model from an event log.
+
+    Supports multiple discovery algorithms:
+    - alpha: Classic Alpha Miner
+    - alpha_plus: Alpha+ Miner with improvements
+    - heuristic: Heuristic Miner (handles noise well)
+    - inductive: Inductive Miner (guarantees sound models)
+    - ilp: Integer Linear Programming Miner
+
+    Examples:
+        specify pm discover log.xes -o model.pnml
+        specify pm discover log.csv -a heuristic -o model.png
+        specify pm discover log.xes -a inductive -n 0.2 -o model.svg
+    """
+    import pm4py
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
+        raise typer.Exit(1)
+
+    tracker = StepTracker("Process Discovery")
+    tracker.add("load", "Load event log")
+    tracker.add("discover", "Discover process model")
+    tracker.add("save", "Save model")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            tracker.start("load")
+            log = _load_event_log(input_file, case_id, activity, timestamp)
+            num_cases = len(log)
+            num_events = sum(len(trace) for trace in log)
+            tracker.complete("load", f"{num_cases} cases, {num_events} events")
+
+            tracker.start("discover", f"using {algorithm}")
+
+            if algorithm == "alpha":
+                net, im, fm = pm4py.discover_petri_net_alpha(log)
+                model = (net, im, fm)
+                model_type = "petri"
+            elif algorithm == "alpha_plus":
+                net, im, fm = pm4py.discover_petri_net_alpha_plus(log)
+                model = (net, im, fm)
+                model_type = "petri"
+            elif algorithm == "heuristic":
+                net, im, fm = pm4py.discover_petri_net_heuristics(log)
+                model = (net, im, fm)
+                model_type = "petri"
+            elif algorithm == "inductive":
+                net, im, fm = pm4py.discover_petri_net_inductive(log, noise_threshold=noise_threshold)
+                model = (net, im, fm)
+                model_type = "petri"
+            elif algorithm == "ilp":
+                net, im, fm = pm4py.discover_petri_net_ilp(log)
+                model = (net, im, fm)
+                model_type = "petri"
+            else:
+                tracker.error("discover", f"unknown algorithm: {algorithm}")
+                raise typer.Exit(1)
+
+            tracker.complete("discover", algorithm)
+
+            if output:
+                tracker.start("save")
+                _save_model(model, output, model_type)
+                tracker.complete("save", str(output))
+            else:
+                tracker.skip("save", "no output specified")
+
+        except Exception as e:
+            if "load" in [s["key"] for s in tracker.steps if s["status"] == "running"]:
+                tracker.error("load", str(e))
+            elif "discover" in [s["key"] for s in tracker.steps if s["status"] == "running"]:
+                tracker.error("discover", str(e))
+            else:
+                tracker.error("save", str(e))
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+    console.print("\n[bold green]Process discovery complete.[/bold green]")
+
+    if output:
+        console.print(f"Model saved to: [cyan]{output}[/cyan]")
+
+
+@pm_app.command("conform")
+def pm_conform(
+    log_file: Path = typer.Argument(..., help="Event log file (.xes or .csv)"),
+    model_file: Path = typer.Argument(..., help="Process model file (.pnml or .bpmn)"),
+    method: str = typer.Option("token", "--method", "-m", help="Conformance method: token, alignment"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+    detailed: bool = typer.Option(False, "--detailed", "-d", help="Show detailed per-trace results"),
+):
+    """
+    Perform conformance checking between an event log and a process model.
+
+    Methods:
+    - token: Token-based replay (faster)
+    - alignment: Alignment-based (more accurate)
+
+    Examples:
+        specify pm conform log.xes model.pnml
+        specify pm conform log.csv model.pnml -m alignment
+        specify pm conform log.xes model.pnml --detailed
+    """
+    import pm4py
+
+    if not log_file.exists():
+        console.print(f"[red]Error:[/red] Log file not found: {log_file}")
+        raise typer.Exit(1)
+
+    if not model_file.exists():
+        console.print(f"[red]Error:[/red] Model file not found: {model_file}")
+        raise typer.Exit(1)
+
+    tracker = StepTracker("Conformance Checking")
+    tracker.add("load-log", "Load event log")
+    tracker.add("load-model", "Load process model")
+    tracker.add("conform", "Perform conformance checking")
+    tracker.add("results", "Compute metrics")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            tracker.start("load-log")
+            log = _load_event_log(log_file, case_id, activity, timestamp)
+            num_cases = len(log)
+            tracker.complete("load-log", f"{num_cases} cases")
+
+            tracker.start("load-model")
+            suffix = model_file.suffix.lower()
+            if suffix == ".pnml":
+                net, im, fm = pm4py.read_pnml(str(model_file))
+            elif suffix == ".bpmn":
+                bpmn = pm4py.read_bpmn(str(model_file))
+                net, im, fm = pm4py.convert_to_petri_net(bpmn)
+            else:
+                tracker.error("load-model", f"unsupported format: {suffix}")
+                raise typer.Exit(1)
+            tracker.complete("load-model", model_file.name)
+
+            tracker.start("conform", method)
+
+            if method == "token":
+                result = pm4py.conformance_diagnostics_token_based_replay(log, net, im, fm)
+                fitness = pm4py.fitness_token_based_replay(log, net, im, fm)
+            elif method == "alignment":
+                result = pm4py.conformance_diagnostics_alignments(log, net, im, fm)
+                fitness = pm4py.fitness_alignments(log, net, im, fm)
+            else:
+                tracker.error("conform", f"unknown method: {method}")
+                raise typer.Exit(1)
+
+            tracker.complete("conform", method)
+
+            tracker.start("results")
+            precision = pm4py.precision_token_based_replay(log, net, im, fm) if method == "token" else pm4py.precision_alignments(log, net, im, fm)
+            tracker.complete("results")
+
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+
+    # Display metrics
+    metrics_table = Table(title="Conformance Metrics", show_header=True, header_style="bold cyan")
+    metrics_table.add_column("Metric", style="cyan")
+    metrics_table.add_column("Value", style="white")
+
+    if isinstance(fitness, dict):
+        fitness_val = fitness.get("average_trace_fitness", fitness.get("log_fitness", 0))
+    else:
+        fitness_val = fitness
+
+    metrics_table.add_row("Fitness", f"{fitness_val:.4f}")
+    metrics_table.add_row("Precision", f"{precision:.4f}")
+    metrics_table.add_row("F1-Score", f"{2 * fitness_val * precision / (fitness_val + precision) if (fitness_val + precision) > 0 else 0:.4f}")
+
+    console.print()
+    console.print(metrics_table)
+
+    if detailed and result:
+        console.print()
+        console.print("[bold]Per-Trace Results (first 10):[/bold]")
+        for i, r in enumerate(result[:10]):
+            if method == "token":
+                status = "fit" if r.get("trace_is_fit", False) else "unfit"
+                console.print(f"  Trace {i+1}: [{('green' if status == 'fit' else 'red')}]{status}[/]")
+            else:
+                cost = r.get("cost", 0)
+                console.print(f"  Trace {i+1}: cost={cost}")
+
+
+@pm_app.command("stats")
+def pm_stats(
+    input_file: Path = typer.Argument(..., help="Input event log file (.xes or .csv)"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+    show_variants: bool = typer.Option(False, "--variants", "-v", help="Show top process variants"),
+    show_activities: bool = typer.Option(False, "--activities", "-a", help="Show activity statistics"),
+):
+    """
+    Display statistics about an event log.
+
+    Examples:
+        specify pm stats log.xes
+        specify pm stats log.csv --variants --activities
+        specify pm stats log.xes -v -a
+    """
+    import pm4py
+    from pm4py.statistics.traces.generic.log import case_statistics
+    from pm4py.statistics.start_activities.log import get as get_start_activities
+    from pm4py.statistics.end_activities.log import get as get_end_activities
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
+        raise typer.Exit(1)
+
+    tracker = StepTracker("Event Log Statistics")
+    tracker.add("load", "Load event log")
+    tracker.add("analyze", "Analyze log")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            tracker.start("load")
+            log = _load_event_log(input_file, case_id, activity, timestamp)
+            tracker.complete("load")
+
+            tracker.start("analyze")
+
+            # Basic statistics
+            num_cases = len(log)
+            num_events = sum(len(trace) for trace in log)
+            avg_trace_length = num_events / num_cases if num_cases > 0 else 0
+
+            # Activities
+            activities = pm4py.get_event_attribute_values(log, "concept:name")
+            num_activities = len(activities)
+
+            # Variants
+            variants = case_statistics.get_variant_statistics(log)
+            num_variants = len(variants)
+
+            # Start and end activities
+            start_activities = get_start_activities.get_start_activities(log)
+            end_activities = get_end_activities.get_end_activities(log)
+
+            tracker.complete("analyze")
+
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+
+    # Display basic statistics
+    stats_table = Table(title="Event Log Statistics", show_header=True, header_style="bold cyan")
+    stats_table.add_column("Metric", style="cyan")
+    stats_table.add_column("Value", style="white")
+
+    stats_table.add_row("Cases", str(num_cases))
+    stats_table.add_row("Events", str(num_events))
+    stats_table.add_row("Activities", str(num_activities))
+    stats_table.add_row("Variants", str(num_variants))
+    stats_table.add_row("Avg. Trace Length", f"{avg_trace_length:.2f}")
+    stats_table.add_row("Start Activities", str(len(start_activities)))
+    stats_table.add_row("End Activities", str(len(end_activities)))
+
+    console.print()
+    console.print(stats_table)
+
+    if show_activities:
+        console.print()
+        act_table = Table(title="Activity Statistics (Top 15)", show_header=True, header_style="bold cyan")
+        act_table.add_column("Activity", style="cyan")
+        act_table.add_column("Count", style="white", justify="right")
+        act_table.add_column("Percentage", style="white", justify="right")
+
+        sorted_activities = sorted(activities.items(), key=lambda x: x[1], reverse=True)[:15]
+        for act, count in sorted_activities:
+            pct = (count / num_events) * 100
+            act_table.add_row(str(act), str(count), f"{pct:.1f}%")
+
+        console.print(act_table)
+
+    if show_variants:
+        console.print()
+        var_table = Table(title="Process Variants (Top 10)", show_header=True, header_style="bold cyan")
+        var_table.add_column("#", style="dim", justify="right")
+        var_table.add_column("Variant", style="cyan", max_width=60)
+        var_table.add_column("Cases", style="white", justify="right")
+        var_table.add_column("Percentage", style="white", justify="right")
+
+        sorted_variants = sorted(variants, key=lambda x: x["count"], reverse=True)[:10]
+        for i, var in enumerate(sorted_variants, 1):
+            variant_str = var.get("variant", str(var))
+            if len(str(variant_str)) > 57:
+                variant_str = str(variant_str)[:57] + "..."
+            pct = (var["count"] / num_cases) * 100
+            var_table.add_row(str(i), str(variant_str), str(var["count"]), f"{pct:.1f}%")
+
+        console.print(var_table)
+
+
+@pm_app.command("convert")
+def pm_convert(
+    input_file: Path = typer.Argument(..., help="Input file (.xes, .csv, .pnml, .bpmn)"),
+    output_file: Path = typer.Argument(..., help="Output file (.xes, .csv, .pnml, .bpmn)"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV input)"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV input)"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV input)"),
+):
+    """
+    Convert between different process mining file formats.
+
+    Supported conversions:
+    - Event logs: XES <-> CSV
+    - Models: PNML <-> BPMN
+
+    Examples:
+        specify pm convert log.csv log.xes
+        specify pm convert log.xes log.csv
+        specify pm convert model.pnml model.bpmn
+    """
+    import pm4py
+    import pandas as pd
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
+        raise typer.Exit(1)
+
+    in_suffix = input_file.suffix.lower()
+    out_suffix = output_file.suffix.lower()
+
+    tracker = StepTracker("Format Conversion")
+    tracker.add("load", f"Load {in_suffix}")
+    tracker.add("convert", "Convert format")
+    tracker.add("save", f"Save {out_suffix}")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            # Event log conversions
+            if in_suffix in [".xes", ".csv"] and out_suffix in [".xes", ".csv"]:
+                tracker.start("load")
+                log = _load_event_log(input_file, case_id, activity, timestamp)
+                tracker.complete("load", f"{len(log)} cases")
+
+                tracker.start("convert")
+                if out_suffix == ".xes":
+                    tracker.complete("convert", "to XES")
+                    tracker.start("save")
+                    pm4py.write_xes(log, str(output_file))
+                else:  # CSV
+                    df = pm4py.convert_to_dataframe(log)
+                    tracker.complete("convert", "to CSV")
+                    tracker.start("save")
+                    df.to_csv(output_file, index=False)
+                tracker.complete("save", output_file.name)
+
+            # Model conversions
+            elif in_suffix == ".pnml" and out_suffix == ".bpmn":
+                tracker.start("load")
+                net, im, fm = pm4py.read_pnml(str(input_file))
+                tracker.complete("load")
+
+                tracker.start("convert")
+                bpmn = pm4py.convert_to_bpmn(net, im, fm)
+                tracker.complete("convert", "to BPMN")
+
+                tracker.start("save")
+                pm4py.write_bpmn(bpmn, str(output_file))
+                tracker.complete("save", output_file.name)
+
+            elif in_suffix == ".bpmn" and out_suffix == ".pnml":
+                tracker.start("load")
+                bpmn = pm4py.read_bpmn(str(input_file))
+                tracker.complete("load")
+
+                tracker.start("convert")
+                net, im, fm = pm4py.convert_to_petri_net(bpmn)
+                tracker.complete("convert", "to Petri Net")
+
+                tracker.start("save")
+                pm4py.write_pnml(net, im, fm, str(output_file))
+                tracker.complete("save", output_file.name)
+
+            else:
+                console.print(f"[red]Error:[/red] Unsupported conversion: {in_suffix} -> {out_suffix}")
+                raise typer.Exit(1)
+
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+    console.print(f"\n[bold green]Conversion complete.[/bold green]")
+    console.print(f"Output saved to: [cyan]{output_file}[/cyan]")
+
+
+@pm_app.command("visualize")
+def pm_visualize(
+    input_file: Path = typer.Argument(..., help="Input file (.xes, .csv, .pnml, .bpmn)"),
+    output: Path = typer.Option(None, "--output", "-o", help="Output image file (.png, .svg)"),
+    viz_type: str = typer.Option("auto", "--type", "-t", help="Visualization type: auto, dfg, petri, bpmn, tree, heuristic"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+):
+    """
+    Visualize a process model or event log.
+
+    Visualization types:
+    - auto: Automatic based on input type
+    - dfg: Directly-Follows Graph (from event log)
+    - petri: Petri Net
+    - bpmn: BPMN diagram
+    - tree: Process Tree
+    - heuristic: Heuristic Net
+
+    Examples:
+        specify pm visualize log.xes -o process.png
+        specify pm visualize model.pnml -o model.svg
+        specify pm visualize log.csv -t dfg -o dfg.png
+    """
+    import pm4py
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
+        raise typer.Exit(1)
+
+    in_suffix = input_file.suffix.lower()
+
+    tracker = StepTracker("Process Visualization")
+    tracker.add("load", "Load input")
+    tracker.add("visualize", "Generate visualization")
+    tracker.add("save", "Save output")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            tracker.start("load")
+
+            # Determine visualization type
+            if viz_type == "auto":
+                if in_suffix in [".xes", ".csv"]:
+                    viz_type = "dfg"
+                elif in_suffix == ".pnml":
+                    viz_type = "petri"
+                elif in_suffix == ".bpmn":
+                    viz_type = "bpmn"
+
+            # Load based on type
+            if in_suffix in [".xes", ".csv"]:
+                log = _load_event_log(input_file, case_id, activity, timestamp)
+                tracker.complete("load", f"{len(log)} cases")
+            elif in_suffix == ".pnml":
+                net, im, fm = pm4py.read_pnml(str(input_file))
+                tracker.complete("load", "Petri Net")
+            elif in_suffix == ".bpmn":
+                bpmn = pm4py.read_bpmn(str(input_file))
+                tracker.complete("load", "BPMN")
+            else:
+                tracker.error("load", f"unsupported format: {in_suffix}")
+                raise typer.Exit(1)
+
+            tracker.start("visualize", viz_type)
+
+            if output:
+                tracker.complete("visualize")
+                tracker.start("save")
+
+                if viz_type == "dfg":
+                    dfg, start_activities, end_activities = pm4py.discover_dfg(log)
+                    pm4py.save_vis_dfg(dfg, start_activities, end_activities, str(output))
+                elif viz_type == "petri":
+                    if in_suffix in [".xes", ".csv"]:
+                        net, im, fm = pm4py.discover_petri_net_inductive(log)
+                    pm4py.save_vis_petri_net(net, im, fm, str(output))
+                elif viz_type == "bpmn":
+                    if in_suffix in [".xes", ".csv"]:
+                        bpmn = pm4py.discover_bpmn_inductive(log)
+                    pm4py.save_vis_bpmn(bpmn, str(output))
+                elif viz_type == "tree":
+                    if in_suffix in [".xes", ".csv"]:
+                        tree = pm4py.discover_process_tree_inductive(log)
+                        pm4py.save_vis_process_tree(tree, str(output))
+                    else:
+                        console.print("[red]Error:[/red] Process tree requires event log input")
+                        raise typer.Exit(1)
+                elif viz_type == "heuristic":
+                    if in_suffix in [".xes", ".csv"]:
+                        heu_net = pm4py.discover_heuristics_net(log)
+                        pm4py.save_vis_heuristics_net(heu_net, str(output))
+                    else:
+                        console.print("[red]Error:[/red] Heuristic net requires event log input")
+                        raise typer.Exit(1)
+                else:
+                    tracker.error("save", f"unknown viz type: {viz_type}")
+                    raise typer.Exit(1)
+
+                tracker.complete("save", output.name)
+            else:
+                # View in browser/window
+                tracker.complete("visualize")
+                tracker.skip("save", "displaying inline")
+
+                if viz_type == "dfg":
+                    dfg, start_activities, end_activities = pm4py.discover_dfg(log)
+                    pm4py.view_dfg(dfg, start_activities, end_activities)
+                elif viz_type == "petri":
+                    if in_suffix in [".xes", ".csv"]:
+                        net, im, fm = pm4py.discover_petri_net_inductive(log)
+                    pm4py.view_petri_net(net, im, fm)
+                elif viz_type == "bpmn":
+                    if in_suffix in [".xes", ".csv"]:
+                        bpmn = pm4py.discover_bpmn_inductive(log)
+                    pm4py.view_bpmn(bpmn)
+
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+
+    if output:
+        console.print(f"\n[bold green]Visualization saved.[/bold green]")
+        console.print(f"Output: [cyan]{output}[/cyan]")
+    else:
+        console.print("\n[bold green]Visualization displayed.[/bold green]")
+
+
+@pm_app.command("filter")
+def pm_filter(
+    input_file: Path = typer.Argument(..., help="Input event log file (.xes or .csv)"),
+    output_file: Path = typer.Argument(..., help="Output event log file (.xes or .csv)"),
+    start_activities: str = typer.Option(None, "--start", "-s", help="Filter by start activities (comma-separated)"),
+    end_activities: str = typer.Option(None, "--end", "-e", help="Filter by end activities (comma-separated)"),
+    activities: str = typer.Option(None, "--activities", "-a", help="Keep only these activities (comma-separated)"),
+    min_events: int = typer.Option(None, "--min-events", help="Minimum number of events per case"),
+    max_events: int = typer.Option(None, "--max-events", help="Maximum number of events per case"),
+    top_variants: int = typer.Option(None, "--top-variants", "-v", help="Keep only top N variants"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
+    activity_col: str = typer.Option("concept:name", "--activity-col", help="Column name for activity (CSV only)"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+):
+    """
+    Filter an event log based on various criteria.
+
+    Filters can be combined. All specified filters are applied in sequence.
+
+    Examples:
+        specify pm filter log.xes filtered.xes --start "Start,Begin"
+        specify pm filter log.csv filtered.csv --min-events 5 --max-events 50
+        specify pm filter log.xes filtered.xes --top-variants 10
+        specify pm filter log.xes filtered.xes -a "Activity A,Activity B,Activity C"
+    """
+    import pm4py
+    from pm4py.algo.filtering.log.variants import variants_filter
+    from pm4py.algo.filtering.log.start_activities import start_activities_filter
+    from pm4py.algo.filtering.log.end_activities import end_activities_filter
+    from pm4py.algo.filtering.log.attributes import attributes_filter
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
+        raise typer.Exit(1)
+
+    tracker = StepTracker("Event Log Filtering")
+    tracker.add("load", "Load event log")
+    tracker.add("filter", "Apply filters")
+    tracker.add("save", "Save filtered log")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            tracker.start("load")
+            log = _load_event_log(input_file, case_id, activity_col, timestamp)
+            original_cases = len(log)
+            original_events = sum(len(trace) for trace in log)
+            tracker.complete("load", f"{original_cases} cases, {original_events} events")
+
+            tracker.start("filter")
+            filters_applied = []
+
+            # Filter by start activities
+            if start_activities:
+                start_acts = [a.strip() for a in start_activities.split(",")]
+                log = start_activities_filter.apply(log, start_acts)
+                filters_applied.append(f"start={len(start_acts)}")
+
+            # Filter by end activities
+            if end_activities:
+                end_acts = [a.strip() for a in end_activities.split(",")]
+                log = end_activities_filter.apply(log, end_acts)
+                filters_applied.append(f"end={len(end_acts)}")
+
+            # Filter by specific activities
+            if activities:
+                acts = [a.strip() for a in activities.split(",")]
+                log = attributes_filter.apply(log, acts, parameters={attributes_filter.Parameters.ATTRIBUTE_KEY: "concept:name", attributes_filter.Parameters.POSITIVE: True})
+                filters_applied.append(f"activities={len(acts)}")
+
+            # Filter by trace length
+            if min_events is not None or max_events is not None:
+                filtered_log = pm4py.objects.log.obj.EventLog()
+                for trace in log:
+                    trace_len = len(trace)
+                    if min_events is not None and trace_len < min_events:
+                        continue
+                    if max_events is not None and trace_len > max_events:
+                        continue
+                    filtered_log.append(trace)
+                log = filtered_log
+                filters_applied.append(f"length={min_events or 0}-{max_events or 'inf'}")
+
+            # Filter by top variants
+            if top_variants:
+                log = variants_filter.filter_log_variants_top_k(log, top_variants)
+                filters_applied.append(f"top_variants={top_variants}")
+
+            filtered_cases = len(log)
+            filtered_events = sum(len(trace) for trace in log)
+            tracker.complete("filter", ", ".join(filters_applied) if filters_applied else "none")
+
+            tracker.start("save")
+            out_suffix = output_file.suffix.lower()
+            if out_suffix == ".xes":
+                pm4py.write_xes(log, str(output_file))
+            elif out_suffix == ".csv":
+                df = pm4py.convert_to_dataframe(log)
+                df.to_csv(output_file, index=False)
+            else:
+                tracker.error("save", f"unsupported format: {out_suffix}")
+                raise typer.Exit(1)
+            tracker.complete("save", output_file.name)
+
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+
+    # Show filtering summary
+    summary_table = Table(title="Filtering Summary", show_header=True, header_style="bold cyan")
+    summary_table.add_column("Metric", style="cyan")
+    summary_table.add_column("Before", style="white", justify="right")
+    summary_table.add_column("After", style="white", justify="right")
+    summary_table.add_column("Reduction", style="yellow", justify="right")
+
+    cases_pct = ((original_cases - filtered_cases) / original_cases * 100) if original_cases > 0 else 0
+    events_pct = ((original_events - filtered_events) / original_events * 100) if original_events > 0 else 0
+
+    summary_table.add_row("Cases", str(original_cases), str(filtered_cases), f"-{cases_pct:.1f}%")
+    summary_table.add_row("Events", str(original_events), str(filtered_events), f"-{events_pct:.1f}%")
+
+    console.print()
+    console.print(summary_table)
+    console.print(f"\nFiltered log saved to: [cyan]{output_file}[/cyan]")
+
+
+@pm_app.command("sample")
+def pm_sample(
+    output_file: Path = typer.Argument(..., help="Output event log file (.xes or .csv)"),
+    cases: int = typer.Option(100, "--cases", "-c", help="Number of cases to generate"),
+    activities: int = typer.Option(10, "--activities", "-a", help="Number of unique activities"),
+    min_trace_length: int = typer.Option(3, "--min-length", help="Minimum trace length"),
+    max_trace_length: int = typer.Option(15, "--max-length", help="Maximum trace length"),
+    seed: int = typer.Option(None, "--seed", "-s", help="Random seed for reproducibility"),
+):
+    """
+    Generate a sample event log for testing and experimentation.
+
+    Creates a synthetic event log with configurable parameters.
+
+    Examples:
+        specify pm sample sample.xes
+        specify pm sample sample.csv --cases 500 --activities 20
+        specify pm sample sample.xes -c 1000 --seed 42
+    """
+    import pm4py
+    import pandas as pd
+    import random
+    from datetime import datetime, timedelta
+
+    if seed is not None:
+        random.seed(seed)
+
+    tracker = StepTracker("Generate Sample Log")
+    tracker.add("generate", "Generate traces")
+    tracker.add("save", "Save log")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        try:
+            tracker.start("generate")
+
+            # Generate activity names
+            activity_names = [f"Activity_{chr(65 + i)}" if i < 26 else f"Activity_{i}" for i in range(activities)]
+
+            # Generate traces
+            data = []
+            base_time = datetime(2024, 1, 1, 8, 0, 0)
+
+            for case_idx in range(cases):
+                case_id = f"case_{case_idx + 1:05d}"
+                trace_length = random.randint(min_trace_length, max_trace_length)
+
+                # Start with first activity more likely
+                current_time = base_time + timedelta(days=case_idx, hours=random.randint(0, 8))
+
+                for event_idx in range(trace_length):
+                    # Weighted selection - earlier activities more common at start
+                    if event_idx == 0:
+                        activity = activity_names[0]  # Always start with first activity
+                    elif event_idx == trace_length - 1:
+                        activity = activity_names[-1]  # Always end with last activity
+                    else:
+                        activity = random.choice(activity_names[1:-1])
+
+                    data.append({
+                        "case:concept:name": case_id,
+                        "concept:name": activity,
+                        "time:timestamp": current_time,
+                    })
+
+                    current_time += timedelta(minutes=random.randint(5, 120))
+
+            # Create dataframe and convert to event log
+            df = pd.DataFrame(data)
+            df = pm4py.format_dataframe(df, case_id="case:concept:name", activity_key="concept:name", timestamp_key="time:timestamp")
+            log = pm4py.convert_to_event_log(df)
+
+            total_events = len(data)
+            tracker.complete("generate", f"{cases} cases, {total_events} events")
+
+            tracker.start("save")
+            out_suffix = output_file.suffix.lower()
+            if out_suffix == ".xes":
+                pm4py.write_xes(log, str(output_file))
+            elif out_suffix == ".csv":
+                df.to_csv(output_file, index=False)
+            else:
+                tracker.error("save", f"unsupported format: {out_suffix}")
+                raise typer.Exit(1)
+            tracker.complete("save", output_file.name)
+
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    console.print(tracker.render())
+    console.print(f"\n[bold green]Sample log generated.[/bold green]")
+    console.print(f"Output: [cyan]{output_file}[/cyan]")
+
+    # Show summary
+    summary_table = Table(title="Generated Log Summary", show_header=True, header_style="bold cyan")
+    summary_table.add_column("Parameter", style="cyan")
+    summary_table.add_column("Value", style="white")
+
+    summary_table.add_row("Cases", str(cases))
+    summary_table.add_row("Events", str(total_events))
+    summary_table.add_row("Activities", str(activities))
+    summary_table.add_row("Trace Length", f"{min_trace_length}-{max_trace_length}")
+    if seed is not None:
+        summary_table.add_row("Seed", str(seed))
+
+    console.print()
+    console.print(summary_table)
+
+
+# =============================================================================
+# End Process Mining Commands
+# =============================================================================
+
+
 @app.command()
 def version():
     """Display version and system information."""
     import platform
     import importlib.metadata
-    
+
     show_banner()
     
     # Get CLI version from package metadata

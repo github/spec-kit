@@ -11,6 +11,8 @@ dependencies = [
     "readchar",
     "truststore>=0.10.4",
     "dspy>=2.5.0",
+    "pm4py>=2.7.0",
+    "pandas>=2.0.0",
 ]
 
 # External system dependencies (must be installed separately):

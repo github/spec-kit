@@ -1,0 +1,71 @@
+# Specification-Driven Development (SDD) Philosophy
+
+Specification-Driven Development is a methodology where specifications are the source of truth and deterministically drive code generation. This document outlines the core principles and philosophy that guide the Spec-Kit project.
+
+## Constitutional Equation
+
+```
+specification.md = μ(feature.ttl)
+```
+
+This equation expresses the core principle of SDD: specifications in Markdown are generated artifacts of specifications in Turtle RDF format. The function μ represents the deterministic transformation pipeline.
+
+## Core Principles
+
+{% for row in results %}
+### {{ row.principleIndex }}. {{ row.principleId | replace(from="_", to=" ") }}
+
+**{{ row.title }}**
+
+{{ row.description }}
+
+#### Rationale
+
+{{ row.rationale }}
+
+#### Examples
+
+{{ row.examples }}
+
+{% if row.violations %}
+#### Anti-Patterns and Violations
+
+{{ row.violations }}
+
+{% endif %}
+---
+
+{% endfor %}
+
+## Implementation Across Spec-Kit
+
+The principles above are not merely theoretical - they are actively implemented and enforced throughout the Spec-Kit project:
+
+- **Ontology-First Design**: The `ontology/spec-kit-schema.ttl` file encodes the domain model before any code is written
+- **Deterministic Transformation**: The `ggen v6` pipeline ensures reproducible specifications → implementation mappings
+- **Validation as Code**: SHACL shapes in the ontology validate specification quality upfront
+- **Source of Truth**: All documentation, specifications, and configurations derive from RDF Turtle files
+- **Idempotent Operations**: Running transformations multiple times produces identical results
+
+## Benefits of SDD
+
+1. **Reduced Ambiguity**: Specifications are machine-readable and validated before implementation
+2. **Automation**: Code generation reduces manual effort and human error
+3. **Traceability**: Complete audit trail from requirements to implementation
+4. **Maintainability**: Changes to specifications automatically propagate to generated code
+5. **Quality Assurance**: SHACL validation catches specification errors early
+6. **Reproducibility**: Same specification always generates same implementation
+
+## Relationship to Other Methodologies
+
+- **Test-Driven Development (TDD)**: SDD is complementary - specifications define tests and behavior
+- **Domain-Driven Design (DDD)**: The ontology embodies domain knowledge and ubiquitous language
+- **Model-Driven Engineering (MDE)**: RDF/OWL models are the primary artifacts, not visualizations
+
+## Getting Started with SDD
+
+See the [RDF Workflow Guide](RDF_WORKFLOW_GUIDE.md) for step-by-step instructions on implementing SDD with Spec-Kit.
+
+---
+
+*Last updated: {{ now() | date(format="%Y-%m-%d") }}*

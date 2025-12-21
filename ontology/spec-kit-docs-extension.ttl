@@ -1,0 +1,780 @@
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# ============================================================================
+# Spec-Kit Documentation Extension Ontology
+# ============================================================================
+# This ontology extends the core spec-kit schema to support comprehensive
+# documentation as RDF, enabling:
+# - Source-of-truth documentation in Turtle format
+# - Deterministic markdown generation via ggen v6
+# - Constitutional equation: documentation.md = μ(documentation.ttl)
+# - SHACL validation of documentation quality and completeness
+# ============================================================================
+
+# ============================================================================
+# CLASSES - Documentation Framework
+# ============================================================================
+
+sk:Documentation
+  a owl:Class ;
+  rdfs:label "Documentation" ;
+  rdfs:comment "Parent class for all documentation items. Base type for all documentation entities." ;
+  rdfs:subClassOf owl:Thing .
+
+sk:Guide
+  a owl:Class ;
+  rdfs:label "Guide" ;
+  rdfs:comment "Specialized documentation for procedures, workflows, and tutorials. Provides step-by-step guidance." ;
+  rdfs:subClassOf sk:Documentation .
+
+sk:APIReference
+  a owl:Class ;
+  rdfs:label "API Reference" ;
+  rdfs:comment "Technical reference documentation for APIs, functions, and interfaces." ;
+  rdfs:subClassOf sk:Documentation .
+
+sk:Principle
+  a owl:Class ;
+  rdfs:label "Constitutional Principle" ;
+  rdfs:comment "Core philosophy, principle, or constitutional rule that governs the project." ;
+  rdfs:subClassOf sk:Documentation .
+
+sk:Changelog
+  a owl:Class ;
+  rdfs:label "Changelog" ;
+  rdfs:comment "Version history and release information documentation." ;
+  rdfs:subClassOf sk:Documentation .
+
+sk:Release
+  a owl:Class ;
+  rdfs:label "Release" ;
+  rdfs:comment "Single version release with associated changes and metadata." ;
+  rdfs:subClassOf owl:Thing .
+
+sk:Change
+  a owl:Class ;
+  rdfs:label "Change" ;
+  rdfs:comment "Individual change entry in a changelog (Added, Fixed, Changed, etc.)." ;
+  rdfs:subClassOf owl:Thing .
+
+sk:ConfigurationOption
+  a owl:Class ;
+  rdfs:label "Configuration Option" ;
+  rdfs:comment "Configuration setting, CLI option, or environment variable documentation." ;
+  rdfs:subClassOf sk:Documentation .
+
+sk:Governance
+  a owl:Class ;
+  rdfs:label "Governance Rule" ;
+  rdfs:comment "Project governance rules, processes, and requirements." ;
+  rdfs:subClassOf sk:Documentation .
+
+sk:WorkflowPhase
+  a owl:Class ;
+  rdfs:label "Workflow Phase" ;
+  rdfs:comment "Single phase or stage in a multi-step workflow or procedure." ;
+  rdfs:subClassOf owl:Thing .
+
+sk:WorkflowStep
+  a owl:Class ;
+  rdfs:label "Workflow Step" ;
+  rdfs:comment "Individual step within a workflow phase." ;
+  rdfs:subClassOf owl:Thing .
+
+sk:Author
+  a owl:Class ;
+  rdfs:label "Author" ;
+  rdfs:comment "Person or entity responsible for creating or maintaining documentation." ;
+  rdfs:subClassOf owl:Thing .
+
+sk:DocumentationCategory
+  a owl:Class ;
+  rdfs:label "Documentation Category" ;
+  rdfs:comment "Topic classification for documentation (Guide, Reference, Philosophy, etc.)." ;
+  rdfs:subClassOf owl:Thing .
+
+sk:DocumentationMetadata
+  a owl:Class ;
+  rdfs:label "Documentation Metadata" ;
+  rdfs:comment "Container for documentation-wide metadata and configuration." ;
+  rdfs:subClassOf owl:Thing .
+
+# ============================================================================
+# DATATYPE PROPERTIES - Documentation Metadata
+# ============================================================================
+
+sk:documentTitle
+  a owl:DatatypeProperty ;
+  rdfs:label "Document Title" ;
+  rdfs:comment "Human-readable title of the documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:documentDescription
+  a owl:DatatypeProperty ;
+  rdfs:label "Document Description" ;
+  rdfs:comment "Purpose, overview, and summary of the documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:documentVersion
+  a owl:DatatypeProperty ;
+  rdfs:label "Document Version" ;
+  rdfs:comment "Version identifier of the documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:createdDate
+  a owl:DatatypeProperty ;
+  rdfs:label "Created Date" ;
+  rdfs:comment "Date when documentation was created" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:dateTime .
+
+sk:lastUpdatedDate
+  a owl:DatatypeProperty ;
+  rdfs:label "Last Updated Date" ;
+  rdfs:comment "Date of last modification to the documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:dateTime .
+
+sk:authorName
+  a owl:DatatypeProperty ;
+  rdfs:label "Author Name" ;
+  rdfs:comment "Name of the documentation author(s)" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:maintenanceStatus
+  a owl:DatatypeProperty ;
+  rdfs:label "Maintenance Status" ;
+  rdfs:comment "Current status: Current, Archived, or Deprecated" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:audience
+  a owl:DatatypeProperty ;
+  rdfs:label "Target Audience" ;
+  rdfs:comment "Description of target audience for the documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:prerequisites
+  a owl:DatatypeProperty ;
+  rdfs:label "Prerequisites" ;
+  rdfs:comment "Required knowledge, setup, or prior reading" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:category
+  a owl:DatatypeProperty ;
+  rdfs:label "Category" ;
+  rdfs:comment "Documentation category classification" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range xsd:string .
+
+sk:purpose
+  a owl:DatatypeProperty ;
+  rdfs:label "Purpose" ;
+  rdfs:comment "Primary purpose of the guide or documentation" ;
+  rdfs:domain sk:Guide ;
+  rdfs:range xsd:string .
+
+sk:guideSections
+  a owl:DatatypeProperty ;
+  rdfs:label "Guide Sections" ;
+  rdfs:comment "Comma-separated list of main sections in the guide" ;
+  rdfs:domain sk:Guide ;
+  rdfs:range xsd:string .
+
+# Changelog-specific properties
+sk:versionNumber
+  a owl:DatatypeProperty ;
+  rdfs:label "Version Number" ;
+  rdfs:comment "Semantic version identifier (e.g., 1.2.3)" ;
+  rdfs:domain sk:Release ;
+  rdfs:range xsd:string .
+
+sk:releaseDate
+  a owl:DatatypeProperty ;
+  rdfs:label "Release Date" ;
+  rdfs:comment "Date of the version release" ;
+  rdfs:domain sk:Release ;
+  rdfs:range xsd:dateTime .
+
+sk:breakingChanges
+  a owl:DatatypeProperty ;
+  rdfs:label "Has Breaking Changes" ;
+  rdfs:comment "Whether this release contains breaking changes" ;
+  rdfs:domain sk:Release ;
+  rdfs:range xsd:boolean .
+
+sk:deprecatedFeatures
+  a owl:DatatypeProperty ;
+  rdfs:label "Deprecated Features" ;
+  rdfs:comment "List of deprecated features in this release" ;
+  rdfs:domain sk:Release ;
+  rdfs:range xsd:string .
+
+sk:changeDescription
+  a owl:DatatypeProperty ;
+  rdfs:label "Change Description" ;
+  rdfs:comment "Description of what changed" ;
+  rdfs:domain sk:Change ;
+  rdfs:range xsd:string .
+
+sk:changeType
+  a owl:DatatypeProperty ;
+  rdfs:label "Change Type" ;
+  rdfs:comment "Type of change: Added, Fixed, Changed, Deprecated, Removed, or Security" ;
+  rdfs:domain sk:Change ;
+  rdfs:range xsd:string .
+
+# Configuration-specific properties
+sk:configName
+  a owl:DatatypeProperty ;
+  rdfs:label "Config Name" ;
+  rdfs:comment "Name of the configuration option" ;
+  rdfs:domain sk:ConfigurationOption ;
+  rdfs:range xsd:string .
+
+sk:configDescription
+  a owl:DatatypeProperty ;
+  rdfs:label "Config Description" ;
+  rdfs:comment "Description of what this configuration option controls" ;
+  rdfs:domain sk:ConfigurationOption ;
+  rdfs:range xsd:string .
+
+sk:configType
+  a owl:DatatypeProperty ;
+  rdfs:label "Config Type" ;
+  rdfs:comment "Data type of the configuration value (string, integer, boolean, etc.)" ;
+  rdfs:domain sk:ConfigurationOption ;
+  rdfs:range xsd:string .
+
+sk:configDefault
+  a owl:DatatypeProperty ;
+  rdfs:label "Config Default Value" ;
+  rdfs:comment "Default value for this configuration option" ;
+  rdfs:domain sk:ConfigurationOption ;
+  rdfs:range xsd:string .
+
+sk:configRequired
+  a owl:DatatypeProperty ;
+  rdfs:label "Config Required" ;
+  rdfs:comment "Whether this configuration option is required" ;
+  rdfs:domain sk:ConfigurationOption ;
+  rdfs:range xsd:boolean .
+
+sk:configExamples
+  a owl:DatatypeProperty ;
+  rdfs:label "Config Examples" ;
+  rdfs:comment "Usage examples for this configuration option" ;
+  rdfs:domain sk:ConfigurationOption ;
+  rdfs:range xsd:string .
+
+# Principle-specific properties
+sk:principleId
+  a owl:DatatypeProperty ;
+  rdfs:label "Principle ID" ;
+  rdfs:comment "Unique identifier for this principle" ;
+  rdfs:domain sk:Principle ;
+  rdfs:range xsd:string .
+
+sk:principleIndex
+  a owl:DatatypeProperty ;
+  rdfs:label "Principle Index" ;
+  rdfs:comment "Display order for principle rendering" ;
+  rdfs:domain sk:Principle ;
+  rdfs:range xsd:integer .
+
+sk:rationale
+  a owl:DatatypeProperty ;
+  rdfs:label "Rationale" ;
+  rdfs:comment "Why this principle matters and its justification" ;
+  rdfs:domain sk:Principle ;
+  rdfs:range xsd:string .
+
+sk:examples
+  a owl:DatatypeProperty ;
+  rdfs:label "Examples" ;
+  rdfs:comment "Concrete examples of this principle in practice" ;
+  rdfs:domain sk:Principle ;
+  rdfs:range xsd:string .
+
+sk:violations
+  a owl:DatatypeProperty ;
+  rdfs:label "Violations" ;
+  rdfs:comment "Examples of violations or anti-patterns of this principle" ;
+  rdfs:domain sk:Principle ;
+  rdfs:range xsd:string .
+
+# Governance-specific properties
+sk:governanceRule
+  a owl:DatatypeProperty ;
+  rdfs:label "Governance Rule" ;
+  rdfs:comment "The rule name or statement" ;
+  rdfs:domain sk:Governance ;
+  rdfs:range xsd:string .
+
+sk:governanceDescription
+  a owl:DatatypeProperty ;
+  rdfs:label "Governance Description" ;
+  rdfs:comment "Detailed description of the governance rule" ;
+  rdfs:domain sk:Governance ;
+  rdfs:range xsd:string .
+
+sk:enforcement
+  a owl:DatatypeProperty ;
+  rdfs:label "Enforcement Mechanism" ;
+  rdfs:comment "How this rule is enforced" ;
+  rdfs:domain sk:Governance ;
+  rdfs:range xsd:string .
+
+sk:procedure
+  a owl:DatatypeProperty ;
+  rdfs:label "Procedure" ;
+  rdfs:comment "Procedure for compliance with this rule" ;
+  rdfs:domain sk:Governance ;
+  rdfs:range xsd:string .
+
+# Workflow-specific properties
+sk:phaseId
+  a owl:DatatypeProperty ;
+  rdfs:label "Phase ID" ;
+  rdfs:comment "Unique identifier for this workflow phase" ;
+  rdfs:domain sk:WorkflowPhase ;
+  rdfs:range xsd:string .
+
+sk:phaseName
+  a owl:DatatypeProperty ;
+  rdfs:label "Phase Name" ;
+  rdfs:comment "Name of this workflow phase" ;
+  rdfs:domain sk:WorkflowPhase ;
+  rdfs:range xsd:string .
+
+sk:phaseDescription
+  a owl:DatatypeProperty ;
+  rdfs:label "Phase Description" ;
+  rdfs:comment "Description of what happens in this phase" ;
+  rdfs:domain sk:WorkflowPhase ;
+  rdfs:range xsd:string .
+
+sk:stepId
+  a owl:DatatypeProperty ;
+  rdfs:label "Step ID" ;
+  rdfs:comment "Unique identifier for this workflow step" ;
+  rdfs:domain sk:WorkflowStep ;
+  rdfs:range xsd:string .
+
+sk:stepDescription
+  a owl:DatatypeProperty ;
+  rdfs:label "Step Description" ;
+  rdfs:comment "Description of this workflow step" ;
+  rdfs:domain sk:WorkflowStep ;
+  rdfs:range xsd:string .
+
+sk:stepIndex
+  a owl:DatatypeProperty ;
+  rdfs:label "Step Index" ;
+  rdfs:comment "Order of this step within its phase" ;
+  rdfs:domain sk:WorkflowStep ;
+  rdfs:range xsd:integer .
+
+# Author properties
+sk:authorEmail
+  a owl:DatatypeProperty ;
+  rdfs:label "Author Email" ;
+  rdfs:comment "Email address of the author" ;
+  rdfs:domain sk:Author ;
+  rdfs:range xsd:string .
+
+sk:authorGitHub
+  a owl:DatatypeProperty ;
+  rdfs:label "Author GitHub" ;
+  rdfs:comment "GitHub username of the author" ;
+  rdfs:domain sk:Author ;
+  rdfs:range xsd:string .
+
+# ============================================================================
+# OBJECT PROPERTIES - Documentation Structure & Relationships
+# ============================================================================
+
+sk:hasDocumentation
+  a owl:ObjectProperty ;
+  rdfs:label "Has Documentation" ;
+  rdfs:comment "Feature or entity is documented by this documentation" ;
+  rdfs:domain sk:Feature ;
+  rdfs:range sk:Documentation ;
+  owl:inverseOf sk:documents .
+
+sk:documents
+  a owl:ObjectProperty ;
+  rdfs:label "Documents" ;
+  rdfs:comment "This documentation documents a feature or entity" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Feature ;
+  owl:inverseOf sk:hasDocumentation .
+
+sk:hasGuide
+  a owl:ObjectProperty ;
+  rdfs:label "Has Guide" ;
+  rdfs:comment "Project or feature has an associated guide" ;
+  rdfs:domain owl:Thing ;
+  rdfs:range sk:Guide .
+
+sk:inCategory
+  a owl:ObjectProperty ;
+  rdfs:label "In Category" ;
+  rdfs:comment "Documentation belongs to this category" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:DocumentationCategory .
+
+sk:documentLinks
+  a owl:ObjectProperty ;
+  rdfs:label "Document Links" ;
+  rdfs:comment "Cross-reference to related documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Documentation .
+
+sk:relatedDocuments
+  a owl:ObjectProperty ;
+  rdfs:label "Related Documents" ;
+  rdfs:comment "Documents related to this documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Documentation .
+
+sk:implements
+  a owl:ObjectProperty ;
+  rdfs:label "Implements" ;
+  rdfs:comment "Documentation implements or describes this feature" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Feature .
+
+sk:citedBy
+  a owl:ObjectProperty ;
+  rdfs:label "Cited By" ;
+  rdfs:comment "This documentation is referenced/cited by other documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Documentation ;
+  owl:inverseOf sk:cites .
+
+sk:cites
+  a owl:ObjectProperty ;
+  rdfs:label "Cites" ;
+  rdfs:comment "This documentation cites/references other documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Documentation ;
+  owl:inverseOf sk:citedBy .
+
+# Changelog relationships
+sk:hasRelease
+  a owl:ObjectProperty ;
+  rdfs:label "Has Release" ;
+  rdfs:comment "Changelog contains this release" ;
+  rdfs:domain sk:Changelog ;
+  rdfs:range sk:Release .
+
+sk:hasChange
+  a owl:ObjectProperty ;
+  rdfs:label "Has Change" ;
+  rdfs:comment "Release contains this change" ;
+  rdfs:domain sk:Release ;
+  rdfs:range sk:Change .
+
+sk:previousVersion
+  a owl:ObjectProperty ;
+  rdfs:label "Previous Version" ;
+  rdfs:comment "Link to previous version in release sequence" ;
+  rdfs:domain sk:Release ;
+  rdfs:range sk:Release .
+
+# Workflow relationships
+sk:hasPhase
+  a owl:ObjectProperty ;
+  rdfs:label "Has Phase" ;
+  rdfs:comment "Workflow contains this phase" ;
+  rdfs:domain sk:Guide ;
+  rdfs:range sk:WorkflowPhase .
+
+sk:hasStep
+  a owl:ObjectProperty ;
+  rdfs:label "Has Step" ;
+  rdfs:comment "Phase contains this step" ;
+  rdfs:domain sk:WorkflowPhase ;
+  rdfs:range sk:WorkflowStep .
+
+sk:nextStep
+  a owl:ObjectProperty ;
+  rdfs:label "Next Step" ;
+  rdfs:comment "Link to next step in sequence" ;
+  rdfs:domain sk:WorkflowStep ;
+  rdfs:range sk:WorkflowStep .
+
+# Author relationships
+sk:author
+  a owl:ObjectProperty ;
+  rdfs:label "Author" ;
+  rdfs:comment "Primary author of this documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Author .
+
+sk:contributors
+  a owl:ObjectProperty ;
+  rdfs:label "Contributors" ;
+  rdfs:comment "Additional contributors to this documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Author .
+
+sk:maintainedBy
+  a owl:ObjectProperty ;
+  rdfs:label "Maintained By" ;
+  rdfs:comment "Person(s) responsible for maintaining this documentation" ;
+  rdfs:domain sk:Documentation ;
+  rdfs:range sk:Author .
+
+# ============================================================================
+# SHACL VALIDATION SHAPES
+# ============================================================================
+
+# Base documentation shape - applies to all documentation
+sk:DocumentationShape
+  a sh:NodeShape ;
+  sh:targetClass sk:Documentation ;
+  sh:property [
+    sh:path sk:documentTitle ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "Documentation must have exactly one documentTitle property"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:documentDescription ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:minLength 10 ;
+    sh:message "Documentation must have a description of at least 10 characters"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:createdDate ;
+    sh:datatype xsd:dateTime ;
+    sh:message "createdDate must be a valid dateTime"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:lastUpdatedDate ;
+    sh:datatype xsd:dateTime ;
+    sh:message "lastUpdatedDate must be a valid dateTime"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:maintenanceStatus ;
+    sh:in ( "Current" "Archived" "Deprecated" ) ;
+    sh:message "maintenanceStatus must be one of: Current, Archived, Deprecated"@en ;
+  ] .
+
+# Guide shape
+sk:GuideShape
+  a sh:NodeShape ;
+  sh:targetClass sk:Guide ;
+  sh:property [
+    sh:path sk:purpose ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:minLength 20 ;
+    sh:message "Guide must have a purpose of at least 20 characters"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:audience ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "Guide should specify target audience"@en ;
+  ] .
+
+# Principle shape
+sk:PrincipleShape
+  a sh:NodeShape ;
+  sh:targetClass sk:Principle ;
+  sh:property [
+    sh:path sk:principleId ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:pattern "^[A-Z][A-Z0-9_]*$" ;
+    sh:message "principleId must be uppercase alphanumeric (e.g., SEMANTIC_FIRST)"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:principleIndex ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:integer ;
+    sh:message "principleIndex must be a single integer"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:rationale ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:minLength 50 ;
+    sh:message "Principle must have a rationale of at least 50 characters"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:examples ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "Principle should provide examples"@en ;
+  ] .
+
+# Changelog shape
+sk:ChangelogShape
+  a sh:NodeShape ;
+  sh:targetClass sk:Changelog ;
+  sh:property [
+    sh:path sk:hasRelease ;
+    sh:minCount 1 ;
+    sh:message "Changelog must contain at least one release"@en ;
+  ] .
+
+# Release shape
+sk:ReleaseShape
+  a sh:NodeShape ;
+  sh:targetClass sk:Release ;
+  sh:property [
+    sh:path sk:versionNumber ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:pattern "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$" ;
+    sh:message "versionNumber must be valid semantic version"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:releaseDate ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:dateTime ;
+    sh:message "Release must have exactly one releaseDate"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:hasChange ;
+    sh:minCount 1 ;
+    sh:message "Release should contain at least one change"@en ;
+  ] .
+
+# Change shape
+sk:ChangeShape
+  a sh:NodeShape ;
+  sh:targetClass sk:Change ;
+  sh:property [
+    sh:path sk:changeType ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:in ( "Added" "Fixed" "Changed" "Deprecated" "Removed" "Security" ) ;
+    sh:message "changeType must be one of: Added, Fixed, Changed, Deprecated, Removed, Security"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:changeDescription ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:minLength 10 ;
+    sh:message "changeDescription must be at least 10 characters"@en ;
+  ] .
+
+# Configuration Option shape
+sk:ConfigurationOptionShape
+  a sh:NodeShape ;
+  sh:targetClass sk:ConfigurationOption ;
+  sh:property [
+    sh:path sk:configName ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "ConfigurationOption must have exactly one configName"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:configDescription ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:minLength 20 ;
+    sh:message "Configuration description must be at least 20 characters"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:configType ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "ConfigurationOption must specify configType"@en ;
+  ] .
+
+# Workflow Phase shape
+sk:WorkflowPhaseShape
+  a sh:NodeShape ;
+  sh:targetClass sk:WorkflowPhase ;
+  sh:property [
+    sh:path sk:phaseId ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:pattern "^[A-Z0-9_]+$" ;
+    sh:message "phaseId must be uppercase alphanumeric"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:phaseName ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "WorkflowPhase must have exactly one phaseName"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:phaseDescription ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:minLength 20 ;
+    sh:message "Phase description must be at least 20 characters"@en ;
+  ] .
+
+# Workflow Step shape
+sk:WorkflowStepShape
+  a sh:NodeShape ;
+  sh:targetClass sk:WorkflowStep ;
+  sh:property [
+    sh:path sk:stepId ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "WorkflowStep must have exactly one stepId"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:stepIndex ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:integer ;
+    sh:message "WorkflowStep must have exactly one stepIndex"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:stepDescription ;
+    sh:minCount 1 ;
+    sh:datatype xsd:string ;
+    sh:minLength 10 ;
+    sh:message "Step description must be at least 10 characters"@en ;
+  ] .
+
+# Author shape
+sk:AuthorShape
+  a sh:NodeShape ;
+  sh:targetClass sk:Author ;
+  sh:property [
+    sh:path sk:authorName ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:datatype xsd:string ;
+    sh:message "Author must have exactly one authorName"@en ;
+  ] ;
+  sh:property [
+    sh:path sk:authorEmail ;
+    sh:datatype xsd:string ;
+    sh:pattern "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$" ;
+    sh:message "authorEmail must be valid email format if provided"@en ;
+  ] .

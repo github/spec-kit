@@ -1,0 +1,37 @@
+# Query to extract guide documentation for rendering
+# Returns all properties needed to render a guide in Markdown format
+
+PREFIX sk: <http://github.com/github/spec-kit#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+
+SELECT DISTINCT
+  ?guide
+  ?title
+  ?description
+  ?purpose
+  ?audience
+  ?prerequisites
+  ?sections
+  ?category
+  ?status
+  ?lastUpdated
+  (GROUP_CONCAT(?linkedDoc; separator="|") AS ?relatedDocs)
+WHERE {
+  ?guide a sk:Guide .
+  ?guide sk:documentTitle ?title .
+  ?guide sk:documentDescription ?description .
+
+  OPTIONAL { ?guide sk:purpose ?purpose }
+  OPTIONAL { ?guide sk:audience ?audience }
+  OPTIONAL { ?guide sk:prerequisites ?prerequisites }
+  OPTIONAL { ?guide sk:guideSections ?sections }
+  OPTIONAL { ?guide sk:category ?category }
+  OPTIONAL { ?guide sk:maintenanceStatus ?status }
+  OPTIONAL { ?guide sk:lastUpdatedDate ?lastUpdated }
+  OPTIONAL {
+    ?guide sk:documentLinks ?linkedGuide .
+    ?linkedGuide sk:documentTitle ?linkedDoc .
+  }
+}
+GROUP BY ?guide ?title ?description ?purpose ?audience ?prerequisites ?sections ?category ?status ?lastUpdated
+ORDER BY ?category ?title
