@@ -11,428 +11,57 @@
 # ///
 """
 Specify CLI - Setup tool for Specify projects
-
-Usage:
-    uvx specify-cli.py init <project-name>
-    uvx specify-cli.py init .
-    uvx specify-cli.py init --here
-
-Or install globally:
-    uv tool install --from specify-cli.py specify-cli
-    specify init <project-name>
-    specify init .
-    specify init --here
 """
 
+import importlib.metadata
 import os
-import subprocess
+import platform
+import shutil
 import sys
 import zipfile
-import tempfile
-import shutil
-import shlex
-import json
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
-import typer
 import httpx
+import typer
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.text import Text
-from rich.live import Live
-from rich.align import Align
 from rich.table import Table
-from rich.tree import Tree
-from typer.core import TyperGroup
+from rich.text import Text
 
-# For cross-platform keyboard input
-import readchar
-import ssl
-import truststore
-from datetime import datetime, timezone
-
-ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-client = httpx.Client(verify=ssl_context)
-
-def _github_token(cli_token: str | None = None) -> str | None:
-    """Return sanitized GitHub token (cli arg takes precedence) or None."""
-    return ((cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN") or "").strip()) or None
-
-def _github_auth_headers(cli_token: str | None = None) -> dict:
-    """Return Authorization header dict only when a non-empty token exists."""
-    token = _github_token(cli_token)
-    return {"Authorization": f"Bearer {token}"} if token else {}
-
-def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
-    """Extract and parse GitHub rate-limit headers."""
-    info = {}
-    
-    # Standard GitHub rate-limit headers
-    if "X-RateLimit-Limit" in headers:
-        info["limit"] = headers.get("X-RateLimit-Limit")
-    if "X-RateLimit-Remaining" in headers:
-        info["remaining"] = headers.get("X-RateLimit-Remaining")
-    if "X-RateLimit-Reset" in headers:
-        reset_epoch = int(headers.get("X-RateLimit-Reset", "0"))
-        if reset_epoch:
-            reset_time = datetime.fromtimestamp(reset_epoch, tz=timezone.utc)
-            info["reset_epoch"] = reset_epoch
-            info["reset_time"] = reset_time
-            info["reset_local"] = reset_time.astimezone()
-    
-    # Retry-After header (seconds or HTTP-date)
-    if "Retry-After" in headers:
-        retry_after = headers.get("Retry-After")
-        try:
-            info["retry_after_seconds"] = int(retry_after)
-        except ValueError:
-            # HTTP-date format - not implemented, just store as string
-            info["retry_after"] = retry_after
-    
-    return info
-
-def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str) -> str:
-    """Format a user-friendly error message with rate-limit information."""
-    rate_info = _parse_rate_limit_headers(headers)
-    
-    lines = [f"GitHub API returned status {status_code} for {url}"]
-    lines.append("")
-    
-    if rate_info:
-        lines.append("[bold]Rate Limit Information:[/bold]")
-        if "limit" in rate_info:
-            lines.append(f"  • Rate Limit: {rate_info['limit']} requests/hour")
-        if "remaining" in rate_info:
-            lines.append(f"  • Remaining: {rate_info['remaining']}")
-        if "reset_local" in rate_info:
-            reset_str = rate_info["reset_local"].strftime("%Y-%m-%d %H:%M:%S %Z")
-            lines.append(f"  • Resets at: {reset_str}")
-        if "retry_after_seconds" in rate_info:
-            lines.append(f"  • Retry after: {rate_info['retry_after_seconds']} seconds")
-        lines.append("")
-    
-    # Add troubleshooting guidance
-    lines.append("[bold]Troubleshooting Tips:[/bold]")
-    lines.append("  • If you're on a shared CI or corporate environment, you may be rate-limited.")
-    lines.append("  • Consider using a GitHub token via --github-token or the GH_TOKEN/GITHUB_TOKEN")
-    lines.append("    environment variable to increase rate limits.")
-    lines.append("  • Authenticated requests have a limit of 5,000/hour vs 60/hour for unauthenticated.")
-    
-    return "\n".join(lines)
-
-# Agent configuration with name, folder, install URL, and CLI tool requirement
-AGENT_CONFIG = {
-    "copilot": {
-        "name": "GitHub Copilot",
-        "folder": ".github/",
-        "install_url": None,  # IDE-based, no CLI check needed
-        "requires_cli": False,
-    },
-    "claude": {
-        "name": "Claude Code",
-        "folder": ".claude/",
-        "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
-        "requires_cli": True,
-    },
-    "gemini": {
-        "name": "Gemini CLI",
-        "folder": ".gemini/",
-        "install_url": "https://github.com/google-gemini/gemini-cli",
-        "requires_cli": True,
-    },
-    "cursor-agent": {
-        "name": "Cursor",
-        "folder": ".cursor/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
-    },
-    "qwen": {
-        "name": "Qwen Code",
-        "folder": ".qwen/",
-        "install_url": "https://github.com/QwenLM/qwen-code",
-        "requires_cli": True,
-    },
-    "opencode": {
-        "name": "opencode",
-        "folder": ".opencode/",
-        "install_url": "https://opencode.ai",
-        "requires_cli": True,
-    },
-    "codex": {
-        "name": "Codex CLI",
-        "folder": ".codex/",
-        "install_url": "https://github.com/openai/codex",
-        "requires_cli": True,
-    },
-    "windsurf": {
-        "name": "Windsurf",
-        "folder": ".windsurf/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
-    },
-    "kilocode": {
-        "name": "Kilo Code",
-        "folder": ".kilocode/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
-    },
-    "auggie": {
-        "name": "Auggie CLI",
-        "folder": ".augment/",
-        "install_url": "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli",
-        "requires_cli": True,
-    },
-    "codebuddy": {
-        "name": "CodeBuddy",
-        "folder": ".codebuddy/",
-        "install_url": "https://www.codebuddy.ai/cli",
-        "requires_cli": True,
-    },
-    "qoder": {
-        "name": "Qoder CLI",
-        "folder": ".qoder/",
-        "install_url": "https://qoder.com/cli",
-        "requires_cli": True,
-    },
-    "roo": {
-        "name": "Roo Code",
-        "folder": ".roo/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
-    },
-    "q": {
-        "name": "Amazon Q Developer CLI",
-        "folder": ".amazonq/",
-        "install_url": "https://aws.amazon.com/developer/learning/q-developer-cli/",
-        "requires_cli": True,
-    },
-    "amp": {
-        "name": "Amp",
-        "folder": ".agents/",
-        "install_url": "https://ampcode.com/manual#install",
-        "requires_cli": True,
-    },
-    "shai": {
-        "name": "SHAI",
-        "folder": ".shai/",
-        "install_url": "https://github.com/ovh/shai",
-        "requires_cli": True,
-    },
-    "bob": {
-        "name": "IBM Bob",
-        "folder": ".bob/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
-    },
-}
-
-SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
-
-CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
-
-BANNER = """
-███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
-██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
-███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝ 
-╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝  
-███████║██║     ███████╗╚██████╗██║██║        ██║   
-╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
-"""
-
-TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
-class StepTracker:
-    """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
-    Supports live auto-refresh via an attached refresh callback.
-    """
-    def __init__(self, title: str):
-        self.title = title
-        self.steps = []  # list of dicts: {key, label, status, detail}
-        self.status_order = {"pending": 0, "running": 1, "done": 2, "error": 3, "skipped": 4}
-        self._refresh_cb = None  # callable to trigger UI refresh
-
-    def attach_refresh(self, cb):
-        self._refresh_cb = cb
-
-    def add(self, key: str, label: str):
-        if key not in [s["key"] for s in self.steps]:
-            self.steps.append({"key": key, "label": label, "status": "pending", "detail": ""})
-            self._maybe_refresh()
-
-    def start(self, key: str, detail: str = ""):
-        self._update(key, status="running", detail=detail)
-
-    def complete(self, key: str, detail: str = ""):
-        self._update(key, status="done", detail=detail)
-
-    def error(self, key: str, detail: str = ""):
-        self._update(key, status="error", detail=detail)
-
-    def skip(self, key: str, detail: str = ""):
-        self._update(key, status="skipped", detail=detail)
-
-    def _update(self, key: str, status: str, detail: str):
-        for s in self.steps:
-            if s["key"] == key:
-                s["status"] = status
-                if detail:
-                    s["detail"] = detail
-                self._maybe_refresh()
-                return
-
-        self.steps.append({"key": key, "label": key, "status": status, "detail": detail})
-        self._maybe_refresh()
-
-    def _maybe_refresh(self):
-        if self._refresh_cb:
-            try:
-                self._refresh_cb()
-            except Exception:
-                pass
-
-    def render(self):
-        tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
-        for step in self.steps:
-            label = step["label"]
-            detail_text = step["detail"].strip() if step["detail"] else ""
-
-            status = step["status"]
-            if status == "done":
-                symbol = "[green]●[/green]"
-            elif status == "pending":
-                symbol = "[green dim]○[/green dim]"
-            elif status == "running":
-                symbol = "[cyan]○[/cyan]"
-            elif status == "error":
-                symbol = "[red]●[/red]"
-            elif status == "skipped":
-                symbol = "[yellow]○[/yellow]"
-            else:
-                symbol = " "
-
-            if status == "pending":
-                # Entire line light gray (pending)
-                if detail_text:
-                    line = f"{symbol} [bright_black]{label} ({detail_text})[/bright_black]"
-                else:
-                    line = f"{symbol} [bright_black]{label}[/bright_black]"
-            else:
-                # Label white, detail (if any) light gray in parentheses
-                if detail_text:
-                    line = f"{symbol} [white]{label}[/white] [bright_black]({detail_text})[/bright_black]"
-                else:
-                    line = f"{symbol} [white]{label}[/white]"
-
-            tree.add(line)
-        return tree
-
-def get_key():
-    """Get a single keypress in a cross-platform way using readchar."""
-    key = readchar.readkey()
-
-    if key == readchar.key.UP or key == readchar.key.CTRL_P:
-        return 'up'
-    if key == readchar.key.DOWN or key == readchar.key.CTRL_N:
-        return 'down'
-
-    if key == readchar.key.ENTER:
-        return 'enter'
-
-    if key == readchar.key.ESC:
-        return 'escape'
-
-    if key == readchar.key.CTRL_C:
-        raise KeyboardInterrupt
-
-    return key
-
-def select_with_arrows(options: dict, prompt_text: str = "Select an option", default_key: str = None) -> str:
-    """
-    Interactive selection using arrow keys with Rich Live display.
-    
-    Args:
-        options: Dict with keys as option keys and values as descriptions
-        prompt_text: Text to show above the options
-        default_key: Default option key to start with
-        
-    Returns:
-        Selected option key
-    """
-    option_keys = list(options.keys())
-    if default_key and default_key in option_keys:
-        selected_index = option_keys.index(default_key)
-    else:
-        selected_index = 0
-
-    selected_key = None
-
-    def create_selection_panel():
-        """Create the selection panel with current selection highlighted."""
-        table = Table.grid(padding=(0, 2))
-        table.add_column(style="cyan", justify="left", width=3)
-        table.add_column(style="white", justify="left")
-
-        for i, key in enumerate(option_keys):
-            if i == selected_index:
-                table.add_row("▶", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
-            else:
-                table.add_row(" ", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
-
-        table.add_row("", "")
-        table.add_row("", "[dim]Use ↑/↓ to navigate, Enter to select, Esc to cancel[/dim]")
-
-        return Panel(
-            table,
-            title=f"[bold]{prompt_text}[/bold]",
-            border_style="cyan",
-            padding=(1, 2)
-        )
-
-    console.print()
-
-    def run_selection_loop():
-        nonlocal selected_key, selected_index
-        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
-            while True:
-                try:
-                    key = get_key()
-                    if key == 'up':
-                        selected_index = (selected_index - 1) % len(option_keys)
-                    elif key == 'down':
-                        selected_index = (selected_index + 1) % len(option_keys)
-                    elif key == 'enter':
-                        selected_key = option_keys[selected_index]
-                        break
-                    elif key == 'escape':
-                        console.print("\n[yellow]Selection cancelled[/yellow]")
-                        raise typer.Exit(1)
-
-                    live.update(create_selection_panel(), refresh=True)
-
-                except KeyboardInterrupt:
-                    console.print("\n[yellow]Selection cancelled[/yellow]")
-                    raise typer.Exit(1)
-
-    run_selection_loop()
-
-    if selected_key is None:
-        console.print("\n[red]Selection failed.[/red]")
-        raise typer.Exit(1)
-
-    return selected_key
+# Import from refactored modules
+from .cli import BannerGroup, show_banner
+from .core import (
+    _format_rate_limit_error,
+    _github_auth_headers,
+    init_git_repo,
+    is_git_repo,
+)
+from .core.github import ssl_context
+from .utils import (
+    AGENT_CONFIG,
+    BANNER,
+    CLAUDE_LOCAL_PATH,
+    SCRIPT_TYPE_CHOICES,
+    TAGLINE,
+    StepTracker,
+    check_tool,
+    download_and_extract_template,
+    ensure_executable_scripts,
+    get_key,
+    run_command,
+    select_with_arrows,
+)
 
 console = Console()
 
-class BannerGroup(TyperGroup):
-    """Custom group that shows banner before help."""
+# Create global httpx client
+client = httpx.Client(verify=ssl_context)
 
-    def format_help(self, ctx, formatter):
-        # Show banner before help
-        show_banner()
-        super().format_help(ctx, formatter)
-
-
+# Create the main Typer app
 app = typer.Typer(
     name="specify",
     help="Setup tool for Specify spec-driven development projects",
@@ -441,511 +70,29 @@ app = typer.Typer(
     cls=BannerGroup,
 )
 
-def show_banner():
-    """Display the ASCII art banner."""
-    banner_lines = BANNER.strip().split('\n')
-    colors = ["bright_blue", "blue", "cyan", "bright_cyan", "white", "bright_white"]
-
-    styled_banner = Text()
-    for i, line in enumerate(banner_lines):
-        color = colors[i % len(colors)]
-        styled_banner.append(line + "\n", style=color)
-
-    console.print(Align.center(styled_banner))
-    console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
-    console.print()
 
 @app.callback()
 def callback(ctx: typer.Context):
     """Show banner when no subcommand is provided."""
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
+        from rich.align import Align
+
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
-    """Run a shell command and optionally capture output."""
-    try:
-        if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
-            return result.stdout.strip()
-        else:
-            subprocess.run(cmd, check=check_return, shell=shell)
-            return None
-    except subprocess.CalledProcessError as e:
-        if check_return:
-            console.print(f"[red]Error running command:[/red] {' '.join(cmd)}")
-            console.print(f"[red]Exit code:[/red] {e.returncode}")
-            if hasattr(e, 'stderr') and e.stderr:
-                console.print(f"[red]Error output:[/red] {e.stderr}")
-            raise
-        return None
-
-def check_tool(tool: str, tracker: StepTracker = None) -> bool:
-    """Check if a tool is installed. Optionally update tracker.
-    
-    Args:
-        tool: Name of the tool to check
-        tracker: Optional StepTracker to update with results
-        
-    Returns:
-        True if tool is found, False otherwise
-    """
-    # Special handling for Claude CLI after `claude migrate-installer`
-    # See: https://github.com/github/spec-kit/issues/123
-    # The migrate-installer command REMOVES the original executable from PATH
-    # and creates an alias at ~/.claude/local/claude instead
-    # This path should be prioritized over other claude executables in PATH
-    if tool == "claude":
-        if CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file():
-            if tracker:
-                tracker.complete(tool, "available")
-            return True
-    
-    found = shutil.which(tool) is not None
-    
-    if tracker:
-        if found:
-            tracker.complete(tool, "available")
-        else:
-            tracker.error(tool, "not found")
-    
-    return found
-
-def is_git_repo(path: Path = None) -> bool:
-    """Check if the specified path is inside a git repository."""
-    if path is None:
-        path = Path.cwd()
-    
-    if not path.is_dir():
-        return False
-
-    try:
-        # Use git command to check if inside a work tree
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            capture_output=True,
-            cwd=path,
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Optional[str]]:
-    """Initialize a git repository in the specified path.
-    
-    Args:
-        project_path: Path to initialize git repository in
-        quiet: if True suppress console output (tracker handles status)
-    
-    Returns:
-        Tuple of (success: bool, error_message: Optional[str])
-    """
-    try:
-        original_cwd = Path.cwd()
-        os.chdir(project_path)
-        if not quiet:
-            console.print("[cyan]Initializing git repository...[/cyan]")
-        subprocess.run(["git", "init"], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True, text=True)
-        if not quiet:
-            console.print("[green]✓[/green] Git repository initialized")
-        return True, None
-
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Command: {' '.join(e.cmd)}\nExit code: {e.returncode}"
-        if e.stderr:
-            error_msg += f"\nError: {e.stderr.strip()}"
-        elif e.stdout:
-            error_msg += f"\nOutput: {e.stdout.strip()}"
-        
-        if not quiet:
-            console.print(f"[red]Error initializing git repository:[/red] {e}")
-        return False, error_msg
-    finally:
-        os.chdir(original_cwd)
-
-def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker=None) -> None:
-    """Handle merging or copying of .vscode/settings.json files."""
-    def log(message, color="green"):
-        if verbose and not tracker:
-            console.print(f"[{color}]{message}[/] {rel_path}")
-
-    try:
-        with open(sub_item, 'r', encoding='utf-8') as f:
-            new_settings = json.load(f)
-
-        if dest_file.exists():
-            merged = merge_json_files(dest_file, new_settings, verbose=verbose and not tracker)
-            with open(dest_file, 'w', encoding='utf-8') as f:
-                json.dump(merged, f, indent=4)
-                f.write('\n')
-            log("Merged:", "green")
-        else:
-            shutil.copy2(sub_item, dest_file)
-            log("Copied (no existing settings.json):", "blue")
-
-    except Exception as e:
-        log(f"Warning: Could not merge, copying instead: {e}", "yellow")
-        shutil.copy2(sub_item, dest_file)
-
-def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = False) -> dict:
-    """Merge new JSON content into existing JSON file.
-
-    Performs a deep merge where:
-    - New keys are added
-    - Existing keys are preserved unless overwritten by new content
-    - Nested dictionaries are merged recursively
-    - Lists and other values are replaced (not merged)
-
-    Args:
-        existing_path: Path to existing JSON file
-        new_content: New JSON content to merge in
-        verbose: Whether to print merge details
-
-    Returns:
-        Merged JSON content as dict
-    """
-    try:
-        with open(existing_path, 'r', encoding='utf-8') as f:
-            existing_content = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # If file doesn't exist or is invalid, just use new content
-        return new_content
-
-    def deep_merge(base: dict, update: dict) -> dict:
-        """Recursively merge update dict into base dict."""
-        result = base.copy()
-        for key, value in update.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                # Recursively merge nested dictionaries
-                result[key] = deep_merge(result[key], value)
-            else:
-                # Add new key or replace existing value
-                result[key] = value
-        return result
-
-    merged = deep_merge(existing_content, new_content)
-
-    if verbose:
-        console.print(f"[cyan]Merged JSON file:[/cyan] {existing_path.name}")
-
-    return merged
-
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
-    if client is None:
-        client = httpx.Client(verify=ssl_context)
-
-    if verbose:
-        console.print("[cyan]Fetching latest release information...[/cyan]")
-    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-
-    try:
-        response = client.get(
-            api_url,
-            timeout=30,
-            follow_redirects=True,
-            headers=_github_auth_headers(github_token),
-        )
-        status = response.status_code
-        if status != 200:
-            # Format detailed error message with rate-limit info
-            error_msg = _format_rate_limit_error(status, response.headers, api_url)
-            if debug:
-                error_msg += f"\n\n[dim]Response body (truncated 500):[/dim]\n{response.text[:500]}"
-            raise RuntimeError(error_msg)
-        try:
-            release_data = response.json()
-        except ValueError as je:
-            raise RuntimeError(f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}")
-    except Exception as e:
-        console.print(f"[red]Error fetching release information[/red]")
-        console.print(Panel(str(e), title="Fetch Error", border_style="red"))
-        raise typer.Exit(1)
-
-    assets = release_data.get("assets", [])
-    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
-    matching_assets = [
-        asset for asset in assets
-        if pattern in asset["name"] and asset["name"].endswith(".zip")
-    ]
-
-    asset = matching_assets[0] if matching_assets else None
-
-    if asset is None:
-        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
-        asset_names = [a.get('name', '?') for a in assets]
-        console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
-        raise typer.Exit(1)
-
-    download_url = asset["browser_download_url"]
-    filename = asset["name"]
-    file_size = asset["size"]
-
-    if verbose:
-        console.print(f"[cyan]Found template:[/cyan] {filename}")
-        console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
-        console.print(f"[cyan]Release:[/cyan] {release_data['tag_name']}")
-
-    zip_path = download_dir / filename
-    if verbose:
-        console.print(f"[cyan]Downloading template...[/cyan]")
-
-    try:
-        with client.stream(
-            "GET",
-            download_url,
-            timeout=60,
-            follow_redirects=True,
-            headers=_github_auth_headers(github_token),
-        ) as response:
-            if response.status_code != 200:
-                # Handle rate-limiting on download as well
-                error_msg = _format_rate_limit_error(response.status_code, response.headers, download_url)
-                if debug:
-                    error_msg += f"\n\n[dim]Response body (truncated 400):[/dim]\n{response.text[:400]}"
-                raise RuntimeError(error_msg)
-            total_size = int(response.headers.get('content-length', 0))
-            with open(zip_path, 'wb') as f:
-                if total_size == 0:
-                    for chunk in response.iter_bytes(chunk_size=8192):
-                        f.write(chunk)
-                else:
-                    if show_progress:
-                        with Progress(
-                            SpinnerColumn(),
-                            TextColumn("[progress.description]{task.description}"),
-                            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                            console=console,
-                        ) as progress:
-                            task = progress.add_task("Downloading...", total=total_size)
-                            downloaded = 0
-                            for chunk in response.iter_bytes(chunk_size=8192):
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                progress.update(task, completed=downloaded)
-                    else:
-                        for chunk in response.iter_bytes(chunk_size=8192):
-                            f.write(chunk)
-    except Exception as e:
-        console.print(f"[red]Error downloading template[/red]")
-        detail = str(e)
-        if zip_path.exists():
-            zip_path.unlink()
-        console.print(Panel(detail, title="Download Error", border_style="red"))
-        raise typer.Exit(1)
-    if verbose:
-        console.print(f"Downloaded: {filename}")
-    metadata = {
-        "filename": filename,
-        "size": file_size,
-        "release": release_data["tag_name"],
-        "asset_url": download_url
-    }
-    return zip_path, metadata
-
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
-    """Download the latest release and extract it to create a new project.
-    Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
-    """
-    current_dir = Path.cwd()
-
-    if tracker:
-        tracker.start("fetch", "contacting GitHub API")
-    try:
-        zip_path, meta = download_template_from_github(
-            ai_assistant,
-            current_dir,
-            script_type=script_type,
-            verbose=verbose and tracker is None,
-            show_progress=(tracker is None),
-            client=client,
-            debug=debug,
-            github_token=github_token
-        )
-        if tracker:
-            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
-            tracker.add("download", "Download template")
-            tracker.complete("download", meta['filename'])
-    except Exception as e:
-        if tracker:
-            tracker.error("fetch", str(e))
-        else:
-            if verbose:
-                console.print(f"[red]Error downloading template:[/red] {e}")
-        raise
-
-    if tracker:
-        tracker.add("extract", "Extract template")
-        tracker.start("extract")
-    elif verbose:
-        console.print("Extracting template...")
-
-    try:
-        if not is_current_dir:
-            project_path.mkdir(parents=True)
-
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_contents = zip_ref.namelist()
-            if tracker:
-                tracker.start("zip-list")
-                tracker.complete("zip-list", f"{len(zip_contents)} entries")
-            elif verbose:
-                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
-
-            if is_current_dir:
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir)
-                    zip_ref.extractall(temp_path)
-
-                    extracted_items = list(temp_path.iterdir())
-                    if tracker:
-                        tracker.start("extracted-summary")
-                        tracker.complete("extracted-summary", f"temp {len(extracted_items)} items")
-                    elif verbose:
-                        console.print(f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]")
-
-                    source_dir = temp_path
-                    if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                        source_dir = extracted_items[0]
-                        if tracker:
-                            tracker.add("flatten", "Flatten nested directory")
-                            tracker.complete("flatten")
-                        elif verbose:
-                            console.print(f"[cyan]Found nested directory structure[/cyan]")
-
-                    for item in source_dir.iterdir():
-                        dest_path = project_path / item.name
-                        if item.is_dir():
-                            if dest_path.exists():
-                                if verbose and not tracker:
-                                    console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
-                                for sub_item in item.rglob('*'):
-                                    if sub_item.is_file():
-                                        rel_path = sub_item.relative_to(item)
-                                        dest_file = dest_path / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        # Special handling for .vscode/settings.json - merge instead of overwrite
-                                        if dest_file.name == "settings.json" and dest_file.parent.name == ".vscode":
-                                            handle_vscode_settings(sub_item, dest_file, rel_path, verbose, tracker)
-                                        else:
-                                            shutil.copy2(sub_item, dest_file)
-                            else:
-                                shutil.copytree(item, dest_path)
-                        else:
-                            if dest_path.exists() and verbose and not tracker:
-                                console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
-                            shutil.copy2(item, dest_path)
-                    if verbose and not tracker:
-                        console.print(f"[cyan]Template files merged into current directory[/cyan]")
-            else:
-                zip_ref.extractall(project_path)
-
-                extracted_items = list(project_path.iterdir())
-                if tracker:
-                    tracker.start("extracted-summary")
-                    tracker.complete("extracted-summary", f"{len(extracted_items)} top-level items")
-                elif verbose:
-                    console.print(f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]")
-                    for item in extracted_items:
-                        console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
-
-                if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                    nested_dir = extracted_items[0]
-                    temp_move_dir = project_path.parent / f"{project_path.name}_temp"
-
-                    shutil.move(str(nested_dir), str(temp_move_dir))
-
-                    project_path.rmdir()
-
-                    shutil.move(str(temp_move_dir), str(project_path))
-                    if tracker:
-                        tracker.add("flatten", "Flatten nested directory")
-                        tracker.complete("flatten")
-                    elif verbose:
-                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
-
-    except Exception as e:
-        if tracker:
-            tracker.error("extract", str(e))
-        else:
-            if verbose:
-                console.print(f"[red]Error extracting template:[/red] {e}")
-                if debug:
-                    console.print(Panel(str(e), title="Extraction Error", border_style="red"))
-
-        if not is_current_dir and project_path.exists():
-            shutil.rmtree(project_path)
-        raise typer.Exit(1)
-    else:
-        if tracker:
-            tracker.complete("extract")
-    finally:
-        if tracker:
-            tracker.add("cleanup", "Remove temporary archive")
-
-        if zip_path.exists():
-            zip_path.unlink()
-            if tracker:
-                tracker.complete("cleanup")
-            elif verbose:
-                console.print(f"Cleaned up: {zip_path.name}")
-
-    return project_path
-
-
-def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
-    if os.name == "nt":
-        return  # Windows: skip silently
-    scripts_root = project_path / ".specify" / "scripts"
-    if not scripts_root.is_dir():
-        return
-    failures: list[str] = []
-    updated = 0
-    for script in scripts_root.rglob("*.sh"):
-        try:
-            if script.is_symlink() or not script.is_file():
-                continue
-            try:
-                with script.open("rb") as f:
-                    if f.read(2) != b"#!":
-                        continue
-            except Exception:
-                continue
-            st = script.stat(); mode = st.st_mode
-            if mode & 0o111:
-                continue
-            new_mode = mode
-            if mode & 0o400: new_mode |= 0o100
-            if mode & 0o040: new_mode |= 0o010
-            if mode & 0o004: new_mode |= 0o001
-            if not (new_mode & 0o100):
-                new_mode |= 0o100
-            os.chmod(script, new_mode)
-            updated += 1
-        except Exception as e:
-            failures.append(f"{script.relative_to(scripts_root)}: {e}")
-    if tracker:
-        detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
-        tracker.add("chmod", "Set script permissions recursively")
-        (tracker.error if failures else tracker.complete)("chmod", detail)
-    else:
-        if updated:
-            console.print(f"[cyan]Updated execute permissions on {updated} script(s) recursively[/cyan]")
-        if failures:
-            console.print("[yellow]Some scripts could not be updated:[/yellow]")
-            for f in failures:
-                console.print(f"  - {f}")
 
 @app.command()
 def init(
-    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, bob, or qoder "),
+    project_name: str = typer.Argument(
+        None,
+        help="Name for your new project directory (optional if using --here, or use '.' for current directory)",
+    ),
+    ai_assistant: str = typer.Option(
+        None,
+        "--ai",
+        help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, bob, or qoder ",
+    ),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -953,11 +100,15 @@ def init(
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
-    github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    github_token: str = typer.Option(
+        None,
+        "--github-token",
+        help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)",
+    ),
 ):
     """
     Initialize a new Specify project from the latest template.
-    
+
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant
@@ -965,7 +116,7 @@ def init(
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
-    
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
@@ -1017,7 +168,7 @@ def init(
                 "Please choose a different project name or remove the existing directory.",
                 title="[red]Directory Conflict[/red]",
                 border_style="red",
-                padding=(1, 2)
+                padding=(1, 2),
             )
             console.print()
             console.print(error_panel)
@@ -1051,11 +202,7 @@ def init(
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
-        selected_ai = select_with_arrows(
-            ai_choices, 
-            "Choose your AI assistant:", 
-            "copilot"
-        )
+        selected_ai = select_with_arrows(ai_choices, "Choose your AI assistant:", "copilot")
 
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG.get(selected_ai)
@@ -1069,7 +216,7 @@ def init(
                     "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
                     title="[red]Agent Detection Error[/red]",
                     border_style="red",
-                    padding=(1, 2)
+                    padding=(1, 2),
                 )
                 console.print()
                 console.print(error_panel)
@@ -1110,7 +257,7 @@ def init(
         ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
-        ("final", "Finalize")
+        ("final", "Finalize"),
     ]:
         tracker.add(key, label)
 
@@ -1124,7 +271,17 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(
+                project_path,
+                selected_ai,
+                selected_script,
+                here,
+                verbose=False,
+                tracker=tracker,
+                client=local_client,
+                debug=debug,
+                github_token=github_token,
+            )
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1165,7 +322,7 @@ def init(
 
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
-    
+
     # Show git error details if initialization failed
     if git_error_message:
         console.print()
@@ -1179,7 +336,7 @@ def init(
             f"[cyan]git commit -m \"Initial commit\"[/cyan]",
             title="[red]Git Initialization Failed[/red]",
             border_style="red",
-            padding=(1, 2)
+            padding=(1, 2),
         )
         console.print(git_error_panel)
 
@@ -1192,10 +349,12 @@ def init(
             f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
             title="[yellow]Agent Folder Security[/yellow]",
             border_style="yellow",
-            padding=(1, 2)
+            padding=(1, 2),
         )
         console.print()
         console.print(security_notice)
+
+    import shlex
 
     steps_lines = []
     if not here:
@@ -1213,7 +372,7 @@ def init(
             cmd = f"setx CODEX_HOME {quoted_path}"
         else:  # Unix-like systems
             cmd = f"export CODEX_HOME={quoted_path}"
-        
+
         steps_lines.append(f"{step_num}. Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]")
         step_num += 1
 
@@ -1225,7 +384,7 @@ def init(
     steps_lines.append("   2.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
     steps_lines.append("   2.5 [cyan]/speckit.implement[/] - Execute implementation")
 
-    steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
+    steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1, 2))
     console.print()
     console.print(steps_panel)
 
@@ -1234,56 +393,65 @@ def init(
         "",
         f"○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
         f"○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
-        f"○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])"
+        f"○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])",
     ]
-    enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
+    enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1, 2))
     console.print()
     console.print(enhancements_panel)
 
+
 @app.command()
 def check():
-    """Check that all required tools are installed."""
+    """Check that required tools are installed."""
     show_banner()
-    console.print("[bold]Checking for installed tools...[/bold]\n")
 
-    tracker = StepTracker("Check Available Tools")
+    tracker = StepTracker("Tool Verification")
 
-    tracker.add("git", "Git version control")
-    git_ok = check_tool("git", tracker=tracker)
+    tools_to_check = ["git"] + list(AGENT_CONFIG.keys())
 
-    agent_results = {}
-    for agent_key, agent_config in AGENT_CONFIG.items():
-        agent_name = agent_config["name"]
-        requires_cli = agent_config["requires_cli"]
+    for tool in tools_to_check:
+        label = AGENT_CONFIG.get(tool, {}).get("name", tool)
+        tracker.add(tool, label)
 
-        tracker.add(agent_key, agent_name)
+    with Live(tracker.render(), console=console, refresh_per_second=4, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
 
-        if requires_cli:
-            agent_results[agent_key] = check_tool(agent_key, tracker=tracker)
-        else:
-            # IDE-based agent - skip CLI check and mark as optional
-            tracker.skip(agent_key, "IDE-based, no CLI check")
-            agent_results[agent_key] = False  # Don't count IDE agents as "found"
-
-    # Check VS Code variants (not in agent config)
-    tracker.add("code", "Visual Studio Code")
-    code_ok = check_tool("code", tracker=tracker)
-
-    tracker.add("code-insiders", "Visual Studio Code Insiders")
-    code_insiders_ok = check_tool("code-insiders", tracker=tracker)
+        for tool in tools_to_check:
+            check_tool(tool, tracker)
 
     console.print(tracker.render())
+    console.print()
 
-    console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
+    # Summary
+    available_tools = [tool for tool in tools_to_check if check_tool(tool)]
+    unavailable_tools = [tool for tool in tools_to_check if not check_tool(tool)]
 
-    if not git_ok:
-        console.print("[dim]Tip: Install git for repository management[/dim]")
+    summary_lines = [f"Available: {len(available_tools)}/{len(tools_to_check)}", ""]
 
-    if not any(agent_results.values()):
-        console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+    if available_tools:
+        summary_lines.append("[green]Available:[/green]")
+        for tool in available_tools:
+            label = AGENT_CONFIG.get(tool, {}).get("name", tool)
+            summary_lines.append(f"  [green]●[/green] {label}")
+
+    if unavailable_tools:
+        summary_lines.append("")
+        summary_lines.append("[yellow]Not Available:[/yellow]")
+        for tool in unavailable_tools:
+            label = AGENT_CONFIG.get(tool, {}).get("name", tool)
+            config = AGENT_CONFIG.get(tool, {})
+            install_info = ""
+            if config.get("install_url"):
+                install_info = f" - Install: {config['install_url']}"
+            summary_lines.append(f"  [yellow]○[/yellow] {label}{install_info}")
+
+    summary_panel = Panel("\n".join(summary_lines), title="Tool Check Summary", border_style="cyan", padding=(1, 2))
+    console.print()
+    console.print(summary_panel)
+
 
 # =============================================================================
-# Process Mining Commands (pm4py)
+# Process Mining Commands
 # =============================================================================
 
 pm_app = typer.Typer(
@@ -1291,847 +459,498 @@ pm_app = typer.Typer(
     help="Process mining commands using pm4py",
     add_completion=False,
 )
-
 app.add_typer(pm_app, name="pm")
 
 
 def _load_event_log(file_path: Path, case_id: str = "case:concept:name", activity: str = "concept:name", timestamp: str = "time:timestamp"):
-    """Load an event log from file (XES or CSV)."""
-    import pm4py
+    """Load event log from CSV/XES file."""
+    try:
+        import pm4py
 
-    suffix = file_path.suffix.lower()
-
-    if suffix == ".xes":
-        return pm4py.read_xes(str(file_path))
-    elif suffix == ".csv":
-        import pandas as pd
-        df = pd.read_csv(file_path)
-        # Format as event log
-        df = pm4py.format_dataframe(df, case_id=case_id, activity_key=activity, timestamp_key=timestamp)
-        return pm4py.convert_to_event_log(df)
-    else:
-        raise ValueError(f"Unsupported file format: {suffix}. Use .xes or .csv")
+        if file_path.suffix.lower() == ".xes":
+            return pm4py.read_xes(str(file_path))
+        elif file_path.suffix.lower() == ".csv":
+            df = pm4py.read_csv(str(file_path))
+            return pm4py.convert_to_event_log(df, case_id=case_id, activity_key=activity, timestamp_key=timestamp)
+        else:
+            raise ValueError(f"Unsupported file format: {file_path.suffix}")
+    except ImportError:
+        raise RuntimeError("pm4py is not installed. Install it with: pip install pm4py")
 
 
 def _save_model(model, output_path: Path, model_type: str = "petri"):
-    """Save a process model to file."""
-    import pm4py
+    """Save a model to file."""
+    try:
+        import pm4py
 
-    suffix = output_path.suffix.lower()
-
-    if model_type == "petri":
-        net, im, fm = model
-        if suffix == ".pnml":
-            pm4py.write_pnml(net, im, fm, str(output_path))
-        elif suffix in [".png", ".svg"]:
-            pm4py.save_vis_petri_net(net, im, fm, str(output_path))
+        if model_type == "petri" and hasattr(model, "__iter__") and len(model) == 3:
+            net, im, fm = model
+            pm4py.write_petri_net(net, str(output_path), im, fm)
+        elif model_type == "process_tree":
+            pm4py.write_process_tree(model, str(output_path))
+        elif hasattr(model, "to_file"):
+            model.to_file(str(output_path))
         else:
-            raise ValueError(f"Unsupported output format for Petri net: {suffix}")
-    elif model_type == "bpmn":
-        if suffix == ".bpmn":
-            pm4py.write_bpmn(model, str(output_path))
-        elif suffix in [".png", ".svg"]:
-            pm4py.save_vis_bpmn(model, str(output_path))
-        else:
-            raise ValueError(f"Unsupported output format for BPMN: {suffix}")
-    elif model_type == "tree":
-        if suffix in [".png", ".svg"]:
-            pm4py.save_vis_process_tree(model, str(output_path))
-        else:
-            raise ValueError(f"Unsupported output format for process tree: {suffix}")
+            raise ValueError(f"Cannot save model of type {type(model)}")
+    except ImportError:
+        raise RuntimeError("pm4py is not installed. Install it with: pip install pm4py")
 
 
 @pm_app.command("discover")
 def pm_discover(
-    input_file: Path = typer.Argument(..., help="Input event log file (.xes or .csv)"),
-    output: Path = typer.Option(None, "--output", "-o", help="Output file for the discovered model (.pnml, .bpmn, .png, .svg)"),
-    algorithm: str = typer.Option("inductive", "--algorithm", "-a", help="Discovery algorithm: alpha, alpha_plus, heuristic, inductive, ilp"),
-    noise_threshold: float = typer.Option(0.0, "--noise", "-n", help="Noise threshold for inductive miner (0.0-1.0)"),
-    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
-    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
-    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+    input_file: Path = typer.Argument(..., help="Input event log file (CSV or XES)"),
+    output_file: Path = typer.Option(None, "--output", "-o", help="Output file for discovered model (default: input_name_model.pnml)"),
+    model_type: str = typer.Option("petri", "--type", "-t", help="Model type: petri or tree"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp"),
 ):
-    """
-    Discover a process model from an event log.
+    """Discover a process model from an event log using the Inductive Miner."""
+    try:
+        import pm4py
 
-    Supports multiple discovery algorithms:
-    - alpha: Classic Alpha Miner
-    - alpha_plus: Alpha+ Miner with improvements
-    - heuristic: Heuristic Miner (handles noise well)
-    - inductive: Inductive Miner (guarantees sound models)
-    - ilp: Integer Linear Programming Miner
-
-    Examples:
-        specify pm discover log.xes -o model.pnml
-        specify pm discover log.csv -a heuristic -o model.png
-        specify pm discover log.xes -a inductive -n 0.2 -o model.svg
-    """
-    import pm4py
-
-    if not input_file.exists():
-        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
-        raise typer.Exit(1)
-
-    tracker = StepTracker("Process Discovery")
-    tracker.add("load", "Load event log")
-    tracker.add("discover", "Discover process model")
-    tracker.add("save", "Save model")
-
-    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
-        tracker.attach_refresh(lambda: live.update(tracker.render()))
-
-        try:
-            tracker.start("load")
-            log = _load_event_log(input_file, case_id, activity, timestamp)
-            num_cases = len(log)
-            num_events = sum(len(trace) for trace in log)
-            tracker.complete("load", f"{num_cases} cases, {num_events} events")
-
-            tracker.start("discover", f"using {algorithm}")
-
-            if algorithm == "alpha":
-                net, im, fm = pm4py.discover_petri_net_alpha(log)
-                model = (net, im, fm)
-                model_type = "petri"
-            elif algorithm == "alpha_plus":
-                net, im, fm = pm4py.discover_petri_net_alpha_plus(log)
-                model = (net, im, fm)
-                model_type = "petri"
-            elif algorithm == "heuristic":
-                net, im, fm = pm4py.discover_petri_net_heuristics(log)
-                model = (net, im, fm)
-                model_type = "petri"
-            elif algorithm == "inductive":
-                net, im, fm = pm4py.discover_petri_net_inductive(log, noise_threshold=noise_threshold)
-                model = (net, im, fm)
-                model_type = "petri"
-            elif algorithm == "ilp":
-                net, im, fm = pm4py.discover_petri_net_ilp(log)
-                model = (net, im, fm)
-                model_type = "petri"
-            else:
-                tracker.error("discover", f"unknown algorithm: {algorithm}")
-                raise typer.Exit(1)
-
-            tracker.complete("discover", algorithm)
-
-            if output:
-                tracker.start("save")
-                _save_model(model, output, model_type)
-                tracker.complete("save", str(output))
-            else:
-                tracker.skip("save", "no output specified")
-
-        except Exception as e:
-            if "load" in [s["key"] for s in tracker.steps if s["status"] == "running"]:
-                tracker.error("load", str(e))
-            elif "discover" in [s["key"] for s in tracker.steps if s["status"] == "running"]:
-                tracker.error("discover", str(e))
-            else:
-                tracker.error("save", str(e))
+        if not input_file.exists():
+            console.print(f"[red]Error:[/red] Input file not found: {input_file}")
             raise typer.Exit(1)
 
-    console.print(tracker.render())
-    console.print("\n[bold green]Process discovery complete.[/bold green]")
+        console.print(f"[cyan]Loading event log from:[/cyan] {input_file}")
+        event_log = _load_event_log(input_file, case_id=case_id, activity=activity, timestamp=timestamp)
 
-    if output:
-        console.print(f"Model saved to: [cyan]{output}[/cyan]")
+        console.print(f"[cyan]Event log loaded:[/cyan] {len(event_log)} cases, {len(event_log.get_events())} events")
+
+        tracker = StepTracker("Process Discovery")
+        tracker.add("discover", "Discover model using Inductive Miner")
+
+        with Live(tracker.render(), console=console, refresh_per_second=2, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
+            tracker.start("discover")
+
+            if model_type == "tree":
+                model = pm4py.discover_process_tree_inductive(event_log)
+            else:
+                model = pm4py.discover_petri_net_inductive(event_log)
+
+            tracker.complete("discover", f"{model_type} net discovered")
+
+            if output_file is None:
+                output_file = input_file.parent / f"{input_file.stem}_model.pnml"
+
+            tracker.add("save", "Save model to file")
+            tracker.start("save")
+
+            _save_model(model, output_file, model_type)
+            tracker.complete("save", str(output_file))
+
+        console.print(tracker.render())
+        console.print(f"\n[bold green]Model discovered and saved to:[/bold green] [cyan]{output_file}[/cyan]")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @pm_app.command("conform")
 def pm_conform(
-    log_file: Path = typer.Argument(..., help="Event log file (.xes or .csv)"),
-    model_file: Path = typer.Argument(..., help="Process model file (.pnml or .bpmn)"),
-    method: str = typer.Option("token", "--method", "-m", help="Conformance method: token, alignment"),
-    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
-    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
-    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
-    detailed: bool = typer.Option(False, "--detailed", "-d", help="Show detailed per-trace results"),
+    input_file: Path = typer.Argument(..., help="Input event log file (CSV or XES)"),
+    model_file: Path = typer.Argument(..., help="Process model file (PNML)"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp"),
 ):
-    """
-    Perform conformance checking between an event log and a process model.
+    """Check log conformance against a process model."""
+    try:
+        import pm4py
 
-    Methods:
-    - token: Token-based replay (faster)
-    - alignment: Alignment-based (more accurate)
-
-    Examples:
-        specify pm conform log.xes model.pnml
-        specify pm conform log.csv model.pnml -m alignment
-        specify pm conform log.xes model.pnml --detailed
-    """
-    import pm4py
-
-    if not log_file.exists():
-        console.print(f"[red]Error:[/red] Log file not found: {log_file}")
-        raise typer.Exit(1)
-
-    if not model_file.exists():
-        console.print(f"[red]Error:[/red] Model file not found: {model_file}")
-        raise typer.Exit(1)
-
-    tracker = StepTracker("Conformance Checking")
-    tracker.add("load-log", "Load event log")
-    tracker.add("load-model", "Load process model")
-    tracker.add("conform", "Perform conformance checking")
-    tracker.add("results", "Compute metrics")
-
-    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
-        tracker.attach_refresh(lambda: live.update(tracker.render()))
-
-        try:
-            tracker.start("load-log")
-            log = _load_event_log(log_file, case_id, activity, timestamp)
-            num_cases = len(log)
-            tracker.complete("load-log", f"{num_cases} cases")
-
-            tracker.start("load-model")
-            suffix = model_file.suffix.lower()
-            if suffix == ".pnml":
-                net, im, fm = pm4py.read_pnml(str(model_file))
-            elif suffix == ".bpmn":
-                bpmn = pm4py.read_bpmn(str(model_file))
-                net, im, fm = pm4py.convert_to_petri_net(bpmn)
-            else:
-                tracker.error("load-model", f"unsupported format: {suffix}")
-                raise typer.Exit(1)
-            tracker.complete("load-model", model_file.name)
-
-            tracker.start("conform", method)
-
-            if method == "token":
-                result = pm4py.conformance_diagnostics_token_based_replay(log, net, im, fm)
-                fitness = pm4py.fitness_token_based_replay(log, net, im, fm)
-            elif method == "alignment":
-                result = pm4py.conformance_diagnostics_alignments(log, net, im, fm)
-                fitness = pm4py.fitness_alignments(log, net, im, fm)
-            else:
-                tracker.error("conform", f"unknown method: {method}")
-                raise typer.Exit(1)
-
-            tracker.complete("conform", method)
-
-            tracker.start("results")
-            precision = pm4py.precision_token_based_replay(log, net, im, fm) if method == "token" else pm4py.precision_alignments(log, net, im, fm)
-            tracker.complete("results")
-
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
+        if not input_file.exists():
+            console.print(f"[red]Error:[/red] Input file not found: {input_file}")
             raise typer.Exit(1)
 
-    console.print(tracker.render())
+        if not model_file.exists():
+            console.print(f"[red]Error:[/red] Model file not found: {model_file}")
+            raise typer.Exit(1)
 
-    # Display metrics
-    metrics_table = Table(title="Conformance Metrics", show_header=True, header_style="bold cyan")
-    metrics_table.add_column("Metric", style="cyan")
-    metrics_table.add_column("Value", style="white")
+        console.print(f"[cyan]Loading event log:[/cyan] {input_file}")
+        event_log = _load_event_log(input_file, case_id=case_id, activity=activity, timestamp=timestamp)
 
-    if isinstance(fitness, dict):
-        fitness_val = fitness.get("average_trace_fitness", fitness.get("log_fitness", 0))
-    else:
-        fitness_val = fitness
+        console.print(f"[cyan]Loading model:[/cyan] {model_file}")
+        net, im, fm = pm4py.read_petri_net(str(model_file))
 
-    metrics_table.add_row("Fitness", f"{fitness_val:.4f}")
-    metrics_table.add_row("Precision", f"{precision:.4f}")
-    metrics_table.add_row("F1-Score", f"{2 * fitness_val * precision / (fitness_val + precision) if (fitness_val + precision) > 0 else 0:.4f}")
+        tracker = StepTracker("Conformance Checking")
+        tracker.add("conformance", "Check conformance")
 
-    console.print()
-    console.print(metrics_table)
+        with Live(tracker.render(), console=console, refresh_per_second=2, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
+            tracker.start("conformance")
 
-    if detailed and result:
+            fitness = pm4py.fitness_petri_net_token_based_replay(event_log, net, im, fm)
+            precision = pm4py.precision_petri_net(event_log, net, im, fm)
+
+            tracker.complete("conformance", f"fitness={fitness:.2%}, precision={precision:.2%}")
+
+        console.print(tracker.render())
         console.print()
-        console.print("[bold]Per-Trace Results (first 10):[/bold]")
-        for i, r in enumerate(result[:10]):
-            if method == "token":
-                status = "fit" if r.get("trace_is_fit", False) else "unfit"
-                console.print(f"  Trace {i+1}: [{('green' if status == 'fit' else 'red')}]{status}[/]")
-            else:
-                cost = r.get("cost", 0)
-                console.print(f"  Trace {i+1}: cost={cost}")
+
+        # Show results
+        result_table = Table(title="Conformance Results", show_header=True, header_style="bold cyan")
+        result_table.add_column("Metric", style="cyan")
+        result_table.add_column("Value", style="white")
+
+        result_table.add_row("Fitness", f"{fitness:.2%}")
+        result_table.add_row("Precision", f"{precision:.2%}")
+
+        console.print(result_table)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @pm_app.command("stats")
 def pm_stats(
-    input_file: Path = typer.Argument(..., help="Input event log file (.xes or .csv)"),
-    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
-    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
-    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
-    show_variants: bool = typer.Option(False, "--variants", "-v", help="Show top process variants"),
-    show_activities: bool = typer.Option(False, "--activities", "-a", help="Show activity statistics"),
+    input_file: Path = typer.Argument(..., help="Input event log file (CSV or XES)"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp"),
 ):
-    """
-    Display statistics about an event log.
+    """Analyze event log statistics."""
+    try:
+        import pm4py
+        import statistics
 
-    Examples:
-        specify pm stats log.xes
-        specify pm stats log.csv --variants --activities
-        specify pm stats log.xes -v -a
-    """
-    import pm4py
-    from pm4py.statistics.traces.generic.log import case_statistics
-    from pm4py.statistics.start_activities.log import get as get_start_activities
-    from pm4py.statistics.end_activities.log import get as get_end_activities
-
-    if not input_file.exists():
-        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
-        raise typer.Exit(1)
-
-    tracker = StepTracker("Event Log Statistics")
-    tracker.add("load", "Load event log")
-    tracker.add("analyze", "Analyze log")
-
-    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
-        tracker.attach_refresh(lambda: live.update(tracker.render()))
-
-        try:
-            tracker.start("load")
-            log = _load_event_log(input_file, case_id, activity, timestamp)
-            tracker.complete("load")
-
-            tracker.start("analyze")
-
-            # Basic statistics
-            num_cases = len(log)
-            num_events = sum(len(trace) for trace in log)
-            avg_trace_length = num_events / num_cases if num_cases > 0 else 0
-
-            # Activities
-            activities = pm4py.get_event_attribute_values(log, "concept:name")
-            num_activities = len(activities)
-
-            # Variants
-            variants = case_statistics.get_variant_statistics(log)
-            num_variants = len(variants)
-
-            # Start and end activities
-            start_activities = get_start_activities.get_start_activities(log)
-            end_activities = get_end_activities.get_end_activities(log)
-
-            tracker.complete("analyze")
-
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
+        if not input_file.exists():
+            console.print(f"[red]Error:[/red] Input file not found: {input_file}")
             raise typer.Exit(1)
 
-    console.print(tracker.render())
+        console.print(f"[cyan]Loading event log:[/cyan] {input_file}")
+        event_log = _load_event_log(input_file, case_id=case_id, activity=activity, timestamp=timestamp)
 
-    # Display basic statistics
-    stats_table = Table(title="Event Log Statistics", show_header=True, header_style="bold cyan")
-    stats_table.add_column("Metric", style="cyan")
-    stats_table.add_column("Value", style="white")
+        tracker = StepTracker("Event Log Analysis")
+        tracker.add("stats", "Calculate statistics")
 
-    stats_table.add_row("Cases", str(num_cases))
-    stats_table.add_row("Events", str(num_events))
-    stats_table.add_row("Activities", str(num_activities))
-    stats_table.add_row("Variants", str(num_variants))
-    stats_table.add_row("Avg. Trace Length", f"{avg_trace_length:.2f}")
-    stats_table.add_row("Start Activities", str(len(start_activities)))
-    stats_table.add_row("End Activities", str(len(end_activities)))
+        with Live(tracker.render(), console=console, refresh_per_second=2, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
+            tracker.start("stats")
 
-    console.print()
-    console.print(stats_table)
+            # Compute stats
+            cases_count = len(event_log)
+            events_count = sum(len(case) for case in event_log)
 
-    if show_activities:
+            trace_lengths = [len(case) for case in event_log]
+            min_trace = min(trace_lengths)
+            max_trace = max(trace_lengths)
+            avg_trace = statistics.mean(trace_lengths)
+
+            activities = set()
+            for case in event_log:
+                for event in case:
+                    if activity in event:
+                        activities.add(event[activity])
+
+            tracker.complete("stats", f"{cases_count} cases, {events_count} events")
+
+        console.print(tracker.render())
         console.print()
-        act_table = Table(title="Activity Statistics (Top 15)", show_header=True, header_style="bold cyan")
-        act_table.add_column("Activity", style="cyan")
-        act_table.add_column("Count", style="white", justify="right")
-        act_table.add_column("Percentage", style="white", justify="right")
 
-        sorted_activities = sorted(activities.items(), key=lambda x: x[1], reverse=True)[:15]
-        for act, count in sorted_activities:
-            pct = (count / num_events) * 100
-            act_table.add_row(str(act), str(count), f"{pct:.1f}%")
+        # Show results
+        stats_table = Table(title="Event Log Statistics", show_header=True, header_style="bold cyan")
+        stats_table.add_column("Metric", style="cyan")
+        stats_table.add_column("Value", style="white")
 
-        console.print(act_table)
+        stats_table.add_row("Total Cases", str(cases_count))
+        stats_table.add_row("Total Events", str(events_count))
+        stats_table.add_row("Unique Activities", str(len(activities)))
+        stats_table.add_row("Min Trace Length", str(min_trace))
+        stats_table.add_row("Max Trace Length", str(max_trace))
+        stats_table.add_row("Avg Trace Length", f"{avg_trace:.2f}")
 
-    if show_variants:
-        console.print()
-        var_table = Table(title="Process Variants (Top 10)", show_header=True, header_style="bold cyan")
-        var_table.add_column("#", style="dim", justify="right")
-        var_table.add_column("Variant", style="cyan", max_width=60)
-        var_table.add_column("Cases", style="white", justify="right")
-        var_table.add_column("Percentage", style="white", justify="right")
+        console.print(stats_table)
 
-        sorted_variants = sorted(variants, key=lambda x: x["count"], reverse=True)[:10]
-        for i, var in enumerate(sorted_variants, 1):
-            variant_str = var.get("variant", str(var))
-            if len(str(variant_str)) > 57:
-                variant_str = str(variant_str)[:57] + "..."
-            pct = (var["count"] / num_cases) * 100
-            var_table.add_row(str(i), str(variant_str), str(var["count"]), f"{pct:.1f}%")
-
-        console.print(var_table)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @pm_app.command("convert")
 def pm_convert(
-    input_file: Path = typer.Argument(..., help="Input file (.xes, .csv, .pnml, .bpmn)"),
-    output_file: Path = typer.Argument(..., help="Output file (.xes, .csv, .pnml, .bpmn)"),
-    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV input)"),
-    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV input)"),
-    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV input)"),
+    input_file: Path = typer.Argument(..., help="Input file (CSV, XES, or PNML)"),
+    output_file: Path = typer.Argument(..., help="Output file (CSV, XES, or PNML)"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp"),
 ):
-    """
-    Convert between different process mining file formats.
+    """Convert between event log and model formats."""
+    try:
+        import pm4py
 
-    Supported conversions:
-    - Event logs: XES <-> CSV
-    - Models: PNML <-> BPMN
-
-    Examples:
-        specify pm convert log.csv log.xes
-        specify pm convert log.xes log.csv
-        specify pm convert model.pnml model.bpmn
-    """
-    import pm4py
-    import pandas as pd
-
-    if not input_file.exists():
-        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
-        raise typer.Exit(1)
-
-    in_suffix = input_file.suffix.lower()
-    out_suffix = output_file.suffix.lower()
-
-    tracker = StepTracker("Format Conversion")
-    tracker.add("load", f"Load {in_suffix}")
-    tracker.add("convert", "Convert format")
-    tracker.add("save", f"Save {out_suffix}")
-
-    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
-        tracker.attach_refresh(lambda: live.update(tracker.render()))
-
-        try:
-            # Event log conversions
-            if in_suffix in [".xes", ".csv"] and out_suffix in [".xes", ".csv"]:
-                tracker.start("load")
-                log = _load_event_log(input_file, case_id, activity, timestamp)
-                tracker.complete("load", f"{len(log)} cases")
-
-                tracker.start("convert")
-                if out_suffix == ".xes":
-                    tracker.complete("convert", "to XES")
-                    tracker.start("save")
-                    pm4py.write_xes(log, str(output_file))
-                else:  # CSV
-                    df = pm4py.convert_to_dataframe(log)
-                    tracker.complete("convert", "to CSV")
-                    tracker.start("save")
-                    df.to_csv(output_file, index=False)
-                tracker.complete("save", output_file.name)
-
-            # Model conversions
-            elif in_suffix == ".pnml" and out_suffix == ".bpmn":
-                tracker.start("load")
-                net, im, fm = pm4py.read_pnml(str(input_file))
-                tracker.complete("load")
-
-                tracker.start("convert")
-                bpmn = pm4py.convert_to_bpmn(net, im, fm)
-                tracker.complete("convert", "to BPMN")
-
-                tracker.start("save")
-                pm4py.write_bpmn(bpmn, str(output_file))
-                tracker.complete("save", output_file.name)
-
-            elif in_suffix == ".bpmn" and out_suffix == ".pnml":
-                tracker.start("load")
-                bpmn = pm4py.read_bpmn(str(input_file))
-                tracker.complete("load")
-
-                tracker.start("convert")
-                net, im, fm = pm4py.convert_to_petri_net(bpmn)
-                tracker.complete("convert", "to Petri Net")
-
-                tracker.start("save")
-                pm4py.write_pnml(net, im, fm, str(output_file))
-                tracker.complete("save", output_file.name)
-
-            else:
-                console.print(f"[red]Error:[/red] Unsupported conversion: {in_suffix} -> {out_suffix}")
-                raise typer.Exit(1)
-
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
+        if not input_file.exists():
+            console.print(f"[red]Error:[/red] Input file not found: {input_file}")
             raise typer.Exit(1)
 
-    console.print(tracker.render())
-    console.print(f"\n[bold green]Conversion complete.[/bold green]")
-    console.print(f"Output saved to: [cyan]{output_file}[/cyan]")
+        console.print(f"[cyan]Loading:[/cyan] {input_file}")
+
+        tracker = StepTracker("Format Conversion")
+        tracker.add("load", "Load file")
+        tracker.add("convert", "Convert format")
+        tracker.add("save", "Save file")
+
+        with Live(tracker.render(), console=console, refresh_per_second=2, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+            tracker.start("load")
+            if input_file.suffix.lower() == ".pnml":
+                net, im, fm = pm4py.read_petri_net(str(input_file))
+                tracker.complete("load", "Petri net")
+            else:
+                event_log = _load_event_log(input_file, case_id=case_id, activity=activity, timestamp=timestamp)
+                tracker.complete("load", f"Event log ({input_file.suffix})")
+
+            tracker.start("convert")
+            out_suffix = output_file.suffix.lower()
+
+            if out_suffix == ".pnml":
+                if input_file.suffix.lower() != ".pnml":
+                    net, im, fm = pm4py.discover_petri_net_inductive(event_log)
+                    tracker.complete("convert", "Petri net model")
+            elif out_suffix in [".csv", ".xes"]:
+                if input_file.suffix.lower() == ".pnml":
+                    tracker.error("convert", "cannot convert model to log")
+                    raise RuntimeError("Cannot convert Petri net model to event log")
+                tracker.complete("convert", out_suffix)
+            else:
+                tracker.error("convert", f"unsupported format: {out_suffix}")
+                raise typer.Exit(1)
+
+            tracker.start("save")
+            if out_suffix == ".csv" and "event_log" in locals():
+                pm4py.write_csv(event_log, str(output_file))
+            elif out_suffix == ".xes" and "event_log" in locals():
+                pm4py.write_xes(event_log, str(output_file))
+            elif out_suffix == ".pnml" and "net" in locals():
+                pm4py.write_petri_net(net, str(output_file), im, fm)
+            else:
+                tracker.error("save", f"unsupported format: {out_suffix}")
+                raise typer.Exit(1)
+            tracker.complete("save", output_file.name)
+
+        console.print(tracker.render())
+        console.print(f"\n[bold green]Conversion complete.[/bold green]")
+        console.print(f"Output: [cyan]{output_file}[/cyan]")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @pm_app.command("visualize")
 def pm_visualize(
-    input_file: Path = typer.Argument(..., help="Input file (.xes, .csv, .pnml, .bpmn)"),
-    output: Path = typer.Option(None, "--output", "-o", help="Output image file (.png, .svg)"),
-    viz_type: str = typer.Option("auto", "--type", "-t", help="Visualization type: auto, dfg, petri, bpmn, tree, heuristic"),
-    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
-    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity (CSV only)"),
-    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+    input_file: Path = typer.Argument(..., help="Input file (event log CSV/XES or model PNML)"),
+    output_file: Path = typer.Option(None, "--output", "-o", help="Output image file (PNG, SVG, etc.)"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp"),
 ):
-    """
-    Visualize a process model or event log.
+    """Visualize a process model or event log."""
+    try:
+        import pm4py
 
-    Visualization types:
-    - auto: Automatic based on input type
-    - dfg: Directly-Follows Graph (from event log)
-    - petri: Petri Net
-    - bpmn: BPMN diagram
-    - tree: Process Tree
-    - heuristic: Heuristic Net
-
-    Examples:
-        specify pm visualize log.xes -o process.png
-        specify pm visualize model.pnml -o model.svg
-        specify pm visualize log.csv -t dfg -o dfg.png
-    """
-    import pm4py
-
-    if not input_file.exists():
-        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
-        raise typer.Exit(1)
-
-    in_suffix = input_file.suffix.lower()
-
-    tracker = StepTracker("Process Visualization")
-    tracker.add("load", "Load input")
-    tracker.add("visualize", "Generate visualization")
-    tracker.add("save", "Save output")
-
-    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
-        tracker.attach_refresh(lambda: live.update(tracker.render()))
-
-        try:
-            tracker.start("load")
-
-            # Determine visualization type
-            if viz_type == "auto":
-                if in_suffix in [".xes", ".csv"]:
-                    viz_type = "dfg"
-                elif in_suffix == ".pnml":
-                    viz_type = "petri"
-                elif in_suffix == ".bpmn":
-                    viz_type = "bpmn"
-
-            # Load based on type
-            if in_suffix in [".xes", ".csv"]:
-                log = _load_event_log(input_file, case_id, activity, timestamp)
-                tracker.complete("load", f"{len(log)} cases")
-            elif in_suffix == ".pnml":
-                net, im, fm = pm4py.read_pnml(str(input_file))
-                tracker.complete("load", "Petri Net")
-            elif in_suffix == ".bpmn":
-                bpmn = pm4py.read_bpmn(str(input_file))
-                tracker.complete("load", "BPMN")
-            else:
-                tracker.error("load", f"unsupported format: {in_suffix}")
-                raise typer.Exit(1)
-
-            tracker.start("visualize", viz_type)
-
-            if output:
-                tracker.complete("visualize")
-                tracker.start("save")
-
-                if viz_type == "dfg":
-                    dfg, start_activities, end_activities = pm4py.discover_dfg(log)
-                    pm4py.save_vis_dfg(dfg, start_activities, end_activities, str(output))
-                elif viz_type == "petri":
-                    if in_suffix in [".xes", ".csv"]:
-                        net, im, fm = pm4py.discover_petri_net_inductive(log)
-                    pm4py.save_vis_petri_net(net, im, fm, str(output))
-                elif viz_type == "bpmn":
-                    if in_suffix in [".xes", ".csv"]:
-                        bpmn = pm4py.discover_bpmn_inductive(log)
-                    pm4py.save_vis_bpmn(bpmn, str(output))
-                elif viz_type == "tree":
-                    if in_suffix in [".xes", ".csv"]:
-                        tree = pm4py.discover_process_tree_inductive(log)
-                        pm4py.save_vis_process_tree(tree, str(output))
-                    else:
-                        console.print("[red]Error:[/red] Process tree requires event log input")
-                        raise typer.Exit(1)
-                elif viz_type == "heuristic":
-                    if in_suffix in [".xes", ".csv"]:
-                        heu_net = pm4py.discover_heuristics_net(log)
-                        pm4py.save_vis_heuristics_net(heu_net, str(output))
-                    else:
-                        console.print("[red]Error:[/red] Heuristic net requires event log input")
-                        raise typer.Exit(1)
-                else:
-                    tracker.error("save", f"unknown viz type: {viz_type}")
-                    raise typer.Exit(1)
-
-                tracker.complete("save", output.name)
-            else:
-                # View in browser/window
-                tracker.complete("visualize")
-                tracker.skip("save", "displaying inline")
-
-                if viz_type == "dfg":
-                    dfg, start_activities, end_activities = pm4py.discover_dfg(log)
-                    pm4py.view_dfg(dfg, start_activities, end_activities)
-                elif viz_type == "petri":
-                    if in_suffix in [".xes", ".csv"]:
-                        net, im, fm = pm4py.discover_petri_net_inductive(log)
-                    pm4py.view_petri_net(net, im, fm)
-                elif viz_type == "bpmn":
-                    if in_suffix in [".xes", ".csv"]:
-                        bpmn = pm4py.discover_bpmn_inductive(log)
-                    pm4py.view_bpmn(bpmn)
-
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
+        if not input_file.exists():
+            console.print(f"[red]Error:[/red] Input file not found: {input_file}")
             raise typer.Exit(1)
 
-    console.print(tracker.render())
+        console.print(f"[cyan]Loading:[/cyan] {input_file}")
 
-    if output:
-        console.print(f"\n[bold green]Visualization saved.[/bold green]")
-        console.print(f"Output: [cyan]{output}[/cyan]")
-    else:
-        console.print("\n[bold green]Visualization displayed.[/bold green]")
+        tracker = StepTracker("Visualization")
+        tracker.add("load", "Load file")
+        tracker.add("visualize", "Generate visualization")
+
+        with Live(tracker.render(), console=console, refresh_per_second=2, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+            tracker.start("load")
+            if input_file.suffix.lower() == ".pnml":
+                net, im, fm = pm4py.read_petri_net(str(input_file))
+                tracker.complete("load", "Petri net")
+
+                tracker.start("visualize")
+                gviz = pm4py.vis_petri_net(net, im, fm)
+                tracker.complete("visualize", "Petri net diagram")
+            else:
+                event_log = _load_event_log(input_file, case_id=case_id, activity=activity, timestamp=timestamp)
+                tracker.complete("load", f"Event log ({input_file.suffix})")
+
+                tracker.start("visualize")
+                process_tree = pm4py.discover_process_tree_inductive(event_log)
+                gviz = pm4py.vis_process_tree(process_tree)
+                tracker.complete("visualize", "Process tree diagram")
+
+            if output_file is None:
+                output_file = input_file.parent / f"{input_file.stem}_viz"
+
+            gviz.render(str(output_file), format="png", cleanup=True)
+
+        console.print(tracker.render())
+        console.print(f"\n[bold green]Visualization saved:[/bold green] [cyan]{output_file}.png[/cyan]")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @pm_app.command("filter")
 def pm_filter(
-    input_file: Path = typer.Argument(..., help="Input event log file (.xes or .csv)"),
-    output_file: Path = typer.Argument(..., help="Output event log file (.xes or .csv)"),
-    start_activities: str = typer.Option(None, "--start", "-s", help="Filter by start activities (comma-separated)"),
-    end_activities: str = typer.Option(None, "--end", "-e", help="Filter by end activities (comma-separated)"),
-    activities: str = typer.Option(None, "--activities", "-a", help="Keep only these activities (comma-separated)"),
-    min_events: int = typer.Option(None, "--min-events", help="Minimum number of events per case"),
-    max_events: int = typer.Option(None, "--max-events", help="Maximum number of events per case"),
-    top_variants: int = typer.Option(None, "--top-variants", "-v", help="Keep only top N variants"),
-    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID (CSV only)"),
-    activity_col: str = typer.Option("concept:name", "--activity-col", help="Column name for activity (CSV only)"),
-    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp (CSV only)"),
+    input_file: Path = typer.Argument(..., help="Input event log file (CSV or XES)"),
+    output_file: Path = typer.Option(None, "--output", "-o", help="Output file (default: input_name_filtered.csv)"),
+    min_support: float = typer.Option(0.1, "--min-support", "-s", help="Minimum support threshold (0.0-1.0)"),
+    max_duration: int = typer.Option(None, "--max-duration", "-d", help="Maximum trace duration in seconds"),
+    case_id: str = typer.Option("case:concept:name", "--case-id", help="Column name for case ID"),
+    activity: str = typer.Option("concept:name", "--activity", help="Column name for activity"),
+    timestamp: str = typer.Option("time:timestamp", "--timestamp", help="Column name for timestamp"),
 ):
-    """
-    Filter an event log based on various criteria.
+    """Filter an event log by support and other criteria."""
+    try:
+        import pm4py
 
-    Filters can be combined. All specified filters are applied in sequence.
-
-    Examples:
-        specify pm filter log.xes filtered.xes --start "Start,Begin"
-        specify pm filter log.csv filtered.csv --min-events 5 --max-events 50
-        specify pm filter log.xes filtered.xes --top-variants 10
-        specify pm filter log.xes filtered.xes -a "Activity A,Activity B,Activity C"
-    """
-    import pm4py
-    from pm4py.algo.filtering.log.variants import variants_filter
-    from pm4py.algo.filtering.log.start_activities import start_activities_filter
-    from pm4py.algo.filtering.log.end_activities import end_activities_filter
-    from pm4py.algo.filtering.log.attributes import attributes_filter
-
-    if not input_file.exists():
-        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
-        raise typer.Exit(1)
-
-    tracker = StepTracker("Event Log Filtering")
-    tracker.add("load", "Load event log")
-    tracker.add("filter", "Apply filters")
-    tracker.add("save", "Save filtered log")
-
-    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
-        tracker.attach_refresh(lambda: live.update(tracker.render()))
-
-        try:
-            tracker.start("load")
-            log = _load_event_log(input_file, case_id, activity_col, timestamp)
-            original_cases = len(log)
-            original_events = sum(len(trace) for trace in log)
-            tracker.complete("load", f"{original_cases} cases, {original_events} events")
-
-            tracker.start("filter")
-            filters_applied = []
-
-            # Filter by start activities
-            if start_activities:
-                start_acts = [a.strip() for a in start_activities.split(",")]
-                log = start_activities_filter.apply(log, start_acts)
-                filters_applied.append(f"start={len(start_acts)}")
-
-            # Filter by end activities
-            if end_activities:
-                end_acts = [a.strip() for a in end_activities.split(",")]
-                log = end_activities_filter.apply(log, end_acts)
-                filters_applied.append(f"end={len(end_acts)}")
-
-            # Filter by specific activities
-            if activities:
-                acts = [a.strip() for a in activities.split(",")]
-                log = attributes_filter.apply(log, acts, parameters={attributes_filter.Parameters.ATTRIBUTE_KEY: "concept:name", attributes_filter.Parameters.POSITIVE: True})
-                filters_applied.append(f"activities={len(acts)}")
-
-            # Filter by trace length
-            if min_events is not None or max_events is not None:
-                filtered_log = pm4py.objects.log.obj.EventLog()
-                for trace in log:
-                    trace_len = len(trace)
-                    if min_events is not None and trace_len < min_events:
-                        continue
-                    if max_events is not None and trace_len > max_events:
-                        continue
-                    filtered_log.append(trace)
-                log = filtered_log
-                filters_applied.append(f"length={min_events or 0}-{max_events or 'inf'}")
-
-            # Filter by top variants
-            if top_variants:
-                log = variants_filter.filter_log_variants_top_k(log, top_variants)
-                filters_applied.append(f"top_variants={top_variants}")
-
-            filtered_cases = len(log)
-            filtered_events = sum(len(trace) for trace in log)
-            tracker.complete("filter", ", ".join(filters_applied) if filters_applied else "none")
-
-            tracker.start("save")
-            out_suffix = output_file.suffix.lower()
-            if out_suffix == ".xes":
-                pm4py.write_xes(log, str(output_file))
-            elif out_suffix == ".csv":
-                df = pm4py.convert_to_dataframe(log)
-                df.to_csv(output_file, index=False)
-            else:
-                tracker.error("save", f"unsupported format: {out_suffix}")
-                raise typer.Exit(1)
-            tracker.complete("save", output_file.name)
-
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
+        if not input_file.exists():
+            console.print(f"[red]Error:[/red] Input file not found: {input_file}")
             raise typer.Exit(1)
 
-    console.print(tracker.render())
+        console.print(f"[cyan]Loading event log:[/cyan] {input_file}")
+        event_log = _load_event_log(input_file, case_id=case_id, activity=activity, timestamp=timestamp)
 
-    # Show filtering summary
-    summary_table = Table(title="Filtering Summary", show_header=True, header_style="bold cyan")
-    summary_table.add_column("Metric", style="cyan")
-    summary_table.add_column("Before", style="white", justify="right")
-    summary_table.add_column("After", style="white", justify="right")
-    summary_table.add_column("Reduction", style="yellow", justify="right")
+        tracker = StepTracker("Event Log Filtering")
+        tracker.add("filter", "Filter event log")
 
-    cases_pct = ((original_cases - filtered_cases) / original_cases * 100) if original_cases > 0 else 0
-    events_pct = ((original_events - filtered_events) / original_events * 100) if original_events > 0 else 0
+        with Live(tracker.render(), console=console, refresh_per_second=2, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
 
-    summary_table.add_row("Cases", str(original_cases), str(filtered_cases), f"-{cases_pct:.1f}%")
-    summary_table.add_row("Events", str(original_events), str(filtered_events), f"-{events_pct:.1f}%")
+            tracker.start("filter")
 
-    console.print()
-    console.print(summary_table)
-    console.print(f"\nFiltered log saved to: [cyan]{output_file}[/cyan]")
+            # Apply filtering
+            if min_support > 0:
+                filtered_log = pm4py.filter_log_events_percentage(event_log, min_support)
+            else:
+                filtered_log = event_log
+
+            original_size = len(event_log)
+            filtered_size = len(filtered_log)
+
+            tracker.complete("filter", f"reduced to {filtered_size}/{original_size} cases")
+
+            if output_file is None:
+                output_file = input_file.parent / f"{input_file.stem}_filtered.csv"
+
+            tracker.add("save", "Save filtered log")
+            tracker.start("save")
+
+            pm4py.write_csv(filtered_log, str(output_file))
+            tracker.complete("save", output_file.name)
+
+        console.print(tracker.render())
+        console.print(f"\n[bold green]Filtering complete.[/bold green]")
+        console.print(f"Original cases: {original_size}, Filtered cases: {filtered_size}")
+        console.print(f"Output: [cyan]{output_file}[/cyan]")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @pm_app.command("sample")
 def pm_sample(
-    output_file: Path = typer.Argument(..., help="Output event log file (.xes or .csv)"),
+    output_file: Path = typer.Argument(..., help="Output event log file (CSV or XES)"),
     cases: int = typer.Option(100, "--cases", "-c", help="Number of cases to generate"),
-    activities: int = typer.Option(10, "--activities", "-a", help="Number of unique activities"),
-    min_trace_length: int = typer.Option(3, "--min-length", help="Minimum trace length"),
-    max_trace_length: int = typer.Option(15, "--max-length", help="Maximum trace length"),
-    seed: int = typer.Option(None, "--seed", "-s", help="Random seed for reproducibility"),
+    activities: int = typer.Option(5, "--activities", "-a", help="Number of activities"),
+    min_trace_length: int = typer.Option(3, "--min-trace", help="Minimum events per trace"),
+    max_trace_length: int = typer.Option(10, "--max-trace", help="Maximum events per trace"),
+    seed: int = typer.Option(None, "--seed", help="Random seed for reproducibility"),
 ):
-    """
-    Generate a sample event log for testing and experimentation.
+    """Generate a sample event log for testing."""
+    try:
+        import pm4py
+        import random
+        from datetime import datetime, timedelta
 
-    Creates a synthetic event log with configurable parameters.
+        if output_file.exists():
+            console.print(f"[yellow]Warning:[/yellow] Output file exists, will overwrite: {output_file}")
 
-    Examples:
-        specify pm sample sample.xes
-        specify pm sample sample.csv --cases 500 --activities 20
-        specify pm sample sample.xes -c 1000 --seed 42
-    """
-    import pm4py
-    import pandas as pd
-    import random
-    from datetime import datetime, timedelta
+        tracker = StepTracker("Sample Log Generation")
+        tracker.add("generate", "Generate sample log")
+        tracker.add("save", "Save to file")
 
-    if seed is not None:
-        random.seed(seed)
+        with Live(tracker.render(), console=console, refresh_per_second=2, transient=True) as live:
+            tracker.attach_refresh(lambda: live.update(tracker.render()))
 
-    tracker = StepTracker("Generate Sample Log")
-    tracker.add("generate", "Generate traces")
-    tracker.add("save", "Save log")
-
-    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
-        tracker.attach_refresh(lambda: live.update(tracker.render()))
-
-        try:
             tracker.start("generate")
 
-            # Generate activity names
-            activity_names = [f"Activity_{chr(65 + i)}" if i < 26 else f"Activity_{i}" for i in range(activities)]
+            if seed is not None:
+                random.seed(seed)
 
-            # Generate traces
-            data = []
-            base_time = datetime(2024, 1, 1, 8, 0, 0)
+            event_log = []
+            activity_names = [f"Activity_{i+1}" for i in range(activities)]
+            start_date = datetime(2024, 1, 1)
 
-            for case_idx in range(cases):
-                case_id = f"case_{case_idx + 1:05d}"
+            total_events = 0
+            for case_id in range(cases):
                 trace_length = random.randint(min_trace_length, max_trace_length)
-
-                # Start with first activity more likely
-                current_time = base_time + timedelta(days=case_idx, hours=random.randint(0, 8))
+                current_time = start_date + timedelta(days=case_id)
 
                 for event_idx in range(trace_length):
-                    # Weighted selection - earlier activities more common at start
-                    if event_idx == 0:
-                        activity = activity_names[0]  # Always start with first activity
-                    elif event_idx == trace_length - 1:
-                        activity = activity_names[-1]  # Always end with last activity
-                    else:
-                        activity = random.choice(activity_names[1:-1])
+                    event = {
+                        "case:concept:name": f"Case_{case_id+1:05d}",
+                        "concept:name": random.choice(activity_names),
+                        "time:timestamp": current_time.isoformat(),
+                    }
+                    event_log.append(event)
+                    current_time += timedelta(hours=random.randint(1, 8))
+                    total_events += 1
 
-                    data.append({
-                        "case:concept:name": case_id,
-                        "concept:name": activity,
-                        "time:timestamp": current_time,
-                    })
+            tracker.complete("generate", f"generated {total_events} events")
 
-                    current_time += timedelta(minutes=random.randint(5, 120))
-
-            # Create dataframe and convert to event log
-            df = pd.DataFrame(data)
-            df = pm4py.format_dataframe(df, case_id="case:concept:name", activity_key="concept:name", timestamp_key="time:timestamp")
-            log = pm4py.convert_to_event_log(df)
-
-            total_events = len(data)
-            tracker.complete("generate", f"{cases} cases, {total_events} events")
-
+            tracker.add("save", "Save to file")
             tracker.start("save")
+
             out_suffix = output_file.suffix.lower()
-            if out_suffix == ".xes":
-                pm4py.write_xes(log, str(output_file))
-            elif out_suffix == ".csv":
-                df.to_csv(output_file, index=False)
+            if out_suffix == ".csv":
+                import csv
+
+                with open(output_file, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=["case:concept:name", "concept:name", "time:timestamp"])
+                    writer.writeheader()
+                    writer.writerows(event_log)
+            elif out_suffix == ".xes":
+                # For XES, we need to create a proper log object
+                import pandas as pd
+
+                df = pd.DataFrame(event_log)
+                xes_log = pm4py.convert_to_event_log(df)
+                pm4py.write_xes(xes_log, str(output_file))
             else:
                 tracker.error("save", f"unsupported format: {out_suffix}")
                 raise typer.Exit(1)
             tracker.complete("save", output_file.name)
 
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1)
+        console.print(tracker.render())
+        console.print(f"\n[bold green]Sample log generated.[/bold green]")
+        console.print(f"Output: [cyan]{output_file}[/cyan]")
 
-    console.print(tracker.render())
-    console.print(f"\n[bold green]Sample log generated.[/bold green]")
-    console.print(f"Output: [cyan]{output_file}[/cyan]")
+        # Show summary
+        summary_table = Table(title="Generated Log Summary", show_header=True, header_style="bold cyan")
+        summary_table.add_column("Parameter", style="cyan")
+        summary_table.add_column("Value", style="white")
 
-    # Show summary
-    summary_table = Table(title="Generated Log Summary", show_header=True, header_style="bold cyan")
-    summary_table.add_column("Parameter", style="cyan")
-    summary_table.add_column("Value", style="white")
+        summary_table.add_row("Cases", str(cases))
+        summary_table.add_row("Events", str(total_events))
+        summary_table.add_row("Activities", str(activities))
+        summary_table.add_row("Trace Length", f"{min_trace_length}-{max_trace_length}")
+        if seed is not None:
+            summary_table.add_row("Seed", str(seed))
 
-    summary_table.add_row("Cases", str(cases))
-    summary_table.add_row("Events", str(total_events))
-    summary_table.add_row("Activities", str(activities))
-    summary_table.add_row("Trace Length", f"{min_trace_length}-{max_trace_length}")
-    if seed is not None:
-        summary_table.add_row("Seed", str(seed))
+        console.print()
+        console.print(summary_table)
 
-    console.print()
-    console.print(summary_table)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 # =============================================================================
@@ -2142,11 +961,8 @@ def pm_sample(
 @app.command()
 def version():
     """Display version and system information."""
-    import platform
-    import importlib.metadata
-
     show_banner()
-    
+
     # Get CLI version from package metadata
     cli_version = "unknown"
     try:
@@ -2155,6 +971,7 @@ def version():
         # Fallback: try reading from pyproject.toml if running from source
         try:
             import tomllib
+
             pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
             if pyproject_path.exists():
                 with open(pyproject_path, "rb") as f:
@@ -2162,15 +979,15 @@ def version():
                     cli_version = data.get("project", {}).get("version", "unknown")
         except Exception:
             pass
-    
+
     # Fetch latest template release version
     repo_owner = "github"
     repo_name = "spec-kit"
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-    
+
     template_version = "unknown"
     release_date = "unknown"
-    
+
     try:
         response = client.get(
             api_url,
@@ -2188,7 +1005,7 @@ def version():
             if release_date != "unknown":
                 # Format the date nicely
                 try:
-                    dt = datetime.fromisoformat(release_date.replace('Z', '+00:00'))
+                    dt = datetime.fromisoformat(release_date.replace("Z", "+00:00"))
                     release_date = dt.strftime("%Y-%m-%d")
                 except Exception:
                     pass
@@ -2212,15 +1029,16 @@ def version():
         info_table,
         title="[bold cyan]Specify CLI Information[/bold cyan]",
         border_style="cyan",
-        padding=(1, 2)
+        padding=(1, 2),
     )
 
     console.print(panel)
     console.print()
 
+
 def main():
     app()
 
+
 if __name__ == "__main__":
     main()
-
