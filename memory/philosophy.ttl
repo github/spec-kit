@@ -1,0 +1,221 @@
+@prefix sk: <http://github.com/github/spec-kit#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# ============================================================================
+# Spec-Kit Constitutional Principles
+# ============================================================================
+# Core philosophical principles that drive Specification-Driven Development
+# These principles are immutable and form the architectural DNA of the system
+# ============================================================================
+
+sk:SDDPhilosophy
+  a sk:Documentation ;
+  rdfs:label "Specification-Driven Development Philosophy" ;
+  sk:documentTitle "Specification-Driven Development (SDD)" ;
+  sk:documentDescription "Core philosophical principles that drive specification-driven development and guide all spec-kit development"@en ;
+  sk:documentVersion "1.0" ;
+  sk:createdDate "2024-01-10T00:00:00Z"^^xsd:dateTime ;
+  sk:lastUpdatedDate "2025-12-21T00:00:00Z"^^xsd:dateTime ;
+  sk:authorName "Spec-Kit Contributors" ;
+  sk:maintenanceStatus "Current" ;
+  sk:audience "Development teams, architects, and stakeholders adopting SDD methodology"@en ;
+  sk:category "Philosophy" ;
+  .
+
+# ============================================================================
+# CORE SDD PRINCIPLES (6 principles)
+# ============================================================================
+
+# Principle 1: Specifications as the Lingua Franca
+sk:Principle_1_SpecificationsAsLinguaFranca
+  a sk:Principle ;
+  rdfs:label "Specifications as the Lingua Franca" ;
+  sk:documentTitle "Specifications as the Lingua Franca"@en ;
+  sk:documentDescription "The specification becomes the primary artifact. Code becomes its expression in a particular language and framework. Maintaining software means evolving specifications."@en ;
+  sk:principleId "SPECIFICATIONS_LINGUA_FRANCA" ;
+  sk:principleIndex 1 ;
+  sk:rationale "For decades, code has been king and specifications served code. SDD inverts this power structure - code serves specifications, not the other way around. The Product Requirements Document (PRD) isn't merely a guide for implementation; it's the source that generates implementation. By making specifications primary, we eliminate the chronic gap between intent and implementation that has plagued software development since its inception."@en ;
+  sk:examples "When a product manager updates acceptance criteria in the PRD, implementation plans automatically flag affected technical decisions. When an architect discovers a better pattern, the PRD updates to reflect new possibilities. The code is always a faithful reflection of the current specification, never diverging from intent."@en ;
+  sk:violations "Accepting code as the source of truth and treating specifications as secondary documents that become stale. Making architectural decisions in code first and documenting them afterward. Allowing code and specification to diverge over time."@en ;
+  .
+
+# Principle 2: Executable Specifications
+sk:Principle_2_ExecutableSpecifications
+  a sk:Principle ;
+  rdfs:label "Executable Specifications" ;
+  sk:documentTitle "Executable Specifications"@en ;
+  sk:documentDescription "Specifications must be precise, complete, and unambiguous enough to generate working systems. This eliminates the gap between intent and implementation."@en ;
+  sk:principleId "EXECUTABLE_SPECIFICATIONS" ;
+  sk:principleIndex 2 ;
+  sk:rationale "Traditional specifications are written for human consumption and inevitably contain ambiguities that developers must interpret. SDD requires specifications to be machine-executable - precise enough that an AI system can deterministically generate working code. This precision eliminates the gap because when specifications generate implementation, there is no room for misinterpretation - only transformation."@en ;
+  sk:examples "A user story specifies not just the happy path but every edge case with measurable acceptance criteria. A data model doesn't just describe entities but includes validation rules and constraints. An API contract specifies request/response schemas, error conditions, and example interactions - all machine-readable and testable."@en ;
+  sk:violations "Writing vague requirements that require developer interpretation. Omitting edge cases or error conditions. Creating specifications that cannot be validated against generated code. Treating specifications as high-level guidance rather than executable contracts."@en ;
+  .
+
+# Principle 3: Continuous Refinement
+sk:Principle_3_ContinuousRefinement
+  a sk:Principle ;
+  rdfs:label "Continuous Refinement" ;
+  sk:documentTitle "Continuous Refinement"@en ;
+  sk:documentDescription "Consistency validation happens continuously, not as a one-time gate. AI analyzes specifications for ambiguity, contradictions, and gaps as an ongoing process."@en ;
+  sk:principleId "CONTINUOUS_REFINEMENT" ;
+  sk:principleIndex 3 ;
+  sk:rationale "Traditional development treats validation as a discrete phase - requirements review, design review, code review. This sequential approach misses ambiguities that only emerge during implementation. Continuous refinement leverages AI to analyze specifications at every step, identifying contradictions between requirements, conflicts with organizational constraints, and gaps in edge case coverage before they become costly rework."@en ;
+  sk:examples "As user stories are written, AI immediately flags conflicts with existing requirements. When architecture decisions are made, the system validates them against performance requirements and simplicity constraints. As code is generated, discrepancies between specification and implementation immediately surface."@en ;
+  sk:violations "Treating specification review as a one-time checkpoint. Waiting until implementation to discover specification ambiguities. Allowing contradictions between different specification sections. Treating validation as a phase that ends rather than a continuous activity."@en ;
+  .
+
+# Principle 4: Research-Driven Context
+sk:Principle_4_ResearchDrivenContext
+  a sk:Principle ;
+  rdfs:label "Research-Driven Context" ;
+  sk:documentTitle "Research-Driven Context"@en ;
+  sk:documentDescription "Research agents gather critical context throughout the specification process, investigating technical options, performance implications, and organizational constraints."@en ;
+  sk:principleId "RESEARCH_DRIVEN_CONTEXT" ;
+  sk:principleIndex 4 ;
+  sk:rationale "Specifications exist in context - organizational constraints, technology landscape, security requirements, and performance targets. Rather than making assumptions, research agents actively investigate this context and feed findings back into specifications. This ensures specifications are grounded in reality and account for real-world constraints from the start."@en ;
+  sk:examples "When specifying a database solution, research agents investigate library compatibility, performance benchmarks for your data volume, and security implications. When defining API contracts, they research relevant standards and similar implementations. When planning deployment, they identify your company's database standards, authentication requirements, and policies that automatically integrate into specifications."@en ;
+  sk:violations "Making architectural decisions without investigating technical implications. Assuming implementation approaches without validating they work in your environment. Ignoring organizational policies and constraints until implementation. Treating research as optional rather than integral to specification."@en ;
+  .
+
+# Principle 5: Bidirectional Feedback
+sk:Principle_5_BidirectionalFeedback
+  a sk:Principle ;
+  rdfs:label "Bidirectional Feedback" ;
+  sk:documentTitle "Bidirectional Feedback"@en ;
+  sk:documentDescription "Production reality informs specification evolution. Metrics, incidents, and operational learnings become inputs for specification refinement."@en ;
+  sk:principleId "BIDIRECTIONAL_FEEDBACK" ;
+  sk:principleIndex 5 ;
+  sk:rationale "SDD doesn't end when code is deployed. Production reality - metrics, incidents, user behavior, performance bottlenecks - feeds back into specification evolution. When a performance bottleneck occurs, it becomes a new non-functional requirement. When a security vulnerability emerges, it becomes a constraint that affects all future generations. This feedback loop transforms development from a linear process into a continuous spiral of understanding and improvement."@en ;
+  sk:examples "A production outage due to database connection pooling becomes a specification requirement for future implementations. High memory usage identified in metrics becomes a performance constraint. User complaints about API response times trigger specification changes to support caching strategies."@en ;
+  sk:violations "Treating production issues as one-time hotfixes rather than specification updates. Allowing learnings from production to disappear rather than informing future generations. Separating operational concerns from specification evolution. Building feedback loops only for initial development."@en ;
+  .
+
+# Principle 6: Branching for Exploration
+sk:Principle_6_BranchingForExploration
+  a sk:Principle ;
+  rdfs:label "Branching for Exploration" ;
+  sk:documentTitle "Branching for Exploration"@en ;
+  sk:documentDescription "Generate multiple implementation approaches from the same specification to explore different optimization targets - performance, maintainability, user experience, cost."@en ;
+  sk:principleId "BRANCHING_EXPLORATION" ;
+  sk:principleIndex 6 ;
+  sk:rationale "Because code is generated from specifications, creating alternative implementations doesn't require rewriting the specification. You can generate multiple parallel implementations optimizing for different targets from the same source specification. This enables true exploratory development - testing whether optimization approaches work in practice before committing."@en ;
+  sk:examples "From the same user authentication specification, generate one implementation optimized for performance (using Redis caching), one for maintainability (with comprehensive logging), and one for cost (using simpler infrastructure). Compare approaches and choose or blend the best aspects. This can amplify exploration and creativity, and support starting-over easily."@en ;
+  sk:violations "Treating implementation as monolithic - one specification generates one implementation. Avoiding architectural exploration because rewriting code is expensive. Locking in initial technology choices without testing alternatives. Not leveraging generated code to rapidly experiment with different approaches."@en ;
+  .
+
+# ============================================================================
+# CONSTITUTIONAL PRINCIPLES (6 Constitutional Articles)
+# ============================================================================
+
+# Article I: Library-First Principle
+sk:Constitutional_1_LibraryFirst
+  a sk:Principle ;
+  rdfs:label "Constitutional Article I: Library-First Principle" ;
+  sk:documentTitle "Article I: Library-First Principle"@en ;
+  sk:documentDescription "Every feature must begin as a standalone library with no exceptions. This forces modular design from the start."@en ;
+  sk:principleId "LIBRARY_FIRST" ;
+  sk:principleIndex 10 ;
+  sk:rationale "The Library-First principle ensures that specifications generate modular, reusable code rather than monolithic applications. When the LLM generates an implementation plan, it must structure features as libraries with clear boundaries and minimal dependencies. This enforces modularity at the architectural level."@en ;
+  sk:examples "A chat feature is implemented first as a standalone chat-library that can be used in any application context. A payment processor is a reusable payment-library with clean interfaces. Each library is independently testable, versionable, and deployable."@en ;
+  sk:violations "Implementing features directly within application code. Monolithic implementations that tightly couple features. Creating features with implicit dependencies on application infrastructure. Avoiding library extraction until late in development."@en ;
+  .
+
+# Article II: CLI Interface Mandate
+sk:Constitutional_2_CLIInterface
+  a sk:Principle ;
+  rdfs:label "Constitutional Article II: CLI Interface Mandate" ;
+  sk:documentTitle "Article II: CLI Interface Mandate"@en ;
+  sk:documentDescription "Every library must expose its functionality through a command-line interface. All CLI interfaces must accept text input and produce text output, supporting JSON for structured data."@en ;
+  sk:principleId "CLI_INTERFACE" ;
+  sk:principleIndex 11 ;
+  sk:rationale "The CLI Interface Mandate enforces observability and testability. No functionality can hide inside opaque classes - everything must be accessible and verifiable through text-based interfaces. This makes libraries inspectable, debuggable, and composable with other tools."@en ;
+  sk:examples "A data processing library exposes operations via CLI: `process-data --input data.json --filter active`. A networking library provides: `network-call --method POST --url api.example.com --body '{...}'`. Libraries become UNIX-style tools that can be piped and composed."@en ;
+  sk:violations "Exposing functionality only through programmatic APIs. Creating black-box components without text-based inspection interfaces. Hidden side effects or state changes. Libraries that cannot be tested or debugged without running the full application."@en ;
+  .
+
+# Article III: Test-First Imperative
+sk:Constitutional_3_TestFirst
+  a sk:Principle ;
+  rdfs:label "Constitutional Article III: Test-First Imperative" ;
+  sk:documentTitle "Article III: Test-First Imperative"@en ;
+  sk:documentDescription "All implementation must follow strict Test-Driven Development. No implementation code shall be written before unit tests are written, validated, and confirmed to fail."@en ;
+  sk:principleId "TEST_FIRST" ;
+  sk:principleIndex 12 ;
+  sk:rationale "Test-First is non-negotiable and completely inverts traditional AI code generation. Instead of generating code and hoping it works, tests are generated first that define expected behavior, approved, and confirmed to fail before implementation. This ensures code is written specifically to make tests pass, not speculatively."@en ;
+  sk:examples "Before implementing authentication, write tests for success/failure scenarios, password validation, session management, and edge cases. Get them approved. Watch them fail. Only then implement code to make them pass. When tests pass, implementation is done by definition."@en ;
+  sk:violations "Generating implementation code before tests. Treating test-writing as an afterthought. Writing tests after code exists. Approving implementation without test coverage. Accepting incomplete test scenarios."@en ;
+  .
+
+# Article VII: Simplicity (Part of Anti-Complexity Principles)
+sk:Constitutional_7_Simplicity
+  a sk:Principle ;
+  rdfs:label "Constitutional Article VII: Simplicity" ;
+  sk:documentTitle "Article VII: Simplicity"@en ;
+  sk:documentDescription "Minimize project structure and complexity. Maximum 3 projects for initial implementation. No future-proofing or speculative abstractions."@en ;
+  sk:principleId "SIMPLICITY" ;
+  sk:principleIndex 13 ;
+  sk:rationale "When an LLM might naturally create elaborate abstractions or plan for non-existent future requirements, the Simplicity principle forces it to justify every layer of complexity. Start simple, add complexity only when proven necessary. This prevents over-engineering from the start."@en ;
+  sk:examples "Instead of building a extensible plugin architecture for one feature, use straightforward code that is easy to understand. Rather than creating a configuration abstraction system, hardcode configurations until multiple sources demand flexibility."@en ;
+  sk:violations "Creating unnecessary abstraction layers. Building for hypothetical future requirements. Over-generalizing for reuse before knowing if it's needed. Creating more projects or modules than strictly necessary."@en ;
+  .
+
+# Article VIII: Anti-Abstraction
+sk:Constitutional_8_AntiAbstraction
+  a sk:Principle ;
+  rdfs:label "Constitutional Article VIII: Anti-Abstraction" ;
+  sk:documentTitle "Article VIII: Anti-Abstraction"@en ;
+  sk:documentDescription "Use framework features directly rather than wrapping them. Single model representation rather than layers of abstraction."@en ;
+  sk:principleId "ANTI_ABSTRACTION" ;
+  sk:principleIndex 14 ;
+  sk:rationale "Anti-Abstraction combats unnecessary indirection. When a framework provides a solution, use it directly. Don't create wrapper layers. Don't build abstraction layers that aren't needed. Trust that future developers can understand framework documentation as well as your wrapper code."@en ;
+  sk:examples "Use your framework's ORM directly rather than creating a custom data access layer. Use your router directly rather than wrapping it. Use your database migration tool rather than building a custom migration system."@en ;
+  sk:violations "Creating custom abstractions over framework features. Multiple layers of indirection between code and framework. Custom wrapper libraries when framework features suffice. Over-layering architectural patterns."@en ;
+  .
+
+# Article IX: Integration-First Testing
+sk:Constitutional_9_IntegrationFirst
+  a sk:Principle ;
+  rdfs:label "Constitutional Article IX: Integration-First Testing" ;
+  sk:documentTitle "Article IX: Integration-First Testing"@en ;
+  sk:documentDescription "Tests must use realistic environments: prefer real databases over mocks, actual service instances over stubs, contract tests mandatory before implementation."@en ;
+  sk:principleId "INTEGRATION_FIRST" ;
+  sk:principleIndex 15 ;
+  sk:rationale "Integration-First Testing ensures generated code works in practice, not just in theory. Unit tests with mocks can pass while integration breaks. Contract tests ensure interfaces are correct before implementation."@en ;
+  sk:examples "Use a real PostgreSQL database instance in tests rather than mocking database calls. Test against real API endpoints or contract-validated stubs. Include end-to-end tests that exercise the full request/response cycle."@en ;
+  sk:violations "Relying entirely on unit tests with extensive mocks. Assuming code will work with real dependencies untested. Skipping integration testing. Treating unit test coverage as sufficient proof of correctness."@en ;
+  .
+
+# ============================================================================
+# THE CONSTITUTIONAL EQUATION
+# ============================================================================
+
+sk:ConstitutionalEquation
+  a sk:Principle ;
+  rdfs:label "The Constitutional Equation" ;
+  sk:documentTitle "The Constitutional Equation"@en ;
+  sk:documentDescription "specification.md = μ(feature.ttl) - Specifications in Markdown are generated artifacts of specifications in Turtle RDF format."@en ;
+  sk:principleId "CONSTITUTIONAL_EQUATION" ;
+  sk:principleIndex 0 ;
+  sk:rationale "This equation expresses the fundamental principle of Specification-Driven Development. The function μ represents the deterministic transformation pipeline that converts RDF specifications into executable Markdown. This equation guarantees that Markdown documentation is never stale - it is always a faithful transformation of the RDF source of truth."@en ;
+  sk:examples "When a feature.ttl RDF file is updated, running μ automatically regenerates the specification.md file. The equation guarantees they are always in sync. Users of specification.md are reading the current, correct version because it was just generated from the source."@en ;
+  sk:violations "Manually editing specification.md files. Allowing markdown specifications to diverge from RDF source. Treating markdown as the source of truth instead of generated artifact. Making changes to generated files rather than to source RDF."@en ;
+  .
+
+# ============================================================================
+# PRINCIPLE GROUPINGS FOR NAVIGATION
+# ============================================================================
+
+sk:CoreSDDPrinciples
+  a sk:DocumentationCategory ;
+  rdfs:label "Core SDD Principles" ;
+  rdfs:comment "The six foundational principles of Specification-Driven Development" ;
+  .
+
+sk:ConstitutionalPrinciples
+  a sk:DocumentationCategory ;
+  rdfs:label "Constitutional Principles" ;
+  rdfs:comment "The nine immutable articles that govern architectural discipline" ;
+  .
