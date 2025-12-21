@@ -1,14 +1,14 @@
 [project]
 name = "specify-cli"
-version = "0.0.23"
-description = "Specify CLI, part of GitHub Spec Kit with RDF-first architecture. A tool to bootstrap your projects for Spec-Driven Development (SDD) using ggen v6 ontology-driven transformations."
+version = "0.0.24"
+description = "Specify CLI: RDF-first Spec-Driven Development toolkit. Modular architecture with separation of concerns: CLI layer, operations layer (business logic), and core utilities. Process mining support via pm4py. Integration reference: uvmgr."
 requires-python = ">=3.11"
 dependencies = [
-    "typer",
-    "rich",
-    "httpx[socks]",
-    "platformdirs",
-    "readchar",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "httpx[socks]>=0.24.0",
+    "platformdirs>=3.0.0",
+    "readchar>=4.0.0",
     "truststore>=0.10.4",
     "pm4py>=2.7.0",
     "pandas>=2.0.0",
@@ -26,6 +26,19 @@ test = [
     "testcontainers>=4.0.0",
     "rdflib>=7.0.0",
 ]
+# Optional observability stack (following uvmgr patterns)
+otel = [
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp>=0.41b0",
+    "opentelemetry-instrumentation>=0.41b0",
+]
+# Development: code quality and linting
+dev = [
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "black>=23.0.0",
+    "pytest-watch>=4.2.0",
+]
 
 [project.scripts]
 specify = "specify_cli:main"
@@ -36,4 +49,34 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
+
+# Ruff linter configuration
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # Line length handled by formatter
+
+[tool.ruff.isort]
+known-first-party = ["specify_cli"]
+
+# Black formatter configuration
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+
+# MyPy type checking configuration
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--cov=src/specify_cli --cov-report=term-missing"
 
