@@ -4,7 +4,7 @@ permissions:
 
 on:
   push:
-    branches: ["main"]
+    branches: ["bin"]
   pull_request:
 
 jobs:
