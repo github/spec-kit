@@ -39,6 +39,7 @@ class SpecificationBuilder:
         feature_description: str,
         feature_id: Optional[str] = None,
         constitution: Optional[Constitution] = None,
+        language: Optional[str] = None,
     ) -> Specification:
         """
         Generate a specification from natural language.
@@ -47,6 +48,7 @@ class SpecificationBuilder:
             feature_description: Natural language description of the feature
             feature_id: Optional custom ID (auto-generated if not provided)
             constitution: Optional project constitution for context
+            language: Optional output language (e.g., 'pt-br', 'es', 'en')
 
         Returns:
             Generated Specification model
@@ -61,6 +63,7 @@ class SpecificationBuilder:
             feature_description=feature_description,
             feature_id=feature_id,
             constitution=constitution,
+            language=language,
         )
 
         # Generate specification using structured output
@@ -81,6 +84,7 @@ class SpecificationBuilder:
         feature_description: str,
         feature_id: Optional[str] = None,
         constitution: Optional[Constitution] = None,
+        language: Optional[str] = None,
     ) -> Specification:
         """Async version of generate()."""
         if feature_id is None:
@@ -91,6 +95,7 @@ class SpecificationBuilder:
             feature_description=feature_description,
             feature_id=feature_id,
             constitution=constitution,
+            language=language,
         )
 
         spec = await self.llm.complete_structured_async(

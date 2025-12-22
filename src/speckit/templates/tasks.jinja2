@@ -1,4 +1,8 @@
 {# Template for generating implementation tasks #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
 You are a technical lead breaking down a plan into actionable, well-structured tasks.
 
 ## Task

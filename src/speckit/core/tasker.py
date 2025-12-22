@@ -38,6 +38,7 @@ class TaskGenerator:
         plan: TechnicalPlan,
         specification: Optional[Specification] = None,
         parallel_friendly: bool = True,
+        language: Optional[str] = None,
     ) -> TaskBreakdown:
         """
         Generate tasks from a technical plan.
@@ -46,6 +47,7 @@ class TaskGenerator:
             plan: Technical plan to break down
             specification: Optional specification for traceability
             parallel_friendly: If True, maximizes parallel task opportunities
+            language: Optional output language (e.g., 'pt-br', 'es', 'en')
 
         Returns:
             Generated TaskBreakdown model
@@ -55,6 +57,7 @@ class TaskGenerator:
             "tasks.jinja2",
             plan=plan.model_dump(mode="json"),
             specification=specification.model_dump(mode="json") if specification else {},
+            language=language,
         )
 
         # Generate tasks using structured output
@@ -82,12 +85,14 @@ class TaskGenerator:
         plan: TechnicalPlan,
         specification: Optional[Specification] = None,
         parallel_friendly: bool = True,
+        language: Optional[str] = None,
     ) -> TaskBreakdown:
         """Async version of generate()."""
         prompt = render_template(
             "tasks.jinja2",
             plan=plan.model_dump(mode="json"),
             specification=specification.model_dump(mode="json") if specification else {},
+            language=language,
         )
 
         breakdown = await self.llm.complete_structured_async(

@@ -184,6 +184,7 @@ class SpecKit:
             feature_description=feature_description,
             feature_id=feature_id,
             constitution=constitution,
+            language=self.config.language,
         )
 
     async def specify_async(
@@ -203,6 +204,7 @@ class SpecKit:
             feature_description=feature_description,
             feature_id=feature_id,
             constitution=constitution,
+            language=self.config.language,
         )
 
     # =========================================================================
@@ -293,6 +295,7 @@ class SpecKit:
             specification=specification,
             constitution=constitution,
             tech_stack=tech_stack,
+            language=self.config.language,
         )
 
     async def plan_async(
@@ -312,6 +315,7 @@ class SpecKit:
             specification=specification,
             constitution=constitution,
             tech_stack=tech_stack,
+            language=self.config.language,
         )
 
     # =========================================================================
@@ -345,6 +349,7 @@ class SpecKit:
             plan=plan,
             specification=spec,
             parallel_friendly=parallel_friendly,
+            language=self.config.language,
         )
 
     async def tasks_async(
@@ -364,6 +369,7 @@ class SpecKit:
             plan=plan,
             specification=spec,
             parallel_friendly=parallel_friendly,
+            language=self.config.language,
         )
 
     # =========================================================================

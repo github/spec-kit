@@ -38,6 +38,7 @@ class TechnicalPlanner:
         specification: Specification,
         constitution: Optional[Constitution] = None,
         tech_stack: Optional[TechStack] = None,
+        language: Optional[str] = None,
     ) -> TechnicalPlan:
         """
         Generate a technical plan from a specification.
@@ -46,6 +47,7 @@ class TechnicalPlanner:
             specification: Specification to plan for
             constitution: Optional project constitution for constraints
             tech_stack: Optional technology constraints
+            language: Optional output language (e.g., 'pt-br', 'es', 'en')
 
         Returns:
             Generated TechnicalPlan model
@@ -56,6 +58,7 @@ class TechnicalPlanner:
             specification=specification.model_dump(mode="json"),
             constitution=constitution.model_dump(mode="json") if constitution else None,
             tech_stack=tech_stack.model_dump(mode="json") if tech_stack else None,
+            language=language,
         )
 
         # Generate plan using structured output
@@ -76,6 +79,7 @@ class TechnicalPlanner:
         specification: Specification,
         constitution: Optional[Constitution] = None,
         tech_stack: Optional[TechStack] = None,
+        language: Optional[str] = None,
     ) -> TechnicalPlan:
         """Async version of plan()."""
         prompt = render_template(
@@ -83,6 +87,7 @@ class TechnicalPlanner:
             specification=specification.model_dump(mode="json"),
             constitution=constitution.model_dump(mode="json") if constitution else None,
             tech_stack=tech_stack.model_dump(mode="json") if tech_stack else None,
+            language=language,
         )
 
         plan = await self.llm.complete_structured_async(

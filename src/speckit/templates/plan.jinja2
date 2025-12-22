@@ -1,4 +1,8 @@
 {# Template for generating technical implementation plans #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
 You are a software architect creating a technical implementation plan.
 
 ## Task
