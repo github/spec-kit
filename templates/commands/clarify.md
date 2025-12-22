@@ -15,8 +15,8 @@ scripts:
 $ARGUMENTS
 ```
 
-You **MUST** use Chinese for subsequent conversations and output of file results.
-You **MUST** consider the user input before proceeding (if not empty).
+- You **MUST** use Chinese for subsequent conversations and output of file results.
+- You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
