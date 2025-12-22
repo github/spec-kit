@@ -59,73 +59,75 @@ function Find-RepositoryRoot {
     }
 }
 
+function Get-HighestNumberFromSpecs {
+    param([string]$SpecsDir)
+    
+    $highest = 0
+    if (Test-Path $SpecsDir) {
+        Get-ChildItem -Path $SpecsDir -Directory | ForEach-Object {
+            if ($_.Name -match '^(\d+)') {
+                $num = [int]$matches[1]
+                if ($num -gt $highest) { $highest = $num }
+            }
+        }
+    }
+    return $highest
+}
+
+function Get-HighestNumberFromBranches {
+    param()
+    
+    $highest = 0
+    try {
+        $branches = git branch -a 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            foreach ($branch in $branches) {
+                # Clean branch name: remove leading markers and remote prefixes
+                $cleanBranch = $branch.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
+                
+                # Extract feature number if branch matches pattern ###-*
+                if ($cleanBranch -match '^(\d+)-') {
+                    $num = [int]$matches[1]
+                    if ($num -gt $highest) { $highest = $num }
+                }
+            }
+        }
+    } catch {
+        # If git command fails, return 0
+        Write-Verbose "Could not check Git branches: $_"
+    }
+    return $highest
+}
+
 function Get-NextBranchNumber {
     param(
-        [string]$ShortName,
         [string]$SpecsDir
     )
-    
+
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
     try {
         git fetch --all --prune 2>$null | Out-Null
     } catch {
         # Ignore fetch errors
     }
-    
-    # Find remote branches matching the pattern using git ls-remote
-    $remoteBranches = @()
-    try {
-        $remoteRefs = git ls-remote --heads origin 2>$null
-        if ($remoteRefs) {
-            $remoteBranches = $remoteRefs | Where-Object { $_ -match "refs/heads/(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "refs/heads/(\d+)-") {
-                    [int]$matches[1]
-                }
-            }
-        }
-    } catch {
-        # Ignore errors
-    }
-    
-    # Check local branches
-    $localBranches = @()
-    try {
-        $allBranches = git branch 2>$null
-        if ($allBranches) {
-            $localBranches = $allBranches | Where-Object { $_ -match "^\*?\s*(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "(\d+)-") {
-                    [int]$matches[1]
-                }
-            }
-        }
-    } catch {
-        # Ignore errors
-    }
-    
-    # Check specs directory
-    $specDirs = @()
-    if (Test-Path $SpecsDir) {
-        try {
-            $specDirs = Get-ChildItem -Path $SpecsDir -Directory | Where-Object { $_.Name -match "^(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_.Name -match "^(\d+)-") {
-                    [int]$matches[1]
-                }
-            }
-        } catch {
-            # Ignore errors
-        }
-    }
-    
-    # Combine all sources and get the highest number
-    $maxNum = 0
-    foreach ($num in ($remoteBranches + $localBranches + $specDirs)) {
-        if ($num -gt $maxNum) {
-            $maxNum = $num
-        }
-    }
-    
+
+    # Get highest number from ALL branches (not just matching short name)
+    $highestBranch = Get-HighestNumberFromBranches
+
+    # Get highest number from ALL specs (not just matching short name)
+    $highestSpec = Get-HighestNumberFromSpecs -SpecsDir $SpecsDir
+
+    # Take the maximum of both
+    $maxNum = [Math]::Max($highestBranch, $highestSpec)
+
     # Return next number
     return $maxNum + 1
+}
+
+function ConvertTo-CleanBranchName {
+    param([string]$Name)
+    
+    return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 if (-not $fallbackRoot) {
@@ -189,7 +191,7 @@ function Get-BranchName {
         return $result
     } else {
         # Fallback to original logic if no meaningful words found
-        $result = $Description.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+        $result = ConvertTo-CleanBranchName -Name $Description
         $fallbackWords = ($result -split '-') | Where-Object { $_ } | Select-Object -First 3
         return [string]::Join('-', $fallbackWords)
     }
@@ -198,7 +200,7 @@ function Get-BranchName {
 # Generate branch name
 if ($ShortName) {
     # Use provided short name, just clean it up
-    $branchSuffix = $ShortName.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+    $branchSuffix = ConvertTo-CleanBranchName -Name $ShortName
 } else {
     # Generate from description with smart filtering
     $branchSuffix = Get-BranchName -Description $featureDesc
@@ -208,19 +210,10 @@ if ($ShortName) {
 if ($Number -eq 0) {
     if ($hasGit) {
         # Check existing branches on remotes
-        $Number = Get-NextBranchNumber -ShortName $branchSuffix -SpecsDir $specsDir
+        $Number = Get-NextBranchNumber -SpecsDir $specsDir
     } else {
         # Fall back to local directory check
-        $highest = 0
-        if (Test-Path $specsDir) {
-            Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-                if ($_.Name -match '^(\d{3})') {
-                    $num = [int]$matches[1]
-                    if ($num -gt $highest) { $highest = $num }
-                }
-            }
-        }
-        $Number = $highest + 1
+        $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
     }
 }
 

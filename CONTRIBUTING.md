@@ -32,8 +32,8 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 
 ## Submitting a pull request
 
->[!NOTE]
->If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
+> [!NOTE]
+> If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
 1. Fork and clone the repository
 1. Configure and install the dependencies: `uv sync`
@@ -70,13 +70,14 @@ To test your templates, commands, and other changes locally, follow these steps:
 1. **Create release packages**
 
    Run the following command to generate the local packages:
-   ```
+
+   ```bash
    ./.github/workflows/scripts/create-release-packages.sh v1.0.0
    ```
 
 2. **Copy the relevant package to your test project**
 
-   ```
+   ```bash
    cp -r .genreleases/sdd-copilot-package-sh/. <path-to-test-project>/
    ```
 
@@ -121,7 +122,7 @@ When submitting AI-assisted contributions, please ensure they include:
 
 - **Clear disclosure of AI use** - You are transparent about AI use and degree to which you're using it for the contribution
 - **Human understanding and testing** - You've personally tested the changes and understand what they do
-- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals  
+- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals
 - **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
 - **Your own analysis** - Share your thoughts on the end-to-end developer experience
 
