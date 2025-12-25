@@ -671,8 +671,8 @@ def load_template_from_local(ai_assistant: str, local_dir: Path, *, script_type:
             ))
         raise typer.Exit(1)
     
-    # Sort alphabetically - versions like v1.0.0, v1.0.1 will order correctly
-    zip_path = sorted(matches)[-1]
+    # Use first match - typically only one version exists per agent/script combo
+    zip_path = matches[0]
     file_stat = zip_path.stat()
     
     if verbose:
