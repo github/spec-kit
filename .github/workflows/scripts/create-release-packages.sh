@@ -150,7 +150,14 @@ build_variant() {
     esac
   fi
   
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+  [[ -d templates ]] && { 
+    find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" | while read -r file; do
+      dir=$(dirname "$file")
+      mkdir -p "$SPEC_DIR/$dir"
+      cp "$file" "$SPEC_DIR/$file"
+    done
+    echo "Copied templates -> .specify/templates"
+  }
   
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS
@@ -217,13 +224,16 @@ build_variant() {
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
+    trae)
+      mkdir -p "$base_dir/.trae/rules"
+      generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder trae)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
@@ -232,13 +242,25 @@ norm_list() {
 }
 
 validate_subset() {
-  local type=$1; shift; local -n allowed=$1; shift; local items=("$@")
+  local type=$1; shift
+  local items=("$@")
+  local allowed_list
+  
+  if [[ "$type" == "agent" ]]; then
+    allowed_list=("${ALL_AGENTS[@]}")
+  elif [[ "$type" == "script" ]]; then
+    allowed_list=("${ALL_SCRIPTS[@]}")
+  else
+    echo "Internal error: unknown validation type $type" >&2
+    return 1
+  fi
+
   local invalid=0
   for it in "${items[@]}"; do
     local found=0
-    for a in "${allowed[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
+    for a in "${allowed_list[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
     if [[ $found -eq 0 ]]; then
-      echo "Error: unknown $type '$it' (allowed: ${allowed[*]})" >&2
+      echo "Error: unknown $type '$it' (allowed: ${allowed_list[*]})" >&2
       invalid=1
     fi
   done
@@ -246,15 +268,15 @@ validate_subset() {
 }
 
 if [[ -n ${AGENTS:-} ]]; then
-  mapfile -t AGENT_LIST < <(printf '%s' "$AGENTS" | norm_list)
-  validate_subset agent ALL_AGENTS "${AGENT_LIST[@]}" || exit 1
+  while IFS= read -r line; do AGENT_LIST+=("$line"); done < <(printf '%s' "$AGENTS" | norm_list)
+  validate_subset agent "${AGENT_LIST[@]}" || exit 1
 else
   AGENT_LIST=("${ALL_AGENTS[@]}")
 fi
 
 if [[ -n ${SCRIPTS:-} ]]; then
-  mapfile -t SCRIPT_LIST < <(printf '%s' "$SCRIPTS" | norm_list)
-  validate_subset script ALL_SCRIPTS "${SCRIPT_LIST[@]}" || exit 1
+  while IFS= read -r line; do SCRIPT_LIST+=("$line"); done < <(printf '%s' "$SCRIPTS" | norm_list)
+  validate_subset script "${SCRIPT_LIST[@]}" || exit 1
 else
   SCRIPT_LIST=("${ALL_SCRIPTS[@]}")
 fi
