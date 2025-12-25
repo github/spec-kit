@@ -95,6 +95,6 @@ database.batchQuery(ids);
 ## 附录：审查说明
 
 - **审查范围**: 本次审查聚焦于提交记录中的代码变更
-- **审查标准**: 参考 `code-review/constitutions/constitution.md`
+- **审查标准**: 参考 `.specify/code-review/specification.md`
 - **问题分类**: 🔴严重(必须修复) / 🟡一般(建议修复) / 🔵优化(可选)
 - **新引入标识**: ✅表示本次提交新引入的问题, ❌表示历史遗留问题

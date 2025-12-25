@@ -98,7 +98,7 @@ Commit: {commit_hash}
 
 4. **应用审查标准发现问题**
    
-   参考 `constitution.md` 检查：
+   参考 `.specify/code-review/specification.md` 检查：
    
    | 检查项 | 重点 |
    |--------|------|
@@ -118,7 +118,7 @@ Commit: {commit_hash}
 
 ### 步骤 5：生成审查报告
 
-使用 `code-review-template.md` 模板生成报告。
+使用 `.specify/code-review/template.md` 模板生成报告。
 
 **报告内容**：
 - 调用链路图（来自子代理）
