@@ -748,6 +748,45 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
+def move_skills_to_claude(project_path: Path, verbose: bool = True, tracker: StepTracker | None = None) -> None:
+    """Move skills from .specify/templates/skills/ to .claude/skills (mandatory for all agents)."""
+    source_skills = project_path / ".specify" / "templates" / "skills"
+    if not (source_skills.exists() and source_skills.is_dir()):
+        return
+    
+    target_skills = project_path / ".claude" / "skills"
+    
+    try:
+        # Create target directory if it doesn't exist
+        target_skills.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Move skills directory
+        if target_skills.exists():
+            # If target already exists, merge the contents
+            for item in source_skills.iterdir():
+                dest_item = target_skills / item.name
+                if item.is_dir():
+                    if dest_item.exists():
+                        shutil.rmtree(dest_item)
+                    shutil.copytree(item, dest_item)
+                else:
+                    shutil.copy2(item, dest_item)
+            shutil.rmtree(source_skills)
+        else:
+            shutil.move(str(source_skills), str(target_skills))
+        
+        if tracker:
+            tracker.add("move-skills", "Move skills to .claude/skills")
+            tracker.complete("move-skills", ".claude/skills")
+        elif verbose:
+            console.print(f"[cyan]Moved skills to .claude/skills[/cyan]")
+    except Exception as e:
+        if tracker:
+            tracker.add("move-skills", "Move skills to .claude/skills")
+            tracker.error("move-skills", str(e))
+        elif verbose:
+            console.print(f"[yellow]Warning: Could not move skills directory: {e}[/yellow]")
+
 def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
@@ -909,6 +948,9 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
         except Exception as e:
             if verbose and not tracker:
                 console.print(f"[yellow]Warning: Could not update constitution.md: {e}[/yellow]")
+
+    # Move skills to .claude/skills
+    move_skills_to_claude(project_path, verbose, tracker)
 
     return project_path
 
