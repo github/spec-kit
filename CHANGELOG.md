@@ -7,6 +7,40 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.23] - 2025-12-25
+
+### Added
+
+- **Code Review Integration**: Added 3 new commands for code review workflow
+  - `code-review.md`: Main code review command with AI-assisted analysis
+  - `logic-analysis.md`: Focused logic flow and architecture analysis
+  - `case-analysis.md`: Test case and edge case analysis
+- **Code Review Resources**: Added code review specification and template
+  - `code-review/specification.md`: Code review standards and best practices
+  - `code-review/template.md`: Template for structured code review reports
+- **Skills Framework**: Added 6 pre-configured skills for development workflows
+  - `apollo-config-sync`: Fetch configuration from Apollo Config Center
+  - `database-query`: Execute read-only MySQL queries
+  - `feishu-doc-reader`: Read Feishu cloud documents via API
+  - `git-branch-sync`: Synchronize and switch Git branches
+  - `git-commit-log`: View and analyze Git commit history
+  - `skill-creator`: Create new custom skills with templates
+
+### Changed
+
+- **Simplified Directory Structure**: Flattened directory hierarchy for better maintainability
+  - Moved code review agents from `.github/agents/` to `templates/commands/`
+  - All 12 commands now in single `templates/commands/` directory
+  - Skills templates now in `templates/skills/` for distribution
+- **Security Hardening**: Removed all hardcoded credentials and sensitive URLs
+  - All skills now use configuration templates (`.template` files)
+  - Added `.gitignore` protection for sensitive config files
+  - Updated documentation with security warnings and setup instructions
+
+### Fixed
+
+- Packaging scripts now correctly copy code-review and skills resources
+
 ## [0.0.22] - 2025-11-07
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.

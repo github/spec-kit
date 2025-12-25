@@ -1,0 +1,23 @@
+{
+  "environments": {
+    "dev": "http://apollo-dev.example.com:8080",
+    "test": "http://apollo-test.example.com:8080",
+    "uat": "http://apollo-uat.example.com:8080",
+    "pro": "http://apollo-pro.example.com:8080"
+  },
+  "default_cluster": "default",
+  "timeout": 10,
+  "common_namespaces": [
+    "bootstrap.yml",
+    "application.yml",
+    "application-dev.yml",
+    "application-test.yml",
+    "application-uat.yml",
+    "application-pro.yml"
+  ],
+  "common_modules": [
+    "your-module-api",
+    "your-module-order",
+    "your-module-user"
+  ]
+}

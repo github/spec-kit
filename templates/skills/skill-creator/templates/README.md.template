@@ -1,0 +1,107 @@
+# {技能名称}
+
+> {技能的一句话描述}
+
+## 📋 概述
+
+{技能的详细描述，说明它是什么，解决什么问题。}
+
+## ✨ 主要功能
+
+- ✅ {功能1}
+- ✅ {功能2}
+- ✅ {功能3}
+- ✅ {功能4}
+
+## 🚀 快速开始
+
+### 前置要求
+
+- Python 3.x
+- {其他依赖}
+
+### 安装依赖
+
+```powershell
+cd d:\project\ecp\.claude\skills\{SKILL_NAME}\scripts
+pip install -r requirements.txt
+```
+
+### 基本使用
+
+```powershell
+# 示例命令
+python script_name.py --help
+```
+
+## 📖 使用指南
+
+### 场景1：{场景名称}
+
+```powershell
+# 命令示例
+command example
+```
+
+### 场景2：{场景名称}
+
+```powershell
+# 命令示例
+command example
+```
+
+## 📁 目录结构
+
+```
+{SKILL_NAME}/
+├── SKILL.md              # 技能提示词文件
+├── LICENSE.txt           # 许可证
+├── README.md             # 本文件
+├── templates/            # 模板文件
+│   └── template.txt
+├── scripts/              # 脚本文件
+│   ├── main_script.py
+│   └── requirements.txt
+└── config/               # 配置文件
+    └── config.json
+```
+
+## ⚙️ 配置说明
+
+配置文件位于 `config/config.json`：
+
+```json
+{
+  "option1": "value1",
+  "option2": "value2"
+}
+```
+
+### 配置项说明
+
+- `option1`: {说明}
+- `option2`: {说明}
+
+## 🔧 故障排查
+
+### 常见问题
+
+**Q: {问题1}？**
+
+A: {答案1}
+
+**Q: {问题2}？**
+
+A: {答案2}
+
+## 🤝 贡献
+
+欢迎贡献！如果你有好的想法或发现了问题，请随时提出。
+
+## 📄 许可证
+
+MIT License - 详见 [LICENSE.txt](LICENSE.txt)
+
+## 📮 联系方式
+
+如有问题或建议，请联系项目维护者。

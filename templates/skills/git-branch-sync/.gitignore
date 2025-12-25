@@ -1,0 +1,9 @@
+# 忽略日志文件
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python

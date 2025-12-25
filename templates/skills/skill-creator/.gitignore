@@ -1,0 +1,12 @@
+# 忽略日志和临时文件
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 生成的技能目录（如果在本地测试）
+# test-skill/

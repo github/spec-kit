@@ -1,0 +1,85 @@
+{
+  "skill_structure": {
+    "required_files": [
+      "SKILL.md",
+      "LICENSE.txt"
+    ],
+    "recommended_files": [
+      "README.md"
+    ],
+    "optional_directories": [
+      "templates",
+      "scripts",
+      "config"
+    ]
+  },
+  "naming_rules": {
+    "format": "kebab-case",
+    "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+    "examples": [
+      "apollo-config-sync",
+      "database-query",
+      "log-analyzer",
+      "api-tester"
+    ]
+  },
+  "skill_md_sections": [
+    {
+      "name": "yaml_front_matter",
+      "required": true,
+      "fields": {
+        "name": "技能名称（kebab-case）",
+        "description": "简短描述（1-2句话）",
+        "license": "许可证类型（通常为MIT）"
+      }
+    },
+    {
+      "name": "技能用途",
+      "required": true,
+      "description": "详细说明技能的用途和触发场景"
+    },
+    {
+      "name": "核心工具/脚本",
+      "required": false,
+      "description": "说明依赖的工具或脚本位置"
+    },
+    {
+      "name": "使用指南",
+      "required": true,
+      "description": "包含基本使用、命令示例、参数说明等"
+    },
+    {
+      "name": "工作流程",
+      "required": true,
+      "description": "描述AI执行此技能的步骤"
+    },
+    {
+      "name": "故障排查",
+      "required": false,
+      "description": "常见问题和解决方案"
+    },
+    {
+      "name": "注意事项",
+      "required": true,
+      "description": "重要提醒和最佳实践"
+    }
+  ],
+  "description_template": "{技能用途}。当用户需要{场景1}、{场景2}、{场景3}时使用。支持{功能1}、{功能2}和{功能3}。",
+  "path_conventions": {
+    "use_absolute_paths": true,
+    "windows_separator": "\\",
+    "skill_root": "d:\\project\\ecp\\.claude\\skills\\{skill_name}",
+    "scripts_dir": "d:\\project\\ecp\\.claude\\skills\\{skill_name}\\scripts",
+    "config_dir": "d:\\project\\ecp\\.claude\\skills\\{skill_name}\\config",
+    "templates_dir": "d:\\project\\ecp\\.claude\\skills\\{skill_name}\\templates"
+  },
+  "best_practices": [
+    "每个技能专注于一个明确的任务领域",
+    "提供清晰的使用示例和命令",
+    "使用绝对路径引用文件",
+    "适配Windows环境（PowerShell命令）",
+    "包含完整的错误处理和日志",
+    "提供故障排查指南",
+    "编写清晰的文档注释"
+  ]
+}

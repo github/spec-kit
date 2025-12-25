@@ -1,0 +1,11 @@
+# 忽略输出文件
+*.log
+*.json
+*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python

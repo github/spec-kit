@@ -247,13 +247,16 @@ function Build-Variant {
         }
     }
     
-    # Copy templates (excluding commands directory and vscode-settings.json)
+    # Copy templates (excluding commands, vscode-settings.json, code-review, and skills)
     if (Test-Path "templates") {
         $templatesDestDir = Join-Path $specDir "templates"
         New-Item -ItemType Directory -Path $templatesDestDir -Force | Out-Null
         
         Get-ChildItem -Path "templates" -Recurse -File | Where-Object {
-            $_.FullName -notmatch 'templates[/\\]commands[/\\]' -and $_.Name -ne 'vscode-settings.json'
+            $_.FullName -notmatch 'templates[/\\]commands[/\\]' -and 
+            $_.FullName -notmatch 'templates[/\\]code-review[/\\]' -and 
+            $_.FullName -notmatch 'templates[/\\]skills[/\\]' -and 
+            $_.Name -ne 'vscode-settings.json'
         } | ForEach-Object {
             $relativePath = $_.FullName.Substring((Resolve-Path "templates").Path.Length + 1)
             $destFile = Join-Path $templatesDestDir $relativePath
@@ -262,6 +265,23 @@ function Build-Variant {
             Copy-Item -Path $_.FullName -Destination $destFile -Force
         }
         Write-Host "Copied templates -> .specify/templates"
+    }
+    
+    # Copy code-review resources
+    if (Test-Path "templates/code-review") {
+        $codeReviewDestDir = Join-Path $specDir "code-review"
+        Copy-Item -Path "templates/code-review" -Destination $codeReviewDestDir -Recurse -Force
+        Write-Host "Copied templates/code-review -> .specify/code-review"
+    }
+    
+    # Copy skills to .claude/skills (not .specify)
+    if (Test-Path "templates/skills") {
+        $claudeSkillsDir = Join-Path $baseDir ".claude/skills"
+        New-Item -ItemType Directory -Path $claudeSkillsDir -Force | Out-Null
+        Get-ChildItem -Path "templates/skills" -Directory | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $claudeSkillsDir -Recurse -Force
+        }
+        Write-Host "Copied templates/skills -> .claude/skills"
     }
     
     # Generate agent-specific command files

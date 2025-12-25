@@ -150,7 +150,23 @@ build_variant() {
     esac
   fi
   
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+  # Copy templates (excluding commands, vscode-settings.json, code-review, and skills)
+  [[ -d templates ]] && { 
+    mkdir -p "$SPEC_DIR/templates"
+    find templates -type f \
+      -not -path "templates/commands/*" \
+      -not -path "templates/code-review/*" \
+      -not -path "templates/skills/*" \
+      -not -name "vscode-settings.json" \
+      -exec cp --parents {} "$SPEC_DIR"/ \;
+    echo "Copied templates -> .specify/templates"
+  }
+  
+  # Copy code-review resources
+  [[ -d templates/code-review ]] && { cp -r templates/code-review "$SPEC_DIR/"; echo "Copied templates/code-review -> .specify/code-review"; }
+  
+  # Copy skills to .claude/skills (not .specify)
+  [[ -d templates/skills ]] && { mkdir -p "$base_dir/.claude/skills" && cp -r templates/skills/* "$base_dir/.claude/skills/"; echo "Copied templates/skills -> .claude/skills"; }
   
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS

@@ -1,0 +1,15 @@
+# 忽略可能包含敏感信息的文件
+*.log
+
+# 忽略包含真实环境地址的配置文件
+config/apollo_env.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 如果有自定义的敏感配置，在这里添加
+# config/custom_config.json

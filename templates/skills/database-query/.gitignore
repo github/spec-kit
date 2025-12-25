@@ -1,0 +1,12 @@
+# 忽略包含敏感信息的配置文件
+config/db_config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 日志文件
+*.log

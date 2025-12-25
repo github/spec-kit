@@ -1,0 +1,17 @@
+{
+  "skill_name": "{SKILL_NAME}",
+  "description": "{技能描述}",
+  "version": "1.0.0",
+  "settings": {
+    "option1": "value1",
+    "option2": "value2",
+    "enable_feature": true,
+    "max_retries": 3,
+    "timeout": 30
+  },
+  "paths": {
+    "input": "./input",
+    "output": "./output",
+    "logs": "./logs"
+  }
+}
