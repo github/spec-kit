@@ -170,7 +170,7 @@ scripts:
 
 ### 调用链 1：订单创建流程
 
-**入口**：`com.ruijie.order.controller.OrderController.createOrder(OrderRequest)`
+**入口**：`com.example.order.controller.OrderController.createOrder(OrderRequest)`
 
 **调用路径**：
 ```
@@ -198,7 +198,7 @@ OrderController.createOrder()
 
 #### 1️⃣ OrderController.createOrder()
 - **模块**：op-api
-- **文件**：`op-api/src/main/java/com/ruijie/order/controller/OrderController.java`
+- **文件**：`op-api/src/main/java/com/example/order/controller/OrderController.java`
 - **方法签名**：`public Result<Order> createOrder(@RequestBody OrderRequest request)`
 - **行号**：45-68
 - **调用类型**：Feign 调用
@@ -220,7 +220,7 @@ public Result<Order> createOrder(@RequestBody OrderRequest request) {
 
 #### 2️⃣ OrderServiceImpl.create()
 - **模块**：op-biz
-- **文件**：`op-biz/src/main/java/com/ruijie/order/service/impl/OrderServiceImpl.java`
+- **文件**：`op-biz/src/main/java/com/example/order/service/impl/OrderServiceImpl.java`
 - **方法签名**：`@Transactional public Order create(OrderRequest request)`
 - **行号**：120-185
 - **调用类型**：多个 Feign 调用 + 数据库操作
@@ -252,7 +252,7 @@ public Order create(OrderRequest request) {
 
 #### 3️⃣ ProductServiceImpl.checkStock()
 - **模块**：oversea-op-product
-- **文件**：`oversea-op-product/src/main/java/com/ruijie/product/service/impl/ProductServiceImpl.java`
+- **文件**：`oversea-op-product/src/main/java/com/example/product/service/impl/ProductServiceImpl.java`
 - **方法签名**：`public boolean checkStock(List<Long> productIds)`
 - **行号**：89-135
 - **调用类型**：数据库查询

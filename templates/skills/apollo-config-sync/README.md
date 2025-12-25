@@ -190,10 +190,10 @@ apollo-config-sync/
 ```json
 {
   "environments": {
-    "dev": "http://dev.ruijie.com.cn:8080",
-    "test": "http://uat.ruijie.com.cn:8080",
-    "uat": "http://uat.ruijie.com.cn:8080",
-    "pro": "http://pro.ruijie.com.cn:8080"
+    "dev": "http://dev.example.com.cn:8080",
+    "test": "http://uat.example.com.cn:8080",
+    "uat": "http://uat.example.com.cn:8080",
+    "pro": "http://pro.example.com.cn:8080"
   },
   "default_cluster": "default",
   "timeout": 10

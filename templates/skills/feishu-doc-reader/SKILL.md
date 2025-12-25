@@ -102,7 +102,7 @@ python feishu_doc_reader.py <doc_token>
 python feishu_doc_reader.py <doc_token> json
 
 # ✅ 正确：直接使用URL
-python feishu_doc_reader.py "https://ruijie.feishu.cn/docx/xxxxx"
+python feishu_doc_reader.py "https://example.feishu.cn/docx/xxxxx"
 
 # ❌ 错误：禁止重定向到文件
 # python feishu_doc_reader.py <doc_token> > temp.txt
