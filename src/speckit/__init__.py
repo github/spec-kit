@@ -32,6 +32,17 @@ from speckit.schemas import (
     TaskBreakdown,
     ClarificationQuestion,
     AnalysisReport,
+    # Extended artifacts
+    DataModel,
+    DataModelEntity,
+    DataModelField,
+    ResearchFindings,
+    TechnologyDecision,
+    APIContract,
+    APIEndpoint,
+    QualityChecklist,
+    ChecklistItem,
+    QuickstartGuide,
 )
 from speckit.llm import LiteLLMProvider, LLMResponse
 
@@ -62,6 +73,17 @@ __all__ = [
     "TaskBreakdown",
     "ClarificationQuestion",
     "AnalysisReport",
+    # Extended artifacts
+    "DataModel",
+    "DataModelEntity",
+    "DataModelField",
+    "ResearchFindings",
+    "TechnologyDecision",
+    "APIContract",
+    "APIEndpoint",
+    "QualityChecklist",
+    "ChecklistItem",
+    "QuickstartGuide",
     # LLM
     "LiteLLMProvider",
     "LLMResponse",

@@ -28,6 +28,12 @@ from speckit.schemas import (
     Priority,
     TaskStatus,
     PhaseType,
+    # Extended artifacts
+    DataModel,
+    ResearchFindings,
+    APIContract,
+    QualityChecklist,
+    QuickstartGuide,
 )
 from speckit.storage.base import StorageBase
 
@@ -50,6 +56,11 @@ class FileStorage(StorageBase):
     SPEC_FILE = "spec.md"
     PLAN_FILE = "plan.md"
     TASKS_FILE = "tasks.md"
+    DATA_MODEL_FILE = "data-model.md"
+    RESEARCH_FILE = "research.md"
+    API_CONTRACT_FILE = "contracts/api.md"
+    CHECKLIST_FILE = "checklists/requirements.md"
+    QUICKSTART_FILE = "quickstart.md"
 
     def __init__(
         self,
@@ -369,7 +380,8 @@ class FileStorage(StorageBase):
 
         Args:
             feature_id: Feature identifier
-            artifact_type: One of "spec", "plan", "tasks"
+            artifact_type: One of "spec", "plan", "tasks", "data-model", "research",
+                          "contracts", "checklist", "quickstart"
 
         Returns:
             Path to the artifact file
@@ -378,6 +390,11 @@ class FileStorage(StorageBase):
             "spec": self.SPEC_FILE,
             "plan": self.PLAN_FILE,
             "tasks": self.TASKS_FILE,
+            "data-model": self.DATA_MODEL_FILE,
+            "research": self.RESEARCH_FILE,
+            "contracts": self.API_CONTRACT_FILE,
+            "checklist": self.CHECKLIST_FILE,
+            "quickstart": self.QUICKSTART_FILE,
         }
 
         if artifact_type not in filenames:
@@ -388,3 +405,112 @@ class FileStorage(StorageBase):
     def artifact_exists(self, feature_id: str, artifact_type: str) -> bool:
         """Check if a specific artifact exists."""
         return self.get_artifact_path(feature_id, artifact_type).exists()
+
+    # =========================================================================
+    # Extended Artifacts (Data Model, Research, Contracts, Checklist, Quickstart)
+    # =========================================================================
+
+    def save_data_model(self, data_model: DataModel, feature_id: str) -> Path:
+        """
+        Save data model to Markdown file.
+
+        Args:
+            data_model: DataModel instance to save
+            feature_id: Feature identifier
+
+        Returns:
+            Path to the saved file
+        """
+        feature_path = self.get_feature_path(feature_id)
+        file_path = feature_path / self.DATA_MODEL_FILE
+        self._create_backup(file_path)
+
+        content = data_model.to_markdown()
+        file_path.write_text(content, encoding="utf-8")
+        return file_path
+
+    def save_research(self, research: ResearchFindings, feature_id: str) -> Path:
+        """
+        Save research findings to Markdown file.
+
+        Args:
+            research: ResearchFindings instance to save
+            feature_id: Feature identifier
+
+        Returns:
+            Path to the saved file
+        """
+        feature_path = self.get_feature_path(feature_id)
+        file_path = feature_path / self.RESEARCH_FILE
+        self._create_backup(file_path)
+
+        content = research.to_markdown()
+        file_path.write_text(content, encoding="utf-8")
+        return file_path
+
+    def save_api_contract(self, contract: APIContract, feature_id: str) -> Path:
+        """
+        Save API contract to Markdown file.
+
+        Creates contracts/ subdirectory if needed.
+
+        Args:
+            contract: APIContract instance to save
+            feature_id: Feature identifier
+
+        Returns:
+            Path to the saved file
+        """
+        feature_path = self.get_feature_path(feature_id)
+        contracts_dir = feature_path / "contracts"
+        contracts_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = feature_path / self.API_CONTRACT_FILE
+        self._create_backup(file_path)
+
+        content = contract.to_markdown()
+        file_path.write_text(content, encoding="utf-8")
+        return file_path
+
+    def save_checklist(self, checklist: QualityChecklist, feature_id: str) -> Path:
+        """
+        Save quality checklist to Markdown file.
+
+        Creates checklists/ subdirectory if needed.
+
+        Args:
+            checklist: QualityChecklist instance to save
+            feature_id: Feature identifier
+
+        Returns:
+            Path to the saved file
+        """
+        feature_path = self.get_feature_path(feature_id)
+        checklists_dir = feature_path / "checklists"
+        checklists_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = feature_path / self.CHECKLIST_FILE
+        self._create_backup(file_path)
+
+        content = checklist.to_markdown()
+        file_path.write_text(content, encoding="utf-8")
+        return file_path
+
+    def save_quickstart(self, quickstart: QuickstartGuide, feature_id: str) -> Path:
+        """
+        Save quickstart guide to Markdown file.
+
+        Args:
+            quickstart: QuickstartGuide instance to save
+            feature_id: Feature identifier
+
+        Returns:
+            Path to the saved file
+        """
+        feature_path = self.get_feature_path(feature_id)
+        file_path = feature_path / self.QUICKSTART_FILE
+        self._create_backup(file_path)
+
+        content = quickstart.to_markdown()
+        file_path.write_text(content, encoding="utf-8")
+        return file_path

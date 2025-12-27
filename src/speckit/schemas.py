@@ -880,3 +880,488 @@ class GeneratedArtifact(BaseModel):
     model_used: str
     tokens_used: int
     retries: int = 0  # Number of retry attempts
+
+
+# =============================================================================
+# Extended Artifacts (data-model, research, contracts, checklists, quickstart)
+# =============================================================================
+
+
+class DataModelField(BaseModel):
+    """Field/attribute definition in a data model entity."""
+
+    name: str
+    field_type: str  # e.g., "UUID", "String", "Integer", "DateTime"
+    description: str
+    is_required: bool = True
+    is_primary_key: bool = False
+    is_foreign_key: bool = False
+    foreign_key_target: Optional[str] = None  # e.g., "User.id"
+    default_value: Optional[str] = None
+    constraints: list[str] = Field(default_factory=list)  # e.g., ["unique", "indexed"]
+
+    def to_markdown(self) -> str:
+        """Export field to Markdown format."""
+        parts = [f"**`{self.name}`**"]
+
+        # Type and constraints
+        type_info = f": `{self.field_type}`"
+        if self.is_primary_key:
+            type_info += " (Primary Key)"
+        elif self.is_foreign_key and self.foreign_key_target:
+            type_info += f" (FK → {self.foreign_key_target})"
+
+        if not self.is_required:
+            type_info += " (Optional)"
+
+        parts.append(type_info)
+        parts.append(f" - {self.description}")
+
+        if self.default_value:
+            parts.append(f" (default: `{self.default_value}`)")
+
+        if self.constraints:
+            parts.append(f" [{', '.join(self.constraints)}]")
+
+        return "".join(parts)
+
+
+class DataModelEntity(BaseModel):
+    """Entity/table definition in the data model."""
+
+    name: str
+    description: str
+    fields: list[DataModelField] = Field(default_factory=list)
+    relationships: list[str] = Field(default_factory=list)  # e.g., "User (1) → (N) Projects"
+    indexes: list[str] = Field(default_factory=list)  # Additional indexes beyond PKs
+
+    def to_markdown(self) -> str:
+        """Export entity to Markdown format."""
+        lines = [
+            f"### Entity: {self.name}",
+            "",
+            self.description,
+            "",
+            "**Fields**:",
+            "",
+        ]
+
+        for field in self.fields:
+            lines.append(f"- {field.to_markdown()}")
+
+        if self.relationships:
+            lines.extend(["", "**Relationships**:", ""])
+            for rel in self.relationships:
+                lines.append(f"- {rel}")
+
+        if self.indexes:
+            lines.extend(["", "**Indexes**:", ""])
+            for idx in self.indexes:
+                lines.append(f"- {idx}")
+
+        lines.append("")
+        return "\n".join(lines)
+
+
+class DataModel(BaseModel):
+    """Complete data model specification for database schema."""
+
+    feature_id: str
+    feature_name: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    version: str = "1.0.0"
+
+    # Content
+    overview: str = ""
+    entities: list[DataModelEntity] = Field(default_factory=list)
+    database_type: Optional[str] = None  # e.g., "PostgreSQL", "MySQL", "MongoDB"
+    orm_framework: Optional[str] = None  # e.g., "SQLAlchemy", "Prisma", "TypeORM"
+    migration_notes: list[str] = Field(default_factory=list)
+
+    def to_markdown(self) -> str:
+        """Export data model to Markdown format."""
+        lines = [
+            f"# Data Model: {self.feature_name}",
+            "",
+            f"**Feature ID**: {self.feature_id}",
+            f"**Version**: {self.version}",
+            f"**Created**: {self.created_at.isoformat()}",
+            "",
+        ]
+
+        if self.database_type:
+            lines.append(f"**Database**: {self.database_type}")
+        if self.orm_framework:
+            lines.append(f"**ORM**: {self.orm_framework}")
+
+        if self.database_type or self.orm_framework:
+            lines.append("")
+
+        if self.overview:
+            lines.extend(["## Overview", "", self.overview, ""])
+
+        lines.extend(["## Entities", ""])
+        for entity in self.entities:
+            lines.append(entity.to_markdown())
+
+        if self.migration_notes:
+            lines.extend(["## Migration Notes", ""])
+            for note in self.migration_notes:
+                lines.append(f"- {note}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+
+class TechnologyDecision(BaseModel):
+    """A technology choice with rationale and alternatives considered."""
+
+    decision_name: str  # e.g., "LLM Provider Integration"
+    selected_option: str  # e.g., "LiteLLM"
+    rationale: str
+    alternatives_considered: list[str] = Field(default_factory=list)  # e.g., ["Direct SDKs", "LangChain"]
+    trade_offs: dict[str, list[str]] = Field(default_factory=dict)  # pros/cons
+    code_examples: list[str] = Field(default_factory=list)  # Example code snippets
+
+    def to_markdown(self) -> str:
+        """Export technology decision to Markdown format."""
+        lines = [
+            f"## Decision: {self.decision_name}",
+            "",
+            f"**Selected**: {self.selected_option}",
+            "",
+            f"**Rationale**: {self.rationale}",
+            "",
+        ]
+
+        if self.alternatives_considered:
+            lines.extend(["**Alternatives Considered**:", ""])
+            for alt in self.alternatives_considered:
+                lines.append(f"- {alt}")
+            lines.append("")
+
+        if self.trade_offs:
+            if "pros" in self.trade_offs:
+                lines.extend(["**Pros**:", ""])
+                for pro in self.trade_offs["pros"]:
+                    lines.append(f"- ✅ {pro}")
+                lines.append("")
+
+            if "cons" in self.trade_offs:
+                lines.extend(["**Cons**:", ""])
+                for con in self.trade_offs["cons"]:
+                    lines.append(f"- ⚠️  {con}")
+                lines.append("")
+
+        if self.code_examples:
+            lines.extend(["**Example Usage**:", ""])
+            for example in self.code_examples:
+                lines.append("```")
+                lines.append(example)
+                lines.append("```")
+                lines.append("")
+
+        return "\n".join(lines)
+
+
+class ResearchFindings(BaseModel):
+    """Technology research and architectural decisions documentation."""
+
+    feature_id: str
+    feature_name: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    version: str = "1.0.0"
+
+    # Content
+    overview: str = ""
+    decisions: list[TechnologyDecision] = Field(default_factory=list)
+    tech_stack_summary: Optional[str] = None
+    implementation_patterns: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)  # Links to docs, articles
+
+    def to_markdown(self) -> str:
+        """Export research findings to Markdown format."""
+        lines = [
+            f"# Technology Research: {self.feature_name}",
+            "",
+            f"**Feature ID**: {self.feature_id}",
+            f"**Version**: {self.version}",
+            f"**Created**: {self.created_at.isoformat()}",
+            "",
+        ]
+
+        if self.overview:
+            lines.extend(["## Overview", "", self.overview, ""])
+
+        if self.tech_stack_summary:
+            lines.extend(["## Technology Stack", "", self.tech_stack_summary, ""])
+
+        if self.decisions:
+            lines.extend(["## Technology Decisions", ""])
+            for decision in self.decisions:
+                lines.append(decision.to_markdown())
+
+        if self.implementation_patterns:
+            lines.extend(["## Implementation Patterns", ""])
+            for pattern in self.implementation_patterns:
+                lines.append(f"- {pattern}")
+            lines.append("")
+
+        if self.references:
+            lines.extend(["## References", ""])
+            for ref in self.references:
+                lines.append(f"- {ref}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+
+class APIEndpoint(BaseModel):
+    """API endpoint specification."""
+
+    method: str  # GET, POST, PUT, DELETE, PATCH
+    path: str  # e.g., "/api/v2/specifications"
+    summary: str
+    description: str = ""
+    request_body: Optional[dict] = None  # JSON schema or example
+    response_schema: Optional[dict] = None  # JSON schema or example
+    error_responses: dict[str, str] = Field(default_factory=dict)  # status code -> description
+    authentication_required: bool = True
+
+    def to_markdown(self) -> str:
+        """Export API endpoint to Markdown format."""
+        lines = [
+            f"### `{self.method} {self.path}`",
+            "",
+            self.summary,
+            "",
+        ]
+
+        if self.description:
+            lines.append(self.description)
+            lines.append("")
+
+        if self.authentication_required:
+            lines.append("**Authentication**: Required")
+            lines.append("")
+
+        if self.request_body:
+            lines.extend(["**Request Body**:", "", "```json"])
+            import json
+            lines.append(json.dumps(self.request_body, indent=2))
+            lines.extend(["```", ""])
+
+        if self.response_schema:
+            lines.extend(["**Response**:", "", "```json"])
+            import json
+            lines.append(json.dumps(self.response_schema, indent=2))
+            lines.extend(["```", ""])
+
+        if self.error_responses:
+            lines.extend(["**Error Responses**:", ""])
+            for code, desc in self.error_responses.items():
+                lines.append(f"- `{code}`: {desc}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+
+class APIContract(BaseModel):
+    """API contract specification."""
+
+    feature_id: str
+    feature_name: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    version: str = "1.0.0"
+
+    # Content
+    overview: str = ""
+    base_url: str = ""  # e.g., "/api/v2"
+    api_type: str = "REST"  # REST, GraphQL, gRPC, WebSocket
+    endpoints: list[APIEndpoint] = Field(default_factory=list)
+    authentication_method: str = "Bearer Token"  # JWT, API Key, OAuth2
+    rate_limiting: Optional[str] = None
+    versioning_strategy: str = "URL Path"  # URL Path, Header, Query Parameter
+
+    def to_markdown(self) -> str:
+        """Export API contract to Markdown format."""
+        lines = [
+            f"# API Contract: {self.feature_name}",
+            "",
+            f"**Feature ID**: {self.feature_id}",
+            f"**Version**: {self.version}",
+            f"**Created**: {self.created_at.isoformat()}",
+            "",
+        ]
+
+        if self.overview:
+            lines.extend(["## Overview", "", self.overview, ""])
+
+        lines.extend([
+            "## API Configuration",
+            "",
+            f"- **Base URL**: `{self.base_url}`",
+            f"- **Type**: {self.api_type}",
+            f"- **Authentication**: {self.authentication_method}",
+            f"- **Versioning**: {self.versioning_strategy}",
+        ])
+
+        if self.rate_limiting:
+            lines.append(f"- **Rate Limiting**: {self.rate_limiting}")
+
+        lines.extend(["", "## Endpoints", ""])
+
+        for endpoint in self.endpoints:
+            lines.append(endpoint.to_markdown())
+
+        return "\n".join(lines)
+
+
+class ChecklistItem(BaseModel):
+    """Quality checklist item with pass/fail status."""
+
+    id: str
+    criterion: str
+    status: str = "PENDING"  # PASS, FAIL, PENDING
+    details: Optional[str] = None
+
+    def to_markdown(self) -> str:
+        """Export checklist item to Markdown format."""
+        icon = {"PASS": "✅", "FAIL": "❌", "PENDING": "⏸️"}.get(self.status, "")
+        line = f"- {icon} **{self.id}**: {self.criterion} - {self.status}"
+        if self.details:
+            line += f"\n  - {self.details}"
+        return line
+
+
+class QualityChecklist(BaseModel):
+    """Quality validation checklist for specification."""
+
+    feature_id: str
+    feature_name: str
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    # Checklist categories
+    content_quality: list[ChecklistItem] = Field(default_factory=list)
+    requirement_completeness: list[ChecklistItem] = Field(default_factory=list)
+    feature_readiness: list[ChecklistItem] = Field(default_factory=list)
+
+    # Results
+    overall_status: str = "PENDING"  # PASS, FAIL, PENDING
+    recommendations: list[str] = Field(default_factory=list)
+
+    def to_markdown(self) -> str:
+        """Export checklist to Markdown format."""
+        lines = [
+            f"# Specification Quality Checklist",
+            "",
+            f"**Feature**: {self.feature_name} ({self.feature_id})",
+            f"**Generated**: {self.created_at.isoformat()}",
+            "",
+        ]
+
+        if self.content_quality:
+            lines.extend(["## Content Quality", ""])
+            for item in self.content_quality:
+                lines.append(item.to_markdown())
+            lines.append("")
+
+        if self.requirement_completeness:
+            lines.extend(["## Requirement Completeness", ""])
+            for item in self.requirement_completeness:
+                lines.append(item.to_markdown())
+            lines.append("")
+
+        if self.feature_readiness:
+            lines.extend(["## Feature Readiness", ""])
+            for item in self.feature_readiness:
+                lines.append(item.to_markdown())
+            lines.append("")
+
+        lines.extend([
+            "## Overall Status",
+            "",
+            f"**Status**: {self.overall_status}",
+            "",
+        ])
+
+        if self.recommendations:
+            lines.extend(["## Recommendations", ""])
+            for rec in self.recommendations:
+                lines.append(f"- {rec}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+
+class QuickstartGuide(BaseModel):
+    """Getting started guide for the feature."""
+
+    feature_id: str
+    feature_name: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    version: str = "1.0.0"
+
+    # Content
+    overview: str = ""
+    prerequisites: list[str] = Field(default_factory=list)
+    installation_steps: list[str] = Field(default_factory=list)
+    configuration_steps: list[str] = Field(default_factory=list)
+    usage_examples: list[str] = Field(default_factory=list)  # Code examples
+    troubleshooting: dict[str, str] = Field(default_factory=dict)  # problem -> solution
+    next_steps: list[str] = Field(default_factory=list)
+
+    def to_markdown(self) -> str:
+        """Export quickstart guide to Markdown format."""
+        lines = [
+            f"# Quickstart Guide: {self.feature_name}",
+            "",
+            f"**Feature ID**: {self.feature_id}",
+            f"**Version**: {self.version}",
+            f"**Created**: {self.created_at.isoformat()}",
+            "",
+        ]
+
+        if self.overview:
+            lines.extend(["## Overview", "", self.overview, ""])
+
+        if self.prerequisites:
+            lines.extend(["## Prerequisites", ""])
+            for prereq in self.prerequisites:
+                lines.append(f"- {prereq}")
+            lines.append("")
+
+        if self.installation_steps:
+            lines.extend(["## Installation", ""])
+            for i, step in enumerate(self.installation_steps, 1):
+                lines.append(f"{i}. {step}")
+            lines.append("")
+
+        if self.configuration_steps:
+            lines.extend(["## Configuration", ""])
+            for i, step in enumerate(self.configuration_steps, 1):
+                lines.append(f"{i}. {step}")
+            lines.append("")
+
+        if self.usage_examples:
+            lines.extend(["## Usage Examples", ""])
+            for example in self.usage_examples:
+                lines.append("```")
+                lines.append(example)
+                lines.append("```")
+                lines.append("")
+
+        if self.troubleshooting:
+            lines.extend(["## Troubleshooting", ""])
+            for problem, solution in self.troubleshooting.items():
+                lines.append(f"**Problem**: {problem}")
+                lines.append(f"**Solution**: {solution}")
+                lines.append("")
+
+        if self.next_steps:
+            lines.extend(["## Next Steps", ""])
+            for step in self.next_steps:
+                lines.append(f"- {step}")
+            lines.append("")
+
+        return "\n".join(lines)
