@@ -19,8 +19,13 @@ from speckit.config import LLMConfig, SpecKitConfig
 from speckit.llm import LiteLLMProvider
 from speckit.schemas import (
     AnalysisReport,
+    APIContract,
     ClarificationQuestion,
     Constitution,
+    DataModel,
+    QualityChecklist,
+    QuickstartGuide,
+    ResearchFindings,
     Specification,
     TaskBreakdown,
     TechStack,
@@ -94,6 +99,7 @@ class SpecKit:
         self._task_generator = None
         self._implementation_tracker = None
         self._consistency_analyzer = None
+        self._artifact_generator = None
 
     @property
     def llm(self) -> LiteLLMProvider:
@@ -452,3 +458,240 @@ class SpecKit:
     def list_features(self) -> list[str]:
         """List all features in the project."""
         return self.storage.list_features()
+
+    # =========================================================================
+    # Extended Artifacts Generation
+    # =========================================================================
+
+    def generate_data_model(
+        self,
+        specification: Specification,
+        plan: TechnicalPlan,
+    ) -> DataModel:
+        """
+        Generate database schema and data model.
+
+        Args:
+            specification: Feature specification
+            plan: Technical implementation plan
+
+        Returns:
+            DataModel with entities and fields
+
+        Example:
+            >>> spec = kit.load_specification("001-user-auth")
+            >>> plan = kit.load_plan("001-user-auth")
+            >>> data_model = kit.generate_data_model(spec, plan)
+            >>> kit.storage.save_data_model(data_model, "001-user-auth")
+        """
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return self._artifact_generator.generate_data_model(
+            specification=specification,
+            plan=plan,
+            language=self.config.language,
+        )
+
+    async def generate_data_model_async(
+        self,
+        specification: Specification,
+        plan: TechnicalPlan,
+    ) -> DataModel:
+        """Async version of generate_data_model()."""
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return await self._artifact_generator.generate_data_model_async(
+            specification=specification,
+            plan=plan,
+            language=self.config.language,
+        )
+
+    def generate_research(
+        self,
+        plan: TechnicalPlan,
+    ) -> ResearchFindings:
+        """
+        Generate technology research and decision documentation.
+
+        Args:
+            plan: Technical implementation plan
+
+        Returns:
+            ResearchFindings with technology decisions
+
+        Example:
+            >>> plan = kit.load_plan("001-user-auth")
+            >>> research = kit.generate_research(plan)
+            >>> kit.storage.save_research(research, "001-user-auth")
+        """
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return self._artifact_generator.generate_research(
+            plan=plan,
+            language=self.config.language,
+        )
+
+    async def generate_research_async(
+        self,
+        plan: TechnicalPlan,
+    ) -> ResearchFindings:
+        """Async version of generate_research()."""
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return await self._artifact_generator.generate_research_async(
+            plan=plan,
+            language=self.config.language,
+        )
+
+    def generate_api_contract(
+        self,
+        specification: Specification,
+        plan: TechnicalPlan,
+    ) -> APIContract:
+        """
+        Generate API specification with endpoints and schemas.
+
+        Args:
+            specification: Feature specification
+            plan: Technical implementation plan
+
+        Returns:
+            APIContract with endpoint definitions
+
+        Example:
+            >>> spec = kit.load_specification("001-user-auth")
+            >>> plan = kit.load_plan("001-user-auth")
+            >>> contract = kit.generate_api_contract(spec, plan)
+            >>> kit.storage.save_api_contract(contract, "001-user-auth")
+        """
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return self._artifact_generator.generate_api_contract(
+            specification=specification,
+            plan=plan,
+            language=self.config.language,
+        )
+
+    async def generate_api_contract_async(
+        self,
+        specification: Specification,
+        plan: TechnicalPlan,
+    ) -> APIContract:
+        """Async version of generate_api_contract()."""
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return await self._artifact_generator.generate_api_contract_async(
+            specification=specification,
+            plan=plan,
+            language=self.config.language,
+        )
+
+    def generate_checklist(
+        self,
+        specification: Specification,
+    ) -> QualityChecklist:
+        """
+        Generate quality validation checklist for specification.
+
+        Args:
+            specification: Feature specification to validate
+
+        Returns:
+            QualityChecklist with validation items
+
+        Example:
+            >>> spec = kit.load_specification("001-user-auth")
+            >>> checklist = kit.generate_checklist(spec)
+            >>> kit.storage.save_checklist(checklist, "001-user-auth")
+        """
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return self._artifact_generator.generate_checklist(
+            specification=specification,
+            language=self.config.language,
+        )
+
+    async def generate_checklist_async(
+        self,
+        specification: Specification,
+    ) -> QualityChecklist:
+        """Async version of generate_checklist()."""
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return await self._artifact_generator.generate_checklist_async(
+            specification=specification,
+            language=self.config.language,
+        )
+
+    def generate_quickstart(
+        self,
+        specification: Specification,
+        plan: TechnicalPlan,
+    ) -> QuickstartGuide:
+        """
+        Generate quickstart guide for developers.
+
+        Args:
+            specification: Feature specification
+            plan: Technical implementation plan
+
+        Returns:
+            QuickstartGuide with setup instructions
+
+        Example:
+            >>> spec = kit.load_specification("001-user-auth")
+            >>> plan = kit.load_plan("001-user-auth")
+            >>> quickstart = kit.generate_quickstart(spec, plan)
+            >>> kit.storage.save_quickstart(quickstart, "001-user-auth")
+        """
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return self._artifact_generator.generate_quickstart(
+            specification=specification,
+            plan=plan,
+            language=self.config.language,
+        )
+
+    async def generate_quickstart_async(
+        self,
+        specification: Specification,
+        plan: TechnicalPlan,
+    ) -> QuickstartGuide:
+        """Async version of generate_quickstart()."""
+        from speckit.core.artifacts import ArtifactGenerator
+
+        if self._artifact_generator is None:
+            self._artifact_generator = ArtifactGenerator(self.llm, self.storage)
+
+        return await self._artifact_generator.generate_quickstart_async(
+            specification=specification,
+            plan=plan,
+            language=self.config.language,
+        )
