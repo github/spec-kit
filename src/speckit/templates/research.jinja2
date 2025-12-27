@@ -1,0 +1,73 @@
+{# Template for generating technology research findings #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are a technology researcher documenting architectural decisions.
+
+## Task
+Create comprehensive research findings for implementing this feature:
+
+**Technical Plan:**
+{{ plan | tojson(indent=2) }}
+
+## Requirements
+Generate research findings with:
+
+1. **Overview**: 2-3 paragraphs summarizing the research purpose and key findings
+
+2. **Technology Stack Summary**: Brief overview of selected technologies
+
+3. **Technology Decisions** (3-8 decisions):
+   For each critical technology choice:
+   - decision_name: The technology area or problem being addressed
+   - selected_option: The chosen technology/approach
+   - rationale: Why this option was selected (2-4 sentences)
+   - alternatives_considered: List of 2-4 alternatives that were evaluated
+   - trade_offs:
+     * pros: List of 3-5 advantages
+     * cons: List of 2-4 disadvantages or limitations
+   - code_examples: List of 1-3 code snippets demonstrating usage
+
+4. **Implementation Patterns**: List of 3-7 patterns or best practices to follow
+
+## Focus Areas for Decisions
+Consider these common decision areas:
+- LLM/AI provider integration
+- Database and ORM selection
+- Authentication/Authorization approach
+- API design (REST vs GraphQL vs RPC)
+- State management
+- Testing strategy
+- Deployment and infrastructure
+- Security measures
+
+## Output Format
+Return a JSON object matching the ResearchFindings schema:
+{
+  "feature_id": "{{ plan.feature_id }}",
+  "feature_name": "...",
+  "overview": "...",
+  "tech_stack_summary": "...",
+  "decisions": [
+    {
+      "decision_name": "Authentication Strategy",
+      "selected_option": "JWT with RS256",
+      "rationale": "...",
+      "alternatives_considered": ["Session-based auth", "OAuth2 only", "Magic links"],
+      "trade_offs": {
+        "pros": ["Stateless", "Scalable", "Standard"],
+        "cons": ["Token size", "Revocation complexity"]
+      },
+      "code_examples": [
+        "import jwt\ntoken = jwt.encode(payload, private_key, algorithm='RS256')"
+      ]
+    }
+  ],
+  "implementation_patterns": [
+    "Use repository pattern for data access",
+    "Implement retry logic with exponential backoff"
+  ]
+}
+
+Be thorough and provide actionable insights.

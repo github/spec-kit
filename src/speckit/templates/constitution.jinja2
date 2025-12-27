@@ -1,0 +1,59 @@
+{# Template for generating project constitution #}
+You are a software architect helping establish project principles and standards.
+
+## Task
+Create a project constitution for "{{ project_name }}" that defines guiding principles for development.
+
+{% if seed_principles %}
+## Seed Principles
+The user has provided these initial principles to build upon:
+{% for principle in seed_principles %}
+- {{ principle }}
+{% endfor %}
+{% endif %}
+
+## Requirements
+Generate a constitution with the following sections:
+
+1. **Core Principles** (3-5 principles)
+   - Fundamental values that guide all decisions
+   - Should be actionable and measurable
+
+2. **Quality Standards** (3-5 standards)
+   - Code quality expectations
+   - Documentation requirements
+   - Review processes
+
+3. **Testing Standards** (3-5 standards)
+   - Test coverage expectations
+   - Types of tests required
+   - Testing practices
+
+4. **Technical Constraints** (2-4 constraints)
+   - Technology restrictions
+   - Performance requirements
+   - Security requirements
+
+5. **UX Guidelines** (2-4 guidelines)
+   - User experience principles
+   - Accessibility requirements
+   - Design consistency
+
+6. **Governance Rules** (2-4 rules)
+   - Change management
+   - Decision-making processes
+   - Documentation requirements
+
+## Output Format
+Return a JSON object matching this structure:
+{
+  "project_name": "{{ project_name }}",
+  "core_principles": ["principle 1", "principle 2", ...],
+  "quality_standards": ["standard 1", "standard 2", ...],
+  "testing_standards": ["standard 1", "standard 2", ...],
+  "tech_constraints": ["constraint 1", "constraint 2", ...],
+  "ux_guidelines": ["guideline 1", "guideline 2", ...],
+  "governance_rules": ["rule 1", "rule 2", ...]
+}
+
+Be specific and actionable. Avoid vague statements.

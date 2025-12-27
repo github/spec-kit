@@ -1,0 +1,83 @@
+{# Template for generating API contracts #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are an API architect creating formal API specifications.
+
+## Task
+Create a comprehensive API contract for this feature:
+
+**Specification:**
+{{ specification | tojson(indent=2) }}
+
+**Technical Plan:**
+{{ plan | tojson(indent=2) }}
+
+## Requirements
+Generate an API contract with:
+
+1. **Overview**: 2-3 paragraphs describing the API purpose and design philosophy
+
+2. **Base URL**: The base path for all endpoints (e.g., "/api/v2", "/graphql")
+
+3. **API Type**: REST, GraphQL, gRPC, WebSocket, etc.
+
+4. **Authentication Method**: Bearer Token, API Key, OAuth2, JWT, etc.
+
+5. **Versioning Strategy**: URL path, header, query parameter, etc.
+
+6. **Endpoints** (5-20 endpoints):
+   For each endpoint:
+   - method: GET, POST, PUT, PATCH, DELETE, SUBSCRIBE
+   - path: Full endpoint path with parameters (e.g., "/users/{user_id}")
+   - summary: Brief description (1 sentence)
+   - description: Detailed explanation (2-4 sentences)
+   - request_body: JSON schema of request body (if applicable)
+   - query_parameters: Dict of query params with descriptions (if applicable)
+   - response_schema: JSON schema of successful response
+   - error_responses: Dict mapping status codes to error descriptions
+     * Common codes: 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), 404 (Not Found), 409 (Conflict), 500 (Server Error)
+
+7. **Rate Limiting**: Policy for API rate limits (if applicable)
+
+8. **Webhooks**: Webhook endpoints for async notifications (if applicable)
+
+## Output Format
+Return a JSON object matching the APIContract schema:
+{
+  "feature_id": "{{ specification.feature_id }}",
+  "feature_name": "{{ specification.feature_name }}",
+  "overview": "...",
+  "base_url": "/api/v2",
+  "api_type": "REST",
+  "authentication_method": "Bearer Token (JWT)",
+  "versioning_strategy": "URL Path",
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/auth/register",
+      "summary": "Register a new user",
+      "description": "...",
+      "request_body": {
+        "email": "string",
+        "password": "string",
+        "name": "string (optional)"
+      },
+      "query_parameters": {},
+      "response_schema": {
+        "user_id": "uuid",
+        "access_token": "string",
+        "refresh_token": "string"
+      },
+      "error_responses": {
+        "400": "Invalid email or password format",
+        "409": "Email already registered"
+      }
+    }
+  ],
+  "rate_limiting": "100 requests per minute per IP",
+  "webhooks": []
+}
+
+Be specific with schema definitions. Use realistic field types and validation rules.

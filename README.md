@@ -10,6 +10,7 @@
 
 <p align="center">
     <a href="https://github.com/github/spec-kit/actions/workflows/release.yml"><img src="https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
+    <a href="https://pypi.org/project/speckit-ai/"><img src="https://img.shields.io/pypi/v/speckit-ai" alt="PyPI version"/></a>
     <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
     <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
     <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
@@ -21,6 +22,7 @@
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get Started](#-get-started)
+- [🐍 Python Library](#-python-library)
 - [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
@@ -133,6 +135,96 @@ Use **`/speckit.implement`** to execute all tasks and build your feature accordi
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 🐍 Python Library
+
+The `speckit-ai` Python library provides programmatic access to Spec-Driven Development workflows. Use it to integrate spec generation into your own tools, CI/CD pipelines, or custom applications.
+
+### Installation
+
+```bash
+# Basic installation
+pip install speckit-ai
+
+# With MCP (Model Context Protocol) support for AI assistants
+pip install speckit-ai[mcp]
+```
+
+### Quick Start
+
+```python
+from speckit import SpecKit, SpecKitConfig, LLMConfig
+
+# Initialize with your project path
+kit = SpecKit(
+    project_path="./my-project",
+    config=SpecKitConfig(
+        llm=LLMConfig(
+            model="claude-3-haiku-20240307",  # or any LiteLLM-supported model
+            temperature=0.7,
+            max_tokens=4096,
+        )
+    )
+)
+
+# Generate a specification from a feature description
+spec = kit.specify(
+    "A todo list feature that allows users to add, complete, and delete tasks",
+    feature_id="001-todo-list"
+)
+
+# Create a technical implementation plan
+plan = kit.plan(spec)
+
+# Generate implementation tasks
+tasks = kit.tasks(plan)
+
+# Save all artifacts
+kit.save(spec)
+kit.save(plan)
+kit.save(tasks)
+
+# Analyze consistency across artifacts
+report = kit.analyze(spec, plan, tasks)
+print(report.to_markdown())
+```
+
+### CLI Usage
+
+The library also provides a CLI for quick operations:
+
+```bash
+# Generate a specification
+speckit specify "A user authentication feature" --feature-id 001-auth
+
+# Create a plan from specification
+speckit plan --feature-id 001-auth
+
+# Generate tasks from plan
+speckit tasks --feature-id 001-auth
+
+# Analyze artifacts for consistency
+speckit analyze --feature-id 001-auth
+```
+
+### Supported LLM Providers
+
+The library uses [LiteLLM](https://docs.litellm.ai/) under the hood, supporting 100+ LLM providers including:
+
+- **Anthropic**: Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku
+- **OpenAI**: GPT-4o, GPT-4 Turbo, GPT-3.5 Turbo
+- **Google**: Gemini Pro, Gemini Ultra
+- **AWS Bedrock**: Claude, Titan, Llama
+- **Azure OpenAI**: All Azure-hosted models
+- **Local models**: Ollama, vLLM, and more
+
+Set your provider's API key as an environment variable:
+
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+# or
+export OPENAI_API_KEY=your-key-here
+```
 
 ## 📽️ Video Overview
 

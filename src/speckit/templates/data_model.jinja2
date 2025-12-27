@@ -1,0 +1,75 @@
+{# Template for generating data models #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are a database architect creating a data model specification.
+
+## Task
+Create a comprehensive data model for implementing this feature:
+
+**Specification:**
+{{ specification | tojson(indent=2) }}
+
+**Technical Plan:**
+{{ plan | tojson(indent=2) }}
+
+## Requirements
+Generate a data model with:
+
+1. **Overview**: 2-3 paragraphs describing the data model purpose and design
+
+2. **Database Type**: PostgreSQL, MySQL, MongoDB, etc.
+
+3. **ORM Framework**: Prisma, SQLAlchemy, TypeORM, Mongoose, etc. (based on tech stack)
+
+4. **Entities** (3-15 entities):
+   For each entity:
+   - Name (singular, PascalCase)
+   - Description (1 sentence)
+   - Fields (3-20 fields per entity):
+     * name (snake_case for SQL, camelCase for NoSQL)
+     * field_type (UUID, String, Integer, Boolean, DateTime, JSON, etc.)
+     * description (1 sentence)
+     * is_primary_key (boolean)
+     * is_foreign_key (boolean)
+     * is_nullable (boolean, default: false)
+     * is_unique (boolean, default: false)
+     * default_value (optional)
+     * constraints (list of strings like "indexed", "min:0", "max:255")
+   - Relationships (list of strings describing relationships):
+     * Format: "EntityA (1) → (N) EntityB" or "User (1) ← (1) Profile"
+
+5. **Migration Notes**: Important considerations for database migrations
+
+## Output Format
+Return a JSON object matching the DataModel schema:
+{
+  "feature_id": "{{ specification.feature_id }}",
+  "feature_name": "{{ specification.feature_name }}",
+  "overview": "...",
+  "database_type": "PostgreSQL",
+  "orm_framework": "Prisma",
+  "entities": [
+    {
+      "name": "User",
+      "description": "...",
+      "fields": [
+        {
+          "name": "id",
+          "field_type": "UUID",
+          "description": "...",
+          "is_primary_key": true,
+          "is_foreign_key": false,
+          "is_nullable": false,
+          "is_unique": true,
+          "constraints": ["indexed"]
+        }
+      ],
+      "relationships": ["User (1) → (N) Sessions"]
+    }
+  ],
+  "migration_notes": "..."
+}
+
+Be specific and comprehensive. Include all entities needed for the feature.

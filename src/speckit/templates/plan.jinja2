@@ -1,0 +1,86 @@
+{# Template for generating technical implementation plans #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are a software architect creating a technical implementation plan.
+
+## Task
+Create a technical plan for implementing this specification:
+
+{{ specification | tojson(indent=2) }}
+
+{% if constitution %}
+## Project Constitution
+Ensure the plan follows these principles:
+{% for principle in constitution.core_principles %}
+- {{ principle }}
+{% endfor %}
+{% for constraint in constitution.tech_constraints %}
+- {{ constraint }}
+{% endfor %}
+{% endif %}
+
+{% if tech_stack %}
+## Technology Constraints
+Use this technology stack:
+- Language: {{ tech_stack.language }}
+{% if tech_stack.framework %}- Framework: {{ tech_stack.framework }}{% endif %}
+{% if tech_stack.database %}- Database: {{ tech_stack.database }}{% endif %}
+{% if tech_stack.testing %}- Testing: {{ tech_stack.testing }}{% endif %}
+{% endif %}
+
+## Requirements
+Generate a plan with:
+
+1. **Tech Stack**:
+   - Language and version
+   - Framework (if applicable)
+   - Database (if applicable)
+   - Testing framework
+   - Additional tools
+
+2. **Architecture Overview**: 2-3 paragraphs describing the design
+
+3. **Components** (3-10 components):
+   - Name and type (module, service, cli, etc.)
+   - Description
+   - File path
+   - Dependencies on other components
+   - Public interface (exported functions/classes)
+
+4. **File Structure**: Directory tree showing project organization
+
+5. **Technical Risks**: Potential issues and challenges
+
+6. **Mitigation Strategies**: How to address risks
+
+## Output Format
+Return a JSON object matching the TechnicalPlan schema:
+{
+  "feature_id": "{{ specification.feature_id }}",
+  "tech_stack": {
+    "language": "...",
+    "framework": "...",
+    "database": null,
+    "orm": null,
+    "testing": "...",
+    "additional_tools": [...]
+  },
+  "architecture_overview": "...",
+  "components": [
+    {
+      "name": "...",
+      "component_type": "module|service|cli|...",
+      "description": "...",
+      "file_path": "src/...",
+      "dependencies": [...],
+      "public_interface": [...]
+    }
+  ],
+  "file_structure": "...",
+  "technical_risks": [...],
+  "mitigation_strategies": [...]
+}
+
+Be specific about file paths and interfaces.

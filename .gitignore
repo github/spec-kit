@@ -44,3 +44,6 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Test output
+test_output

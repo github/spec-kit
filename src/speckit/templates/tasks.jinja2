@@ -1,0 +1,148 @@
+{# Template for generating implementation tasks #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are a technical lead breaking down a plan into actionable, well-structured tasks.
+
+## Task
+Create an implementation task breakdown from this plan:
+
+{{ plan | tojson(indent=2) }}
+
+## Specification Reference
+{{ specification | tojson(indent=2) }}
+
+## Phase Organization
+
+Organize tasks into phases based on user stories and functional groupings:
+
+1. **Phase 1: Setup (Shared Infrastructure)**
+   - Project initialization, dependencies, tooling
+   - Purpose: "Project initialization and basic structure"
+   - No dependencies, can start immediately
+
+2. **Phase 2: Foundational (Blocking Prerequisites)**
+   - Core infrastructure that MUST be complete before any user story
+   - Database schemas, auth framework, base models
+   - Purpose: "Core infrastructure that MUST be complete before ANY user story"
+   - CRITICAL: No user story work can begin until this phase is complete
+
+3. **Phase 3+: User Story Phases**
+   - One phase per user story from the specification
+   - Each phase should be independently testable
+   - Include priority (P1 for MVP, P2 for important, P3 for nice to have)
+   - Mark MVP phases with is_mvp: true
+
+4. **Final Phase: Polish & Cross-Cutting**
+   - Documentation, cleanup, optimization
+   - Depends on all desired user stories being complete
+
+## Task Requirements
+
+Each task must have:
+- **id**: Unique ID without hyphens (T001, T002, etc.)
+- **title**: Brief, actionable title (e.g., "Create User model")
+- **description**: 2-4 sentences explaining what to implement, why it matters, and hints
+- **phase**: The phase ID this task belongs to (e.g., "setup", "foundational", "us1")
+- **priority**: P1 (critical/MVP), P2 (important), or P3 (nice to have)
+- **file_paths**: Exact file paths to create/modify
+- **dependencies**: List of task IDs that must complete first
+- **dependency_reasons**: Object mapping task_id -> reason for dependency
+- **is_parallel**: true if can run with other tasks (different files, no deps)
+- **user_story_id**: Link to user story ID if applicable (e.g., "US-001")
+- **validation_criteria**: How to verify the task is complete
+
+## Output Format
+
+Return a JSON object with this exact structure:
+
+```json
+{
+  "feature_id": "{{ plan.feature_id }}",
+  "feature_name": "Feature display name from plan",
+  "input_docs": "Design documents from `/specs/{{ plan.feature_id }}/`",
+  "prerequisites": ["plan.md", "spec.md"],
+  "tests_requested": false,
+  "implementation_strategy": "MVP First approach: Complete Setup, Foundational, then User Story 1 before others.",
+  "parallel_opportunities": [
+    "All Setup tasks marked [P] can run in parallel",
+    "User stories can proceed in parallel after Foundational phase"
+  ],
+  "phases": [
+    {
+      "id": "setup",
+      "number": 1,
+      "name": "Setup (Shared Infrastructure)",
+      "purpose": "Project initialization and dependency configuration",
+      "is_mvp": true,
+      "checkpoint": "All dependencies installed, project structure ready",
+      "user_story_id": null,
+      "priority": ""
+    },
+    {
+      "id": "foundational",
+      "number": 2,
+      "name": "Foundational (Blocking Prerequisites)",
+      "purpose": "Core infrastructure that MUST be complete before ANY user story",
+      "is_mvp": true,
+      "checkpoint": "Foundation ready - user story implementation can now begin",
+      "user_story_id": null,
+      "priority": ""
+    },
+    {
+      "id": "us1",
+      "number": 3,
+      "name": "User Story 1 - [Title from spec]",
+      "purpose": "[Goal from user story]",
+      "is_mvp": true,
+      "checkpoint": "User Story 1 complete - independently functional and testable",
+      "user_story_id": "US-001",
+      "priority": "P1"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Create project structure",
+      "description": "Initialize the project with required directories and configuration files. This establishes the foundation for all subsequent development.",
+      "phase": "setup",
+      "priority": "P1",
+      "status": "pending",
+      "user_story_id": null,
+      "file_paths": ["src/", "tests/", "pyproject.toml"],
+      "dependencies": [],
+      "dependency_reasons": {},
+      "is_parallel": false,
+      "validation_criteria": ["Directory structure exists", "Config files valid"],
+      "estimated_complexity": "low"
+    },
+    {
+      "id": "T002",
+      "title": "Configure linting and formatting",
+      "description": "Set up code quality tools (ruff, black, etc.) for consistent code style. Can run in parallel with other setup tasks.",
+      "phase": "setup",
+      "priority": "P2",
+      "status": "pending",
+      "user_story_id": null,
+      "file_paths": ["pyproject.toml", ".pre-commit-config.yaml"],
+      "dependencies": ["T001"],
+      "dependency_reasons": {"T001": "project structure must exist"},
+      "is_parallel": true,
+      "validation_criteria": ["Linting passes", "Formatter configured"],
+      "estimated_complexity": "low"
+    }
+  ]
+}
+```
+
+## Guidelines
+
+- **Task IDs**: Use T001, T002, etc. (NO hyphens)
+- **Phases**: Create one phase per user story from the spec, plus Setup and Foundational
+- **Dependencies**: Be explicit about why tasks depend on each other
+- **Parallel tasks**: Mark [P] only when files don't conflict AND no dependencies
+- **User stories**: Link each task to the user story it implements (if applicable)
+- **MVP focus**: Mark P1/MVP tasks clearly - these should deliver value independently
+- **Checkpoints**: Each phase ends with a validation checkpoint
+- **Descriptions**: Include implementation hints and why the task matters

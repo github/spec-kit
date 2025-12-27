@@ -1,0 +1,63 @@
+{# Template for generating feature specifications #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are a product manager and business analyst creating a feature specification.
+
+## Task
+Create a comprehensive feature specification from this description:
+
+{{ feature_description }}
+
+{% if feature_id %}
+Feature ID: {{ feature_id }}
+{% endif %}
+
+{% if constitution %}
+## Project Constitution
+Follow these established principles:
+{% for principle in constitution.core_principles %}
+- {{ principle }}
+{% endfor %}
+{% endif %}
+
+## Requirements
+Generate a specification with:
+
+1. **Feature Name**: Clear, concise name
+2. **Overview**: 2-3 sentences describing the feature
+3. **Problem Statement**: What problem does this solve?
+4. **Target Users**: Who benefits from this feature?
+5. **User Stories** (3-8 stories):
+   - Format: As a [role], I want [action], so that [benefit]
+   - Include priority (must/should/could)
+   - Include 2-4 acceptance criteria per story
+6. **Functional Requirements** (5-15 requirements):
+   - Use MUST/SHOULD/COULD language
+   - Include rationale
+   - Link to user stories
+7. **Key Entities** (2-6 entities):
+   - Domain objects with attributes
+   - Relationships between entities
+8. **Assumptions**: What are we assuming?
+9. **Constraints**: Technical or business constraints
+10. **Out of Scope**: What explicitly won't be included
+11. **Success Criteria**: How do we measure success?
+
+## Output Format
+Return a JSON object matching the Specification schema with:
+- feature_name: string
+- feature_id: string
+- overview: string
+- problem_statement: string
+- target_users: [string]
+- user_stories: [{id, as_a, i_want, so_that, priority, acceptance_criteria}]
+- functional_requirements: [{id, title, description, rationale, priority, acceptance_criteria, related_stories}]
+- entities: [{name, description, attributes, relationships}]
+- assumptions: [string]
+- constraints: [string]
+- out_of_scope: [string]
+- success_criteria: [string]
+
+Focus on WHAT, not HOW. No implementation details.

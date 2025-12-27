@@ -1,0 +1,94 @@
+{# Template for generating quality checklists #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are a quality assurance specialist validating specification quality.
+
+## Task
+Create a comprehensive quality checklist for this specification:
+
+**Specification:**
+{{ specification | tojson(indent=2) }}
+
+## Requirements
+Analyze the specification and generate a quality checklist with:
+
+1. **Content Quality** (5-8 items):
+   Validate that the specification:
+   - Focuses on user value, not implementation
+   - Avoids technical details (languages, frameworks, APIs)
+   - Is written for non-technical stakeholders
+   - Has clear and unambiguous language
+   - Includes all mandatory sections
+
+2. **Requirement Completeness** (5-8 items):
+   Validate that:
+   - All requirements are testable and measurable
+   - Success criteria are well-defined
+   - Edge cases are considered
+   - Non-functional requirements are included
+   - No [NEEDS CLARIFICATION] markers remain
+
+3. **Feature Readiness** (5-8 items):
+   Validate that:
+   - User stories follow proper format
+   - Acceptance criteria are complete
+   - Dependencies are identified
+   - Risks are documented
+   - Timeline is realistic
+
+For each checklist item:
+- id: Unique identifier (e.g., "CQ-001", "RC-001", "FR-001")
+- criterion: The quality criterion being checked
+- status: "PASS", "FAIL", or "PENDING"
+- notes: Optional explanation or recommendation (if status is FAIL or PENDING)
+
+4. **Overall Status**: "PASS" (all items pass), "FAIL" (any critical failures), or "PENDING" (needs review)
+
+5. **Recommendations**: List of 3-7 improvement suggestions (even if status is PASS)
+
+## Output Format
+Return a JSON object matching the QualityChecklist schema:
+{
+  "feature_id": "{{ specification.feature_id }}",
+  "feature_name": "{{ specification.feature_name }}",
+  "content_quality": [
+    {
+      "id": "CQ-001",
+      "criterion": "No implementation details (languages, frameworks, APIs)",
+      "status": "PASS",
+      "notes": null
+    },
+    {
+      "id": "CQ-002",
+      "criterion": "Focused on user value and business needs",
+      "status": "FAIL",
+      "notes": "Section 2.3 mentions React components - remove technical details"
+    }
+  ],
+  "requirement_completeness": [
+    {
+      "id": "RC-001",
+      "criterion": "All requirements are testable and unambiguous",
+      "status": "PASS",
+      "notes": null
+    }
+  ],
+  "feature_readiness": [
+    {
+      "id": "FR-001",
+      "criterion": "User stories follow 'As a..., I want..., so that...' format",
+      "status": "PASS",
+      "notes": null
+    }
+  ],
+  "overall_status": "PASS",
+  "recommendations": [
+    "Add more specific success metrics",
+    "Consider accessibility requirements",
+    "Document data retention policies"
+  ]
+}
+
+Be thorough and constructive. Provide specific, actionable feedback.

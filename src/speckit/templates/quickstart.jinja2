@@ -1,0 +1,99 @@
+{# Template for generating quickstart guides #}
+{% if language and language != 'en' %}
+**IMPORTANT: Generate ALL content in {{ language }} language. All text output must be in {{ language }}.**
+
+{% endif %}
+You are a technical writer creating developer onboarding documentation.
+
+## Task
+Create a quickstart guide for this feature:
+
+**Specification:**
+{{ specification | tojson(indent=2) }}
+
+**Technical Plan:**
+{{ plan | tojson(indent=2) }}
+
+## Requirements
+Generate a quickstart guide with:
+
+1. **Overview**: 2-3 paragraphs introducing the feature and what developers will accomplish
+
+2. **Prerequisites** (3-8 items):
+   List of requirements before starting:
+   - Software to install (with versions)
+   - Accounts or credentials needed
+   - Background knowledge required
+   - Environment setup requirements
+
+3. **Installation Steps** (5-12 steps):
+   Detailed, numbered steps to install and configure:
+   - Clone repository / download package
+   - Install dependencies
+   - Configure environment variables
+   - Run database migrations
+   - Verify installation
+   Each step should be clear and actionable.
+
+4. **Configuration Steps** (3-8 steps):
+   How to configure the feature:
+   - Set up configuration files
+   - Configure integrations
+   - Set API keys or credentials
+   - Customize settings
+
+5. **Usage Examples** (3-6 examples):
+   Code snippets or commands showing:
+   - Basic usage
+   - Common use cases
+   - Advanced features
+   Each example should include explanation.
+
+6. **Troubleshooting** (5-10 common issues):
+   Dictionary mapping problems to solutions:
+   - Key: Description of the problem
+   - Value: Step-by-step solution
+
+7. **Next Steps**: List of 3-5 resources or actions for going deeper
+
+## Output Format
+Return a JSON object matching the QuickstartGuide schema:
+{
+  "feature_id": "{{ specification.feature_id }}",
+  "feature_name": "{{ specification.feature_name }}",
+  "overview": "...",
+  "prerequisites": [
+    "Node.js 18.x or higher",
+    "PostgreSQL 14+",
+    "Git installed",
+    "GitHub account with OAuth app configured"
+  ],
+  "installation_steps": [
+    "Clone the repository: git clone ...",
+    "Install dependencies: npm install",
+    "Copy .env.example to .env",
+    "Run database migrations: npm run migrate",
+    "Start development server: npm run dev"
+  ],
+  "configuration_steps": [
+    "Set DATABASE_URL in .env to your PostgreSQL connection string",
+    "Add your GitHub OAuth client ID and secret to .env",
+    "Configure JWT secret: openssl rand -hex 32"
+  ],
+  "usage_examples": [
+    "# Register a new user\ncurl -X POST http://localhost:3000/api/auth/register \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"user@example.com\",\"password\":\"secret123\"}'",
+    "# Login and get access token\ncurl -X POST http://localhost:3000/api/auth/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"user@example.com\",\"password\":\"secret123\"}'"
+  ],
+  "troubleshooting": {
+    "Database connection fails": "Ensure PostgreSQL is running and DATABASE_URL is correct. Check firewall settings.",
+    "Port 3000 already in use": "Either stop the process using port 3000 or set PORT=3001 in .env",
+    "OAuth redirect fails": "Verify the callback URL in your GitHub OAuth app matches http://localhost:3000/api/auth/callback"
+  },
+  "next_steps": [
+    "Read the API documentation at /docs",
+    "Explore advanced authentication features",
+    "Set up production deployment"
+  ]
+}
+
+Be practical and developer-friendly. Include copy-pasteable commands and code.
