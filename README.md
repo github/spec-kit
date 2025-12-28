@@ -161,6 +161,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | ✅      |                                                                                                                                           |
 | [Roo Code](https://roocode.com/)                                                     | ✅      |                                                                                                                                           |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | ✅      |                                                                                                                                           |
+| [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                          | ✅      |                                                                                                                                           |
 | [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
 
 ## 🔧 Specify CLI Reference
@@ -212,6 +213,9 @@ specify init my-project --ai amp
 
 # Initialize with SHAI support
 specify init my-project --ai shai
+
+# Initialize with Mistral Vibe support
+specify init my-project --ai vibe
 
 # Initialize with IBM Bob support
 specify init my-project --ai bob
