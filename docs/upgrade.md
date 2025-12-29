@@ -290,6 +290,7 @@ This tells Spec Kit which feature directory to use when creating specs, plans, a
    ```bash
    ls -la .claude/commands/      # Claude Code
    ls -la .gemini/commands/       # Gemini
+   ls -la .iflow/commands/        # IFlow
    ls -la .cursor/commands/       # Cursor
    ```
 

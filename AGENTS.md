@@ -33,6 +33,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | -------------------------- | ---------------------- | -------- | --------------- | --------------------------- |
 | **Claude Code**            | `.claude/commands/`    | Markdown | `claude`        | Anthropic's Claude Code CLI |
 | **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
+| **IFlow CLI**              | `.iflow/commands/`     | TOML     | `iflow`         | IFlow CLI         |
 | **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
 | **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
 | **Qwen Code**              | `.qwen/commands/`      | TOML     | `qwen`          | Alibaba's Qwen Code CLI     |
@@ -308,6 +309,7 @@ Require a command-line tool to be installed:
 
 - **Claude Code**: `claude` CLI
 - **Gemini CLI**: `gemini` CLI
+- **IFlow CLI**: `iflow` CLI
 - **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
@@ -354,7 +356,7 @@ Command content with {SCRIPT} and $ARGUMENTS placeholders.
 
 ### TOML Format
 
-Used by: Gemini, Qwen
+Used by: Gemini, Qwen, IFlow
 
 ```toml
 description = "Command description"

@@ -39,6 +39,10 @@ echo -e "\n🤖 Installing Gemini CLI..."
 run_command "npm install -g @google/gemini-cli@latest"
 echo "✅ Done"
 
+echo -e "\n🤖 Installing IFlow CLI..."
+run_command "npm install -g @iflow-ai/iflow-cli@latest"
+echo "✅ Done"
+
 echo -e "\n🤖 Installing Augie CLI..."
 run_command "npm install -g @augmentcode/auggie@latest"
 echo "✅ Done"
