@@ -44,6 +44,15 @@ get_current_branch() {
                         highest=$number
                         latest_feature=$dirname
                     fi
+                else
+                    # Check for Jira-style branches (case-insensitive)
+                    local dirname_upper=$(echo "$dirname" | tr '[:lower:]' '[:upper:]')
+                    if [[ "$dirname_upper" =~ ^([A-Z]+-[0-9]+)- ]]; then
+                        # For Jira-style branches, use modification time to find latest
+                        if [[ -z "$latest_feature" ]]; then
+                            latest_feature=$dirname
+                        fi
+                    fi
                 fi
             fi
         done
@@ -72,9 +81,11 @@ check_feature_branch() {
         return 0
     fi
 
-    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+    # Convert branch to uppercase for case-insensitive Jira key matching
+    local branch_upper=$(echo "$branch" | tr '[:lower:]' '[:upper:]')
+    if [[ ! "$branch_upper" =~ ^([0-9]{3}-|[A-Z]+-[0-9]+-) ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: 001-feature-name" >&2
+        echo "Feature branches should be named like: 001-feature-name or PROJ-123-feature-name" >&2
         return 1
     fi
 
@@ -90,14 +101,19 @@ find_feature_dir_by_prefix() {
     local branch_name="$2"
     local specs_dir="$repo_root/specs"
 
-    # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
-    if [[ ! "$branch_name" =~ ^([0-9]{3})- ]]; then
-        # If branch doesn't have numeric prefix, fall back to exact match
+    # Extract prefix from branch (e.g., "004" from "004-whatever" or "PROJ-123" from "PROJ-123-feature")
+    # Convert to uppercase for case-insensitive Jira key matching
+    local branch_upper=$(echo "$branch_name" | tr '[:lower:]' '[:upper:]')
+    local prefix=""
+    if [[ "$branch_name" =~ ^([0-9]{3})- ]]; then
+        prefix="${BASH_REMATCH[1]}"
+    elif [[ "$branch_upper" =~ ^([A-Z]+-[0-9]+)- ]]; then
+        prefix="${BASH_REMATCH[1]}"
+    else
+        # If branch doesn't have valid prefix, fall back to exact match
         echo "$specs_dir/$branch_name"
         return
     fi
-
-    local prefix="${BASH_REMATCH[1]}"
 
     # Search for directories in specs/ that start with this prefix
     local matches=()

@@ -47,6 +47,12 @@ function Get-CurrentBranch {
                     $latestFeature = $_.Name
                 }
             }
+            elseif ($_.Name -match '^([A-Z]+-\d+)-') {
+                # For Jira-style branches, use as fallback if no numeric branches found
+                if (-not $latestFeature) {
+                    $latestFeature = $_.Name
+                }
+            }
         }
         
         if ($latestFeature) {
@@ -79,9 +85,9 @@ function Test-FeatureBranch {
         return $true
     }
     
-    if ($Branch -notmatch '^[0-9]{3}-') {
+    if ($Branch -notmatch '^(\d{3}-|[A-Z]+-\d+-)') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name"
+        Write-Output "Feature branches should be named like: 001-feature-name or PROJ-123-feature-name"
         return $false
     }
     return $true
