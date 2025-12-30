@@ -124,10 +124,47 @@ def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str)
 
 # Agent configuration with name, folder, install URL, and CLI tool requirement
 AGENT_CONFIG = {
+    # --- God Tier & Major IDEs ---
+    "cursor-agent": {
+        "name": "Cursor",
+        "folder": ".cursor/",
+        "install_url": "https://cursor.com",
+        "requires_cli": False,
+    },
+    "windsurf": {
+        "name": "Windsurf",
+        "folder": ".windsurf/",
+        "install_url": "https://windsurf.com",
+        "requires_cli": False,
+    },
+    "antigravity": {
+        "name": "Google Antigravity",
+        "folder": ".antigravity/",
+        "install_url": "https://antigravity.google",
+        "requires_cli": False,
+    },
+    "kiro": {
+        "name": "Amazon Kiro",
+        "folder": ".kiro/",
+        "install_url": "https://kiro.dev",
+        "requires_cli": False,
+    },
+    "bolt": {
+        "name": "Bolt.new",
+        "folder": ".bolt/",
+        "install_url": "https://bolt.new",
+        "requires_cli": False,
+    },
+    "firebase-studio": {
+        "name": "Firebase Studio",
+        "folder": ".idx/",
+        "install_url": "https://studio.firebase.google.com",
+        "requires_cli": False,
+    },
     "copilot": {
         "name": "GitHub Copilot",
         "folder": ".github/",
-        "install_url": None,  # IDE-based, no CLI check needed
+        "install_url": "https://github.com/features/copilot",
         "requires_cli": False,
     },
     "claude": {
@@ -142,41 +179,61 @@ AGENT_CONFIG = {
         "install_url": "https://github.com/google-gemini/gemini-cli",
         "requires_cli": True,
     },
-    "cursor-agent": {
-        "name": "Cursor",
-        "folder": ".cursor/",
-        "install_url": None,  # IDE-based
+
+    # --- CLI & Terminal Agents ---
+    "aider": {
+        "name": "Aider",
+        "folder": ".aider/",
+        "install_url": "https://aider.chat",
+        "requires_cli": True,
+    },
+    "warp": {
+        "name": "Warp",
+        "folder": ".warp/",
+        "install_url": "https://www.warp.dev",
         "requires_cli": False,
     },
-    "qwen": {
-        "name": "Qwen Code",
-        "folder": ".qwen/",
-        "install_url": "https://github.com/QwenLM/qwen-code",
+    "wave": {
+        "name": "Wave Terminal",
+        "folder": ".waveterm/",
+        "install_url": "https://www.waveterm.dev",
+        "requires_cli": False,
+    },
+    "copilot-cli": {
+        "name": "Copilot CLI",
+        "folder": ".copilot-cli/",
+        "install_url": "https://githubnext.com/projects/copilot-cli/",
+        "requires_cli": True,
+    },
+    "gpt-engineer": {
+        "name": "GPT Engineer",
+        "folder": ".gpt-engineer/",
+        "install_url": "https://github.com/AntonOsika/gpt-engineer",
         "requires_cli": True,
     },
     "opencode": {
-        "name": "opencode",
+        "name": "OpenCode",
         "folder": ".opencode/",
         "install_url": "https://opencode.ai",
         "requires_cli": True,
     },
-    "codex": {
-        "name": "Codex CLI",
-        "folder": ".codex/",
-        "install_url": "https://github.com/openai/codex",
+    "shell-gpt": {
+        "name": "Shell GPT",
+        "folder": ".shell-gpt/",
+        "install_url": "https://github.com/TheR1D/shell_gpt",
         "requires_cli": True,
     },
-    "windsurf": {
-        "name": "Windsurf",
-        "folder": ".windsurf/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
+    "gorilla": {
+        "name": "Gorilla CLI",
+        "folder": ".gorilla/",
+        "install_url": "https://github.com/gorilla-llm/gorilla-cli",
+        "requires_cli": True,
     },
-    "kilocode": {
-        "name": "Kilo Code",
-        "folder": ".kilocode/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
+    "butterfish": {
+        "name": "Butterfish",
+        "folder": ".butterfish/",
+        "install_url": "https://butterfi.sh",
+        "requires_cli": True,
     },
     "auggie": {
         "name": "Auggie CLI",
@@ -196,22 +253,10 @@ AGENT_CONFIG = {
         "install_url": "https://qoder.com/cli",
         "requires_cli": True,
     },
-    "roo": {
-        "name": "Roo Code",
-        "folder": ".roo/",
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
-    },
     "q": {
         "name": "Amazon Q Developer CLI",
         "folder": ".amazonq/",
         "install_url": "https://aws.amazon.com/developer/learning/q-developer-cli/",
-        "requires_cli": True,
-    },
-    "amp": {
-        "name": "Amp",
-        "folder": ".agents/",
-        "install_url": "https://ampcode.com/manual#install",
         "requires_cli": True,
     },
     "shai": {
@@ -220,10 +265,478 @@ AGENT_CONFIG = {
         "install_url": "https://github.com/ovh/shai",
         "requires_cli": True,
     },
+    "codex": {
+        "name": "Codex CLI",
+        "folder": ".codex/",
+        "install_url": "https://github.com/openai/codex",
+        "requires_cli": True,
+    },
+
+    # --- VS Code Extensions & Agents ---
+    "cline": {
+        "name": "Cline",
+        "folder": ".cline/",
+        "install_url": "https://cline.bot",
+        "requires_cli": False,
+    },
+    "roo": {
+        "name": "Roo Code",
+        "folder": ".roo/",
+        "install_url": "https://roocode.com",
+        "requires_cli": False,
+    },
+    "kilocode": {
+        "name": "Kilo Code",
+        "folder": ".kilocode/",
+        "install_url": "https://kilocode.ai",
+        "requires_cli": False,
+    },
+    "codegpt": {
+        "name": "CodeGPT",
+        "folder": ".codegpt/",
+        "install_url": "https://codegpt.co",
+        "requires_cli": False,
+    },
+    "continue": {
+        "name": "Continue",
+        "folder": ".continue/",
+        "install_url": "https://www.continue.dev",
+        "requires_cli": False,
+    },
+    "blackbox": {
+        "name": "Blackbox AI",
+        "folder": ".blackbox/",
+        "install_url": "https://www.blackbox.ai",
+        "requires_cli": False,
+    },
+    "bito": {
+        "name": "Bito AI",
+        "folder": ".bito/",
+        "install_url": "https://bito.ai",
+        "requires_cli": False,
+    },
+    "codegeex": {
+        "name": "CodeGeeX",
+        "folder": ".codegeex/",
+        "install_url": "https://codegeex.cn",
+        "requires_cli": False,
+    },
+    "askcodi": {
+        "name": "AskCodi",
+        "folder": ".askcodi/",
+        "install_url": "https://www.askcodi.com",
+        "requires_cli": False,
+    },
+    "refact": {
+        "name": "Refact.ai",
+        "folder": ".refact/",
+        "install_url": "https://refact.ai",
+        "requires_cli": False,
+    },
+    "codemate": {
+        "name": "CodeMate",
+        "folder": ".codemate/",
+        "install_url": "https://codemate.ai",
+        "requires_cli": False,
+    },
+    "machinet": {
+        "name": "Machinet",
+        "folder": ".machinet/",
+        "install_url": "https://machinet.net",
+        "requires_cli": False,
+    },
+    "adrenaline": {
+        "name": "Adrenaline",
+        "folder": ".adrenaline/",
+        "install_url": "https://useadrenaline.com",
+        "requires_cli": False,
+    },
+    "grit": {
+        "name": "Grit.io",
+        "folder": ".grit/",
+        "install_url": "https://grit.io",
+        "requires_cli": True,
+    },
+    "ellipsis": {
+        "name": "Ellipsis",
+        "folder": ".ellipsis/",
+        "install_url": "https://ellipsis.dev",
+        "requires_cli": False,
+    },
+    "mentat": {
+        "name": "Mentat",
+        "folder": ".mentat/",
+        "install_url": "https://mentat.ai",
+        "requires_cli": True,
+    },
+    "coderabbit": {
+        "name": "CodeRabbit",
+        "folder": ".coderabbit/",
+        "install_url": "https://coderabbit.ai",
+        "requires_cli": False,
+    },
+    "sweep": {
+        "name": "Sweep AI",
+        "folder": ".sweep/",
+        "install_url": "https://sweep.dev",
+        "requires_cli": False,
+    },
+    "codium": {
+        "name": "CodiumAI",
+        "folder": ".codium/",
+        "install_url": "https://www.qodo.ai",
+        "requires_cli": False,
+    },
+    "mintlify": {
+        "name": "Mintlify",
+        "folder": ".mintlify/",
+        "install_url": "https://mintlify.com",
+        "requires_cli": True,
+    },
+    "pieces": {
+        "name": "Pieces",
+        "folder": ".pieces/",
+        "install_url": "https://pieces.app",
+        "requires_cli": False,
+    },
+    "tabby": {
+        "name": "Tabby",
+        "folder": ".tabby/",
+        "install_url": "https://tabbyml.com",
+        "requires_cli": False,
+    },
+    "twinny": {
+        "name": "Twinny",
+        "folder": ".twinny/",
+        "install_url": "https://twinny.dev",
+        "requires_cli": False,
+    },
+    "sourcery": {
+        "name": "Sourcery",
+        "folder": ".sourcery/",
+        "install_url": "https://sourcery.ai",
+        "requires_cli": False,
+    },
+
+    # --- International & Other Agents ---
+    "tongyi": {
+        "name": "Tongyi Lingma",
+        "folder": ".tongyi/",
+        "install_url": "https://tongyi.aliyun.com/lingma",
+        "requires_cli": False,
+    },
+    "comate": {
+        "name": "Comate",
+        "folder": ".comate/",
+        "install_url": "https://comate.baidu.com",
+        "requires_cli": False,
+    },
+    "trae": {
+        "name": "Trae",
+        "folder": ".trae/",
+        "install_url": "https://www.trae.ai",
+        "requires_cli": False,
+    },
+    "deepseek": {
+        "name": "DeepSeek Coder",
+        "folder": ".deepseek/",
+        "install_url": "https://coder.deepseek.com",
+        "requires_cli": False,
+    },
+    "cloudstudio": {
+        "name": "Cloud Studio",
+        "folder": ".cloudstudio/",
+        "install_url": "https://cloud.tencent.com/product/cloudstudio",
+        "requires_cli": False,
+    },
+    "sparkdesk": {
+        "name": "Spark Desk",
+        "folder": ".sparkdesk/",
+        "install_url": "https://xinghuo.xfyun.cn",
+        "requires_cli": False,
+    },
+    "glm4": {
+        "name": "GLM-4",
+        "folder": ".glm4/",
+        "install_url": "https://open.bigmodel.cn",
+        "requires_cli": False,
+    },
+    "kimi": {
+        "name": "Kimi",
+        "folder": ".kimi/",
+        "install_url": "https://kimi.moonshot.cn",
+        "requires_cli": False,
+    },
+
+    # --- Web Builders ---
+    "lovable": {
+        "name": "Lovable",
+        "folder": ".lovable/",
+        "install_url": "https://lovable.dev",
+        "requires_cli": False,
+    },
+    "v0": {
+        "name": "V0.dev",
+        "folder": ".v0/",
+        "install_url": "https://v0.dev",
+        "requires_cli": False,
+    },
+    "cosmic": {
+        "name": "Cosmic",
+        "folder": ".cosmic/",
+        "install_url": "https://www.cosmicjs.com",
+        "requires_cli": False,
+    },
+    "glitch": {
+        "name": "Glitch",
+        "folder": ".glitch/",
+        "install_url": "https://glitch.com",
+        "requires_cli": False,
+    },
+    "stackblitz": {
+        "name": "StackBlitz",
+        "folder": ".stackblitz/",
+        "install_url": "https://stackblitz.com",
+        "requires_cli": False,
+    },
+    "codesandbox": {
+        "name": "CodeSandbox",
+        "folder": ".codesandbox/",
+        "install_url": "https://codesandbox.io",
+        "requires_cli": False,
+    },
+    "replit": {
+        "name": "Replit",
+        "folder": ".replit/",
+        "install_url": "https://replit.com",
+        "requires_cli": False,
+    },
+    "playcode": {
+        "name": "Playcode",
+        "folder": ".playcode/",
+        "install_url": "https://playcode.io",
+        "requires_cli": False,
+    },
+    "jsfiddle": {
+        "name": "JSFiddle",
+        "folder": ".jsfiddle/",
+        "install_url": "https://jsfiddle.net",
+        "requires_cli": False,
+    },
+    "codepen": {
+        "name": "Codepen",
+        "folder": ".codepen/",
+        "install_url": "https://codepen.io",
+        "requires_cli": False,
+    },
+
+    # --- Data Science ---
+    "deepnote": {
+        "name": "DeepNote",
+        "folder": ".deepnote/",
+        "install_url": "https://deepnote.com",
+        "requires_cli": False,
+    },
+    "hex": {
+        "name": "Hex",
+        "folder": ".hex/",
+        "install_url": "https://hex.tech",
+        "requires_cli": False,
+    },
+    "jupyter": {
+        "name": "Jupyter AI",
+        "folder": ".jupyter/",
+        "install_url": "https://github.com/jupyterlab/jupyter-ai",
+        "requires_cli": False,
+    },
+    "deno": {
+        "name": "Deno Jupyter",
+        "folder": ".deno/",
+        "install_url": "https://deno.com",
+        "requires_cli": True,
+    },
+    "anaconda": {
+        "name": "Anaconda Assistant",
+        "folder": ".anaconda/",
+        "install_url": "https://www.anaconda.com",
+        "requires_cli": False,
+    },
+    "datacamp": {
+        "name": "DataCamp",
+        "folder": ".datacamp/",
+        "install_url": "https://www.datacamp.com",
+        "requires_cli": False,
+    },
+    "julius": {
+        "name": "Julius AI",
+        "folder": ".julius/",
+        "install_url": "https://julius.ai",
+        "requires_cli": False,
+    },
+    "einblick": {
+        "name": "Einblick",
+        "folder": ".einblick/",
+        "install_url": "https://www.einblick.ai",
+        "requires_cli": False,
+    },
+    "akkio": {
+        "name": "Akkio",
+        "folder": ".akkio/",
+        "install_url": "https://www.akkio.com",
+        "requires_cli": False,
+    },
+
+    # --- Next-Gen IDEs ---
+    "zed": {
+        "name": "Zed",
+        "folder": ".zed/",
+        "install_url": "https://zed.dev",
+        "requires_cli": False,
+    },
+    "augment": {
+        "name": "Augment Code",
+        "folder": ".augment/",
+        "install_url": "https://augmentcode.com",
+        "requires_cli": False,
+    },
+    "pear": {
+        "name": "PearAI",
+        "folder": ".pear/",
+        "install_url": "https://trypear.ai",
+        "requires_cli": False,
+    },
+    "void": {
+        "name": "Void",
+        "folder": ".void/",
+        "install_url": "https://voideditor.com",
+        "requires_cli": False,
+    },
+    "melty": {
+        "name": "Melty",
+        "folder": ".melty/",
+        "install_url": "https://melty.sh",
+        "requires_cli": False,
+    },
+    "lapce": {
+        "name": "Lapce",
+        "folder": ".lapce/",
+        "install_url": "https://lapce.dev",
+        "requires_cli": False,
+    },
+    "litexl": {
+        "name": "Lite XL",
+        "folder": ".litexl/",
+        "install_url": "https://lite-xl.com",
+        "requires_cli": False,
+    },
+    "pulsar": {
+        "name": "Pulsar",
+        "folder": ".pulsar/",
+        "install_url": "https://pulsar-edit.dev",
+        "requires_cli": False,
+    },
+
+    # --- Specialized ---
+    "phind": {
+        "name": "Phind",
+        "folder": ".phind/",
+        "install_url": "https://www.phind.com",
+        "requires_cli": False,
+    },
+    "perplexity": {
+        "name": "Perplexity",
+        "folder": ".perplexity/",
+        "install_url": "https://www.perplexity.ai",
+        "requires_cli": False,
+    },
+    "fine": {
+        "name": "Fine.dev",
+        "folder": ".fine/",
+        "install_url": "https://fine.dev",
+        "requires_cli": False,
+    },
+    "second": {
+        "name": "Second.dev",
+        "folder": ".second/",
+        "install_url": "https://www.second.dev",
+        "requires_cli": False,
+    },
+    "factory": {
+        "name": "Factory",
+        "folder": ".factory/",
+        "install_url": "https://factory.ai",
+        "requires_cli": False,
+    },
+    "emdash": {
+        "name": "Emdash",
+        "folder": ".emdash/",
+        "install_url": "https://emdash.ai",
+        "requires_cli": False,
+    },
+    "amp-editor": {
+        "name": "Amp Editor",
+        "folder": ".amp/",
+        "install_url": "https://ampcode.com",
+        "requires_cli": False,
+    },
+    "crush": {
+        "name": "Crush",
+        "folder": ".crush/",
+        "install_url": "https://charm.land/crush",
+        "requires_cli": False,
+    },
+    "boltai": {
+        "name": "BoltAI",
+        "folder": ".boltai/",
+        "install_url": "https://boltai.com",
+        "requires_cli": False,
+    },
+    "rovo": {
+        "name": "Rovo Dev",
+        "folder": ".rovo/",
+        "install_url": "https://www.atlassian.com/software/rovo",
+        "requires_cli": False,
+    },
+    "zencoder": {
+        "name": "Zencoder",
+        "folder": ".zencoder/",
+        "install_url": "https://zencoder.ai",
+        "requires_cli": False,
+    },
+    "tabnine": {
+        "name": "Tabnine",
+        "folder": ".tabnine/",
+        "install_url": "https://www.tabnine.com",
+        "requires_cli": False,
+    },
+    "sourcegraph": {
+        "name": "Sourcegraph Cody",
+        "folder": ".sourcegraph/",
+        "install_url": "https://sourcegraph.com/cody",
+        "requires_cli": False,
+    },
+    "diffblue": {
+        "name": "Diffblue Cover",
+        "folder": ".diffblue/",
+        "install_url": "https://www.diffblue.com",
+        "requires_cli": True,
+    },
+    "codiga": {
+        "name": "Codiga",
+        "folder": ".codiga/",
+        "install_url": "https://www.codiga.io",
+        "requires_cli": False,
+    },
+    "qwen": {
+        "name": "Qwen Code",
+        "folder": ".qwen/",
+        "install_url": "https://github.com/QwenLM/qwen-code",
+        "requires_cli": True,
+    },
     "bob": {
         "name": "IBM Bob",
         "folder": ".bob/",
-        "install_url": None,  # IDE-based
+        "install_url": None,
         "requires_cli": False,
     },
 }
@@ -242,6 +755,24 @@ BANNER = """
 """
 
 TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
+
+def get_spec_driven_content() -> str:
+    """Read the bundled spec-driven.md content."""
+    try:
+        # Try importing from package resources (Python 3.9+)
+        from importlib.resources import files
+        return files("specify_cli.templates").joinpath("spec-driven.md").read_text(encoding="utf-8")
+    except (ImportError, FileNotFoundError):
+        # Fallback for development mode or older python
+        try:
+            template_path = Path(__file__).parent / "templates" / "spec-driven.md"
+            if template_path.exists():
+                return template_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    # Ultimate fallback if file missing
+    return "# Specification-Driven Development (SDD)\n\nPlease see https://github.com/neerazz/spec-kit/blob/main/spec-driven.md"
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -422,6 +953,181 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
 
     return selected_key
 
+def checkbox_select(options: dict, prompt_text: str = "Select options (Space to toggle, Enter to confirm)") -> list[str]:
+    """
+    Interactive multi-selection using arrow keys and spacebar.
+
+    Args:
+        options: Dict with keys as option keys and values as descriptions
+        prompt_text: Text to show above the options
+
+    Returns:
+        List of selected option keys
+    """
+    option_keys = list(options.keys())
+    selected_indices = set()
+    current_index = 0
+    confirmed = False
+
+    def create_selection_panel():
+        """Create the selection panel with current selection highlighted."""
+        table = Table.grid(padding=(0, 2))
+        table.add_column(style="cyan", justify="center", width=4)
+        table.add_column(style="white", justify="left")
+
+        for i, key in enumerate(option_keys):
+            cursor = "▶" if i == current_index else " "
+            checkbox = "[x]" if i in selected_indices else "[ ]"
+            style = "cyan" if i == current_index else "white"
+            desc_style = "dim" if i != current_index else ""
+
+            table.add_row(
+                f"{cursor} {checkbox}",
+                f"[{style}]{key}[/{style}] [{desc_style}]({options[key]})[/{desc_style}]"
+            )
+
+        table.add_row("", "")
+        table.add_row("", "[dim]Use ↑/↓ to navigate, Space to toggle, Enter to confirm[/dim]")
+
+        return Panel(
+            table,
+            title=f"[bold]{prompt_text}[/bold]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+
+    console.print()
+
+    def run_selection_loop():
+        nonlocal current_index, confirmed
+        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
+            while True:
+                try:
+                    key = get_key()
+                    if key == 'up':
+                        current_index = (current_index - 1) % len(option_keys)
+                    elif key == 'down':
+                        current_index = (current_index + 1) % len(option_keys)
+                    elif key == ' ':  # Spacebar
+                        if current_index in selected_indices:
+                            selected_indices.remove(current_index)
+                        else:
+                            selected_indices.add(current_index)
+                    elif key == 'enter':
+                        confirmed = True
+                        break
+                    elif key == 'escape':
+                        console.print("\n[yellow]Selection cancelled[/yellow]")
+                        raise typer.Exit(1)
+
+                    live.update(create_selection_panel(), refresh=True)
+
+                except KeyboardInterrupt:
+                    console.print("\n[yellow]Selection cancelled[/yellow]")
+                    raise typer.Exit(1)
+
+    run_selection_loop()
+
+    if not confirmed:
+        console.print("\n[red]Selection failed.[/red]")
+        raise typer.Exit(1)
+
+    return [option_keys[i] for i in selected_indices]
+
+def configure_agent_rules(project_path: Path, agents: list[str], tracker: StepTracker | None = None) -> None:
+    """
+    Generate configuration rules and folders for selected agents.
+    Updates AGENTS.md and creates agent-specific directories.
+    """
+    if tracker:
+        tracker.start("rules", "Configuring agent rules")
+
+    agents_md_path = project_path / "AGENTS.md"
+
+    # Base content for AGENTS.md if it doesn't exist
+    if not agents_md_path.exists():
+        content = [
+            "# AI Agent Configuration",
+            "",
+            "This project is configured for Spec-Driven Development (SDD).",
+            "All agents should follow the protocols defined in `spec-driven.md`.",
+            "",
+            "## Active Agents",
+            ""
+        ]
+    else:
+        try:
+            with open(agents_md_path, "r", encoding="utf-8") as f:
+                content = f.read().splitlines()
+        except Exception:
+             content = ["# AI Agent Configuration", ""]
+
+    # Ensure "Active Agents" section exists
+    if "## Active Agents" not in content:
+        content.append("")
+        content.append("## Active Agents")
+        content.append("")
+
+    for agent_key in agents:
+        config = AGENT_CONFIG.get(agent_key)
+        if not config:
+            continue
+
+        agent_name = config["name"]
+        agent_folder = config["folder"]
+
+        # Add to AGENTS.md if not present
+        agent_line = f"- **{agent_name}** ({agent_key})"
+        if agent_line not in content:
+            # Find where to insert (end of file or under Active Agents)
+            try:
+                idx = content.index("## Active Agents") + 1
+                while idx < len(content) and content[idx].strip() == "":
+                    idx += 1
+                content.insert(idx, agent_line)
+            except ValueError:
+                content.append(agent_line)
+
+        # Create agent folder if specified
+        if agent_folder:
+            folder_path = project_path / agent_folder
+            if not folder_path.exists():
+                folder_path.mkdir(parents=True, exist_ok=True)
+                # Add a .gitkeep or basic config if we know it
+                (folder_path / ".gitkeep").touch()
+
+                # Special handling for known config files
+                if agent_key == "cursor-agent":
+                    # Create .cursorrules
+                    rules_path = project_path / ".cursorrules"
+                    if not rules_path.exists():
+                        with open(rules_path, "w") as f:
+                            f.write('ALWAYS read "spec-driven.md" and "AGENTS.md" at the start of a session.\n')
+                            f.write('Follow the SDD workflow: Specify -> Plan -> Task -> Implement.\n')
+
+                elif agent_key == "windsurf":
+                     # Create .windsurfrules
+                    rules_path = project_path / ".windsurfrules"
+                    if not rules_path.exists():
+                        with open(rules_path, "w") as f:
+                            f.write('ALWAYS read "spec-driven.md" and "AGENTS.md" at the start of a session.\n')
+                            f.write('Follow the SDD workflow: Specify -> Plan -> Task -> Implement.\n')
+
+    # Write back AGENTS.md
+    with open(agents_md_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(content))
+        f.write("\n")
+
+    # Ensure spec-driven.md exists
+    spec_driven_path = project_path / "spec-driven.md"
+    if not spec_driven_path.exists():
+        content = get_spec_driven_content()
+        with open(spec_driven_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    if tracker:
+        tracker.complete("rules", f"configured {len(agents)} agents")
+
 console = Console()
 
 class BannerGroup(TyperGroup):
@@ -492,7 +1198,7 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
         True if tool is found, False otherwise
     """
     # Special handling for Claude CLI after `claude migrate-installer`
-    # See: https://github.com/github/spec-kit/issues/123
+    # See: https://github.com/neerazz/spec-kit/issues/123
     # The migrate-installer command REMOVES the original executable from PATH
     # and creates an alias at ~/.claude/local/claude instead
     # This path should be prioritized over other claude executables in PATH
@@ -635,7 +1341,7 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
     return merged
 
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
+    repo_owner = "neerazz"
     repo_name = "spec-kit"
     if client is None:
         client = httpx.Client(verify=ssl_context)
@@ -945,7 +1651,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, bob, or qoder "),
+    ai_assistant: list[str] = typer.Option(None, "--ai", help="AI assistant(s) to use. Can be specified multiple times. E.g. --ai cursor-agent --ai claude"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -960,15 +1666,17 @@ def init(
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant
+    2. Let you choose your AI assistant(s)
     3. Download the appropriate template from GitHub
     4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
-    6. Optionally set up AI assistant commands
+    5. Configure agent rules for all selected agents
+    6. Initialize a fresh git repository (if not --no-git and no existing repo)
+    7. Optionally set up AI assistant commands
     
     Examples:
         specify init my-project
         specify init my-project --ai claude
+        specify init my-project --ai cursor-agent --ai claude
         specify init my-project --ai copilot --no-git
         specify init --ignore-agent-tools my-project
         specify init . --ai claude         # Initialize in current directory
@@ -1043,37 +1751,39 @@ def init(
         if not should_init_git:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
+    selected_agents = []
     if ai_assistant:
-        if ai_assistant not in AGENT_CONFIG:
-            console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
-            raise typer.Exit(1)
-        selected_ai = ai_assistant
+        for agent in ai_assistant:
+            if agent not in AGENT_CONFIG:
+                console.print(f"[red]Error:[/red] Invalid AI assistant '{agent}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+                raise typer.Exit(1)
+        selected_agents = list(ai_assistant)
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
-        selected_ai = select_with_arrows(
+        selected_agents = checkbox_select(
             ai_choices, 
-            "Choose your AI assistant:", 
-            "copilot"
+            "Choose your AI assistant(s):"
         )
 
     if not ignore_agent_tools:
-        agent_config = AGENT_CONFIG.get(selected_ai)
-        if agent_config and agent_config["requires_cli"]:
-            install_url = agent_config["install_url"]
-            if not check_tool(selected_ai):
-                error_panel = Panel(
-                    f"[cyan]{selected_ai}[/cyan] not found\n"
-                    f"Install from: [cyan]{install_url}[/cyan]\n"
-                    f"{agent_config['name']} is required to continue with this project type.\n\n"
-                    "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
-                    title="[red]Agent Detection Error[/red]",
-                    border_style="red",
-                    padding=(1, 2)
-                )
-                console.print()
-                console.print(error_panel)
-                raise typer.Exit(1)
+        for agent in selected_agents:
+            agent_config = AGENT_CONFIG.get(agent)
+            if agent_config and agent_config["requires_cli"]:
+                install_url = agent_config["install_url"]
+                if not check_tool(agent):
+                    error_panel = Panel(
+                        f"[cyan]{agent}[/cyan] not found\n"
+                        f"Install from: [cyan]{install_url}[/cyan]\n"
+                        f"{agent_config['name']} is required to continue with this project type.\n\n"
+                        "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
+                        title="[red]Agent Detection Error[/red]",
+                        border_style="red",
+                        padding=(1, 2)
+                    )
+                    console.print()
+                    console.print(error_panel)
+                    raise typer.Exit(1)
 
     if script_type:
         if script_type not in SCRIPT_TYPE_CHOICES:
@@ -1088,7 +1798,7 @@ def init(
         else:
             selected_script = default_script
 
-    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
+    console.print(f"[cyan]Selected AI assistant(s):[/cyan] {', '.join(selected_agents)}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
     tracker = StepTracker("Initialize Specify Project")
@@ -1098,7 +1808,7 @@ def init(
     tracker.add("precheck", "Check required tools")
     tracker.complete("precheck", "ok")
     tracker.add("ai-select", "Select AI assistant")
-    tracker.complete("ai-select", f"{selected_ai}")
+    tracker.complete("ai-select", f"{', '.join(selected_agents)}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
     for key, label in [
@@ -1124,7 +1834,28 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            # Determine primary agent for template download
+            # Prefer agents that we know have templates, or fallback to a default
+            # Current known templates: claude, cursor-agent, etc.
+            # We'll try to find a match, otherwise default to 'cursor-agent' as a safe base
+            primary_agent = "cursor-agent" # Default
+
+            # These are agents we know historically had templates in the repo
+            # We use one of them to get the base structure
+            known_template_agents = ["cursor-agent", "claude", "copilot"]
+
+            for agent in selected_agents:
+                if agent in known_template_agents:
+                    primary_agent = agent
+                    break
+
+            # If no known template agent selected, we stick with 'cursor-agent' as base
+            # and just configure rules on top.
+
+            download_and_extract_template(project_path, primary_agent, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+
+            # Configure rules for ALL selected agents
+            configure_agent_rules(project_path, selected_agents, tracker=tracker)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1184,18 +1915,19 @@ def init(
         console.print(git_error_panel)
 
     # Agent folder security notice
-    agent_config = AGENT_CONFIG.get(selected_ai)
-    if agent_config:
-        agent_folder = agent_config["folder"]
-        security_notice = Panel(
-            f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
-            f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
-            title="[yellow]Agent Folder Security[/yellow]",
-            border_style="yellow",
-            padding=(1, 2)
-        )
-        console.print()
-        console.print(security_notice)
+    for agent in selected_agents:
+        agent_config = AGENT_CONFIG.get(agent)
+        if agent_config:
+            agent_folder = agent_config["folder"]
+            security_notice = Panel(
+                f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
+                f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
+                title=f"[yellow]{agent_config['name']} Folder Security[/yellow]",
+                border_style="yellow",
+                padding=(1, 2)
+            )
+            console.print()
+            console.print(security_notice)
 
     steps_lines = []
     if not here:
@@ -1206,7 +1938,7 @@ def init(
         step_num = 2
 
     # Add Codex-specific setup step if needed
-    if selected_ai == "codex":
+    if "codex" in selected_agents:
         codex_path = project_path / ".codex"
         quoted_path = shlex.quote(str(codex_path))
         if os.name == "nt":  # Windows
@@ -1241,7 +1973,9 @@ def init(
     console.print(enhancements_panel)
 
 @app.command()
-def check():
+def check(
+    ai: list[str] = typer.Option(None, "--ai", help="Limit check to specific AI agents")
+):
     """Check that all required tools are installed."""
     show_banner()
     console.print("[bold]Checking for installed tools...[/bold]\n")
@@ -1252,7 +1986,18 @@ def check():
     git_ok = check_tool("git", tracker=tracker)
 
     agent_results = {}
-    for agent_key, agent_config in AGENT_CONFIG.items():
+
+    # Determine which agents to check
+    agents_to_check = AGENT_CONFIG.keys()
+    if ai:
+        for agent in ai:
+            if agent not in AGENT_CONFIG:
+                console.print(f"[red]Error:[/red] Invalid AI assistant '{agent}'.")
+                raise typer.Exit(1)
+        agents_to_check = ai
+
+    for agent_key in agents_to_check:
+        agent_config = AGENT_CONFIG[agent_key]
         agent_name = agent_config["name"]
         requires_cli = agent_config["requires_cli"]
 
@@ -1307,7 +2052,7 @@ def version():
             pass
     
     # Fetch latest template release version
-    repo_owner = "github"
+    repo_owner = "neerazz"
     repo_name = "spec-kit"
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
