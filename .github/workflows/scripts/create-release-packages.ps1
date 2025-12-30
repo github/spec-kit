@@ -14,7 +14,7 @@
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, q, bob, qoder
+    Valid agents: claude, gemini, iflow, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, q, bob, qoder
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -277,6 +277,13 @@ function Build-Variant {
                 Copy-Item -Path "agent_templates/gemini/GEMINI.md" -Destination (Join-Path $baseDir "GEMINI.md")
             }
         }
+        'iflow' {
+            $cmdDir = Join-Path $baseDir ".iflow/commands"
+            Generate-Commands -Agent 'iflow' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path "agent_templates/iflow/IFLOW.md") {
+                Copy-Item -Path "agent_templates/iflow/IFLOW.md" -Destination (Join-Path $baseDir "IFLOW.md")
+            }
+        }
         'copilot' {
             $agentsDir = Join-Path $baseDir ".github/agents"
             Generate-Commands -Agent 'copilot' -Extension 'agent.md' -ArgFormat '$ARGUMENTS' -OutputDir $agentsDir -ScriptVariant $Script
@@ -356,7 +363,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qoder')
+$AllAgents = @('claude', 'gemini', 'iflow', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qoder')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {

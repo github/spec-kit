@@ -6,11 +6,11 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex amp shai bob (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini iflow copilot cursor-agent qwen opencode windsurf codex amp shai bob (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
-#     AGENTS="copilot,gemini" $0 v0.2.0
+#     AGENTS="copilot,gemini,iflow" $0 v0.2.0
 #     SCRIPTS=ps $0 v0.2.0
 
 if [[ $# -ne 1 ]]; then
@@ -154,7 +154,7 @@ build_variant() {
   
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS
-  #   * TOML (gemini, qwen): {{args}}
+  #   * TOML (gemini, iflow, qwen): {{args}}
   # This keeps formats readable without extra abstraction.
 
   case $agent in
@@ -165,6 +165,10 @@ build_variant() {
       mkdir -p "$base_dir/.gemini/commands"
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
       [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md "$base_dir/GEMINI.md" ;;
+    iflow)
+      mkdir -p "$base_dir/.iflow/commands"
+      generate_commands iflow md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script" 
+      [[ -f agent_templates/iflow/IFLOW.md ]] && cp agent_templates/iflow/IFLOW.md "$base_dir/IFLOW.md" ;;
     copilot)
       mkdir -p "$base_dir/.github/agents"
       generate_commands copilot agent.md "\$ARGUMENTS" "$base_dir/.github/agents" "$script"
@@ -223,7 +227,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
+ALL_AGENTS=(claude gemini iflow copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
