@@ -211,6 +211,10 @@ Task: "Create [Entity2] model in src/models/[entity2].py"
 
 ## Implementation Strategy
 
+### Coding and Develop guideline
+
+1. Prefer the appropriate subagnet, eg: `rust-pro`, `typescript-pro`, `golang-pro`, `context-manager`, `prompt-engineer` and so on.
+
 ### MVP First (User Story 1 Only)
 
 1. Complete Phase 1: Setup
