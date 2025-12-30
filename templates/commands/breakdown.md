@@ -113,165 +113,160 @@ This phase runs **ONLY** after user confirms which phase to process.
 
 8. **Wait for researcher agent to complete**: Store research findings for use in planning.
 
-### Phase 3: Incremental Task Planning (Sequential Processing)
+### Phase 3: Group-Based Task Planning (Optimized)
 
-This phase processes tasks **ONE AT A TIME** with immediate tasks.md updates.
+This phase plans tasks **by logical groups** for efficiency (fewer agent calls, less tokens).
 
-9. **For each incomplete task in current phase** (sequential, not parallel):
+9. **Prepare tasks for planning**:
 
-   a. **Load task context**:
-      - Extract task ID (e.g., T004)
-      - Extract task description
-      - Extract phase and user story
-      - Extract parallel marker [P] if present
-      - Extract file paths mentioned in description
-      - Check if task plan already exists
+   a. **Collect incomplete tasks**:
+      - Filter tasks without existing plans (no task-plans/T{number}-*.md)
+      - Log skipped tasks: "⏭️  T{number}: Plan already exists, skipping"
 
-   b. **Skip if plan already exists**:
-      - If task-plans/T{number}-*.md exists, skip to next task
-      - Log: "⏭️  T{number}: Plan already exists, skipping"
+   b. **Group tasks by topic** (priority order):
+      1. **By User Story**: Group [US1], [US2], etc. tasks together
+      2. **By domain/topic**: Detect from task descriptions:
+         - "model", "entity", "schema" → Data Models group
+         - "api", "endpoint", "route" → API group
+         - "component", "page", "view", "ui" → Frontend group
+         - "service", "repository" → Backend Services group
+         - "test", "spec" → Testing group
+         - "config", "setup" → Configuration group
+      3. **By target directory**: Group tasks targeting same folder
+      4. **Ungrouped**: Tasks that don't fit above categories
 
-   c. **Check for previous task results**:
-      - Look for result files: T{number-1}-result.md, dependency task results
-      - If found, read and extract:
-        * What was actually implemented (vs what was planned)
-        * Deviations from original plan and reasons
-        * New files created/modified
-        * Gotchas discovered during implementation
-        * Lessons learned (patterns that work/don't work, approaches that succeed/fail)
-        * TODOs left for current or future tasks
-      - Pass this context to planner agent as "lessons from previous implementations" to create better, more accurate plans
-
-   d. **Launch planner agent for this specific task**:
-
-      Use Task tool with:
-      - If .claude/agents/speckit/planner.md exists: subagent_type="planner"
-      - Otherwise: subagent_type="general-purpose"
-
-      Prompt:
-
+   c. **Display grouping**:
       ```
-      You are the planner agent for SpecKit breakdown.
+      📦 Task Groups for Phase {N}:
 
-      Task: Create a detailed implementation plan for task T{number}.
+      Group 1: Data Models (5 tasks)
+        T004, T005, T006, T007, T008
 
-      Task Details:
-      - ID: T{number}
-      - Description: {task description}
-      - Phase: {phase name}
-      - User Story: {user story or N/A}
-      - Can run in parallel: {yes/no based on [P] marker}
+      Group 2: API Endpoints (8 tasks)
+        T009, T010, T011, T012, T013, T014, T015, T016
 
-      Context Available:
-      - Research findings: {summary from researcher agent}
-      - Previous task results: {summary from T###-result.md files - actual implementations, deviations, gotchas, lessons learned}
-      - Tech stack: {from plan.md}
-      - Data model: {from data-model.md if relevant}
-      - Contracts: {from contracts/ if relevant}
+      Group 3: Frontend Components (4 tasks)
+        T017, T018, T019, T020
 
-      Your goals:
-      1. Analyze the codebase impact (files to create/modify)
-      2. Identify exact implementation approach using research findings
-      3. Provide step-by-step implementation instructions
-      4. Note gotchas and special considerations
-      5. Estimate complexity and time
-
-      Use the Task Plan Template structure:
-
-      # Task Plan: T{number}
-
-      ## Task Description
-      {full task description}
-      **Phase**: {phase}
-      **User Story**: {US# or N/A}
-      **Parallel**: {Yes/No}
-
-      ---
-
-      ## Codebase Impact Analysis
-
-      ### Files to Create
-      - `{absolute/path}` - {purpose}
-
-      ### Files to Modify
-      - `{absolute/path}:{line}` - {what changes}
-
-      ### Dependencies
-      - **Imports**: {list}
-      - **Services**: {list}
-      - **Data Models**: {list}
-      - **Contracts**: {list}
-
-      ---
-
-      ## Implementation Approach
-
-      ### Existing Patterns to Follow
-      **Reference Implementation**: `{file:line}` from {source}
-      ```{language}
-      {code snippet}
-      ```
-      **Why this pattern**: {explanation}
-
-      ### Implementation Steps
-      1. {specific step with file operations}
-      2. {specific step with code to write}
-      3. {integration points}
-
-      ### Gotchas / Special Considerations
-      - {issue from research or constitution}
-      - {framework-specific requirement}
-      - {performance consideration}
-
-      ---
-
-      ## Related Tasks
-      **Depends On**: T{numbers}
-      **Blocks**: T{numbers}
-      **Can Run In Parallel With**: T{numbers}
-
-      ---
-
-      ## References
-      - **Research**: {findings}
-      - **Data Model**: {entities}
-      - **Contract**: {files}
-      - **Constitution**: {principles}
-      - **Existing Code**: {patterns}
-
-      ---
-
-      ## Estimated Complexity
-      **Complexity**: {Simple/Moderate/Complex}
-      **Estimated Time**: {5min/15min/30min/1h/2h}
-      **Risk Level**: {Low/Medium/High}
-      **Complexity Reasoning**: {why}
-
-      Deliverable: Return the complete task plan markdown content.
+      Group 4: Other (2 tasks)
+        T021, T022
       ```
 
-   e. **Write task plan file**:
-      - Create task-plans/ directory if it doesn't exist
-      - Sanitize task description for filename (lowercase, replace spaces with hyphens, max 50 chars)
-      - Write plan to `task-plans/T{number}-{sanitized-description}.md`
-      - Log: "✅ Created plan for T{number}: {filename}"
+   d. **Load shared context for phase**:
+      - Check for previous task results (task-results/*.md)
+      - Extract lessons learned, gotchas, patterns that worked/failed
+      - This context will be passed to ALL groups
 
-   f. **Update tasks.md immediately**:
-      - Find the task line in tasks.md
-      - Append plan reference: `[📋 Plan](task-plans/T{number}-{sanitized-description}.md)`
-      - Preserve checkbox, ID, description, and any existing markers
-      - Example: `- [ ] T004 [P] Create JobType enum... [📋 Plan](task-plans/T004-create-jobtype-enum.md)`
+10. **For each task group** (sequential groups, but all tasks in group planned together):
 
-   g. **Progress checkpoint** (every 3-5 tasks):
-      - After completing 3-5 task plans, pause
-      - Show progress: "Created {count} task plans so far ({remaining} remaining in this phase)"
-      - Ask: "Continue with next batch? (yes/no/skip to next phase)"
-      - **STOP and wait for user response**
-      - If "no", jump to Phase 4 (summary)
-      - If "skip", jump to Phase 1 step 6 for next phase
-      - If "yes", continue with next task
+    a. **Launch planner agent for entire group**:
 
-10. **Phase completion**:
+       Use Task tool with:
+       - If .claude/agents/speckit/planner.md exists: subagent_type="planner"
+       - Otherwise: subagent_type="general-purpose"
+
+       Prompt:
+
+       ```
+       You are the planner agent for SpecKit breakdown.
+
+       Task: Create implementation plans for ALL tasks in this group.
+
+       Group: {group_name} ({count} tasks)
+       Phase: {phase_name}
+
+       Tasks to plan:
+       {for each task in group:}
+       - T{number}: {description} [P={yes/no}] [Story={US# or N/A}]
+       {end for}
+
+       Context Available:
+       - Research findings: {summary from researcher agent}
+       - Previous task results: {lessons learned from task-results/*.md}
+       - Tech stack: {from plan.md}
+       - Data model: {from data-model.md if relevant}
+       - Contracts: {from contracts/ if relevant}
+
+       CRITICAL: Generate a plan for EACH task. Separate plans with exactly this line:
+       ---TASK_SEPARATOR---
+
+       For EACH task, use this structure:
+
+       # Task Plan: T{number}
+
+       ## Task Description
+       {full task description}
+       **Phase**: {phase}
+       **User Story**: {US# or N/A}
+       **Parallel**: {Yes/No}
+
+       ---
+
+       ## Codebase Impact Analysis
+
+       ### Files to Create
+       - `{path}` - {purpose}
+
+       ### Files to Modify
+       - `{path}:{line}` - {what changes}
+
+       ### Dependencies
+       - **Imports**: {list}
+       - **Services**: {list}
+       - **Data Models**: {list}
+
+       ---
+
+       ## Implementation Approach
+
+       ### Existing Patterns to Follow
+       **Reference**: `{file:line}`
+       **Why**: {explanation}
+
+       ### Implementation Steps
+       1. {step}
+       2. {step}
+       3. {step}
+
+       ### Gotchas
+       - {gotcha}
+
+       ---
+
+       ## Related Tasks
+       **Depends On**: T{numbers}
+       **Blocks**: T{numbers}
+       **Can Run In Parallel With**: T{numbers}
+
+       ---
+
+       ## Estimated Complexity
+       **Complexity**: {Simple/Moderate/Complex}
+       **Estimated Time**: {5min/15min/30min/1h/2h}
+       **Risk Level**: {Low/Medium/High}
+
+       ---TASK_SEPARATOR---
+
+       Deliverable: Return ALL task plans separated by ---TASK_SEPARATOR---
+       ```
+
+    b. **Parse and write individual plan files**:
+       - Split agent response by "---TASK_SEPARATOR---"
+       - For each task plan section:
+         * Extract task ID from "# Task Plan: T{number}"
+         * Sanitize description for filename (lowercase, hyphens, max 50 chars)
+         * Create task-plans/ directory if needed
+         * Write to `task-plans/T{number}-{sanitized-description}.md`
+         * Log: "✅ T{number}: Plan created"
+
+    c. **Update tasks.md with plan references**:
+       - For each planned task, append: `[📋 Plan](task-plans/T{number}-{filename}.md)`
+       - Example: `- [ ] T004 [P] Create JobType enum... [📋 Plan](task-plans/T004-create-jobtype-enum.md)`
+
+    d. **Group completion log**:
+       - Show: "✅ Group '{group_name}': {count} plans created"
+
+11. **Phase completion**:
     - After all tasks in current phase are planned
     - Show summary: "✅ Phase {N} breakdown complete: {count} task plans created"
     - List all plan files created in this phase
@@ -342,10 +337,10 @@ This phase processes tasks **ONE AT A TIME** with immediate tasks.md updates.
 ### Progressive Execution
 
 - **Phase-by-phase**: Work on current phase only, not all phases at once
-- **Incremental updates**: Update tasks.md after each plan created, not in batch
-- **Regular pauses**: Ask user every 3-5 tasks to prevent lazy execution
+- **Group-based planning**: Plan tasks in logical groups (by topic, user story, or domain)
+- **Batch updates**: Update tasks.md after each group is planned
 - **Context-aware**: Use results from previous tasks to inform current plans
-- **Sequential tools**: Execute ONE tool at a time, wait for completion
+- **Efficient token usage**: One agent call per group instead of per task
 
 ### Framework Agnosticism
 
@@ -358,7 +353,7 @@ This phase processes tasks **ONE AT A TIME** with immediate tasks.md updates.
 
 - **Researcher for discovery**: Use general-purpose agent with researcher prompt for codebase analysis
 - **Planner for creation**: Use general-purpose agent with planner prompt for plan generation
-- **Sequential execution**: Run researcher once per phase, planner once per task
+- **Group execution**: Run researcher once per phase, planner once per task group
 - **Context passing**: Pass research findings to planner for informed planning
 
 ### Quality Standards
@@ -373,20 +368,21 @@ This phase processes tasks **ONE AT A TIME** with immediate tasks.md updates.
 
 - **No tasks.md**: Error and suggest running `/speckit.tasks` first
 - **No incomplete tasks**: Inform user all tasks are already planned
-- **Agent failure**: Log error, skip task, continue with next task
+- **Agent failure**: Log error, skip group, continue with next group
+- **Parse failure**: If ---TASK_SEPARATOR--- parsing fails, attempt to extract plans by # Task Plan: headers
 - **File write error**: Report error, suggest manual creation
 - **User cancellation**: Save progress, generate summary of work done so far
 
 ## Important Notes
 
 - **NEVER process all phases at once** - work on current phase only
-- **ALWAYS update tasks.md immediately** after each plan - not in batch
-- **PAUSE every 3-5 tasks** - prevent lazy execution
+- **GROUP tasks by topic** - plan related tasks together for coherence and efficiency
+- **UPDATE tasks.md after each group** - not after each individual task
 - **USE result files** - learn from previous implementations
 - **BE AGNOSTIC** - discover patterns, don't assume frameworks
-- **RUN TOOLS SEQUENTIALLY** - one at a time, wait for completion
-- **USE AGENTS** - researcher for analysis, planner for creation
+- **USE AGENTS** - researcher for analysis, planner for groups
 - **FOCUS ON CURRENT PHASE** - don't try to plan everything upfront
+- **PARSE carefully** - split agent response by ---TASK_SEPARATOR--- to extract individual plans
 
 ## Context
 
