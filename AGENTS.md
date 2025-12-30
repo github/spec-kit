@@ -337,7 +337,7 @@ Trae uses the `.trae/rules/` directory for context. To use Spec-Kit commands in 
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob, Trae
 
 **Standard format:**
 
@@ -379,6 +379,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
+  - Trae: `.trae/rules/`
 
 ## Argument Patterns
 
