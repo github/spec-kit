@@ -41,10 +41,30 @@ Default: **Post-Implementation** (review recent changes)
 Run `{SCRIPT}` to get project context, then determine scope:
 
 **For Post-Implementation (default):**
+
+First, detect if on a feature branch and get the appropriate diff:
+
 ```bash
-git diff --name-only HEAD~5  # Last 5 commits
-git diff --name-only --staged  # Staged changes
+# Get current branch name
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Check if this is a feature branch (pattern: ###-name or feature/*)
+if [[ "$CURRENT_BRANCH" =~ ^[0-9]+-.*$ ]] || [[ "$CURRENT_BRANCH" =~ ^feature/.* ]]; then
+    # Determine base branch (main, master, or develop)
+    BASE_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+    if [ -z "$BASE_BRANCH" ]; then
+        BASE_BRANCH="main"
+    fi
+
+    # Diff against base branch - ALL changes in this feature branch
+    git diff --name-only "$BASE_BRANCH"...HEAD
+else
+    # Not on feature branch - use last 5 commits
+    git diff --name-only HEAD~5
+fi
 ```
+
+**IMPORTANT**: When on a feature branch, the review scope MUST include ALL changes since branching from main/master, not just recent commits. This ensures the review covers the complete feature implementation.
 
 **For Pre-Implementation:**
 - Read `tasks.md` to identify affected areas
@@ -252,7 +272,7 @@ Create a structured report in `FEATURE_DIR/reviews/` or project root:
 
 ### 5.1: Generate Tasks
 
-For high-priority issues, create actionable tasks:
+For high-priority issues, create actionable tasks with proper IDs:
 
 ```markdown
 ## Review Action Items
@@ -264,22 +284,122 @@ For high-priority issues, create actionable tasks:
 - [ ] [LOW] Update deprecated lodash methods
 ```
 
-### 5.2: Update tasks.md (if exists)
+### 5.2: Update tasks.md (Smart Insertion)
 
-If `tasks.md` exists in the feature directory, append review tasks:
+If `tasks.md` exists in the feature directory, **DO NOT append at the end**. Instead, use smart insertion:
+
+#### Step 5.2.1: Analyze Task Progress
 
 ```markdown
-## Code Review Tasks (Added {date})
-
-### Security
-- [ ] T-REV-1: Fix {issue} in {file}
-
-### Quality
-- [ ] T-REV-2: Refactor {component}
-
-### Testing
-- [ ] T-REV-3: Add tests for {module}
+Parse tasks.md to identify:
+1. All completed tasks: lines matching `- [x]` or `- [X]`
+2. All pending tasks: lines matching `- [ ]`
+3. The LAST completed task (by position in file)
+4. The current phase/section being worked on
 ```
+
+#### Step 5.2.2: Determine Insertion Point
+
+The insertion point for review tasks depends on implementation progress:
+
+| Scenario | Insertion Point |
+|----------|-----------------|
+| **No tasks completed** | After Phase 2 (Foundational) header, before first task |
+| **Some tasks completed** | Immediately AFTER the last completed task `[x]` |
+| **All tasks completed** | Append new "Review & Polish" section at the end |
+
+**CRITICAL**: Review correction tasks must be addressed BEFORE continuing with pending tasks. Inserting them after the last completed task ensures proper execution order.
+
+#### Step 5.2.3: Generate Task IDs
+
+Find the highest existing task ID (e.g., T047) and continue numbering:
+
+```bash
+# Find highest task number
+grep -oE 'T[0-9]+' tasks.md | sort -t'T' -k2 -n | tail -1
+# If T047, new tasks start at T048
+```
+
+#### Step 5.2.4: Insert Review Tasks
+
+Insert a review block after the last completed task:
+
+```markdown
+### 🔍 Review Corrections (Added {date})
+
+> **Source**: Code review on branch `{branch_name}` vs `{base_branch}`
+> **Must complete before**: Continuing with pending tasks
+
+- [ ] T048 [CRITICAL] [US1] Fix SQL injection in user_controller.py:45
+- [ ] T049 [HIGH] [US1] Add input validation to createUser endpoint
+- [ ] T050 [MEDIUM] [US2] Refactor OrderProcessor to reduce complexity
+
+---
+```
+
+### 5.3: Impact Analysis on Pending Tasks
+
+**IMPORTANT**: Review findings may affect tasks not yet completed. Analyze and amend if necessary.
+
+#### Step 5.3.1: Map Issues to Pending Tasks
+
+For each review finding, check if it relates to a pending task:
+
+| Review Finding | Related Pending Task | Impact |
+|----------------|---------------------|--------|
+| Missing auth check in `/api/orders` | T052: Implement order endpoint | Task must include auth |
+| SQL injection pattern in models | T055: Create Report model | Must use parameterized queries |
+| Missing error handling | T058: Add API error responses | Already planned, no change |
+
+#### Step 5.3.2: Amend Affected Pending Tasks
+
+If a pending task is impacted by a review finding:
+
+1. **Add a note** to the task description:
+   ```markdown
+   - [ ] T052 [US2] Implement order endpoint in src/api/orders.py
+     > ⚠️ **Review Note**: Must include authentication check (see T048)
+   ```
+
+2. **Add dependency** if the review task must complete first:
+   ```markdown
+   - [ ] T052 [US2] Implement order endpoint (depends on T048: auth fix)
+   ```
+
+3. **Modify the task scope** if needed:
+   ```markdown
+   # Before
+   - [ ] T055 [US3] Create Report model in src/models/report.py
+
+   # After (amended)
+   - [ ] T055 [US3] Create Report model in src/models/report.py (use parameterized queries per review)
+   ```
+
+#### Step 5.3.3: Document Impact Summary
+
+Add an impact summary after the review corrections block:
+
+```markdown
+### Impact on Pending Tasks
+
+| Task | Amendment | Reason |
+|------|-----------|--------|
+| T052 | Added auth requirement | Review finding: missing auth check |
+| T055 | Added query safety note | Review finding: SQL injection pattern |
+| T060 | No change | Not affected by review findings |
+
+**Blocking dependencies created**: T048 → T052, T049 → T055
+```
+
+### 5.4: Validation
+
+Before saving the updated tasks.md:
+
+1. ✅ Review tasks inserted after last completed task (not at end)
+2. ✅ Task IDs are sequential and unique
+3. ✅ All affected pending tasks have been amended
+4. ✅ Dependencies are clearly marked
+5. ✅ No duplicate findings (check if issue already has a task)
 
 ---
 
@@ -288,12 +408,15 @@ If `tasks.md` exists in the feature directory, append review tasks:
 Present findings to user with:
 
 1. **Summary**: Overall health score and critical issues count
-2. **Top 5 Issues**: Most important findings with recommendations
-3. **Quick Wins**: Easy fixes that improve quality immediately
-4. **Report Location**: Path to full report file
+2. **Diff Scope**: Show base branch and number of files changed
+3. **Top 5 Issues**: Most important findings with recommendations
+4. **Quick Wins**: Easy fixes that improve quality immediately
+5. **Tasks Created**: List of new review tasks with IDs
+6. **Tasks Amended**: List of pending tasks that were modified
+7. **Report Location**: Path to full report file
 
 Ask if user wants to:
 - Generate detailed report file
-- Create tasks from findings
+- Apply the task updates to tasks.md
 - Deep-dive into specific issues
 - Run focused review on specific files
