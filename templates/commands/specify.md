@@ -1,6 +1,6 @@
 ---
-description: Create or update the feature specification from a natural language feature description.
-handoffs: 
+description: Create or update the feature specification from a natural language feature description or existing idea document.
+handoffs:
   - label: Build Technical Plan
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
@@ -8,6 +8,9 @@ handoffs:
     agent: speckit.clarify
     prompt: Clarify specification requirements
     send: true
+  - label: Explore Idea First
+    agent: speckit.idea
+    prompt: Let me explore this idea before creating a formal specification
 scripts:
   sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
   ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
@@ -25,7 +28,28 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
-Given that feature description, do this:
+### Step 0: Check for Existing Idea Document
+
+Before starting, check if an idea document already exists:
+
+1. **If currently on a feature branch** (pattern `###-short-name`):
+   - Check for `specs/<current-branch>/idea.md`
+   - If found, load it as the primary source for specification generation
+
+2. **If an idea.md path is provided** in the input:
+   - Load that file as the primary source
+
+3. **If idea.md exists**:
+   - Use the Vision, Problem Statement, Target Users, Goals, Scope, and Use Cases sections to generate a richer specification
+   - The idea document provides context that reduces [NEEDS CLARIFICATION] markers
+   - Cross-reference Discovery Notes for any clarifications already made
+   - Preserve the link: add `**Source**: [idea.md](./idea.md)` in the spec header
+
+4. **If no idea.md exists**:
+   - Proceed with the feature description as the sole input
+   - Consider suggesting `/speckit.idea` first if the description is very vague (< 20 words and no clear user/problem/scope)
+
+Given that feature description (or idea document), do this:
 
 1. **Generate a concise short name** (2-4 words) for the branch:
    - Analyze the feature description and extract the most meaningful keywords
