@@ -1,5 +1,5 @@
 ---
-description: Complete project setup - configures hooks, skills, agents, and constitution in one command
+description: Complete project setup - configures hooks, skills, agents, constitution, and optionally MCP server
 scripts:
   sh: scripts/bash/setup-hooks.sh --json
   ps: scripts/powershell/setup-hooks.ps1 -Json
@@ -7,7 +7,7 @@ scripts:
 
 # SpecKit Project Setup
 
-You are the **Setup Orchestrator**. Complete the full initial setup for this SpecKit project in **3 phases**.
+You are the **Setup Orchestrator**. Complete the full initial setup for this SpecKit project in **3-4 phases**.
 
 ## User Input
 
@@ -21,6 +21,8 @@ $ARGUMENTS
 - `--no-format`: Skip auto-formatting hooks
 - `--no-tests`: Skip test-running hooks
 - `--skip-skills`: Don't create skill files
+- `--mcp`: Also generate MCP server for integration testing (Phase 4)
+- `--with-validation`: Include MCP + validation workflow setup
 - Custom requests (e.g., "add ESLint pre-commit check")
 
 ---
@@ -1439,6 +1441,110 @@ Check these files for alignment with constitution:
 
 ---
 
+# PHASE 4: MCP Server Setup (Optional)
+
+**Trigger**: User specified `--mcp` or `--with-validation`, OR project has multiple services (backend + frontend, docker-compose, microservices).
+
+If triggered, proceed with MCP server generation for automated integration testing.
+
+## Step 4.1: Detect Services to Manage
+
+Based on project structure, identify services:
+
+| Detection | Service Type | Example Command |
+|-----------|--------------|-----------------|
+| `backend/pom.xml` | Java Backend | `./mvnw spring-boot:run` |
+| `backend/package.json` | Node Backend | `npm run start:dev` |
+| `frontend/vite.config.*` | Vite Frontend | `npm run dev` |
+| `frontend/next.config.*` | Next.js | `npm run dev` |
+| `docker-compose.yml` | Docker Services | `docker compose up -d` |
+| `services/*/` | Microservices | Per-service commands |
+
+## Step 4.2: Generate MCP Server
+
+Run the equivalent of `/speckit.mcp`:
+
+1. Create `.mcp/project-server/` directory
+2. Copy template files from `templates/mcp/project-server/`
+3. Generate `src/config.ts` with detected services
+4. Replace placeholders (PROJECT_NAME, PROJECT_ROOT, etc.)
+
+## Step 4.3: Configure Services
+
+Generate service configuration based on detection:
+
+```typescript
+services: [
+  {
+    name: "backend",
+    command: "{DETECTED_BACKEND_COMMAND}",
+    cwd: "{DETECTED_BACKEND_PATH}",
+    healthCheck: {
+      url: "{DETECTED_HEALTH_URL}",
+      timeout: 60000
+    }
+  },
+  {
+    name: "frontend",
+    command: "{DETECTED_FRONTEND_COMMAND}",
+    cwd: "{DETECTED_FRONTEND_PATH}",
+    healthCheck: {
+      url: "{DETECTED_FRONTEND_URL}",
+      timeout: 30000
+    },
+    dependsOn: ["backend"]
+  }
+],
+docker: {
+  composeFile: "docker-compose.yml",
+  services: [{DETECTED_DOCKER_SERVICES}]
+}
+```
+
+## Step 4.4: Install and Build
+
+```bash
+cd .mcp/project-server
+npm install
+npm run build
+npx playwright install chromium  # For browser automation
+```
+
+## Step 4.5: Configure Claude Code Integration
+
+Create or update `.claude/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "project": {
+      "command": "node",
+      "args": ["{PROJECT_ROOT}/.mcp/project-server/dist/index.js"]
+    }
+  }
+}
+```
+
+## Step 4.6: Update .gitignore
+
+```bash
+echo ".mcp/project-server/node_modules/" >> .gitignore
+echo ".mcp/project-server/dist/" >> .gitignore
+```
+
+## Step 4.7: Validate MCP Server
+
+```bash
+cd .mcp/project-server && npm run inspect
+```
+
+Verify tools are available:
+- Process management: `start_service`, `stop_service`, `service_logs`
+- Browser automation: `browser_open`, `browser_click`, `browser_screenshot`
+- API testing: `api_get`, `api_post`, `api_test`
+
+---
+
 # Completion Summary
 
 After all phases complete, output:
@@ -1482,11 +1588,21 @@ After all phases complete, output:
 - **Version**: 1.0.0
 - **Principles**: {count} core principles defined
 
+### Phase 4: MCP Server (if configured)
+- **Location**: .mcp/project-server/
+- **Services Configured**: {list of services}
+- **Docker Services**: {list of docker services}
+- **Tools Available**:
+  - Process: start_service, stop_service, service_logs, health_check
+  - Browser: browser_open, browser_click, browser_fill, browser_screenshot
+  - API: api_get, api_post, api_test
+
 ### Files Created
 
 ```
 .claude/
 ├── settings.json
+├── mcp.json                    # (if MCP configured)
 ├── hooks/
 │   ├── session-setup.sh
 │   ├── auto-format.sh
@@ -1512,6 +1628,19 @@ After all phases complete, output:
     ├── researcher.md
     ├── planner.md
     └── reviewer.md
+
+.mcp/                           # (if MCP configured)
+└── project-server/
+    ├── package.json
+    ├── tsconfig.json
+    ├── src/
+    │   ├── index.ts
+    │   ├── config.ts
+    │   └── tools/
+    │       ├── process.ts
+    │       ├── browser.ts
+    │       └── api.ts
+    └── README.md
 
 .specify/
 └── memory/
@@ -1539,6 +1668,21 @@ After all phases complete, output:
 2. Run `/speckit.plan` to create an implementation plan
 3. Run `/speckit.implement` to start coding
 4. Run `/speckit.review` for quality checks before/after implementation
+5. Run `/speckit.validate` to run integration tests (requires MCP)
+
+### MCP Commands (if Phase 4 was run)
+
+- `/speckit.mcp` - Regenerate or update MCP server configuration
+- `/speckit.validate` - Run automated integration tests using MCP tools
+
+**Quick MCP Test**:
+```
+Restart Claude Code to load the MCP server, then try:
+> start_docker
+> start_service backend
+> browser_open /login
+> api_get /health
+```
 ```
 
 ---
