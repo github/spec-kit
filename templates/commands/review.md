@@ -1,5 +1,12 @@
 ---
 description: Analyze code quality, technical debt, and provide actionable improvement recommendations
+handoffs:
+  - label: Deep Fix
+    agent: speckit.fix
+    prompt: Diagnose root causes and create a comprehensive correction plan
+  - label: Implement Fixes
+    agent: speckit.implement
+    prompt: Execute the correction tasks from review
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json

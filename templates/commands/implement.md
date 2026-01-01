@@ -1,5 +1,12 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+handoffs:
+  - label: Diagnose Issues
+    agent: speckit.fix
+    prompt: Diagnose why implementation is failing and create a correction plan
+  - label: Validate
+    agent: speckit.validate
+    prompt: Run integration tests to verify implementation
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
