@@ -28,26 +28,89 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
-### Step 0: Check for Existing Idea Document
+### Step 0: Detect Input Type and Load Context
 
-Before starting, check if an idea document already exists:
+The input can be one of:
+- A feature description (plain text)
+- A feature file path (`features/01-feature-name.md`)
+- A feature number (`01`, `1`, `feature 1`)
+- An idea.md path
 
-1. **If currently on a feature branch** (pattern `###-short-name`):
-   - Check for `specs/<current-branch>/idea.md`
-   - If found, load it as the primary source for specification generation
+#### 0.1 Parse Input Type
 
-2. **If an idea.md path is provided** in the input:
-   - Load that file as the primary source
+```
+IF input matches "features/##-*.md" OR "##" OR "feature ##":
+    → Feature file mode (load specific feature)
+ELSE IF input matches "idea.md" or path contains "idea.md":
+    → Idea mode (load idea for simple spec)
+ELSE:
+    → Description mode (plain text feature description)
+```
 
-3. **If idea.md exists**:
-   - Use the Vision, Problem Statement, Target Users, Goals, Scope, and Use Cases sections to generate a richer specification
-   - The idea document provides context that reduces [NEEDS CLARIFICATION] markers
-   - Cross-reference Discovery Notes for any clarifications already made
-   - Preserve the link: add `**Source**: [idea.md](./idea.md)` in the spec header
+#### 0.2 Load Context Based on Mode
 
-4. **If no idea.md exists**:
-   - Proceed with the feature description as the sole input
-   - Consider suggesting `/speckit.idea` first if the description is very vague (< 20 words and no clear user/problem/scope)
+**Feature File Mode** (decomposed idea):
+
+1. Locate the feature file:
+   - If path provided: use directly
+   - If number provided: find `specs/*/features/##-*.md`
+
+2. Load the feature file as PRIMARY source:
+   - Summary → Feature description
+   - Use Cases → User scenarios
+   - Scope → Requirements boundaries
+   - Dependencies → Technical constraints
+
+3. Load the PARENT idea.md for CONTEXT:
+   - Vision → Overall project context
+   - Target Users → Personas (cross-reference with feature)
+   - Goals → Success metrics context
+   - Features Overview → Understand where this feature fits
+
+4. Add source links in spec header:
+   ```markdown
+   **Source**: [Feature ##](./features/##-feature-name.md)
+   **Parent Idea**: [idea.md](./idea.md)
+   ```
+
+**Idea Mode** (simple idea, no decomposition):
+
+1. Load `idea.md` as the primary source
+2. Use Vision, Problem Statement, Target Users, Goals, Scope, and Use Cases
+3. Cross-reference Discovery Notes for clarifications
+4. Add source link: `**Source**: [idea.md](./idea.md)`
+
+**Description Mode** (no idea document):
+
+1. Use the plain text as the feature description
+2. Check if an idea.md exists in the target directory:
+   - If found, load it for additional context
+   - Suggest `/speckit.idea` first if description is very vague (< 20 words)
+
+#### 0.3 Feature File Status Update
+
+After successfully creating a specification from a feature file:
+
+1. Update the feature file's status:
+   ```markdown
+   **Status**: Specified
+   ```
+
+2. Update the Specification Status section:
+   ```markdown
+   | Field | Value |
+   |-------|-------|
+   | Specified | Yes |
+   | Spec File | [spec.md](../spec.md) or [##-spec.md](../##-spec.md) |
+   | Plan File | - |
+   | Tasks File | - |
+   | Implementation | Not Started |
+   ```
+
+3. Update the parent idea.md Features Overview table:
+   ```markdown
+   | 01 | [feature-name] | ... | 📝 Specified |
+   ```
 
 Given that feature description (or idea document), do this:
 

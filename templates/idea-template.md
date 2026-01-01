@@ -193,6 +193,66 @@
 - [Assumption 1 - things we're assuming to be true]
 - [Assumption 2 - defaults we've chosen]
 
+## Features Overview
+
+<!--
+  This section is populated when the idea is decomposed into multiple features.
+  Leave empty for simple ideas (complexity score < 4).
+  The complexity score helps determine if decomposition is needed.
+-->
+
+**Complexity Score**: [X]/10 - [Simple|Moderate|Complex|Very Complex]
+
+<!--
+  Complexity is calculated from:
+  - Multiple user types (> 2)
+  - Independent capabilities (> 3)
+  - Phased delivery (> 2 phases)
+  - Domain boundaries (> 1)
+  - Integration points (> 2)
+  - Data entities (> 4)
+-->
+
+### Feature Breakdown
+
+<!--
+  If complexity >= 4, list each feature here.
+  Each feature has its own file in the features/ subdirectory.
+-->
+
+| # | Feature | Description | Priority | Dependencies | Status |
+|---|---------|-------------|----------|--------------|--------|
+| 01 | [feature-name] | [One sentence description] | P1/MVP | None | 🔲 Not specified |
+| 02 | [feature-name] | [One sentence description] | P1/MVP | 01 | 🔲 Not specified |
+| 03 | [feature-name] | [One sentence description] | P2 | 01, 02 | 🔲 Not specified |
+
+**Status Legend**: 🔲 Not specified → 📝 Specified → ✅ Implemented
+
+### Feature Dependencies Graph
+
+<!--
+  Visual representation of how features depend on each other.
+  Helps determine implementation order.
+-->
+
+```
+[01-core-feature]
+    └── [02-dependent-feature]
+         └── [03-another-feature]
+[04-independent-feature]
+```
+
+### Implementation Order
+
+<!--
+  Recommended order for specifying and implementing features.
+  Based on dependencies and priority.
+-->
+
+1. **Phase 1 (MVP)**: 01, 02, ...
+2. **Phase 2**: 03, 04, ...
+3. **Phase 3**: ...
+
 ## Open Questions & Risks
 
 ### Questions to Resolve
