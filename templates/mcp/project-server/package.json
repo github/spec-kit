@@ -1,0 +1,28 @@
+{
+  "name": "{{PROJECT_NAME}}-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for {{PROJECT_NAME}} - process management, logs, browser automation, and API testing",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "inspect": "npx @anthropic-ai/model-context-protocol@latest inspect dist/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "playwright": "^1.40.0",
+    "tree-kill": "^1.2.2",
+    "tail": "^2.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
