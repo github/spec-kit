@@ -1,9 +1,12 @@
 ---
 description: Run integration tests by starting services, executing acceptance scenarios, and reporting results
 handoffs:
-  - label: Fix Issues Found
+  - label: Diagnose & Fix
+    agent: speckit.fix
+    prompt: Diagnose why the feature is failing and create a correction plan
+  - label: Quick Fix
     agent: speckit.implement
-    prompt: Fix the validation issues found
+    prompt: Fix the validation issues found (use when root cause is clear)
   - label: Update Tasks
     agent: speckit.review
     prompt: Add correction tasks for validation failures
