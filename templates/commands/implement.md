@@ -12,33 +12,9 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
 ---
 
-# 🚨 IMPLEMENTATION ORCHESTRATOR - READ THIS FIRST 🚨
+# Implementation Orchestrator
 
-**YOUR ROLE**: You are the **orchestrator**, NOT the implementer.
-
-**CRITICAL**: You MUST delegate ALL code implementation to specialized agents via the Task tool.
-
-```
-❌ FORBIDDEN: Edit, Write, NotebookEdit tools during task execution
-✅ REQUIRED: Task tool to invoke agents (backend-coder, frontend-coder, implementer, tester)
-
-Your job:
-→ Load tasks and plans
-→ Select the right agent for each task
-→ Invoke agents via Task tool
-→ Collect results and update tasks.md
-→ Coordinate the workflow
-
-Agents' job:
-→ Read code and context
-→ Implement the task
-→ Use Edit/Write tools (allowed in agent context)
-→ Report back to you
-
-If you catch yourself using Edit/Write → STOP and use Task tool instead.
-```
-
----
+**YOUR ROLE**: Orchestrate implementation by delegating to specialized agents via Task tool. You coordinate; agents implement.
 
 ## User Input
 
@@ -54,23 +30,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 **YOU MUST FOLLOW THESE RULES - NO EXCEPTIONS:**
 
-### Rule 1: ALWAYS Use Task Tool for Implementation
+### Rule 1: Use Task Tool for Implementation
 ```
-For EVERY task that involves writing code:
-→ YOU MUST use the Task tool to invoke a specialized agent
-→ NEVER implement code directly in the main conversation
-→ The agent handles the implementation in its isolated context
-
-EXPLICITLY FORBIDDEN in main conversation during task execution:
-❌ Edit tool - DO NOT USE for implementation
-❌ Write tool - DO NOT USE for implementation
-❌ NotebookEdit tool - DO NOT USE for implementation
-✅ ONLY Task tool is allowed for code changes
-
-If you catch yourself about to use Edit/Write/NotebookEdit:
-→ STOP immediately
-→ Use Task tool instead with appropriate agent
-→ Pass task context to the agent
+For EVERY implementation task:
+→ Use Task tool to invoke specialized agent (backend-coder, frontend-coder, implementer, tester)
+→ FORBIDDEN: Edit, Write, NotebookEdit tools in main conversation
+→ Agents implement; you orchestrate
 ```
 
 ### Rule 2: ALWAYS Update tasks.md Immediately
@@ -240,25 +205,7 @@ DO NOT load all context upfront:
    - **Verify dependencies**: Ensure all required files/services from Dependencies section exist
    - **Follow exact file paths**: Use file paths from "Codebase Impact Analysis" section for accuracy
 
-7. **Task Execution Loop** (MANDATORY - per Rule 1):
-
-   **🚨 CRITICAL REMINDER BEFORE STARTING 🚨**
-   ```
-   You are about to execute tasks. Remember:
-   ❌ DO NOT use Edit/Write/NotebookEdit tools in this conversation
-   ✅ ONLY use Task tool to invoke agents
-
-   For EVERY task, you MUST:
-   1. Select the appropriate agent (Step 7.1)
-   2. Load task context (Step 7.2)
-   3. Invoke agent with Task tool (Step 7.3)
-   4. Wait for agent to complete
-   5. Create result file and update tasks.md (Step 7.4)
-
-   If you find yourself using Edit/Write directly → YOU ARE DOING IT WRONG
-   ```
-
-   **FOR EACH incomplete task in current phase, execute this exact sequence:**
+7. **Task Execution Loop** - FOR EACH incomplete task in current phase:
 
    ### Step 7.1: Select Agent (REQUIRED)
 
@@ -278,23 +225,11 @@ DO NOT load all context upfront:
    3. Extract file paths from task description
    ```
 
-   ### Step 7.3: Invoke Agent (YOU MUST USE Task TOOL)
+   ### Step 7.3: Invoke Agent via Task Tool
 
-   **🚨 THIS IS THE MOST IMPORTANT STEP 🚨**
-
-   **MANDATORY Task tool invocation - NO EXCEPTIONS:**
-
-   ❌ **WRONG - DO NOT DO THIS:**
-   ```
-   # This is implementing directly - FORBIDDEN!
-   Edit(file_path="src/something.ts", ...)
-   Write(file_path="src/new.ts", ...)
-   ```
-
-   ✅ **CORRECT - DO THIS:**
    ```yaml
    Task:
-     subagent_type: "{agent-name}"  # e.g., "backend-coder", "frontend-coder", "implementer"
+     subagent_type: "{agent-name}"  # from Step 7.1
      model: "{agent-model}"         # from agent frontmatter, default: sonnet
      description: "Implement T{number}: {short-description}"
      prompt: |
@@ -312,15 +247,9 @@ DO NOT load all context upfront:
 
        ## Instructions
        1. Implement the task following the steps above
-       2. Use project skills for patterns (your skills: field)
+       2. Use project skills for patterns
        3. Report: files created/modified, issues found, deviations
    ```
-
-   **After invoking Task tool:**
-   - WAIT for the agent to complete
-   - The agent will use Edit/Write tools (that's allowed in agent context)
-   - You will receive the agent's report
-   - Then proceed to Step 7.4
 
    ### Step 7.4: After Agent Returns (IMMEDIATELY - per Rule 2 & 3)
 
@@ -344,20 +273,8 @@ DO NOT load all context upfront:
       "✅ T{number} complete. {N} tasks remaining in phase."
    ```
 
-   ### Step 7.5: Self-Check and Continue or Pause
+   ### Step 7.5: Continue or Pause
 
-   **Self-verification (CRITICAL):**
-   ```
-   Before continuing, verify you followed the rules:
-   ✓ Did you use Task tool for the implementation? (YES/NO)
-   ✓ Did you avoid using Edit/Write directly? (YES/NO)
-   ✓ Did you create the result file? (YES/NO)
-   ✓ Did you update tasks.md? (YES/NO)
-
-   If ANY answer is NO → You violated the rules. Fix it immediately.
-   ```
-
-   **User interaction:**
    - After every 3 tasks: Ask user "Continue? (yes/no/skip phase)"
    - If task failed: Ask user "Task T{N} failed. Retry/Skip/Stop?"
    - After phase complete: Show summary, ask about next phase
