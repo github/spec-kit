@@ -20,46 +20,6 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
----
-
-## CRITICAL RULES (READ FIRST)
-
-**YOU MUST FOLLOW THESE RULES - NO EXCEPTIONS:**
-
-### Rule 1: ALWAYS Use Task Tool for Implementation
-```
-For EVERY task that involves writing code:
-→ YOU MUST use the Task tool to invoke a specialized agent
-→ NEVER implement code directly in the main conversation
-→ The agent handles the implementation in its isolated context
-```
-
-### Rule 2: ALWAYS Update tasks.md Immediately
-```
-After EACH task completion (success or failure):
-→ YOU MUST update tasks.md with [X] or [~] checkbox
-→ YOU MUST append result reference [📊 Result](task-results/T###-result.md)
-→ DO NOT batch updates - update ONE task at a time
-```
-
-### Rule 3: ALWAYS Create Result Files
-```
-After EACH task implementation:
-→ YOU MUST create task-results/T{number}-result.md
-→ Include: status, files changed, deviations, lessons learned
-→ This informs the next task's agent
-```
-
-### Rule 4: Minimal Context Loading
-```
-DO NOT load all context upfront:
-→ Load ONLY tasks.md and plan.md initially
-→ Let agents load their own context via skills
-→ Pass task-specific context to each agent
-```
-
----
-
 ## Outline
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
@@ -95,12 +55,12 @@ DO NOT load all context upfront:
      - Display the table showing all checklists passed
      - Automatically proceed to step 3
 
-3. **Minimal Context Loading** (per Rule 4):
-   - **REQUIRED**: Read tasks.md - parse phases, task IDs, completion status
-   - **REQUIRED**: Read plan.md - extract tech stack summary (1-2 lines per tech)
-   - **SCAN ONLY** (don't read yet): List files in task-plans/ and task-results/
-   - **DO NOT** read data-model.md, contracts/, research.md upfront
-   - **Agents will load** their own context via skills and targeted reads
+3. **Minimal context loading** (agents will load their own detailed context):
+   - **REQUIRED**: Read tasks.md for the complete task list and execution plan
+   - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
+   - **SCAN ONLY** (don't read full content yet): List files in task-plans/ and task-results/ directories
+   - **DO NOT** load data-model.md, contracts/, research.md, or quickstart.md upfront
+   - Agents will load these files as needed based on their specific tasks
 
 4. **Project Setup Verification**:
    - **REQUIRED**: Create/verify ignore files based on actual project setup:
@@ -152,167 +112,139 @@ DO NOT load all context upfront:
    - **Task details**: ID, description, file paths, parallel markers [P]
    - **Execution flow**: Order and dependency requirements
 
-5.5 **CRITICAL: Load Task Plans and Previous Results**:
-
-   **Task Plan Loading (MANDATORY when plan exists)**:
-   - For each task to be implemented:
-     * Extract task ID from tasks.md (e.g., T004, T051, etc.)
-     * Search for plan file: `{FEATURE_DIR}/task-plans/T{number}-*.md`
-     * **IF PLAN EXISTS - MUST LOAD**:
-       - Read entire plan file
-       - Extract: Implementation Steps, Existing Patterns, Codebase Impact, Gotchas, Dependencies, Complexity
-       - Log: "✅ Loaded plan for T{number}"
-     * **IF PLAN MISSING but referenced in tasks.md** ([📋 Plan](task-plans/...)):
-       - Log: "⚠️ WARNING: Task T{number} references plan but file not found"
-       - Proceed with task description from tasks.md only
-     * **IF NO PLAN**: Proceed with task description, search codebase for similar patterns
-
-   **Previous Task Results Loading (for context)**:
-   - Check if task-results/ directory exists
-   - For current task T{N}, look for related result files:
-     * T{N-1}-result.md (previous task in sequence)
-     * Result files for tasks listed in "Depends On" from plan
-   - If found, read and extract:
-     * What was actually implemented (vs what was planned)
-     * Deviations from plan and reasons why
-     * New files created/modified
-     * Gotchas discovered during implementation
-     * TODOs left for current or future tasks
-     * Lessons learned (patterns that worked/didn't work)
-   - Use this context to inform current task implementation
-
-5.6 **Load Specialized Agents**:
+6. **Load available specialized agents** (if .claude/agents/speckit/ exists):
    - Scan `.claude/agents/speckit/*.md` for available agents
-   - For each agent, extract metadata: name, description, capabilities, model
-   - Build agent registry mapping file patterns/capabilities to agents with model info
-   - Log detected agents with their specializations and configured model (e.g., "backend-coder: haiku")
+   - Extract agent metadata: name, description, model preference
+   - Build agent mapping table:
 
-6. Execute implementation following the task plan:
-   - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
-   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
-   - **File-based coordination**: Tasks affecting the same files must run sequentially
-   - **Validation checkpoints**: Verify each phase completion before proceeding
+     | File Pattern | Agent | Model |
+     |--------------|-------|-------|
+     | `backend/**`, `server/**`, `api/**` | backend-coder | sonnet |
+     | `frontend/**`, `src/components/**`, `*.tsx` | frontend-coder | sonnet |
+     | `*.test.*`, `*_test.*`, `tests/**` | tester | sonnet |
+     | UI design tasks | frontend-designer | sonnet |
+     | No match | implementer | sonnet |
 
-   **When task plans are available**:
-   - **Follow Implementation Steps exactly**: Execute steps in order from task plan
+   - Log detected agents: "Found N specialized agents: backend-coder, frontend-coder, ..."
+   - If no agents found, log: "No specialized agents detected, using direct implementation"
+
+   **When task plans are available** (task-plans/T{number}-*.md):
+   - **Follow implementation steps exactly**: Execute steps in order from the plan
    - **Use reference patterns**: Copy/adapt code snippets from "Existing Patterns to Follow" section
    - **Check gotchas first**: Review "Gotchas / Special Considerations" before starting implementation
    - **Verify dependencies**: Ensure all required files/services from Dependencies section exist
    - **Follow exact file paths**: Use file paths from "Codebase Impact Analysis" section for accuracy
 
-7. **Task Execution Loop** (MANDATORY - per Rule 1):
+7. Execute implementation following the task plan:
+   - **Phase-by-phase execution**: Complete each phase before moving to the next
+   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
+   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
+   - **File-based coordination**: Tasks affecting the same files must run sequentially
+   - **Validation checkpoints**: Verify each phase completion before proceeding
 
-   **FOR EACH incomplete task in current phase, execute this exact sequence:**
+   **For each task:**
 
-   ### Step 7.1: Select Agent (REQUIRED)
+   a. **Determine execution mode** based on agent availability:
+      - Extract file paths from task description
+      - Match file patterns against agent mapping table
+      - If matching agent exists → **Delegate mode**
+      - If no matching agent → **Direct mode**
 
-   | File Pattern | Agent | Model |
-   |--------------|-------|-------|
-   | `backend/**`, `server/**`, `api/**` | backend-coder | sonnet |
-   | `frontend/**`, `src/components/**`, `*.tsx` | frontend-coder | sonnet |
-   | `*.test.*`, `*_test.*`, `tests/**` | tester | sonnet |
-   | UI design tasks | frontend-designer | sonnet |
-   | No match | implementer | sonnet |
+   b. **Delegate mode** (agent exists):
+      - Use Task tool to invoke the specialized agent
+      - Pass task number, description, and feature directory
+      - Agent will autonomously:
+        * Load task plan from task-plans/T{number}-*.md (if exists, handle errors gracefully)
+        * Load previous results:
+          - T{number-1}-result.md (previous task in sequence)
+          - Results for tasks listed in "Depends On" from the plan (if specified)
+        * Extract from previous results: what was implemented, deviations, gotchas, TODOs, lessons learned
+        * Read relevant context files (data-model.md, contracts/, etc. as needed)
+        * Implement the task using Edit/Write tools
+        * Report files changed and any issues
+      - After agent returns, create task-results/T{number}-result.md with structured format (see below)
+      - Update tasks.md: mark [X] (complete) or [~] (partial) and append [📊 Result](task-results/T{number}-result.md)
+      - Log progress
 
-   ### Step 7.2: Load Task Context (ONLY what agent needs)
+   c. **Direct mode** (no agent):
+      - Load task plan from task-plans/T{number}-*.md (if exists, handle errors gracefully)
+      - Load previous results:
+        * T{number-1}-result.md (previous task in sequence)
+        * Results for tasks listed in "Depends On" from the plan (if specified)
+      - Extract from previous results: what was implemented, deviations, gotchas, TODOs, lessons learned
+      - Read relevant context files (data-model.md, contracts/, etc. as needed)
+      - Implement task directly using Edit/Write tools
+      - Create task-results/T{number}-result.md with structured format (see below)
+      - Update tasks.md: mark [X] (complete) or [~] (partial) and append result reference
+      - Log progress
 
-   ```
-   1. Read task-plans/T{number}-*.md IF EXISTS
-   2. Read task-results/T{number-1}-result.md for previous task context
-   3. Extract file paths from task description
-   ```
-
-   ### Step 7.3: Invoke Agent (YOU MUST USE Task TOOL)
-
-   **MANDATORY Task tool invocation:**
-
+   **Task tool invocation format** (delegate mode):
    ```yaml
    Task:
-     subagent_type: "{agent-name}"  # e.g., "backend-coder"
-     model: "{agent-model}"         # from agent frontmatter, default: sonnet
+     subagent_type: "{agent-name}"
+     model: "{agent-model}"
+     description: "Implement T{number}: {short-description}"
      prompt: |
-       ## Task: T{number}
-       {task-description}
+       Implement task T{number} from {FEATURE_DIR}/tasks.md
 
-       ## Files
-       {file-paths from task}
+       Task: {full-task-description}
 
-       ## Implementation Steps
-       {from task-plans/T{number}-*.md or "Follow standard patterns"}
-
-       ## Previous Task Context
-       {from task-results/T{number-1}-result.md or "First task in phase"}
-
-       ## Instructions
-       1. Implement the task following the steps above
-       2. Use project skills for patterns (your skills: field)
-       3. Report: files created/modified, issues found, deviations
+       Instructions:
+       1. Load task plan from {FEATURE_DIR}/task-plans/T{number}-*.md if exists (handle errors gracefully)
+       2. Load previous results:
+          - {FEATURE_DIR}/task-results/T{number-1}-result.md (previous task)
+          - Results for tasks in "Depends On" from plan (if specified)
+       3. Extract from results: what was implemented, deviations, gotchas, TODOs, lessons learned
+       4. Implement following the plan's steps, or use standard patterns if no plan
+       5. Report using structured format: status, files changed, deviations, gotchas, TODOs, lessons
    ```
 
-   ### Step 7.4: After Agent Returns (IMMEDIATELY - per Rule 2 & 3)
-
-   **YOU MUST do these 3 things IMMEDIATELY after agent completes:**
-
-   ```
-   1. CREATE task-results/T{number}-result.md:
-      ---
-      Status: ✅ Complete | ⚠️ Partial | ❌ Failed
-      Files Changed:
-        - {file}: {what changed}
-      Deviations: {if any}
-      Lessons: {what worked/didn't}
-      ---
-
-   2. UPDATE tasks.md - find the task line and change:
-      FROM: - [ ] T{number} {description}
-      TO:   - [X] T{number} {description} [📊 Result](task-results/T{number}-result.md)
-
-   3. LOG progress:
-      "✅ T{number} complete. {N} tasks remaining in phase."
+   **Result file format** (task-results/T{number}-result.md):
+   ```markdown
+   Status: ✅ Complete | ⚠️ Partial | ❌ Failed
+   Files Changed:
+     - {file}: {description of changes, line ranges}
+   Deviations from Plan: {what changed vs plan and why, or "None"}
+   Gotchas Discovered: {issues found and resolutions, or "None"}
+   TODOs Left:
+     - 🚫 Blockers: {critical issues preventing progress}
+     - 💡 Enhancements: {nice-to-have improvements}
+     - ⚠️ Technical debt: {shortcuts taken, to be addressed later}
+   Lessons Learned: {patterns that worked/didn't work}
    ```
 
-   ### Step 7.5: Continue or Pause
+   **Task plan error handling**:
+   - If plan referenced in tasks.md but file missing: Log warning, implement using task description only
+   - If plan file exists but malformed/unreadable: Use best-effort extraction, log issues found
+   - If "Implementation Steps" incomplete in plan: Use available steps and supplement with task description
+   - If dependent files don't exist (per plan's Dependencies): Report missing prerequisite and skip task with clear message
 
-   - After every 3 tasks: Ask user "Continue? (yes/no/skip phase)"
-   - If task failed: Ask user "Task T{N} failed. Retry/Skip/Stop?"
-   - After phase complete: Show summary, ask about next phase
+   **After phase complete**:
+   - Aggregate TODOs from all task-results/T*-result.md files in completed phase
+   - Categorize by type: 🚫 blockers / 💡 enhancements / ⚠️ technical debt
+   - If blockers exist: **STOP** and report blockers to user, ask whether to resolve/continue/stop
+   - If no blockers: Proceed to next phase
 
-8. Progress tracking and error handling:
+8. Implementation execution rules:
+   - **Setup first**: Initialize project structure, dependencies, configuration
+   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
+   - **Core development**: Implement models, services, CLI commands, endpoints
+   - **Integration work**: Database connections, middleware, logging, external services
+   - **Polish and validation**: Unit tests, performance optimization, documentation
+
+9. Progress tracking and error handling:
    - Report progress after each completed task
-   - Halt execution if any non-parallel task fails
+   - Mark tasks as [X] (complete) or [~] (partial) based on result status
+   - Halt execution if any non-parallel task fails (status: ❌ Failed)
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if implementation cannot proceed
 
-   **After Task Implementation Complete**:
-   - **Generate Result File**: Create `{FEATURE_DIR}/task-results/T{number}-result.md` with:
-     * Status: ✅ Complete | ⚠️ Partial | ❌ Failed
-     * Files Changed: created and modified files with line counts/ranges
-     * Deviations from Plan: what changed vs plan and why
-     * Gotchas Discovered: issues found and resolutions
-     * TODOs Left: blockers, enhancements, technical debt
-     * Debugging Results: compilation, linting, tests status
-     * Lessons Learned: patterns that worked/didn't work
-   - **Update tasks.md**: Mark task [X] if complete or [~] if partial, append result reference `[📊 Result](task-results/T{number}-result.md)`
-
-   **After Phase Complete**:
-   - Aggregate TODOs from all task result files in phase
-   - Categorize: 🚫 blockers / 💡 enhancements / ⚠️ technical debt
-   - If blockers exist: **STOP**, ask user to resolve/list/continue/stop
-   - If no blockers: proceed to next phase
-
-   **Task plan error handling**:
-   - If task plan file referenced in tasks.md ([📋 Plan](task-plans/...)) but file is missing: Log warning and implement using task description
-   - If task plan file exists but is malformed/unreadable: Use best-effort extraction and log issues
-   - If "Implementation Steps" section is incomplete in task plan: Use available steps and supplement with task description
-   - If dependent files don't exist (per task plan Dependencies): Report missing prerequisite and skip task (with clear message)
-
-9. Completion validation:
-   - Verify all required tasks are completed
-   - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
-   - Confirm the implementation follows the technical plan
-   - Report final status with summary: tasks completed, remaining TODOs (enhancements/debt only, blockers resolved), files changed, next steps
+10. Completion validation:
+    - Verify all required tasks are completed
+    - Check that implemented features match the original specification
+    - Validate that tests pass and coverage meets requirements
+    - Confirm the implementation follows the technical plan
+    - Report final status with summary of completed work
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
