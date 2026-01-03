@@ -112,21 +112,26 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Task details**: ID, description, file paths, parallel markers [P]
    - **Execution flow**: Order and dependency requirements
 
-6. **Load available specialized agents** (if .claude/agents/speckit/ exists):
-   - Scan `.claude/agents/speckit/*.md` for available agents
-   - Extract agent metadata: name, description, model preference
-   - Build agent mapping table:
-
-     | File Pattern | Agent | Model |
-     |--------------|-------|-------|
-     | `backend/**`, `server/**`, `api/**` | backend-coder | sonnet |
-     | `frontend/**`, `src/components/**`, `*.tsx` | frontend-coder | sonnet |
-     | `*.test.*`, `*_test.*`, `tests/**` | tester | sonnet |
-     | UI design tasks | frontend-designer | sonnet |
-     | No match | implementer | sonnet |
-
-   - Log detected agents: "Found N specialized agents: backend-coder, frontend-coder, ..."
-   - If no agents found, log: "No specialized agents detected, using direct implementation"
+6. **Load available specialized agents** (REQUIRED):
+   - **MUST CHECK**: Run `ls .claude/agents/speckit/ 2>/dev/null` to check if agents exist
+   - **If directory exists**:
+     * List all agent files: `ls .claude/agents/speckit/*.md`
+     * For each agent file found:
+       - Read the file to extract frontmatter (name, description, model)
+       - Parse file patterns from description or create default pattern from name
+       - Add to agent registry: `{pattern} → {name} (model: {model})`
+     * Example mappings based on discovered agents:
+       - `backend/**`, `server/**`, `api/**` → backend-coder
+       - `frontend/**`, `src/components/**`, `*.tsx` → frontend-coder
+       - `*.test.*`, `*_test.*`, `tests/**` → tester
+       - UI design tasks → frontend-designer
+       - No match → implementer (fallback)
+     * Log: "✅ Found N specialized agents: {agent names with models}"
+     * Store agent registry for Step 7 (CRITICAL: this registry determines delegate vs direct mode)
+   - **If directory does NOT exist**:
+     * Log: "⚠️ No specialized agents detected, using direct implementation for all tasks"
+     * Set agent registry to empty
+     * All tasks will use direct mode in Step 7
 
    **When task plans are available** (task-plans/T{number}-*.md):
    - **Follow implementation steps exactly**: Execute steps in order from the plan
@@ -144,15 +149,17 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    **For each task:**
 
-   a. **Determine execution mode** based on agent availability:
+   a. **Determine execution mode** using agent registry from Step 6:
+      - **REQUIRED**: Check agent registry built in Step 6
       - Extract file paths from task description
-      - Match file patterns against agent mapping table
-      - If matching agent exists → **Delegate mode**
-      - If no matching agent → **Direct mode**
+      - Match file patterns against agent registry mappings
+      - **If agent registry has matching agent** → **Delegate mode** (use Task tool)
+      - **If agent registry is empty OR no match** → **Direct mode** (implement directly)
 
-   b. **Delegate mode** (agent exists):
-      - Use Task tool to invoke the specialized agent
-      - Pass task number, description, and feature directory
+   b. **Delegate mode** (agent exists - MUST use Task tool):
+      - **CRITICAL**: Use Task tool to invoke the specialized agent (NOT Edit/Write directly)
+      - Invoke with subagent_type matching the agent name from registry
+      - Pass task number, description, and feature directory to agent
       - Agent will autonomously:
         * Load task plan from task-plans/T{number}-*.md (if exists, handle errors gracefully)
         * Load previous results:
