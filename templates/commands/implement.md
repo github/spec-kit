@@ -113,20 +113,21 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Execution flow**: Order and dependency requirements
 
 6. **Load available specialized agents** (if .claude/agents/speckit/ exists):
-   - Scan `.claude/agents/speckit/*.md` for available agents
-   - Extract agent metadata: name, description, model preference
-   - Build agent mapping table:
-
-     | File Pattern | Agent | Model |
-     |--------------|-------|-------|
-     | `backend/**`, `server/**`, `api/**` | backend-coder | sonnet |
-     | `frontend/**`, `src/components/**`, `*.tsx` | frontend-coder | sonnet |
-     | `*.test.*`, `*_test.*`, `tests/**` | tester | sonnet |
-     | UI design tasks | frontend-designer | sonnet |
-     | No match | implementer | sonnet |
-
-   - Log detected agents: "Found N specialized agents: backend-coder, frontend-coder, ..."
+   - Check if directory exists: `ls .claude/agents/speckit/ 2>/dev/null`
+   - If exists, list all agent files: `ls .claude/agents/speckit/*.md`
+   - For each agent file found:
+     * Read the file to extract frontmatter (name, description, model)
+     * Parse file patterns from description or create default pattern from name
+     * Add to agent registry with format: `{pattern} → {name} (model: {model})`
+   - Build agent mapping based on discovered agents, example mappings:
+     * `backend/**`, `server/**`, `api/**` → backend-coder
+     * `frontend/**`, `src/components/**`, `*.tsx` → frontend-coder
+     * `*.test.*`, `*_test.*`, `tests/**` → tester
+     * UI design tasks → frontend-designer
+     * No match → implementer (fallback)
+   - Log detected agents: "Found N specialized agents: {list of agent names}"
    - If no agents found, log: "No specialized agents detected, using direct implementation"
+   - Store agent registry for use in Step 7
 
    **When task plans are available** (task-plans/T{number}-*.md):
    - **Follow implementation steps exactly**: Execute steps in order from the plan
