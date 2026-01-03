@@ -156,30 +156,41 @@ After gathering context and analyzing complexity, generate the documents:
 Determine a short name (2-4 words) for the idea and create the directory structure:
 
 ```bash
-# Find next available number
-NEXT_NUM=$(ls -d specs/[0-9][0-9][0-9]-* 2>/dev/null | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n | tail -1 | awk '{print $1+1}')
+# Find next available idea number
+NEXT_NUM=$(ls -d ideas/[0-9][0-9][0-9]-* 2>/dev/null | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n | tail -1 | awk '{print $1+1}')
 NEXT_NUM=${NEXT_NUM:-1}
 IDEA_NUM=$(printf "%03d" $NEXT_NUM)
 
-# Create directory with features subdirectory
-mkdir -p "specs/${IDEA_NUM}-<short-name>/features"
+# Create idea directory with features subdirectory
+mkdir -p "ideas/${IDEA_NUM}-<short-name>/features"
 ```
 
 **Directory structure**:
 
 ```
-specs/###-<short-name>/
+ideas/###-<short-name>/
 ├── idea.md                    # High-level vision (always created)
-├── features/                  # Feature files (if complexity ≥ 4)
-│   ├── 01-feature-name.md     # First feature
-│   ├── 02-feature-name.md     # Second feature
+└── features/                  # Feature files (if complexity ≥ 4)
+    ├── 01-<feature-name>.md   # First feature
+    ├── 02-<feature-name>.md   # Second feature
+    └── ...
+
+.speckit/                              # Created later by /speckit.specify
+├── ###-<short-name>/                  # Spec for simple idea (complexity < 4)
+│   ├── spec.md
+│   ├── plan.md
 │   └── ...
-└── spec.md                    # (Created later by /speckit.specify)
+└── ###-01-<feature-name>/             # Spec for feature 1 (complexity ≥ 4)
+    ├── spec.md
+    ├── plan.md
+    └── ...
 ```
+
+**Note**: The `/speckit.specify` command will create the `.speckit/###-<name>/` directory structure when you specify the idea or each feature.
 
 #### 3.2 Write Idea Document
 
-Create `specs/###-<short-name>/idea.md` using this structure:
+Create `ideas/###-<short-name>/idea.md` using this structure:
 
 ```markdown
 # Idea: [CONCISE TITLE]
@@ -315,7 +326,7 @@ Recommended order based on dependencies and priority:
 
 #### 3.3 Generate Feature Files (if complexity ≥ 4)
 
-For each identified feature, create a feature file in `specs/###-<short-name>/features/`:
+For each identified feature, create a feature file in `ideas/###-<short-name>/features/`:
 
 **File naming**: `##-feature-short-name.md` (e.g., `01-user-authentication.md`)
 
@@ -402,8 +413,8 @@ Before completing, verify:
 ### Phase 4: Completion
 
 1. **Save** all documents:
-   - `specs/###-<short-name>/idea.md` (always)
-   - `specs/###-<short-name>/features/*.md` (if complexity ≥ 4)
+   - `ideas/###-<short-name>/idea.md` (always)
+   - `ideas/###-<short-name>/features/*.md` (if complexity ≥ 4)
 
 2. **Report** completion:
 
@@ -411,7 +422,7 @@ Before completing, verify:
    ```
    ## Idea Document Created
 
-   📄 **File**: specs/###-<short-name>/idea.md
+   📄 **File**: ideas/###-<short-name>/idea.md
 
    ### Summary
    - **Vision**: [1-line summary]
@@ -421,15 +432,15 @@ Before completing, verify:
    - **Open questions**: [count]
 
    ### Next Step
-   → `/speckit.specify` to create formal specification
+   → `/speckit.specify ideas/###-<short-name>` to create formal specification
    ```
 
    **For complex ideas (complexity ≥ 4)**:
    ```
    ## Idea Document & Features Created
 
-   📄 **Idea**: specs/###-<short-name>/idea.md
-   📁 **Features**: specs/###-<short-name>/features/
+   📄 **Idea**: ideas/###-<short-name>/idea.md
+   📁 **Features**: ideas/###-<short-name>/features/
 
    ### Summary
    - **Vision**: [1-line summary]
@@ -449,8 +460,8 @@ Before completing, verify:
    3. **Later**: Feature 03 - [name]
 
    ### Next Step
-   → `/speckit.specify 01` to create specification for first feature
-   → Or `/speckit.specify features/01-feature-name.md` with full path
+   → `/speckit.specify ideas/###-<short-name>/features/01-feature-name.md` to specify first feature
+   → Or `/speckit.specify ideas/###-<short-name>` to specify entire idea as one spec
    ```
 
 3. **Handoff options**:
