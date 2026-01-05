@@ -1,0 +1,3 @@
+[submodule "frameworks/autospec"]
+	path = frameworks/autospec
+	url = https://github.com/Leonai-do/autospec.git
