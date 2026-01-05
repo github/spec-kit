@@ -1,0 +1,4230 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where security check has been disabled.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Security check has been disabled - content may contain sensitive information
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  workflows/
+    docs.yml
+    manual-release.yml
+    release.yml
+  CODEOWNERS
+docs/
+  .gitignore
+  docfx.json
+  index.md
+  installation.md
+  quickstart.md
+  README.md
+  toc.yml
+memory/
+  constitution_update_checklist.md
+  constitution.md
+scripts/
+  check-task-prerequisites.sh
+  common.sh
+  create-new-feature.sh
+  get-feature-paths.sh
+  setup-plan.sh
+  update-agent-context.sh
+src/
+  specify_cli/
+    __init__.py
+templates/
+  commands/
+    plan.md
+    specify.md
+    tasks.md
+  agent-file-template.md
+  plan-template.md
+  spec-template.md
+  tasks-template.md
+.gitignore
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+LICENSE
+pyproject.toml
+README.md
+SECURITY.md
+spec-driven.md
+SUPPORT.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".github/workflows/docs.yml">
+# Build and deploy DocFX documentation to GitHub Pages
+name: Deploy Documentation to Pages
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["main"]
+    paths:
+      - 'docs/**'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # Build job
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for git info
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Setup DocFX
+        run: dotnet tool install -g docfx
+
+      - name: Build with DocFX
+        run: |
+          cd docs
+          docfx docfx.json
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'docs/_site'
+
+  # Deploy job
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+</file>
+
+<file path=".github/workflows/manual-release.yml">
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  manual_release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Calculate new version
+      id: version
+      run: |
+        # Get the latest tag, or use v0.0.0 if no tags exist
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+        
+        # Extract version number
+        VERSION=$(echo $LATEST_TAG | sed 's/v//')
+        IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+        MAJOR=${VERSION_PARTS[0]:-0}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # Increment based on input
+        case "${{ github.event.inputs.version_bump }}" in
+          "major")
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          "minor")
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          "patch")
+            PATCH=$((PATCH + 1))
+            ;;
+        esac
+        
+        NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "New version will be: $NEW_VERSION (was $LATEST_TAG)"
+        
+    - name: Create release package
+      run: |
+        # Create base package directory structure
+        mkdir -p sdd-package-base
+        
+        # Copy common folders to base
+        echo "Packaging SDD common components..."
+        
+        if [ -d "memory" ]; then
+          cp -r memory sdd-package-base/
+          echo "✓ Copied memory folder ($(find memory -type f | wc -l) files)"
+        else
+          echo "⚠️ memory folder not found"
+        fi
+        
+        if [ -d "scripts" ]; then
+          cp -r scripts sdd-package-base/
+          echo "✓ Copied scripts folder ($(find scripts -type f | wc -l) files)"
+        else
+          echo "⚠️ scripts folder not found"
+        fi
+        
+        # Create Claude Code package
+        echo "Creating Claude Code package..."
+        mkdir -p sdd-claude-package
+        cp -r sdd-package-base/* sdd-claude-package/
+        if [ -d "agent_templates/claude" ]; then
+          cp -r agent_templates/claude sdd-claude-package/.claude
+          echo "✓ Added Claude Code commands ($(find agent_templates/claude -type f | wc -l) files)"
+        else
+          echo "⚠️ agent_templates/claude folder not found"
+        fi
+        
+        # Create Gemini CLI package
+        echo "Creating Gemini CLI package..."
+        mkdir -p sdd-gemini-package
+        cp -r sdd-package-base/* sdd-gemini-package/
+        if [ -d "agent_templates/gemini" ]; then
+          cp -r agent_templates/gemini sdd-gemini-package/.gemini
+          # Move GEMINI.md to root for easier access
+          if [ -f "sdd-gemini-package/.gemini/GEMINI.md" ]; then
+            mv sdd-gemini-package/.gemini/GEMINI.md sdd-gemini-package/GEMINI.md
+            echo "✓ Moved GEMINI.md to root of Gemini package"
+          fi
+          # Remove empty .gemini folder if it only contained GEMINI.md
+          if [ -d "sdd-gemini-package/.gemini" ] && [ -z "$(find sdd-gemini-package/.gemini -type f)" ]; then
+            rm -rf sdd-gemini-package/.gemini
+            echo "✓ Removed empty .gemini folder"
+          fi
+          echo "✓ Added Gemini CLI commands ($(find agent_templates/gemini -type f | wc -l) files)"
+        else
+          echo "⚠️ agent_templates/gemini folder not found"
+        fi
+        
+        # Create GitHub Copilot package
+        echo "Creating GitHub Copilot package..."
+        mkdir -p sdd-copilot-package
+        cp -r sdd-package-base/* sdd-copilot-package/
+        if [ -d "agent_templates/copilot" ]; then
+          mkdir -p sdd-copilot-package/.github
+          cp -r agent_templates/copilot/* sdd-copilot-package/.github/
+          echo "✓ Added Copilot instructions to .github ($(find agent_templates/copilot -type f | wc -l) files)"
+        else
+          echo "⚠️ agent_templates/copilot folder not found"
+        fi
+        
+        # Create archive files for each package
+        echo "Creating archive files..."
+        cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip . && cd ..
+        
+        cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip . && cd ..
+        
+        cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip . && cd ..
+        
+        echo ""
+        echo "📦 Packages created:"
+        echo "Claude: $(ls -lh spec-kit-template-claude-*.zip | awk '{print $5}')"
+        echo "Gemini: $(ls -lh spec-kit-template-gemini-*.zip | awk '{print $5}')"
+        echo "Copilot: $(ls -lh spec-kit-template-copilot-*.zip | awk '{print $5}')"
+        echo "Copilot: $(ls -lh sdd-template-copilot-*.zip | awk '{print $5}')"
+        
+    - name: Generate detailed release notes
+      run: |
+        LAST_TAG=${{ steps.version.outputs.latest_tag }}
+        
+        # Get commit range
+        if [ "$LAST_TAG" = "v0.0.0" ]; then
+          COMMIT_RANGE="HEAD~10..HEAD"
+          COMMITS=$(git log --oneline --pretty=format:"- %s" $COMMIT_RANGE 2>/dev/null || echo "- Initial release")
+        else
+          COMMIT_RANGE="$LAST_TAG..HEAD"
+          COMMITS=$(git log --oneline --pretty=format:"- %s" $COMMIT_RANGE 2>/dev/null || echo "- No changes since last release")
+        fi
+        
+        # Count files in each directory
+        CLAUDE_COUNT=$(find agent_templates/claude -type f 2>/dev/null | wc -l || echo "0")
+        GEMINI_COUNT=$(find agent_templates/gemini -type f 2>/dev/null | wc -l || echo "0")
+        COPILOT_COUNT=$(find agent_templates/copilot -type f 2>/dev/null | wc -l || echo "0")
+        MEMORY_COUNT=$(find memory -type f 2>/dev/null | wc -l || echo "0")
+        SCRIPTS_COUNT=$(find scripts -type f 2>/dev/null | wc -l || echo "0")
+        
+        cat > release_notes.md << EOF
+        Template release ${{ steps.version.outputs.new_version }}
+        
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+        
+        Download the template for your preferred AI assistant:
+        - spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip
+        - spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip
+        - spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip  
+        
+        Changes since $LAST_TAG:
+        $COMMITS
+        EOF
+        
+    - name: Create GitHub Release
+      run: |
+        # Remove 'v' prefix from version for release title
+        VERSION_NO_V=${{ steps.version.outputs.new_version }}
+        VERSION_NO_V=${VERSION_NO_V#v}
+        
+        gh release create ${{ steps.version.outputs.new_version }} \
+          spec-kit-template-copilot-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-claude-${{ steps.version.outputs.new_version }}.zip \
+          spec-kit-template-gemini-${{ steps.version.outputs.new_version }}.zip \
+          --title "Spec Kit Templates - $VERSION_NO_V" \
+          --notes-file release_notes.md
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+</file>
+
+<file path=".github/workflows/release.yml">
+name: Create Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'memory/**'
+      - 'scripts/**'
+      - 'templates/**'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: write
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Get latest tag
+      id: get_tag
+      run: |
+        # Get the latest tag, or use v0.0.0 if no tags exist
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+        
+        # Extract version number and increment
+        VERSION=$(echo $LATEST_TAG | sed 's/v//')
+        IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+        MAJOR=${VERSION_PARTS[0]:-0}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # Increment patch version
+        PATCH=$((PATCH + 1))
+        NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+        
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "New version will be: $NEW_VERSION"
+        
+    - name: Check if release already exists
+      id: check_release
+      run: |
+        if gh release view ${{ steps.get_tag.outputs.new_version }} >/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "Release ${{ steps.get_tag.outputs.new_version }} already exists, skipping..."
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Release ${{ steps.get_tag.outputs.new_version }} does not exist, proceeding..."
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create release package
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        # Create base package directory structure
+        mkdir -p sdd-package-base
+        
+        # Copy common folders to base
+        if [ -d "memory" ]; then
+          cp -r memory sdd-package-base/
+          echo "Copied memory folder"
+        fi
+        
+        if [ -d "scripts" ]; then
+          cp -r scripts sdd-package-base/
+          echo "Copied scripts folder"
+        fi
+
+        if [ -d "templates" ]; then
+          mkdir -p sdd-package-base/templates
+          # Copy templates folder but exclude the commands directory
+          find templates -type f -not -path "templates/commands/*" -exec cp --parents {} sdd-package-base/ \;
+          echo "Copied templates folder (excluding commands directory)"
+        fi
+        
+        # Generate command files for each agent from source templates
+        generate_commands() {
+          local agent=$1
+          local ext=$2
+          local arg_format=$3
+          local output_dir=$4
+          
+          mkdir -p "$output_dir"
+          
+          for template in templates/commands/*.md; do
+            if [[ -f "$template" ]]; then
+              name=$(basename "$template" .md)
+              description=$(awk '/^description:/ {gsub(/^description: *"?/, ""); gsub(/"$/, ""); print; exit}' "$template" | tr -d '\r')
+              content=$(awk '/^---$/{if(++count==2) start=1; next} start' "$template" | sed "s/{ARGS}/$arg_format/g")
+              
+              case $ext in
+                "toml")
+                  {
+                    echo "description = \"$description\""
+                    echo ""
+                    echo "prompt = \"\"\""
+                    echo "$content"
+                    echo "\"\"\""
+                  } > "$output_dir/$name.$ext"
+                  ;;
+                "md")
+                  echo "$content" > "$output_dir/$name.$ext"
+                  ;;
+                "prompt.md")
+                  {
+                    echo "# $(echo "$description" | sed 's/\. .*//')"
+                    echo ""
+                    echo "$content"
+                  } > "$output_dir/$name.$ext"
+                  ;;
+              esac
+            fi
+          done
+        }
+        
+        # Create Claude Code package
+        mkdir -p sdd-claude-package
+        cp -r sdd-package-base/* sdd-claude-package/
+        mkdir -p sdd-claude-package/.claude/commands
+        generate_commands "claude" "md" "\$ARGUMENTS" "sdd-claude-package/.claude/commands"
+        echo "Created Claude Code package"
+        
+        # Create Gemini CLI package  
+        mkdir -p sdd-gemini-package
+        cp -r sdd-package-base/* sdd-gemini-package/
+        mkdir -p sdd-gemini-package/.gemini/commands
+        generate_commands "gemini" "toml" "{{args}}" "sdd-gemini-package/.gemini/commands"
+        if [ -f "agent_templates/gemini/GEMINI.md" ]; then
+          cp agent_templates/gemini/GEMINI.md sdd-gemini-package/GEMINI.md
+        fi
+        echo "Created Gemini CLI package"
+        
+        # Create GitHub Copilot package
+        mkdir -p sdd-copilot-package
+        cp -r sdd-package-base/* sdd-copilot-package/
+        mkdir -p sdd-copilot-package/.github/prompts
+        generate_commands "copilot" "prompt.md" "\$ARGUMENTS" "sdd-copilot-package/.github/prompts"
+        echo "Created GitHub Copilot package"
+        
+        # Create archive files for each package
+        cd sdd-claude-package && zip -r ../spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+        
+        cd sdd-gemini-package && zip -r ../spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+        
+        cd sdd-copilot-package && zip -r ../spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip . && cd ..
+        
+        # List contents for verification
+        echo "Claude package contents:"
+        unzip -l spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        echo "Gemini package contents:"
+        unzip -l spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        echo "Copilot package contents:"
+        unzip -l spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip | head -10
+        
+    - name: Generate release notes
+      if: steps.check_release.outputs.exists == 'false'
+      id: release_notes
+      run: |
+        # Get commits since last tag
+        LAST_TAG=${{ steps.get_tag.outputs.latest_tag }}
+        if [ "$LAST_TAG" = "v0.0.0" ]; then
+          # Check how many commits we have and use that as the limit
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          if [ "$COMMIT_COUNT" -gt 10 ]; then
+            COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~10..HEAD)
+          else
+            COMMITS=$(git log --oneline --pretty=format:"- %s" HEAD~$COMMIT_COUNT..HEAD 2>/dev/null || git log --oneline --pretty=format:"- %s")
+          fi
+        else
+          COMMITS=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
+        fi
+        
+        # Create release notes
+        cat > release_notes.md << EOF
+        Template release ${{ steps.get_tag.outputs.new_version }}
+        
+        Updated specification-driven development templates for GitHub Copilot, Claude Code, and Gemini CLI.
+        
+        Download the template for your preferred AI assistant:
+        - spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip
+        - spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip
+        - spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip  
+        EOF
+        
+        echo "Generated release notes:"
+        cat release_notes.md
+        
+    - name: Create GitHub Release
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        # Remove 'v' prefix from version for release title
+        VERSION_NO_V=${{ steps.get_tag.outputs.new_version }}
+        VERSION_NO_V=${VERSION_NO_V#v}
+        
+        gh release create ${{ steps.get_tag.outputs.new_version }} \
+          spec-kit-template-copilot-${{ steps.get_tag.outputs.new_version }}.zip \
+          spec-kit-template-claude-${{ steps.get_tag.outputs.new_version }}.zip \
+          spec-kit-template-gemini-${{ steps.get_tag.outputs.new_version }}.zip \
+          --title "Spec Kit Templates - $VERSION_NO_V" \
+          --notes-file release_notes.md
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Update version in pyproject.toml (for release artifacts only)
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        # Update version in pyproject.toml (remove 'v' prefix for Python versioning)
+        VERSION=${{ steps.get_tag.outputs.new_version }}
+        PYTHON_VERSION=${VERSION#v}
+        
+        if [ -f "pyproject.toml" ]; then
+          sed -i "s/version = \".*\"/version = \"$PYTHON_VERSION\"/" pyproject.toml
+          echo "Updated pyproject.toml version to $PYTHON_VERSION (for release artifacts only)"
+        fi
+        
+    # Note: No longer committing version changes back to main branch
+    # The version is only updated in the release artifacts
+</file>
+
+<file path=".github/CODEOWNERS">
+# Global code owner
+* @localden
+</file>
+
+<file path="docs/.gitignore">
+# DocFX build output
+_site/
+obj/
+.docfx/
+
+# Temporary files
+*.tmp
+*.log
+</file>
+
+<file path="docs/docfx.json">
+{
+  "build": {
+    "content": [
+      {
+        "files": [
+          "*.md",
+          "toc.yml"
+        ]
+      },
+      {
+        "files": [
+          "../README.md",
+          "../CONTRIBUTING.md",
+          "../CODE_OF_CONDUCT.md",
+          "../SECURITY.md",
+          "../SUPPORT.md"
+        ],
+        "dest": "."
+      }
+    ],
+    "resource": [
+      {
+        "files": [
+          "images/**"
+        ]
+      },
+      {
+        "files": [
+          "../media/**"
+        ],
+        "dest": "media"
+      }
+    ],
+    "overwrite": [
+      {
+        "files": [
+          "apidoc/**.md"
+        ],
+        "exclude": [
+          "obj/**",
+          "_site/**"
+        ]
+      }
+    ],
+    "dest": "_site",
+    "globalMetadataFiles": [],
+    "fileMetadataFiles": [],
+    "template": [
+      "default",
+      "modern"
+    ],
+    "postProcessors": [],
+    "markdownEngineName": "markdig",
+    "noLangKeyword": false,
+    "keepFileLink": false,
+    "cleanupCacheHistory": false,
+    "disableGitFeatures": false,
+    "globalMetadata": {
+      "_appTitle": "Spec Kit Documentation",
+      "_appName": "Spec Kit",
+      "_appFooter": "Spec Kit - A specification-driven development toolkit",
+      "_enableSearch": true,
+      "_disableContribution": false,
+      "_gitContribute": {
+        "repo": "https://github.com/github/spec-kit",
+        "branch": "main"
+      }
+    }
+  }
+}
+</file>
+
+<file path="docs/index.md">
+# Spec Kit
+
+*Build high-quality software faster.*
+
+**An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.**
+
+## What is Spec-Driven Development?
+
+Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+
+## Getting Started
+
+- [Installation Guide](installation.md)
+- [Quick Start Guide](quickstart.md)
+
+## Core Philosophy
+
+Spec-Driven Development is a structured process that emphasizes:
+
+- **Intent-driven development** where specifications define the "_what_" before the "_how_"
+- **Rich specification creation** using guardrails and organizational principles
+- **Multi-step refinement** rather than one-shot code generation from prompts
+- **Heavy reliance** on advanced AI model capabilities for specification interpretation
+
+## Development Phases
+
+| Phase | Focus | Key Activities |
+|-------|-------|----------------|
+| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
+| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
+| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+
+## Experimental Goals
+
+Our research and experimentation focus on:
+
+### Technology Independence
+- Create applications using diverse technology stacks
+- Validate the hypothesis that Spec-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
+
+### Enterprise Constraints
+- Demonstrate mission-critical application development
+- Incorporate organizational constraints (cloud providers, tech stacks, engineering practices)
+- Support enterprise design systems and compliance requirements
+
+### User-Centric Development
+- Build applications for different user cohorts and preferences
+- Support various development approaches (from vibe-coding to AI-native development)
+
+### Creative & Iterative Processes
+- Validate the concept of parallel implementation exploration
+- Provide robust iterative feature development workflows
+- Extend processes to handle upgrades and modernization tasks
+
+## Contributing
+
+Please see our [Contributing Guide](CONTRIBUTING.md) for information on how to contribute to this project.
+
+## Support
+
+For support, please check our [Support Guide](SUPPORT.md) or open an issue on GitHub.
+</file>
+
+<file path="docs/installation.md">
+# Installation Guide
+
+## Prerequisites
+
+- **Linux/macOS** (or WSL2 on Windows)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- [uv](https://docs.astral.sh/uv/) for package management
+- [Python 3.11+](https://www.python.org/downloads/)
+- [Git](https://git-scm.com/downloads)
+
+## Installation
+
+### Initialize a New Project
+
+The easiest way to get started is to initialize a new project:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+```
+
+Or initialize in the current directory:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init --here
+```
+
+### Specify AI Agent
+
+You can proactively specify your AI agent during initialization:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai gemini
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
+```
+
+### Ignore Agent Tools Check
+
+If you prefer to get the templates without checking for the right tools:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude --ignore-agent-tools
+```
+
+## Verification
+
+After initialization, you should see the following commands available in your AI agent:
+- `/specify` - Create specifications
+- `/plan` - Generate implementation plans  
+- `/tasks` - Break down into actionable tasks
+
+## Troubleshooting
+
+### Git Credential Manager on Linux
+
+If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
+
+```bash
+#!/usr/bin/env bash
+set -e
+echo "Downloading Git Credential Manager v2.6.1..."
+wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
+echo "Installing Git Credential Manager..."
+sudo dpkg -i gcm-linux_amd64.2.6.1.deb
+echo "Configuring Git to use GCM..."
+git config --global credential.helper manager
+echo "Cleaning up..."
+rm gcm-linux_amd64.2.6.1.deb
+```
+</file>
+
+<file path="docs/quickstart.md">
+# Quick Start Guide
+
+This guide will help you get started with Spec-Driven Development using Spec Kit.
+
+## The 4-Step Process
+
+### 1. Install Specify
+
+Initialize your project depending on the coding agent you're using:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+```
+
+### 2. Create the Spec
+
+Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+
+```bash
+/specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+```
+
+### 3. Create a Technical Implementation Plan
+
+Use the `/plan` command to provide your tech stack and architecture choices.
+
+```bash
+/plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+```
+
+### 4. Break Down and Implement
+
+Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
+
+## Detailed Example: Building Taskify
+
+Here's a complete example of building a team productivity platform:
+
+### Step 1: Define Requirements with `/specify`
+
+```text
+Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
+assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
+let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
+I want five users in two different categories, one product manager and four engineers. Let's create three
+different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
+"In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
+first testing thing to ensure that our basic features are set up. For each task in the UI for a task card,
+you should be able to change the current status of the task between the different columns in the Kanban work board.
+You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task
+card, assign one of the valid users. When you first launch Taskify, it's going to give you a list of the five users to pick
+from. There will be no password required. When you click on a user, you go into the main view, which displays the list of
+projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns.
+You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are
+assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly
+see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can
+delete any comments that you made, but you can't delete comments anybody else made.
+```
+
+### Step 2: Refine the Specification
+
+After the initial specification is created, clarify any missing requirements:
+
+```text
+For each sample project or project that you create there should be a variable number of tasks between 5 and 15
+tasks for each one randomly distributed into different states of completion. Make sure that there's at least
+one task in each stage of completion.
+```
+
+Also validate the specification checklist:
+
+```text
+Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
+```
+
+### Step 3: Generate Technical Plan with `/plan`
+
+Be specific about your tech stack and technical requirements:
+
+```text
+We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use
+Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API,
+tasks API, and a notifications API.
+```
+
+### Step 4: Validate and Implement
+
+Have your AI agent audit the implementation plan:
+
+```text
+Now I want you to go and audit the implementation plan and the implementation detail files.
+Read through it with an eye on determining whether or not there is a sequence of tasks that you need
+to be doing that are obvious from reading this. Because I don't know if there's enough here.
+```
+
+Finally, implement the solution:
+
+```text
+implement specs/002-create-taskify/plan.md
+```
+
+## Key Principles
+
+- **Be explicit** about what you're building and why
+- **Don't focus on tech stack** during specification phase
+- **Iterate and refine** your specifications before implementation
+- **Validate** the plan before coding begins
+- **Let the AI agent handle** the implementation details
+
+## Next Steps
+
+- Read the complete methodology for in-depth guidance
+- Check out more examples in the repository
+- Explore the source code on GitHub
+</file>
+
+<file path="docs/README.md">
+# Documentation
+
+This folder contains the documentation source files for Spec Kit, built using [DocFX](https://dotnet.github.io/docfx/).
+
+## Building Locally
+
+To build the documentation locally:
+
+1. Install DocFX:
+   ```bash
+   dotnet tool install -g docfx
+   ```
+
+2. Build the documentation:
+   ```bash
+   cd docs
+   docfx docfx.json --serve
+   ```
+
+3. Open your browser to `http://localhost:8080` to view the documentation.
+
+## Structure
+
+- `docfx.json` - DocFX configuration file
+- `index.md` - Main documentation homepage
+- `toc.yml` - Table of contents configuration
+- `installation.md` - Installation guide
+- `quickstart.md` - Quick start guide
+- `_site/` - Generated documentation output (ignored by git)
+
+## Deployment
+
+Documentation is automatically built and deployed to GitHub Pages when changes are pushed to the `main` branch. The workflow is defined in `.github/workflows/docs.yml`.
+</file>
+
+<file path="docs/toc.yml">
+- name: Home
+  href: index.md
+- name: Installation
+  href: installation.md
+- name: Quick Start
+  href: quickstart.md
+- name: Contributing
+  href: CONTRIBUTING.md
+- name: Support
+  href: SUPPORT.md
+</file>
+
+<file path="memory/constitution_update_checklist.md">
+# Constitution Update Checklist
+
+When amending the constitution (`/memory/constitution.md`), ensure all dependent documents are updated to maintain consistency.
+
+## Templates to Update
+
+### When adding/modifying ANY article:
+- [ ] `/templates/plan-template.md` - Update Constitution Check section
+- [ ] `/templates/spec-template.md` - Update if requirements/scope affected
+- [ ] `/templates/tasks-template.md` - Update if new task types needed
+- [ ] `/.claude/commands/plan.md` - Update if planning process changes
+- [ ] `/.claude/commands/tasks.md` - Update if task generation affected
+- [ ] `/CLAUDE.md` - Update runtime development guidelines
+
+### Article-specific updates:
+
+#### Article I (Library-First):
+- [ ] Ensure templates emphasize library creation
+- [ ] Update CLI command examples
+- [ ] Add llms.txt documentation requirements
+
+#### Article II (CLI Interface):
+- [ ] Update CLI flag requirements in templates
+- [ ] Add text I/O protocol reminders
+
+#### Article III (Test-First):
+- [ ] Update test order in all templates
+- [ ] Emphasize TDD requirements
+- [ ] Add test approval gates
+
+#### Article IV (Integration Testing):
+- [ ] List integration test triggers
+- [ ] Update test type priorities
+- [ ] Add real dependency requirements
+
+#### Article V (Observability):
+- [ ] Add logging requirements to templates
+- [ ] Include multi-tier log streaming
+- [ ] Update performance monitoring sections
+
+#### Article VI (Versioning):
+- [ ] Add version increment reminders
+- [ ] Include breaking change procedures
+- [ ] Update migration requirements
+
+#### Article VII (Simplicity):
+- [ ] Update project count limits
+- [ ] Add pattern prohibition examples
+- [ ] Include YAGNI reminders
+
+## Validation Steps
+
+1. **Before committing constitution changes:**
+   - [ ] All templates reference new requirements
+   - [ ] Examples updated to match new rules
+   - [ ] No contradictions between documents
+
+2. **After updating templates:**
+   - [ ] Run through a sample implementation plan
+   - [ ] Verify all constitution requirements addressed
+   - [ ] Check that templates are self-contained (readable without constitution)
+
+3. **Version tracking:**
+   - [ ] Update constitution version number
+   - [ ] Note version in template footers
+   - [ ] Add amendment to constitution history
+
+## Common Misses
+
+Watch for these often-forgotten updates:
+- Command documentation (`/commands/*.md`)
+- Checklist items in templates
+- Example code/commands
+- Domain-specific variations (web vs mobile vs CLI)
+- Cross-references between documents
+
+## Template Sync Status
+
+Last sync check: 2025-07-16
+- Constitution version: 2.1.1
+- Templates aligned: ❌ (missing versioning, observability details)
+
+---
+
+*This checklist ensures the constitution's principles are consistently applied across all project documentation.*
+</file>
+
+<file path="memory/constitution.md">
+# [PROJECT_NAME] Constitution
+<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+
+## Core Principles
+
+### [PRINCIPLE_1_NAME]
+<!-- Example: I. Library-First -->
+[PRINCIPLE_1_DESCRIPTION]
+<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+
+### [PRINCIPLE_2_NAME]
+<!-- Example: II. CLI Interface -->
+[PRINCIPLE_2_DESCRIPTION]
+<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+
+### [PRINCIPLE_3_NAME]
+<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+[PRINCIPLE_3_DESCRIPTION]
+<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+
+### [PRINCIPLE_4_NAME]
+<!-- Example: IV. Integration Testing -->
+[PRINCIPLE_4_DESCRIPTION]
+<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+
+### [PRINCIPLE_5_NAME]
+<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+[PRINCIPLE_5_DESCRIPTION]
+<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+
+## [SECTION_2_NAME]
+<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+
+[SECTION_2_CONTENT]
+<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+
+## [SECTION_3_NAME]
+<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+
+[SECTION_3_CONTENT]
+<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+
+## Governance
+<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+
+[GOVERNANCE_RULES]
+<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+
+**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
+<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+</file>
+
+<file path="scripts/check-task-prerequisites.sh">
+#!/usr/bin/env bash
+# Check that implementation plan exists and find optional design documents
+# Usage: ./check-task-prerequisites.sh [--json]
+
+set -e
+
+JSON_MODE=false
+for arg in "$@"; do
+    case "$arg" in
+        --json) JSON_MODE=true ;;
+        --help|-h) echo "Usage: $0 [--json]"; exit 0 ;;
+    esac
+done
+
+# Source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
+# Get all paths
+eval $(get_feature_paths)
+
+# Check if on feature branch
+check_feature_branch "$CURRENT_BRANCH" || exit 1
+
+# Check if feature directory exists
+if [[ ! -d "$FEATURE_DIR" ]]; then
+    echo "ERROR: Feature directory not found: $FEATURE_DIR"
+    echo "Run /specify first to create the feature structure."
+    exit 1
+fi
+
+# Check for implementation plan (required)
+if [[ ! -f "$IMPL_PLAN" ]]; then
+    echo "ERROR: plan.md not found in $FEATURE_DIR"
+    echo "Run /plan first to create the plan."
+    exit 1
+fi
+
+if $JSON_MODE; then
+    # Build JSON array of available docs that actually exist
+    docs=()
+    [[ -f "$RESEARCH" ]] && docs+=("research.md")
+    [[ -f "$DATA_MODEL" ]] && docs+=("data-model.md")
+    ([[ -d "$CONTRACTS_DIR" ]] && [[ -n "$(ls -A "$CONTRACTS_DIR" 2>/dev/null)" ]]) && docs+=("contracts/")
+    [[ -f "$QUICKSTART" ]] && docs+=("quickstart.md")
+    # join array into JSON
+    json_docs=$(printf '"%s",' "${docs[@]}")
+    json_docs="[${json_docs%,}]"
+    printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s}\n' "$FEATURE_DIR" "$json_docs"
+else
+    # List available design documents (optional)
+    echo "FEATURE_DIR:$FEATURE_DIR"
+    echo "AVAILABLE_DOCS:"
+
+    # Use common check functions
+    check_file "$RESEARCH" "research.md"
+    check_file "$DATA_MODEL" "data-model.md"
+    check_dir "$CONTRACTS_DIR" "contracts/"
+    check_file "$QUICKSTART" "quickstart.md"
+fi
+
+# Always succeed - task generation should work with whatever docs are available
+</file>
+
+<file path="scripts/common.sh">
+#!/usr/bin/env bash
+# Common functions and variables for all scripts
+
+# Get repository root
+get_repo_root() {
+    git rev-parse --show-toplevel
+}
+
+# Get current branch
+get_current_branch() {
+    git rev-parse --abbrev-ref HEAD
+}
+
+# Check if current branch is a feature branch
+# Returns 0 if valid, 1 if not
+check_feature_branch() {
+    local branch="$1"
+    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+        echo "ERROR: Not on a feature branch. Current branch: $branch"
+        echo "Feature branches should be named like: 001-feature-name"
+        return 1
+    fi
+    return 0
+}
+
+# Get feature directory path
+get_feature_dir() {
+    local repo_root="$1"
+    local branch="$2"
+    echo "$repo_root/specs/$branch"
+}
+
+# Get all standard paths for a feature
+# Usage: eval $(get_feature_paths)
+# Sets: REPO_ROOT, CURRENT_BRANCH, FEATURE_DIR, FEATURE_SPEC, IMPL_PLAN, TASKS
+get_feature_paths() {
+    local repo_root=$(get_repo_root)
+    local current_branch=$(get_current_branch)
+    local feature_dir=$(get_feature_dir "$repo_root" "$current_branch")
+    
+    echo "REPO_ROOT='$repo_root'"
+    echo "CURRENT_BRANCH='$current_branch'"
+    echo "FEATURE_DIR='$feature_dir'"
+    echo "FEATURE_SPEC='$feature_dir/spec.md'"
+    echo "IMPL_PLAN='$feature_dir/plan.md'"
+    echo "TASKS='$feature_dir/tasks.md'"
+    echo "RESEARCH='$feature_dir/research.md'"
+    echo "DATA_MODEL='$feature_dir/data-model.md'"
+    echo "QUICKSTART='$feature_dir/quickstart.md'"
+    echo "CONTRACTS_DIR='$feature_dir/contracts'"
+}
+
+# Check if a file exists and report
+check_file() {
+    local file="$1"
+    local description="$2"
+    if [[ -f "$file" ]]; then
+        echo "  ✓ $description"
+        return 0
+    else
+        echo "  ✗ $description"
+        return 1
+    fi
+}
+
+# Check if a directory exists and has files
+check_dir() {
+    local dir="$1"
+    local description="$2"
+    if [[ -d "$dir" ]] && [[ -n "$(ls -A "$dir" 2>/dev/null)" ]]; then
+        echo "  ✓ $description"
+        return 0
+    else
+        echo "  ✗ $description"
+        return 1
+    fi
+}
+</file>
+
+<file path="scripts/create-new-feature.sh">
+#!/usr/bin/env bash
+# Create a new feature with branch, directory structure, and template
+# Usage: ./create-new-feature.sh "feature description"
+#        ./create-new-feature.sh --json "feature description"
+
+set -e
+
+JSON_MODE=false
+
+# Collect non-flag args
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --json)
+            JSON_MODE=true
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--json] <feature_description>"; exit 0 ;;
+        *)
+            ARGS+=("$arg") ;;
+    esac
+done
+
+FEATURE_DESCRIPTION="${ARGS[*]}"
+if [ -z "$FEATURE_DESCRIPTION" ]; then
+        echo "Usage: $0 [--json] <feature_description>" >&2
+        exit 1
+fi
+
+# Get repository root
+REPO_ROOT=$(git rev-parse --show-toplevel)
+SPECS_DIR="$REPO_ROOT/specs"
+
+# Create specs directory if it doesn't exist
+mkdir -p "$SPECS_DIR"
+
+# Find the highest numbered feature directory
+HIGHEST=0
+if [ -d "$SPECS_DIR" ]; then
+    for dir in "$SPECS_DIR"/*; do
+        if [ -d "$dir" ]; then
+            dirname=$(basename "$dir")
+            number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
+            number=$((10#$number))
+            if [ "$number" -gt "$HIGHEST" ]; then
+                HIGHEST=$number
+            fi
+        fi
+    done
+fi
+
+# Generate next feature number with zero padding
+NEXT=$((HIGHEST + 1))
+FEATURE_NUM=$(printf "%03d" "$NEXT")
+
+# Create branch name from description
+BRANCH_NAME=$(echo "$FEATURE_DESCRIPTION" | \
+    tr '[:upper:]' '[:lower:]' | \
+    sed 's/[^a-z0-9]/-/g' | \
+    sed 's/-\+/-/g' | \
+    sed 's/^-//' | \
+    sed 's/-$//')
+
+# Extract 2-3 meaningful words
+WORDS=$(echo "$BRANCH_NAME" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//')
+
+# Final branch name
+BRANCH_NAME="${FEATURE_NUM}-${WORDS}"
+
+# Create and switch to new branch
+git checkout -b "$BRANCH_NAME"
+
+# Create feature directory
+FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+mkdir -p "$FEATURE_DIR"
+
+# Copy template if it exists
+TEMPLATE="$REPO_ROOT/templates/spec-template.md"
+SPEC_FILE="$FEATURE_DIR/spec.md"
+
+if [ -f "$TEMPLATE" ]; then
+    cp "$TEMPLATE" "$SPEC_FILE"
+else
+    echo "Warning: Template not found at $TEMPLATE" >&2
+    touch "$SPEC_FILE"
+fi
+
+if $JSON_MODE; then
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' \
+        "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+else
+    # Output results for the LLM to use (legacy key: value format)
+    echo "BRANCH_NAME: $BRANCH_NAME"
+    echo "SPEC_FILE: $SPEC_FILE"
+    echo "FEATURE_NUM: $FEATURE_NUM"
+fi
+</file>
+
+<file path="scripts/get-feature-paths.sh">
+#!/usr/bin/env bash
+# Get paths for current feature branch without creating anything
+# Used by commands that need to find existing feature files
+
+set -e
+
+# Source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
+# Get all paths
+eval $(get_feature_paths)
+
+# Check if on feature branch
+check_feature_branch "$CURRENT_BRANCH" || exit 1
+
+# Output paths (don't create anything)
+echo "REPO_ROOT: $REPO_ROOT"
+echo "BRANCH: $CURRENT_BRANCH"
+echo "FEATURE_DIR: $FEATURE_DIR"
+echo "FEATURE_SPEC: $FEATURE_SPEC"
+echo "IMPL_PLAN: $IMPL_PLAN"
+echo "TASKS: $TASKS"
+</file>
+
+<file path="scripts/setup-plan.sh">
+#!/usr/bin/env bash
+# Setup implementation plan structure for current branch
+# Returns paths needed for implementation plan generation
+# Usage: ./setup-plan.sh [--json]
+
+set -e
+
+JSON_MODE=false
+for arg in "$@"; do
+    case "$arg" in
+        --json) JSON_MODE=true ;;
+        --help|-h) echo "Usage: $0 [--json]"; exit 0 ;;
+    esac
+done
+
+# Source common functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
+# Get all paths
+eval $(get_feature_paths)
+
+# Check if on feature branch
+check_feature_branch "$CURRENT_BRANCH" || exit 1
+
+# Create specs directory if it doesn't exist
+mkdir -p "$FEATURE_DIR"
+
+# Copy plan template if it exists
+TEMPLATE="$REPO_ROOT/templates/plan-template.md"
+if [ -f "$TEMPLATE" ]; then
+    cp "$TEMPLATE" "$IMPL_PLAN"
+fi
+
+if $JSON_MODE; then
+    printf '{"FEATURE_SPEC":"%s","IMPL_PLAN":"%s","SPECS_DIR":"%s","BRANCH":"%s"}\n' \
+        "$FEATURE_SPEC" "$IMPL_PLAN" "$FEATURE_DIR" "$CURRENT_BRANCH"
+else
+    # Output all paths for LLM use
+    echo "FEATURE_SPEC: $FEATURE_SPEC"
+    echo "IMPL_PLAN: $IMPL_PLAN"
+    echo "SPECS_DIR: $FEATURE_DIR"
+    echo "BRANCH: $CURRENT_BRANCH"
+fi
+</file>
+
+<file path="scripts/update-agent-context.sh">
+#!/usr/bin/env bash
+# Incrementally update agent context files based on new feature plan
+# Supports: CLAUDE.md, GEMINI.md, and .github/copilot-instructions.md
+# O(1) operation - only reads current context file and new plan.md
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+FEATURE_DIR="$REPO_ROOT/specs/$CURRENT_BRANCH"
+NEW_PLAN="$FEATURE_DIR/plan.md"
+
+# Determine which agent context files to update
+CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
+GEMINI_FILE="$REPO_ROOT/GEMINI.md"
+COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
+
+# Allow override via argument
+AGENT_TYPE="$1"
+
+if [ ! -f "$NEW_PLAN" ]; then
+    echo "ERROR: No plan.md found at $NEW_PLAN"
+    exit 1
+fi
+
+echo "=== Updating agent context files for feature $CURRENT_BRANCH ==="
+
+# Extract tech from new plan
+NEW_LANG=$(grep "^**Language/Version**: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^**Language\/Version**: //' | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_FRAMEWORK=$(grep "^**Primary Dependencies**: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^**Primary Dependencies**: //' | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_TESTING=$(grep "^**Testing**: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^**Testing**: //' | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_DB=$(grep "^**Storage**: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^**Storage**: //' | grep -v "N/A" | grep -v "NEEDS CLARIFICATION" || echo "")
+NEW_PROJECT_TYPE=$(grep "^**Project Type**: " "$NEW_PLAN" 2>/dev/null | head -1 | sed 's/^**Project Type**: //' || echo "")
+
+# Function to update a single agent context file
+update_agent_file() {
+    local target_file="$1"
+    local agent_name="$2"
+    
+    echo "Updating $agent_name context file: $target_file"
+    
+    # Create temp file for new context
+    local temp_file=$(mktemp)
+    
+    # If file doesn't exist, create from template
+    if [ ! -f "$target_file" ]; then
+        echo "Creating new $agent_name context file..."
+        
+        # Check if this is the SDD repo itself
+        if [ -f "$REPO_ROOT/templates/agent-file-template.md" ]; then
+            cp "$REPO_ROOT/templates/agent-file-template.md" "$temp_file"
+        else
+            echo "ERROR: Template not found at $REPO_ROOT/templates/agent-file-template.md"
+            return 1
+        fi
+        
+        # Replace placeholders
+        sed -i.bak "s/\[PROJECT NAME\]/$(basename $REPO_ROOT)/" "$temp_file"
+        sed -i.bak "s/\[DATE\]/$(date +%Y-%m-%d)/" "$temp_file"
+        sed -i.bak "s/\[EXTRACTED FROM ALL PLAN.MD FILES\]/- $NEW_LANG + $NEW_FRAMEWORK ($CURRENT_BRANCH)/" "$temp_file"
+        
+        # Add project structure based on type
+        if [[ "$NEW_PROJECT_TYPE" == *"web"* ]]; then
+            sed -i.bak "s|\[ACTUAL STRUCTURE FROM PLANS\]|backend/\nfrontend/\ntests/|" "$temp_file"
+        else
+            sed -i.bak "s|\[ACTUAL STRUCTURE FROM PLANS\]|src/\ntests/|" "$temp_file"
+        fi
+        
+        # Add minimal commands
+        if [[ "$NEW_LANG" == *"Python"* ]]; then
+            COMMANDS="cd src && pytest && ruff check ."
+        elif [[ "$NEW_LANG" == *"Rust"* ]]; then
+            COMMANDS="cargo test && cargo clippy"
+        elif [[ "$NEW_LANG" == *"JavaScript"* ]] || [[ "$NEW_LANG" == *"TypeScript"* ]]; then
+            COMMANDS="npm test && npm run lint"
+        else
+            COMMANDS="# Add commands for $NEW_LANG"
+        fi
+        sed -i.bak "s|\[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES\]|$COMMANDS|" "$temp_file"
+        
+        # Add code style
+        sed -i.bak "s|\[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE\]|$NEW_LANG: Follow standard conventions|" "$temp_file"
+        
+        # Add recent changes
+        sed -i.bak "s|\[LAST 3 FEATURES AND WHAT THEY ADDED\]|- $CURRENT_BRANCH: Added $NEW_LANG + $NEW_FRAMEWORK|" "$temp_file"
+        
+        rm "$temp_file.bak"
+    else
+        echo "Updating existing $agent_name context file..."
+        
+        # Extract manual additions
+        local manual_start=$(grep -n "<!-- MANUAL ADDITIONS START -->" "$target_file" | cut -d: -f1)
+        local manual_end=$(grep -n "<!-- MANUAL ADDITIONS END -->" "$target_file" | cut -d: -f1)
+        
+        if [ ! -z "$manual_start" ] && [ ! -z "$manual_end" ]; then
+            sed -n "${manual_start},${manual_end}p" "$target_file" > /tmp/manual_additions.txt
+        fi
+        
+        # Parse existing file and create updated version
+        python3 - << EOF
+import re
+import sys
+from datetime import datetime
+
+# Read existing file
+with open("$target_file", 'r') as f:
+    content = f.read()
+
+# Check if new tech already exists
+tech_section = re.search(r'## Active Technologies\n(.*?)\n\n', content, re.DOTALL)
+if tech_section:
+    existing_tech = tech_section.group(1)
+    
+    # Add new tech if not already present
+    new_additions = []
+    if "$NEW_LANG" and "$NEW_LANG" not in existing_tech:
+        new_additions.append(f"- $NEW_LANG + $NEW_FRAMEWORK ($CURRENT_BRANCH)")
+    if "$NEW_DB" and "$NEW_DB" not in existing_tech and "$NEW_DB" != "N/A":
+        new_additions.append(f"- $NEW_DB ($CURRENT_BRANCH)")
+    
+    if new_additions:
+        updated_tech = existing_tech + "\n" + "\n".join(new_additions)
+        content = content.replace(tech_section.group(0), f"## Active Technologies\n{updated_tech}\n\n")
+
+# Update project structure if needed
+if "$NEW_PROJECT_TYPE" == "web" and "frontend/" not in content:
+    struct_section = re.search(r'## Project Structure\n\`\`\`\n(.*?)\n\`\`\`', content, re.DOTALL)
+    if struct_section:
+        updated_struct = struct_section.group(1) + "\nfrontend/src/      # Web UI"
+        content = re.sub(r'(## Project Structure\n\`\`\`\n).*?(\n\`\`\`)', 
+                        f'\\1{updated_struct}\\2', content, flags=re.DOTALL)
+
+# Add new commands if language is new
+if "$NEW_LANG" and f"# {NEW_LANG}" not in content:
+    commands_section = re.search(r'## Commands\n\`\`\`bash\n(.*?)\n\`\`\`', content, re.DOTALL)
+    if not commands_section:
+        commands_section = re.search(r'## Commands\n(.*?)\n\n', content, re.DOTALL)
+    
+    if commands_section:
+        new_commands = commands_section.group(1)
+        if "Python" in "$NEW_LANG":
+            new_commands += "\ncd src && pytest && ruff check ."
+        elif "Rust" in "$NEW_LANG":
+            new_commands += "\ncargo test && cargo clippy"
+        elif "JavaScript" in "$NEW_LANG" or "TypeScript" in "$NEW_LANG":
+            new_commands += "\nnpm test && npm run lint"
+        
+        if "```bash" in content:
+            content = re.sub(r'(## Commands\n\`\`\`bash\n).*?(\n\`\`\`)', 
+                            f'\\1{new_commands}\\2', content, flags=re.DOTALL)
+        else:
+            content = re.sub(r'(## Commands\n).*?(\n\n)', 
+                            f'\\1{new_commands}\\2', content, flags=re.DOTALL)
+
+# Update recent changes (keep only last 3)
+changes_section = re.search(r'## Recent Changes\n(.*?)(\n\n|$)', content, re.DOTALL)
+if changes_section:
+    changes = changes_section.group(1).strip().split('\n')
+    changes.insert(0, f"- $CURRENT_BRANCH: Added $NEW_LANG + $NEW_FRAMEWORK")
+    # Keep only last 3
+    changes = changes[:3]
+    content = re.sub(r'(## Recent Changes\n).*?(\n\n|$)', 
+                    f'\\1{chr(10).join(changes)}\\2', content, flags=re.DOTALL)
+
+# Update date
+content = re.sub(r'Last updated: \d{4}-\d{2}-\d{2}', 
+                f'Last updated: {datetime.now().strftime("%Y-%m-%d")}', content)
+
+# Write to temp file
+with open("$temp_file", 'w') as f:
+    f.write(content)
+EOF
+
+        # Restore manual additions if they exist
+        if [ -f /tmp/manual_additions.txt ]; then
+            # Remove old manual section from temp file
+            sed -i.bak '/<!-- MANUAL ADDITIONS START -->/,/<!-- MANUAL ADDITIONS END -->/d' "$temp_file"
+            # Append manual additions
+            cat /tmp/manual_additions.txt >> "$temp_file"
+            rm /tmp/manual_additions.txt "$temp_file.bak"
+        fi
+    fi
+    
+    # Move temp file to final location
+    mv "$temp_file" "$target_file"
+    echo "✅ $agent_name context file updated successfully"
+}
+
+# Update files based on argument or detect existing files
+case "$AGENT_TYPE" in
+    "claude")
+        update_agent_file "$CLAUDE_FILE" "Claude Code"
+        ;;
+    "gemini") 
+        update_agent_file "$GEMINI_FILE" "Gemini CLI"
+        ;;
+    "copilot")
+        update_agent_file "$COPILOT_FILE" "GitHub Copilot"
+        ;;
+    "")
+        # Update all existing files
+        [ -f "$CLAUDE_FILE" ] && update_agent_file "$CLAUDE_FILE" "Claude Code"
+        [ -f "$GEMINI_FILE" ] && update_agent_file "$GEMINI_FILE" "Gemini CLI" 
+        [ -f "$COPILOT_FILE" ] && update_agent_file "$COPILOT_FILE" "GitHub Copilot"
+        
+        # If no files exist, create based on current directory or ask user
+        if [ ! -f "$CLAUDE_FILE" ] && [ ! -f "$GEMINI_FILE" ] && [ ! -f "$COPILOT_FILE" ]; then
+            echo "No agent context files found. Creating Claude Code context file by default."
+            update_agent_file "$CLAUDE_FILE" "Claude Code"
+        fi
+        ;;
+    *)
+        echo "ERROR: Unknown agent type '$AGENT_TYPE'. Use: claude, gemini, copilot, or leave empty for all."
+        exit 1
+        ;;
+esac
+echo ""
+echo "Summary of changes:"
+if [ ! -z "$NEW_LANG" ]; then
+    echo "- Added language: $NEW_LANG"
+fi
+if [ ! -z "$NEW_FRAMEWORK" ]; then
+    echo "- Added framework: $NEW_FRAMEWORK"
+fi
+if [ ! -z "$NEW_DB" ] && [ "$NEW_DB" != "N/A" ]; then
+    echo "- Added database: $NEW_DB"
+fi
+
+echo ""
+echo "Usage: $0 [claude|gemini|copilot]"
+echo "  - No argument: Update all existing agent context files"
+echo "  - claude: Update only CLAUDE.md"
+echo "  - gemini: Update only GEMINI.md" 
+echo "  - copilot: Update only .github/copilot-instructions.md"
+</file>
+
+<file path="src/specify_cli/__init__.py">
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "typer",
+#     "rich",
+#     "platformdirs",
+#     "readchar",
+#     "httpx",
+# ]
+# ///
+"""
+Specify CLI - Setup tool for Specify projects
+
+Usage:
+    uvx specify-cli.py init <project-name>
+    uvx specify-cli.py init --here
+
+Or install globally:
+    uv tool install --from specify-cli.py specify-cli
+    specify init <project-name>
+    specify init --here
+"""
+
+import os
+import subprocess
+import sys
+import zipfile
+import tempfile
+import shutil
+import json
+from pathlib import Path
+from typing import Optional
+
+import typer
+import httpx
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.text import Text
+from rich.live import Live
+from rich.align import Align
+from rich.table import Table
+from rich.tree import Tree
+from typer.core import TyperGroup
+
+# For cross-platform keyboard input
+import readchar
+
+# Constants
+AI_CHOICES = {
+    "copilot": "GitHub Copilot",
+    "claude": "Claude Code",
+    "gemini": "Gemini CLI"
+}
+
+# ASCII Art Banner
+BANNER = """
+███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
+██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
+███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝ 
+╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝  
+███████║██║     ███████╗╚██████╗██║██║        ██║   
+╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
+"""
+
+TAGLINE = "Spec-Driven Development Toolkit"
+class StepTracker:
+    """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
+    Supports live auto-refresh via an attached refresh callback.
+    """
+    def __init__(self, title: str):
+        self.title = title
+        self.steps = []  # list of dicts: {key, label, status, detail}
+        self.status_order = {"pending": 0, "running": 1, "done": 2, "error": 3, "skipped": 4}
+        self._refresh_cb = None  # callable to trigger UI refresh
+
+    def attach_refresh(self, cb):
+        self._refresh_cb = cb
+
+    def add(self, key: str, label: str):
+        if key not in [s["key"] for s in self.steps]:
+            self.steps.append({"key": key, "label": label, "status": "pending", "detail": ""})
+            self._maybe_refresh()
+
+    def start(self, key: str, detail: str = ""):
+        self._update(key, status="running", detail=detail)
+
+    def complete(self, key: str, detail: str = ""):
+        self._update(key, status="done", detail=detail)
+
+    def error(self, key: str, detail: str = ""):
+        self._update(key, status="error", detail=detail)
+
+    def skip(self, key: str, detail: str = ""):
+        self._update(key, status="skipped", detail=detail)
+
+    def _update(self, key: str, status: str, detail: str):
+        for s in self.steps:
+            if s["key"] == key:
+                s["status"] = status
+                if detail:
+                    s["detail"] = detail
+                self._maybe_refresh()
+                return
+        # If not present, add it
+        self.steps.append({"key": key, "label": key, "status": status, "detail": detail})
+        self._maybe_refresh()
+
+    def _maybe_refresh(self):
+        if self._refresh_cb:
+            try:
+                self._refresh_cb()
+            except Exception:
+                pass
+
+    def render(self):
+        tree = Tree(f"[bold cyan]{self.title}[/bold cyan]", guide_style="grey50")
+        for step in self.steps:
+            label = step["label"]
+            detail_text = step["detail"].strip() if step["detail"] else ""
+
+            # Circles (unchanged styling)
+            status = step["status"]
+            if status == "done":
+                symbol = "[green]●[/green]"
+            elif status == "pending":
+                symbol = "[green dim]○[/green dim]"
+            elif status == "running":
+                symbol = "[cyan]○[/cyan]"
+            elif status == "error":
+                symbol = "[red]●[/red]"
+            elif status == "skipped":
+                symbol = "[yellow]○[/yellow]"
+            else:
+                symbol = " "
+
+            if status == "pending":
+                # Entire line light gray (pending)
+                if detail_text:
+                    line = f"{symbol} [bright_black]{label} ({detail_text})[/bright_black]"
+                else:
+                    line = f"{symbol} [bright_black]{label}[/bright_black]"
+            else:
+                # Label white, detail (if any) light gray in parentheses
+                if detail_text:
+                    line = f"{symbol} [white]{label}[/white] [bright_black]({detail_text})[/bright_black]"
+                else:
+                    line = f"{symbol} [white]{label}[/white]"
+
+            tree.add(line)
+        return tree
+
+
+
+MINI_BANNER = """
+╔═╗╔═╗╔═╗╔═╗╦╔═╗╦ ╦
+╚═╗╠═╝║╣ ║  ║╠╣ ╚╦╝
+╚═╝╩  ╚═╝╚═╝╩╚   ╩ 
+"""
+
+def get_key():
+    """Get a single keypress in a cross-platform way using readchar."""
+    key = readchar.readkey()
+    
+    # Arrow keys
+    if key == readchar.key.UP:
+        return 'up'
+    if key == readchar.key.DOWN:
+        return 'down'
+    
+    # Enter/Return
+    if key == readchar.key.ENTER:
+        return 'enter'
+    
+    # Escape
+    if key == readchar.key.ESC:
+        return 'escape'
+        
+    # Ctrl+C
+    if key == readchar.key.CTRL_C:
+        raise KeyboardInterrupt
+
+    return key
+
+
+
+def select_with_arrows(options: dict, prompt_text: str = "Select an option", default_key: str = None) -> str:
+    """
+    Interactive selection using arrow keys with Rich Live display.
+    
+    Args:
+        options: Dict with keys as option keys and values as descriptions
+        prompt_text: Text to show above the options
+        default_key: Default option key to start with
+        
+    Returns:
+        Selected option key
+    """
+    option_keys = list(options.keys())
+    if default_key and default_key in option_keys:
+        selected_index = option_keys.index(default_key)
+    else:
+        selected_index = 0
+    
+    selected_key = None
+
+    def create_selection_panel():
+        """Create the selection panel with current selection highlighted."""
+        table = Table.grid(padding=(0, 2))
+        table.add_column(style="bright_cyan", justify="left", width=3)
+        table.add_column(style="white", justify="left")
+        
+        for i, key in enumerate(option_keys):
+            if i == selected_index:
+                table.add_row("▶", f"[bright_cyan]{key}: {options[key]}[/bright_cyan]")
+            else:
+                table.add_row(" ", f"[white]{key}: {options[key]}[/white]")
+        
+        table.add_row("", "")
+        table.add_row("", "[dim]Use ↑/↓ to navigate, Enter to select, Esc to cancel[/dim]")
+        
+        return Panel(
+            table,
+            title=f"[bold]{prompt_text}[/bold]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+    
+    console.print()
+
+    def run_selection_loop():
+        nonlocal selected_key, selected_index
+        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
+            while True:
+                try:
+                    key = get_key()
+                    if key == 'up':
+                        selected_index = (selected_index - 1) % len(option_keys)
+                    elif key == 'down':
+                        selected_index = (selected_index + 1) % len(option_keys)
+                    elif key == 'enter':
+                        selected_key = option_keys[selected_index]
+                        break
+                    elif key == 'escape':
+                        console.print("\n[yellow]Selection cancelled[/yellow]")
+                        raise typer.Exit(1)
+                    
+                    live.update(create_selection_panel(), refresh=True)
+
+                except KeyboardInterrupt:
+                    console.print("\n[yellow]Selection cancelled[/yellow]")
+                    raise typer.Exit(1)
+
+    run_selection_loop()
+
+    if selected_key is None:
+        console.print("\n[red]Selection failed.[/red]")
+        raise typer.Exit(1)
+
+    # Suppress explicit selection print; tracker / later logic will report consolidated status
+    return selected_key
+
+
+
+console = Console()
+
+
+class BannerGroup(TyperGroup):
+    """Custom group that shows banner before help."""
+    
+    def format_help(self, ctx, formatter):
+        # Show banner before help
+        show_banner()
+        super().format_help(ctx, formatter)
+
+
+app = typer.Typer(
+    name="specify",
+    help="Setup tool for Specify spec-driven development projects",
+    add_completion=False,
+    invoke_without_command=True,
+    cls=BannerGroup,
+)
+
+
+def show_banner():
+    """Display the ASCII art banner."""
+    # Create gradient effect with different colors
+    banner_lines = BANNER.strip().split('\n')
+    colors = ["bright_blue", "blue", "cyan", "bright_cyan", "white", "bright_white"]
+    
+    styled_banner = Text()
+    for i, line in enumerate(banner_lines):
+        color = colors[i % len(colors)]
+        styled_banner.append(line + "\n", style=color)
+    
+    console.print(Align.center(styled_banner))
+    console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
+    console.print()
+
+
+@app.callback()
+def callback(ctx: typer.Context):
+    """Show banner when no subcommand is provided."""
+    # Show banner only when no subcommand and no help flag
+    # (help is handled by BannerGroup)
+    if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
+        show_banner()
+        console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
+        console.print()
+
+
+def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
+    """Run a shell command and optionally capture output."""
+    try:
+        if capture:
+            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            return result.stdout.strip()
+        else:
+            subprocess.run(cmd, check=check_return, shell=shell)
+            return None
+    except subprocess.CalledProcessError as e:
+        if check_return:
+            console.print(f"[red]Error running command:[/red] {' '.join(cmd)}")
+            console.print(f"[red]Exit code:[/red] {e.returncode}")
+            if hasattr(e, 'stderr') and e.stderr:
+                console.print(f"[red]Error output:[/red] {e.stderr}")
+            raise
+        return None
+
+
+def check_tool(tool: str, install_hint: str) -> bool:
+    """Check if a tool is installed."""
+    if shutil.which(tool):
+        return True
+    else:
+        console.print(f"[yellow]⚠️  {tool} not found[/yellow]")
+        console.print(f"   Install with: [cyan]{install_hint}[/cyan]")
+        return False
+
+
+def is_git_repo(path: Path = None) -> bool:
+    """Check if the specified path is inside a git repository."""
+    if path is None:
+        path = Path.cwd()
+    
+    if not path.is_dir():
+        return False
+
+    try:
+        # Use git command to check if inside a work tree
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            check=True,
+            capture_output=True,
+            cwd=path,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
+    """Initialize a git repository in the specified path.
+    quiet: if True suppress console output (tracker handles status)
+    """
+    try:
+        original_cwd = Path.cwd()
+        os.chdir(project_path)
+        if not quiet:
+            console.print("[cyan]Initializing git repository...[/cyan]")
+        subprocess.run(["git", "init"], check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True)
+        if not quiet:
+            console.print("[green]✓[/green] Git repository initialized")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        if not quiet:
+            console.print(f"[red]Error initializing git repository:[/red] {e}")
+        return False
+    finally:
+        os.chdir(original_cwd)
+
+
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, verbose: bool = True, show_progress: bool = True):
+    """Download the latest template release from GitHub using HTTP requests.
+    Returns (zip_path, metadata_dict)
+    """
+    repo_owner = "github"
+    repo_name = "spec-kit"
+    
+    if verbose:
+        console.print("[cyan]Fetching latest release information...[/cyan]")
+    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+    
+    try:
+        response = httpx.get(api_url, timeout=30, follow_redirects=True)
+        response.raise_for_status()
+        release_data = response.json()
+    except httpx.RequestError as e:
+        if verbose:
+            console.print(f"[red]Error fetching release information:[/red] {e}")
+        raise typer.Exit(1)
+    
+    # Find the template asset for the specified AI assistant
+    pattern = f"spec-kit-template-{ai_assistant}"
+    matching_assets = [
+        asset for asset in release_data.get("assets", [])
+        if pattern in asset["name"] and asset["name"].endswith(".zip")
+    ]
+    
+    if not matching_assets:
+        if verbose:
+            console.print(f"[red]Error:[/red] No template found for AI assistant '{ai_assistant}'")
+            console.print(f"[yellow]Available assets:[/yellow]")
+            for asset in release_data.get("assets", []):
+                console.print(f"  - {asset['name']}")
+        raise typer.Exit(1)
+    
+    # Use the first matching asset
+    asset = matching_assets[0]
+    download_url = asset["browser_download_url"]
+    filename = asset["name"]
+    file_size = asset["size"]
+    
+    if verbose:
+        console.print(f"[cyan]Found template:[/cyan] {filename}")
+        console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
+        console.print(f"[cyan]Release:[/cyan] {release_data['tag_name']}")
+    
+    # Download the file
+    zip_path = download_dir / filename
+    if verbose:
+        console.print(f"[cyan]Downloading template...[/cyan]")
+    
+    try:
+        with httpx.stream("GET", download_url, timeout=30, follow_redirects=True) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+            
+            with open(zip_path, 'wb') as f:
+                if total_size == 0:
+                    # No content-length header, download without progress
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        f.write(chunk)
+                else:
+                    if show_progress:
+                        # Show progress bar
+                        with Progress(
+                            SpinnerColumn(),
+                            TextColumn("[progress.description]{task.description}"),
+                            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                            console=console,
+                        ) as progress:
+                            task = progress.add_task("Downloading...", total=total_size)
+                            downloaded = 0
+                            for chunk in response.iter_bytes(chunk_size=8192):
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                progress.update(task, completed=downloaded)
+                    else:
+                        # Silent download loop
+                        for chunk in response.iter_bytes(chunk_size=8192):
+                            f.write(chunk)
+    
+    except httpx.RequestError as e:
+        if verbose:
+            console.print(f"[red]Error downloading template:[/red] {e}")
+        if zip_path.exists():
+            zip_path.unlink()
+        raise typer.Exit(1)
+    if verbose:
+        console.print(f"Downloaded: {filename}")
+    metadata = {
+        "filename": filename,
+        "size": file_size,
+        "release": release_data["tag_name"],
+        "asset_url": download_url
+    }
+    return zip_path, metadata
+
+
+def download_and_extract_template(project_path: Path, ai_assistant: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None) -> Path:
+    """Download the latest release and extract it to create a new project.
+    Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+    """
+    current_dir = Path.cwd()
+    
+    # Step: fetch + download combined
+    if tracker:
+        tracker.start("fetch", "contacting GitHub API")
+    try:
+        zip_path, meta = download_template_from_github(
+            ai_assistant,
+            current_dir,
+            verbose=verbose and tracker is None,
+            show_progress=(tracker is None)
+        )
+        if tracker:
+            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
+            tracker.add("download", "Download template")
+            tracker.complete("download", meta['filename'])  # already downloaded inside helper
+    except Exception as e:
+        if tracker:
+            tracker.error("fetch", str(e))
+        else:
+            if verbose:
+                console.print(f"[red]Error downloading template:[/red] {e}")
+        raise
+    
+    if tracker:
+        tracker.add("extract", "Extract template")
+        tracker.start("extract")
+    elif verbose:
+        console.print("Extracting template...")
+    
+    try:
+        # Create project directory only if not using current directory
+        if not is_current_dir:
+            project_path.mkdir(parents=True)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # List all files in the ZIP for debugging
+            zip_contents = zip_ref.namelist()
+            if tracker:
+                tracker.start("zip-list")
+                tracker.complete("zip-list", f"{len(zip_contents)} entries")
+            elif verbose:
+                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
+            
+            # For current directory, extract to a temp location first
+            if is_current_dir:
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_path = Path(temp_dir)
+                    zip_ref.extractall(temp_path)
+                    
+                    # Check what was extracted
+                    extracted_items = list(temp_path.iterdir())
+                    if tracker:
+                        tracker.start("extracted-summary")
+                        tracker.complete("extracted-summary", f"temp {len(extracted_items)} items")
+                    elif verbose:
+                        console.print(f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]")
+                    
+                    # Handle GitHub-style ZIP with a single root directory
+                    source_dir = temp_path
+                    if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                        source_dir = extracted_items[0]
+                        if tracker:
+                            tracker.add("flatten", "Flatten nested directory")
+                            tracker.complete("flatten")
+                        elif verbose:
+                            console.print(f"[cyan]Found nested directory structure[/cyan]")
+                    
+                    # Copy contents to current directory
+                    for item in source_dir.iterdir():
+                        dest_path = project_path / item.name
+                        if item.is_dir():
+                            if dest_path.exists():
+                                if verbose and not tracker:
+                                    console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
+                                # Recursively copy directory contents
+                                for sub_item in item.rglob('*'):
+                                    if sub_item.is_file():
+                                        rel_path = sub_item.relative_to(item)
+                                        dest_file = dest_path / rel_path
+                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(sub_item, dest_file)
+                            else:
+                                shutil.copytree(item, dest_path)
+                        else:
+                            if dest_path.exists() and verbose and not tracker:
+                                console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
+                            shutil.copy2(item, dest_path)
+                    if verbose and not tracker:
+                        console.print(f"[cyan]Template files merged into current directory[/cyan]")
+            else:
+                # Extract directly to project directory (original behavior)
+                zip_ref.extractall(project_path)
+                
+                # Check what was extracted
+                extracted_items = list(project_path.iterdir())
+                if tracker:
+                    tracker.start("extracted-summary")
+                    tracker.complete("extracted-summary", f"{len(extracted_items)} top-level items")
+                elif verbose:
+                    console.print(f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]")
+                    for item in extracted_items:
+                        console.print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
+                
+                # Handle GitHub-style ZIP with a single root directory
+                if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                    # Move contents up one level
+                    nested_dir = extracted_items[0]
+                    temp_move_dir = project_path.parent / f"{project_path.name}_temp"
+                    # Move the nested directory contents to temp location
+                    shutil.move(str(nested_dir), str(temp_move_dir))
+                    # Remove the now-empty project directory
+                    project_path.rmdir()
+                    # Rename temp directory to project directory
+                    shutil.move(str(temp_move_dir), str(project_path))
+                    if tracker:
+                        tracker.add("flatten", "Flatten nested directory")
+                        tracker.complete("flatten")
+                    elif verbose:
+                        console.print(f"[cyan]Flattened nested directory structure[/cyan]")
+                    
+    except Exception as e:
+        if tracker:
+            tracker.error("extract", str(e))
+        else:
+            if verbose:
+                console.print(f"[red]Error extracting template:[/red] {e}")
+        # Clean up project directory if created and not current directory
+        if not is_current_dir and project_path.exists():
+            shutil.rmtree(project_path)
+        raise typer.Exit(1)
+    else:
+        if tracker:
+            tracker.complete("extract")
+    finally:
+        if tracker:
+            tracker.add("cleanup", "Remove temporary archive")
+        # Clean up downloaded ZIP file
+        if zip_path.exists():
+            zip_path.unlink()
+            if tracker:
+                tracker.complete("cleanup")
+            elif verbose:
+                console.print(f"Cleaned up: {zip_path.name}")
+    
+    return project_path
+
+
+@app.command()
+def init(
+    project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here)"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, or copilot"),
+    ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
+    no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
+    here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
+):
+    """
+    Initialize a new Specify project from the latest template.
+    
+    This command will:
+    1. Check that required tools are installed (git is optional)
+    2. Let you choose your AI assistant (Claude Code, Gemini CLI, or GitHub Copilot)
+    3. Download the appropriate template from GitHub
+    4. Extract the template to a new project directory or current directory
+    5. Initialize a fresh git repository (if not --no-git and no existing repo)
+    6. Optionally set up AI assistant commands
+    
+    Examples:
+        specify init my-project
+        specify init my-project --ai claude
+        specify init my-project --ai gemini
+        specify init my-project --ai copilot --no-git
+        specify init --ignore-agent-tools my-project
+        specify init --here --ai claude
+        specify init --here
+    """
+    # Show banner first
+    show_banner()
+    
+    # Validate arguments
+    if here and project_name:
+        console.print("[red]Error:[/red] Cannot specify both project name and --here flag")
+        raise typer.Exit(1)
+    
+    if not here and not project_name:
+        console.print("[red]Error:[/red] Must specify either a project name or use --here flag")
+        raise typer.Exit(1)
+    
+    # Determine project directory
+    if here:
+        project_name = Path.cwd().name
+        project_path = Path.cwd()
+        
+        # Check if current directory has any files
+        existing_items = list(project_path.iterdir())
+        if existing_items:
+            console.print(f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)")
+            console.print("[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]")
+            
+            # Ask for confirmation
+            response = typer.confirm("Do you want to continue?")
+            if not response:
+                console.print("[yellow]Operation cancelled[/yellow]")
+                raise typer.Exit(0)
+    else:
+        project_path = Path(project_name).resolve()
+        # Check if project directory already exists
+        if project_path.exists():
+            console.print(f"[red]Error:[/red] Directory '{project_name}' already exists")
+            raise typer.Exit(1)
+    
+    console.print(Panel.fit(
+        "[bold cyan]Specify Project Setup[/bold cyan]\n"
+        f"{'Initializing in current directory:' if here else 'Creating new project:'} [green]{project_path.name}[/green]"
+        + (f"\n[dim]Path: {project_path}[/dim]" if here else ""),
+        border_style="cyan"
+    ))
+    
+    # Check git only if we might need it (not --no-git)
+    git_available = True
+    if not no_git:
+        git_available = check_tool("git", "https://git-scm.com/downloads")
+        if not git_available:
+            console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
+
+    # AI assistant selection
+    if ai_assistant:
+        if ai_assistant not in AI_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AI_CHOICES.keys())}")
+            raise typer.Exit(1)
+        selected_ai = ai_assistant
+    else:
+        # Use arrow-key selection interface
+        selected_ai = select_with_arrows(
+            AI_CHOICES, 
+            "Choose your AI assistant:", 
+            "copilot"
+        )
+    
+    # Check agent tools unless ignored
+    if not ignore_agent_tools:
+        agent_tool_missing = False
+        if selected_ai == "claude":
+            if not check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup"):
+                console.print("[red]Error:[/red] Claude CLI is required for Claude Code projects")
+                agent_tool_missing = True
+        elif selected_ai == "gemini":
+            if not check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli"):
+                console.print("[red]Error:[/red] Gemini CLI is required for Gemini projects")
+                agent_tool_missing = True
+        # GitHub Copilot check is not needed as it's typically available in supported IDEs
+        
+        if agent_tool_missing:
+            console.print("\n[red]Required AI tool is missing![/red]")
+            console.print("[yellow]Tip:[/yellow] Use --ignore-agent-tools to skip this check")
+            raise typer.Exit(1)
+    
+    # Download and set up project
+    # New tree-based progress (no emojis); include earlier substeps
+    tracker = StepTracker("Initialize Specify Project")
+    # Flag to allow suppressing legacy headings
+    sys._specify_tracker_active = True
+    # Pre steps recorded as completed before live rendering
+    tracker.add("precheck", "Check required tools")
+    tracker.complete("precheck", "ok")
+    tracker.add("ai-select", "Select AI assistant")
+    tracker.complete("ai-select", f"{selected_ai}")
+    for key, label in [
+        ("fetch", "Fetch latest release"),
+        ("download", "Download template"),
+        ("extract", "Extract template"),
+        ("zip-list", "Archive contents"),
+        ("extracted-summary", "Extraction summary"),
+        ("cleanup", "Cleanup"),
+        ("git", "Initialize git repository"),
+        ("final", "Finalize")
+    ]:
+        tracker.add(key, label)
+
+    # Use transient so live tree is replaced by the final static render (avoids duplicate output)
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+        try:
+            download_and_extract_template(project_path, selected_ai, here, verbose=False, tracker=tracker)
+
+            # Git step
+            if not no_git:
+                tracker.start("git")
+                if is_git_repo(project_path):
+                    tracker.complete("git", "existing repo detected")
+                elif git_available:
+                    if init_git_repo(project_path, quiet=True):
+                        tracker.complete("git", "initialized")
+                    else:
+                        tracker.error("git", "init failed")
+                else:
+                    tracker.skip("git", "git not available")
+            else:
+                tracker.skip("git", "--no-git flag")
+
+            tracker.complete("final", "project ready")
+        except Exception as e:
+            tracker.error("final", str(e))
+            if not here and project_path.exists():
+                shutil.rmtree(project_path)
+            raise typer.Exit(1)
+        finally:
+            # Force final render
+            pass
+
+    # Final static tree (ensures finished state visible after Live context ends)
+    console.print(tracker.render())
+    console.print("\n[bold green]Project ready.[/bold green]")
+    
+    # Boxed "Next steps" section
+    steps_lines = []
+    if not here:
+        steps_lines.append(f"1. [bold green]cd {project_name}[/bold green]")
+        step_num = 2
+    else:
+        steps_lines.append("1. You're already in the project directory!")
+        step_num = 2
+
+    if selected_ai == "claude":
+        steps_lines.append(f"{step_num}. Open in Visual Studio Code and start using / commands with Claude Code")
+        steps_lines.append("   - Type / in any file to see available commands")
+        steps_lines.append("   - Use /specify to create specifications")
+        steps_lines.append("   - Use /plan to create implementation plans")
+        steps_lines.append("   - Use /tasks to generate tasks")
+    elif selected_ai == "gemini":
+        steps_lines.append(f"{step_num}. Use / commands with Gemini CLI")
+        steps_lines.append("   - Run gemini /specify to create specifications")
+        steps_lines.append("   - Run gemini /plan to create implementation plans")
+        steps_lines.append("   - See GEMINI.md for all available commands")
+    elif selected_ai == "copilot":
+        steps_lines.append(f"{step_num}. Open in Visual Studio Code and use [bold cyan]/specify[/], [bold cyan]/plan[/], [bold cyan]/tasks[/] commands with GitHub Copilot")
+
+    step_num += 1
+    steps_lines.append(f"{step_num}. Update [bold magenta]CONSTITUTION.md[/bold magenta] with your project's non-negotiable principles")
+
+    steps_panel = Panel("\n".join(steps_lines), title="Next steps", border_style="cyan", padding=(1,2))
+    console.print()  # blank line
+    console.print(steps_panel)
+    
+    # Removed farewell line per user request
+
+
+@app.command()
+def check():
+    """Check that all required tools are installed."""
+    show_banner()
+    console.print("[bold]Checking Specify requirements...[/bold]\n")
+    
+    # Check if we have internet connectivity by trying to reach GitHub API
+    console.print("[cyan]Checking internet connectivity...[/cyan]")
+    try:
+        response = httpx.get("https://api.github.com", timeout=5, follow_redirects=True)
+        console.print("[green]✓[/green] Internet connection available")
+    except httpx.RequestError:
+        console.print("[red]✗[/red] No internet connection - required for downloading templates")
+        console.print("[yellow]Please check your internet connection[/yellow]")
+    
+    console.print("\n[cyan]Optional tools:[/cyan]")
+    git_ok = check_tool("git", "https://git-scm.com/downloads")
+    
+    console.print("\n[cyan]Optional AI tools:[/cyan]")
+    claude_ok = check_tool("claude", "Install from: https://docs.anthropic.com/en/docs/claude-code/setup")
+    gemini_ok = check_tool("gemini", "Install from: https://github.com/google-gemini/gemini-cli")
+    
+    console.print("\n[green]✓ Specify CLI is ready to use![/green]")
+    if not git_ok:
+        console.print("[yellow]Consider installing git for repository management[/yellow]")
+    if not (claude_ok or gemini_ok):
+        console.print("[yellow]Consider installing an AI assistant for the best experience[/yellow]")
+
+
+def main():
+    app()
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="templates/commands/plan.md">
+---
+name: plan
+description: "Plan how to implement the specified feature. This is the second step in the Spec-Driven Development lifecycle."
+---
+
+Plan how to implement the specified feature.
+
+This is the second step in the Spec-Driven Development lifecycle.
+
+Given the implementation details provided as an argument, do this:
+
+1. Run `scripts/setup-plan.sh --json` from the repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. All future file paths must be absolute.
+2. Read and analyze the feature specification to understand:
+   - The feature requirements and user stories
+   - Functional and non-functional requirements
+   - Success criteria and acceptance criteria
+   - Any technical constraints or dependencies mentioned
+
+3. Read the constitution at `/memory/constitution.md` to understand constitutional requirements.
+
+4. Execute the implementation plan template:
+   - Load `/templates/plan-template.md` (already copied to IMPL_PLAN path)
+   - Set Input path to FEATURE_SPEC
+   - Run the Execution Flow (main) function steps 1-10
+   - The template is self-contained and executable
+   - Follow error handling and gate checks as specified
+   - Let the template guide artifact generation in $SPECS_DIR:
+     * Phase 0 generates research.md
+     * Phase 1 generates data-model.md, contracts/, quickstart.md
+     * Phase 2 generates tasks.md
+   - Incorporate user-provided details from arguments into Technical Context: {ARGS}
+   - Update Progress Tracking as you complete each phase
+
+5. Verify execution completed:
+   - Check Progress Tracking shows all phases complete
+   - Ensure all required artifacts were generated
+   - Confirm no ERROR states in execution
+
+6. Report results with branch name, file paths, and generated artifacts.
+
+Use absolute paths with the repository root for all file operations to avoid path issues.
+</file>
+
+<file path="templates/commands/specify.md">
+---
+name: specify
+description: "Start a new feature by creating a specification and feature branch. This is the first step in the Spec-Driven Development lifecycle."
+---
+
+Start a new feature by creating a specification and feature branch.
+
+This is the first step in the Spec-Driven Development lifecycle.
+
+Given the feature description provided as an argument, do this:
+
+1. Run the script `scripts/create-new-feature.sh --json "{ARGS}"` from repo root and parse its JSON output for BRANCH_NAME and SPEC_FILE. All file paths must be absolute.
+2. Load `templates/spec-template.md` to understand required sections.
+3. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+4. Report completion with branch name, spec file path, and readiness for the next phase.
+
+Note: The script creates and checks out the new branch and initializes the spec file before writing.
+</file>
+
+<file path="templates/commands/tasks.md">
+---
+name: tasks
+description: "Break down the plan into executable tasks. This is the third step in the Spec-Driven Development lifecycle."
+---
+
+Break down the plan into executable tasks.
+
+This is the third step in the Spec-Driven Development lifecycle.
+
+Given the context provided as an argument, do this:
+
+1. Run `scripts/check-task-prerequisites.sh --json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
+2. Load and analyze available design documents:
+   - Always read plan.md for tech stack and libraries
+   - IF EXISTS: Read data-model.md for entities
+   - IF EXISTS: Read contracts/ for API endpoints
+   - IF EXISTS: Read research.md for technical decisions
+   - IF EXISTS: Read quickstart.md for test scenarios
+
+   Note: Not all projects have all documents. For example:
+   - CLI tools might not have contracts/
+   - Simple libraries might not need data-model.md
+   - Generate tasks based on what's available
+
+3. Generate tasks following the template:
+   - Use `/templates/tasks-template.md` as the base
+   - Replace example tasks with actual tasks based on:
+     * **Setup tasks**: Project init, dependencies, linting
+     * **Test tasks [P]**: One per contract, one per integration scenario
+     * **Core tasks**: One per entity, service, CLI command, endpoint
+     * **Integration tasks**: DB connections, middleware, logging
+     * **Polish tasks [P]**: Unit tests, performance, docs
+
+4. Task generation rules:
+   - Each contract file → contract test task marked [P]
+   - Each entity in data-model → model creation task marked [P]
+   - Each endpoint → implementation task (not parallel if shared files)
+   - Each user story → integration test marked [P]
+   - Different files = can be parallel [P]
+   - Same file = sequential (no [P])
+
+5. Order tasks by dependencies:
+   - Setup before everything
+   - Tests before implementation (TDD)
+   - Models before services
+   - Services before endpoints
+   - Core before integration
+   - Everything before polish
+
+6. Include parallel execution examples:
+   - Group [P] tasks that can run together
+   - Show actual Task agent commands
+
+7. Create FEATURE_DIR/tasks.md with:
+   - Correct feature name from implementation plan
+   - Numbered tasks (T001, T002, etc.)
+   - Clear file paths for each task
+   - Dependency notes
+   - Parallel execution guidance
+
+Context for task generation: {ARGS}
+
+The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
+</file>
+
+<file path="templates/agent-file-template.md">
+# [PROJECT NAME] Development Guidelines
+
+Auto-generated from all feature plans. Last updated: [DATE]
+
+## Active Technologies
+[EXTRACTED FROM ALL PLAN.MD FILES]
+
+## Project Structure
+```
+[ACTUAL STRUCTURE FROM PLANS]
+```
+
+## Commands
+[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]
+
+## Code Style
+[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]
+
+## Recent Changes
+[LAST 3 FEATURES AND WHAT THEY ADDED]
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
+</file>
+
+<file path="templates/plan-template.md">
+# Implementation Plan: [FEATURE]
+
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+
+## Execution Flow (/plan command scope)
+```
+1. Load feature spec from Input path
+   → If not found: ERROR "No feature spec at {path}"
+2. Fill Technical Context (scan for NEEDS CLARIFICATION)
+   → Detect Project Type from context (web=frontend+backend, mobile=app+api)
+   → Set Structure Decision based on project type
+3. Evaluate Constitution Check section below
+   → If violations exist: Document in Complexity Tracking
+   → If no justification possible: ERROR "Simplify approach first"
+   → Update Progress Tracking: Initial Constitution Check
+4. Execute Phase 0 → research.md
+   → If NEEDS CLARIFICATION remain: ERROR "Resolve unknowns"
+5. Execute Phase 1 → contracts, data-model.md, quickstart.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, or `GEMINI.md` for Gemini CLI).
+6. Re-evaluate Constitution Check section
+   → If new violations: Refactor design, return to Phase 1
+   → Update Progress Tracking: Post-Design Constitution Check
+7. Plan Phase 2 → Describe task generation approach (DO NOT create tasks.md)
+8. STOP - Ready for /tasks command
+```
+
+**IMPORTANT**: The /plan command STOPS at step 7. Phases 2-4 are executed by other commands:
+- Phase 2: /tasks command creates tasks.md
+- Phase 3-4: Implementation execution (manual or via tools)
+
+## Summary
+[Extract from feature spec: primary requirement + technical approach from research]
+
+## Technical Context
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: [single/web/mobile - determines source structure]  
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+
+## Constitution Check
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+
+**Simplicity**:
+- Projects: [#] (max 3 - e.g., api, cli, tests)
+- Using framework directly? (no wrapper classes)
+- Single data model? (no DTOs unless serialization differs)
+- Avoiding patterns? (no Repository/UoW without proven need)
+
+**Architecture**:
+- EVERY feature as library? (no direct app code)
+- Libraries listed: [name + purpose for each]
+- CLI per library: [commands with --help/--version/--format]
+- Library docs: llms.txt format planned?
+
+**Testing (NON-NEGOTIABLE)**:
+- RED-GREEN-Refactor cycle enforced? (test MUST fail first)
+- Git commits show tests before implementation?
+- Order: Contract→Integration→E2E→Unit strictly followed?
+- Real dependencies used? (actual DBs, not mocks)
+- Integration tests for: new libraries, contract changes, shared schemas?
+- FORBIDDEN: Implementation before test, skipping RED phase
+
+**Observability**:
+- Structured logging included?
+- Frontend logs → backend? (unified stream)
+- Error context sufficient?
+
+**Versioning**:
+- Version number assigned? (MAJOR.MINOR.BUILD)
+- BUILD increments on every change?
+- Breaking changes handled? (parallel tests, migration plan)
+
+## Project Structure
+
+### Documentation (this feature)
+```
+specs/[###-feature]/
+├── plan.md              # This file (/plan command output)
+├── research.md          # Phase 0 output (/plan command)
+├── data-model.md        # Phase 1 output (/plan command)
+├── quickstart.md        # Phase 1 output (/plan command)
+├── contracts/           # Phase 1 output (/plan command)
+└── tasks.md             # Phase 2 output (/tasks command - NOT created by /plan)
+```
+
+### Source Code (repository root)
+```
+# Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure]
+```
+
+**Structure Decision**: [DEFAULT to Option 1 unless Technical Context indicates web/mobile app]
+
+## Phase 0: Outline & Research
+1. **Extract unknowns from Technical Context** above:
+   - For each NEEDS CLARIFICATION → research task
+   - For each dependency → best practices task
+   - For each integration → patterns task
+
+2. **Generate and dispatch research agents**:
+   ```
+   For each unknown in Technical Context:
+     Task: "Research {unknown} for {feature context}"
+   For each technology choice:
+     Task: "Find best practices for {tech} in {domain}"
+   ```
+
+3. **Consolidate findings** in `research.md` using format:
+   - Decision: [what was chosen]
+   - Rationale: [why chosen]
+   - Alternatives considered: [what else evaluated]
+
+**Output**: research.md with all NEEDS CLARIFICATION resolved
+
+## Phase 1: Design & Contracts
+*Prerequisites: research.md complete*
+
+1. **Extract entities from feature spec** → `data-model.md`:
+   - Entity name, fields, relationships
+   - Validation rules from requirements
+   - State transitions if applicable
+
+2. **Generate API contracts** from functional requirements:
+   - For each user action → endpoint
+   - Use standard REST/GraphQL patterns
+   - Output OpenAPI/GraphQL schema to `/contracts/`
+
+3. **Generate contract tests** from contracts:
+   - One test file per endpoint
+   - Assert request/response schemas
+   - Tests must fail (no implementation yet)
+
+4. **Extract test scenarios** from user stories:
+   - Each story → integration test scenario
+   - Quickstart test = story validation steps
+
+5. **Update agent file incrementally** (O(1) operation):
+   - Run `/scripts/update-agent-context.sh [claude|gemini|copilot]` for your AI assistant
+   - If exists: Add only NEW tech from current plan
+   - Preserve manual additions between markers
+   - Update recent changes (keep last 3)
+   - Keep under 150 lines for token efficiency
+   - Output to repository root
+
+**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file
+
+## Phase 2: Task Planning Approach
+*This section describes what the /tasks command will do - DO NOT execute during /plan*
+
+**Task Generation Strategy**:
+- Load `/templates/tasks-template.md` as base
+- Generate tasks from Phase 1 design docs (contracts, data model, quickstart)
+- Each contract → contract test task [P]
+- Each entity → model creation task [P] 
+- Each user story → integration test task
+- Implementation tasks to make tests pass
+
+**Ordering Strategy**:
+- TDD order: Tests before implementation 
+- Dependency order: Models before services before UI
+- Mark [P] for parallel execution (independent files)
+
+**Estimated Output**: 25-30 numbered, ordered tasks in tasks.md
+
+**IMPORTANT**: This phase is executed by the /tasks command, NOT by /plan
+
+## Phase 3+: Future Implementation
+*These phases are beyond the scope of the /plan command*
+
+**Phase 3**: Task execution (/tasks command creates tasks.md)  
+**Phase 4**: Implementation (execute tasks.md following constitutional principles)  
+**Phase 5**: Validation (run tests, execute quickstart.md, performance validation)
+
+## Complexity Tracking
+*Fill ONLY if Constitution Check has violations that must be justified*
+
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+
+
+## Progress Tracking
+*This checklist is updated during execution flow*
+
+**Phase Status**:
+- [ ] Phase 0: Research complete (/plan command)
+- [ ] Phase 1: Design complete (/plan command)
+- [ ] Phase 2: Task planning complete (/plan command - describe approach only)
+- [ ] Phase 3: Tasks generated (/tasks command)
+- [ ] Phase 4: Implementation complete
+- [ ] Phase 5: Validation passed
+
+**Gate Status**:
+- [ ] Initial Constitution Check: PASS
+- [ ] Post-Design Constitution Check: PASS
+- [ ] All NEEDS CLARIFICATION resolved
+- [ ] Complexity deviations documented
+
+---
+*Based on Constitution v2.1.1 - See `/memory/constitution.md`*
+</file>
+
+<file path="templates/spec-template.md">
+# Feature Specification: [FEATURE NAME]
+
+**Feature Branch**: `[###-feature-name]`  
+**Created**: [DATE]  
+**Status**: Draft  
+**Input**: User description: "$ARGUMENTS"
+
+## Execution Flow (main)
+```
+1. Parse user description from Input
+   → If empty: ERROR "No feature description provided"
+2. Extract key concepts from description
+   → Identify: actors, actions, data, constraints
+3. For each unclear aspect:
+   → Mark with [NEEDS CLARIFICATION: specific question]
+4. Fill User Scenarios & Testing section
+   → If no clear user flow: ERROR "Cannot determine user scenarios"
+5. Generate Functional Requirements
+   → Each requirement must be testable
+   → Mark ambiguous requirements
+6. Identify Key Entities (if data involved)
+7. Run Review Checklist
+   → If any [NEEDS CLARIFICATION]: WARN "Spec has uncertainties"
+   → If implementation details found: ERROR "Remove tech details"
+8. Return: SUCCESS (spec ready for planning)
+```
+
+---
+
+## ⚡ Quick Guidelines
+- ✅ Focus on WHAT users need and WHY
+- ❌ Avoid HOW to implement (no tech stack, APIs, code structure)
+- 👥 Written for business stakeholders, not developers
+
+### Section Requirements
+- **Mandatory sections**: Must be completed for every feature
+- **Optional sections**: Include only when relevant to the feature
+- When a section doesn't apply, remove it entirely (don't leave as "N/A")
+
+### For AI Generation
+When creating this spec from a user prompt:
+1. **Mark all ambiguities**: Use [NEEDS CLARIFICATION: specific question] for any assumption you'd need to make
+2. **Don't guess**: If the prompt doesn't specify something (e.g., "login system" without auth method), mark it
+3. **Think like a tester**: Every vague requirement should fail the "testable and unambiguous" checklist item
+4. **Common underspecified areas**:
+   - User types and permissions
+   - Data retention/deletion policies  
+   - Performance targets and scale
+   - Error handling behaviors
+   - Integration requirements
+   - Security/compliance needs
+
+---
+
+## User Scenarios & Testing *(mandatory)*
+
+### Primary User Story
+[Describe the main user journey in plain language]
+
+### Acceptance Scenarios
+1. **Given** [initial state], **When** [action], **Then** [expected outcome]
+2. **Given** [initial state], **When** [action], **Then** [expected outcome]
+
+### Edge Cases
+- What happens when [boundary condition]?
+- How does system handle [error scenario]?
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
+- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
+- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
+- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
+- **FR-005**: System MUST [behavior, e.g., "log all security events"]
+
+*Example of marking unclear requirements:*
+- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
+- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+
+### Key Entities *(include if feature involves data)*
+- **[Entity 1]**: [What it represents, key attributes without implementation]
+- **[Entity 2]**: [What it represents, relationships to other entities]
+
+---
+
+## Review & Acceptance Checklist
+*GATE: Automated checks run during main() execution*
+
+### Content Quality
+- [ ] No implementation details (languages, frameworks, APIs)
+- [ ] Focused on user value and business needs
+- [ ] Written for non-technical stakeholders
+- [ ] All mandatory sections completed
+
+### Requirement Completeness
+- [ ] No [NEEDS CLARIFICATION] markers remain
+- [ ] Requirements are testable and unambiguous  
+- [ ] Success criteria are measurable
+- [ ] Scope is clearly bounded
+- [ ] Dependencies and assumptions identified
+
+---
+
+## Execution Status
+*Updated by main() during processing*
+
+- [ ] User description parsed
+- [ ] Key concepts extracted
+- [ ] Ambiguities marked
+- [ ] User scenarios defined
+- [ ] Requirements generated
+- [ ] Entities identified
+- [ ] Review checklist passed
+
+---
+</file>
+
+<file path="templates/tasks-template.md">
+# Tasks: [FEATURE NAME]
+
+**Input**: Design documents from `/specs/[###-feature-name]/`
+**Prerequisites**: plan.md (required), research.md, data-model.md, contracts/
+
+## Execution Flow (main)
+```
+1. Load plan.md from feature directory
+   → If not found: ERROR "No implementation plan found"
+   → Extract: tech stack, libraries, structure
+2. Load optional design documents:
+   → data-model.md: Extract entities → model tasks
+   → contracts/: Each file → contract test task
+   → research.md: Extract decisions → setup tasks
+3. Generate tasks by category:
+   → Setup: project init, dependencies, linting
+   → Tests: contract tests, integration tests
+   → Core: models, services, CLI commands
+   → Integration: DB, middleware, logging
+   → Polish: unit tests, performance, docs
+4. Apply task rules:
+   → Different files = mark [P] for parallel
+   → Same file = sequential (no [P])
+   → Tests before implementation (TDD)
+5. Number tasks sequentially (T001, T002...)
+6. Generate dependency graph
+7. Create parallel execution examples
+8. Validate task completeness:
+   → All contracts have tests?
+   → All entities have models?
+   → All endpoints implemented?
+9. Return: SUCCESS (tasks ready for execution)
+```
+
+## Format: `[ID] [P?] Description`
+- **[P]**: Can run in parallel (different files, no dependencies)
+- Include exact file paths in descriptions
+
+## Path Conventions
+- **Single project**: `src/`, `tests/` at repository root
+- **Web app**: `backend/src/`, `frontend/src/`
+- **Mobile**: `api/src/`, `ios/src/` or `android/src/`
+- Paths shown below assume single project - adjust based on plan.md structure
+
+## Phase 3.1: Setup
+- [ ] T001 Create project structure per implementation plan
+- [ ] T002 Initialize [language] project with [framework] dependencies
+- [ ] T003 [P] Configure linting and formatting tools
+
+## Phase 3.2: Tests First (TDD) ⚠️ MUST COMPLETE BEFORE 3.3
+**CRITICAL: These tests MUST be written and MUST FAIL before ANY implementation**
+- [ ] T004 [P] Contract test POST /api/users in tests/contract/test_users_post.py
+- [ ] T005 [P] Contract test GET /api/users/{id} in tests/contract/test_users_get.py
+- [ ] T006 [P] Integration test user registration in tests/integration/test_registration.py
+- [ ] T007 [P] Integration test auth flow in tests/integration/test_auth.py
+
+## Phase 3.3: Core Implementation (ONLY after tests are failing)
+- [ ] T008 [P] User model in src/models/user.py
+- [ ] T009 [P] UserService CRUD in src/services/user_service.py
+- [ ] T010 [P] CLI --create-user in src/cli/user_commands.py
+- [ ] T011 POST /api/users endpoint
+- [ ] T012 GET /api/users/{id} endpoint
+- [ ] T013 Input validation
+- [ ] T014 Error handling and logging
+
+## Phase 3.4: Integration
+- [ ] T015 Connect UserService to DB
+- [ ] T016 Auth middleware
+- [ ] T017 Request/response logging
+- [ ] T018 CORS and security headers
+
+## Phase 3.5: Polish
+- [ ] T019 [P] Unit tests for validation in tests/unit/test_validation.py
+- [ ] T020 Performance tests (<200ms)
+- [ ] T021 [P] Update docs/api.md
+- [ ] T022 Remove duplication
+- [ ] T023 Run manual-testing.md
+
+## Dependencies
+- Tests (T004-T007) before implementation (T008-T014)
+- T008 blocks T009, T015
+- T016 blocks T018
+- Implementation before polish (T019-T023)
+
+## Parallel Example
+```
+# Launch T004-T007 together:
+Task: "Contract test POST /api/users in tests/contract/test_users_post.py"
+Task: "Contract test GET /api/users/{id} in tests/contract/test_users_get.py"
+Task: "Integration test registration in tests/integration/test_registration.py"
+Task: "Integration test auth in tests/integration/test_auth.py"
+```
+
+## Notes
+- [P] tasks = different files, no dependencies
+- Verify tests fail before implementing
+- Commit after each task
+- Avoid: vague tasks, same file conflicts
+
+## Task Generation Rules
+*Applied during main() execution*
+
+1. **From Contracts**:
+   - Each contract file → contract test task [P]
+   - Each endpoint → implementation task
+   
+2. **From Data Model**:
+   - Each entity → model creation task [P]
+   - Relationships → service layer tasks
+   
+3. **From User Stories**:
+   - Each story → integration test [P]
+   - Quickstart scenarios → validation tasks
+
+4. **Ordering**:
+   - Setup → Tests → Models → Services → Endpoints → Polish
+   - Dependencies block parallel execution
+
+## Validation Checklist
+*GATE: Checked by main() before returning*
+
+- [ ] All contracts have corresponding tests
+- [ ] All entities have model tasks
+- [ ] All tests come before implementation
+- [ ] Parallel tasks truly independent
+- [ ] Each task specifies exact file path
+- [ ] No task modifies same file as another [P] task
+</file>
+
+<file path=".gitignore">
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Project specific
+*.log
+.env
+.env.local
+*.lock
+</file>
+
+<file path="CODE_OF_CONDUCT.md">
+# Contributor Covenant Code of Conduct
+
+## Our Pledge
+
+In the interest of fostering an open and welcoming environment, we as
+contributors and maintainers pledge to making participation in our project and
+our community a harassment-free experience for everyone, regardless of age, body
+size, disability, ethnicity, gender identity and expression, level of experience,
+nationality, personal appearance, race, religion, or sexual identity and
+orientation.
+
+## Our Standards
+
+Examples of behavior that contributes to creating a positive environment
+include:
+
+* Using welcoming and inclusive language
+* Being respectful of differing viewpoints and experiences
+* Gracefully accepting constructive criticism
+* Focusing on what is best for the community
+* Showing empathy towards other community members
+
+Examples of unacceptable behavior by participants include:
+
+* The use of sexualized language or imagery and unwelcome sexual attention or
+advances
+* Trolling, insulting/derogatory comments, and personal or political attacks
+* Public or private harassment
+* Publishing others' private information, such as a physical or electronic
+  address, without explicit permission
+* Other conduct which could reasonably be considered inappropriate in a
+  professional setting
+
+## Our Responsibilities
+
+Project maintainers are responsible for clarifying the standards of acceptable
+behavior and are expected to take appropriate and fair corrective action in
+response to any instances of unacceptable behavior.
+
+Project maintainers have the right and responsibility to remove, edit, or
+reject comments, commits, code, wiki edits, issues, and other contributions
+that are not aligned to this Code of Conduct, or to ban temporarily or
+permanently any contributor for other behaviors that they deem inappropriate,
+threatening, offensive, or harmful.
+
+## Scope
+
+This Code of Conduct applies both within project spaces and in public spaces
+when an individual is representing the project or its community. Examples of
+representing a project or community include using an official project e-mail
+address, posting via an official social media account, or acting as an appointed
+representative at an online or offline event. Representation of a project may be
+further defined and clarified by project maintainers.
+
+## Enforcement
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be
+reported by contacting the project team at <opensource@github.com>. All
+complaints will be reviewed and investigated and will result in a response that
+is deemed necessary and appropriate to the circumstances. The project team is
+obligated to maintain confidentiality with regard to the reporter of an incident.
+Further details of specific enforcement policies may be posted separately.
+
+Project maintainers who do not follow or enforce the Code of Conduct in good
+faith may face temporary or permanent repercussions as determined by other
+members of the project's leadership.
+
+## Attribution
+
+This Code of Conduct is adapted from the [Contributor Covenant][homepage], version 1.4,
+available at [http://contributor-covenant.org/version/1/4][version]
+
+[homepage]: http://contributor-covenant.org
+[version]: http://contributor-covenant.org/version/1/4/
+</file>
+
+<file path="CONTRIBUTING.md">
+## Contributing to Spec Kit
+
+Hi there! We're thrilled that you'd like to contribute to Spec Kit. Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](LICENSE).
+
+Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+
+## Prerequisites for running and testing code
+
+These are one time installations required to be able to test your changes locally as part of the pull request (PR) submission process.
+
+1. Install [Python 3.11+](https://www.python.org/downloads/)
+1. Install [uv](https://docs.astral.sh/uv/) for package management
+1. Install [Git](https://git-scm.com/downloads)
+1. Have an AI coding agent available: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+
+## Submitting a pull request
+
+1. Fork and clone the repository
+1. Configure and install the dependencies: `uv sync`
+1. Make sure the CLI works on your machine: `uv run specify --help`
+1. Create a new branch: `git checkout -b my-branch-name`
+1. Make your change, add tests, and make sure everything still works
+1. Test the CLI functionality with a sample project if relevant
+1. Push to your fork and submit a pull request
+1. Wait for your pull request to be reviewed and merged.
+
+Here are a few things you can do that will increase the likelihood of your pull request being accepted:
+
+- Follow the project's coding conventions.
+- Write tests for new functionality.
+- Update documentation (`README.md,` `spec-driven.md`) if your changes affect user-facing features.
+- Keep your change as focused as possible. If there are multiple changes you would like to make that are not dependent upon each other, consider submitting them as separate pull requests.
+- Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
+- Test your changes with the Spec-Driven Development workflow to ensure compatibility.
+
+## Development workflow
+
+When working on spec-kit:
+
+1. Test changes with the `specify` CLI commands (`/specify`, `/plan`, `/tasks`) in your coding agent of choice
+2. Verify templates are working correctly in `templates/` directory
+3. Test script functionality in the `scripts/` directory
+4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+
+## Resources
+
+- [Spec-Driven Development Methodology](./spec-driven.md)
+- [How to Contribute to Open Source](https://opensource.guide/how-to-contribute/)
+- [Using Pull Requests](https://help.github.com/articles/about-pull-requests/)
+- [GitHub Help](https://help.github.com)
+</file>
+
+<file path="LICENSE">
+MIT License
+
+Copyright GitHub, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</file>
+
+<file path="pyproject.toml">
+[project]
+name = "specify-cli"
+version = "0.0.2"
+description = "Setup tool for Specify spec-driven development projects"
+requires-python = ">=3.11"
+dependencies = [
+    "typer",
+    "rich",
+    "httpx",
+    "platformdirs",
+    "readchar",
+]
+
+[project.scripts]
+specify = "specify_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/specify_cli"]
+</file>
+
+<file path="README.md">
+<div align="center">
+    <img src="./media/logo_small.webp"/>
+    <h1>🌱 Spec Kit</h1>
+    <h3><em>Build high-quality software faster.</em></h3>
+</div>
+
+<p align="center">
+    <strong>An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.</strong>
+</p>
+
+[![Release](https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg)](https://github.com/github/spec-kit/actions/workflows/release.yml)
+
+---
+
+## Table of Contents
+
+- [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
+- [⚡ Get started](#-get-started)
+- [📚 Core philosophy](#-core-philosophy)
+- [🌟 Development phases](#-development-phases)
+- [🎯 Experimental goals](#-experimental-goals)
+- [🔧 Prerequisites](#-prerequisites)
+- [📖 Learn more](#-learn-more)
+- [📋 Detailed process](#-detailed-process)
+- [🔍 Troubleshooting](#-troubleshooting)
+- [👥 Maintainers](#-maintainers)
+- [💬 Support](#-support)
+- [🙏 Acknowledgements](#-acknowledgements)
+- [📄 License](#-license)
+
+## 🤔 What is Spec-Driven Development?
+
+Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+
+## ⚡ Get started
+
+### 1. Install Specify
+
+Initialize your project depending on the coding agent you're using:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+```
+
+### 2. Create the spec
+
+Use the `/specify` command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+
+```bash
+/specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+```
+
+### 3. Create a technical implementation plan
+
+Use the `/plan` command to provide your tech stack and architecture choices.
+
+```bash
+/plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+```
+
+### 4. Break down and implement
+
+Use `/tasks` to create an actionable task list, then ask your agent to implement the feature.
+
+For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 📚 Core philosophy
+
+Spec-Driven Development is a structured process that emphasizes:
+
+- **Intent-driven development** where specifications define the "_what_" before the "_how_"
+- **Rich specification creation** using guardrails and organizational principles
+- **Multi-step refinement** rather than one-shot code generation from prompts
+- **Heavy reliance** on advanced AI model capabilities for specification interpretation
+
+## 🌟 Development phases
+
+| Phase | Focus | Key Activities |
+|-------|-------|----------------|
+| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
+| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
+| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+
+## 🎯 Experimental goals
+
+Our research and experimentation focus on:
+
+### Technology independence
+
+- Create applications using diverse technology stacks
+- Validate the hypothesis that Spec-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
+
+### Enterprise constraints
+
+- Demonstrate mission-critical application development
+- Incorporate organizational constraints (cloud providers, tech stacks, engineering practices)
+- Support enterprise design systems and compliance requirements
+
+### User-centric development
+
+- Build applications for different user cohorts and preferences
+- Support various development approaches (from vibe-coding to AI-native development)
+
+### Creative & iterative processes
+
+- Validate the concept of parallel implementation exploration
+- Provide robust iterative feature development workflows
+- Extend processes to handle upgrades and modernization tasks  
+
+## 🔧 Prerequisites
+
+- **Linux/macOS** (or WSL2 on Windows)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- [uv](https://docs.astral.sh/uv/) for package management
+- [Python 3.11+](https://www.python.org/downloads/)
+- [Git](https://git-scm.com/downloads)
+
+## 📖 Learn more
+
+- **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+- **[Detailed Walkthrough](#detailed-process)** - Step-by-step implementation guide
+
+---
+
+## 📋 Detailed process
+
+<details>
+<summary>Click to expand the detailed step-by-step walkthrough</summary>
+
+You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
+
+```bash
+specify init <project_name>
+```
+
+Or initialize in the current directory:
+
+```bash
+specify init --here
+```
+
+![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
+
+You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
+
+```bash
+specify init <project_name> --ai claude
+specify init <project_name> --ai gemini
+specify init <project_name> --ai copilot
+# Or in current directory:
+specify init --here --ai claude
+```
+
+The CLI will check if you have Claude Code or Gemini CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+
+```bash
+specify init <project_name> --ai claude --ignore-agent-tools
+```
+
+### **STEP 1:** Bootstrap the project
+
+Go to the project folder and run your AI agent. In our example, we're using `claude`.
+
+![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
+
+You will know that things are configured correctly if you see the `/specify`, `/plan`, and `/tasks` commands available.
+
+The first step should be creating a new project scaffolding. Use `/specify` command and then provide the concrete requirements for the project you want to develop.
+
+>[!IMPORTANT]
+>Be as explicit as possible about _what_ you are trying to build and _why_. **Do not focus on the tech stack at this point**.
+
+An example prompt:
+
+```text
+Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
+assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
+let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
+I want five users in two different categories, one product manager and four engineers. Let's create three
+different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
+"In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
+first testing thing to ensure that our basic features are set up. For each task in the UI for a task card,
+you should be able to change the current status of the task between the different columns in the Kanban work board.
+You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task
+card, assign one of the valid users. When you first launch Taskify, it's going to give you a list of the five users to pick
+from. There will be no password required. When you click on a user, you go into the main view, which displays the list of
+projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns.
+You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are
+assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly
+see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can
+delete any comments that you made, but you can't delete comments anybody else made.
+```
+
+After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
+
+Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
+
+The produced specification should contain a set of user stories and functional requirements, as defined in the template.
+
+At this stage, your project folder contents should resemble the following:
+
+```text
+├── memory
+│	 ├── constitution.md
+│	 └── constitution_update_checklist.md
+├── scripts
+│	 ├── check-task-prerequisites.sh
+│	 ├── common.sh
+│	 ├── create-new-feature.sh
+│	 ├── get-feature-paths.sh
+│	 ├── setup-plan.sh
+│	 └── update-claude-md.sh
+├── specs
+│	 └── 001-create-taskify
+│	     └── spec.md
+└── templates
+    ├── CLAUDE-template.md
+    ├── plan-template.md
+    ├── spec-template.md
+    └── tasks-template.md
+```
+
+### **STEP 2:** Functional specification clarification
+
+With the baseline specification created, you can go ahead and clarify any of the requirements that were not captured properly within the first shot attempt. For example, you could use a prompt like this within the same Claude Code session:
+
+```text
+For each sample project or project that you create there should be a variable number of tasks between 5 and 15
+tasks for each one randomly distributed into different states of completion. Make sure that there's at least
+one task in each stage of completion.
+```
+
+You should also ask Claude Code to validate the **Review & Acceptance Checklist**, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
+
+```text
+Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
+```
+
+It's important to use the interaction with Claude Code as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
+
+### **STEP 3:** Generate a plan
+
+You can now be specific about the tech stack and other technical requirements. You can use the `/plan` command that is built into the project template with a prompt like this:
+
+```text
+We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use
+Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API,
+tasks API, and a notifications API.
+```
+
+The output of this step will include a number of implementation detail documents, with your directory tree resembling this:
+
+```text
+.
+├── CLAUDE.md
+├── memory
+│	 ├── constitution.md
+│	 └── constitution_update_checklist.md
+├── scripts
+│	 ├── check-task-prerequisites.sh
+│	 ├── common.sh
+│	 ├── create-new-feature.sh
+│	 ├── get-feature-paths.sh
+│	 ├── setup-plan.sh
+│	 └── update-claude-md.sh
+├── specs
+│	 └── 001-create-taskify
+│	     ├── contracts
+│	     │	 ├── api-spec.json
+│	     │	 └── signalr-spec.md
+│	     ├── data-model.md
+│	     ├── plan.md
+│	     ├── quickstart.md
+│	     ├── research.md
+│	     └── spec.md
+└── templates
+    ├── CLAUDE-template.md
+    ├── plan-template.md
+    ├── spec-template.md
+    └── tasks-template.md
+```
+
+Check the `research.md` document to ensure that the right tech stack is used, based on your instructions. You can ask Claude Code to refine it if any of the components stand out, or even have it check the locally-installed version of the platform/framework you want to use (e.g., .NET).
+
+Additionally, you might want to ask Claude Code to research details about the chosen tech stack if it's something that is rapidly changing (e.g., .NET Aspire, JS frameworks), with a prompt like this:
+
+```text
+I want you to go through the implementation plan and implementation details, looking for areas that could
+benefit from additional research as .NET Aspire is a rapidly changing library. For those areas that you identify that
+require further research, I want you to update the research document with additional details about the specific
+versions that we are going to be using in this Taskify application and spawn parallel research tasks to clarify
+any details using research from the web.
+```
+
+During this process, you might find that Claude Code gets stuck researching the wrong thing - you can help nudge it in the right direction with a prompt like this:
+
+```text
+I think we need to break this down into a series of steps. First, identify a list of tasks
+that you would need to do during implementation that you're not sure of or would benefit
+from further research. Write down a list of those tasks. And then for each one of these tasks,
+I want you to spin up a separate research task so that the net results is we are researching
+all of those very specific tasks in parallel. What I saw you doing was it looks like you were
+researching .NET Aspire in general and I don't think that's gonna do much for us in this case.
+That's way too untargeted research. The research needs to help you solve a specific targeted question.
+```
+
+>[!NOTE]
+>Claude Code might be over-eager and add components that you did not ask for. Ask it to clarify the rationale and the source of the change.
+
+### **STEP 4:** Have Claude Code validate the plan
+
+With the plan in place, you should have Claude Code run through it to make sure that there are no missing pieces. You can use a prompt like this:
+
+```text
+Now I want you to go and audit the implementation plan and the implementation detail files.
+Read through it with an eye on determining whether or not there is a sequence of tasks that you need
+to be doing that are obvious from reading this. Because I don't know if there's enough here. For example,
+when I look at the core implementation, it would be useful to reference the appropriate places in the implementation
+details where it can find the information as it walks through each step in the core implementation or in the refinement.
+```
+
+This helps refine the implementation plan and helps you avoid potential blind spots that Claude Code missed in its planning cycle. Once the initial refinement pass is complete, ask Claude Code to go through the checklist once more before you can get to the implementation.
+
+You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.com/en/github-cli/github-cli) installed) to go ahead and create a pull request from your current branch to `main` with a detailed description, to make sure that the effort is properly tracked.
+
+>[!NOTE]
+>Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
+
+### STEP 5: Implementation
+
+Once ready, instruct Claude Code to implement your solution (example path included):
+
+```text
+implement specs/002-create-taskify/plan.md
+```
+
+Claude Code will spring into action and will start creating the implementation.
+
+>[!IMPORTANT]
+>Claude Code will execute local CLI commands (such as `dotnet`) - make sure you have them installed on your machine.
+
+Once the implementation step is done, ask Claude Code to try to run the application and resolve any emerging build errors. If the application runs, but there are _runtime errors_ that are not directly available to Claude Code through CLI logs (e.g., errors rendered in browser logs), copy and paste the error in Claude Code and have it attempt to resolve it.
+
+</details>
+
+---
+
+## 🔍 Troubleshooting
+
+### Git Credential Manager on Linux
+
+If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
+
+```bash
+#!/usr/bin/env bash
+set -e
+echo "Downloading Git Credential Manager v2.6.1..."
+wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
+echo "Installing Git Credential Manager..."
+sudo dpkg -i gcm-linux_amd64.2.6.1.deb
+echo "Configuring Git to use GCM..."
+git config --global credential.helper manager
+echo "Cleaning up..."
+rm gcm-linux_amd64.2.6.1.deb
+```
+
+## 👥 Maintainers
+
+- Den Delimarsky ([@localden](https://github.com/localden))
+- John Lam ([@jflam](https://github.com/jflam))
+
+## 💬 Support
+
+For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
+
+## 🙏 Acknowledgements
+
+This project is heavily influenced by and based on the work and research of [John Lam](https://github.com/jflam).
+
+## 📄 License
+
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
+</file>
+
+<file path="SECURITY.md">
+Thanks for helping make GitHub safe for everyone.
+
+# Security
+
+GitHub takes the security of our software products and services seriously, including all of the open source code repositories managed through our GitHub organizations, such as [GitHub](https://github.com/GitHub).
+
+Even though [open source repositories are outside of the scope of our bug bounty program](https://bounty.github.com/index.html#scope) and therefore not eligible for bounty rewards, we will ensure that your finding gets passed along to the appropriate maintainers for remediation. 
+
+## Reporting Security Issues
+
+If you believe you have found a security vulnerability in any GitHub-owned repository, please report it to us through coordinated disclosure.
+
+**Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
+
+Instead, please send an email to opensource-security[@]github.com.
+
+Please include as much of the information listed below as you can to help us better understand and resolve the issue:
+
+  * The type of issue (e.g., buffer overflow, SQL injection, or cross-site scripting)
+  * Full paths of source file(s) related to the manifestation of the issue
+  * The location of the affected source code (tag/branch/commit or direct URL)
+  * Any special configuration required to reproduce the issue
+  * Step-by-step instructions to reproduce the issue
+  * Proof-of-concept or exploit code (if possible)
+  * Impact of the issue, including how an attacker might exploit the issue
+
+This information will help us triage your report more quickly.
+
+## Policy
+
+See [GitHub's Safe Harbor Policy](https://docs.github.com/en/site-policy/security-policies/github-bug-bounty-program-legal-safe-harbor#1-safe-harbor-terms)
+</file>
+
+<file path="spec-driven.md">
+# Specification-Driven Development (SDD)
+
+## The Power Inversion
+
+For decades, code has been king. Specifications served code—they were the scaffolding we built and then discarded once the "real work" of coding began. We wrote PRDs to guide development, created design docs to inform implementation, drew diagrams to visualize architecture. But these were always subordinate to the code itself. Code was truth. Everything else was, at best, good intentions. Code was the source of truth, as it moved forward, and spec's rarely kept pace. As the asset (code) and the implementation are one, it's not easy to have a parallel implementation without trying to build from the code.
+
+Spec-Driven Development (SDD) inverts this power structure. Specifications don't serve code—code serves specifications. The (Product Requirements Document-Specification) PRD isn't a guide for implementation; it's the source that generates implementation. Technical plans aren't documents that inform coding; they're precise definitions that produce code. This isn't an incremental improvement to how we build software. It's a fundamental rethinking of what drives development.
+
+The gap between specification and implementation has plagued software development since its inception. We've tried to bridge it with better documentation, more detailed requirements, stricter processes. These approaches fail because they accept the gap as inevitable. They try to narrow it but never eliminate it. SDD eliminates the gap by making specifications or and their concrete implementation plans born from the specification executable. When specifications to implementation plans generate code, there is no gap—only transformation.
+
+This transformation is now possible because AI can understand and implement complex specifications, and create detailed implementation plans. But raw AI generation without structure produces chaos. SDD provides that structure through specifications and subsequent implementation plans that are precise, complete, and unambiguous enough to generate working systems. The specification becomes the primary artifact. Code becomes its expression (as an implementation from the implementation plan) in a particular language and framework.
+
+In this new world, maintaining software means evolving specifications. The intent of the development team is expressed in natural language ("**intent-driven development**"), design assets, core principles and other guidelines . The **lingua franca** of development moves to a higher-level, and code is the last-mile approach.
+
+Debugging means fixing specifications and their implementation plans that generate incorrect code. Refactoring means restructuring for clarity. The entire development workflow reorganizes around specifications as the central source of truth, with implementation plans and code as the continuously regenerated output. Updating apps with new features or creating a new parallel implementation because we are creative beings, means revisiting the specification and creating new implementation plans. This process is therefore a 0 -> 1, (1', ..), 2, 3, N.
+
+The development team focuses in on their creativity, experimentation, their critical thinking.
+
+## The SDD Workflow in Practice
+
+The workflow begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, that's team reviewed-specifications are expressed and versioned, created in branches, and merged.
+
+When a product manager updates acceptance criteria, implementation plans automatically flag affected technical decisions. When an architect discovers a better pattern, the PRD updates to reflect new possibilities.
+
+Throughout this specification process, research agents gather critical context. They investigate library compatibility, performance benchmarks, and security implications. Organizational constraints are discovered and applied automatically—your company's database standards, authentication requirements, and deployment policies seamlessly integrate into every specification.
+
+From the PRD, AI generates implementation plans that map requirements to technical decisions. Every technology choice has documented rationale. Every architectural decision traces back to specific requirements. Throughout this process, consistency validation continuously improves quality. AI analyzes specifications for ambiguity, contradictions, and gaps—not as a one-time gate, but as an ongoing refinement.
+
+Code generation begins as soon as specifications and their implementation plans are stable enough, but they do not have to be "complete." Early generations might be exploratory—testing whether the specification makes sense in practice. Domain concepts become data models. User stories become API endpoints. Acceptance scenarios become tests. This merges development and testing through specification—test scenarios aren't written after code, they're part of the specification that generates both implementation and tests.
+
+The feedback loop extends beyond initial development. Production metrics and incidents don't just trigger hotfixes—they update specifications for the next regeneration. Performance bottlenecks become new non-functional requirements. Security vulnerabilities become constraints that affect all future generations. This iterative dance between specification, implementation, and operational reality is where true understanding emerges and where the traditional SDLC transforms into a continuous evolution.
+
+## Why SDD Matters Now
+
+Three trends make SDD not just possible but necessary:
+
+First, AI capabilities have reached a threshold where natural language specifications can reliably generate working code. This isn't about replacing developers—it's about amplifying their effectiveness by automating the mechanical translation from specification to implementation. It can amplify exploration and creativity, it can support "start-over" easily, it supports addition subtraction and critical thinking.
+
+Second, software complexity continues to grow exponentially. Modern systems integrate dozens of services, frameworks, and dependencies. Keeping all these pieces aligned with original intent through manual processes becomes increasingly difficult. SDD provides systematic alignment through specification-driven generation. Frameworks may evolve to provide AI-first support, not human-first support, or architect around reusable components.
+
+Third, the pace of change accelerates. Requirements change far more rapidly today than ever before. Pivoting is no longer exceptional—it's expected. Modern product development demands rapid iteration based on user feedback, market conditions, and competitive pressures. Traditional development treats these changes as disruptions. Each pivot requires manually propagating changes through documentation, design, and code. The result is either slow, careful updates that limit velocity, or fast, reckless changes that accumulate technical debt.
+
+SDD can support what-if/simulation experiments, "If we need to re-implement or change the application to promote a business need to sell more T-shirts, how would we implement and experiment for that?".
+
+SDD transforms requirement changes from obstacles into normal workflow. When specifications drive implementation, pivots become systematic regenerations rather than manual rewrites. Change a core requirement in the PRD, and affected implementation plans update automatically. Modify a user story, and corresponding API endpoints regenerate. This isn't just about initial development—it's about maintaining engineering velocity through inevitable changes.
+
+## Core Principles
+
+**Specifications as the Lingua Franca**: The specification becomes the primary artifact. Code becomes its expression in a particular language and framework. Maintaining software means evolving specifications.
+
+**Executable Specifications**: Specifications must be precise, complete, and unambiguous enough to generate working systems. This eliminates the gap between intent and implementation.
+
+**Continuous Refinement**: Consistency validation happens continuously, not as a one-time gate. AI analyzes specifications for ambiguity, contradictions, and gaps as an ongoing process.
+
+**Research-Driven Context**: Research agents gather critical context throughout the specification process, investigating technical options, performance implications, and organizational constraints.
+
+**Bidirectional Feedback**: Production reality informs specification evolution. Metrics, incidents, and operational learnings become inputs for specification refinement.
+
+**Branching for Exploration**: Generate multiple implementation approaches from the same specification to explore different optimization targets—performance, maintainability, user experience, cost.
+
+## Implementation Approaches
+
+Today, practicing SDD requires assembling existing tools and maintaining discipline throughout the process. The methodology can be practiced with:
+
+- AI assistants for iterative specification development
+- Research agents for gathering technical context
+- Code generation tools for translating specifications to implementation
+- Version control systems adapted for specification-first workflows
+- Consistency checking through AI analysis of specification documents
+
+The key is treating specifications as the source of truth, with code as the generated output that serves the specification rather than the other way around.
+
+## Streamlining SDD with Claude Commands
+
+The SDD methodology is significantly enhanced through two powerful Claude commands that automate the specification and planning workflow:
+
+### The `new_feature` Command
+
+This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
+
+1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003)
+2. **Branch Creation**: Generates a semantic branch name from your description and creates it automatically
+3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
+4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
+
+### The `generate_plan` Command
+
+Once a feature specification exists, this command creates a comprehensive implementation plan:
+
+1. **Specification Analysis**: Reads and understands the feature requirements, user stories, and acceptance criteria
+2. **Constitutional Compliance**: Ensures alignment with project constitution and architectural principles
+3. **Technical Translation**: Converts business requirements into technical architecture and implementation details
+4. **Detailed Documentation**: Generates supporting documents for data models, API contracts, and test scenarios
+5. **Manual Testing Plans**: Creates step-by-step validation procedures for each user story
+
+### Example: Building a Chat Feature
+
+Here's how these commands transform the traditional development workflow:
+
+**Traditional Approach:**
+```
+1. Write a PRD in a document (2-3 hours)
+2. Create design documents (2-3 hours)
+3. Set up project structure manually (30 minutes)
+4. Write technical specifications (3-4 hours)
+5. Create test plans (2 hours)
+Total: ~12 hours of documentation work
+```
+
+**SDD with Commands Approach:**
+```bash
+# Step 1: Create the feature specification (5 minutes)
+/new_feature Real-time chat system with message history and user presence
+
+# This automatically:
+# - Creates branch "003-chat-system"
+# - Generates specs/003-chat-system/feature-spec.md
+# - Populates it with structured requirements
+
+# Step 2: Generate implementation plan (10 minutes)
+/generate_plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
+
+# This automatically creates:
+# - specs/003-chat-system/implementation-plan.md
+# - specs/003-chat-system/implementation-details/
+#   - 00-research.md (WebSocket library comparisons)
+#   - 02-data-model.md (Message and User schemas)
+#   - 03-api-contracts.md (WebSocket events, REST endpoints)
+#   - 06-contract-tests.md (Message flow scenarios)
+#   - 08-inter-library-tests.md (Database-WebSocket integration)
+# - specs/003-chat-system/manual-testing.md
+```
+
+In 15 minutes, you have:
+- A complete feature specification with user stories and acceptance criteria
+- A detailed implementation plan with technology choices and rationale
+- API contracts and data models ready for code generation
+- Comprehensive test scenarios for both automated and manual testing
+- All documents properly versioned in a feature branch
+
+### The Power of Structured Automation
+
+These commands don't just save time—they enforce consistency and completeness:
+
+1. **No Forgotten Details**: Templates ensure every aspect is considered, from non-functional requirements to error handling
+2. **Traceable Decisions**: Every technical choice links back to specific requirements
+3. **Living Documentation**: Specifications stay in sync with code because they generate it
+4. **Rapid Iteration**: Change requirements and regenerate plans in minutes, not days
+
+The commands embody SDD principles by treating specifications as executable artifacts rather than static documents. They transform the specification process from a necessary evil into the driving force of development.
+
+### Template-Driven Quality: How Structure Constrains LLMs for Better Outcomes
+
+The true power of these commands lies not just in automation, but in how the templates guide LLM behavior toward higher-quality specifications. The templates act as sophisticated prompts that constrain the LLM's output in productive ways:
+
+#### 1. **Preventing Premature Implementation Details**
+
+The feature specification template explicitly instructs:
+```
+- ✅ Focus on WHAT users need and WHY
+- ❌ Avoid HOW to implement (no tech stack, APIs, code structure)
+```
+
+This constraint forces the LLM to maintain proper abstraction levels. When an LLM might naturally jump to "implement using React with Redux," the template keeps it focused on "users need real-time updates of their data." This separation ensures specifications remain stable even as implementation technologies change.
+
+#### 2. **Forcing Explicit Uncertainty Markers**
+
+Both templates mandate the use of `[NEEDS CLARIFICATION]` markers:
+```
+When creating this spec from a user prompt:
+1. **Mark all ambiguities**: Use [NEEDS CLARIFICATION: specific question] 
+2. **Don't guess**: If the prompt doesn't specify something, mark it
+```
+
+This prevents the common LLM behavior of making plausible but potentially incorrect assumptions. Instead of guessing that a "login system" uses email/password authentication, the LLM must mark it as `[NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]`.
+
+#### 3. **Structured Thinking Through Checklists**
+
+The templates include comprehensive checklists that act as "unit tests" for the specification:
+```
+### Requirement Completeness
+- [ ] No [NEEDS CLARIFICATION] markers remain
+- [ ] Requirements are testable and unambiguous  
+- [ ] Success criteria are measurable
+```
+
+These checklists force the LLM to self-review its output systematically, catching gaps that might otherwise slip through. It's like giving the LLM a quality assurance framework.
+
+#### 4. **Constitutional Compliance Through Gates**
+
+The implementation plan template enforces architectural principles through phase gates:
+```
+### Phase -1: Pre-Implementation Gates
+#### Simplicity Gate (Article VII)
+- [ ] Using ≤3 projects?
+- [ ] No future-proofing?
+#### Anti-Abstraction Gate (Article VIII)
+- [ ] Using framework directly?
+- [ ] Single model representation?
+```
+
+These gates prevent over-engineering by making the LLM explicitly justify any complexity. If a gate fails, the LLM must document why in the "Complexity Tracking" section, creating accountability for architectural decisions.
+
+#### 5. **Hierarchical Detail Management**
+
+The templates enforce proper information architecture:
+```
+**IMPORTANT**: This implementation plan should remain high-level and readable. 
+Any code samples, detailed algorithms, or extensive technical specifications 
+must be placed in the appropriate `implementation-details/` file
+```
+
+This prevents the common problem of specifications becoming unreadable code dumps. The LLM learns to maintain appropriate detail levels, extracting complexity to separate files while keeping the main document navigable.
+
+#### 6. **Test-First Thinking**
+
+The implementation template enforces test-first development:
+```
+### File Creation Order
+1. Create `contracts/` with API specifications
+2. Create test files in order: contract → integration → e2e → unit
+3. Create source files to make tests pass
+```
+
+This ordering constraint ensures the LLM thinks about testability and contracts before implementation, leading to more robust and verifiable specifications.
+
+#### 7. **Preventing Speculative Features**
+
+Templates explicitly discourage speculation:
+```
+- [ ] No speculative or "might need" features
+- [ ] All phases have clear prerequisites and deliverables
+```
+
+This stops the LLM from adding "nice to have" features that complicate implementation. Every feature must trace back to a concrete user story with clear acceptance criteria.
+
+### The Compound Effect
+
+These constraints work together to produce specifications that are:
+- **Complete**: Checklists ensure nothing is forgotten
+- **Unambiguous**: Forced clarification markers highlight uncertainties
+- **Testable**: Test-first thinking baked into the process
+- **Maintainable**: Proper abstraction levels and information hierarchy
+- **Implementable**: Clear phases with concrete deliverables
+
+The templates transform the LLM from a creative writer into a disciplined specification engineer, channeling its capabilities toward producing consistently high-quality, executable specifications that truly drive development.
+
+## The Constitutional Foundation: Enforcing Architectural Discipline
+
+At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`base/memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+
+### The Nine Articles of Development
+
+The constitution defines nine articles that shape every aspect of the development process:
+
+#### Article I: Library-First Principle
+Every feature must begin as a standalone library—no exceptions. This forces modular design from the start:
+```
+Every feature in Specify MUST begin its existence as a standalone library. 
+No feature shall be implemented directly within application code without 
+first being abstracted into a reusable library component.
+```
+
+This principle ensures that specifications generate modular, reusable code rather than monolithic applications. When the LLM generates an implementation plan, it must structure features as libraries with clear boundaries and minimal dependencies.
+
+#### Article II: CLI Interface Mandate
+Every library must expose its functionality through a command-line interface:
+```
+All CLI interfaces MUST:
+- Accept text as input (via stdin, arguments, or files)
+- Produce text as output (via stdout)
+- Support JSON format for structured data exchange
+```
+
+This enforces observability and testability. The LLM cannot hide functionality inside opaque classes—everything must be accessible and verifiable through text-based interfaces.
+
+#### Article III: Test-First Imperative
+The most transformative article—no code before tests:
+```
+This is NON-NEGOTIABLE: All implementation MUST follow strict Test-Driven Development.
+No implementation code shall be written before:
+1. Unit tests are written
+2. Tests are validated and approved by the user
+3. Tests are confirmed to FAIL (Red phase)
+```
+
+This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
+
+#### Articles VII & VIII: Simplicity and Anti-Abstraction
+These paired articles combat over-engineering:
+```
+Section 7.3: Minimal Project Structure
+- Maximum 3 projects for initial implementation
+- Additional projects require documented justification
+
+Section 8.1: Framework Trust
+- Use framework features directly rather than wrapping them
+```
+
+When an LLM might naturally create elaborate abstractions, these articles force it to justify every layer of complexity. The implementation plan template's "Phase -1 Gates" directly enforce these principles.
+
+#### Article IX: Integration-First Testing
+Prioritizes real-world testing over isolated unit tests:
+```
+Tests MUST use realistic environments:
+- Prefer real databases over mocks
+- Use actual service instances over stubs
+- Contract tests mandatory before implementation
+```
+
+This ensures generated code works in practice, not just in theory.
+
+### Constitutional Enforcement Through Templates
+
+The implementation plan template operationalizes these articles through concrete checkpoints:
+
+```markdown
+### Phase -1: Pre-Implementation Gates
+#### Simplicity Gate (Article VII)
+- [ ] Using ≤3 projects?
+- [ ] No future-proofing?
+
+#### Anti-Abstraction Gate (Article VIII)
+- [ ] Using framework directly?
+- [ ] Single model representation?
+
+#### Integration-First Gate (Article IX)
+- [ ] Contracts defined?
+- [ ] Contract tests written?
+```
+
+These gates act as compile-time checks for architectural principles. The LLM cannot proceed without either passing the gates or documenting justified exceptions in the "Complexity Tracking" section.
+
+### The Power of Immutable Principles
+
+The constitution's power lies in its immutability. While implementation details can evolve, the core principles remain constant. This provides:
+
+1. **Consistency Across Time**: Code generated today follows the same principles as code generated next year
+2. **Consistency Across LLMs**: Different AI models produce architecturally compatible code
+3. **Architectural Integrity**: Every feature reinforces rather than undermines the system design
+4. **Quality Guarantees**: Test-first, library-first, and simplicity principles ensure maintainable code
+
+### Constitutional Evolution
+
+While principles are immutable, their application can evolve:
+```
+Section 4.2: Amendment Process
+Modifications to this constitution require:
+- Explicit documentation of the rationale for change
+- Review and approval by project maintainers
+- Backwards compatibility assessment
+```
+
+This allows the methodology to learn and improve while maintaining stability. The constitution shows its own evolution with dated amendments, demonstrating how principles can be refined based on real-world experience.
+
+### Beyond Rules: A Development Philosophy
+
+The constitution isn't just a rulebook—it's a philosophy that shapes how LLMs think about code generation:
+
+- **Observability Over Opacity**: Everything must be inspectable through CLI interfaces
+- **Simplicity Over Cleverness**: Start simple, add complexity only when proven necessary
+- **Integration Over Isolation**: Test in real environments, not artificial ones
+- **Modularity Over Monoliths**: Every feature is a library with clear boundaries
+
+By embedding these principles into the specification and planning process, SDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound. The constitution transforms AI from a code generator into an architectural partner that respects and reinforces system design principles.
+
+## The Transformation
+
+This isn't about replacing developers or automating creativity. It's about amplifying human capability by automating mechanical translation. It's about creating a tight feedback loop where specifications, research, and code evolve together, each iteration bringing deeper understanding and better alignment between intent and implementation.
+
+Software development needs better tools for maintaining alignment between intent and implementation. SDD provides the methodology for achieving this alignment through executable specifications that generate code rather than merely guiding it.
+</file>
+
+<file path="SUPPORT.md">
+# Support 
+
+## How to file issues and get help
+
+This project uses GitHub issues to track bugs and feature requests. Please search the existing issues before filing new issues to avoid duplicates. For new issues, file your bug or feature request as a new issue.
+
+For help or questions about using this project, please:
+
+- Open a [GitHub issue](https://github.com/github/spec-kit/issues/new) for bug reports, feature requests, or questions about the Spec-Driven Development methodology
+- Check the [comprehensive guide](./spec-driven.md) for detailed documentation on the Spec-Driven Development process
+- Review the [README](./README.md) for getting started instructions and troubleshooting tips
+
+## Project Status
+
+**Spec Kit** is under active development and maintained by GitHub staff **AND THE COMMUNITY**. We will do our best to respond to support, feature requests, and community questions in a timely manner.
+
+## GitHub Support Policy
+
+Support for this project is limited to the resources listed above.
+</file>
+
+</files>
