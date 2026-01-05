@@ -54,6 +54,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
 | **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
 | **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
+| **Antigravity IDE**        | `.agent/workflows/`    | Markdown | N/A (IDE-based) | Google's Antigravity IDE    |
 | **Qwen Code**              | `.qwen/commands/`      | TOML     | `qwen`          | Alibaba's Qwen Code CLI     |
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
 | **Codex CLI**              | `.codex/commands/`     | Markdown | `codex`         | Codex CLI                   |
@@ -109,7 +110,7 @@ This eliminates the need for special-case mappings throughout the codebase.
 Update the `--ai` parameter help text in the `init()` command to include the new agent:
 
 ```python
-ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, new-agent-cli, or q"),
+ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, antigravity, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, new-agent-cli, or q"),
 ```
 
 Also update any function docstrings, examples, and error messages that list available agents.
@@ -130,7 +131,7 @@ Modify `.github/workflows/scripts/create-release-packages.sh`:
 ##### Add to ALL_AGENTS array
 
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf q)
+ALL_AGENTS=(claude gemini copilot cursor-agent antigravity qwen opencode windsurf q)
 ```
 
 ##### Add case statement for directory structure
@@ -348,7 +349,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+Used by: Claude, Cursor, Antigravity, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
 
 **Standard format:**
 
