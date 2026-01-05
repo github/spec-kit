@@ -75,6 +75,7 @@ AMP_FILE="$REPO_ROOT/AGENTS.md"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
 BOB_FILE="$REPO_ROOT/AGENTS.md"
+BYTEBUDDY_FILE="$REPO_ROOT/.bytebuddy/rules/specify-rules.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -621,6 +622,9 @@ update_specific_agent() {
         qoder)
             update_agent_file "$QODER_FILE" "Qoder CLI"
             ;;
+        bytebuddy)
+            update_agent_file "$BYTEBUDDY_FILE" "ByteBuddy"
+            ;;
         amp)
             update_agent_file "$AMP_FILE" "Amp"
             ;;
@@ -635,7 +639,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder|bytebuddy"
             exit 1
             ;;
     esac
@@ -717,6 +721,11 @@ update_all_existing_agents() {
     
     if [[ -f "$BOB_FILE" ]]; then
         update_agent_file "$BOB_FILE" "IBM Bob"
+        found_agent=true
+    fi
+    
+    if [[ -f "$BYTEBUDDY_FILE" ]]; then
+        update_agent_file "$BYTEBUDDY_FILE" "ByteBuddy"
         found_agent=true
     fi
     
