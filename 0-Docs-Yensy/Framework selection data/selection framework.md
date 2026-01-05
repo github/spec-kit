@@ -1158,8 +1158,3 @@ Based on this rigorous, standalone-focused re-evaluation, the recommendation is 
 **The single framework best suited to build the entire AgentOps platform is Haystack.**
 
 While LangChain is an exceptionally close competitor with a slightly higher unweighted score, **Haystack** wins because it scores perfectly on our most critical, heavily weighted criterion: **native and deep MCP integration**. Its production-focused, structured, and robust design provides the ideal foundation for a reliable and maintainable platform, directly aligning with our core strategic priorities. It is powerful enough to handle the full lifecycle from single-agent creation to multi-agent orchestration, making it the most balanced and strategically sound choice for a unified solution.
-
----
-
-User:
-
