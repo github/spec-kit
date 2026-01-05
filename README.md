@@ -268,6 +268,25 @@ Additional commands for enhanced quality and validation:
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
+#### Visual Workflow
+
+```mermaid
+flowchart TD
+  %% Core (recommended order)
+  C0["/speckit.constitution"] --> C1["/speckit.specify"] --> C2["/speckit.plan"] --> C3["/speckit.tasks"] --> C4["/speckit.implement"]
+
+  %% Optional (dashed = insert/assist)
+  C1 -.-> O1["/speckit.clarify"]
+  O1 -.-> C2
+
+  C3 -.-> O2["/speckit.analyze"]
+  O2 -.-> C4
+
+  C1 -.-> O3["/speckit.checklist"]
+  C2 -.-> O3
+  C3 -.-> O3
+```
+
 ### Environment Variables
 
 | Variable          | Description                                                                                                                                                                                                                                                                                            |
