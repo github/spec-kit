@@ -37,3 +37,20 @@ The local branch list is now:
 - `guardian-state`
 
 (Note: Use `git label` or `git show <tagname>` to retrieve archived states if needed).
+
+## Remote Branches Archive
+
+In addition to local branches, remote branches were also archived and deleted from `origin` to clean up the view.
+
+### Archived Remote Branches
+
+- `origin/001-add-a-comprehensive` -> Tag: `archive/2026-01-04/remote/001-add-a-comprehensive`
+- `origin/003-implement-business-logic` -> Tag: `archive/2026-01-04/remote/003-implement-business-logic`
+- `origin/004-feature` -> Tag: `archive/2026-01-04/remote/004-feature`
+
+### Current Remote Status
+
+The remote `origin` now only contains:
+
+- `main`
+- `guardian-state`
