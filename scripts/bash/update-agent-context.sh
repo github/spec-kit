@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
+#    - Supports: Claude, Gemini, Copilot, Cursor, Antigravity, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Amazon Q Developer CLI
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|bob|qoder
+# Agent types: claude|gemini|copilot|cursor-agent|antigravity|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|bob|qoder
 # Leave empty to update all existing agent files
 
 set -e
@@ -63,6 +63,7 @@ CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/agents/copilot-instructions.md"
 CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
+ANTIGRAVITY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 QWEN_FILE="$REPO_ROOT/QWEN.md"
 AGENTS_FILE="$REPO_ROOT/AGENTS.md"
 WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
@@ -594,6 +595,9 @@ update_specific_agent() {
         cursor-agent)
             update_agent_file "$CURSOR_FILE" "Cursor IDE"
             ;;
+        antigravity)
+            update_agent_file "$ANTIGRAVITY_FILE" "Antigravity IDE"
+            ;;
         qwen)
             update_agent_file "$QWEN_FILE" "Qwen Code"
             ;;
@@ -635,7 +639,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|antigravity|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
             exit 1
             ;;
     esac
@@ -662,6 +666,11 @@ update_all_existing_agents() {
     
     if [[ -f "$CURSOR_FILE" ]]; then
         update_agent_file "$CURSOR_FILE" "Cursor IDE"
+        found_agent=true
+    fi
+    
+    if [[ -f "$ANTIGRAVITY_FILE" ]]; then
+        update_agent_file "$ANTIGRAVITY_FILE" "Antigravity IDE"
         found_agent=true
     fi
     
@@ -744,7 +753,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|antigravity|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder]"
 }
 
 #==============================================================================
