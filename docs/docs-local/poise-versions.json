@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "metadata": {
+    "created": "2026-01-04T16:13:25-04:00",
+    "lastModified": "2026-01-04T16:13:25-04:00",
+    "projectRoot": "/home/leonai-do/Host-D-Drive/LeonAI_DO/dev/Framework Comparison"
+  },
+  "prompts": {
+    "universal-framework-evaluation-system": {
+      "current": "v1",
+      "history": [
+        {
+          "version": "v1",
+          "date": "2026-01-04T16:13:25-04:00",
+          "path": "docs/docs-local/2026-01-04/prompts/poise/universal-framework-evaluation-system-v1-20260104-161325.md",
+          "note": "Initial version created via POISE"
+        }
+      ]
+    }
+  }
+}
