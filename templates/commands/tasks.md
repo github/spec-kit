@@ -75,13 +75,18 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map endpoints to user stories
-   - If research.md exists: Extract decisions for setup tasks
+   - If research.md exists:
+     - Extract decisions for setup tasks
+     - **Extract Existing Codebase Analysis** → reuse decisions
+     - **Extract reuse/extend/new markers** for each component
    - **Map IDEA_TECHNICAL_REQUIREMENTS to specific tasks** (see Task Generation Rules)
+   - **Map REUSE DECISIONS to specific tasks** (see Reuse Task Rules below)
    - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
    - Create parallel execution examples per user story
    - Validate task completeness (each user story has all needed tasks, independently testable)
    - **Validate technical alignment** (each idea requirement maps to at least one task)
+   - **Validate reuse alignment** (reuse decisions from research.md are reflected in tasks)
 
 6. **Generate tasks.md**: Use `templates/tasks-template.md` as structure, fill with:
    - Correct feature name from plan.md
@@ -105,6 +110,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Suggested MVP scope (typically just User Story 1)
    - Format validation: Confirm ALL tasks follow the checklist format (checkbox, ID, labels, file paths)
    - **Idea alignment status**: Confirm all technical requirements from idea are mapped to tasks
+   - **Reuse summary**: Count of REUSE/EXTEND/REFACTOR/NEW tasks
+   - **Reuse ratio**: If NEW > 50%, flag for review
 
 Context for task generation: {ARGS}
 
@@ -182,6 +189,46 @@ Every task MUST strictly follow this format:
   - Each phase should be a complete, independently testable increment
 - **Final Phase**: Polish & Cross-Cutting Concerns
 
+### Reuse Task Rules (CRITICAL)
+
+Tasks MUST reflect the reuse decisions from research.md. Use these markers in task descriptions:
+
+**Task Type Markers**:
+- `[REUSE]` - Use existing component as-is (just wire it up)
+- `[EXTEND]` - Add capabilities to existing component
+- `[REFACTOR]` - Modify existing component for broader use
+- `[NEW]` - Create new component (must be justified in research.md)
+
+**Examples**:
+
+- ✅ `- [ ] T005 [P] [US1] [REUSE] Wire existing AuthService for user validation`
+- ✅ `- [ ] T008 [US2] [EXTEND] Add export method to existing ReportService in src/services/report.py`
+- ✅ `- [ ] T012 [US3] [REFACTOR] Generalize NotificationService to support SMS in src/services/notification.py`
+- ✅ `- [ ] T015 [P] [US4] [NEW] Create PaymentGateway integration in src/services/payment.py`
+
+**Reuse Task Requirements**:
+
+1. **For [REUSE] tasks**:
+   - Reference the existing component path
+   - Describe how to integrate/wire it
+   - No new file creation needed
+
+2. **For [EXTEND] tasks**:
+   - Reference the existing component to extend
+   - Describe the new capability to add
+   - Specify the extension approach (new method, parameter, etc.)
+
+3. **For [REFACTOR] tasks**:
+   - Reference the existing component to refactor
+   - Describe the refactoring goal
+   - List what other code might be affected
+   - Include task to update existing usages if needed
+
+4. **For [NEW] tasks**:
+   - Must reference research.md justification
+   - Explain why existing code couldn't be used
+   - Follow existing patterns from codebase
+
 ### Idea Technical Traceability (REQUIRED)
 
 At the end of tasks.md, include a traceability section that maps each technical requirement from the source idea to specific tasks:
@@ -219,3 +266,44 @@ Order preserved: ✅ Yes
 **CRITICAL**: If any technical requirement from the idea is NOT mapped to a task:
 1. Add the missing task(s)
 2. Or document why it was intentionally omitted (with user confirmation)
+
+### Reuse Traceability (REQUIRED)
+
+After the Idea Technical Traceability section, include a reuse summary:
+
+```markdown
+## Reuse Traceability
+
+**Source**: research.md (Existing Codebase Analysis)
+
+### Reuse Summary
+
+| Type | Count | Tasks |
+|------|-------|-------|
+| REUSE | X | T001, T005, ... |
+| EXTEND | X | T008, T012, ... |
+| REFACTOR | X | T015, ... |
+| NEW | X | T020, T021, ... |
+
+### Reuse Decisions
+
+| Component | Decision | Task | Justification |
+|-----------|----------|------|---------------|
+| AuthService | REUSE | T005 | Existing auth fits requirements |
+| ReportService | EXTEND | T008 | Add export capability |
+| NotificationService | REFACTOR | T012 | Generalize for SMS support |
+| PaymentGateway | NEW | T020 | No existing payment integration |
+
+### New Code Justifications
+
+For each [NEW] task, reference the research.md justification:
+
+| Task | Component | Why Not Reuse? |
+|------|-----------|----------------|
+| T020 | PaymentGateway | No existing payment code; external API integration required |
+```
+
+**CRITICAL**:
+- More [REUSE] and [EXTEND] tasks than [NEW] tasks indicates good code reuse
+- Every [NEW] task must have explicit justification from research.md
+- If ratio of [NEW] > 50%, reconsider if existing code was properly explored
