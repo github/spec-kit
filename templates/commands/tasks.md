@@ -31,18 +31,59 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Optional**: data-model.md (entities), contracts/ (API endpoints), research.md (decisions), quickstart.md (test scenarios)
    - Note: Not all projects have all documents. Generate tasks based on what's available.
 
-3. **Execute task generation workflow**:
+3. **Load source idea (CRITICAL for alignment)**:
+   - Check plan.md for "Idea Technical Alignment" section → extract source idea path
+   - If not found, check spec.md for `**Source**:` or `**Parent Idea**:` links
+   - If still not found, search `ideas/` directory for matching idea
+   - Load the idea.md and any feature files
+   - Extract **Technical Hints** and **Constraints** sections
+   - Store as IDEA_TECHNICAL_REQUIREMENTS for validation in step 4
+
+4. **Validate alignment with source idea (BEFORE generating tasks)**:
+
+   CRITICAL: Before generating any tasks, verify alignment with IDEA_TECHNICAL_REQUIREMENTS:
+
+   a. **Extract technical specifics from idea**:
+      - Commands or CLI instructions to execute (with order)
+      - Specific tools, libraries, or versions mentioned
+      - Step-by-step technical procedures
+      - Configuration patterns or approaches
+      - Integration sequences or protocols
+
+   b. **Cross-check with plan.md**:
+      - Verify plan's "Idea Technical Alignment" section exists
+      - If plan has divergences, they MUST be carried to tasks (not ignored)
+      - If plan is missing alignment section, perform alignment check now
+
+   c. **Pre-generation checklist**:
+      ```
+      For each technical requirement in idea:
+      □ Is it reflected in plan.md?
+      □ Will the generated tasks implement it correctly?
+      □ Is the execution order preserved?
+      □ Are specific commands/tools preserved (not substituted)?
+      ```
+
+   d. **STOP if misalignment detected**:
+      - If idea specifies technical approach X but plan uses approach Y
+      - Report the divergence to user BEFORE generating tasks
+      - Ask for explicit confirmation to proceed with plan's approach
+      - Document decision in tasks.md header
+
+5. **Execute task generation workflow**:
    - Load plan.md and extract tech stack, libraries, project structure
    - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map endpoints to user stories
    - If research.md exists: Extract decisions for setup tasks
+   - **Map IDEA_TECHNICAL_REQUIREMENTS to specific tasks** (see Task Generation Rules)
    - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
    - Create parallel execution examples per user story
    - Validate task completeness (each user story has all needed tasks, independently testable)
+   - **Validate technical alignment** (each idea requirement maps to at least one task)
 
-4. **Generate tasks.md**: Use `templates/tasks-template.md` as structure, fill with:
+6. **Generate tasks.md**: Use `templates/tasks-template.md` as structure, fill with:
    - Correct feature name from plan.md
    - Phase 1: Setup tasks (project initialization)
    - Phase 2: Foundational tasks (blocking prerequisites for all user stories)
@@ -54,14 +95,16 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Dependencies section showing story completion order
    - Parallel execution examples per story
    - Implementation strategy section (MVP first, incremental delivery)
+   - **Idea Technical Traceability section** (see below)
 
-5. **Report**: Output path to generated tasks.md and summary:
+7. **Report**: Output path to generated tasks.md and summary:
    - Total task count
    - Task count per user story
    - Parallel opportunities identified
    - Independent test criteria for each story
    - Suggested MVP scope (typically just User Story 1)
    - Format validation: Confirm ALL tasks follow the checklist format (checkbox, ID, labels, file paths)
+   - **Idea alignment status**: Confirm all technical requirements from idea are mapped to tasks
 
 Context for task generation: {ARGS}
 
@@ -138,3 +181,41 @@ Every task MUST strictly follow this format:
   - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
 - **Final Phase**: Polish & Cross-Cutting Concerns
+
+### Idea Technical Traceability (REQUIRED)
+
+At the end of tasks.md, include a traceability section that maps each technical requirement from the source idea to specific tasks:
+
+```markdown
+## Idea Technical Traceability
+
+**Source Idea**: [path to idea.md]
+
+### Technical Requirements Mapping
+
+| Idea Requirement | Task(s) | Status |
+|------------------|---------|--------|
+| [Command/tool/approach from idea] | T001, T005 | ✅ Mapped |
+| [Execution order requirement] | T003 → T004 → T005 | ✅ Order preserved |
+| [Specific library/version] | T002 | ✅ Mapped |
+
+### Execution Order Preservation
+
+If the idea specified a particular execution order:
+
+```
+Idea specified: Step A → Step B → Step C
+Tasks implement: T003 (Step A) → T007 (Step B) → T012 (Step C)
+Order preserved: ✅ Yes
+```
+
+### Divergences from Idea (if any)
+
+| Idea Specified | Task Implements | Justification |
+|----------------|-----------------|---------------|
+| [original approach] | [different approach] | [documented reason from plan.md] |
+```
+
+**CRITICAL**: If any technical requirement from the idea is NOT mapped to a task:
+1. Add the missing task(s)
+2. Or document why it was intentionally omitted (with user confirmation)

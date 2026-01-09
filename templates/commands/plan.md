@@ -30,7 +30,18 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+3. **Load source idea (CRITICAL)**: Extract the SOURCE IDEA from spec.md header or locate it:
+   - Check spec.md for `**Source**:` or `**Parent Idea**:` links
+   - If found, load the linked idea.md file
+   - If not found, search `ideas/` directory for matching idea by feature name
+   - Extract **Technical Hints** section from idea (if present)
+   - Extract any technical details from:
+     - "Constraints & Assumptions" → technical constraints
+     - "Discovery Notes" → technical decisions made during exploration
+     - Feature files → "Technical Hints" or "Notes" sections
+   - Store these as IDEA_TECHNICAL_CONSTRAINTS for validation in step 5
+
+4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
@@ -39,7 +50,49 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
-4. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+5. **Validate alignment with source idea (CRITICAL)**:
+
+   Before finalizing, verify that the plan respects IDEA_TECHNICAL_CONSTRAINTS:
+
+   a. **Extract technical requirements from idea**:
+      - Commands or scripts that must be executed
+      - Specific tools, libraries, or versions mentioned
+      - Execution order or sequencing requirements
+      - Technical patterns or approaches specified
+      - Integration points with specific instructions
+
+   b. **Cross-check with plan.md**:
+      - For each technical constraint in the idea:
+        - ✅ ALIGNED: Plan explicitly addresses it
+        - ⚠️ DIVERGENT: Plan uses different approach → requires justification
+        - ❌ MISSING: Plan doesn't address it → add to plan
+
+   c. **Create alignment report** in plan.md:
+
+      ```markdown
+      ## Idea Technical Alignment
+
+      **Source Idea**: [path to idea.md]
+
+      ### Technical Constraints from Idea
+
+      | Constraint | Status | Plan Reference |
+      |------------|--------|----------------|
+      | [constraint from idea] | ✅/⚠️/❌ | [section in plan] |
+
+      ### Divergences (if any)
+
+      | Idea Specified | Plan Proposes | Justification |
+      |----------------|---------------|---------------|
+      | [original] | [different approach] | [why change is better] |
+      ```
+
+   d. **STOP and report if critical divergences**:
+      - If plan contradicts explicit technical instructions from idea
+      - Ask user to confirm before proceeding
+      - Document the decision in research.md
+
+6. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, generated artifacts, and **alignment status with source idea**.
 
 ## Phases
 
