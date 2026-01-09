@@ -52,9 +52,75 @@ import readchar
 import ssl
 import truststore
 from datetime import datetime, timezone
+import locale
 
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
+
+def get_user_locale() -> str:
+    """
+    Detect user's preferred locale for templates.
+    
+    Returns:
+        'ko' for Korean, 'en' for English (default)
+    
+    Priority:
+        1. SPECIFY_LANG environment variable
+        2. System locale (ko_KR, ko_*, etc.)
+        3. Default to 'en'
+    """
+    # Check environment variable first
+    env_lang = os.getenv("SPECIFY_LANG", "").strip().lower()
+    if env_lang in ("ko", "korean", "kr"):
+        return "ko"
+    elif env_lang in ("en", "english"):
+        return "en"
+    
+    # Check system locale
+    try:
+        user_locale, _ = locale.getdefaultlocale()
+        if user_locale and user_locale.startswith("ko"):
+            return "ko"
+    except Exception:
+        pass  # Fallback to default
+    
+    return "en"
+
+def get_localized_file(base_path: Path, locale_code: str = None) -> Path:
+    """
+    Get localized version of a file if available, otherwise return base file.
+    
+    Args:
+        base_path: Path to the base file (e.g., 'spec-template.md')
+        locale_code: Locale code (e.g., 'ko'). If None, auto-detect.
+    
+    Returns:
+        Path to localized file (e.g., 'spec-template.ko.md') if exists,
+        otherwise returns the base file path.
+    
+    Example:
+        >>> get_localized_file(Path('templates/spec-template.md'), 'ko')
+        Path('templates/spec-template.ko.md')  # if exists
+        Path('templates/spec-template.md')     # if .ko.md doesn't exist
+    """
+    if locale_code is None:
+        locale_code = get_user_locale()
+    
+    # If English or no locale, return base path
+    if locale_code == "en":
+        return base_path
+    
+    # Check for localized version
+    stem = base_path.stem  # e.g., 'spec-template'
+    suffix = base_path.suffix  # e.g., '.md'
+    localized_name = f"{stem}.{locale_code}{suffix}"  # e.g., 'spec-template.ko.md'
+    localized_path = base_path.parent / localized_name
+    
+    if localized_path.exists():
+        return localized_path
+    
+    # Fallback to base file
+    return base_path
 
 def _github_token(cli_token: str | None = None) -> str | None:
     """Return sanitized GitHub token (cli arg takes precedence) or None."""
