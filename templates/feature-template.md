@@ -131,14 +131,55 @@
 ## Technical Hints
 
 <!--
-  Optional section for technical considerations that are known.
-  NOT implementation details, but constraints or approaches.
-  Keep this high-level and technology-agnostic when possible.
+  CRITICAL: This section captures technical requirements that MUST be preserved
+  throughout specification, planning, and implementation.
+
+  These hints will be:
+  1. Carried forward to spec.md as "Technical Hints (For Planning)"
+  2. Validated during /speckit.plan for alignment
+  3. Traced to specific tasks in tasks.md
+  4. Verified before implementation begins
+
+  Include specific details when you have them - don't leave them implicit.
 -->
 
-- [Any known technical constraints]
-- [Integration points with external systems]
-- [Performance considerations]
+### Required Commands/Scripts
+
+<!--
+  List any specific commands or scripts that must be executed for this feature.
+  Include the exact syntax and execution order.
+-->
+
+| Order | Command/Script | Purpose |
+|-------|----------------|---------|
+| 1 | [command] | [what it does] |
+| 2 | [command] | [what it does] |
+
+### Required Tools & Versions
+
+<!--
+  Specify exact tools, libraries, or versions if they matter for this feature.
+-->
+
+- **[Tool/Library]**: [version requirement] - [why this specific version]
+
+### Integration Constraints
+
+<!--
+  Document integration patterns, API endpoints, or protocols this feature must use.
+-->
+
+- [Integration point with external systems]
+- [Protocol or pattern that must be followed]
+
+### Implementation Notes
+
+<!--
+  Other technical guidance that must be followed for this feature.
+-->
+
+- [Technical constraint 1]
+- [Performance consideration]
 
 ## Open Questions
 

@@ -19,11 +19,20 @@ You **MUST** consider the user input before proceeding (if not empty).
 2. **Load required context documents**:
    - **REQUIRED**: Read tasks.md for complete task list and structure
    - **REQUIRED**: Read plan.md for tech stack and architecture
+   - **REQUIRED**: Read research.md for:
+     - **Existing Codebase Analysis** section (reusable components, patterns)
+     - **Reuse decisions** (REUSE/EXTEND/REFACTOR/NEW for each component)
+     - **Technical decisions** with justifications
    - **IF EXISTS**: Read spec.md for feature requirements
    - **IF EXISTS**: Read data-model.md for entities and relationships
    - **IF EXISTS**: Read constitution.md for project principles
    - **IF EXISTS**: Scan contracts/ directory for API specifications
-   - **IF EXISTS**: Read research.md for technical decisions
+
+   **CRITICAL**: Extract from research.md:
+   - List of components marked for REUSE (must wire up, not recreate)
+   - List of components marked for EXTEND (must add to existing, not duplicate)
+   - List of components marked for REFACTOR (must modify existing)
+   - List of components marked for NEW (only these should create new files)
 
 2b. **Check for specialized agents**:
    - Check if .claude/agents/speckit/researcher.md exists
@@ -71,6 +80,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 This phase runs **ONLY** after user confirms which phase to process.
 
+**PURPOSE**: Reduce uncertainty between the technical plan and actual implementation by validating reuse decisions against current codebase state.
+
 7. **Launch researcher agent for codebase analysis**:
 
    Use Task tool with:
@@ -82,15 +93,44 @@ This phase runs **ONLY** after user confirms which phase to process.
    ```
    You are the researcher agent for SpecKit breakdown.
 
-   Task: Analyze the codebase to identify implementation patterns and best practices for {Phase Name}.
+   Task: Validate reuse decisions and analyze the codebase for {Phase Name} implementation.
 
    Context:
    - Feature: {feature-name}
    - Phase: {phase-name}
-   - Tasks to plan: {list of task IDs and descriptions}
+   - Tasks to plan: {list of task IDs and descriptions, with their [REUSE]/[EXTEND]/[REFACTOR]/[NEW] markers}
    - Tech stack: {from plan.md}
+   - Previous reuse decisions: {from research.md Existing Codebase Analysis}
 
-   Your goals:
+   ## CRITICAL: Validate Reuse Decisions
+
+   The plan made reuse decisions during /speckit.plan. Your job is to VALIDATE these are still accurate:
+
+   ### For each [REUSE] task:
+   - VERIFY the component still exists at the specified location
+   - CONFIRM it still has the expected interface/API
+   - CHECK for any recent changes that might affect usage
+   - If changed: Flag as REUSE_NEEDS_UPDATE
+
+   ### For each [EXTEND] task:
+   - VERIFY the base component exists
+   - IDENTIFY the exact extension points (methods, hooks, interfaces)
+   - CHECK if the extension approach is still valid
+   - If blocked: Flag as EXTEND_BLOCKED with reason
+
+   ### For each [REFACTOR] task:
+   - VERIFY the component exists and is refactorable
+   - IDENTIFY all usages that will be affected
+   - CHECK for tests that need updating
+   - If risky: Flag as REFACTOR_HIGH_RISK with details
+
+   ### For each [NEW] task:
+   - DOUBLE-CHECK no existing code can serve this purpose
+   - IDENTIFY similar patterns to follow
+   - If reusable code found: Flag as NEW_SHOULD_BE_REUSE
+
+   ## Standard Research Goals
+
    1. Find existing code patterns relevant to these tasks
    2. Identify framework-specific best practices (be agnostic - discover patterns)
    3. Locate reference implementations in the codebase
@@ -104,14 +144,44 @@ This phase runs **ONLY** after user confirms which phase to process.
    - Check .repomix/ files if they exist for reference patterns
 
    Deliverable: Return a structured research report with:
-   - Existing patterns found (with file:line references)
-   - Framework best practices discovered
-   - Code snippets to reuse/adapt
-   - Gotchas and special considerations
-   - Dependencies and imports needed
+
+   ## Reuse Validation Report
+
+   | Task | Original Decision | Validation | Status |
+   |------|-------------------|------------|--------|
+   | T001 | [REUSE] AuthService | Component exists, API unchanged | ✅ VALID |
+   | T002 | [EXTEND] ReportService | New method signature needed | ⚠️ NEEDS_UPDATE |
+   | T003 | [NEW] PaymentGateway | Found existing payment code! | ❌ SHOULD_REUSE |
+
+   ## Implementation Gaps Discovered
+
+   - Gap 1: [what the plan assumed vs. what actually exists]
+   - Gap 2: [interface mismatch between plan and reality]
+
+   ## Existing Patterns Found
+   - Pattern: {name} at file:line
+   - Pattern: {name} at file:line
+
+   ## Framework Best Practices Discovered
+   - Practice 1 with code snippets
+   - Practice 2 with references
+
+   ## Gotchas and Special Considerations
+   - Gotcha 1 from constitution or code
+   - Gotcha 2 from previous implementations
+
+   ## Dependencies and Imports Needed
+   - Import list per task
    ```
 
-8. **Wait for researcher agent to complete**: Store research findings for use in planning.
+8. **Validate and report reuse decision changes**:
+   - Parse researcher agent response
+   - If any NEEDS_UPDATE, BLOCKED, HIGH_RISK, or SHOULD_REUSE flags:
+     - Display to user: "⚠️ Reuse decisions need review:"
+     - List each flagged task with reason
+     - Ask: "Update tasks with corrected decisions? (yes/no)"
+     - If yes: Update tasks.md markers accordingly
+   - Store validated research findings for use in planning
 
 ### Phase 3: Group-Based Task Planning (Optimized)
 
@@ -199,12 +269,39 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
        **Phase**: {phase}
        **User Story**: {US# or N/A}
        **Parallel**: {Yes/No}
+       **Reuse Type**: {REUSE/EXTEND/REFACTOR/NEW}
+
+       ---
+
+       ## Reuse Decision (CRITICAL)
+
+       **Original Decision**: {from tasks.md marker}
+       **Validation Status**: {VALID/NEEDS_UPDATE/SHOULD_REUSE}
+
+       ### If REUSE:
+       - **Existing Component**: `{path}` (verified exists)
+       - **How to Wire**: {exact integration steps}
+       - **NO new files should be created**
+
+       ### If EXTEND:
+       - **Base Component**: `{path}` (verified exists)
+       - **Extension Point**: {method/hook/interface to use}
+       - **New Capability**: {what to add}
+
+       ### If REFACTOR:
+       - **Target Component**: `{path}` (verified exists)
+       - **Refactoring Goal**: {what to change}
+       - **Affected Usages**: {list of files that use this component}
+
+       ### If NEW:
+       - **Justification**: {why no existing code works}
+       - **Similar Pattern to Follow**: `{path}` for reference
 
        ---
 
        ## Codebase Impact Analysis
 
-       ### Files to Create
+       ### Files to Create (only for [NEW] tasks)
        - `{path}` - {purpose}
 
        ### Files to Modify
@@ -334,6 +431,22 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
 
 ## Operating Principles
 
+### Reduce Uncertainty
+
+The primary goal of breakdown is to **reduce uncertainty** between the technical plan and actual implementation:
+
+- **Validate assumptions**: Check that components marked for reuse still exist and work as expected
+- **Discover gaps**: Identify mismatches between plan assumptions and codebase reality
+- **Update decisions**: Correct reuse decisions if the codebase has changed
+- **Fine-tune approach**: Provide exact file paths, line numbers, and code snippets
+
+### Reuse-First Implementation
+
+- **Honor reuse decisions**: Tasks marked [REUSE] must NOT create new files
+- **Extend carefully**: Tasks marked [EXTEND] must identify exact extension points
+- **Refactor safely**: Tasks marked [REFACTOR] must list all affected code
+- **Justify new code**: Tasks marked [NEW] must confirm no reusable alternative exists
+
 ### Progressive Execution
 
 - **Phase-by-phase**: Work on current phase only, not all phases at once
@@ -376,13 +489,16 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
 ## Important Notes
 
 - **NEVER process all phases at once** - work on current phase only
+- **VALIDATE REUSE DECISIONS** - always check if planned reuse is still valid before planning
+- **REDUCE UNCERTAINTY** - the goal is to close gaps between plan and reality
 - **GROUP tasks by topic** - plan related tasks together for coherence and efficiency
 - **UPDATE tasks.md after each group** - not after each individual task
 - **USE result files** - learn from previous implementations
 - **BE AGNOSTIC** - discover patterns, don't assume frameworks
-- **USE AGENTS** - researcher for analysis, planner for groups
+- **USE AGENTS** - researcher for analysis and reuse validation, planner for groups
 - **FOCUS ON CURRENT PHASE** - don't try to plan everything upfront
 - **PARSE carefully** - split agent response by ---TASK_SEPARATOR--- to extract individual plans
+- **HONOR REUSE MARKERS** - [REUSE] tasks must NOT create new files, [NEW] must justify why
 
 ## Context
 

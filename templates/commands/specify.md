@@ -66,8 +66,16 @@ ELSE:
    - Target Users → Personas (cross-reference with feature)
    - Goals → Success metrics context
    - Features Overview → Understand where this feature fits
+   - **Constraints & Assumptions** → Technical constraints to preserve
+   - **Discovery Notes** → Technical decisions made during exploration
 
-4. Add source links in spec header:
+4. **Extract Technical Hints (CRITICAL for downstream alignment)**:
+   - From idea.md "Constraints & Assumptions" section → extract technical constraints
+   - From idea.md "Discovery Notes" section → extract technical decisions/commands
+   - From feature file "Technical Hints" or "Notes" sections → extract implementation guidance
+   - These hints will be preserved in the spec for the /plan command to use
+
+5. Add source links in spec header:
    ```markdown
    **Source**: [Feature ##](./features/##-feature-name.md)
    **Parent Idea**: [idea.md](./idea.md)
@@ -78,7 +86,8 @@ ELSE:
 1. Load `idea.md` as the primary source
 2. Use Vision, Problem Statement, Target Users, Goals, Scope, and Use Cases
 3. Cross-reference Discovery Notes for clarifications
-4. Add source link: `**Source**: [idea.md](./idea.md)`
+4. **Extract Technical Hints** from Constraints & Assumptions and Discovery Notes
+5. Add source link: `**Source**: [idea.md](./idea.md)`
 
 **Description Mode** (no idea document):
 
@@ -184,9 +193,45 @@ Given that feature description (or idea document), do this:
        Include both quantitative metrics (time, performance, volume) and qualitative measures (user satisfaction, task completion)
        Each criterion must be verifiable without implementation details
     7. Identify Key Entities (if data involved)
-    8. Return: SUCCESS (spec ready for planning)
+    8. **Include Technical Hints section** (if extracted from idea):
+       - Add a "Technical Hints" section at the end of the spec
+       - Include commands, tools, libraries, or approaches specified in the idea
+       - Preserve execution order requirements
+       - Mark as "For implementation planning - not part of functional spec"
+    9. Return: SUCCESS (spec ready for planning)
 
 5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+
+   **IMPORTANT**: If Technical Hints were extracted from the idea (step 4 above), add this section at the end of the spec:
+
+   ```markdown
+   ---
+
+   ## Technical Hints (For Planning)
+
+   > **Note**: This section preserves technical guidance from the source idea.
+   > It is NOT part of the functional specification but MUST be considered during `/speckit.plan`.
+
+   ### Source
+
+   - **Idea**: [path to idea.md]
+   - **Feature**: [path to feature file, if applicable]
+
+   ### Technical Constraints
+
+   [List technical constraints from idea's Constraints & Assumptions section]
+
+   ### Implementation Guidance
+
+   [List any commands, tools, libraries, or step-by-step procedures from idea]
+   - Command/Step 1: [description]
+   - Command/Step 2: [description]
+   - Execution order: [specify if order matters]
+
+   ### Discovery Decisions
+
+   [Key technical decisions from idea's Discovery Notes]
+   ```
 
 6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 

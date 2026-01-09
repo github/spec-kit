@@ -286,3 +286,62 @@
 
 - Q: [Question asked] → A: [Answer given]
 - Q: [Question asked] → A: [Answer given]
+
+## Technical Hints
+
+<!--
+  IMPORTANT: This section captures technical requirements that MUST be preserved
+  throughout the specification, planning, and implementation phases.
+
+  Use this section when:
+  - You have specific commands or scripts that must be executed
+  - You know the exact tools, libraries, or versions required
+  - There's a specific execution order that must be followed
+  - You have integration patterns or protocols that must be used
+
+  Everything documented here will be:
+  1. Carried forward to spec.md as "Technical Hints (For Planning)"
+  2. Validated during /speckit.plan for alignment
+  3. Traced to specific tasks in tasks.md
+  4. Verified before implementation begins
+-->
+
+### Required Commands/Scripts
+
+<!--
+  List any specific commands or scripts that must be executed.
+  Include the exact syntax and execution order.
+-->
+
+| Order | Command/Script | Purpose |
+|-------|----------------|---------|
+| 1 | [command] | [what it does] |
+| 2 | [command] | [what it does] |
+
+### Required Tools & Versions
+
+<!--
+  Specify exact tools, libraries, or versions if they matter.
+  Only include if you have a specific requirement (not preferences).
+-->
+
+- **[Tool/Library]**: [version requirement] - [why this specific version]
+
+### Integration Sequences
+
+<!--
+  Document any specific integration patterns or protocols.
+  Include API endpoints, authentication flows, or data formats.
+-->
+
+[Describe the integration sequence if applicable]
+
+### Implementation Notes
+
+<!--
+  Any other technical guidance that must be followed.
+  This will be validated during planning and task generation.
+-->
+
+- [Technical note 1]
+- [Technical note 2]

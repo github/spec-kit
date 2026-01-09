@@ -322,6 +322,32 @@ Recommended order based on dependencies and priority:
 [Summary of key decisions made during exploration]
 - Q: [Question asked] → A: [Answer given]
 - Q: [Question asked] → A: [Answer given]
+
+## Technical Hints
+
+<!--
+  IMPORTANT: Capture technical requirements that MUST be preserved
+  throughout specification, planning, and implementation.
+  This section is critical for downstream alignment.
+-->
+
+### Required Commands/Scripts
+
+| Order | Command/Script | Purpose |
+|-------|----------------|---------|
+| 1 | [command] | [what it does] |
+
+### Required Tools & Versions
+
+- **[Tool/Library]**: [version] - [why required]
+
+### Integration Sequences
+
+[Describe integration patterns or protocols if applicable]
+
+### Implementation Notes
+
+- [Technical note that must be preserved]
 ```
 
 #### 3.3 Generate Feature Files (if complexity ≥ 4)
@@ -378,6 +404,27 @@ Use the feature template structure:
 
 ### Enables
 - [Feature ##]: [What this feature provides to it]
+
+## Technical Hints
+
+<!--
+  CRITICAL: Capture technical requirements that MUST be preserved.
+  These will be validated during planning and traced to tasks.
+-->
+
+### Required Commands/Scripts
+
+| Order | Command/Script | Purpose |
+|-------|----------------|---------|
+| 1 | [command] | [what it does] |
+
+### Required Tools & Versions
+
+- **[Tool/Library]**: [version] - [why required]
+
+### Implementation Notes
+
+- [Technical constraint]
 
 ## Open Questions
 
