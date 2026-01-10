@@ -21,6 +21,89 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Flags
+
+Parse the following flags from user input:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sequential` | false | Force single-agent mode (no subagents, current behavior) |
+
+## Execution Mode Detection
+
+**BEFORE generating specification**, determine execution mode:
+
+1. Check if `--sequential` flag is present → **Sequential Mode**
+2. Otherwise → **Parallel Mode** (default)
+
+### Parallel Mode (default)
+
+When `--sequential` is NOT set, explore 4 concept dimensions concurrently:
+
+```
+[speckit] Parallel mode: 4 concept dimensions
+[speckit] Max concurrent subagents: unlimited
+```
+
+**Spawn 4 subagents** for concept extraction:
+
+Dimensions: Actors, Actions, Data, Constraints
+
+For each dimension:
+```
+Task(
+  subagent_type: "general-purpose",
+  prompt: "Extract {dimension} concepts from feature description.
+
+           Feature description: {user_description}
+
+           Focus on {dimension}:
+           {dimension_specific_instructions}
+
+           Output format:
+           - List of {dimension} identified
+           - For each: name, description, relationships
+
+           Write results to: .claude/workspace/results/specify-{dimension}-result.md",
+  description: "specify:{dimension}"
+)
+```
+
+Dimension-specific instructions:
+- **Actors**: Who uses the system? Roles, personas, external systems
+- **Actions**: What do users do? User goals, operations, workflows
+- **Data**: What data is involved? Entities, attributes, relationships
+- **Constraints**: What limits apply? Business rules, validations, requirements
+
+**Progress reporting**:
+```
+[██████████] 4/4 dimensions complete
+  ✓ actors (2.1s) - 3 identified
+  ✓ actions (2.8s) - 7 identified
+  ✓ data (3.2s) - 5 entities
+  ✓ constraints (1.9s) - 4 rules
+```
+
+**Concept merge**: After all 4 subagents complete:
+1. Read all result files from `.claude/workspace/results/specify-*-result.md`
+2. Deduplicate overlapping concepts (same entity mentioned by multiple dimensions)
+3. Combine into unified spec structure:
+   - User Stories (from Actors + Actions)
+   - Key Entities (from Data)
+   - Functional Requirements (from Actions + Constraints)
+   - Non-Functional Requirements (from Constraints)
+4. Proceed with validation and spec generation
+
+### Sequential Mode (fallback)
+
+When `--sequential` is set:
+
+```
+[speckit] Sequential mode: single-agent execution
+```
+
+Proceed with current behavior (extract all concepts in main agent).
+
 ## Outline
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.

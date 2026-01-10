@@ -20,7 +20,7 @@ Parse the following flags from user input:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--sequential` | false | Force single-agent mode (no subagents, current behavior) |
-| `--max-parallel N` | 10 | Maximum concurrent subagents (1-10, Claude Code hard cap) |
+| `--max-parallel N` | unlimited | Maximum concurrent subagents (default: unlimited) |
 | `--no-auto-commit` | false | Skip automatic git commits after gates |
 | `--dry-run` | false | Show execution plan without running tasks |
 
@@ -38,7 +38,7 @@ When `tasks.execution.yaml` is detected and `--sequential` is NOT set:
 
 ```
 [speckit] Parallel mode: tasks.execution.yaml detected
-[speckit] Max concurrent subagents: 10
+[speckit] Max concurrent subagents: unlimited
 [speckit] Phases: 5 | Batches: 12 | Tasks: 25
 ```
 

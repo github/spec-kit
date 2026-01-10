@@ -24,6 +24,104 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Flags
+
+Parse the following flags from user input:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sequential` | false | Force single-agent mode (no subagents, current behavior) |
+
+## Execution Mode Detection
+
+**BEFORE starting planning**, determine execution mode:
+
+1. Check if `--sequential` flag is present → **Sequential Mode**
+2. Otherwise → **Parallel Mode** (default)
+
+### Parallel Mode (default)
+
+When `--sequential` is NOT set:
+
+```
+[speckit] Parallel mode: research and artifact generation
+[speckit] Max concurrent subagents: unlimited
+```
+
+#### Phase 0: Parallel Research
+
+For each NEEDS CLARIFICATION item in Technical Context, spawn a research subagent:
+```
+Task(
+  subagent_type: "general-purpose",
+  prompt: "Research {unknown} for {feature context}.
+
+           Find:
+           - Best practices
+           - Common patterns
+           - Recommended approaches
+
+           Output format:
+           - Decision: [what was chosen]
+           - Rationale: [why chosen]
+           - Alternatives considered: [what else evaluated]
+
+           Write results to: .claude/workspace/results/research-{topic}-result.md",
+  description: "plan:research-{topic}"
+)
+```
+
+**Progress reporting**:
+```
+[████░░░░░░] 2/4 research tasks complete
+  ✓ auth-patterns (5.2s) - OAuth2 recommended
+  ✓ database-options (4.8s) - PostgreSQL selected
+  ⏳ api-design...
+  ⏳ caching-strategy...
+```
+
+After all research completes, consolidate into research.md.
+
+#### Phase 1: Parallel Artifact Generation
+
+Spawn subagents for independent artifacts:
+```
+Task(
+  subagent_type: "general-purpose",
+  prompt: "Generate {artifact} based on feature spec and research.
+
+           Context:
+           - spec: {spec_path}
+           - research: {research_path}
+
+           Write to: {artifact_path}",
+  description: "plan:generate-{artifact}"
+)
+```
+
+Artifacts that can run in parallel:
+- data-model.md
+- contracts/ (API schemas)
+- quickstart.md
+
+**Progress reporting**:
+```
+[██████░░░░] 2/3 artifacts complete
+  ✓ data-model.md (8.1s)
+  ✓ contracts/ (12.3s)
+  ⏳ quickstart.md...
+```
+
+### Sequential Mode (fallback)
+
+When `--sequential` is set:
+
+```
+[speckit] Sequential mode: single-agent execution
+```
+
+Proceed with current behavior (execute Phase 0 and Phase 1 sequentially in main agent).
+
 ## Outline
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").

@@ -13,6 +13,76 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Flags
+
+Parse the following flags from user input:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sequential` | false | Force single-agent mode (no subagents, current behavior) |
+
+## Execution Mode Detection
+
+**BEFORE starting analysis**, determine execution mode:
+
+1. Check if `--sequential` flag is present → **Sequential Mode**
+2. Otherwise → **Parallel Mode** (default)
+
+### Parallel Mode (default)
+
+When `--sequential` is NOT set, run 6 detection passes concurrently:
+
+```
+[speckit] Parallel mode: 6 detection passes
+[speckit] Max concurrent subagents: unlimited
+```
+
+**Spawn 6 subagents** using Task tool:
+
+For each detection pass (Duplication, Ambiguity, Underspecification, Constitution, Coverage, Inconsistency):
+```
+Task(
+  subagent_type: "general-purpose",
+  prompt: "Analyze {SPEC}, {PLAN}, {TASKS} for {pass_name} issues only.
+
+           Focus exclusively on {pass_name} detection:
+           {pass_specific_instructions}
+
+           Output format:
+           | ID | Severity | Location(s) | Summary | Recommendation |
+
+           Write results to: .claude/workspace/results/analyze-{pass_name}-result.md",
+  description: "analyze:{pass_name}"
+)
+```
+
+**Progress reporting** during parallel execution:
+```
+[████░░░░░░] 4/6 passes complete
+  ✓ duplication (2.1s) - 0 issues
+  ✓ ambiguity (3.4s) - 1 issue
+  ✓ constitution (1.8s) - 0 issues
+  ✓ coverage (4.2s) - 2 issues
+  ⏳ underspec...
+  ⏳ inconsistency...
+```
+
+**Result merge**: After all 6 subagents complete:
+1. Read all result files from `.claude/workspace/results/analyze-*-result.md`
+2. Concatenate findings by category (preserve original detection pass grouping)
+3. Deduplicate any overlapping findings
+4. Generate unified analysis report
+
+### Sequential Mode (fallback)
+
+When `--sequential` is set:
+
+```
+[speckit] Sequential mode: single-agent execution
+```
+
+Proceed with current behavior (execute Detection Passes A-F sequentially in main agent).
+
 ## Goal
 
 Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (`spec.md`, `plan.md`, `tasks.md`) before implementation. This command MUST run only after `/speckit.tasks` has successfully produced a complete `tasks.md`.
@@ -79,6 +149,8 @@ Create internal representations (do not include raw artifacts in output):
 ### 4. Detection Passes (Token-Efficient Analysis)
 
 Focus on high-signal findings. Limit to 50 findings total; aggregate remainder in overflow summary.
+
+> **Note:** In parallel mode, each pass (A-F) runs as a separate subagent. In sequential mode, all passes run in the main agent.
 
 #### A. Duplication Detection
 

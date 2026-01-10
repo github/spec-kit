@@ -17,6 +17,90 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Flags
+
+Parse the following flags from user input:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sequential` | false | Force single-agent mode (no subagents, current behavior) |
+
+## Execution Mode Detection
+
+**BEFORE starting clarification**, determine execution mode:
+
+1. Check if `--sequential` flag is present → **Sequential Mode**
+2. Otherwise → **Parallel Mode** (default)
+
+### Parallel Mode (default)
+
+When `--sequential` is NOT set, scan 10 taxonomy categories concurrently:
+
+```
+[speckit] Parallel mode: 10 taxonomy categories
+[speckit] Max concurrent subagents: unlimited
+```
+
+**Spawn 10 subagents** for taxonomy scan:
+
+Categories: Functional Scope, Data Model, UX Flow, Non-Functional, Edge Cases, Constraints, Terminology, Completion, Integration, Misc
+
+For each category:
+```
+Task(
+  subagent_type: "general-purpose",
+  prompt: "Scan spec for ambiguities in {category} category only.
+
+           Spec file: {spec_path}
+
+           Focus on {category}:
+           {category_specific_criteria}
+
+           For each ambiguity found, output:
+           - Category: {category}
+           - Status: Clear | Partial | Missing
+           - Question candidate (if Partial/Missing)
+           - Impact score (1-5)
+
+           Write results to: .claude/workspace/results/clarify-{category}-result.md",
+  description: "clarify:{category}"
+)
+```
+
+**Progress reporting**:
+```
+[████████░░] 8/10 categories scanned
+  ✓ functional_scope (1.2s) - Clear
+  ✓ data_model (2.1s) - Partial (1 question)
+  ✓ ux_flow (1.8s) - Clear
+  ✓ non_functional (2.5s) - Missing (2 questions)
+  ✓ edge_cases (1.5s) - Partial (1 question)
+  ✓ constraints (1.1s) - Clear
+  ✓ terminology (0.9s) - Clear
+  ✓ completion (1.3s) - Clear
+  ⏳ integration...
+  ⏳ misc...
+```
+
+**Result merge and prioritization**: After all 10 subagents complete:
+1. Read all result files from `.claude/workspace/results/clarify-*-result.md`
+2. Collect all question candidates
+3. Sort by (Impact * Uncertainty) heuristic
+4. Select top 5 highest-priority questions
+5. Proceed to sequential questioning loop with prioritized queue
+
+### Sequential Mode (fallback)
+
+When `--sequential` is set:
+
+```
+[speckit] Sequential mode: single-agent execution
+```
+
+Proceed with current behavior (scan all categories in main agent).
+
+---
+
 ## Outline
 
 Goal: Detect and reduce ambiguity or missing decision points in the active feature specification and record the clarifications directly in the spec file.

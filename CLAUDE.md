@@ -62,3 +62,10 @@ This repo manages itself:
 1. Test CLI: `uv run specify check`
 2. Test init: `uv run specify init /tmp/test-project --ai claude --force`
 3. Version bump if touching `src/`: update `pyproject.toml` + `CHANGELOG.md`
+
+## Active Technologies
+- Markdown command files (Claude Code native) + Claude Code Task tool, Claude Code CLI (001-parallel-commands)
+- File-based workspace at `.claude/workspace/` (context.md, results/, gates/) (001-parallel-commands)
+
+## Recent Changes
+- 001-parallel-commands: Added Markdown command files (Claude Code native) + Claude Code Task tool, Claude Code CLI

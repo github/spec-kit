@@ -34,6 +34,82 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Flags
+
+Parse the following flags from user input:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sequential` | false | Force single-agent mode (no subagents, current behavior) |
+
+## Execution Mode Detection
+
+**BEFORE generating checklist**, determine execution mode:
+
+1. Check if `--sequential` flag is present → **Sequential Mode**
+2. Otherwise → **Parallel Mode** (default)
+
+### Parallel Mode (default)
+
+When `--sequential` is NOT set, evaluate 6 quality dimensions concurrently:
+
+```
+[speckit] Parallel mode: 6 quality dimensions
+[speckit] Max concurrent subagents: unlimited
+```
+
+**Spawn 6 subagents** using Task tool for quality dimensions:
+
+For each dimension (Completeness, Clarity, Consistency, Measurability, Coverage, EdgeCases):
+```
+Task(
+  subagent_type: "general-purpose",
+  prompt: "Generate checklist items for {dimension} dimension only.
+
+           Feature context: {feature_dir}
+           Spec file: {spec_path}
+
+           Focus on {dimension}:
+           - {dimension_specific_criteria}
+
+           Output checklist items in format:
+           - [ ] CHK### - {requirement quality question} [{dimension}]
+
+           Write results to: .claude/workspace/results/checklist-{dimension}-result.md",
+  description: "checklist:{dimension}"
+)
+```
+
+**Progress reporting** during parallel execution:
+```
+[████░░░░░░] 4/6 dimensions complete
+  ✓ completeness (2.5s) - 8 items
+  ✓ clarity (1.8s) - 5 items
+  ✓ consistency (2.1s) - 4 items
+  ✓ measurability (3.2s) - 6 items
+  ⏳ coverage...
+  ⏳ edge_cases...
+```
+
+**Result merge**: After all 6 subagents complete:
+1. Read all result files from `.claude/workspace/results/checklist-*-result.md`
+2. Concatenate items by dimension (preserve grouping)
+3. Renumber CHK IDs sequentially (CHK001, CHK002, ...)
+4. Apply soft cap (if >40 items, prioritize by risk/impact)
+5. Write unified checklist file
+
+### Sequential Mode (fallback)
+
+When `--sequential` is set:
+
+```
+[speckit] Sequential mode: single-agent execution
+```
+
+Proceed with current behavior (evaluate all dimensions in main agent).
+
+---
+
 ## Execution Steps
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS list.

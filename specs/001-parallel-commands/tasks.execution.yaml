@@ -1,0 +1,750 @@
+version: "1.0"
+feature: parallel-commands
+generated: "2026-01-10T12:00:00Z"
+
+execution_constraints:
+  model: opus-4.5
+  max_parallel_subagents: unlimited  # No hard cap - Claude Code supports unlimited parallel subagents
+  default_task_timeout_seconds: 120
+  gate_timeout_seconds: 60
+  subagent_timeout_seconds: 300
+
+  dispatch_strategy: greedy_queue
+  cross_phase_parallelism: true
+  greedy_refill: true
+
+  async_background:
+    enabled: true
+    background_research_tasks: true
+    wake_on_complete: true
+
+  batch_sizing:
+    prefer_wider_batches: true
+    merge_small_batches: true
+    max_batch_size: 10
+
+  extended_thinking:
+    enabled: true
+    ultrathink_for: [architecture, design, complex_logic]
+
+  retry_policy:
+    max_attempts: 3
+    strategy: exponential
+    initial_delay_seconds: 1
+    max_delay_seconds: 4
+    retry_on: [timeout, rate_limit]
+    fail_fast_on: [syntax_error, import_error, type_error]
+
+  circuit_breaker:
+    - at_failures: 3
+      action: pause_batch
+    - at_failures: 5
+      action: pause_phase
+    - at_failures: 10
+      action: abort
+
+  context_per_subagent: 200k
+
+phases:
+  - id: phase-1
+    name: Setup
+    batches:
+      - id: "1.1"
+        parallel: true
+        tasks:
+          - id: T001
+            description: "Review speckit.implement.md parallel execution pattern"
+            output_file: null
+            context_scope:
+              - .claude/commands/speckit.implement.md
+              - specs/001-parallel-commands/plan.md
+            timeout_seconds: 120
+        gate:
+          command: "test -f .claude/commands/speckit.implement.md"
+          on_fail: "Verify command file exists at expected path"
+
+  - id: phase-2
+    name: Foundational
+    depends_on: [phase-1]
+    batches:
+      - id: "2.1"
+        parallel: true
+        tasks:
+          - id: T002
+            description: "Document --sequential flag parsing pattern in spec workspace"
+            output_file: null
+            context_scope:
+              - specs/001-parallel-commands/contracts/parallel-execution.md
+            timeout_seconds: 120
+          - id: T002a
+            description: "Document --max-parallel flag parsing pattern (default: unlimited)"
+            output_file: null
+            context_scope:
+              - specs/001-parallel-commands/contracts/parallel-execution.md
+              - specs/001-parallel-commands/spec.md#FR-003
+            timeout_seconds: 120
+          - id: T003
+            description: "Document workspace setup pattern (.claude/workspace/)"
+            output_file: null
+            context_scope:
+              - specs/001-parallel-commands/data-model.md#Workspace
+            timeout_seconds: 120
+          - id: T004
+            description: "Document progress reporting format (bar + per-task lines)"
+            output_file: null
+            context_scope:
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Progress
+            timeout_seconds: 120
+          - id: T005
+            description: "Document retry policy with exponential backoff (1s, 2s, 4s)"
+            output_file: null
+            context_scope:
+              - specs/001-parallel-commands/data-model.md#SubagentTask
+            timeout_seconds: 120
+          - id: T006
+            description: "Document circuit breaker pattern (pause at 3, abort at 10)"
+            output_file: null
+            context_scope:
+              - specs/001-parallel-commands/data-model.md#CircuitBreakerState
+            timeout_seconds: 120
+        gate:
+          command: "test -f specs/001-parallel-commands/contracts/parallel-execution.md"
+          on_fail: "Verify parallel execution contract was created in planning phase"
+
+  - id: phase-3
+    name: "User Story 1 - Parallel Artifact Analysis"
+    depends_on: [phase-2]
+    batches:
+      - id: "3.1"
+        parallel: true
+        tasks:
+          - id: T007
+            description: "Add Flags section with --sequential to speckit.analyze.md"
+            output_file: .claude/commands/speckit.analyze.md
+            context_scope:
+              - .claude/commands/speckit.analyze.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Flag
+            timeout_seconds: 180
+          - id: T008
+            description: "Add Execution Mode Detection section to speckit.analyze.md"
+            output_file: .claude/commands/speckit.analyze.md
+            context_scope:
+              - .claude/commands/speckit.analyze.md
+              - .claude/commands/speckit.implement.md#Execution-Mode-Detection
+            timeout_seconds: 180
+        gate:
+          command: "grep -q '\\-\\-sequential' .claude/commands/speckit.analyze.md"
+          on_fail: "Verify --sequential flag was added to Flags section"
+
+      - id: "3.2"
+        parallel: true
+        depends_on: ["3.1"]
+        tasks:
+          - id: T009
+            description: "Add parallel 6-pass dispatch (Duplication, Ambiguity, Underspec, Constitution, Coverage, Inconsistency)"
+            output_file: .claude/commands/speckit.analyze.md
+            context_scope:
+              - .claude/commands/speckit.analyze.md
+              - .claude/commands/speckit.implement.md#Parallel-Mode
+              - specs/001-parallel-commands/spec.md#US1
+            timeout_seconds: 300
+        gate:
+          command: "grep -q 'Task(' .claude/commands/speckit.analyze.md || grep -q 'subagent' .claude/commands/speckit.analyze.md"
+          on_fail: "Verify Task tool dispatch pattern was added"
+
+      - id: "3.3"
+        parallel: true
+        depends_on: ["3.2"]
+        tasks:
+          - id: T010
+            description: "Add result merge logic (concatenate findings by category)"
+            output_file: .claude/commands/speckit.analyze.md
+            context_scope:
+              - .claude/commands/speckit.analyze.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Merge
+            timeout_seconds: 180
+          - id: T011
+            description: "Add progress reporting (progress bar + per-task lines)"
+            output_file: .claude/commands/speckit.analyze.md
+            context_scope:
+              - .claude/commands/speckit.analyze.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Progress
+            timeout_seconds: 180
+        gate:
+          command: "grep -q 'progress' .claude/commands/speckit.analyze.md"
+          on_fail: "Verify progress reporting section was added"
+
+  - id: phase-4
+    name: "User Story 2 - Parallel Checklist Generation"
+    depends_on: [phase-2]
+    batches:
+      - id: "4.1"
+        parallel: true
+        tasks:
+          - id: T012
+            description: "Add Flags section with --sequential to speckit.checklist.md"
+            output_file: .claude/commands/speckit.checklist.md
+            context_scope:
+              - .claude/commands/speckit.checklist.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Flag
+            timeout_seconds: 180
+          - id: T013
+            description: "Add Execution Mode Detection section to speckit.checklist.md"
+            output_file: .claude/commands/speckit.checklist.md
+            context_scope:
+              - .claude/commands/speckit.checklist.md
+              - .claude/commands/speckit.implement.md#Execution-Mode-Detection
+            timeout_seconds: 180
+        gate:
+          command: "grep -q '\\-\\-sequential' .claude/commands/speckit.checklist.md"
+          on_fail: "Verify --sequential flag was added"
+
+      - id: "4.2"
+        parallel: true
+        depends_on: ["4.1"]
+        tasks:
+          - id: T014
+            description: "Add parallel dimension dispatch (Completeness, Clarity, Consistency, Measurability, Coverage, EdgeCases)"
+            output_file: .claude/commands/speckit.checklist.md
+            context_scope:
+              - .claude/commands/speckit.checklist.md
+              - specs/001-parallel-commands/spec.md#US2
+            timeout_seconds: 300
+        gate:
+          command: "grep -q 'Task(' .claude/commands/speckit.checklist.md || grep -q 'subagent' .claude/commands/speckit.checklist.md"
+          on_fail: "Verify Task tool dispatch pattern was added"
+
+      - id: "4.3"
+        parallel: true
+        depends_on: ["4.2"]
+        tasks:
+          - id: T015
+            description: "Add result merge logic (concatenate by dimension)"
+            output_file: .claude/commands/speckit.checklist.md
+            context_scope:
+              - .claude/commands/speckit.checklist.md
+            timeout_seconds: 180
+          - id: T016
+            description: "Add progress reporting to speckit.checklist.md"
+            output_file: .claude/commands/speckit.checklist.md
+            context_scope:
+              - .claude/commands/speckit.checklist.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Progress
+            timeout_seconds: 180
+        gate:
+          command: "grep -q 'progress' .claude/commands/speckit.checklist.md"
+          on_fail: "Verify progress reporting was added"
+
+  - id: phase-5
+    name: "User Story 3 - Parallel Research in Planning"
+    depends_on: [phase-2]
+    batches:
+      - id: "5.1"
+        parallel: true
+        tasks:
+          - id: T017
+            description: "Add Flags section with --sequential to speckit.plan.md"
+            output_file: .claude/commands/speckit.plan.md
+            context_scope:
+              - .claude/commands/speckit.plan.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Flag
+            timeout_seconds: 180
+          - id: T018
+            description: "Add Execution Mode Detection section to speckit.plan.md"
+            output_file: .claude/commands/speckit.plan.md
+            context_scope:
+              - .claude/commands/speckit.plan.md
+              - .claude/commands/speckit.implement.md#Execution-Mode-Detection
+            timeout_seconds: 180
+        gate:
+          command: "grep -q '\\-\\-sequential' .claude/commands/speckit.plan.md"
+          on_fail: "Verify --sequential flag was added"
+
+      - id: "5.2"
+        parallel: true
+        depends_on: ["5.1"]
+        tasks:
+          - id: T019
+            description: "Add parallel research dispatch for Phase 0 tasks"
+            output_file: .claude/commands/speckit.plan.md
+            context_scope:
+              - .claude/commands/speckit.plan.md
+              - specs/001-parallel-commands/spec.md#US3
+            timeout_seconds: 300
+          - id: T020
+            description: "Add parallel artifact generation for Phase 1 (data-model.md, contracts/, quickstart.md)"
+            output_file: .claude/commands/speckit.plan.md
+            context_scope:
+              - .claude/commands/speckit.plan.md
+            timeout_seconds: 300
+        gate:
+          command: "grep -q 'Task(' .claude/commands/speckit.plan.md || grep -q 'subagent' .claude/commands/speckit.plan.md"
+          on_fail: "Verify Task tool dispatch pattern was added"
+
+      - id: "5.3"
+        parallel: true
+        depends_on: ["5.2"]
+        tasks:
+          - id: T021
+            description: "Add progress reporting to speckit.plan.md"
+            output_file: .claude/commands/speckit.plan.md
+            context_scope:
+              - .claude/commands/speckit.plan.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Progress
+            timeout_seconds: 180
+        gate:
+          command: "grep -q 'progress' .claude/commands/speckit.plan.md"
+          on_fail: "Verify progress reporting was added"
+
+  - id: phase-6
+    name: "User Story 4 - Parallel Ambiguity Research"
+    depends_on: [phase-2]
+    batches:
+      - id: "6.1"
+        parallel: true
+        tasks:
+          - id: T022
+            description: "Add Flags section with --sequential to speckit.clarify.md"
+            output_file: .claude/commands/speckit.clarify.md
+            context_scope:
+              - .claude/commands/speckit.clarify.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Flag
+            timeout_seconds: 180
+          - id: T023
+            description: "Add Execution Mode Detection section to speckit.clarify.md"
+            output_file: .claude/commands/speckit.clarify.md
+            context_scope:
+              - .claude/commands/speckit.clarify.md
+              - .claude/commands/speckit.implement.md#Execution-Mode-Detection
+            timeout_seconds: 180
+        gate:
+          command: "grep -q '\\-\\-sequential' .claude/commands/speckit.clarify.md"
+          on_fail: "Verify --sequential flag was added"
+
+      - id: "6.2"
+        parallel: true
+        depends_on: ["6.1"]
+        tasks:
+          - id: T024
+            description: "Add parallel taxonomy scan dispatch (10 categories)"
+            output_file: .claude/commands/speckit.clarify.md
+            context_scope:
+              - .claude/commands/speckit.clarify.md
+              - specs/001-parallel-commands/spec.md#US4
+              - specs/001-parallel-commands/contracts/parallel-execution.md#clarify
+            timeout_seconds: 300
+        gate:
+          command: "grep -q 'Task(' .claude/commands/speckit.clarify.md || grep -q 'subagent' .claude/commands/speckit.clarify.md"
+          on_fail: "Verify Task tool dispatch pattern was added"
+
+      - id: "6.3"
+        parallel: true
+        depends_on: ["6.2"]
+        tasks:
+          - id: T025
+            description: "Add question prioritization from parallel results"
+            output_file: .claude/commands/speckit.clarify.md
+            context_scope:
+              - .claude/commands/speckit.clarify.md
+            timeout_seconds: 180
+          - id: T026
+            description: "Add progress reporting to speckit.clarify.md"
+            output_file: .claude/commands/speckit.clarify.md
+            context_scope:
+              - .claude/commands/speckit.clarify.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Progress
+            timeout_seconds: 180
+        gate:
+          command: "grep -q 'progress' .claude/commands/speckit.clarify.md"
+          on_fail: "Verify progress reporting was added"
+
+  - id: phase-7
+    name: "User Story 5 - Parallel GitHub Issue Creation"
+    depends_on: [phase-2]
+    batches:
+      - id: "7.1"
+        parallel: true
+        tasks:
+          - id: T027
+            description: "Add Flags section with --sequential to speckit.taskstoissues.md"
+            output_file: .claude/commands/speckit.taskstoissues.md
+            context_scope:
+              - .claude/commands/speckit.taskstoissues.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Flag
+            timeout_seconds: 180
+          - id: T028
+            description: "Add Execution Mode Detection section to speckit.taskstoissues.md"
+            output_file: .claude/commands/speckit.taskstoissues.md
+            context_scope:
+              - .claude/commands/speckit.taskstoissues.md
+              - .claude/commands/speckit.implement.md#Execution-Mode-Detection
+            timeout_seconds: 180
+        gate:
+          command: "grep -q '\\-\\-sequential' .claude/commands/speckit.taskstoissues.md"
+          on_fail: "Verify --sequential flag was added"
+
+      - id: "7.2"
+        parallel: true
+        depends_on: ["7.1"]
+        tasks:
+          - id: T029
+            description: "Add parallel issue creation dispatch (all concurrent)"
+            output_file: .claude/commands/speckit.taskstoissues.md
+            context_scope:
+              - .claude/commands/speckit.taskstoissues.md
+              - specs/001-parallel-commands/spec.md#US5
+            timeout_seconds: 300
+          - id: T030
+            description: "Add GitHub API rate limit handling with exponential backoff"
+            output_file: .claude/commands/speckit.taskstoissues.md
+            context_scope:
+              - .claude/commands/speckit.taskstoissues.md
+            timeout_seconds: 180
+        gate:
+          command: "grep -q 'Task(' .claude/commands/speckit.taskstoissues.md || grep -q 'subagent' .claude/commands/speckit.taskstoissues.md"
+          on_fail: "Verify Task tool dispatch pattern was added"
+
+      - id: "7.3"
+        parallel: true
+        depends_on: ["7.2"]
+        tasks:
+          - id: T031
+            description: "Add progress reporting to speckit.taskstoissues.md"
+            output_file: .claude/commands/speckit.taskstoissues.md
+            context_scope:
+              - .claude/commands/speckit.taskstoissues.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Progress
+            timeout_seconds: 180
+        gate:
+          command: "grep -q 'progress' .claude/commands/speckit.taskstoissues.md"
+          on_fail: "Verify progress reporting was added"
+
+  - id: phase-8
+    name: "User Story 6 - Parallel Requirement Exploration"
+    depends_on: [phase-2]
+    batches:
+      - id: "8.1"
+        parallel: true
+        tasks:
+          - id: T032
+            description: "Add Flags section with --sequential to speckit.specify.md"
+            output_file: .claude/commands/speckit.specify.md
+            context_scope:
+              - .claude/commands/speckit.specify.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Flag
+            timeout_seconds: 180
+          - id: T033
+            description: "Add Execution Mode Detection section to speckit.specify.md"
+            output_file: .claude/commands/speckit.specify.md
+            context_scope:
+              - .claude/commands/speckit.specify.md
+              - .claude/commands/speckit.implement.md#Execution-Mode-Detection
+            timeout_seconds: 180
+        gate:
+          command: "grep -q '\\-\\-sequential' .claude/commands/speckit.specify.md"
+          on_fail: "Verify --sequential flag was added"
+
+      - id: "8.2"
+        parallel: true
+        depends_on: ["8.1"]
+        tasks:
+          - id: T034
+            description: "Add parallel concept extraction dispatch (actors, actions, data, constraints)"
+            output_file: .claude/commands/speckit.specify.md
+            context_scope:
+              - .claude/commands/speckit.specify.md
+              - specs/001-parallel-commands/spec.md#US6
+            timeout_seconds: 300
+        gate:
+          command: "grep -q 'Task(' .claude/commands/speckit.specify.md || grep -q 'subagent' .claude/commands/speckit.specify.md"
+          on_fail: "Verify Task tool dispatch pattern was added"
+
+      - id: "8.3"
+        parallel: true
+        depends_on: ["8.2"]
+        tasks:
+          - id: T035
+            description: "Add concept merge logic (deduplicate and combine)"
+            output_file: .claude/commands/speckit.specify.md
+            context_scope:
+              - .claude/commands/speckit.specify.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Merge
+            timeout_seconds: 180
+          - id: T036
+            description: "Add progress reporting to speckit.specify.md"
+            output_file: .claude/commands/speckit.specify.md
+            context_scope:
+              - .claude/commands/speckit.specify.md
+              - specs/001-parallel-commands/contracts/parallel-execution.md#Progress
+            timeout_seconds: 180
+        gate:
+          command: "grep -q 'progress' .claude/commands/speckit.specify.md"
+          on_fail: "Verify progress reporting was added"
+
+  - id: phase-9
+    name: "Polish & Cross-Cutting Concerns"
+    depends_on: [phase-3, phase-4, phase-5, phase-6, phase-7, phase-8]
+    batches:
+      - id: "9.1"
+        parallel: true
+        tasks:
+          - id: T037
+            description: "Update quickstart.md with actual command output examples"
+            output_file: specs/001-parallel-commands/quickstart.md
+            context_scope:
+              - specs/001-parallel-commands/quickstart.md
+            timeout_seconds: 180
+          - id: T038
+            description: "Validate all 6 commands support --sequential flag"
+            output_file: null
+            context_scope:
+              - .claude/commands/speckit.analyze.md
+              - .claude/commands/speckit.checklist.md
+              - .claude/commands/speckit.plan.md
+              - .claude/commands/speckit.clarify.md
+              - .claude/commands/speckit.taskstoissues.md
+              - .claude/commands/speckit.specify.md
+            timeout_seconds: 120
+        gate:
+          command: "test -f specs/001-parallel-commands/quickstart.md"
+          on_fail: "Verify quickstart.md exists"
+
+      - id: "9.2"
+        parallel: true
+        depends_on: ["9.1"]
+        tasks:
+          - id: T039
+            description: "Test /speckit.analyze in parallel mode (verify 3x speedup)"
+            output_file: null
+            context_scope: []
+            timeout_seconds: 300
+          - id: T040
+            description: "Test /speckit.checklist in parallel mode (verify 2x speedup)"
+            output_file: null
+            context_scope: []
+            timeout_seconds: 300
+          - id: T041
+            description: "Test /speckit.plan in parallel mode"
+            output_file: null
+            context_scope: []
+            timeout_seconds: 300
+          - id: T042
+            description: "Test /speckit.clarify in parallel mode"
+            output_file: null
+            context_scope: []
+            timeout_seconds: 300
+          - id: T043
+            description: "Test /speckit.taskstoissues in parallel mode (verify 5x speedup)"
+            output_file: null
+            context_scope: []
+            timeout_seconds: 300
+          - id: T044
+            description: "Test /speckit.specify in parallel mode"
+            output_file: null
+            context_scope: []
+            timeout_seconds: 300
+        gate:
+          command: "echo 'Manual validation required - run each command and verify parallel execution'"
+          on_fail: "Re-run failed commands with --sequential to debug"
+
+dependency_graph:
+  edges:
+    # Phase 1 -> Phase 2
+    - from: T002
+      to: T001
+      type: depends_on
+    - from: T003
+      to: T001
+      type: depends_on
+    - from: T004
+      to: T001
+      type: depends_on
+    - from: T005
+      to: T001
+      type: depends_on
+    - from: T006
+      to: T001
+      type: depends_on
+
+    # Phase 2 -> Phase 3 (US1)
+    - from: T007
+      to: T002
+      type: depends_on
+    - from: T008
+      to: T002
+      type: depends_on
+    - from: T009
+      to: T007
+      type: depends_on
+    - from: T009
+      to: T008
+      type: depends_on
+    - from: T010
+      to: T009
+      type: depends_on
+    - from: T011
+      to: T009
+      type: depends_on
+
+    # Phase 2 -> Phase 4 (US2)
+    - from: T012
+      to: T002
+      type: depends_on
+    - from: T013
+      to: T002
+      type: depends_on
+    - from: T014
+      to: T012
+      type: depends_on
+    - from: T014
+      to: T013
+      type: depends_on
+    - from: T015
+      to: T014
+      type: depends_on
+    - from: T016
+      to: T014
+      type: depends_on
+
+    # Phase 2 -> Phase 5 (US3)
+    - from: T017
+      to: T002
+      type: depends_on
+    - from: T018
+      to: T002
+      type: depends_on
+    - from: T019
+      to: T017
+      type: depends_on
+    - from: T019
+      to: T018
+      type: depends_on
+    - from: T020
+      to: T019
+      type: depends_on
+    - from: T021
+      to: T020
+      type: depends_on
+
+    # Phase 2 -> Phase 6 (US4)
+    - from: T022
+      to: T002
+      type: depends_on
+    - from: T023
+      to: T002
+      type: depends_on
+    - from: T024
+      to: T022
+      type: depends_on
+    - from: T024
+      to: T023
+      type: depends_on
+    - from: T025
+      to: T024
+      type: depends_on
+    - from: T026
+      to: T024
+      type: depends_on
+
+    # Phase 2 -> Phase 7 (US5)
+    - from: T027
+      to: T002
+      type: depends_on
+    - from: T028
+      to: T002
+      type: depends_on
+    - from: T029
+      to: T027
+      type: depends_on
+    - from: T029
+      to: T028
+      type: depends_on
+    - from: T030
+      to: T029
+      type: depends_on
+    - from: T031
+      to: T030
+      type: depends_on
+
+    # Phase 2 -> Phase 8 (US6)
+    - from: T032
+      to: T002
+      type: depends_on
+    - from: T033
+      to: T002
+      type: depends_on
+    - from: T034
+      to: T032
+      type: depends_on
+    - from: T034
+      to: T033
+      type: depends_on
+    - from: T035
+      to: T034
+      type: depends_on
+    - from: T036
+      to: T034
+      type: depends_on
+
+    # All US -> Phase 9 (Polish)
+    - from: T037
+      to: T011
+      type: depends_on
+    - from: T037
+      to: T016
+      type: depends_on
+    - from: T037
+      to: T021
+      type: depends_on
+    - from: T037
+      to: T026
+      type: depends_on
+    - from: T037
+      to: T031
+      type: depends_on
+    - from: T037
+      to: T036
+      type: depends_on
+    - from: T039
+      to: T038
+      type: depends_on
+    - from: T040
+      to: T038
+      type: depends_on
+    - from: T041
+      to: T038
+      type: depends_on
+    - from: T042
+      to: T038
+      type: depends_on
+    - from: T043
+      to: T038
+      type: depends_on
+    - from: T044
+      to: T038
+      type: depends_on
+
+critical_path:
+  tasks: [T001, T002, T007, T009, T010, T037, T038, T039]
+  estimated_duration_seconds: 1500
+
+parallelism_analysis:
+  total_tasks: 45
+  critical_path_length: 8
+  parallelism_factor: 5.5
+  theoretical_speedup: 5.5x
+  practical_speedup: 5.5x  # No cap means theoretical = practical
+  max_concurrent_subagents: unlimited  # Claude Code has no hard cap
+  max_parallelism_by_phase:
+    phase-1: 1
+    phase-2: 5
+    phase-3: 2
+    phase-4: 2
+    phase-5: 2
+    phase-6: 2
+    phase-7: 2
+    phase-8: 2
+    phase-9: 6
+  cross_phase_execution:
+    strategy: interleaved
+    example: "Phase 3-8 (US1-US6) all run concurrently after Phase 2 - up to 12 simultaneous subagents"
