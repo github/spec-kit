@@ -32,8 +32,9 @@
 ### Dogfooding
 
 This repo uses itself for development:
-- `.claude/commands/` symlinks to `templates/commands/`
-- Editing `templates/commands/*.md` immediately updates project commands
+- `.claude/commands/` contains the actual command files
+- `templates/commands/` symlinks to `.claude/commands/` (for distribution)
+- Editing `.claude/commands/speckit.*.md` immediately updates project commands
 - Use `/speckit.*` commands to develop new features for spec-kit-max
 
 ### Upstream Sync

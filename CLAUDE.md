@@ -6,20 +6,21 @@
 
 ### This is spec-kit-max
 
-A fork of `github/spec-kit` with parallel subagent orchestration for Claude Code. Key file: `templates/commands/tasks.md`.
+A fork of `github/spec-kit` with parallel subagent orchestration for Claude Code. Key file: `.claude/commands/speckit.tasks.md`.
 
 ### Dogfooding Active
 
 This repo manages itself:
-- `.claude/commands/` → symlinks to `templates/commands/`
-- Changes to templates immediately affect `/speckit.*` commands
+- `.claude/commands/` → actual command files (Claude Code reads these)
+- `templates/commands/` → symlinks to `.claude/commands/` (for distribution)
+- Changes to `.claude/commands/speckit.*.md` immediately affect `/speckit.*` commands
 - Use the spec-kit workflow to develop spec-kit
 
 ### Critical Paths
 
 | Task | Key Files |
 |------|-----------|
-| Modify commands | `templates/commands/*.md` |
+| Modify commands | `.claude/commands/speckit.*.md` |
 | CLI changes | `src/specify_cli/__init__.py` + bump `pyproject.toml` |
 | Add agent support | See AGENTS.md "Adding New Agent Support" |
 | Shell scripts | `scripts/bash/`, `scripts/powershell/` |
