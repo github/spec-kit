@@ -1,5 +1,75 @@
 # AGENTS.md
 
+## About spec-kit-max
+
+**spec-kit-max** is a fork of [github/spec-kit](https://github.com/github/spec-kit) optimized for Claude Code with parallel subagent orchestration. Key enhancements:
+
+| Feature | Upstream | spec-kit-max |
+|---------|----------|--------------|
+| Task orchestration | Sequential | Greedy parallel batches (up to 10 concurrent) |
+| Cross-phase execution | No | Yes - independent user stories run concurrently |
+| Execution manifest | No | `tasks.execution.yaml` with full dependency graph |
+| Extended thinking | No | `--ultrathink` flag for complex architecture |
+| Background agents | No | Async research tasks via `--async-background` |
+| Circuit breaker | No | Fault tolerance with retry policies |
+
+### Dogfooding
+
+This repo uses itself for development:
+- `.claude/commands/` symlinks to `templates/commands/`
+- Editing `templates/commands/*.md` immediately updates project commands
+- Use `/speckit.*` commands to develop new features for spec-kit-max
+
+### Upstream Sync
+
+```bash
+git fetch upstream
+git diff main upstream/main -- templates/commands/  # Check for conflicts
+git merge upstream/main                              # Or cherry-pick specific commits
+```
+
+**Modified files** (review carefully on merge):
+- `templates/commands/tasks.md` - parallel orchestration enhancements
+
+---
+
+## Development Guidelines
+
+### Code Style
+
+- **Python**: Follow upstream conventions in `src/specify_cli/`
+- **Markdown commands**: YAML frontmatter required, use `$ARGUMENTS` placeholder
+- **Shell scripts**: POSIX-compatible, test on both bash and zsh
+
+### Testing Changes
+
+```bash
+# Test CLI changes
+uv run specify check
+uv run specify init test-project --ai claude --force
+
+# Test command changes (in any project with .specify/)
+/speckit.tasks --help  # Verify flags parse correctly
+```
+
+### Commit Convention
+
+```
+feat(tasks): add new flag for X
+fix(cli): handle edge case in Y
+docs: update AGENTS.md
+chore: sync from upstream
+```
+
+### PR Workflow
+
+1. Create feature branch from `main`
+2. Use `/speckit.specify` → `/speckit.plan` → `/speckit.tasks` for non-trivial changes
+3. Test with `specify init` in fresh directory
+4. PR to `main` with description of changes vs upstream
+
+---
+
 ## About Spec Kit and Specify
 
 **GitHub Spec Kit** is a comprehensive toolkit for implementing Spec-Driven Development (SDD) - a methodology that emphasizes creating clear specifications before implementation. The toolkit includes templates, scripts, and workflows that guide development teams through a structured approach to building software.
