@@ -25,7 +25,7 @@ Parse the following flags from user input:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--orchestration` | false | Emit `tasks.execution.yaml` alongside `tasks.md` |
+| `--no-orchestration` | false | Skip generating `tasks.execution.yaml` (not recommended) |
 | `--max-parallel N` | 10 | Maximum concurrent subagents (hard cap enforced by Claude Code) |
 | `--model` | opus-4.5 | Model for subagents (opus-4.5 = most capable, sonnet-4 = faster) |
 | `--ultrathink` | true | Enable extended thinking for complex architecture tasks |
@@ -160,7 +160,7 @@ Parse the following flags from user input:
    - Dependencies section with critical path analysis
    - Recovery Playbook
 
-7. **Generate tasks.execution.yaml** (if --orchestration flag):
+7. **Generate tasks.execution.yaml** (unless --no-orchestration flag):
    - Machine-readable manifest with:
      - Feature metadata
      - Execution constraints

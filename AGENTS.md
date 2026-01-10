@@ -26,7 +26,8 @@
 - `--dry-run` - Show execution plan without running
 
 **`/speckit.tasks`**:
-- `--orchestration` - Generate `tasks.execution.yaml` for parallel mode
+- Always generates `tasks.execution.yaml` (for parallel mode)
+- `--no-orchestration` - Skip YAML generation (not recommended)
 
 ### Dogfooding
 

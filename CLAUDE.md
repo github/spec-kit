@@ -31,7 +31,8 @@ This repo manages itself:
 /speckit.specify       - Create feature specification
 /speckit.plan          - Technical implementation plan
 /speckit.tasks         - Generate parallel task batches (ENHANCED)
-                         --orchestration → emit tasks.execution.yaml
+                         Always emits tasks.execution.yaml
+                         --no-orchestration → skip YAML (not recommended)
 /speckit.implement     - Execute implementation (ENHANCED)
                          Auto-spawns parallel subagents when YAML exists
                          --sequential → force single-agent mode
@@ -45,8 +46,8 @@ This repo manages itself:
 ### Parallel Execution Workflow
 
 ```bash
-# 1. Generate tasks with orchestration manifest
-/speckit.tasks --orchestration
+# 1. Generate tasks (YAML is auto-generated)
+/speckit.tasks
 
 # 2. Run parallel implementation (auto-detects YAML)
 /speckit.implement
