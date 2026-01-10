@@ -1,5 +1,5 @@
 ---
-description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+description: Execute the implementation plan with optional parallel subagent orchestration for maximum throughput.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
@@ -12,6 +12,105 @@ $ARGUMENTS
 ```
 
 You **MUST** consider the user input before proceeding (if not empty).
+
+## Flags
+
+Parse the following flags from user input:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sequential` | false | Force single-agent mode (no subagents, current behavior) |
+| `--max-parallel N` | 10 | Maximum concurrent subagents (1-10, Claude Code hard cap) |
+| `--no-auto-commit` | false | Skip automatic git commits after gates |
+| `--dry-run` | false | Show execution plan without running tasks |
+
+## Execution Mode Detection
+
+**BEFORE starting implementation**, determine execution mode:
+
+1. Check if `--sequential` flag is present → **Sequential Mode**
+2. Check if `tasks.execution.yaml` exists in FEATURE_DIR → **Parallel Mode**
+3. Otherwise → **Sequential Mode** (fallback)
+
+### Parallel Mode (when tasks.execution.yaml exists)
+
+When `tasks.execution.yaml` is detected and `--sequential` is NOT set:
+
+```
+[speckit] Parallel mode: tasks.execution.yaml detected
+[speckit] Max concurrent subagents: 10
+[speckit] Phases: 5 | Batches: 12 | Tasks: 25
+```
+
+**Parallel execution uses the Task tool to spawn subagents:**
+
+For each phase:
+  For each batch in phase:
+    1. **Setup shared workspace**:
+       ```
+       mkdir -p .claude/workspace/results
+       ```
+       Write shared context to `.claude/workspace/context.md`
+
+    2. **Spawn subagents** (up to --max-parallel concurrent):
+       For each task in batch, use Task tool:
+       ```
+       Task(
+         subagent_type: "general-purpose",
+         prompt: "Implement task {task_id}: {description}
+
+                  Context files to read:
+                  {context_scope}
+
+                  Output file: {output_file}
+
+                  When complete, write a brief summary to:
+                  .claude/workspace/results/{task_id}-result.md",
+         description: "Task {task_id}: {short_description}"
+       )
+       ```
+
+    3. **Wait for batch completion**:
+       Monitor all spawned subagents until complete
+       Report progress as each completes:
+       ```
+       [speckit] T012 ✓ complete (1/4) - src/models/user.py
+       [speckit] T013 ✓ complete (2/4) - src/models/session.py
+       ```
+
+    4. **Run gate validation**:
+       Execute gate command from tasks.execution.yaml
+       ```bash
+       {gate.command}
+       ```
+
+    5. **Handle gate result**:
+       - **PASS**:
+         - Mark tasks complete in tasks.md: `- [ ]` → `- [x]`
+         - Auto-commit (unless --no-auto-commit):
+           ```bash
+           git add -A && git commit -m "[speckit] Gate {batch_id} passed"
+           ```
+         - Proceed to next batch
+       - **FAIL**:
+         - Display gate error output
+         - Show recovery hints from gate.on_fail
+         - **STOP** and ask user how to proceed
+
+    6. **Clean workspace** (after phase):
+       Archive results: `mv .claude/workspace/results .claude/workspace/phase-{n}-results`
+
+### Sequential Mode (default fallback)
+
+When `--sequential` is set OR no `tasks.execution.yaml`:
+
+```
+[speckit] Sequential mode: single-agent execution
+```
+
+Proceed with original behavior (steps 1-9 below).
+
+---
 
 ## Outline
 

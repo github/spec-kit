@@ -169,7 +169,72 @@ Parse the following flags from user input:
      - Gate definitions with commands and failure actions
      - Dependency graph edges
 
-8. **Report**: Output path(s) to generated file(s) and summary:
+8. **Generate Dependency Visualization** (include in tasks.md):
+
+   Create a Mermaid flowchart showing task dependencies:
+
+   ```markdown
+   ## Dependency Graph
+
+   ```mermaid
+   graph LR
+       subgraph Phase 1: Setup
+           T001[T001: Project structure]
+           T002[T002: Dependencies]
+       end
+
+       subgraph Phase 2: Foundational
+           T003[T003: Database setup]
+           T004[T004: Auth framework]
+       end
+
+       subgraph Phase 3: US1
+           T012[T012: User model]
+           T014[T014: UserService]
+           T016[T016: User endpoint]
+       end
+
+       T001 --> T003
+       T002 --> T003
+       T003 --> T012
+       T012 --> T014
+       T014 --> T016
+
+       style T001 fill:#90EE90
+       style T016 fill:#FFB6C1
+   ```
+   ```
+
+   **Styling rules**:
+   - Green (`#90EE90`): Tasks with no dependencies (can start immediately)
+   - Red/Pink (`#FFB6C1`): Critical path tasks (longest chain)
+   - Default: All other tasks
+
+9. **Generate Parallelism Metrics** (include in tasks.md):
+
+   ```markdown
+   ## Parallelism Analysis
+
+   | Phase | Batches | Tasks | Max Parallel | Speedup |
+   |-------|---------|-------|--------------|---------|
+   | Setup | 1 | 3 | 3 | 3.0x |
+   | Foundational | 2 | 6 | 3 | 3.0x |
+   | US1 | 3 | 8 | 4 | 2.7x |
+   | US2 | 3 | 6 | 3 | 2.0x |
+   | Polish | 1 | 2 | 2 | 2.0x |
+
+   **Critical Path**: T001 → T003 → T012 → T014 → T016 (5 tasks)
+   **Parallelism Factor**: 5.0x (25 tasks / 5 critical path)
+   **Max Concurrent**: 10 (Claude Code hard cap)
+   ```
+
+   Calculate metrics:
+   - **Max Parallel per phase**: Largest batch size in that phase
+   - **Speedup per phase**: Total tasks in phase / number of batches
+   - **Critical Path**: Longest chain of dependent tasks across all phases
+   - **Parallelism Factor**: Total tasks / critical path length
+
+10. **Report**: Output path(s) to generated file(s) and summary:
    - Total task count
    - Batch count per phase
    - Critical path (longest sequential chain with task IDs)
@@ -276,6 +341,49 @@ python -c "from src.models import User, Order"
 | Tests | `pytest --collect-only {files}` | Verify test discovery |
 | Config | Config validation script | Check environment variables |
 
+### Fault Tolerance Configuration
+
+Gates should include recovery hints for common failure patterns:
+
+```markdown
+#### Gate 3.1
+```bash
+ty src/models/*.py && python -c "from src.models import User, Session"
+```
+**On-Fail**:
+- `Cannot find module` → Install missing dependency or check import path
+- `Property .* does not exist` → Verify field names match data-model.md
+- `has no exported member` → Check export statement in source file
+- `SyntaxError` → Fix syntax error in generated code (do not retry)
+```
+
+**Retry policy** (in tasks.execution.yaml):
+```yaml
+retry_policy:
+  max_attempts: 3
+  strategy: exponential      # exponential, linear, constant
+  initial_delay_seconds: 5
+  max_delay_seconds: 60
+  retry_on:
+    - timeout
+    - rate_limit
+  fail_fast_on:              # Do NOT retry these
+    - syntax_error
+    - import_error
+    - type_error
+```
+
+**Circuit breaker** (stops execution on repeated failures):
+```yaml
+circuit_breaker:
+  - at_failures: 3
+    action: pause_batch      # Stop current batch, ask user
+  - at_failures: 5
+    action: pause_phase      # Stop entire phase
+  - at_failures: 10
+    action: abort            # Stop everything, rollback option
+```
+
 ### Context Scope Specification
 
 For each task, determine what context a subagent needs:
@@ -293,6 +401,50 @@ Use the following scoping rules:
 2. **No full files**: Reference sections, not entire documents
 3. **Include dependencies**: If task uses output of T010, include T010's output file
 4. **Contracts are precise**: `contracts/users.yaml` not `contracts/`
+
+### File-Based Shared Memory (Parallel Mode)
+
+When `--orchestration` flag is set, tasks.execution.yaml includes workspace configuration for inter-agent communication:
+
+**Workspace structure** (created by `/speckit.implement` in parallel mode):
+```
+.claude/workspace/
+├── context.md              # Shared context written by parent agent
+├── results/
+│   ├── T001-result.md      # Task completion summaries
+│   ├── T002-result.md
+│   └── ...
+└── gates/
+    ├── gate-1.1.md         # Gate validation results
+    └── gate-2.1.md
+```
+
+**How it works**:
+1. Parent agent writes shared project context to `context.md` once per phase
+2. Subagents READ from workspace (context.md + dependency results) instead of receiving full context in prompt
+3. Subagents WRITE their results to `results/{task_id}-result.md`
+4. Parent reads only summaries, not full conversation history
+5. Gate results are logged to `gates/` for debugging
+
+**Benefit**: 50-60% token savings compared to passing full context to each subagent.
+
+**Result file format** (written by subagent):
+```markdown
+# T012 Result
+
+## Status: SUCCESS | PARTIAL | FAILED
+
+## Output Files
+- src/models/user.py (created)
+
+## Summary
+Created User model with fields: id, email, password_hash, created_at.
+Implemented password hashing with bcrypt.
+
+## Notes
+- Used UUID for id per data-model.md
+- Added index on email field
+```
 
 ---
 
@@ -386,13 +538,21 @@ execution_constraints:
     ultrathink_for: [architecture, design, complex_logic]
 
   # Fault Tolerance
-  circuit_breaker:
-    max_failures_per_batch: 5            # High tolerance
-    action: pause_and_report
   retry_policy:
     max_attempts: 3
-    backoff: exponential
+    strategy: exponential
     initial_delay_seconds: 5
+    max_delay_seconds: 60
+    retry_on: [timeout, rate_limit]
+    fail_fast_on: [syntax_error, import_error, type_error]
+
+  circuit_breaker:
+    - at_failures: 3
+      action: pause_batch
+    - at_failures: 5
+      action: pause_phase
+    - at_failures: 10
+      action: abort
 
   # Context
   context_per_subagent: 200k             # Full 200k window per agent

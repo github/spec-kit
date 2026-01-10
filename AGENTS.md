@@ -7,11 +7,26 @@
 | Feature | Upstream | spec-kit-max |
 |---------|----------|--------------|
 | Task orchestration | Sequential | Greedy parallel batches (up to 10 concurrent) |
+| Parallel implement | No | `/speckit.implement` spawns subagents automatically |
+| Shared workspace | No | `.claude/workspace/` for inter-agent communication |
 | Cross-phase execution | No | Yes - independent user stories run concurrently |
 | Execution manifest | No | `tasks.execution.yaml` with full dependency graph |
+| Dependency visualization | No | Mermaid diagrams with critical path highlighting |
+| Parallelism metrics | No | Speedup analysis per phase |
 | Extended thinking | No | `--ultrathink` flag for complex architecture |
 | Background agents | No | Async research tasks via `--async-background` |
-| Circuit breaker | No | Fault tolerance with retry policies |
+| Fault tolerance | No | Retry policies, recovery hints, circuit breaker |
+
+### New Flags
+
+**`/speckit.implement`**:
+- `--sequential` - Force single-agent mode (skip parallel subagents)
+- `--max-parallel N` - Limit concurrent subagents (default: 10)
+- `--no-auto-commit` - Skip git commits after gates
+- `--dry-run` - Show execution plan without running
+
+**`/speckit.tasks`**:
+- `--orchestration` - Generate `tasks.execution.yaml` for parallel mode
 
 ### Dogfooding
 
@@ -29,7 +44,8 @@ git merge upstream/main                              # Or cherry-pick specific c
 ```
 
 **Modified files** (review carefully on merge):
-- `templates/commands/tasks.md` - parallel orchestration enhancements
+- `templates/commands/tasks.md` - parallel orchestration, mermaid diagrams, fault tolerance
+- `templates/commands/implement.md` - subagent spawning, shared workspace
 
 ---
 
