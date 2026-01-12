@@ -115,12 +115,17 @@ find_feature_dir_by_prefix() {
         return
     fi
 
-    # Search for directories in specs/ that start with this prefix
+    # Search for directories in specs/ that start with this prefix (case-insensitive for Jira keys)
     local matches=()
     if [[ -d "$specs_dir" ]]; then
-        for dir in "$specs_dir"/"$prefix"-*; do
+        for dir in "$specs_dir"/*; do
             if [[ -d "$dir" ]]; then
-                matches+=("$(basename "$dir")")
+                local dirname=$(basename "$dir")
+                local dirname_upper=$(echo "$dirname" | tr '[:lower:]' '[:upper:]')
+                # Check if directory name starts with the prefix (case-insensitive)
+                if [[ "$dirname_upper" == "${prefix}-"* ]] || [[ "$dirname" == "${prefix}-"* ]]; then
+                    matches+=("$dirname")
+                fi
             fi
         done
     fi
