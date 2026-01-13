@@ -92,6 +92,25 @@ check_feature_branch() {
     return 0
 }
 
+# Check if currently on a valid feature branch (numbered or Jira-style)
+# Returns: 0 (success) if on a feature branch, 1 (failure) otherwise
+# Usage: if is_on_feature_branch; then echo "On feature branch"; fi
+# Edited by Claude Code
+is_on_feature_branch() {
+    local branch
+    branch=$(get_current_branch)
+
+    # Convert branch to uppercase for case-insensitive Jira key matching
+    local branch_upper=$(echo "$branch" | tr '[:lower:]' '[:upper:]')
+
+    # Check if branch matches numbered pattern (001-foo) or Jira pattern (JN-3676-foo)
+    if [[ "$branch_upper" =~ ^([0-9]{3}-|[A-Z]+-[0-9]+-) ]]; then
+        return 0  # Success - on a feature branch
+    fi
+
+    return 1  # Failure - not on a feature branch
+}
+
 get_feature_dir() { echo "$1/specs/$2"; }
 
 # Find feature directory by numeric prefix instead of exact branch match
