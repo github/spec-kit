@@ -94,10 +94,16 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 Launch your AI assistant in the project directory. The `/speckit.*` commands are available in the assistant.
 
-Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
+For enterprise or multi-team environments, you can first define an **organization-wide constitution** using **`/speckit.enterprise-constitution`**. This higher-level document captures non-negotiable guiding principles that ALL projects must obey.
 
 ```bash
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
+/speckit.enterprise-constitution Define organization-wide principles for security, compliance, reliability, and data governance that every project MUST follow
+```
+
+Then, use the **`/speckit.constitution`** command to create your **project's** governing principles and development guidelines, ensuring they align with the enterprise constitution where it exists.
+
+```bash
+/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements that comply with the enterprise constitution
 ```
 
 ### 3. Create the spec
@@ -250,13 +256,14 @@ After running `specify init`, your AI coding agent will have access to these sla
 
 Essential commands for the Spec-Driven Development workflow:
 
-| Command                 | Description                                                              |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `/speckit.constitution` | Create or update project governing principles and development guidelines |
-| `/speckit.specify`      | Define what you want to build (requirements and user stories)            |
-| `/speckit.plan`         | Create technical implementation plans with your chosen tech stack        |
-| `/speckit.tasks`        | Generate actionable task lists for implementation                        |
-| `/speckit.implement`    | Execute all tasks to build the feature according to the plan             |
+| Command                           | Description                                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| `/speckit.enterprise-constitution` | Create or update the higher-level enterprise constitution that governs all project constitutions |
+| `/speckit.constitution`           | Create or update project governing principles and development guidelines                      |
+| `/speckit.specify`                | Define what you want to build (requirements and user stories)                                 |
+| `/speckit.plan`                   | Create technical implementation plans with your chosen tech stack                             |
+| `/speckit.tasks`                  | Generate actionable task lists for implementation                                             |
+| `/speckit.implement`              | Execute all tasks to build the feature according to the plan                                  |
 
 #### Optional Commands
 

@@ -31,10 +31,21 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 ### Step 2: Define Your Constitution
 
-**In your AI Agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
+**In your AI Agent's chat interface**, you can define constitutions at two levels:
+
+- **Enterprise constitution** (optional, recommended for organizations): Use `/speckit.enterprise-constitution` to capture organization-wide principles that ALL projects must follow.
+- **Project constitution**: Use `/speckit.constitution` to establish the core rules and principles for this specific project, ensuring they comply with the enterprise constitution when it exists.
+
+Example enterprise constitution:
 
 ```markdown
-/speckit.constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
+/speckit.enterprise-constitution Our organization is "Security-First" and "Reliability-First". All products MUST meet strict security, compliance, observability, and SLO requirements. We prioritize long-term maintainability over short-term speed.
+```
+
+Example project constitution:
+
+```markdown
+/speckit.constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns. All rules MUST comply with the enterprise constitution.
 ```
 
 ### Step 3: Create the Spec
