@@ -27,17 +27,23 @@ You **MUST** consider the user input before proceeding (if not empty).
 1. **Setup**: Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load design documents**: Read from FEATURE_DIR:
-   - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
+   - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities and external links)
    - **Optional**: data-model.md (entities), contracts/ (API endpoints), research.md (decisions), quickstart.md (test scenarios)
    - Note: Not all projects have all documents. Generate tasks based on what's available.
 
 3. **Execute task generation workflow**:
    - Load plan.md and extract tech stack, libraries, project structure
-   - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
+   - Load spec.md and extract:
+     - User stories with their priorities (P1, P2, P3, etc.)
+     - Any external story IDs and links from the "Related User Stories" section
+     - Any external task IDs and links from the "Related Implementation Tasks" section
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map endpoints to user stories
    - If research.md exists: Extract decisions for setup tasks
-   - Generate tasks organized by user story (see Task Generation Rules below)
+    - Generate tasks organized by user story (see Task Generation Rules below)
+    - When external task IDs already exist for a given story, reference them in
+       the task description instead of inventing new identifiers (the external
+       system remains the source of truth for task state and ownership)
    - Generate dependency graph showing user story completion order
    - Create parallel execution examples per user story
    - Validate task completeness (each user story has all needed tasks, independently testable)
@@ -65,7 +71,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Context for task generation: {ARGS}
 
-The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
+The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context. When online systems (GitHub, Azure DevOps, etc.) already contain tasks, use their IDs as references in the description and do not attempt to model or change their workflow states here.
 
 ## Task Generation Rules
 
@@ -100,6 +106,7 @@ Every task MUST strictly follow this format:
 - ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
 - ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
 - ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
+- ✅ CORRECT: `- [ ] T020 [US2] ADO-2001 Implement API endpoint for story ADO-1234 in src/api/feature_a.ts`
 - ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
 - ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
 - ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)
@@ -138,3 +145,16 @@ Every task MUST strictly follow this format:
   - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
 - **Final Phase**: Polish & Cross-Cutting Concerns
+
+### External Story and Task Systems
+
+- Systems like GitHub and Azure DevOps remain the **source of truth** for
+   user stories and implementation tasks, including their workflow states.
+- When generating tasks.md:
+   - Reference external IDs (e.g., GH-123, ADO-2001) in task descriptions when
+      those tasks already exist.
+   - Do **not** attempt to manage or duplicate state transitions (New, Active,
+      In Progress, Done, etc.) inside tasks.md. Those transitions happen in the
+      external system.
+   - Use tasks.md to provide implementation structure, file paths, and grouping
+      by user story, not to replace the external task board.

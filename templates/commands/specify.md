@@ -72,6 +72,14 @@ Given that feature description, do this:
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
 3. Load `templates/spec-template.md` to understand required sections.
+    - Pay special attention to the "Project Context", "Related User Stories",
+       and "Related Implementation Tasks" sections:
+       - "Project Context" should reference a canonical project description
+          document (for example: docs/project-description.md) when available.
+       - "Related User Stories" should list external story IDs and links from
+          systems like GitHub Issues or Azure DevOps work items.
+       - "Related Implementation Tasks" should list external task IDs and links
+          (e.g., ADO child tasks) when they already exist.
 
 4. Follow this execution flow:
 
@@ -79,6 +87,10 @@ Given that feature description, do this:
        If empty: ERROR "No feature description provided"
     2. Extract key concepts from description
        Identify: actors, actions, data, constraints
+       If the user has provided external story or task IDs (for example,
+       GitHub issues, Azure DevOps work items), collect them and plan to
+       populate the "Related User Stories" and "Related Implementation Tasks"
+       tables in the spec instead of duplicating story text.
     3. For unclear aspects:
        - Make informed guesses based on context and industry standards
        - Only mark with [NEEDS CLARIFICATION: specific question] if:
@@ -87,17 +99,28 @@ Given that feature description, do this:
          - No reasonable default exists
        - **LIMIT: Maximum 3 [NEEDS CLARIFICATION] markers total**
        - Prioritize clarifications by impact: scope > security/privacy > user experience > technical details
-    4. Fill User Scenarios & Testing section
+    4. Fill Project Context and linking sections (when information provided)
+       - If a canonical project description document exists (for example,
+         docs/project-description.md), reference it briefly in the
+         "Project Context" section instead of rewriting it.
+       - If the user has supplied or you can infer external story IDs, add
+         them to the "Related User Stories" table with their system, ID,
+         short title, and link.
+       - If the user has supplied or you can infer external task IDs linked
+         to those stories, add them to the "Related Implementation Tasks"
+         table with their system, story ID, task ID, short title, and link.
+
+    5. Fill User Scenarios & Testing section
        If no clear user flow: ERROR "Cannot determine user scenarios"
-    5. Generate Functional Requirements
+    6. Generate Functional Requirements
        Each requirement must be testable
        Use reasonable defaults for unspecified details (document assumptions in Assumptions section)
-    6. Define Success Criteria
+    7. Define Success Criteria
        Create measurable, technology-agnostic outcomes
        Include both quantitative metrics (time, performance, volume) and qualitative measures (user satisfaction, task completion)
        Each criterion must be verifiable without implementation details
-    7. Identify Key Entities (if data involved)
-    8. Return: SUCCESS (spec ready for planning)
+    8. Identify Key Entities (if data involved)
+    9. Return: SUCCESS (spec ready for planning)
 
 5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 

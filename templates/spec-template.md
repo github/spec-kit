@@ -5,6 +5,45 @@
 **Status**: Draft  
 **Input**: User description: "$ARGUMENTS"
 
+## Project Context *(optional but recommended)*
+
+<!--
+  Briefly summarize how this feature fits into the overall product or project.
+  When available, reference the canonical project description document
+  (for example: docs/project-description.md) instead of duplicating it.
+-->
+
+- Project description source: [link or file path]
+- Key goals this feature supports:
+  - [Goal 1]
+  - [Goal 2]
+
+## Related User Stories *(optional)*
+
+<!--
+  Use this section to link to user stories from external systems such as
+  GitHub Issues, GitHub Projects, or Azure DevOps work items. Do NOT copy
+  the full story text here; instead, reference IDs and links so the external
+  system remains the source of truth.
+-->
+
+| System       | Story ID | Title (short) | Link |
+| ------------ | -------- | ------------- | ---- |
+| [GitHub/ADO] | [1234]   | [Short title] | [URL]|
+
+## Related Implementation Tasks *(optional)*
+
+<!--
+  Use this section to reference implementation tasks already created in
+  your external system (e.g., child tasks of a story in Azure DevOps).
+  These IDs and links allow you to trace from spec → story → tasks while
+  keeping the external system as the owner of task states.
+-->
+
+| System       | Story ID | Task ID | Task Title       | Link |
+| ------------ | -------- | ------- | ---------------- | ---- |
+| [GitHub/ADO] | [1234]   | [2001]  | [Implement X...] | [URL]|
+
 ## User Scenarios & Testing *(mandatory)*
 
 <!--
