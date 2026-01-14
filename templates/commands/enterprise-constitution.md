@@ -55,11 +55,16 @@ Follow this execution flow:
      - Transparency & Accountability
      - Data & Privacy
      - AI & Automation (if applicable)
+      - Delivery Discipline & Change Management (for example, small,
+        incremental, independently reviewable changes)
    - For governance, define at least:
      - Who can propose amendments.
      - How changes are reviewed and approved.
      - How often the constitution should be revisited.
      - How conflicts with project-level constitutions are resolved.
+      - How work is expected to be sliced and delivered (for example,
+        small, focused tasks; narrow pull requests; and incremental,
+        revertible changes tied to clear Task and story IDs).
 
 3. **Decide version bump**
    - If creating the constitution for the first time, set
