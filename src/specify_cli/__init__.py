@@ -634,9 +634,32 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
 
     return merged
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None, template_repo: str = None) -> Tuple[Path, dict]:
+    """Download template from GitHub releases.
+    
+    Args:
+        ai_assistant: AI assistant type (e.g., 'claude', 'gemini')
+        download_dir: Directory to download the template to
+        script_type: Script type ('sh' or 'ps')
+        verbose: Print verbose output
+        show_progress: Show download progress bar
+        client: HTTP client to use
+        debug: Enable debug output
+        github_token: GitHub API token
+        template_repo: Custom repository in 'owner/repo' format (default: 'github/spec-kit')
+    
+    Returns:
+        Tuple of (zip_path, metadata_dict)
+    """
+    if template_repo:
+        parts = template_repo.split("/")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise RuntimeError(f"Invalid template repository format: '{template_repo}'. Expected format: 'owner/repo' (e.g., 'gouzhuang/spec-kit')")
+        repo_owner = parts[0]
+        repo_name = parts[1]
+    else:
+        repo_owner = "github"
+        repo_name = "spec-kit"
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
@@ -748,9 +771,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, template_repo: str = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+    
+    Args:
+        template_repo: Custom repository in 'owner/repo' format (default: 'github/spec-kit')
     """
     current_dir = Path.cwd()
 
@@ -765,7 +791,8 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             show_progress=(tracker is None),
             client=client,
             debug=debug,
-            github_token=github_token
+            github_token=github_token,
+            template_repo=template_repo
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -954,6 +981,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    template_repo: str = typer.Option(None, "--template-repo", help="Custom template repository in 'owner/repo' format (e.g., 'gouzhuang/spec-kit')"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -978,6 +1006,7 @@ def init(
         specify init --here --ai codebuddy
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+        specify init --template-repo gouzhuang/spec-kit my-project  # Use custom fork
     """
 
     show_banner()
@@ -1124,7 +1153,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, template_repo=template_repo)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
