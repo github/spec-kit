@@ -68,7 +68,12 @@ Given that feature description, do this:
    - If no existing branches/directories found with this short-name, start with number 1
    - You must only ever run this script once per feature
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
-   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
+   - The JSON output will contain:
+     - `BRANCH_NAME`: The feature branch name
+     - `SPEC_FILE`: Absolute path to spec.md
+     - `FEATURE_ROOT`: **Working directory** - use this as the base for all file operations
+     - `MODE`: Either "branch" (standard mode) or "worktree" (parallel development mode)
+   - **When MODE is "worktree"**: The feature is in a separate working directory. Use `FEATURE_ROOT` as your working directory for all subsequent commands and file operations
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
 3. Load `templates/spec-template.md` to understand required sections.

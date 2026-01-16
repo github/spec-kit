@@ -135,3 +135,35 @@ function Test-DirHasFiles {
     }
 }
 
+# Read a value from .specify/config.json
+# Usage: Get-ConfigValue -Key "git_mode" [-Default "branch"]
+# Returns the value or default if not found
+function Get-ConfigValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Key,
+        [string]$Default = ""
+    )
+
+    $repoRoot = Get-RepoRoot
+    $configFile = Join-Path $repoRoot ".specify/config.json"
+
+    if (-not (Test-Path $configFile)) {
+        return $Default
+    }
+
+    try {
+        $config = Get-Content $configFile -Raw | ConvertFrom-Json
+        $value = $config.$Key
+
+        if ($null -ne $value -and $value -ne "") {
+            return $value
+        }
+        return $Default
+    }
+    catch {
+        Write-Verbose "Failed to read config file: $_"
+        return $Default
+    }
+}
+

@@ -44,3 +44,6 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Git worktrees (nested strategy)
+.worktrees/

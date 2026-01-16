@@ -2,6 +2,10 @@
 
 set -e
 
+# Source common functions (for read_config_value)
+SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
@@ -155,10 +159,61 @@ clean_branch_name() {
     echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
 }
 
+# Calculate worktree path based on strategy
+# Usage: calculate_worktree_path <branch_name> <repo_root>
+# Returns: absolute path where worktree should be created
+calculate_worktree_path() {
+    local branch_name="$1"
+    local repo_root="$2"
+    local strategy
+    local custom_path
+
+    strategy=$(read_config_value "worktree_strategy" "nested")
+    custom_path=$(read_config_value "worktree_custom_path" "")
+
+    case "$strategy" in
+        nested)
+            echo "$repo_root/.worktrees/$branch_name"
+            ;;
+        sibling)
+            # Sibling to the repository
+            echo "$(dirname "$repo_root")/$branch_name"
+            ;;
+        custom)
+            if [[ -n "$custom_path" ]]; then
+                echo "$custom_path/$branch_name"
+            else
+                # Fallback to nested if custom path not set
+                echo "$repo_root/.worktrees/$branch_name"
+            fi
+            ;;
+        *)
+            # Default to nested
+            echo "$repo_root/.worktrees/$branch_name"
+            ;;
+    esac
+}
+
+# Check if a git branch exists (locally or remotely)
+# Usage: branch_exists <branch_name>
+# Returns: 0 if exists, 1 if not
+branch_exists() {
+    local branch_name="$1"
+    # Check local branches
+    if git rev-parse --verify "$branch_name" >/dev/null 2>&1; then
+        return 0
+    fi
+    # Check remote branches
+    if git rev-parse --verify "origin/$branch_name" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 # Resolve repository root. Prefer git information when available, but fall back
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialised with --no-git.
-SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Note: SCRIPT_DIR is already set at the top of this script
 
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -271,13 +326,90 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
+# Check for uncommitted changes (warning only, per FR-013)
 if [ "$HAS_GIT" = true ]; then
-    git checkout -b "$BRANCH_NAME"
-else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        >&2 echo "[specify] Warning: Uncommitted changes in working directory will not appear in new worktree."
+    fi
 fi
 
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+# Check for orphaned worktrees (warning only, per FR-012)
+if [ "$HAS_GIT" = true ]; then
+    if git worktree list --porcelain 2>/dev/null | grep -q "prunable"; then
+        >&2 echo "[specify] Warning: Orphaned worktree entries detected. Run 'git worktree prune' to clean up."
+    fi
+fi
+
+# Determine git mode and create feature
+GIT_MODE=$(read_config_value "git_mode" "branch")
+CREATION_MODE="branch"
+FEATURE_ROOT="$REPO_ROOT"
+WORKTREE_PATH=""
+
+if [ "$HAS_GIT" = true ]; then
+    if [ "$GIT_MODE" = "worktree" ]; then
+        # Worktree mode
+        WORKTREE_PATH=$(calculate_worktree_path "$BRANCH_NAME" "$REPO_ROOT")
+        WORKTREE_PARENT=$(dirname "$WORKTREE_PATH")
+
+        # Check if parent path is writable (T029)
+        if [[ ! -d "$WORKTREE_PARENT" ]]; then
+            mkdir -p "$WORKTREE_PARENT" 2>/dev/null || {
+                >&2 echo "[specify] Warning: Cannot write to $WORKTREE_PARENT. Falling back to branch mode."
+                GIT_MODE="branch"
+            }
+        elif [[ ! -w "$WORKTREE_PARENT" ]]; then
+            >&2 echo "[specify] Warning: Cannot write to $WORKTREE_PARENT. Falling back to branch mode."
+            GIT_MODE="branch"
+        fi
+    fi
+
+    if [ "$GIT_MODE" = "worktree" ]; then
+        # Check if branch already exists
+        if branch_exists "$BRANCH_NAME"; then
+            # Attach worktree to existing branch (without -b flag)
+            if git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" 2>/dev/null; then
+                CREATION_MODE="worktree"
+                FEATURE_ROOT="$WORKTREE_PATH"
+            else
+                # Fallback to branch mode
+                >&2 echo "[specify] Warning: Worktree creation failed. Falling back to branch mode."
+                git checkout "$BRANCH_NAME"
+                CREATION_MODE="branch"
+                FEATURE_ROOT="$REPO_ROOT"
+            fi
+        else
+            # Create new branch with worktree
+            if git worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME" 2>/dev/null; then
+                CREATION_MODE="worktree"
+                FEATURE_ROOT="$WORKTREE_PATH"
+            else
+                # Fallback to branch mode
+                >&2 echo "[specify] Warning: Worktree creation failed. Falling back to branch mode."
+                git checkout -b "$BRANCH_NAME"
+                CREATION_MODE="branch"
+                FEATURE_ROOT="$REPO_ROOT"
+            fi
+        fi
+    else
+        # Standard branch mode
+        git checkout -b "$BRANCH_NAME"
+        CREATION_MODE="branch"
+        FEATURE_ROOT="$REPO_ROOT"
+    fi
+else
+    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    CREATION_MODE="branch"
+    FEATURE_ROOT="$REPO_ROOT"
+fi
+
+# Create feature directory and spec file
+# In worktree mode, create specs in the worktree; in branch mode, create in main repo
+if [ "$CREATION_MODE" = "worktree" ]; then
+    FEATURE_DIR="$FEATURE_ROOT/specs/$BRANCH_NAME"
+else
+    FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+fi
 mkdir -p "$FEATURE_DIR"
 
 TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
@@ -288,10 +420,13 @@ if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","FEATURE_ROOT":"%s","MODE":"%s"}\n' \
+        "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM" "$FEATURE_ROOT" "$CREATION_MODE"
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
+    echo "FEATURE_ROOT: $FEATURE_ROOT"
+    echo "MODE: $CREATION_MODE"
     echo "SPECIFY_FEATURE environment variable set to: $BRANCH_NAME"
 fi
