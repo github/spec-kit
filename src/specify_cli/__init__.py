@@ -748,7 +748,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, preserve_constitution: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -828,6 +828,11 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                                     if sub_item.is_file():
                                         rel_path = sub_item.relative_to(item)
                                         dest_file = dest_path / rel_path
+                                        # Skip constitution.md if preserve_constitution is True and file exists
+                                        if preserve_constitution and dest_file.exists() and rel_path == Path("constitution.md") and item.name == "memory":
+                                            if verbose and not tracker:
+                                                console.print(f"[cyan]Preserving existing:[/cyan] memory/constitution.md")
+                                            continue
                                         dest_file.parent.mkdir(parents=True, exist_ok=True)
                                         # Special handling for .vscode/settings.json - merge instead of overwrite
                                         if dest_file.name == "settings.json" and dest_file.parent.name == ".vscode":
@@ -951,6 +956,7 @@ def init(
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
+    keep_memory: bool = typer.Option(False, "--keep-memory", help="Switch AI agent without overwriting memory/constitution.md (preserves existing constitution)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
@@ -978,6 +984,7 @@ def init(
         specify init --here --ai codebuddy
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+        specify init . --ai gemini --keep-memory  # Switch to Gemini without overwriting constitution
     """
 
     show_banner()
@@ -1124,7 +1131,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, preserve_constitution=keep_memory)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 

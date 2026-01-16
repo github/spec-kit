@@ -7,6 +7,14 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.23] - 2026-01-16
+
+### Added
+
+- **AI Agent Switching**: Added `--keep-memory` flag to `specify init` command to switch between AI agents without overwriting `memory/constitution.md`
+  - Use case: When switching AI assistants on an existing project, your custom constitution is preserved
+  - Example: `specify init . --ai gemini --keep-memory`
+
 ## [0.0.22] - 2025-11-07
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.
