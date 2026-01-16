@@ -371,6 +371,7 @@ if ($hasGit) {
             catch {
                 # Fallback to branch mode
                 Write-Warning "[specify] Warning: Worktree creation failed. Falling back to branch mode."
+                Write-Warning "[specify] Note: Your current directory will switch to branch '$branchName'."
                 git checkout $branchName | Out-Null
                 $creationMode = "branch"
                 $featureRoot = $repoRoot
@@ -391,6 +392,7 @@ if ($hasGit) {
             catch {
                 # Fallback to branch mode
                 Write-Warning "[specify] Warning: Worktree creation failed. Falling back to branch mode."
+                Write-Warning "[specify] Note: Your current directory will switch to branch '$branchName'."
                 git checkout -b $branchName | Out-Null
                 $creationMode = "branch"
                 $featureRoot = $repoRoot

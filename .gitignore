@@ -45,5 +45,8 @@ env/
 *.zip
 sdd-*/
 
+# Local configuration (contains user-specific paths)
+.specify/config.json
+
 # Git worktrees (nested strategy)
 .worktrees/
