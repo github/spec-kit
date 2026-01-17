@@ -21,19 +21,19 @@ Configure git worktree preferences for Spec Kit feature creation.
 
 Options:
   --mode <branch|worktree>        Set git mode (default: branch)
-  --strategy <sibling|sibling|custom>  Set worktree placement strategy
+  --strategy <nested|sibling|custom>  Set worktree placement strategy
   --path <path>                   Custom base path (required if strategy is 'custom')
   --show                          Display current configuration
   --help, -h                      Show this help message
 
 Strategies:
-  sibling   - Worktrees in .worktrees/ directory inside the repository
+  nested   - Worktrees in .worktrees/ directory inside the repository
   sibling  - Worktrees as sibling directories to the repository
   custom   - Worktrees in a custom directory (requires --path)
 
 Examples:
-  # Enable worktree mode with sibling strategy
-  configure-worktree.sh --mode worktree --strategy sibling
+  # Enable worktree mode with nested strategy
+  configure-worktree.sh --mode worktree --strategy nested
 
   # Enable worktree mode with sibling strategy
   configure-worktree.sh --mode worktree --strategy sibling
@@ -62,7 +62,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --strategy)
             if [[ -z "$2" || "$2" == --* ]]; then
-                echo "Error: --strategy requires a value (sibling, sibling, or custom)" >&2
+                echo "Error: --strategy requires a value (nested, sibling, or custom)" >&2
                 exit 1
             fi
             STRATEGY="$2"
@@ -128,8 +128,8 @@ fi
 
 # Validate strategy
 if [[ -n "$STRATEGY" ]]; then
-    if [[ "$STRATEGY" != "sibling" && "$STRATEGY" != "sibling" && "$STRATEGY" != "custom" ]]; then
-        echo "Error: Invalid strategy '$STRATEGY'. Must be 'sibling', 'sibling', or 'custom'" >&2
+    if [[ "$STRATEGY" != "nested" && "$STRATEGY" != "sibling" && "$STRATEGY" != "custom" ]]; then
+        echo "Error: Invalid strategy '$STRATEGY'. Must be 'nested', 'sibling', or 'custom'" >&2
         exit 1
     fi
 fi
@@ -188,7 +188,7 @@ if command -v jq &>/dev/null; then
 
     if [[ -n "$CUSTOM_PATH" ]]; then
         UPDATE_EXPR="$UPDATE_EXPR | .worktree_custom_path = \"$CUSTOM_PATH\""
-    elif [[ "$STRATEGY" == "sibling" || "$STRATEGY" == "sibling" ]]; then
+    elif [[ "$STRATEGY" == "nested" || "$STRATEGY" == "sibling" ]]; then
         # Clear custom path when switching to non-custom strategy
         UPDATE_EXPR="$UPDATE_EXPR | .worktree_custom_path = \"\""
     fi
@@ -212,7 +212,7 @@ else
     [[ -n "$STRATEGY" ]] && CURRENT_STRATEGY="$STRATEGY"
     if [[ -n "$CUSTOM_PATH" ]]; then
         CURRENT_PATH="$CUSTOM_PATH"
-    elif [[ "$STRATEGY" == "sibling" || "$STRATEGY" == "sibling" ]]; then
+    elif [[ "$STRATEGY" == "nested" || "$STRATEGY" == "sibling" ]]; then
         CURRENT_PATH=""
     fi
 
