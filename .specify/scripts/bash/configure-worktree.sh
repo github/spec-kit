@@ -101,12 +101,12 @@ if $SHOW_CONFIG; then
     if [[ ! -f "$CONFIG_FILE" ]]; then
         echo "No configuration file found. Using defaults:"
         echo "  git_mode: branch"
-        echo "  worktree_strategy: nested"
+        echo "  worktree_strategy: sibling"
         echo "  worktree_custom_path: (none)"
     else
         echo "Current configuration ($CONFIG_FILE):"
         echo "  git_mode: $(read_config_value "git_mode" "branch")"
-        echo "  worktree_strategy: $(read_config_value "worktree_strategy" "nested")"
+        echo "  worktree_strategy: $(read_config_value "worktree_strategy" "sibling")"
         echo "  worktree_custom_path: $(read_config_value "worktree_custom_path" "(none)")"
     fi
     exit 0
@@ -204,7 +204,7 @@ else
 
     # Read existing values
     CURRENT_MODE=$(read_config_value "git_mode" "branch")
-    CURRENT_STRATEGY=$(read_config_value "worktree_strategy" "nested")
+    CURRENT_STRATEGY=$(read_config_value "worktree_strategy" "sibling")
     CURRENT_PATH=$(read_config_value "worktree_custom_path" "")
 
     # Apply updates
@@ -228,7 +228,7 @@ fi
 
 echo "Configuration updated:"
 echo "  git_mode: $(read_config_value "git_mode" "branch")"
-echo "  worktree_strategy: $(read_config_value "worktree_strategy" "nested")"
+echo "  worktree_strategy: $(read_config_value "worktree_strategy" "sibling")"
 custom_path=$(read_config_value "worktree_custom_path" "")
 if [[ -n "$custom_path" ]]; then
     echo "  worktree_custom_path: $custom_path"
