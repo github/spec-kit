@@ -166,26 +166,31 @@ clean_branch_name() {
 # Calculate worktree path based on strategy
 # Usage: calculate_worktree_path <branch_name> <repo_root>
 # Returns: absolute path where worktree should be created
+# Naming convention: <repo_name>-<branch_name> for sibling/custom strategies
 calculate_worktree_path() {
     local branch_name="$1"
     local repo_root="$2"
     local strategy
     local custom_path
+    local repo_name
 
     strategy=$(read_config_value "worktree_strategy" "nested")
     custom_path=$(read_config_value "worktree_custom_path" "")
+    repo_name=$(basename "$repo_root")
 
     case "$strategy" in
         nested)
+            # Nested uses just branch name since it's inside the repo
             echo "$repo_root/.worktrees/$branch_name"
             ;;
         sibling)
-            # Sibling to the repository
-            echo "$(dirname "$repo_root")/$branch_name"
+            # Sibling uses repo_name-branch_name for clarity
+            echo "$(dirname "$repo_root")/${repo_name}-${branch_name}"
             ;;
         custom)
             if [[ -n "$custom_path" ]]; then
-                echo "$custom_path/$branch_name"
+                # Custom also uses repo_name-branch_name for clarity
+                echo "$custom_path/${repo_name}-${branch_name}"
             else
                 # Fallback to nested if custom path not set
                 echo "$repo_root/.worktrees/$branch_name"

@@ -200,6 +200,28 @@ Given that feature description, do this:
 
 7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
+   **CRITICAL - Worktree Mode Notification**: If `MODE` is `worktree`, you **MUST** include a prominent warning section at the end of your completion report:
+
+   ```markdown
+   ---
+
+   ## ⚠️ ACTION REQUIRED: Switch to Worktree
+
+   This feature was created in **worktree mode**. Your files are in a separate directory:
+
+   **Worktree Path**: `[FEATURE_ROOT]`
+
+   **You must switch your coding agent/IDE to this directory** before running any subsequent commands (`/speckit.clarify`, `/speckit.plan`, `/speckit.implement`, etc.).
+
+   ```bash
+   cd [FEATURE_ROOT]
+   ```
+
+   ---
+   ```
+
+   Replace `[FEATURE_ROOT]` with the actual path from the script output. This notification is essential because the agent will not automatically change directories and will operate on the wrong files if the user doesn't switch.
+
 **NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
 
 ## General Guidelines

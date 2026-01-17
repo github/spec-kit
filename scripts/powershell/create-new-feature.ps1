@@ -134,6 +134,7 @@ function ConvertTo-CleanBranchName {
 }
 
 # Calculate worktree path based on strategy
+# Naming convention: <repo_name>-<branch_name> for sibling/custom strategies
 function Get-WorktreePath {
     param(
         [string]$BranchName,
@@ -142,17 +143,21 @@ function Get-WorktreePath {
 
     $strategy = Get-ConfigValue -Key "worktree_strategy" -Default "nested"
     $customPath = Get-ConfigValue -Key "worktree_custom_path" -Default ""
+    $repoName = Split-Path $RepoRoot -Leaf
 
     switch ($strategy) {
         "nested" {
+            # Nested uses just branch name since it's inside the repo
             return Join-Path $RepoRoot ".worktrees/$BranchName"
         }
         "sibling" {
-            return Join-Path (Split-Path $RepoRoot -Parent) $BranchName
+            # Sibling uses repo_name-branch_name for clarity
+            return Join-Path (Split-Path $RepoRoot -Parent) "$repoName-$BranchName"
         }
         "custom" {
             if ($customPath) {
-                return Join-Path $customPath $BranchName
+                # Custom also uses repo_name-branch_name for clarity
+                return Join-Path $customPath "$repoName-$BranchName"
             }
             else {
                 # Fallback to nested if custom path not set
