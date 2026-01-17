@@ -141,7 +141,7 @@ function Get-WorktreePath {
         [string]$RepoRoot
     )
 
-    $strategy = Get-ConfigValue -Key "worktree_strategy" -Default "nested"
+    $strategy = Get-ConfigValue -Key "worktree_strategy" -Default "sibling"
     $customPath = Get-ConfigValue -Key "worktree_custom_path" -Default ""
     $repoName = Split-Path $RepoRoot -Leaf
 

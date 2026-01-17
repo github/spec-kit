@@ -174,7 +174,7 @@ calculate_worktree_path() {
     local custom_path
     local repo_name
 
-    strategy=$(read_config_value "worktree_strategy" "nested")
+    strategy=$(read_config_value "worktree_strategy" "sibling")
     custom_path=$(read_config_value "worktree_custom_path" "")
     repo_name=$(basename "$repo_root")
 

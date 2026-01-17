@@ -19,7 +19,7 @@ We need a persistent configuration to determine the user's preference and the ta
     ```json
     {
       "git_mode": "branch",       // Options: "branch" | "worktree"
-      "worktree_strategy": "nested" // Options: "nested" | "sibling" | "custom"
+      "worktree_strategy": "sibling" // Options: "sibling" | "nested" | "custom"
       "worktree_custom_path": ""  // Used if strategy is "custom" (e.g., "/tmp/worktrees")
     }
     ```

@@ -6,7 +6,7 @@ param(
     [ValidateSet("branch", "worktree")]
     [string]$Mode,
 
-    [ValidateSet("nested", "sibling", "custom")]
+    [ValidateSet("sibling", "sibling", "custom")]
     [string]$Strategy,
 
     [string]$Path,
@@ -29,19 +29,19 @@ Configure git worktree preferences for Spec Kit feature creation.
 
 Options:
   -Mode <branch|worktree>           Set git mode (default: branch)
-  -Strategy <nested|sibling|custom> Set worktree placement strategy
+  -Strategy <sibling|sibling|custom> Set worktree placement strategy
   -Path <path>                      Custom base path (required if strategy is 'custom')
   -Show                             Display current configuration
   -Help                             Show this help message
 
 Strategies:
-  nested   - Worktrees in .worktrees/ directory inside the repository
+  sibling   - Worktrees in .worktrees/ directory inside the repository
   sibling  - Worktrees as sibling directories to the repository
   custom   - Worktrees in a custom directory (requires -Path)
 
 Examples:
-  # Enable worktree mode with nested strategy
-  ./configure-worktree.ps1 -Mode worktree -Strategy nested
+  # Enable worktree mode with sibling strategy
+  ./configure-worktree.ps1 -Mode worktree -Strategy sibling
 
   # Enable worktree mode with sibling strategy
   ./configure-worktree.ps1 -Mode worktree -Strategy sibling
@@ -72,13 +72,13 @@ if ($Show) {
     if (-not (Test-Path $configFile)) {
         Write-Host "No configuration file found. Using defaults:"
         Write-Host "  git_mode: branch"
-        Write-Host "  worktree_strategy: nested"
+        Write-Host "  worktree_strategy: sibling"
         Write-Host "  worktree_custom_path: (none)"
     }
     else {
         Write-Host "Current configuration ($configFile):"
         Write-Host "  git_mode: $(Get-ConfigValue -Key 'git_mode' -Default 'branch')"
-        Write-Host "  worktree_strategy: $(Get-ConfigValue -Key 'worktree_strategy' -Default 'nested')"
+        Write-Host "  worktree_strategy: $(Get-ConfigValue -Key 'worktree_strategy' -Default 'sibling')"
         $customPath = Get-ConfigValue -Key 'worktree_custom_path' -Default ''
         if ($customPath) {
             Write-Host "  worktree_custom_path: $customPath"
@@ -156,7 +156,7 @@ if ($Strategy) {
 if ($Path) {
     $config['worktree_custom_path'] = $Path
 }
-elseif ($Strategy -eq "nested" -or $Strategy -eq "sibling") {
+elseif ($Strategy -eq "sibling" -or $Strategy -eq "sibling") {
     # Clear custom path when switching to non-custom strategy
     $config['worktree_custom_path'] = ""
 }
@@ -166,7 +166,7 @@ $config | ConvertTo-Json | Set-Content $configFile -Encoding UTF8
 
 Write-Host "Configuration updated:"
 Write-Host "  git_mode: $(Get-ConfigValue -Key 'git_mode' -Default 'branch')"
-Write-Host "  worktree_strategy: $(Get-ConfigValue -Key 'worktree_strategy' -Default 'nested')"
+Write-Host "  worktree_strategy: $(Get-ConfigValue -Key 'worktree_strategy' -Default 'sibling')"
 $customPath = Get-ConfigValue -Key 'worktree_custom_path' -Default ''
 if ($customPath) {
     Write-Host "  worktree_custom_path: $customPath"
