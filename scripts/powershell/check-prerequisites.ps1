@@ -117,6 +117,11 @@ if ((Test-Path $paths.CONTRACTS_DIR) -and (Get-ChildItem -Path $paths.CONTRACTS_
     $docs += 'contracts/' 
 }
 
+# Check checklists directory (only if it exists and has files)
+if ((Test-Path $paths.CHECKLISTS_DIR) -and (Get-ChildItem -Path $paths.CHECKLISTS_DIR -ErrorAction SilentlyContinue | Select-Object -First 1)) { 
+    $docs += 'checklists/' 
+}
+
 if (Test-Path $paths.QUICKSTART) { $docs += 'quickstart.md' }
 
 # Include tasks.md if requested and it exists

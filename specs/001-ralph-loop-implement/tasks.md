@@ -15,9 +15,9 @@
 
 **Purpose**: Create project structure and shared infrastructure for ralph loop
 
-- [ ] T001 Create ralph iteration prompt template in templates/ralph-prompt.md per contracts/prompt-template.md spec
-- [ ] T002 [P] Add progress.txt file format documentation to data-model.md if needed
-- [ ] T003 [P] Verify .gitignore includes progress.txt patterns appropriately
+- [x] T001 Create ralph iteration prompt template in templates/ralph-prompt.md per contracts/prompt-template.md spec
+- [x] T002 [P] Add progress.txt file format documentation to data-model.md if needed
+- [x] T003 [P] Verify .gitignore includes progress.txt patterns appropriately
 
 **Checkpoint**: Template and documentation infrastructure ready
 
@@ -29,12 +29,12 @@
 
 **⚠️ CRITICAL**: No user story implementation can begin until this phase is complete
 
-- [ ] T004 Add `ralph` command skeleton to src/specify_cli/__init__.py with Typer
-- [ ] T005 Add `--max-iterations` option with default value of 10
-- [ ] T006 Add `--model` option for AI model selection (default: claude-sonnet-4.5)
-- [ ] T007 Implement prerequisite validation (tasks.md exists, copilot CLI available, git repo)
-- [ ] T008 [P] Create scripts/powershell/ralph-loop.ps1 skeleton with parameter handling
-- [ ] T009 [P] Create scripts/bash/ralph-loop.sh skeleton with parameter handling
+- [x] T004 Add `ralph` command skeleton to src/specify_cli/__init__.py with Typer
+- [x] T005 Add `--max-iterations` option with default value of 10
+- [x] T006 Add `--model` option for AI model selection (default: claude-sonnet-4.5)
+- [x] T007 Implement prerequisite validation (tasks.md exists, copilot CLI available, git repo)
+- [x] T008 [P] Create scripts/powershell/ralph-loop.ps1 skeleton with parameter handling
+- [x] T009 [P] Create scripts/bash/ralph-loop.sh skeleton with parameter handling
 
 **Checkpoint**: CLI entry point functional, can invoke (empty) platform scripts
 
@@ -48,22 +48,22 @@
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] Unit test for prompt template placeholder replacement in tests/unit/test_ralph_prompt.py
-- [ ] T011 [P] [US1] Integration test for loop execution with mock agent in tests/integration/test_ralph_loop.py
+- [x] T010 [P] [US1] Unit test for prompt template placeholder replacement in tests/unit/test_ralph_prompt.py
+- [x] T011 [P] [US1] Integration test for loop execution with mock agent in tests/integration/test_ralph_loop.py
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Implement prompt template placeholder replacement in ralph-loop.ps1
-- [ ] T013 [US1] Implement Copilot CLI invocation with --agent speckit.implement flag in ralph-loop.ps1
-- [ ] T014 [US1] Implement iteration loop with counter and max-iterations check in ralph-loop.ps1
-- [ ] T015 [US1] Implement `<promise>COMPLETE</promise>` token detection for loop termination in ralph-loop.ps1
-- [ ] T016 [US1] Implement iteration summary output (iteration number, status) in ralph-loop.ps1
-- [ ] T017 [P] [US1] Implement prompt template placeholder replacement in ralph-loop.sh
-- [ ] T018 [P] [US1] Implement Copilot CLI invocation with --agent flag in ralph-loop.sh
-- [ ] T019 [P] [US1] Implement iteration loop with counter and max-iterations check in ralph-loop.sh
-- [ ] T020 [P] [US1] Implement `<promise>COMPLETE</promise>` token detection in ralph-loop.sh
-- [ ] T021 [P] [US1] Implement iteration summary output in ralph-loop.sh
-- [ ] T022 [US1] Wire Python CLI to invoke correct platform script based on OS
+- [x] T012 [US1] Implement prompt template placeholder replacement in ralph-loop.ps1
+- [x] T013 [US1] Implement Copilot CLI invocation with --agent speckit.implement flag in ralph-loop.ps1
+- [x] T014 [US1] Implement iteration loop with counter and max-iterations check in ralph-loop.ps1
+- [x] T015 [US1] Implement `<promise>COMPLETE</promise>` token detection for loop termination in ralph-loop.ps1
+- [x] T016 [US1] Implement iteration summary output (iteration number, status) in ralph-loop.ps1
+- [x] T017 [P] [US1] Implement prompt template placeholder replacement in ralph-loop.sh
+- [x] T018 [P] [US1] Implement Copilot CLI invocation with --agent flag in ralph-loop.sh
+- [x] T019 [P] [US1] Implement iteration loop with counter and max-iterations check in ralph-loop.sh
+- [x] T020 [P] [US1] Implement `<promise>COMPLETE</promise>` token detection in ralph-loop.sh
+- [x] T021 [P] [US1] Implement iteration summary output in ralph-loop.sh
+- [x] T022 [US1] Wire Python CLI to invoke correct platform script based on OS
 
 **Checkpoint**: Basic loop execution works - can run `specify ralph` and see iterations
 
@@ -77,13 +77,13 @@
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Create initial progress.txt with header on first iteration in ralph-loop.ps1
-- [ ] T022 [US2] Implement progress entry append after each iteration in ralph-loop.ps1
-- [ ] T023 [US2] Add Codebase Patterns section handling in ralph-loop.ps1
-- [ ] T024 [P] [US2] Create initial progress.txt with header on first iteration in ralph-loop.sh
-- [ ] T025 [P] [US2] Implement progress entry append after each iteration in ralph-loop.sh
-- [ ] T026 [P] [US2] Add Codebase Patterns section handling in ralph-loop.sh
-- [ ] T027 [US2] Update prompt template to include progress file reading instructions
+- [x] T021 [US2] Create initial progress.txt with header on first iteration in ralph-loop.ps1
+- [x] T022 [US2] Implement progress entry append after each iteration in ralph-loop.ps1
+- [x] T023 [US2] Add Codebase Patterns section handling in ralph-loop.ps1
+- [x] T024 [P] [US2] Create initial progress.txt with header on first iteration in ralph-loop.sh
+- [x] T025 [P] [US2] Implement progress entry append after each iteration in ralph-loop.sh
+- [x] T026 [P] [US2] Add Codebase Patterns section handling in ralph-loop.sh
+- [x] T027 [US2] Update prompt template to include progress file reading instructions
 
 **Checkpoint**: Progress tracking works - iterations persist learnings
 
@@ -97,11 +97,11 @@
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] Implement tasks.md checkbox parsing to count incomplete tasks in ralph-loop.ps1
-- [ ] T029 [US3] Implement early termination when no incomplete tasks remain in ralph-loop.ps1
-- [ ] T030 [P] [US3] Implement tasks.md checkbox parsing in ralph-loop.sh
-- [ ] T031 [P] [US3] Implement early termination when no incomplete tasks in ralph-loop.sh
-- [ ] T032 [US3] Update prompt template to instruct agent on checkbox update format
+- [x] T028 [US3] Implement tasks.md checkbox parsing to count incomplete tasks in ralph-loop.ps1
+- [x] T029 [US3] Implement early termination when no incomplete tasks remain in ralph-loop.ps1
+- [x] T030 [P] [US3] Implement tasks.md checkbox parsing in ralph-loop.sh
+- [x] T031 [P] [US3] Implement early termination when no incomplete tasks in ralph-loop.sh
+- [x] T032 [US3] Update prompt template to instruct agent on checkbox update format
 
 **Checkpoint**: Task synchronization works - loop respects existing task completion
 
@@ -115,12 +115,12 @@
 
 ### Implementation for User Story 4
 
-- [ ] T033 [US4] Pass max-iterations parameter from Python CLI to PowerShell script
-- [ ] T034 [US4] Implement configurable limit enforcement in ralph-loop.ps1
-- [ ] T035 [US4] Add termination message when limit reached (vs completion) in ralph-loop.ps1
-- [ ] T036 [P] [US4] Pass max-iterations parameter from Python CLI to Bash script
-- [ ] T037 [P] [US4] Implement configurable limit enforcement in ralph-loop.sh
-- [ ] T038 [P] [US4] Add termination message when limit reached in ralph-loop.sh
+- [x] T033 [US4] Pass max-iterations parameter from Python CLI to PowerShell script
+- [x] T034 [US4] Implement configurable limit enforcement in ralph-loop.ps1
+- [x] T035 [US4] Add termination message when limit reached (vs completion) in ralph-loop.ps1
+- [x] T036 [P] [US4] Pass max-iterations parameter from Python CLI to Bash script
+- [x] T037 [P] [US4] Implement configurable limit enforcement in ralph-loop.sh
+- [x] T038 [P] [US4] Add termination message when limit reached in ralph-loop.sh
 
 **Checkpoint**: Iteration limits work - loop respects configured maximum
 
@@ -134,10 +134,10 @@
 
 ### Implementation for User Story 5
 
-- [ ] T039 [US5] Detect configured agent from .specify/config or project initialization
-- [ ] T040 [US5] Add agent validation in Python CLI (Copilot only for MVP)
-- [ ] T041 [US5] Display helpful error message for unsupported agents
-- [ ] T042 [US5] Document agent extension points in code comments for future agents
+- [x] T039 [US5] Detect configured agent from .specify/config or project initialization
+- [x] T040 [US5] Add agent validation in Python CLI (Copilot only for MVP)
+- [x] T041 [US5] Display helpful error message for unsupported agents
+- [x] T042 [US5] Document agent extension points in code comments for future agents
 
 **Checkpoint**: Agent detection works - clear error for non-Copilot, ready for future agents
 
@@ -147,15 +147,15 @@
 
 **Purpose**: Error handling, edge cases, graceful interruption, documentation
 
-- [ ] T043 Implement graceful Ctrl+C handling with progress preservation in ralph-loop.ps1
-- [ ] T044 [P] Implement graceful Ctrl+C handling with progress preservation in ralph-loop.sh
-- [ ] T045 Implement consecutive failure tracking (skip after 3 failures) in ralph-loop.ps1
-- [ ] T046 [P] Implement consecutive failure tracking in ralph-loop.sh
-- [ ] T047 Add error handling for missing tasks.md with guidance to run /speckit.tasks
-- [ ] T048 Add error handling for missing copilot CLI with installation instructions
-- [ ] T049 Add warning when git has uncommitted changes before starting
-- [ ] T050 Update quickstart.md with final usage examples and troubleshooting
-- [ ] T051 Add --verbose flag for detailed iteration output
+- [x] T043 Implement graceful Ctrl+C handling with progress preservation in ralph-loop.ps1
+- [x] T044 [P] Implement graceful Ctrl+C handling with progress preservation in ralph-loop.sh
+- [x] T045 Implement consecutive failure tracking (skip after 3 failures) in ralph-loop.ps1
+- [x] T046 [P] Implement consecutive failure tracking in ralph-loop.sh
+- [x] T047 Add error handling for missing tasks.md with guidance to run /speckit.tasks
+- [x] T048 Add error handling for missing copilot CLI with installation instructions
+- [x] T049 Add warning when git has uncommitted changes before starting
+- [x] T050 Update quickstart.md with final usage examples and troubleshooting
+- [x] T051 Add --verbose flag for detailed iteration output
 
 **Checkpoint**: Production-ready with proper error handling and documentation
 
