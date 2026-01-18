@@ -50,9 +50,9 @@ As a developer, I want the ralph loop to track which tasks have been completed s
 
 **Acceptance Scenarios**:
 
-1. **Given** a tasks.md file exists with incomplete tasks, **When** the ralph loop starts, **Then** it generates/updates a tracking file that mirrors task completion status
-2. **Given** an iteration successfully completes a task, **When** the iteration ends, **Then** the tracking file is updated to mark that task as complete
-3. **Given** some tasks are already marked complete, **When** a new iteration starts, **Then** it selects the highest priority incomplete task to work on
+1. **Given** a tasks.md file exists with incomplete tasks, **When** the ralph loop starts, **Then** it parses tasks.md checkboxes to determine completion status (no separate tracking file needed)
+2. **Given** an iteration successfully completes a task, **When** the iteration ends, **Then** tasks.md is updated with the checkbox marked `[x]`
+3. **Given** some tasks are already marked complete, **When** a new iteration starts, **Then** it identifies the first incomplete user story and works on tasks within that story
 
 ---
 
@@ -118,7 +118,7 @@ As a developer using different AI agents, I want the ralph loop to work with whi
 - **Ralph Session**: A single execution of the ralph loop command; has iteration count, start time, status (running/completed/interrupted/failed)
 - **Iteration**: One invocation of the agent CLI within a session; has number, task attempted, outcome (success/failure), duration
 - **Progress Log**: Append-only file tracking all iterations; entries include timestamp, task ID, files changed, learnings discovered
-- **Task Tracking**: Structure mapping task IDs to completion status; synced with tasks.md but in machine-readable format
+- **Task Tracking**: Completion status tracked directly via tasks.md checkbox state (`[ ]` = incomplete, `[x]` = complete); no separate tracking file
 - **Prompt Template**: Instructions given to each agent iteration; includes ralph-specific behavior guidance
 
 ## Success Criteria *(mandatory)*
@@ -136,10 +136,10 @@ As a developer using different AI agents, I want the ralph loop to work with whi
 ## Assumptions
 
 - Users have already completed the spec, plan, and tasks phases before running ralph loop
-- GitHub CLI (`gh`) is installed with the Copilot extension (`gh copilot`) available and authenticated
+- GitHub Copilot CLI (`copilot`) is installed and authenticated (via GH_TOKEN or `/login` command)
 - Tasks in tasks.md are appropriately sized for single-context completion (per Ralph methodology)
 - Git is available and the project is a git repository (for commit tracking between iterations)
-- The `gh copilot` CLI supports accepting prompts for code generation tasks
+- The `copilot` CLI supports non-interactive mode via `-p` flag with `--agent` for custom agent profiles
 
 ## Clarifications
 
@@ -148,6 +148,6 @@ As a developer using different AI agents, I want the ralph loop to work with whi
 - Q: How should the agent signal that a task has been completed within an iteration? → A: Agent updates tasks.md directly; loop watches for checkbox changes
 - Q: What should the default maximum iteration limit be? → A: 10 iterations (matches reference implementation)
 - Q: Which agent CLIs should be supported in the initial release (MVP)? → A: GitHub Copilot only
-- Q: How should the ralph loop invoke GitHub Copilot for each iteration? → A: Use Copilot CLI (`gh copilot`) for command-line integration
+- Q: How should the ralph loop invoke GitHub Copilot for each iteration? → A: Use standalone Copilot CLI (`copilot --agent speckit.implement -p "prompt" --allow-all-tools -s`)
 - Q: What observability/logging level should be provided during ralph loop execution? → A: Summary level (iteration count, task attempted, pass/fail per iteration)
 - Q: How should the loop detect that ALL tasks are complete and terminate? → A: Agent outputs `<promise>COMPLETE</promise>` token when all tasks pass; loop detects this in stdout and exits
