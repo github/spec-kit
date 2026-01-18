@@ -50,3 +50,6 @@ docs/dev
 .specify/extensions/.cache/
 .specify/extensions/.backup/
 .specify/extensions/*/local-config.yml
+
+# Ralph loop progress files (regenerated per session)
+specs/*/progress.txt

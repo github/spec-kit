@@ -1587,6 +1587,296 @@ def init(
     console.print()
     console.print(enhancements_panel)
 
+
+def _list_copilot_models():
+    """Fetch and display available models from copilot CLI."""
+    # Find copilot executable - prefer npm global install over VS Code bundled version
+    copilot_path = None
+    
+    # Check npm global location first (more reliable)
+    npm_path = os.path.expandvars(r"%APPDATA%\npm\copilot.cmd")
+    if os.path.exists(npm_path):
+        copilot_path = npm_path
+    else:
+        # Fall back to shutil.which
+        copilot_path = shutil.which("copilot")
+    
+    if not copilot_path:
+        console.print("[red]Error:[/red] GitHub Copilot CLI not found.")
+        console.print("[dim]Install from: https://docs.github.com/copilot/using-github-copilot/using-github-copilot-chat-in-your-ide[/dim]")
+        raise typer.Exit(1)
+    
+    console.print("[bold]Available AI Models[/bold]")
+    console.print("[dim]Fetching from GitHub Copilot CLI...[/dim]")
+    console.print()
+    
+    try:
+        # Use shell=True with string command for .cmd files on Windows
+        cmd = f'"{copilot_path}" --help'
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            shell=True
+        )
+        
+        # Parse the model choices from the help output
+        # Looking for: --model <model>  ... (choices: "model1", "model2", ...)
+        import re
+        match = re.search(r'--model\s+<model>\s+.*?\(choices:\s*([^)]+)\)', result.stdout)
+        if match:
+            choices_str = match.group(1)
+            # Extract model names from quoted strings
+            models_list = re.findall(r'"([^"]+)"', choices_str)
+            
+            if models_list:
+                console.print("[green]Available models:[/green]")
+                for m in models_list:
+                    default_marker = " [yellow](default)[/yellow]" if m == "claude-sonnet-4.5" else ""
+                    console.print(f"  - {m}{default_marker}")
+                console.print()
+                console.print("[dim]Usage: specify ralph -m <model>[/dim]")
+            else:
+                console.print("[yellow]Could not parse model list from copilot --help[/yellow]")
+                console.print("[dim]Run 'copilot --help' directly to see available models[/dim]")
+        else:
+            console.print("[yellow]Could not find model choices in copilot --help output[/yellow]")
+            console.print("[dim]Run 'copilot --help' directly to see available models[/dim]")
+            
+    except subprocess.TimeoutExpired:
+        console.print("[red]Error:[/red] Timeout fetching models from copilot CLI")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        console.print("[dim]Run 'copilot --help' directly to see available models[/dim]")
+
+
+@app.command()
+def ralph(
+    max_iterations: int = typer.Option(10, "--max-iterations", "-n", help="Maximum iterations before stopping (default: 10)"),
+    model: str = typer.Option(
+        "claude-sonnet-4.5", 
+        "--model", "-m", 
+        help="AI model to use (default: claude-sonnet-4.5)"
+    ),
+    list_models: bool = typer.Option(False, "--list-models", "-l", help="List available AI models and exit"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed iteration output"),
+):
+    """Run autonomous implementation loop using GitHub Copilot CLI.
+    
+    Executes tasks from tasks.md in a controlled loop, spawning fresh agent 
+    contexts for each iteration. The loop terminates when:
+    - All tasks are complete (agent outputs <promise>COMPLETE</promise>)
+    - Max iterations reached
+    - User interrupts with Ctrl+C
+    
+    Requires:
+    - tasks.md in current feature spec
+    - GitHub Copilot CLI installed and authenticated
+    - Active feature branch (001-xxx-yyy format)
+    
+    Examples:
+        specify ralph                    # Run with defaults (10 iterations)
+        specify ralph -n 20              # Run up to 20 iterations
+        specify ralph -m gpt-5.1         # Use GPT model
+        specify ralph -l                 # List available models
+        specify ralph -v                 # Verbose output
+    """
+    show_banner()
+    
+    # Handle --list-models flag
+    if list_models:
+        _list_copilot_models()
+        raise typer.Exit(0)
+    
+    # Validate prerequisites
+    tracker = StepTracker("Ralph Loop Prerequisites")
+    tracker.add("copilot", "GitHub Copilot CLI")
+    tracker.add("tasks", "tasks.md exists")
+    tracker.add("git", "Git repository")
+    tracker.add("branch", "Feature branch")
+    
+    with Live(tracker.render(), console=console, transient=True, auto_refresh=False) as live:
+        def refresh():
+            live.update(tracker.render(), refresh=True)
+        tracker.attach_refresh(refresh)
+        
+        # Check copilot CLI
+        copilot_ok = check_tool("copilot", tracker=tracker)
+        if not copilot_ok:
+            console.print(tracker.render())
+            console.print()
+            console.print("[red]Error:[/red] GitHub Copilot CLI not found.")
+            console.print("[dim]Install from: https://docs.github.com/copilot/using-github-copilot/using-github-copilot-chat-in-your-ide[/dim]")
+            console.print("[dim]Or run: npm install -g @github/copilot[/dim]")
+            raise typer.Exit(1)
+        
+        # Check for tasks.md
+        cwd = Path.cwd()
+        
+        # Try to find spec directory (look for .specify or specs folder pattern)
+        spec_dir = None
+        tasks_path = None
+        
+        # Check if we're in a spec directory with tasks.md
+        if (cwd / "tasks.md").exists():
+            spec_dir = cwd
+            tasks_path = cwd / "tasks.md"
+        else:
+            # Look in specs/ for feature directories
+            specs_dir = cwd / "specs"
+            if specs_dir.exists():
+                for child in specs_dir.iterdir():
+                    if child.is_dir() and (child / "tasks.md").exists():
+                        # Use most recent or only spec directory
+                        spec_dir = child
+                        tasks_path = child / "tasks.md"
+                        break
+        
+        if tasks_path and tasks_path.exists():
+            tracker.complete("tasks", f"found: {tasks_path.relative_to(cwd)}")
+        else:
+            tracker.error("tasks", "not found")
+            console.print(tracker.render())
+            console.print()
+            console.print("[red]Error:[/red] tasks.md not found.")
+            console.print("[dim]Run /speckit.tasks to generate task breakdown first.[/dim]")
+            raise typer.Exit(1)
+        
+        # Check git repo
+        if is_git_repo(cwd):
+            tracker.complete("git", "repository found")
+        else:
+            tracker.error("git", "not a git repository")
+            console.print(tracker.render())
+            console.print()
+            console.print("[red]Error:[/red] Not in a git repository.")
+            console.print("[dim]Ralph loop requires git for commit tracking.[/dim]")
+            raise typer.Exit(1)
+        
+        # Check feature branch
+        try:
+            branch = run_command(["git", "branch", "--show-current"], capture=True)
+            if branch:
+                tracker.complete("branch", branch)
+            else:
+                tracker.error("branch", "detached HEAD")
+                console.print(tracker.render())
+                console.print()
+                console.print("[red]Error:[/red] Not on a branch (detached HEAD).")
+                raise typer.Exit(1)
+        except Exception:
+            tracker.error("branch", "could not determine")
+    
+    console.print(tracker.render())
+    console.print()
+    
+    # Check for uncommitted changes (warning only, not blocking)
+    try:
+        git_status = run_command(["git", "status", "--porcelain"], capture=True)
+        if git_status:
+            console.print("[yellow]⚠ Warning:[/yellow] You have uncommitted changes.")
+            console.print("[dim]Consider committing or stashing before running ralph loop.[/dim]")
+            console.print()
+    except Exception:
+        pass  # Non-critical, continue anyway
+    
+    # Extract feature name from spec directory or branch
+    feature_name = spec_dir.name if spec_dir else branch
+    
+    # Detect installed script type by checking which scripts exist
+    # This respects the user's choice during init, regardless of OS
+    ps_script_paths = [
+        cwd / ".specify" / "scripts" / "powershell" / "ralph-loop.ps1",
+        cwd / "scripts" / "powershell" / "ralph-loop.ps1",
+    ]
+    bash_script_paths = [
+        cwd / ".specify" / "scripts" / "bash" / "ralph-loop.sh",
+        cwd / "scripts" / "bash" / "ralph-loop.sh",
+    ]
+    
+    # Find the first existing script
+    script_path = None
+    use_powershell = None
+    
+    for ps_path in ps_script_paths:
+        if ps_path.exists():
+            script_path = ps_path
+            use_powershell = True
+            break
+    
+    if script_path is None:
+        for bash_path in bash_script_paths:
+            if bash_path.exists():
+                script_path = bash_path
+                use_powershell = False
+                break
+    
+    if script_path is None:
+        console.print("[red]Error:[/red] Ralph loop script not found.")
+        console.print("[dim]Ensure ralph-loop scripts are installed in .specify/scripts/powershell/ or .specify/scripts/bash/[/dim]")
+        raise typer.Exit(1)
+    
+    # Display configuration
+    config_table = Table(show_header=False, box=None, padding=(0, 2))
+    config_table.add_column("Key", style="cyan", justify="right")
+    config_table.add_column("Value", style="white")
+    config_table.add_row("Feature", feature_name)
+    config_table.add_row("Tasks", str(tasks_path.relative_to(cwd)))
+    config_table.add_row("Max Iterations", str(max_iterations))
+    config_table.add_row("Model", model)
+    config_table.add_row("Script", str(script_path.relative_to(cwd)))
+    
+    config_panel = Panel(config_table, title="[bold cyan]Ralph Loop Configuration[/bold cyan]", border_style="cyan", padding=(1, 2))
+    console.print(config_panel)
+    console.print()
+    
+    # Build script invocation based on detected script type
+    if use_powershell:
+        cmd = [
+            "powershell", "-ExecutionPolicy", "Bypass", "-File", str(script_path),
+            "-FeatureName", feature_name,
+            "-TasksPath", str(tasks_path),
+            "-SpecDir", str(spec_dir),
+            "-MaxIterations", str(max_iterations),
+            "-Model", model,
+        ]
+        if verbose:
+            cmd.append("-DetailedOutput")
+    else:
+        cmd = [
+            "bash", str(script_path),
+            "--feature-name", feature_name,
+            "--tasks-path", str(tasks_path),
+            "--spec-dir", str(spec_dir),
+            "--max-iterations", str(max_iterations),
+            "--model", model,
+        ]
+        if verbose:
+            cmd.append("--verbose")
+    
+    console.print("[cyan]Starting Ralph loop...[/cyan]")
+    console.print("[dim]Press Ctrl+C to interrupt gracefully[/dim]")
+    console.print()
+    
+    try:
+        # Run the script interactively (not capturing output)
+        result = subprocess.run(cmd, cwd=cwd)
+        
+        if result.returncode == 0:
+            console.print()
+            console.print("[bold green]✓ Ralph loop completed successfully![/bold green]")
+        else:
+            console.print()
+            console.print(f"[yellow]Ralph loop exited with code {result.returncode}[/yellow]")
+            raise typer.Exit(result.returncode)
+            
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Ralph loop interrupted by user[/yellow]")
+        raise typer.Exit(130)  # Standard Ctrl+C exit code
+
+
 @app.command()
 def check():
     """Check that all required tools are installed."""
