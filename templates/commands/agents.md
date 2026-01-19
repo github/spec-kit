@@ -299,6 +299,7 @@ description: |
   Invoke for: /design (after spec-analyzer), architecture decisions.
 tools: Read, Glob, Grep, Write
 model: sonnet  # Needs reasoning for architecture decisions
+# Orchestrator may escalate to opus for: 10+ components, cross-system integration, major refactoring
 skills: {framework}-architecture, {language}-standards  # From /setup-hooks
 ---
 ```
@@ -351,6 +352,7 @@ description: |
   Invoke for: UI design tasks, component design, visual system creation.
 tools: Read, Glob, Grep, Write
 model: sonnet  # Creative reasoning needed
+# Orchestrator may escalate to opus for: complete design systems, complex UX flows, accessibility-critical
 skills: frontend-design  # Anthropic's official frontend-design skill
 ---
 ```
@@ -469,6 +471,7 @@ description: |
   Invoke for: /implement (main coding agent).
 tools: Read, Glob, Grep, Bash, Edit, Write
 model: sonnet  # Needs capability for complex coding
+# Orchestrator may escalate to opus for: security-critical code, complex algorithms, major refactoring
 skills: {framework}-architecture, {language}-standards
 ---
 ```
@@ -580,6 +583,7 @@ description: |
   Use when: implementing APIs, database logic, server-side features.
 tools: Read, Glob, Grep, Bash, Edit, Write
 model: sonnet
+# Orchestrator may escalate to opus for: auth/security, payments, complex data pipelines
 skills: {language}-standards, {framework}-architecture
 ---
 ```
@@ -612,6 +616,7 @@ description: |
   Use when: building UI components, state management, client-side features.
 tools: Read, Glob, Grep, Bash, Edit, Write
 model: sonnet
+# Orchestrator may escalate to opus for: complex state machines, performance-critical rendering, security
 skills: {framework}-architecture, {language}-standards, {styling}-patterns
 ---
 ```
@@ -636,9 +641,9 @@ name: researcher
 description: |
   Codebase exploration and pattern analysis specialist.
   Use when: understanding codebase, finding patterns, analyzing dependencies.
-  Invoke for: research tasks, codebase questions, pattern discovery.
+  Invoke for: research tasks, codebase questions, pattern discovery, REUSE validation.
 tools: Read, Glob, Grep, Bash
-model: haiku  # Fast for exploration tasks
+model: sonnet  # Requires judgment for REUSE/EXTEND validation, not just file exploration
 ---
 ```
 
@@ -674,7 +679,8 @@ description: |
   Use when: breaking down features, planning implementation, organizing work.
   Invoke for: /breakdown, task planning, sprint organization.
 tools: Read, Glob, Grep
-model: haiku  # Fast for planning tasks
+model: sonnet  # Planning requires reasoning about dependencies, complexity, and architecture
+# Orchestrator may escalate to opus for critical/complex groups (security, 10+ tasks, cross-domain)
 ---
 ```
 
@@ -788,22 +794,34 @@ Check each agent:
 | frontend-designer | sonnet | Creative UI/UX reasoning |
 | implementer | sonnet | Complex coding |
 | tester | sonnet | Test design |
-| researcher | haiku | Fast exploration |
-| planner | haiku | Quick task breakdown |
+| researcher | sonnet | REUSE validation requires judgment, not just exploration |
+| planner | sonnet | Planning requires reasoning about dependencies and complexity |
 | backend-coder | sonnet | Complex backend logic |
 | frontend-coder | sonnet | UI/state complexity |
 
 ### When to Use Opus
 
-Opus should be used for **critical or complex tasks**. Add `model: opus` when:
+Opus should be used for **critical or complex tasks**. The orchestrator can escalate any sonnet agent to opus when conditions warrant:
 
-| Scenario | Why Opus |
-|----------|----------|
+| Agent | Escalate to Opus When |
+|-------|----------------------|
+| **designer** | 10+ components, cross-system integration, major refactoring |
+| **frontend-designer** | Complete design systems, complex UX flows, accessibility-critical |
+| **implementer** | Security-critical code, complex algorithms, major refactoring |
+| **planner** | 10+ interdependent tasks, security/auth/payment, cross-domain |
+| **researcher** | Large codebase analysis, complex dependency mapping |
+| **backend-coder** | Auth/security, payments, complex data pipelines |
+| **frontend-coder** | Complex state machines, performance-critical rendering, security |
+
+| General Scenario | Why Opus |
+|------------------|----------|
 | Architecture decisions (10+ components) | Complex trade-off reasoning |
 | Security-critical features | Nuanced vulnerability detection |
 | Major refactoring | Understanding deep interdependencies |
 | Cross-system integration | Synthesizing large context |
 | Performance optimization | Subtle bottleneck analysis |
+| Complex algorithms | Edge cases, correctness reasoning |
+| Financial/payment code | Precision and audit requirements |
 
 ### Adaptive Model Selection (Orchestrator Logic)
 
@@ -815,13 +833,14 @@ The orchestrator can dynamically select models based on task complexity:
 When invoking agents via Task tool, select model based on:
 
 1. **Use haiku** when:
-   - Task is exploration/research only
-   - Simple file parsing
-   - Quick task breakdown
+   - Simple document parsing (spec-analyzer)
+   - Basic file listing/counting
    - Estimated changes < 3 files
 
 2. **Use sonnet** (default) when:
    - Standard feature implementation
+   - REUSE/EXTEND validation (researcher)
+   - Task planning with moderate complexity (planner)
    - Moderate complexity (3-10 files)
    - Typical design decisions
    - Regular testing tasks
@@ -830,8 +849,12 @@ When invoking agents via Task tool, select model based on:
    - Feature marked as "critical" or "complex"
    - Architecture-level changes (10+ files)
    - Security-sensitive code (auth, crypto, payments)
-   - Cross-domain integration
+   - Cross-domain integration (frontend + backend + data)
+   - Planning groups with 10+ interdependent tasks
+   - Complex algorithms or data pipelines
+   - Performance-critical code paths
    - User explicitly requests thorough analysis
+   - Previous sonnet attempts produced suboptimal results
 ```
 
 ### Agent Frontmatter with Adaptive Model
@@ -855,14 +878,16 @@ skills: {framework}-architecture, {language}-standards
 
 | Model | Relative Cost | Speed | Best For |
 |-------|---------------|-------|----------|
-| haiku | $ | ~2s | Research, parsing, simple tasks |
-| sonnet | $$ | ~5s | Most coding, design, testing |
-| opus | $$$$ | ~15s | Critical architecture, security |
+| haiku | $ | ~2s | Document parsing (spec-analyzer), simple file operations |
+| sonnet | $$ | ~5s | Most agents: coding, design, testing, research, planning |
+| opus | $$$$ | ~15s | Critical architecture, security, complex cross-domain planning |
 
-**Recommendation**: Start with sonnet defaults. Promote to opus only for:
+**Recommendation**: Sonnet is now the default for most agents (including researcher and planner). This reflects Opus 4.5's capabilities making the entire model tier more capable. Promote to opus only for:
 - Features tagged `priority: critical`
 - Security/auth/payment features
 - Architecture redesigns
+- Planning groups with 10+ interdependent tasks
+- Cross-domain integration (frontend + backend + data)
 - When sonnet produces suboptimal results
 
 ## Success Criteria

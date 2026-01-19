@@ -87,6 +87,7 @@ This phase runs **ONLY** after user confirms which phase to process.
    Use Task tool with:
    - If .claude/agents/speckit/researcher.md exists: subagent_type="researcher"
    - Otherwise: subagent_type="Explore" with thoroughness="medium"
+   - **Model**: sonnet (requires judgment for REUSE validation, not just file exploration)
 
    Prompt:
 
@@ -234,6 +235,14 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
        Use Task tool with:
        - If .claude/agents/speckit/planner.md exists: subagent_type="planner"
        - Otherwise: subagent_type="general-purpose"
+       - **Model selection** (adaptive):
+         - Default: **sonnet** (good balance of reasoning and speed)
+         - Use **opus** when ANY of these conditions apply:
+           * Group contains security/auth/payment tasks
+           * Group has 10+ tasks with complex dependencies
+           * Tasks involve cross-domain integration (frontend + backend + data)
+           * User explicitly requested thorough analysis
+           * Previous planning attempts produced suboptimal results
 
        Prompt:
 
@@ -464,8 +473,9 @@ The primary goal of breakdown is to **reduce uncertainty** between the technical
 
 ### Agent Coordination
 
-- **Researcher for discovery**: Use general-purpose agent with researcher prompt for codebase analysis
-- **Planner for creation**: Use general-purpose agent with planner prompt for plan generation
+- **Researcher for discovery**: Use sonnet model for codebase analysis (REUSE validation requires judgment)
+- **Planner for creation**: Use sonnet by default, escalate to opus for critical/complex groups
+- **Model selection**: Adaptive - sonnet handles most cases, opus for security/auth/10+ tasks/cross-domain
 - **Group execution**: Run researcher once per phase, planner once per task group
 - **Context passing**: Pass research findings to planner for informed planning
 
