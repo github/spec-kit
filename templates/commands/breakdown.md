@@ -23,6 +23,11 @@ You **MUST** consider the user input before proceeding (if not empty).
      - **Existing Codebase Analysis** section (reusable components, patterns)
      - **Reuse decisions** (REUSE/EXTEND/REFACTOR/NEW for each component)
      - **Technical decisions** with justifications
+   - **REQUIRED**: Read `/memory/architecture-registry.md` for:
+     - **Established Patterns** that MUST be followed
+     - **Technology Decisions** that MUST be used
+     - **Component Conventions** for locations and naming
+     - **Anti-Patterns** that MUST be avoided
    - **IF EXISTS**: Read spec.md for feature requirements
    - **IF EXISTS**: Read data-model.md for entities and relationships
    - **IF EXISTS**: Read constitution.md for project principles
@@ -33,6 +38,12 @@ You **MUST** consider the user input before proceeding (if not empty).
    - List of components marked for EXTEND (must add to existing, not duplicate)
    - List of components marked for REFACTOR (must modify existing)
    - List of components marked for NEW (only these should create new files)
+
+   **CRITICAL**: Extract from architecture-registry.md (ARCHITECTURE_CONTEXT):
+   - Established patterns to follow (with file references)
+   - Technology decisions (what tools/libs to use)
+   - Component conventions (where to put files, how to name them)
+   - Anti-patterns to avoid (what NOT to do)
 
 2b. **Check for specialized agents**:
    - Check if .claude/agents/speckit/researcher.md exists
@@ -102,6 +113,20 @@ This phase runs **ONLY** after user confirms which phase to process.
    - Tasks to plan: {list of task IDs and descriptions, with their [REUSE]/[EXTEND]/[REFACTOR]/[NEW] markers}
    - Tech stack: {from plan.md}
    - Previous reuse decisions: {from research.md Existing Codebase Analysis}
+
+   ## ARCHITECTURE CONTEXT (from registry - MUST FOLLOW)
+
+   ### Established Patterns
+   {list patterns from architecture-registry.md that apply to this phase}
+
+   ### Technology Decisions
+   {list tech decisions from registry that apply}
+
+   ### Component Conventions
+   {list conventions for file locations and naming}
+
+   ### Anti-Patterns to AVOID
+   {list anti-patterns from registry}
 
    ## CRITICAL: Validate Reuse Decisions
 
@@ -266,6 +291,22 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
        - Data model: {from data-model.md if relevant}
        - Contracts: {from contracts/ if relevant}
 
+       ## ARCHITECTURE CONTEXT (from registry - MUST FOLLOW)
+
+       ### Established Patterns (USE THESE)
+       {list patterns from architecture-registry.md with file references}
+
+       ### Technology Decisions (USE THESE TOOLS/LIBS)
+       {list tech decisions - e.g., "Validation: Zod", "State: Zustand"}
+
+       ### Component Conventions (PUT FILES HERE, NAME LIKE THIS)
+       {list conventions - e.g., "Services → src/services/{domain}Service.ts"}
+
+       ### Anti-Patterns (DO NOT DO THIS)
+       {list anti-patterns - e.g., "Direct DB access in routes → Use repository"}
+
+       **CRITICAL**: Plans MUST follow established patterns. If a task would violate a pattern, flag it.
+
        CRITICAL: Generate a plan for EACH task. Separate plans with exactly this line:
        ---TASK_SEPARATOR---
 
@@ -279,6 +320,25 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
        **User Story**: {US# or N/A}
        **Parallel**: {Yes/No}
        **Reuse Type**: {REUSE/EXTEND/REFACTOR/NEW}
+
+       ---
+
+       ## Architecture Alignment (CRITICAL)
+
+       **Registry Patterns Applied**:
+       - [ ] {Pattern 1}: {how applied or N/A}
+       - [ ] {Pattern 2}: {how applied or N/A}
+
+       **Technology Decisions Followed**:
+       - [ ] {Tech 1}: {used as specified or N/A}
+
+       **Conventions Followed**:
+       - [ ] File location: {correct path per convention}
+       - [ ] Naming: {follows convention}
+
+       **Anti-Patterns Avoided**: {list or "None applicable"}
+
+       **Alignment Status**: ✅ Aligned / ⚠️ Divergent (requires justification)
 
        ---
 
@@ -440,9 +500,19 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
 
 ## Operating Principles
 
+### Architecture Consistency (CRITICAL)
+
+The primary goal is to maintain **architectural consistency** across all features:
+
+- **Follow established patterns**: Plans MUST use patterns from architecture-registry.md
+- **Use specified technologies**: Don't introduce alternative libs/tools without justification
+- **Follow conventions**: Put files in standard locations with standard names
+- **Avoid anti-patterns**: Never repeat mistakes documented in registry
+- **Flag divergence**: If a task cannot follow a pattern, document why and get approval
+
 ### Reduce Uncertainty
 
-The primary goal of breakdown is to **reduce uncertainty** between the technical plan and actual implementation:
+The secondary goal is to **reduce uncertainty** between the technical plan and actual implementation:
 
 - **Validate assumptions**: Check that components marked for reuse still exist and work as expected
 - **Discover gaps**: Identify mismatches between plan assumptions and codebase reality
@@ -498,6 +568,8 @@ The primary goal of breakdown is to **reduce uncertainty** between the technical
 
 ## Important Notes
 
+- **LOAD ARCHITECTURE REGISTRY** - always load /memory/architecture-registry.md before planning
+- **FOLLOW ESTABLISHED PATTERNS** - plans MUST use patterns from registry
 - **NEVER process all phases at once** - work on current phase only
 - **VALIDATE REUSE DECISIONS** - always check if planned reuse is still valid before planning
 - **REDUCE UNCERTAINTY** - the goal is to close gaps between plan and reality
@@ -509,6 +581,7 @@ The primary goal of breakdown is to **reduce uncertainty** between the technical
 - **FOCUS ON CURRENT PHASE** - don't try to plan everything upfront
 - **PARSE carefully** - split agent response by ---TASK_SEPARATOR--- to extract individual plans
 - **HONOR REUSE MARKERS** - [REUSE] tasks must NOT create new files, [NEW] must justify why
+- **FLAG PATTERN VIOLATIONS** - if a task cannot follow established patterns, flag and justify
 
 ## Context
 
