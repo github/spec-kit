@@ -352,6 +352,7 @@ description: |
   Invoke for: UI design tasks, component design, visual system creation.
 tools: Read, Glob, Grep, Write
 model: sonnet  # Creative reasoning needed
+# Orchestrator may escalate to opus for: complete design systems, complex UX flows, accessibility-critical
 skills: frontend-design  # Anthropic's official frontend-design skill
 ---
 ```
@@ -805,6 +806,7 @@ Opus should be used for **critical or complex tasks**. The orchestrator can esca
 | Agent | Escalate to Opus When |
 |-------|----------------------|
 | **designer** | 10+ components, cross-system integration, major refactoring |
+| **frontend-designer** | Complete design systems, complex UX flows, accessibility-critical |
 | **implementer** | Security-critical code, complex algorithms, major refactoring |
 | **planner** | 10+ interdependent tasks, security/auth/payment, cross-domain |
 | **researcher** | Large codebase analysis, complex dependency mapping |
