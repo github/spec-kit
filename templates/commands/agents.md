@@ -299,6 +299,7 @@ description: |
   Invoke for: /design (after spec-analyzer), architecture decisions.
 tools: Read, Glob, Grep, Write
 model: sonnet  # Needs reasoning for architecture decisions
+# Orchestrator may escalate to opus for: 10+ components, cross-system integration, major refactoring
 skills: {framework}-architecture, {language}-standards  # From /setup-hooks
 ---
 ```
@@ -469,6 +470,7 @@ description: |
   Invoke for: /implement (main coding agent).
 tools: Read, Glob, Grep, Bash, Edit, Write
 model: sonnet  # Needs capability for complex coding
+# Orchestrator may escalate to opus for: security-critical code, complex algorithms, major refactoring
 skills: {framework}-architecture, {language}-standards
 ---
 ```
@@ -580,6 +582,7 @@ description: |
   Use when: implementing APIs, database logic, server-side features.
 tools: Read, Glob, Grep, Bash, Edit, Write
 model: sonnet
+# Orchestrator may escalate to opus for: auth/security, payments, complex data pipelines
 skills: {language}-standards, {framework}-architecture
 ---
 ```
@@ -612,6 +615,7 @@ description: |
   Use when: building UI components, state management, client-side features.
 tools: Read, Glob, Grep, Bash, Edit, Write
 model: sonnet
+# Orchestrator may escalate to opus for: complex state machines, performance-critical rendering, security
 skills: {framework}-architecture, {language}-standards, {styling}-patterns
 ---
 ```
@@ -796,15 +800,26 @@ Check each agent:
 
 ### When to Use Opus
 
-Opus should be used for **critical or complex tasks**. Add `model: opus` when:
+Opus should be used for **critical or complex tasks**. The orchestrator can escalate any sonnet agent to opus when conditions warrant:
 
-| Scenario | Why Opus |
-|----------|----------|
+| Agent | Escalate to Opus When |
+|-------|----------------------|
+| **designer** | 10+ components, cross-system integration, major refactoring |
+| **implementer** | Security-critical code, complex algorithms, major refactoring |
+| **planner** | 10+ interdependent tasks, security/auth/payment, cross-domain |
+| **researcher** | Large codebase analysis, complex dependency mapping |
+| **backend-coder** | Auth/security, payments, complex data pipelines |
+| **frontend-coder** | Complex state machines, performance-critical rendering, security |
+
+| General Scenario | Why Opus |
+|------------------|----------|
 | Architecture decisions (10+ components) | Complex trade-off reasoning |
 | Security-critical features | Nuanced vulnerability detection |
 | Major refactoring | Understanding deep interdependencies |
 | Cross-system integration | Synthesizing large context |
 | Performance optimization | Subtle bottleneck analysis |
+| Complex algorithms | Edge cases, correctness reasoning |
+| Financial/payment code | Precision and audit requirements |
 
 ### Adaptive Model Selection (Orchestrator Logic)
 
@@ -834,6 +849,8 @@ When invoking agents via Task tool, select model based on:
    - Security-sensitive code (auth, crypto, payments)
    - Cross-domain integration (frontend + backend + data)
    - Planning groups with 10+ interdependent tasks
+   - Complex algorithms or data pipelines
+   - Performance-critical code paths
    - User explicitly requests thorough analysis
    - Previous sonnet attempts produced suboptimal results
 ```
