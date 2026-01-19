@@ -636,9 +636,9 @@ name: researcher
 description: |
   Codebase exploration and pattern analysis specialist.
   Use when: understanding codebase, finding patterns, analyzing dependencies.
-  Invoke for: research tasks, codebase questions, pattern discovery.
+  Invoke for: research tasks, codebase questions, pattern discovery, REUSE validation.
 tools: Read, Glob, Grep, Bash
-model: haiku  # Fast for exploration tasks
+model: sonnet  # Requires judgment for REUSE/EXTEND validation, not just file exploration
 ---
 ```
 
@@ -674,7 +674,8 @@ description: |
   Use when: breaking down features, planning implementation, organizing work.
   Invoke for: /breakdown, task planning, sprint organization.
 tools: Read, Glob, Grep
-model: haiku  # Fast for planning tasks
+model: sonnet  # Planning requires reasoning about dependencies, complexity, and architecture
+# Orchestrator may escalate to opus for critical/complex groups (security, 10+ tasks, cross-domain)
 ---
 ```
 
@@ -788,8 +789,8 @@ Check each agent:
 | frontend-designer | sonnet | Creative UI/UX reasoning |
 | implementer | sonnet | Complex coding |
 | tester | sonnet | Test design |
-| researcher | haiku | Fast exploration |
-| planner | haiku | Quick task breakdown |
+| researcher | sonnet | REUSE validation requires judgment, not just exploration |
+| planner | sonnet | Planning requires reasoning about dependencies and complexity |
 | backend-coder | sonnet | Complex backend logic |
 | frontend-coder | sonnet | UI/state complexity |
 
@@ -815,13 +816,14 @@ The orchestrator can dynamically select models based on task complexity:
 When invoking agents via Task tool, select model based on:
 
 1. **Use haiku** when:
-   - Task is exploration/research only
-   - Simple file parsing
-   - Quick task breakdown
+   - Simple document parsing (spec-analyzer)
+   - Basic file listing/counting
    - Estimated changes < 3 files
 
 2. **Use sonnet** (default) when:
    - Standard feature implementation
+   - REUSE/EXTEND validation (researcher)
+   - Task planning with moderate complexity (planner)
    - Moderate complexity (3-10 files)
    - Typical design decisions
    - Regular testing tasks
@@ -830,8 +832,10 @@ When invoking agents via Task tool, select model based on:
    - Feature marked as "critical" or "complex"
    - Architecture-level changes (10+ files)
    - Security-sensitive code (auth, crypto, payments)
-   - Cross-domain integration
+   - Cross-domain integration (frontend + backend + data)
+   - Planning groups with 10+ interdependent tasks
    - User explicitly requests thorough analysis
+   - Previous sonnet attempts produced suboptimal results
 ```
 
 ### Agent Frontmatter with Adaptive Model
@@ -855,14 +859,16 @@ skills: {framework}-architecture, {language}-standards
 
 | Model | Relative Cost | Speed | Best For |
 |-------|---------------|-------|----------|
-| haiku | $ | ~2s | Research, parsing, simple tasks |
-| sonnet | $$ | ~5s | Most coding, design, testing |
-| opus | $$$$ | ~15s | Critical architecture, security |
+| haiku | $ | ~2s | Document parsing (spec-analyzer), simple file operations |
+| sonnet | $$ | ~5s | Most agents: coding, design, testing, research, planning |
+| opus | $$$$ | ~15s | Critical architecture, security, complex cross-domain planning |
 
-**Recommendation**: Start with sonnet defaults. Promote to opus only for:
+**Recommendation**: Sonnet is now the default for most agents (including researcher and planner). This reflects Opus 4.5's capabilities making the entire model tier more capable. Promote to opus only for:
 - Features tagged `priority: critical`
 - Security/auth/payment features
 - Architecture redesigns
+- Planning groups with 10+ interdependent tasks
+- Cross-domain integration (frontend + backend + data)
 - When sonnet produces suboptimal results
 
 ## Success Criteria
