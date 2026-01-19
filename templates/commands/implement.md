@@ -254,4 +254,61 @@ You **MUST** consider the user input before proceeding (if not empty).
     - Confirm the implementation follows the technical plan
     - Report final status with summary of completed work
 
+11. **Update Architecture Registry (CRITICAL for cross-feature consistency)**:
+
+    After successful implementation, extract and register new patterns:
+
+    a. **Analyze implemented code for patterns**:
+       - Review task-results/*.md for patterns that worked well
+       - Identify new components that could be reused
+       - Note any anti-patterns discovered
+       - Find technology decisions made during implementation
+
+    b. **Extract patterns to register**:
+       ```markdown
+       ## Patterns to Register from {feature-name}
+
+       ### New Established Patterns
+       | Pattern | Files | When to Use | Example |
+       |---------|-------|-------------|---------|
+       | [pattern] | [paths] | [context] | [reference] |
+
+       ### New Technology Decisions
+       | Category | Decision | Rationale |
+       |----------|----------|-----------|
+       | [category] | [tech choice] | [why] |
+
+       ### New Component Conventions
+       | Type | Location | Naming |
+       |------|----------|--------|
+       | [type] | [path pattern] | [convention] |
+
+       ### Anti-Patterns Discovered
+       | Anti-Pattern | Why Avoided | Better Approach |
+       |--------------|-------------|-----------------|
+       | [what not to do] | [problems] | [what to do] |
+       ```
+
+    c. **Update `/memory/architecture-registry.md`**:
+       - Append new patterns to "Established Patterns" section
+       - Append technology decisions to "Technology Decisions" section
+       - Update "Component Conventions" if new conventions established
+       - Add anti-patterns to "Anti-Patterns" section
+       - Update "Cross-Feature Dependencies" if shared components created
+       - Update version and "Last Updated" date
+
+    d. **Registry update format**:
+       ```markdown
+       <!-- Added from {feature-name} ({date}) -->
+       | {pattern} | {feature-id} | {files} | {when to use} | {example} |
+       ```
+
+    e. **If no patterns to register**:
+       - Log: "No new patterns established - feature followed existing conventions ✅"
+       - This is a GOOD outcome - it means consistency was maintained
+
+    f. **Commit registry update**:
+       - Include registry update in feature commit
+       - Commit message: "chore: update architecture registry with {feature-name} patterns"
+
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
