@@ -130,20 +130,20 @@ Validate the specification checklist using the `/speckit.checklist` command:
 /speckit.checklist
 ```
 
-### Step 5: Define Tasks
-
-Generate an actionable task list using the `/speckit.tasks` command:
-
-```bash
-/speckit.tasks
-```
-
-### Step 6: Generate Technical Plan with `/speckit.plan`
+### Step 5: Generate Technical Plan with `/speckit.plan`
 
 Be specific about your tech stack and technical requirements:
 
 ```bash
 /speckit.plan We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API, tasks API, and a notifications API.
+```
+
+### Step 6: Define Tasks
+
+Generate an actionable task list using the `/speckit.tasks` command:
+
+```bash
+/speckit.tasks
 ```
 
 ### Step 7: Validate and Implement
