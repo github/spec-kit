@@ -81,6 +81,9 @@ Then, use the `/speckit.implement` slash command to execute the plan.
 /speckit.implement
 ```
 
+> [!TIP]
+> **Phased Implementation**: For complex projects, implement in phases to avoid overwhelming the agent's context. Start with core functionality, validate it works, then add features incrementally.
+
 ## Detailed Example: Building Taskify
 
 Here's a complete example of building a team productivity platform:
@@ -127,7 +130,15 @@ Validate the specification checklist using the `/speckit.checklist` command:
 /speckit.checklist
 ```
 
-### Step 5: Generate Technical Plan with `/speckit.plan`
+### Step 5: Define Tasks
+
+Generate an actionable task list using the `/speckit.tasks` command:
+
+```bash
+/speckit.tasks
+```
+
+### Step 6: Generate Technical Plan with `/speckit.plan`
 
 Be specific about your tech stack and technical requirements:
 
@@ -135,7 +146,7 @@ Be specific about your tech stack and technical requirements:
 /speckit.plan We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API, tasks API, and a notifications API.
 ```
 
-### Step 6: Validate and Implement
+### Step 7: Validate and Implement
 
 Have your AI agent audit the implementation plan using `/speckit.analyze`:
 
@@ -148,6 +159,9 @@ Finally, implement the solution:
 ```bash
 /speckit.implement
 ```
+
+> [!TIP]
+> **Phased Implementation**: For large projects like Taskify, consider implementing in phases (e.g., Phase 1: Basic project/task structure, Phase 2: Kanban functionality, Phase 3: Comments and assignments). This prevents context saturation and allows for validation at each stage.
 
 ## Key Principles
 
