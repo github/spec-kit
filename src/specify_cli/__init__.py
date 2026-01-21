@@ -898,6 +898,259 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def parse_agent_list(agents_str: str) -> list[str]:
+    """Parse comma-separated agent names and validate against AGENT_CONFIG.
+
+    Args:
+        agents_str: Comma-separated list of agent names (e.g., "claude,copilot,gemini")
+
+    Returns:
+        List of validated agent names (duplicates removed, order preserved)
+
+    Raises:
+        typer.Exit: If any agent name is invalid
+    """
+    if not agents_str or not agents_str.strip():
+        console.print("[red]Error:[/red] --agents requires a comma-separated list of agent names")
+        raise typer.Exit(1)
+
+    # Parse and clean agent names
+    agent_names = [name.strip() for name in agents_str.split(",")]
+    agent_names = [name for name in agent_names if name]  # Remove empty strings
+
+    if not agent_names:
+        console.print("[red]Error:[/red] No valid agent names provided")
+        raise typer.Exit(1)
+
+    # Validate each agent name
+    invalid_agents = [name for name in agent_names if name not in AGENT_CONFIG]
+    if invalid_agents:
+        valid_agents = ", ".join(sorted(AGENT_CONFIG.keys()))
+        console.print(f"[red]Error:[/red] Invalid agent name(s): {', '.join(invalid_agents)}")
+        console.print(f"\n[cyan]Valid agents:[/cyan] {valid_agents}")
+        raise typer.Exit(1)
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_agents = []
+    for name in agent_names:
+        if name not in seen:
+            seen.add(name)
+            unique_agents.append(name)
+
+    return unique_agents
+
+
+def _merge_directory(source: Path, dest: Path, verbose: bool = False, tracker: StepTracker = None) -> None:
+    """Recursively merge source directory into destination directory.
+
+    Args:
+        source: Source directory to merge from
+        dest: Destination directory to merge into
+        verbose: Whether to print merge details
+        tracker: Optional StepTracker for progress updates
+    """
+    for item in source.rglob('*'):
+        if item.is_file():
+            rel_path = item.relative_to(source)
+            dest_file = dest / rel_path
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Special handling for .vscode/settings.json - merge instead of overwrite
+            if dest_file.name == "settings.json" and dest_file.parent.name == ".vscode":
+                handle_vscode_settings(item, dest_file, rel_path, verbose, tracker)
+            else:
+                shutil.copy2(item, dest_file)
+                if verbose and not tracker:
+                    console.print(f"[green]Copied:[/green] {rel_path}")
+
+
+def _handle_agents_md_conflict(project_path: Path, agents: list[str], verbose: bool = False) -> None:
+    """Handle AGENTS.md conflict by merging content from multiple agents.
+
+    Some agents (opencode, codex, amp, q, bob) include an AGENTS.md file.
+    When multiple such agents are initialized, merge their content into a single file.
+
+    Args:
+        project_path: Project directory path
+        agents: List of agent names being initialized
+        verbose: Whether to print merge details
+    """
+    agents_md_path = project_path / "AGENTS.md"
+
+    # Agents that include AGENTS.md
+    agents_with_md = {"opencode", "codex", "amp", "q", "bob"}
+
+    # Check which selected agents have AGENTS.md
+    selected_with_md = [agent for agent in agents if agent in agents_with_md]
+
+    if len(selected_with_md) <= 1:
+        # No conflict - single agent or no agents with AGENTS.md
+        return
+
+    # Create merged AGENTS.md with sections for each agent
+    merged_content = [
+        "# AI Agents",
+        "",
+        "This project is configured with multiple AI agents. Each agent has its own configuration and capabilities.",
+        "",
+    ]
+
+    for agent in selected_with_md:
+        agent_config = AGENT_CONFIG[agent]
+        merged_content.append(f"## {agent_config['name']}")
+        merged_content.append("")
+        merged_content.append(f"Configuration directory: `{agent_config['folder']}`")
+        if agent_config.get("install_url"):
+            merged_content.append(f"Installation: {agent_config['install_url']}")
+        merged_content.append("")
+
+    # Write merged content
+    with open(agents_md_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(merged_content))
+
+    if verbose:
+        console.print(f"[cyan]Merged AGENTS.md for {len(selected_with_md)} agents[/cyan]")
+
+
+def download_and_extract_multi_agent_templates(
+    project_path: Path,
+    agents: list[str],
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    verbose: bool = True,
+    tracker: StepTracker | None = None,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None
+) -> None:
+    """Download and extract templates for multiple AI agents.
+
+    Args:
+        project_path: Target project directory
+        agents: List of agent names to initialize
+        script_type: Script type (sh or ps)
+        is_current_dir: Whether initializing in current directory
+        verbose: Whether to print verbose output
+        tracker: Optional StepTracker for progress updates
+        client: Optional httpx.Client for requests
+        debug: Whether to show debug output
+        github_token: Optional GitHub token for API requests
+    """
+    if client is None:
+        client = httpx.Client(verify=ssl_context)
+
+    # Create temporary directory for downloads
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Download and extract each agent template
+        agent_temp_dirs = []
+
+        for idx, agent in enumerate(agents, 1):
+            if tracker:
+                tracker.start("fetch", f"{agent} ({idx}/{len(agents)})")
+
+            # Download template
+            try:
+                zip_path, meta = download_template_from_github(
+                    agent,
+                    temp_path,
+                    script_type=script_type,
+                    verbose=verbose and tracker is None,
+                    show_progress=(tracker is None),
+                    client=client,
+                    debug=debug,
+                    github_token=github_token
+                )
+
+                if tracker:
+                    tracker.complete("fetch", f"{agent} ({idx}/{len(agents)})")
+                    tracker.start("extract", f"{agent} ({idx}/{len(agents)})")
+
+                # Extract to agent-specific temp directory
+                agent_temp_dir = temp_path / f"agent_{agent}"
+                agent_temp_dir.mkdir(parents=True, exist_ok=True)
+
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(agent_temp_dir)
+
+                # Handle nested directory structure
+                extracted_items = list(agent_temp_dir.iterdir())
+                if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                    # Flatten nested directory
+                    nested_dir = extracted_items[0]
+                    for item in nested_dir.iterdir():
+                        shutil.move(str(item), str(agent_temp_dir / item.name))
+                    nested_dir.rmdir()
+
+                agent_temp_dirs.append((agent, agent_temp_dir))
+
+                if tracker:
+                    tracker.complete("extract", f"{agent} ({idx}/{len(agents)})")
+
+                # Clean up zip file
+                if zip_path.exists():
+                    zip_path.unlink()
+
+            except Exception as e:
+                if tracker:
+                    tracker.error("fetch", f"{agent} failed: {e}")
+                else:
+                    console.print(f"[red]Error downloading {agent}:[/red] {e}")
+                raise
+
+        # Merge all agent directories into project_path
+        if tracker:
+            tracker.add("merge", "Merge agent directories")
+            tracker.start("merge")
+
+        # Create project directory if needed
+        if not is_current_dir:
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        # Track which directories we've seen
+        specify_dir_copied = False
+
+        for idx, (agent, agent_temp_dir) in enumerate(agent_temp_dirs, 1):
+            if tracker:
+                tracker.start("merge", f"{agent} ({idx}/{len(agents)})")
+
+            for item in agent_temp_dir.iterdir():
+                dest_path = project_path / item.name
+
+                # Special handling for .specify/ directory - only copy once
+                if item.name == ".specify":
+                    if not specify_dir_copied:
+                        if dest_path.exists():
+                            _merge_directory(item, dest_path, verbose, tracker)
+                        else:
+                            shutil.copytree(item, dest_path)
+                        specify_dir_copied = True
+                    # Skip .specify/ for subsequent agents
+                    continue
+
+                # Copy agent-specific directories and files
+                if item.is_dir():
+                    if dest_path.exists():
+                        _merge_directory(item, dest_path, verbose, tracker)
+                    else:
+                        shutil.copytree(item, dest_path)
+                else:
+                    # Copy files (will be overwritten if multiple agents have same file)
+                    shutil.copy2(item, dest_path)
+
+            if tracker:
+                tracker.complete("merge", f"{agent} ({idx}/{len(agents)})")
+
+        if tracker:
+            tracker.complete("merge", f"{len(agents)} agents merged")
+
+        # Handle AGENTS.md conflict
+        _handle_agents_md_conflict(project_path, agents, verbose)
+
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -946,6 +1199,9 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, bob, or qoder "),
+    universal: bool = typer.Option(False, "--universal", help="Initialize with ALL supported AI agents"),
+    all_agents: bool = typer.Option(False, "--all-agents", help="Alias for --universal"),
+    agents: str = typer.Option(None, "--agents", help="Comma-separated list of agents (e.g., 'claude,copilot,gemini')"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -1037,43 +1293,101 @@ def init(
 
     console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
 
+    # Validate mutual exclusivity of agent selection flags
+    agent_flags_count = sum([
+        bool(ai_assistant),
+        universal,
+        all_agents,
+        bool(agents)
+    ])
+
+    if agent_flags_count > 1:
+        console.print("[red]Error:[/red] Cannot use multiple agent selection flags together")
+        console.print("Choose only one of: --ai, --universal, --all-agents, or --agents")
+        raise typer.Exit(1)
+
     should_init_git = False
     if not no_git:
         should_init_git = check_tool("git")
         if not should_init_git:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
-    if ai_assistant:
+    # Determine agent selection mode
+    is_multi_agent = False
+    selected_agents = []
+
+    if universal or all_agents:
+        # Universal mode - all agents
+        is_multi_agent = True
+        selected_agents = list(AGENT_CONFIG.keys())
+        console.print(f"[cyan]Initializing with all {len(selected_agents)} agents[/cyan]")
+    elif agents:
+        # Specific subset of agents
+        is_multi_agent = True
+        selected_agents = parse_agent_list(agents)
+        console.print(f"[cyan]Initializing with {len(selected_agents)} agents: {', '.join(selected_agents)}[/cyan]")
+    elif ai_assistant:
+        # Single agent specified via --ai
         if ai_assistant not in AGENT_CONFIG:
             console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
             raise typer.Exit(1)
-        selected_ai = ai_assistant
+        selected_agents = [ai_assistant]
     else:
-        # Create options dict for selection (agent_key: display_name)
+        # Interactive selection - single agent
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
-            ai_choices, 
-            "Choose your AI assistant:", 
+            ai_choices,
+            "Choose your AI assistant:",
             "copilot"
         )
+        selected_agents = [selected_ai]
 
+    # CLI tool checks
     if not ignore_agent_tools:
-        agent_config = AGENT_CONFIG.get(selected_ai)
-        if agent_config and agent_config["requires_cli"]:
-            install_url = agent_config["install_url"]
-            if not check_tool(selected_ai):
-                error_panel = Panel(
-                    f"[cyan]{selected_ai}[/cyan] not found\n"
-                    f"Install from: [cyan]{install_url}[/cyan]\n"
-                    f"{agent_config['name']} is required to continue with this project type.\n\n"
-                    "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
-                    title="[red]Agent Detection Error[/red]",
-                    border_style="red",
-                    padding=(1, 2)
-                )
+        if is_multi_agent:
+            # For multi-agent mode, show informational notice about CLI-based agents
+            cli_agents = [agent for agent in selected_agents if AGENT_CONFIG[agent]["requires_cli"]]
+            if cli_agents:
+                notice_lines = [
+                    "Some selected agents require CLI tools to be installed:",
+                    ""
+                ]
+                for agent in cli_agents:
+                    agent_config = AGENT_CONFIG[agent]
+                    install_url = agent_config.get("install_url", "N/A")
+                    notice_lines.append(f"  • [cyan]{agent}[/cyan] ({agent_config['name']})")
+                    if install_url != "N/A":
+                        notice_lines.append(f"    Install: {install_url}")
+
+                notice_lines.append("")
+                notice_lines.append("Use [cyan]--ignore-agent-tools[/cyan] to suppress this notice")
+
                 console.print()
-                console.print(error_panel)
-                raise typer.Exit(1)
+                console.print(Panel(
+                    "\n".join(notice_lines),
+                    title="[yellow]CLI Tools Notice[/yellow]",
+                    border_style="yellow",
+                    padding=(1, 2)
+                ))
+        else:
+            # Single agent mode - strict check (existing behavior)
+            selected_ai = selected_agents[0]
+            agent_config = AGENT_CONFIG.get(selected_ai)
+            if agent_config and agent_config["requires_cli"]:
+                install_url = agent_config["install_url"]
+                if not check_tool(selected_ai):
+                    error_panel = Panel(
+                        f"[cyan]{selected_ai}[/cyan] not found\n"
+                        f"Install from: [cyan]{install_url}[/cyan]\n"
+                        f"{agent_config['name']} is required to continue with this project type.\n\n"
+                        "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
+                        title="[red]Agent Detection Error[/red]",
+                        border_style="red",
+                        padding=(1, 2)
+                    )
+                    console.print()
+                    console.print(error_panel)
+                    raise typer.Exit(1)
 
     if script_type:
         if script_type not in SCRIPT_TYPE_CHOICES:
@@ -1088,7 +1402,15 @@ def init(
         else:
             selected_script = default_script
 
-    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
+    # Display selection summary
+    if is_multi_agent:
+        if len(selected_agents) <= 5:
+            console.print(f"[cyan]Selected agents:[/cyan] {', '.join(selected_agents)}")
+        else:
+            console.print(f"[cyan]Selected agents:[/cyan] {len(selected_agents)} agents (all)")
+    else:
+        selected_ai = selected_agents[0]
+        console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
     tracker = StepTracker("Initialize Specify Project")
@@ -1098,21 +1420,37 @@ def init(
     tracker.add("precheck", "Check required tools")
     tracker.complete("precheck", "ok")
     tracker.add("ai-select", "Select AI assistant")
-    tracker.complete("ai-select", f"{selected_ai}")
+    if is_multi_agent:
+        tracker.complete("ai-select", f"{len(selected_agents)} agents")
+    else:
+        tracker.complete("ai-select", f"{selected_agents[0]}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
-    for key, label in [
-        ("fetch", "Fetch latest release"),
-        ("download", "Download template"),
-        ("extract", "Extract template"),
-        ("zip-list", "Archive contents"),
-        ("extracted-summary", "Extraction summary"),
-        ("chmod", "Ensure scripts executable"),
-        ("cleanup", "Cleanup"),
-        ("git", "Initialize git repository"),
-        ("final", "Finalize")
-    ]:
-        tracker.add(key, label)
+
+    # Add tracker steps based on mode
+    if is_multi_agent:
+        for key, label in [
+            ("fetch", f"Fetch {len(selected_agents)} templates"),
+            ("extract", f"Extract {len(selected_agents)} templates"),
+            ("merge", "Merge agent directories"),
+            ("chmod", "Ensure scripts executable"),
+            ("git", "Initialize git repository"),
+            ("final", "Finalize")
+        ]:
+            tracker.add(key, label)
+    else:
+        for key, label in [
+            ("fetch", "Fetch latest release"),
+            ("download", "Download template"),
+            ("extract", "Extract template"),
+            ("zip-list", "Archive contents"),
+            ("extracted-summary", "Extraction summary"),
+            ("chmod", "Ensure scripts executable"),
+            ("cleanup", "Cleanup"),
+            ("git", "Initialize git repository"),
+            ("final", "Finalize")
+        ]:
+            tracker.add(key, label)
 
     # Track git error message outside Live context so it persists
     git_error_message = None
@@ -1124,7 +1462,32 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            # Branch based on single vs multi-agent mode
+            if is_multi_agent:
+                download_and_extract_multi_agent_templates(
+                    project_path,
+                    selected_agents,
+                    selected_script,
+                    here,
+                    verbose=False,
+                    tracker=tracker,
+                    client=local_client,
+                    debug=debug,
+                    github_token=github_token
+                )
+            else:
+                selected_ai = selected_agents[0]
+                download_and_extract_template(
+                    project_path,
+                    selected_ai,
+                    selected_script,
+                    here,
+                    verbose=False,
+                    tracker=tracker,
+                    client=local_client,
+                    debug=debug,
+                    github_token=github_token
+                )
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1184,18 +1547,32 @@ def init(
         console.print(git_error_panel)
 
     # Agent folder security notice
-    agent_config = AGENT_CONFIG.get(selected_ai)
-    if agent_config:
-        agent_folder = agent_config["folder"]
+    if is_multi_agent:
+        # Generic security notice for multi-agent setups
         security_notice = Panel(
-            f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
-            f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
+            f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in their agent folders within your project.\n"
+            f"Consider adding agent folders to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
             title="[yellow]Agent Folder Security[/yellow]",
             border_style="yellow",
             padding=(1, 2)
         )
         console.print()
         console.print(security_notice)
+    else:
+        # Single agent - specific folder notice
+        selected_ai = selected_agents[0]
+        agent_config = AGENT_CONFIG.get(selected_ai)
+        if agent_config:
+            agent_folder = agent_config["folder"]
+            security_notice = Panel(
+                f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
+                f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
+                title="[yellow]Agent Folder Security[/yellow]",
+                border_style="yellow",
+                padding=(1, 2)
+            )
+            console.print()
+            console.print(security_notice)
 
     steps_lines = []
     if not here:
@@ -1205,19 +1582,32 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    # Add Codex-specific setup step if needed
-    if selected_ai == "codex":
+    # Add Codex-specific setup step if needed (only in single-agent mode or if codex is in multi-agent list)
+    if not is_multi_agent and selected_agents[0] == "codex":
         codex_path = project_path / ".codex"
         quoted_path = shlex.quote(str(codex_path))
         if os.name == "nt":  # Windows
             cmd = f"setx CODEX_HOME {quoted_path}"
         else:  # Unix-like systems
             cmd = f"export CODEX_HOME={quoted_path}"
-        
+
         steps_lines.append(f"{step_num}. Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]")
         step_num += 1
+    elif is_multi_agent and "codex" in selected_agents:
+        codex_path = project_path / ".codex"
+        quoted_path = shlex.quote(str(codex_path))
+        if os.name == "nt":  # Windows
+            cmd = f"setx CODEX_HOME {quoted_path}"
+        else:  # Unix-like systems
+            cmd = f"export CODEX_HOME={quoted_path}"
 
-    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+        steps_lines.append(f"{step_num}. For Codex: Set [cyan]CODEX_HOME[/cyan] environment variable: [cyan]{cmd}[/cyan]")
+        step_num += 1
+
+    if is_multi_agent:
+        steps_lines.append(f"{step_num}. Start using slash commands with your AI agents:")
+    else:
+        steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
 
     steps_lines.append("   2.1 [cyan]/speckit.constitution[/] - Establish project principles")
     steps_lines.append("   2.2 [cyan]/speckit.specify[/] - Create baseline specification")
