@@ -216,6 +216,19 @@ specify init my-project --ai shai
 # Initialize with IBM Bob support
 specify init my-project --ai bob
 
+# Initialize with ALL supported AI agents (universal mode)
+specify init my-project --universal
+# or use the --all-agents alias
+specify init my-project --all-agents
+
+# Initialize with specific subset of agents
+specify init my-project --agents "claude,copilot,gemini"
+specify init my-project --agents "claude,cursor-agent,windsurf"
+
+# Universal initialization in current directory
+specify init --here --universal
+specify init . --universal
+
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specify init my-project --ai copilot --script ps
 
