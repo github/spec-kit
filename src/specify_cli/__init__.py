@@ -748,9 +748,12 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, preserve_specify: bool = False) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+
+    Args:
+        preserve_specify: If True, skip .specify/ directory to preserve existing work
     """
     current_dir = Path.cwd()
 
@@ -820,6 +823,13 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
 
                     for item in source_dir.iterdir():
                         dest_path = project_path / item.name
+
+                        # Skip .specify/ directory if preserve_specify is True
+                        if item.name == ".specify" and preserve_specify:
+                            if verbose and not tracker:
+                                console.print(f"[yellow]Skipping .specify/ (preserving existing)[/yellow]")
+                            continue
+
                         if item.is_dir():
                             if dest_path.exists():
                                 if verbose and not tracker:
@@ -950,7 +960,7 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
-    force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
+    force: bool = typer.Option(False, "--force", help="Force reinitialize project (overwrites .specify/ directory with constitution, specs, and plans)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
@@ -1091,6 +1101,51 @@ def init(
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
+    # Smart detection: Check if .specify/ exists with content
+    specify_dir = project_path / ".specify"
+    has_existing_project = False
+    preserve_specify = False
+
+    if specify_dir.exists() and specify_dir.is_dir():
+        # Check if .specify/ has actual content (not just empty directory)
+        specify_contents = list(specify_dir.rglob('*'))
+        if specify_contents:
+            has_existing_project = True
+
+            if force:
+                # User explicitly wants to reinitialize (overwrite)
+                console.print()
+                console.print(Panel(
+                    "[yellow]Warning: --force flag detected[/yellow]\n\n"
+                    "Your existing .specify/ directory will be OVERWRITTEN, including:\n"
+                    "  • Constitution and project principles\n"
+                    "  • Specifications and requirements\n"
+                    "  • Implementation plans\n"
+                    "  • Task lists\n\n"
+                    "All your work in .specify/ will be lost!",
+                    title="[red]Reinitializing Project[/red]",
+                    border_style="red",
+                    padding=(1, 2)
+                ))
+                preserve_specify = False
+            else:
+                # Smart default: preserve existing work
+                console.print()
+                console.print(Panel(
+                    "[green]Existing project detected[/green]\n\n"
+                    "Your .specify/ directory will be preserved, including:\n"
+                    "  • Constitution and project principles\n"
+                    "  • Specifications and requirements\n"
+                    "  • Implementation plans\n"
+                    "  • Task lists\n\n"
+                    "Only new agent-specific directories will be added.\n\n"
+                    "[dim]Use --force to reinitialize and overwrite everything[/dim]",
+                    title="[cyan]Adding Agent to Existing Project[/cyan]",
+                    border_style="cyan",
+                    padding=(1, 2)
+                ))
+                preserve_specify = True
+
     tracker = StepTracker("Initialize Specify Project")
 
     sys._specify_tracker_active = True
@@ -1124,7 +1179,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, preserve_specify=preserve_specify)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 

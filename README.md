@@ -216,6 +216,14 @@ specify init my-project --ai shai
 # Initialize with IBM Bob support
 specify init my-project --ai bob
 
+# Add new agents to existing project (automatic - just run init again!)
+# Your constitution, specs, and plans are automatically preserved
+specify init . --ai copilot              # Adds copilot, preserves your work
+specify init . --ai gemini               # Adds gemini, preserves your work
+
+# Force reinitialize (overwrites everything including your work)
+specify init . --ai copilot --force      # Use with caution!
+
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specify init my-project --ai copilot --script ps
 
