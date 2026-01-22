@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
+# Edited by Claude Code
 
 set -e
 
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+USE_CURRENT_BRANCH=""  # Auto-detect by default
+CREATE_NEW_BRANCH=false
 ARGS=()
 i=1
 while [ $i -le $# ]; do
     arg="${!i}"
     case "$arg" in
-        --json) 
-            JSON_MODE=true 
+        --json)
+            JSON_MODE=true
+            ;;
+        --use-current-branch)
+            USE_CURRENT_BRANCH=true
+            ;;
+        --create-new-branch)
+            CREATE_NEW_BRANCH=true
             ;;
         --short-name)
             if [ $((i + 1)) -gt $# ]; then
@@ -40,18 +49,26 @@ while [ $i -le $# ]; do
             fi
             BRANCH_NUMBER="$next_arg"
             ;;
-        --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
+        --help|-h)
+            echo "Usage: $0 [--json] [--use-current-branch | --create-new-branch] [--short-name <name>] [--number N] <feature_description>"
+            echo ""
+            echo "Behavior:"
+            echo "  By default, if you're already on a feature branch, the script will use that branch."
+            echo "  If you're on main/master/develop, it will create a new branch."
             echo ""
             echo "Options:"
-            echo "  --json              Output in JSON format"
-            echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --number N          Specify branch number manually (overrides auto-detection)"
-            echo "  --help, -h          Show this help message"
+            echo "  --json                  Output in JSON format"
+            echo "  --use-current-branch    Force using the current branch (fails on main/master/develop)"
+            echo "  --create-new-branch     Force creating a new branch (even if on a feature branch)"
+            echo "  --short-name <name>     Provide a custom short name (2-4 words) for the branch"
+            echo "  --number N              Specify branch number manually (overrides auto-detection)"
+            echo "  --help, -h              Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
+            echo "  $0 'Update execution flow'  # Auto-uses current branch if not on main/master/develop"
+            echo "  $0 'New feature' --create-new-branch  # Force new branch creation"
             exit 0
             ;;
         *) 
@@ -63,7 +80,7 @@ done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--use-current-branch | --create-new-branch] [--short-name <name>] [--number N] <feature_description>" >&2
     exit 1
 fi
 
@@ -177,6 +194,30 @@ cd "$REPO_ROOT"
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
+# Auto-detect whether to use current branch or create new one
+if [ -z "$USE_CURRENT_BRANCH" ]; then
+    if [ "$CREATE_NEW_BRANCH" = true ]; then
+        USE_CURRENT_BRANCH=false
+    elif [ "$HAS_GIT" = true ]; then
+        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+        # Use current branch if it's not main/master/develop
+        if [ -n "$CURRENT_BRANCH" ] && \
+           [ "$CURRENT_BRANCH" != "main" ] && \
+           [ "$CURRENT_BRANCH" != "master" ] && \
+           [ "$CURRENT_BRANCH" != "develop" ]; then
+            USE_CURRENT_BRANCH=true
+            >&2 echo "[specify] Auto-detected feature branch: $CURRENT_BRANCH"
+        else
+            USE_CURRENT_BRANCH=false
+            if [ -n "$CURRENT_BRANCH" ]; then
+                >&2 echo "[specify] On $CURRENT_BRANCH branch, will create new feature branch"
+            fi
+        fi
+    else
+        USE_CURRENT_BRANCH=false
+    fi
+fi
+
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
     local description="$1"
@@ -225,56 +266,86 @@ generate_branch_name() {
     fi
 }
 
-# Generate branch name
-if [ -n "$SHORT_NAME" ]; then
-    # Use provided short name, just clean it up
-    BRANCH_SUFFIX=$(clean_branch_name "$SHORT_NAME")
-else
-    # Generate from description with smart filtering
-    BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
-fi
-
-# Determine branch number
-if [ -z "$BRANCH_NUMBER" ]; then
+# Determine branch name
+if [ "$USE_CURRENT_BRANCH" = true ]; then
+    # Use current branch name
     if [ "$HAS_GIT" = true ]; then
-        # Check existing branches on remotes
-        BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
+        BRANCH_NAME=$(git branch --show-current)
+        if [ -z "$BRANCH_NAME" ]; then
+            echo "Error: Not on any branch (detached HEAD state). Cannot use --use-current-branch." >&2
+            exit 1
+        fi
+        # Validate that we're not on a protected branch
+        if [ "$BRANCH_NAME" = "main" ] || \
+           [ "$BRANCH_NAME" = "master" ] ; then
+            echo "Error: Cannot use --use-current-branch on protected branch '$BRANCH_NAME'." >&2
+            echo "Protected branches: main, master, develop" >&2
+            echo "Please create a feature branch first or omit --use-current-branch to auto-create one." >&2
+            exit 1
+        fi
+        >&2 echo "[specify] Using current branch: $BRANCH_NAME"
+        # Extract feature number if present (for compatibility)
+        if echo "$BRANCH_NAME" | grep -q '^[0-9]\{3\}-'; then
+            FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -o '^[0-9]\{3\}')
+        else
+            FEATURE_NUM="000"
+        fi
     else
-        # Fall back to local directory check
-        HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
-        BRANCH_NUMBER=$((HIGHEST + 1))
+        echo "Error: --use-current-branch requires a git repository" >&2
+        exit 1
     fi
-fi
-
-# Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
-FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
-
-# GitHub enforces a 244-byte limit on branch names
-# Validate and truncate if necessary
-MAX_BRANCH_LENGTH=244
-if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
-    # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
-    
-    # Truncate suffix at word boundary if possible
-    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
-    # Remove trailing hyphen if truncation created one
-    TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
-    
-    ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
-    
-    >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
-    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
-    >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
-fi
-
-if [ "$HAS_GIT" = true ]; then
-    git checkout -b "$BRANCH_NAME"
 else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    # Generate branch name as before
+    if [ -n "$SHORT_NAME" ]; then
+        # Use provided short name, just clean it up
+        BRANCH_SUFFIX=$(clean_branch_name "$SHORT_NAME")
+    else
+        # Generate from description with smart filtering
+        BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
+    fi
+
+    # Determine branch number
+    if [ -z "$BRANCH_NUMBER" ]; then
+        if [ "$HAS_GIT" = true ]; then
+            # Check existing branches on remotes
+            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
+        else
+            # Fall back to local directory check
+            HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+            BRANCH_NUMBER=$((HIGHEST + 1))
+        fi
+    fi
+
+    # Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
+    FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+
+    # GitHub enforces a 244-byte limit on branch names
+    # Validate and truncate if necessary
+    MAX_BRANCH_LENGTH=244
+    if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
+        # Calculate how much we need to trim from suffix
+        # Account for: feature number (3) + hyphen (1) = 4 chars
+        MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
+
+        # Truncate suffix at word boundary if possible
+        TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
+        # Remove trailing hyphen if truncation created one
+        TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
+
+        ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
+        BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+
+        >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
+        >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
+        >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
+    fi
+
+    if [ "$HAS_GIT" = true ]; then
+        git checkout -b "$BRANCH_NAME"
+    else
+        >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    fi
 fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
