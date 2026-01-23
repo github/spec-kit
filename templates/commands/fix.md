@@ -11,8 +11,8 @@ handoffs:
     agent: speckit.validate
     prompt: Validate that the fixes resolve the issues
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json
-  ps: scripts/powershell/check-prerequisites.ps1 -Json
+  sh: scripts/bash/list-bugs.sh --json
+  ps: scripts/powershell/list-bugs.ps1 -Json
 ---
 
 # Fix Feature Implementation
@@ -73,20 +73,64 @@ This command handles these scenarios:
 
 ---
 
-## Phase 1: Symptom Collection
+## Phase 1: Load Bugs and Context
+
+### Step 1.0: Load Unresolved Bugs
+
+Run `{SCRIPT}` to get the list of unresolved bugs from validation:
+
+```json
+{
+  "FEATURE_DIR": "/path/to/specs/001-feature",
+  "BUGS": [
+    {
+      "id": "BUG-001",
+      "status": "open",
+      "severity": "critical",
+      "user_story": "US3",
+      "title": "Report template not found",
+      "file": "/path/to/validation/bugs/BUG-001-report-template.md"
+    }
+  ],
+  "SUMMARY": {
+    "total": 3,
+    "unresolved": 2,
+    "open": 2,
+    "in_progress": 0,
+    "resolved": 1
+  }
+}
+```
+
+**If bugs are found**:
+- These are the primary input for this command
+- Process ALL unresolved bugs (status: open or in_progress)
+- Read each bug file for full details
+
+**If no bugs found AND no user input**:
+- Ask user what issue they want to fix
+- Or suggest running `/speckit.validate` first
 
 ### Step 1.1: Load Feature Context
 
-Run `{SCRIPT}` to get paths, then load:
+Load additional context from:
 
 ```
 FEATURE_DIR/
-├── spec.md          → What should be built
-├── plan.md          → How it should be built
-├── tasks.md         → What was supposed to be done
-├── task-results/    → What was actually done
-└── validation/      → Test results (if any)
+├── spec.md              → What should be built
+├── plan.md              → How it should be built
+├── tasks.md             → What was supposed to be done
+├── task-results/        → What was actually done
+└── validation/
+    ├── bugs/            → Individual bug reports (PRIMARY INPUT)
+    ├── report-*.md      → Validation reports
+    └── screenshots/     → Evidence
 ```
+
+**Priority Order for Bug Sources**:
+1. `validation/bugs/` - Structured bug reports from validation (preferred)
+2. User input - Specific symptoms described by user
+3. `validation/report-*.md` - Latest validation report for additional context
 
 ### Step 1.2: Gather Symptoms from User
 
@@ -486,13 +530,51 @@ After completing all fixes:
 Ready for re-validation. Run `/speckit.validate` to confirm all issues are resolved.
 ```
 
-### Step 6.4: Update Artifacts
+### Step 6.4: Update Bug Status
+
+**CRITICAL**: After fixing each bug, update its status in `validation/bugs/`:
+
+```yaml
+# Before (in BUG-001-report-template.md):
+---
+status: open
+severity: critical
+...
+---
+
+# After fix applied:
+---
+status: resolved
+severity: critical
+resolved_date: {current_date}
+fix_applied: "Added missing template file and configured path"
+...
+---
+```
+
+Add a "Resolution" section to the bug file:
+
+```markdown
+## Resolution
+
+**Fixed by**: speckit.fix
+**Date**: {current_date}
+**Changes Made**:
+- Created `/templates/monthly.ftl` with report template
+- Updated `application.yml` template path configuration
+- Added unit test for template loading
+
+**Verification**: Local test confirms PDF generation works
+```
+
+### Step 6.5: Update Other Artifacts
 
 After fixes are complete:
 
-1. **Update tasks.md**: Mark FIX tasks as complete
-2. **Create fix results**: Save to `task-results/FIX-XXX-result.md`
-3. **Update validation report**: Note that fixes were applied
+1. **Update bug files**: Mark status as `resolved` (Step 6.4)
+2. **Update tasks.md**: Mark FIX tasks as complete
+3. **Create fix results**: Save to `task-results/FIX-XXX-result.md`
+4. **Note in validation report**: Reference fixes applied
 
 ---
 
@@ -502,6 +584,13 @@ Present to user:
 
 ```markdown
 ## Fix Execution Complete
+
+### Bugs Resolved
+
+| Bug ID | Severity | User Story | Status | Fix Applied |
+|--------|----------|------------|--------|-------------|
+| BUG-001 | CRITICAL | US3 | ✅ Resolved | Added missing report template |
+| BUG-002 | HIGH | US2 | ✅ Resolved | Added cancel button to OrderDetail |
 
 ### Issues Addressed
 
@@ -533,12 +622,22 @@ Present to user:
 | FIX-002 | ✅ Pass | ✅ Added | Pending validation |
 | CLARIFY-001 | ✅ Pass | ✅ Added | Pending validation |
 
-### Files Generated
+### Files Updated
 
+- `validation/bugs/BUG-*.md` - Bug status updated to `resolved`
 - `fix-analysis-{date}.md` - Analysis report
 - `task-results/FIX-001-result.md` - Fix details
 - `task-results/FIX-002-result.md` - Fix details
 - `tasks.md` - Updated with completed fix tasks
+
+### Bug Summary After Fix
+
+```
+Total bugs: 3
+  Resolved: 3 ✅
+  Open: 0
+  In Progress: 0
+```
 
 ### Next Step
 
