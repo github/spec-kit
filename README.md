@@ -264,6 +264,7 @@ Additional commands for enhanced quality and validation:
 
 | Command              | Description                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `/speckit.status`    | Display project status, feature progress, and recommended next actions (use anytime to see where you are)                            |
 | `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
 | `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
 | `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
@@ -447,6 +448,7 @@ At this stage, your project folder contents should resemble the following:
     │  ├── check-prerequisites.sh
     │  ├── common.sh
     │  ├── create-new-feature.sh
+    │  ├── get-project-status.sh
     │  ├── setup-plan.sh
     │  └── update-claude-md.sh
     ├── specs
@@ -508,6 +510,7 @@ The output of this step will include a number of implementation detail documents
 │  ├── check-prerequisites.sh
 │  ├── common.sh
 │  ├── create-new-feature.sh
+│  ├── get-project-status.sh
 │  ├── setup-plan.sh
 │  └── update-claude-md.sh
 ├── specs
