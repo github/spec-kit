@@ -1,8 +1,23 @@
 ---
-description: Generate a custom checklist for the current feature based on user requirements.
+description: Generate or review checklists for the current feature.
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
+---
+
+## Command Modes
+
+| Mode | Trigger | Description |
+|------|---------|-------------|
+| **Generate** | Default, or explicit domain (e.g., `ux`, `security`) | Creates a new checklist file |
+| **Review** | `review`, `validate`, `check` | Validates existing checklists against spec/plan |
+
+**Examples:**
+- `/speckit.checklist` → Generate mode (asks clarifying questions)
+- `/speckit.checklist ux` → Generate UX checklist
+- `/speckit.checklist review` → Review all existing checklists
+- `/speckit.checklist review constitution` → Review only constitution.md checklist
+
 ---
 
 ## Checklist Purpose: "Unit Tests for English"
@@ -366,3 +381,118 @@ Sample items:
 - Correct: Validation of requirement quality
 - Wrong: "Does it do X?"
 - Correct: "Is X clearly specified?"
+
+---
+
+## Review Mode Execution
+
+When `$ARGUMENTS` contains "review", "validate", or "check", execute this flow instead of generation:
+
+### 1. Setup
+
+Run `{SCRIPT}` from repo root and parse JSON for FEATURE_DIR.
+
+### 2. Load Checklists
+
+Scan `FEATURE_DIR/checklists/` for all `.md` files:
+- If specific checklist specified (e.g., `review constitution`), load only that file
+- Otherwise, load all checklist files
+
+**If no checklists exist**: Abort with message "No checklists found. Run `/speckit.checklist` first to generate."
+
+### 3. Load Feature Context
+
+Read from FEATURE_DIR:
+- `spec.md` (required)
+- `plan.md` (if exists)
+
+Also load project references if checklist contains `[Constitution]` or `[Registry]` markers:
+- `/memory/constitution.md`
+- `/memory/architecture-registry.md`
+
+### 4. Validate Each Item
+
+For each unchecked item (`- [ ]`), analyze against loaded documents:
+
+**Validation Logic:**
+1. Parse the item question (e.g., "Are accessibility requirements defined?")
+2. Search spec/plan for evidence that answers the question
+3. Determine status:
+   - **✅ PASS**: Clear evidence found in spec/plan that satisfies the requirement
+   - **❌ FAIL**: No evidence found, or evidence contradicts the requirement
+   - **⚠️ PARTIAL**: Some evidence exists but incomplete or ambiguous
+
+**For each item, record:**
+- Status (PASS/FAIL/PARTIAL)
+- Evidence location (e.g., "spec.md:L45-52")
+- Brief justification (1 sentence)
+
+### 5. Generate Validation Report
+
+Output a Markdown report (do NOT write to file):
+
+```markdown
+## Checklist Validation Report
+
+**Feature**: [FEATURE_NAME]
+**Date**: [DATE]
+**Checklists Reviewed**: [LIST]
+
+### Summary
+
+| Checklist | Total | ✅ Pass | ❌ Fail | ⚠️ Partial | Already Checked |
+|-----------|-------|---------|--------|------------|-----------------|
+| constitution.md | 8 | 5 | 2 | 1 | 0 |
+| ux.md | 12 | 8 | 3 | 1 | 0 |
+
+**Overall**: 13/20 items pass (65%)
+
+### Detailed Results
+
+#### constitution.md
+
+| ID | Item | Status | Evidence |
+|----|------|--------|----------|
+| CHK001 | Are accessibility requirements defined? | ✅ PASS | spec.md:L45 defines WCAG 2.1 AA |
+| CHK002 | Are performance thresholds quantified? | ❌ FAIL | No performance metrics found |
+| CHK003 | Is sensitive data handling specified? | ⚠️ PARTIAL | Auth mentioned but no data classification |
+
+### Failed Items (Action Required)
+
+1. **CHK002** - Are performance thresholds quantified?
+   - **Gap**: spec.md has no performance section
+   - **Suggestion**: Add NFR section with response time targets
+
+2. **CHK005** - Are error handling patterns defined?
+   - **Gap**: Only happy path documented
+   - **Suggestion**: Add error scenarios to each user story
+
+### Partial Items (Review Recommended)
+
+1. **CHK003** - Is sensitive data handling specified?
+   - **Found**: Authentication flow mentions password hashing
+   - **Missing**: No data classification or retention policy
+```
+
+### 6. Offer Auto-Check
+
+After presenting the report, ask:
+
+> "Would you like me to mark the {N} passing items as checked in the checklist files? (yes/no)"
+
+**If user confirms:**
+- Update each checklist file, changing `- [ ]` to `- [x]` for PASS items only
+- Add validation timestamp as comment: `<!-- Validated: {DATE} -->`
+- Report files updated
+
+**If user declines:**
+- No changes made
+- Remind user they can manually check items
+
+### 7. Suggest Next Steps
+
+Based on results:
+
+- **All PASS**: "All checklist items validated. Ready for `/speckit.implement`."
+- **Some FAIL**: "Address {N} failed items before implementation. Consider running `/speckit.clarify` to resolve gaps."
+- **Many FAIL**: "Significant gaps detected. Consider revisiting `/speckit.specify` to improve spec completeness."
