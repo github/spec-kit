@@ -296,6 +296,101 @@ When an execution error occurs:
 
 **NEVER mark validation as successful if execution errors occurred.** The report must clearly state that not all scenarios could be tested.
 
+### Step 3.6: Capture Out-of-Scope Issues
+
+**CRITICAL**: While testing scenarios, you may discover issues OUTSIDE the current test scope. These MUST be captured.
+
+#### Types of Out-of-Scope Issues
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Regression** | Feature that worked before is now broken | Login worked last week, now fails |
+| **Side Effect** | Testing one feature breaks another | Adding item to cart clears user session |
+| **Unexpected Error** | Error in unrelated component | Console error from analytics module during checkout test |
+| **Performance Degradation** | Noticeably slower than before | Page load went from 1s to 5s |
+| **UI/UX Anomaly** | Visual or interaction issue noticed | Button misaligned, wrong color, flicker |
+| **Data Inconsistency** | Data doesn't match expectations | User count shows -1, dates in wrong format |
+
+#### How to Capture
+
+During scenario execution, watch for:
+
+1. **Console errors** not related to the current test
+2. **Visual anomalies** in other parts of the UI
+3. **Slow responses** or timeouts in unrelated components
+4. **Broken navigation** or links
+5. **Data display issues** anywhere on screen
+
+When found, document immediately:
+
+```markdown
+### 🔍 OUT-OF-SCOPE ISSUE DISCOVERED
+
+**Discovered During**: US2 - Order Management / Create order scenario
+**Component Affected**: Navigation Menu (unrelated to current test)
+
+**Issue**: Main navigation dropdown fails to open after order creation
+**Severity**: HIGH (affects all pages)
+**Type**: Regression / Side Effect
+
+**Evidence**:
+- Screenshot: `validation/screenshots/nav-broken-after-order.png`
+- Console: `TypeError: Cannot read property 'toggle' of undefined`
+
+**Reproduction**:
+1. Complete order creation
+2. Click on main navigation menu
+3. Dropdown doesn't appear
+
+**Notes**: This was working before. Likely regression from recent changes.
+```
+
+#### Create Bug Reports for Out-of-Scope Issues
+
+These issues MUST also be added to `validation/bugs/`:
+
+```markdown
+---
+status: open
+severity: high
+type: regression
+user_story: NONE
+discovered_during: US2 - Create order
+component: Navigation Menu
+created: {current_date}
+---
+
+# BUG-003: Navigation menu broken after order creation
+
+## Summary
+
+Navigation dropdown stops working after completing an order.
+
+## Discovery Context
+
+This issue was discovered while testing US2 (Order Management).
+It is NOT related to the order feature itself but was triggered by it.
+
+## Type: REGRESSION
+
+This functionality was working before. Likely caused by recent changes.
+
+...
+```
+
+#### Out-of-Scope Issue Severity
+
+Even if not in the test scope, assess severity based on impact:
+
+| Severity | Criteria |
+|----------|----------|
+| **critical** | Blocks core functionality across the app |
+| **high** | Significantly impacts user experience |
+| **medium** | Noticeable but has workaround |
+| **low** | Minor, cosmetic, or edge case |
+
+**IMPORTANT**: Do NOT ignore out-of-scope issues just because they're "not part of the test". If you see something broken, report it.
+
 ---
 
 ## Phase 4: Results & Reporting
@@ -358,8 +453,11 @@ Create `FEATURE_DIR/validation/report-{date}.md`:
 | Failed | 2 |
 | Skipped | 1 |
 | Execution Errors | 0 |
+| **Out-of-Scope Issues** | **3** |
 | **Pass Rate** | **83%** |
 | **Overall Status** | **FAILED** |
+
+> ⚠️ **Note**: 3 additional issues were discovered outside the test scope (regressions, side effects). See "Out-of-Scope Issues" section.
 
 ## Results by User Story
 
@@ -409,6 +507,35 @@ Create `FEATURE_DIR/validation/report-{date}.md`:
 | US2 | Cancel order | Element not found | Medium |
 | US3 | Generate report | Template missing | High |
 
+## Out-of-Scope Issues Discovered
+
+> These issues were found during testing but are NOT part of the tested scenarios.
+> They may be regressions, side effects, or pre-existing bugs.
+
+| Bug ID | Type | Component | Severity | Discovered During |
+|--------|------|-----------|----------|-------------------|
+| BUG-003 | Regression | Navigation Menu | HIGH | US2 - Create order |
+| BUG-004 | Side Effect | User Session | CRITICAL | US2 - Add to cart |
+| BUG-005 | UI Anomaly | Footer | LOW | US1 - Login |
+
+### BUG-003: Navigation menu broken after order creation
+
+- **Type**: Regression
+- **Component**: Navigation Menu (not related to Order feature)
+- **Discovered While**: Testing US2 - Create order scenario
+- **Severity**: HIGH
+- **Description**: Navigation dropdown fails to open after completing order
+- **Evidence**: `validation/screenshots/nav-broken-after-order.png`
+
+### BUG-004: User session cleared unexpectedly
+
+- **Type**: Side Effect
+- **Component**: Session Management
+- **Discovered While**: Testing US2 - Add to cart scenario
+- **Severity**: CRITICAL
+- **Description**: Adding item to cart logs user out
+- **Evidence**: Console shows session token invalidated
+
 ## Recommendations
 
 ### Critical (Block Release)
@@ -450,6 +577,7 @@ Create one file per bug: `validation/bugs/BUG-{number}-{short-desc}.md`
 ---
 status: open
 severity: critical
+type: scenario_failure
 user_story: US3
 scenario: Generate report
 created: {current_date}
@@ -494,6 +622,17 @@ Backend log: `[ERROR] ReportService: Template not found at /templates/monthly.ft
 - **Validation Report**: `report-{date}.md`
 - **Blocking**: Release
 ```
+
+#### Bug Types
+
+| Type | Description | Origin |
+|------|-------------|--------|
+| **scenario_failure** | A test scenario failed | Testing user story |
+| **regression** | Previously working feature now broken | Discovered during testing |
+| **side_effect** | Action in one area breaks another | Discovered during testing |
+| **performance** | Slow response or degradation | Observed during testing |
+| **ui_anomaly** | Visual or interaction issue | Observed during testing |
+| **data_issue** | Data inconsistency or corruption | Observed during testing |
 
 #### Bug Severity Levels
 
@@ -612,10 +751,19 @@ Present to user with CLEAR status indication:
 
 > These bug files are the input for `/speckit.fix`. Run fix without arguments to process all open bugs.
 
+**Scenario Failures**:
 | Bug ID | Severity | User Story | Issue |
 |--------|----------|------------|-------|
 | BUG-001 | CRITICAL | US3 | Report template not found |
 | BUG-002 | HIGH | US2 | Cancel button missing |
+
+**Out-of-Scope Issues** (regressions, side effects, other discoveries):
+| Bug ID | Type | Component | Severity | Issue |
+|--------|------|-----------|----------|-------|
+| BUG-003 | Regression | Navigation | HIGH | Menu broken after order |
+| BUG-004 | Side Effect | Session | CRITICAL | Cart action logs out user |
+
+> ⚠️ Out-of-scope issues may affect other features. Review and prioritize accordingly.
 
 ### Correction Tasks Added
 
