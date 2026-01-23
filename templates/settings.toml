@@ -1,0 +1,27 @@
+# Spec Kit Settings
+# Documentation: https://github.github.io/spec-kit/
+#
+# This file configures project-level settings for the Spec Kit workflow.
+# Place this file at .specify/settings.toml in your project root.
+
+[branch]
+# Template for generating feature branch names.
+#
+# Available variables:
+#   {number}       - Auto-incrementing 3-digit feature number (001, 002, ...)
+#   {short_name}   - Generated or provided short feature name
+#   {username}     - Git user.name, normalized for branch names (lowercase, hyphens)
+#   {email_prefix} - Portion of Git user.email before the @ symbol
+#
+# Examples:
+#   "{number}-{short_name}"                      # 001-add-login (default, solo dev)
+#   "{username}/{number}-{short_name}"           # johndoe/001-add-login (team)
+#   "feature/{username}/{number}-{short_name}"  # feature/johndoe/001-add-login
+#   "users/{email_prefix}/{number}-{short_name}" # users/jsmith/001-add-login
+#
+# When using {username} or a static prefix, each prefix gets its own number
+# sequence to avoid conflicts between team members.
+#
+# IMPORTANT: Template MUST contain both {number} and {short_name} placeholders.
+
+template = "{number}-{short_name}"

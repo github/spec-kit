@@ -62,6 +62,23 @@ If you prefer to get the templates without checking for the right tools:
 uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude --ignore-agent-tools
 ```
 
+### Initialize Settings File
+
+Teams can customize branch naming patterns by initializing a settings file:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --settings
+```
+
+This creates `.specify/settings.toml` where you can configure the branch template:
+
+```toml
+[branch]
+template = "{username}/{number}-{short_name}"  # e.g., jsmith/001-my-feature
+```
+
+Available template variables: `{number}`, `{short_name}`, `{username}`, `{email_prefix}`
+
 ## Verification
 
 After initialization, you should see the following commands available in your AI agent:
