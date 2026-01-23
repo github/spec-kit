@@ -1,21 +1,24 @@
 # Architecture Registry
 
-This registry captures **architectural decisions** that MUST be followed across all features. It serves as the source of truth for consistency.
+> **Purpose**: This registry captures **implementation decisions** that MUST be followed across all features. It serves as the source of truth for code consistency.
+>
+> **Scope**: Code patterns, technology choices, conventions. For specification rules, see `/memory/constitution.md`.
 
-> **CRITICAL**: Before planning ANY new feature, load this registry and verify alignment.
-> New features MUST follow established patterns unless explicitly diverging with documented justification.
+**CRITICAL**: Before planning ANY new feature, load this registry and verify alignment.
+New features MUST follow established patterns unless explicitly diverging with documented justification.
 
 ## How This Registry Works
 
 1. **During Planning** (`/speckit.plan`): Load this registry and verify new design aligns
 2. **During Implementation** (`/speckit.implement`): Follow patterns from registry, update after completion
 3. **Retrospective** (`/speckit.extract-patterns`): Extract patterns from existing features into this registry
+4. **Quality Gate** (`/speckit.checklist`): Validates plan alignment with registry patterns
 
 ---
 
 ## Established Patterns
 
-> Patterns that have been implemented and MUST be reused in similar contexts.
+> Reusable code patterns that MUST be applied in similar contexts.
 
 | Pattern | First Used In | Files/Locations | When to Use | Example |
 |---------|---------------|-----------------|-------------|---------|

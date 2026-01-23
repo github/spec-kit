@@ -16,19 +16,37 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-You are updating the project constitution at `/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
+You are updating the project constitution at `/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[ACCESSIBILITY_REQUIREMENTS]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
+
+**IMPORTANT DISTINCTION**:
+- **Specification Principles** = Rules that EVERY spec.md must follow (Accessibility, Performance, Security, Error Handling, Data). These are validated by `/speckit.checklist` automatically.
+- **Development Principles** = Rules for HOW to build (TDD, Library-First, etc.). These guide implementation.
+- **Business Constraints** = Domain-specific compliance, legal requirements.
 
 Follow this execution flow:
 
 1. Load the existing constitution template at `/memory/constitution.md`.
    - Identify every placeholder token of the form `[ALL_CAPS_IDENTIFIER]`.
-   **IMPORTANT**: The user might require less or more principles than the ones used in the template. If a number is specified, respect that - follow the general template. You will update the doc accordingly.
+   - The template has TWO main principle sections:
+     - **Specification Principles**: Accessibility, Performance, Security, Error Handling, Data & State
+     - **Development Principles**: TDD, Library-First, Simplicity, etc. (user-defined)
+   **IMPORTANT**: The user might require less or more development principles. Specification Principles sections should always exist (even if marked as "Not applicable to this project").
 
 2. Collect/derive values for placeholders:
    - If user input (conversation) supplies a value, use it.
    - Otherwise infer from existing repo context (README, docs, prior constitution versions if embedded).
+
+   **For Specification Principles**, guide user with questions like:
+   - "What WCAG level should all UIs target? (A, AA, AAA)"
+   - "What are the default performance thresholds? (e.g., API < 200ms)"
+   - "What security requirements apply to all features? (e.g., data encryption, auth)"
+   - "What error handling patterns are mandatory? (e.g., fallbacks, retry)"
+
+   **For Development Principles**, ask:
+   - "What development practices are non-negotiable? (e.g., TDD, code review)"
+
    - For governance dates: `RATIFICATION_DATE` is the original adoption date (if unknown ask or mark TODO), `LAST_AMENDED_DATE` is today if changes are made, otherwise keep previous.
-   - `CONSTITUTION_VERSION` must increment according to semantic versioning rules:
+   - `VERSION` must increment according to semantic versioning rules:
      - MAJOR: Backward incompatible governance/principle removals or redefinitions.
      - MINOR: New principle/section added or materially expanded guidance.
      - PATCH: Clarifications, wording, typo fixes, non-semantic refinements.
@@ -44,6 +62,7 @@ Follow this execution flow:
    - Read `/templates/plan-template.md` and ensure any "Constitution Check" or rules align with updated principles.
    - Read `/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
    - Read `/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
+   - **CRITICAL**: `/templates/commands/checklist.md` auto-generates items from constitution. Verify Specification Principles are well-defined so checklist generation works properly.
    - Read each command file in `/templates/commands/*.md` (including this one) to verify no outdated references (agent-specific names like CLAUDE only) remain when generic guidance is required.
    - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
 

@@ -78,7 +78,21 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Map focus selections to category scaffolding
    - Infer any missing context from spec/plan/tasks (do NOT hallucinate)
 
-4. **Load feature context**: Read from FEATURE_DIR:
+4. **Load project references**: Read from `/memory/` directory:
+
+   a. **Constitution** (`/memory/constitution.md`):
+      - Extract "Specification Principles" section (Accessibility, Performance, Security, Error Handling, Data)
+      - These are NON-NEGOTIABLE rules that EVERY spec must follow
+      - Generate automatic checklist items for each principle
+
+   b. **Architecture Registry** (`/memory/architecture-registry.md`):
+      - Extract "Established Patterns" and "Technology Decisions"
+      - Extract "Anti-Patterns" to avoid
+      - Generate automatic checklist items for plan alignment (if plan.md exists)
+
+   **If files don't exist or are empty templates**: Skip automatic generation, notify user that project references are not configured.
+
+5. **Load feature context**: Read from FEATURE_DIR:
    - spec.md: Feature requirements and scope
    - plan.md (if exists): Technical details, dependencies
    - tasks.md (if exists): Implementation tasks
@@ -89,14 +103,52 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Use progressive disclosure: add follow-on retrieval only if gaps detected
    - If source docs are large, generate interim summary items instead of embedding raw text
 
-5. **Generate checklist** - Create "Unit Tests for Requirements":
+6. **Generate checklist** - Create "Unit Tests for Requirements":
    - Create `FEATURE_DIR/checklists/` directory if it doesn't exist
    - Generate unique checklist filename:
      - Use short, descriptive name based on domain (e.g., `ux.md`, `api.md`, `security.md`)
+     - Special case: `constitution.md` for constitution-based validation
      - Format: `[domain].md`
      - If file exists, append to existing file
    - Number items sequentially starting from CHK001
    - Each `/speckit.checklist` run creates a NEW file (never overwrites existing checklists)
+
+   **CONSTITUTION-BASED ITEMS** (Auto-generated from `/memory/constitution.md`):
+
+   For each defined principle in constitution, generate validation items:
+
+   ```markdown
+   ## Constitution Compliance
+
+   ### Accessibility [Constitution §Accessibility]
+   - [ ] CHK001 - Are accessibility requirements defined per constitution? [Constitution]
+   - [ ] CHK002 - Are WCAG compliance levels specified? [Constitution §Accessibility]
+
+   ### Performance [Constitution §Performance]
+   - [ ] CHK003 - Are performance thresholds quantified per constitution? [Constitution]
+   - [ ] CHK004 - Do response time requirements meet constitution minimums? [Constitution §Performance]
+
+   ### Security [Constitution §Security]
+   - [ ] CHK005 - Are security requirements defined per constitution? [Constitution]
+   - [ ] CHK006 - Is sensitive data handling specified? [Constitution §Security]
+
+   ### Error Handling [Constitution §Error Handling]
+   - [ ] CHK007 - Are failure modes defined per constitution? [Constitution]
+   - [ ] CHK008 - Are fallback behaviors specified? [Constitution §Error Handling]
+   ```
+
+   **ARCHITECTURE REGISTRY ITEMS** (Auto-generated from `/memory/architecture-registry.md`, only if plan.md exists):
+
+   ```markdown
+   ## Architecture Alignment
+
+   - [ ] CHK009 - Does the plan use established patterns from registry? [Registry §Patterns]
+   - [ ] CHK010 - Are technology decisions aligned with registry? [Registry §Technology]
+   - [ ] CHK011 - Do component conventions match registry? [Registry §Conventions]
+   - [ ] CHK012 - Are any anti-patterns from registry present in the plan? [Registry §Anti-Patterns]
+   ```
+
+   **Skip sections** where constitution/registry placeholders are not filled (e.g., `[ACCESSIBILITY_REQUIREMENTS]` still present).
 
    **CORE PRINCIPLE - Test the Requirements, Not the Implementation**:
    Every checklist item MUST evaluate the REQUIREMENTS THEMSELVES for:
@@ -206,9 +258,9 @@ You **MUST** consider the user input before proceeding (if not empty).
    - ✅ "Are [edge cases/scenarios] addressed in requirements?"
    - ✅ "Does the spec define [missing aspect]?"
 
-6. **Structure Reference**: Generate the checklist following the canonical template in `templates/checklist-template.md` for title, meta section, category headings, and ID formatting. If template is unavailable, use: H1 title, purpose/created meta lines, `##` category sections containing `- [ ] CHK### <requirement item>` lines with globally incrementing IDs starting at CHK001.
+7. **Structure Reference**: Generate the checklist following the canonical template in `templates/checklist-template.md` for title, meta section, category headings, and ID formatting. If template is unavailable, use: H1 title, purpose/created meta lines, `##` category sections containing `- [ ] CHK### <requirement item>` lines with globally incrementing IDs starting at CHK001.
 
-7. **Report**: Output full path to created checklist, item count, and remind user that each run creates a new file. Summarize:
+8. **Report**: Output full path to created checklist, item count, and remind user that each run creates a new file. Summarize:
    - Focus areas selected
    - Depth level
    - Actor/timing
@@ -223,6 +275,25 @@ You **MUST** consider the user input before proceeding (if not empty).
 To avoid clutter, use descriptive types and clean up obsolete checklists when done.
 
 ## Example Checklist Types & Sample Items
+
+**Constitution Compliance:** `constitution.md`
+
+Auto-generated items based on project constitution:
+
+- "Are accessibility requirements defined per WCAG 2.1 AA as required by constitution? [Constitution §Accessibility]"
+- "Are performance thresholds quantified (API < 200ms, UI < 100ms) per constitution? [Constitution §Performance]"
+- "Is sensitive data identified and handling specified per constitution? [Constitution §Security]"
+- "Are failure modes and fallback behaviors defined per constitution? [Constitution §Error Handling]"
+- "Does the spec comply with GDPR requirements per constitution? [Constitution §Compliance]"
+
+**Architecture Alignment:** `architecture.md`
+
+Auto-generated items based on architecture registry (requires plan.md):
+
+- "Does the plan follow the Repository Pattern from registry? [Registry §Patterns]"
+- "Is Zod used for validation as per registry technology decisions? [Registry §Technology]"
+- "Are services named {domain}Service.ts per registry conventions? [Registry §Conventions]"
+- "Is direct DB access in routes avoided per registry anti-patterns? [Registry §Anti-Patterns]"
 
 **UX Requirements Quality:** `ux.md`
 
