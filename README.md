@@ -188,7 +188,7 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                  |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                             |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                    |
-| `--settings`           | Flag     | Generate a settings file with branch template configuration instead of full project initialization                                                                                           |
+| `--settings`           | Flag     | Generate `.specify/settings.toml` for branch template customization. Can be combined with other flags.                                                                                       |
 
 ### Examples
 

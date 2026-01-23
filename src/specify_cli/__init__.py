@@ -974,13 +974,20 @@ template = "{number}-{short_name}"
 '''
 
 
-def _init_settings_file(force: bool = False) -> None:
+def _init_settings_file(project_path: Path = None, force: bool = False) -> None:
     """Generate a settings file with branch template configuration.
     
     This is called when `specify init --settings` is used.
     Creates .specify/settings.toml with documented template options.
+    
+    Args:
+        project_path: Path to the project directory. Defaults to current directory.
+        force: If True, overwrite existing settings file without prompting.
     """
-    settings_dir = Path.cwd() / ".specify"
+    if project_path is None:
+        project_path = Path.cwd()
+    
+    settings_dir = project_path / ".specify"
     settings_file = settings_dir / "settings.toml"
     
     # Check if settings file already exists
@@ -1052,11 +1059,13 @@ def init(
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init --settings      # Generate settings file in current directory
         specify init --settings --force  # Overwrite existing settings file
+        specify init --here --settings   # Full init plus settings file
+        specify init my-project --settings --ai claude  # New project with settings
     """
 
-    # Handle --settings mode: generate settings file only
-    if settings:
-        _init_settings_file(force=force)
+    # Handle --settings mode without other arguments: generate settings file only in current directory
+    if settings and not here and not project_name:
+        _init_settings_file(project_path=Path.cwd(), force=force)
         return
 
     show_banner()
@@ -1244,6 +1253,11 @@ def init(
 
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
+    
+    # Create settings file if --settings flag was passed
+    if settings:
+        console.print()
+        _init_settings_file(project_path=project_path, force=force)
     
     # Show git error details if initialization failed
     if git_error_message:

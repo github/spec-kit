@@ -34,7 +34,14 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 Teams can customize how feature branches are named by initializing a settings file:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --settings
+# Settings file only (current directory)
+uvx --from git+https://github.com/github/spec-kit.git specify init --settings
+
+# Combined with full project init
+uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --settings --ai copilot
+
+# Or with --here flag
+uvx --from git+https://github.com/github/spec-kit.git specify init --here --settings --ai claude
 ```
 
 This creates `.specify/settings.toml` where you can configure the branch template:
