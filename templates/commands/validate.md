@@ -436,7 +436,97 @@ validation/
     └── us3-report-fail.png
 ```
 
-### Step 4.3: Create Correction Tasks
+### Step 4.3: Create Bug Reports
+
+**CRITICAL**: For each failure or issue found, create an individual bug report file in `FEATURE_DIR/validation/bugs/`.
+
+This directory is the SOURCE OF TRUTH for the `/speckit.fix` command. Each bug gets its own file.
+
+#### Bug File Format
+
+Create one file per bug: `validation/bugs/BUG-{number}-{short-desc}.md`
+
+```markdown
+---
+status: open
+severity: critical
+user_story: US3
+scenario: Generate report
+created: {current_date}
+---
+
+# BUG-001: Report template not found
+
+## Summary
+
+When generating a PDF report, the system fails with "Template not found" error.
+
+## Reproduction Steps
+
+1. Navigate to Reports section
+2. Click "Generate Monthly Report"
+3. Select date range
+4. Click "Download PDF"
+
+## Expected Behavior
+
+PDF file downloads with the monthly report data.
+
+## Actual Behavior
+
+Error displayed: "Template not found"
+Backend log: `[ERROR] ReportService: Template not found at /templates/monthly.ftl`
+
+## Evidence
+
+- Screenshot: `../screenshots/us3-report-fail.png`
+- Backend logs attached below
+
+## Technical Analysis
+
+**Probable Cause**: Template file missing or path misconfigured
+**Affected Files**: `src/services/ReportService.java:45`
+**Suggested Fix**: Check template path configuration in `application.yml`
+
+## Metadata
+
+- **Detected During**: Integration validation
+- **Validation Report**: `report-{date}.md`
+- **Blocking**: Release
+```
+
+#### Bug Severity Levels
+
+| Severity | Criteria | Example |
+|----------|----------|---------|
+| **critical** | Core functionality broken, no workaround | Login fails, data corruption |
+| **high** | Important feature broken | Cancel button missing, export fails |
+| **medium** | Feature works with issues | Slow performance, UI glitch |
+| **low** | Minor issue, cosmetic | Typo, alignment issue |
+
+#### Bug Status Values
+
+| Status | Meaning |
+|--------|---------|
+| **open** | Bug identified, not yet addressed |
+| **in_progress** | Fix is being worked on |
+| **resolved** | Fix applied and verified |
+| **wont_fix** | Decided not to fix (documented reason) |
+
+Create bug files for ALL failures found during validation:
+
+```
+validation/
+├── report-{date}.md
+├── screenshots/
+│   └── ...
+└── bugs/
+    ├── BUG-001-report-template-missing.md
+    ├── BUG-002-cancel-button-not-found.md
+    └── ...
+```
+
+### Step 4.4: Create Correction Tasks
 
 If failures found, update `tasks.md` with correction tasks (using smart insertion from `/speckit.review`):
 
@@ -516,6 +606,16 @@ Present to user with CLEAR status indication:
 
 - `validation/report-{date}.md` - Full report with all details
 - `validation/screenshots/` - Evidence for failures
+- `validation/bugs/` - Individual bug reports (used by `/speckit.fix`)
+
+### Bug Reports Created
+
+> These bug files are the input for `/speckit.fix`. Run fix without arguments to process all open bugs.
+
+| Bug ID | Severity | User Story | Issue |
+|--------|----------|------------|-------|
+| BUG-001 | CRITICAL | US3 | Report template not found |
+| BUG-002 | HIGH | US2 | Cancel button missing |
 
 ### Correction Tasks Added
 
