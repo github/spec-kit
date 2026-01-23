@@ -2,6 +2,10 @@
 
 set -e
 
+# Source common functions for TOML parsing and template resolution
+SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
@@ -234,10 +238,55 @@ else
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
 fi
 
-# Determine branch number
+# =============================================================================
+# Template-based branch naming (FR-001, FR-002, FR-007, FR-008)
+# =============================================================================
+
+# Load branch template from settings file (defaults to {number}-{short_name})
+BRANCH_TEMPLATE=$(load_branch_template "$REPO_ROOT")
+if [ -z "$BRANCH_TEMPLATE" ]; then
+    BRANCH_TEMPLATE="{number}-{short_name}"
+fi
+
+# Validate template contains required placeholders
+if [[ "$BRANCH_TEMPLATE" != *"{number}"* ]]; then
+    echo "Error: Template must contain {number} placeholder: $BRANCH_TEMPLATE" >&2
+    exit 1
+fi
+if [[ "$BRANCH_TEMPLATE" != *"{short_name}"* ]]; then
+    echo "Error: Template must contain {short_name} placeholder: $BRANCH_TEMPLATE" >&2
+    exit 1
+fi
+
+# Resolve template variables (except {number} and {short_name})
+RESOLVED_TEMPLATE="$BRANCH_TEMPLATE"
+
+# Resolve {username} if present
+if [[ "$RESOLVED_TEMPLATE" == *"{username}"* ]]; then
+    USERNAME_VALUE=$(resolve_username)
+    RESOLVED_TEMPLATE="${RESOLVED_TEMPLATE//\{username\}/$USERNAME_VALUE}"
+fi
+
+# Resolve {email_prefix} if present  
+if [[ "$RESOLVED_TEMPLATE" == *"{email_prefix}"* ]]; then
+    EMAIL_PREFIX_VALUE=$(resolve_email_prefix)
+    if [ -z "$EMAIL_PREFIX_VALUE" ]; then
+        echo "Warning: {email_prefix} used but no Git email configured" >&2
+    fi
+    RESOLVED_TEMPLATE="${RESOLVED_TEMPLATE//\{email_prefix\}/$EMAIL_PREFIX_VALUE}"
+fi
+
+# Extract prefix (everything before {number}) for per-user number scoping
+PREFIX_PATTERN="${RESOLVED_TEMPLATE%%\{number\}*}"
+
+# Determine branch number using prefix-scoped lookup (FR-008)
 if [ -z "$BRANCH_NUMBER" ]; then
-    if [ "$HAS_GIT" = true ]; then
-        # Check existing branches on remotes
+    if [ -n "$PREFIX_PATTERN" ]; then
+        # Use prefix-scoped number lookup
+        HIGHEST=$(get_highest_for_prefix "$PREFIX_PATTERN" "$REPO_ROOT")
+        BRANCH_NUMBER=$((HIGHEST + 1))
+    elif [ "$HAS_GIT" = true ]; then
+        # No prefix - check all existing branches on remotes
         BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
     else
         # Fall back to local directory check
@@ -248,23 +297,36 @@ fi
 
 # Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
 FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+
+# Complete template resolution
+BRANCH_NAME="${RESOLVED_TEMPLATE//\{number\}/$FEATURE_NUM}"
+BRANCH_NAME="${BRANCH_NAME//\{short_name\}/$BRANCH_SUFFIX}"
+
+# Validate the final branch name (FR-004)
+if ! validate_branch_name "$BRANCH_NAME"; then
+    echo "Error: Generated branch name is invalid: $BRANCH_NAME" >&2
+    exit 1
+fi
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 MAX_BRANCH_LENGTH=244
 if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
-    # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
+    ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
     
-    # Truncate suffix at word boundary if possible
-    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
-    # Remove trailing hyphen if truncation created one
+    # For template-based names, truncate the short_name portion
+    # Re-resolve with truncated short_name
+    AVAILABLE_LENGTH=$((MAX_BRANCH_LENGTH - ${#RESOLVED_TEMPLATE} + ${#BRANCH_SUFFIX} + 12))  # +12 for {short_name} placeholder
+    if [ $AVAILABLE_LENGTH -lt 10 ]; then
+        AVAILABLE_LENGTH=10  # Minimum reasonable short_name length
+    fi
+    
+    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$AVAILABLE_LENGTH)
     TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
     
-    ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+    # Re-resolve branch name with truncated suffix
+    BRANCH_NAME="${RESOLVED_TEMPLATE//\{number\}/$FEATURE_NUM}"
+    BRANCH_NAME="${BRANCH_NAME//\{short_name\}/$TRUNCATED_SUFFIX}"
     
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
     >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"

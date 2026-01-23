@@ -27,9 +27,9 @@ Per plan.md, this is a single-project CLI tool:
 
 **Purpose**: Create the settings template file and establish shared utilities
 
-- [ ] T001 Create settings template file at templates/settings.toml with documented branch template options per data-model.md schema
-- [ ] T002 [P] Add TOML parsing utility functions to scripts/bash/common.sh (load_branch_template, get_toml_value)
-- [ ] T003 [P] Add TOML parsing utility functions to scripts/powershell/common.ps1 (Get-BranchTemplate, Get-TomlValue)
+- [X] T001 Create settings template file at templates/settings.toml with documented branch template options per data-model.md schema
+- [X] T002 [P] Add TOML parsing utility functions to scripts/bash/common.sh (load_branch_template, get_toml_value)
+- [X] T003 [P] Add TOML parsing utility functions to scripts/powershell/common.ps1 (Get-BranchTemplate, Get-TomlValue)
 
 ---
 
@@ -39,14 +39,14 @@ Per plan.md, this is a single-project CLI tool:
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Implement resolve_username function in scripts/bash/common.sh (Git config → OS fallback per FR-005)
-- [ ] T005 [P] Implement Resolve-Username function in scripts/powershell/common.ps1 (Git config → OS fallback per FR-005)
-- [ ] T006 [P] Implement resolve_email_prefix function in scripts/bash/common.sh
-- [ ] T007 [P] Implement Resolve-EmailPrefix function in scripts/powershell/common.ps1
-- [ ] T008 Implement validate_branch_name function in scripts/bash/common.sh (validate: no leading `-`, no `..`, no `~^:?*[\` chars, no `.lock` suffix, no trailing `/`, no `//`, max 244 bytes)
-- [ ] T009 [P] Implement Test-BranchName function in scripts/powershell/common.ps1 (validate: no leading `-`, no `..`, no `~^:?*[\` chars, no `.lock` suffix, no trailing `/`, no `//`, max 244 bytes)
-- [ ] T010 Implement get_highest_for_prefix function in scripts/bash/common.sh (per-user number scoping per FR-008; this design eliminates race conditions between users by giving each prefix its own sequence)
-- [ ] T011 [P] Implement Get-HighestNumberForPrefix function in scripts/powershell/common.ps1 (per-user number scoping per FR-008; this design eliminates race conditions between users by giving each prefix its own sequence)
+- [X] T004 Implement resolve_username function in scripts/bash/common.sh (Git config → OS fallback per FR-005)
+- [X] T005 [P] Implement Resolve-Username function in scripts/powershell/common.ps1 (Git config → OS fallback per FR-005)
+- [X] T006 [P] Implement resolve_email_prefix function in scripts/bash/common.sh
+- [X] T007 [P] Implement Resolve-EmailPrefix function in scripts/powershell/common.ps1
+- [X] T008 Implement validate_branch_name function in scripts/bash/common.sh (validate: no leading `-`, no `..`, no `~^:?*[\` chars, no `.lock` suffix, no trailing `/`, no `//`, max 244 bytes)
+- [X] T009 [P] Implement Test-BranchName function in scripts/powershell/common.ps1 (validate: no leading `-`, no `..`, no `~^:?*[\` chars, no `.lock` suffix, no trailing `/`, no `//`, max 244 bytes)
+- [X] T010 Implement get_highest_for_prefix function in scripts/bash/common.sh (per-user number scoping per FR-008; this design eliminates race conditions between users by giving each prefix its own sequence)
+- [X] T011 [P] Implement Get-HighestNumberForPrefix function in scripts/powershell/common.ps1 (per-user number scoping per FR-008; this design eliminates race conditions between users by giving each prefix its own sequence)
 
 **Checkpoint**: Foundation ready - all template resolution utilities available
 
@@ -60,14 +60,14 @@ Per plan.md, this is a single-project CLI tool:
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Integrate load_branch_template into scripts/bash/create-new-feature.sh (read template from settings file)
-- [ ] T013 [P] [US1] Integrate Get-BranchTemplate into scripts/powershell/create-new-feature.ps1 (read template from settings file)
-- [ ] T014 [US1] Implement template variable resolution in scripts/bash/create-new-feature.sh (replace {username}, {email_prefix}, {number}, {short_name})
-- [ ] T015 [P] [US1] Implement template variable resolution in scripts/powershell/create-new-feature.ps1 (replace {username}, {email_prefix}, {number}, {short_name})
-- [ ] T016 [US1] Add branch name validation call before git checkout in scripts/bash/create-new-feature.sh
-- [ ] T017 [P] [US1] Add branch name validation call before git checkout in scripts/powershell/create-new-feature.ps1
-- [ ] T018 [US1] Update error messages in scripts/bash/create-new-feature.sh per FR-006 (syntax errors, invalid branch, unresolved variables)
-- [ ] T019 [P] [US1] Update error messages in scripts/powershell/create-new-feature.ps1 per FR-006
+- [X] T012 [US1] Integrate load_branch_template into scripts/bash/create-new-feature.sh (read template from settings file)
+- [X] T013 [P] [US1] Integrate Get-BranchTemplate into scripts/powershell/create-new-feature.ps1 (read template from settings file)
+- [X] T014 [US1] Implement template variable resolution in scripts/bash/create-new-feature.sh (replace {username}, {email_prefix}, {number}, {short_name})
+- [X] T015 [P] [US1] Implement template variable resolution in scripts/powershell/create-new-feature.ps1 (replace {username}, {email_prefix}, {number}, {short_name})
+- [X] T016 [US1] Add branch name validation call before git checkout in scripts/bash/create-new-feature.sh
+- [X] T017 [P] [US1] Add branch name validation call before git checkout in scripts/powershell/create-new-feature.ps1
+- [X] T018 [US1] Update error messages in scripts/bash/create-new-feature.sh per FR-006 (syntax errors, invalid branch, unresolved variables)
+- [X] T019 [P] [US1] Update error messages in scripts/powershell/create-new-feature.ps1 per FR-006
 
 **Checkpoint**: User Story 1 complete - teams can configure and use custom branch templates
 
@@ -81,10 +81,10 @@ Per plan.md, this is a single-project CLI tool:
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Add fallback to default template `{number}-{short_name}` when settings file missing in scripts/bash/create-new-feature.sh
-- [ ] T021 [P] [US2] Add fallback to default template `{number}-{short_name}` when settings file missing in scripts/powershell/create-new-feature.ps1
-- [ ] T022 [US2] Add fallback when `branch.template` key is missing but settings file exists in scripts/bash/create-new-feature.sh
-- [ ] T023 [P] [US2] Add fallback when `branch.template` key is missing but settings file exists in scripts/powershell/create-new-feature.ps1
+- [X] T020 [US2] Add fallback to default template `{number}-{short_name}` when settings file missing in scripts/bash/create-new-feature.sh
+- [X] T021 [P] [US2] Add fallback to default template `{number}-{short_name}` when settings file missing in scripts/powershell/create-new-feature.ps1
+- [X] T022 [US2] Add fallback when `branch.template` key is missing but settings file exists in scripts/bash/create-new-feature.sh
+- [X] T023 [P] [US2] Add fallback when `branch.template` key is missing but settings file exists in scripts/powershell/create-new-feature.ps1
 
 **Checkpoint**: User Story 2 complete - existing workflows continue unchanged
 
@@ -98,12 +98,12 @@ Per plan.md, this is a single-project CLI tool:
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] Verify resolve_username handles "Jane Smith" → "jane-smith" normalization in scripts/bash/common.sh
-- [ ] T025 [P] [US3] Verify Resolve-Username handles "Jane Smith" → "jane-smith" normalization in scripts/powershell/common.ps1
-- [ ] T026 [US3] Verify OS username fallback works when git config user.name is unset in scripts/bash/common.sh
-- [ ] T027 [P] [US3] Verify OS username fallback works when git config user.name is unset in scripts/powershell/common.ps1
-- [ ] T028 [US3] Verify resolve_email_prefix extracts "jsmith" from "jsmith@company.com" in scripts/bash/common.sh
-- [ ] T029 [P] [US3] Verify Resolve-EmailPrefix extracts "jsmith" from "jsmith@company.com" in scripts/powershell/common.ps1
+- [X] T024 [US3] Verify resolve_username handles "Jane Smith" → "jane-smith" normalization in scripts/bash/common.sh
+- [X] T025 [P] [US3] Verify Resolve-Username handles "Jane Smith" → "jane-smith" normalization in scripts/powershell/common.ps1
+- [X] T026 [US3] Verify OS username fallback works when git config user.name is unset in scripts/bash/common.sh
+- [X] T027 [P] [US3] Verify OS username fallback works when git config user.name is unset in scripts/powershell/common.ps1
+- [X] T028 [US3] Verify resolve_email_prefix extracts "jsmith" from "jsmith@company.com" in scripts/bash/common.sh
+- [X] T029 [P] [US3] Verify Resolve-EmailPrefix extracts "jsmith" from "jsmith@company.com" in scripts/powershell/common.ps1
 
 **Checkpoint**: User Story 3 complete - username resolution works across platforms
 
@@ -117,11 +117,11 @@ Per plan.md, this is a single-project CLI tool:
 
 ### Implementation for User Story 4
 
-- [ ] T030 [US4] Add `--settings` flag to init command in src/specify_cli/__init__.py
-- [ ] T031 [US4] Add `--force` flag for overwrite confirmation in src/specify_cli/__init__.py
-- [ ] T032 [US4] Implement settings file generation logic in src/specify_cli/__init__.py (copy from templates/settings.toml)
-- [ ] T033 [US4] Add overwrite protection with user prompt when settings file exists in src/specify_cli/__init__.py
-- [ ] T034 [US4] Add success/error output messages per contracts/cli.md in src/specify_cli/__init__.py
+- [X] T030 [US4] Add `--settings` flag to init command in src/specify_cli/__init__.py
+- [X] T031 [US4] Add `--force` flag for overwrite confirmation in src/specify_cli/__init__.py
+- [X] T032 [US4] Implement settings file generation logic in src/specify_cli/__init__.py (copy from templates/settings.toml)
+- [X] T033 [US4] Add overwrite protection with user prompt when settings file exists in src/specify_cli/__init__.py
+- [X] T034 [US4] Add success/error output messages per contracts/cli.md in src/specify_cli/__init__.py
 
 **Checkpoint**: User Story 4 complete - teams can initialize settings via CLI
 
@@ -131,11 +131,11 @@ Per plan.md, this is a single-project CLI tool:
 
 **Purpose**: Documentation, versioning, and final cleanup
 
-- [ ] T035 Update CHANGELOG.md with feature description for version increment
-- [ ] T036 [P] Increment version in pyproject.toml (minor version bump for new feature)
-- [ ] T037 [P] Update README.md with branch template configuration documentation
-- [ ] T038 [P] Update docs/quickstart.md with settings file usage example
-- [ ] T039 Verify all scripts work on macOS, Linux, and Windows (manual cross-platform test)
+- [X] T035 Update CHANGELOG.md with feature description for version increment
+- [X] T036 [P] Increment version in pyproject.toml (minor version bump for new feature)
+- [X] T037 [P] Update README.md with branch template configuration documentation
+- [X] T038 [P] Update docs/quickstart.md with settings file usage example
+- [X] T039 Verify all scripts work on macOS, Linux, and Windows (manual cross-platform test)
 
 **Checkpoint**: Feature complete and documented
 

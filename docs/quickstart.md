@@ -29,6 +29,30 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script sh  # Force POSIX shell
 ```
 
+#### Customizing Branch Names
+
+Teams can customize how feature branches are named by initializing a settings file:
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --settings
+```
+
+This creates `.specify/settings.toml` where you can configure the branch template:
+
+```toml
+[branch]
+template = "{username}/{number}-{short_name}"  # e.g., jsmith/001-my-feature
+```
+
+Available template variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{number}` | Auto-incrementing 3-digit number | `001` |
+| `{short_name}` | Kebab-case feature name | `my-feature` |
+| `{username}` | Git user.name or OS username | `jsmith` |
+| `{email_prefix}` | Part before @ in Git email | `john.smith` |
+
 ### Step 2: Define Your Constitution
 
 **In your AI Agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
