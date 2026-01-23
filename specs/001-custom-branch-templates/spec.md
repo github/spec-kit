@@ -98,13 +98,13 @@ As a team lead, I want to initialize a settings file with example templates so t
 
 ### Functional Requirements
 
-- **FR-001**: System MUST support a settings file (`.specify/settings.toml`) for branch template configuration
+- **FR-001**: System MUST support a settings file (`.specify/settings.toml`) with a `branch.template` key for branch template configuration
 - **FR-002**: System MUST support the following template variables:
   - `{number}` - Auto-incrementing 3-digit feature number (e.g., `001`, `002`)
   - `{short_name}` - Generated or provided short feature name (e.g., `add-login-feature`)
-  - `{username}` - Git user.name, normalized for branch names
-  - `{email_prefix}` - Portion of Git user.email before the `@` symbol
-- **FR-003**: System MUST use the default template `{number}-{short_name}` when no settings file exists or no `branch_template` is configured (backward compatibility)
+  - `{username}` - Git user.name, normalized for branch names (falls back to OS username)
+  - `{email_prefix}` - Portion of Git user.email before the `@` symbol (returns empty string if email not configured; validation will catch invalid branch names)
+- **FR-003**: System MUST use the default template `{number}-{short_name}` when no settings file exists or no `branch.template` is configured (backward compatibility)
 - **FR-004**: System MUST validate generated branch names against Git branch naming rules (no `..`, no leading `-`, no trailing `.lock`, etc.)
 - **FR-005**: System MUST sanitize username values by converting to lowercase and replacing spaces/special characters with hyphens
 - **FR-006**: System MUST report clear error messages when:
