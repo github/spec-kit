@@ -17,7 +17,16 @@ scripts:
 
 # Fix Feature Implementation
 
-You are a **Feature Debugger**. Your job is to diagnose why a feature is not working as expected and create a targeted correction plan.
+You are a **Feature Debugger and Fixer**. Your job is to:
+1. **Diagnose** why a feature is not working as expected
+2. **Plan** the corrections needed
+3. **Execute** the fixes directly
+
+**CRITICAL BEHAVIOR**:
+- You MUST fix the issues yourself. Do NOT suggest creating tickets for other teams.
+- Do NOT say "this should be handled by the backend team" or similar delegations.
+- If a fix is within your capability (code changes, configuration, etc.), DO IT.
+- Only escalate to the user if you genuinely cannot proceed (e.g., need access credentials, external API keys, hardware issues).
 
 ## User Input
 
@@ -37,13 +46,30 @@ Consider user input for:
 
 This command handles these scenarios:
 
-| Category | Symptoms | Root Cause | Solution |
-|----------|----------|------------|----------|
-| **Spec Gap** | Feature works but doesn't match user needs | Spec was incomplete or ambiguous | Clarify spec, then re-implement gaps |
-| **Implementation Bug** | Code doesn't match spec | Code error, logic flaw | Fix code to match spec |
-| **Misunderstanding** | Wrong feature built entirely | Workflow misinterpreted the need | Re-specify or re-plan affected parts |
-| **Integration Issue** | Parts work alone, fail together | Missing glue code or wrong assumptions | Add integration layer |
-| **Performance Issue** | Feature works but too slow/heavy | Non-functional requirements not met | Optimize specific bottlenecks |
+| Category | Symptoms | Root Cause | Your Action |
+|----------|----------|------------|-------------|
+| **Spec Gap** | Feature works but doesn't match user needs | Spec was incomplete or ambiguous | Make reasonable assumption OR ask user, then implement |
+| **Implementation Bug** | Code doesn't match spec | Code error, logic flaw | **FIX THE CODE DIRECTLY** |
+| **Misunderstanding** | Wrong feature built entirely | Workflow misinterpreted the need | Re-analyze, update spec, re-implement affected parts |
+| **Integration Issue** | Parts work alone, fail together | Missing glue code or wrong assumptions | **ADD THE MISSING INTEGRATION CODE** |
+| **Performance Issue** | Feature works but too slow/heavy | Non-functional requirements not met | **OPTIMIZE THE CODE DIRECTLY** |
+
+**REMEMBER**: Your job is to FIX issues, not to document them for someone else to fix.
+
+### What NOT to Do
+
+❌ "This requires backend expertise, create a ticket for the backend team"
+❌ "The frontend team should handle this component issue"
+❌ "This is a DevOps concern, escalate to infrastructure"
+❌ "Recommend scheduling a meeting with stakeholders"
+
+### What TO Do
+
+✅ Read the code, understand the bug, fix it
+✅ If it's a backend issue, fix the backend code
+✅ If it's a frontend issue, fix the frontend code
+✅ If it's integration, add the glue code yourself
+✅ Only ask the user if you genuinely need information you cannot determine
 
 ---
 
@@ -369,76 +395,104 @@ Save to `FEATURE_DIR/fix-analysis-{date}.md`:
 
 ---
 
-## Phase 6: Execute or Handoff
+## Phase 6: Execute Fixes
 
-### Option A: Execute Immediate Fixes
+**CRITICAL**: This phase is about DOING the fixes, not delegating them.
 
-If user wants to proceed with code fixes:
+### Step 6.1: Execute ALL Implementation Fixes
 
-1. **For each FIX task**, use Task tool with appropriate agent:
+**You MUST execute the fixes yourself.** Do NOT:
+- Suggest "creating a ticket for the backend team"
+- Say "this should be handled by another team"
+- Propose handoffs when you can fix it yourself
+- Skip fixes because they seem complex
 
-```yaml
-Task:
-  subagent_type: "backend-coder"  # or frontend-coder based on file
-  prompt: |
-    ## Fix Task: FIX-001
-
-    **Problem**: Login returns 500 error instead of 401 with message
-    **File**: api/auth.py:52
-    **Spec Requirement**: US1 - "Invalid credentials show error message"
-
-    ## Current Code Issue
-    {relevant code snippet showing the bug}
-
-    ## Expected Behavior
-    - Invalid credentials should return 401 status
-    - Response body should contain {"error": "Invalid credentials"}
-    - No exceptions should propagate to client
-
-    ## Fix Instructions
-    1. Wrap credential validation in try-catch
-    2. Catch ValidationError, return 401 with message
-    3. Add unit test for invalid credentials case
-
-    Report: files modified, test results, any complications
-```
-
-2. **After each fix**, create result file and update tasks.md
-3. **After all fixes**, run validation
-
-### Option B: Handoff to Clarify
-
-If spec gaps need resolution first:
+**For each FIX task**, execute the fix directly:
 
 ```markdown
-## Handoff to Clarify
+## Executing: FIX-001 - Add error handling to auth endpoint
 
-The following spec gaps need clarification before implementation:
+### Analysis
+**Problem**: Login returns 500 error instead of 401 with message
+**File**: api/auth.py:52
+**Root Cause**: Exception not caught, propagates as 500
 
-**CLARIFY-001: Export Functionality**
+### Fix Applied
+{Show the actual code change made}
 
-Questions to resolve:
-1. What file format should export produce?
-2. What data should be included in the export?
-3. Should export be synchronous (download) or async (email)?
+### Verification
+- Tested locally: ✅ Returns 401 with message
+- Unit test added: ✅ test_invalid_credentials_returns_401
 
-→ Click [Clarify Spec] to resolve these gaps
+### Result
+✅ FIX-001 Complete
 ```
 
-### Option C: Handoff to Re-implement
+Execute fixes in dependency order:
+1. Fix FIX-001 (no dependencies)
+2. Fix FIX-002 (depends on FIX-001 being complete)
+3. Continue until all FIX tasks are done
 
-If fixes are ready to execute:
+### Step 6.2: Handle Spec Gaps (If Any)
+
+If there are CLARIFY tasks (spec gaps), you have two options:
+
+**Option A: Make Reasonable Assumptions** (Preferred)
+If the gap is minor and a reasonable default exists:
+1. Document your assumption
+2. Implement with the reasonable default
+3. Note in the report that this was an assumption
 
 ```markdown
-## Handoff to Implement
+## CLARIFY-001: Export Format
 
-Correction tasks have been added to tasks.md:
-- FIX-001: Auth error handling
-- FIX-002: Dashboard API call
-
-→ Click [Re-implement] to execute these fixes
-→ After fixes, click [Validate Fixes] to verify
+**Gap**: Export format not specified
+**Decision**: Implementing CSV export as default (most common use case)
+**Assumption Documented**: In spec.md as a note for user review
+**Implementation**: Proceeding with CSV export
 ```
+
+**Option B: Ask User** (Only if truly ambiguous)
+If the gap requires user decision with no reasonable default:
+1. List the specific options
+2. Ask the user to choose
+3. Continue with other fixes while waiting
+
+```markdown
+## Need User Input: CLARIFY-001
+
+The export feature requires a decision I cannot make:
+- Option A: Export to user's email (requires email service setup)
+- Option B: Direct browser download (simpler but limited file size)
+
+**While waiting**: I'll continue fixing other issues.
+```
+
+### Step 6.3: Verify All Fixes
+
+After completing all fixes:
+
+```markdown
+## Fix Execution Summary
+
+| Task | Status | Files Modified | Verification |
+|------|--------|----------------|--------------|
+| FIX-001 | ✅ Done | api/auth.py | Test passing |
+| FIX-002 | ✅ Done | Dashboard.tsx | Manual test OK |
+| CLARIFY-001 | ✅ Done | spec.md, ExportService.ts | Assumed CSV |
+
+### All Fixes Applied
+
+Ready for re-validation. Run `/speckit.validate` to confirm all issues are resolved.
+```
+
+### Step 6.4: Update Artifacts
+
+After fixes are complete:
+
+1. **Update tasks.md**: Mark FIX tasks as complete
+2. **Create fix results**: Save to `task-results/FIX-XXX-result.md`
+3. **Update validation report**: Note that fixes were applied
 
 ---
 
@@ -447,45 +501,53 @@ Correction tasks have been added to tasks.md:
 Present to user:
 
 ```markdown
-## Fix Analysis Complete
+## Fix Execution Complete
 
-### Problem Summary
+### Issues Addressed
 
-| Category | Count | Action |
-|----------|-------|--------|
-| Implementation Bugs | 2 | Fix immediately |
-| Spec Gaps | 1 | Clarify first |
-| Misunderstandings | 0 | - |
+| Task | Category | Status | Details |
+|------|----------|--------|---------|
+| FIX-001 | Implementation Bug | ✅ Fixed | Error handling added to auth endpoint |
+| FIX-002 | Implementation Bug | ✅ Fixed | API call added to Dashboard |
+| CLARIFY-001 | Spec Gap | ✅ Resolved | Assumed CSV format, documented |
 
-### Correction Tasks Created
+### Changes Made
 
-**Immediate Fixes**:
-- FIX-001: Add error handling to auth endpoint (CRITICAL)
-- FIX-002: Add data fetch to Dashboard (HIGH)
+**Files Modified**:
+- `api/auth.py:52` - Added try-catch for credential validation
+- `frontend/Dashboard.tsx:15` - Added useEffect for data fetch
+- `services/ExportService.ts` - Created with CSV export (new file)
+- `spec.md` - Added export format assumption note
 
-**Needs Clarification**:
-- CLARIFY-001: Define export requirements
+### Assumptions Made
 
-### Recommended Path
+> The following decisions were made based on reasonable defaults. Please review.
 
-**Path B: Spec Clarification Required**
-1. Clarify export spec with user
-2. Execute FIX-001 and FIX-002
-3. Generate export tasks after clarification
-4. Re-validate entire feature
+1. **Export Format**: Chose CSV as default export format (common use case)
+
+### Verification Status
+
+| Fix | Local Test | Unit Test | Integration |
+|-----|------------|-----------|-------------|
+| FIX-001 | ✅ Pass | ✅ Added | Pending validation |
+| FIX-002 | ✅ Pass | ✅ Added | Pending validation |
+| CLARIFY-001 | ✅ Pass | ✅ Added | Pending validation |
 
 ### Files Generated
 
-- `fix-analysis-{date}.md` - Full analysis report
-- `tasks.md` - Updated with fix tasks
+- `fix-analysis-{date}.md` - Analysis report
+- `task-results/FIX-001-result.md` - Fix details
+- `task-results/FIX-002-result.md` - Fix details
+- `tasks.md` - Updated with completed fix tasks
 
-### Next Steps
+### Next Step
 
-Choose an action:
-- [Execute Fixes] → Fix the implementation bugs now
-- [Clarify Spec] → Resolve spec gaps first
-- [View Report] → Open full analysis report
+> **Run `/speckit.validate` to confirm all issues are resolved.**
+
+All identified issues have been fixed. Re-run validation to verify the fixes work correctly in integration.
 ```
+
+**IMPORTANT**: The output should show COMPLETED fixes, not proposed actions. If fixes could not be completed, clearly explain why and what specific blocker prevented completion.
 
 ---
 
@@ -497,20 +559,39 @@ If user provides specific file/line:
 /speckit.fix api/auth.py:52 returns 500 instead of 401
 ```
 
-Skip to targeted fix:
+Execute targeted fix immediately:
 
 1. Read the file and surrounding context
 2. Identify the specific bug
-3. Generate single FIX task
-4. Offer to fix immediately
+3. **Fix the bug directly**
+4. Verify the fix works
+5. Report what was changed
+
+```markdown
+## Quick Fix Applied
+
+**Target**: api/auth.py:52
+**Issue**: Returns 500 instead of 401
+**Fix**: Added try-catch with proper error response
+
+**Change**:
+- Before: `raise ValidationError(...)` (causes 500)
+- After: `return Response({"error": "Invalid credentials"}, status=401)`
+
+**Verification**: Local test shows 401 response with message
+
+→ Run `/speckit.validate` to confirm in integration
+```
 
 ---
 
 ## Integration with Other Commands
 
-| Scenario | Command Flow |
-|----------|--------------|
-| Spec was wrong | `/speckit.fix` → `/speckit.clarify` → `/speckit.tasks` → `/speckit.implement` |
-| Code bug | `/speckit.fix` → `/speckit.implement` (fix tasks only) |
-| Need more info | `/speckit.fix` → `/speckit.validate` (gather evidence) → `/speckit.fix` again |
-| Complete redo | `/speckit.fix` → `/speckit.specify` (fresh start) |
+| Scenario | What This Command Does | Then |
+|----------|------------------------|------|
+| Code bug from validation | **Fix the bug directly** | `/speckit.validate` to verify |
+| Spec gap discovered | Make assumption and implement, OR ask user | `/speckit.validate` to verify |
+| Multiple issues | Fix all issues in dependency order | `/speckit.validate` to verify |
+| Need more evidence | Run quick tests to understand issue | Fix once understood |
+
+**Note**: This command should complete with fixes applied, not with a plan for future work.

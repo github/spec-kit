@@ -161,6 +161,28 @@ api_post /api/test/seed
 
 ## Phase 3: Execute Validation
 
+**CRITICAL**: Track validation execution status. The final report MUST reflect reality:
+- If validation was interrupted → Report as **INCOMPLETE**
+- If scenarios could not be executed → Report as **ERROR**
+- If all scenarios ran but some failed → Report as **FAILED** with details
+- ONLY report **PASSED** if ALL scenarios were executed AND passed
+
+### Validation Execution Tracking
+
+Maintain a running status during validation:
+
+```markdown
+## Validation Execution Log
+
+| Timestamp | Event | Status | Details |
+|-----------|-------|--------|---------|
+| {time} | Start validation | ⏳ Running | Mode: {mode} |
+| {time} | US1 Scenario 1 | ✅ Pass | 2.3s |
+| {time} | US1 Scenario 2 | ❌ Fail | Element not found |
+| {time} | US2 Scenario 1 | ⚠️ Error | Service unavailable |
+| {time} | Validation ended | ❌ Incomplete | Stopped at US2 due to error |
+```
+
 ### Step 3.1: For Each User Story (by priority)
 
 Process stories in order: P1 → P2 → P3
@@ -246,11 +268,66 @@ When a step fails:
 
 Continue with remaining scenarios unless critical failure.
 
+### Step 3.5: Handle Execution Errors
+
+**IMPORTANT**: Distinguish between test failures and execution errors:
+
+| Type | Example | Action |
+|------|---------|--------|
+| **Test Failure** | Assertion failed, element not found | Record failure, continue testing |
+| **Execution Error** | Service crashed, timeout, MCP error | Record error, attempt recovery or stop |
+| **Critical Error** | Infrastructure down, cannot proceed | Stop validation, report incomplete |
+
+When an execution error occurs:
+
+```markdown
+### ⚠️ EXECUTION ERROR at US2 Scenario 1
+
+**Error Type**: Service Unavailable
+**Error Message**: Backend returned 503 after 3 retries
+**Impact**: Cannot continue testing US2 and beyond
+
+**Recovery Attempted**:
+- Restart backend service: Failed
+- Wait 30s and retry: Failed
+
+**Decision**: Marking validation as INCOMPLETE
+```
+
+**NEVER mark validation as successful if execution errors occurred.** The report must clearly state that not all scenarios could be tested.
+
 ---
 
 ## Phase 4: Results & Reporting
 
-### Step 4.1: Generate Validation Report
+### Step 4.1: Determine Overall Validation Status
+
+**CRITICAL**: Before generating the report, determine the TRUE validation status:
+
+```markdown
+## Validation Status Determination
+
+Check these conditions IN ORDER:
+
+1. **Were there execution errors that prevented testing?**
+   - YES → Status: ❌ **INCOMPLETE** - Cannot determine feature quality
+   - NO → Continue to step 2
+
+2. **Were all planned scenarios executed?**
+   - NO → Status: ⚠️ **PARTIAL** - Some scenarios not tested
+   - YES → Continue to step 3
+
+3. **Did any scenarios fail?**
+   - YES → Status: ❌ **FAILED** - Feature has issues that must be fixed
+   - NO → Status: ✅ **PASSED** - All scenarios passed
+```
+
+**IMPORTANT**:
+- ONLY report "PASSED" or "All Green" if EVERY scenario was executed AND passed
+- If validation was interrupted, clearly state what was NOT tested
+- The fix command relies on this report being accurate
+
+### Step 4.2: Generate Validation Report
 
 Create `FEATURE_DIR/validation/report-{date}.md`:
 
@@ -260,6 +337,16 @@ Create `FEATURE_DIR/validation/report-{date}.md`:
 **Date**: {current_date}
 **Scope**: {validation_mode}
 **Duration**: {total_time}
+**Status**: {PASSED|FAILED|INCOMPLETE|PARTIAL}
+
+## ⚠️ Validation Status: {STATUS}
+
+> {Clear explanation of what this status means}
+>
+> **PASSED**: All scenarios executed successfully - feature is ready
+> **FAILED**: Some scenarios failed - issues must be fixed (see details below)
+> **INCOMPLETE**: Validation could not complete - execution errors occurred
+> **PARTIAL**: Some scenarios were skipped - cannot fully assess quality
 
 ## Summary
 
@@ -270,7 +357,9 @@ Create `FEATURE_DIR/validation/report-{date}.md`:
 | Passed | 10 |
 | Failed | 2 |
 | Skipped | 1 |
+| Execution Errors | 0 |
 | **Pass Rate** | **83%** |
+| **Overall Status** | **FAILED** |
 
 ## Results by User Story
 
@@ -385,41 +474,72 @@ Or leave data for debugging if failures occurred.
 
 ## Output
 
-Present to user:
+Present to user with CLEAR status indication:
+
+**CRITICAL**: The output MUST clearly indicate whether the feature is ready or not. Do NOT say "Validation Complete" if there are failures or errors.
 
 ```markdown
-## Validation Complete
+## Validation Result: {STATUS}
 
-**Pass Rate**: 83% (10/12 scenarios)
+{Use appropriate header based on status:}
+- ✅ **VALIDATION PASSED** - Feature is ready
+- ❌ **VALIDATION FAILED** - Issues must be fixed
+- ⚠️ **VALIDATION INCOMPLETE** - Could not test all scenarios
+- ⚠️ **VALIDATION PARTIAL** - Some scenarios skipped
 
-### Quick Summary
+**Scenarios**: {passed}/{total} passed ({pass_rate}%)
+
+### Status by User Story
 
 ✅ **US1 - User Authentication**: All passed
-⚠️ **US2 - Order Management**: 1 failure (cancel button missing)
+❌ **US2 - Order Management**: 1 failure (cancel button missing)
 ❌ **US3 - Reporting**: 1 failure (template error)
 
-### Failed Scenarios
+### Issues Found
 
-1. **US2/Cancel order**: Element `#cancel-btn` not found
-2. **US3/Generate report**: Template not found in ReportService
+> **IMPORTANT**: These issues MUST be fixed before the feature can be considered complete.
+
+| # | User Story | Scenario | Issue | Severity |
+|---|------------|----------|-------|----------|
+| 1 | US2 | Cancel order | Element `#cancel-btn` not found | HIGH |
+| 2 | US3 | Generate report | Template not found in ReportService | CRITICAL |
+
+### Execution Errors (if any)
+
+> These errors prevented some scenarios from being tested. The feature cannot be validated until these are resolved.
+
+| # | User Story | Error | Impact |
+|---|------------|-------|--------|
+| - | - | - | - |
 
 ### Files Generated
 
-- `validation/report-2024-01-15.md` - Full report
-- `validation/screenshots/` - Evidence
+- `validation/report-{date}.md` - Full report with all details
+- `validation/screenshots/` - Evidence for failures
 
 ### Correction Tasks Added
 
 - T089: Fix report template (CRITICAL)
 - T090: Add cancel button (HIGH)
 
+### Required Actions
+
+{Based on status:}
+
+**If FAILED or INCOMPLETE**:
+> The feature is NOT ready. Run `/speckit.fix` to diagnose and fix the issues.
+
+**If PASSED**:
+> The feature is ready for release.
+
 ### Next Steps
 
-Choose an action:
-- [Fix Issues] → `/speckit.implement` to fix the failures
+- [Diagnose & Fix] → `/speckit.fix` to analyze and fix issues
 - [Re-validate] → `/speckit.validate` after fixes
-- [Review Report] → Open `validation/report-2024-01-15.md`
+- [Review Report] → Open `validation/report-{date}.md`
 ```
+
+**NEVER present a "Validation Complete" message that could be mistaken for success when there are failures.**
 
 ---
 
