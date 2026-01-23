@@ -1,50 +1,120 @@
 # [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
 
-## Core Principles
+> **Purpose**: This constitution defines the non-negotiable rules that ALL specifications must follow. It serves as the quality gate for requirements, not implementation.
+
+## Specification Principles
+
+> Rules that every spec.md MUST respect. These are validated by `/speckit.checklist`.
+
+### Accessibility
+
+<!--
+Define your accessibility requirements. Example:
+- All user interfaces MUST specify WCAG 2.1 AA compliance criteria
+- Keyboard navigation MUST be specified for all interactive elements
+- Screen reader support MUST be documented for dynamic content
+-->
+
+[ACCESSIBILITY_REQUIREMENTS]
+
+### Performance
+
+<!--
+Define performance requirements with quantified thresholds. Example:
+- All response times MUST be quantified (no "fast", "performant")
+- Default thresholds: API < 200ms, UI interaction < 100ms, page load < 3s
+- Performance degradation scenarios MUST be specified
+-->
+
+[PERFORMANCE_REQUIREMENTS]
+
+### Security
+
+<!--
+Define security requirements. Example:
+- All sensitive data MUST be identified and handling specified
+- Authentication/authorization MUST be explicit for each endpoint
+- Data validation requirements MUST be specified at system boundaries
+-->
+
+[SECURITY_REQUIREMENTS]
+
+### Error Handling
+
+<!--
+Define error handling requirements. Example:
+- All features MUST specify their failure modes
+- Fallback behavior MUST be defined for critical paths
+- User-facing error messages MUST be specified
+-->
+
+[ERROR_HANDLING_REQUIREMENTS]
+
+### Data & State
+
+<!--
+Define data requirements. Example:
+- Data retention policies MUST be specified for user data
+- State management approach MUST be documented
+- Data migration/versioning strategy MUST be defined for schema changes
+-->
+
+[DATA_REQUIREMENTS]
+
+---
+
+## Development Principles
+
+> Fundamental development practices that guide implementation.
 
 ### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
+<!-- Example: Test-First (TDD) -->
 [PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+<!-- Example: Tests written before implementation. Red-Green-Refactor cycle enforced. -->
 
 ### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
+<!-- Example: Library-First -->
 [PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+<!-- Example: Every feature starts as a standalone, testable library. -->
 
 ### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+<!-- Example: Simplicity -->
 [PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+<!-- Example: YAGNI principles. No premature abstraction. -->
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+---
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+## Business Constraints
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+> Domain-specific rules, compliance requirements, legal constraints.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### Compliance
+<!-- Example: GDPR, HIPAA, SOC2, PCI-DSS requirements -->
+[COMPLIANCE_REQUIREMENTS]
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+### Domain Rules
+<!-- Example: Business logic invariants, regulatory constraints -->
+[DOMAIN_RULES]
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+---
+
+## Quality Standards
+
+> Measurable quality gates for the project.
+
+| Metric | Target | Enforcement |
+|--------|--------|-------------|
+| Test Coverage | [TARGET]% | CI blocks below threshold |
+| Code Review | [REQUIRED/OPTIONAL] | PR merge requires approval |
+| Documentation | [REQUIREMENTS] | API docs required for public interfaces |
+
+---
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- Constitution supersedes all other practices
+- Amendments require: documentation, team approval, migration plan
+- All specs MUST be validated against this constitution before implementation
+- Divergence from principles requires explicit justification and approval
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: [VERSION] | **Ratified**: [DATE] | **Last Amended**: [DATE]
