@@ -111,18 +111,22 @@ Get-ChildItem -Path $bugsDir -Filter "BUG-*.md" | ForEach-Object {
     $content = Get-Content $bugFile.FullName -Raw
     $status = ""
     $severity = ""
+    $bugType = ""
     $userStory = ""
     $title = ""
     $scenario = ""
+    $component = ""
 
     if ($content -match '(?s)^---\r?\n(.+?)\r?\n---') {
         $frontmatter = $matches[1]
 
         if ($frontmatter -match 'status:\s*(.+)') { $status = $matches[1].Trim() }
         if ($frontmatter -match 'severity:\s*(.+)') { $severity = $matches[1].Trim() }
+        if ($frontmatter -match 'type:\s*(.+)') { $bugType = $matches[1].Trim() }
         if ($frontmatter -match 'user_story:\s*(.+)') { $userStory = $matches[1].Trim() }
         if ($frontmatter -match 'title:\s*(.+)') { $title = $matches[1].Trim() }
         if ($frontmatter -match 'scenario:\s*(.+)') { $scenario = $matches[1].Trim() }
+        if ($frontmatter -match 'component:\s*(.+)') { $component = $matches[1].Trim() }
     }
 
     # Update counters
@@ -150,9 +154,11 @@ Get-ChildItem -Path $bugsDir -Filter "BUG-*.md" | ForEach-Object {
         id = $bugId
         status = $status
         severity = $severity
+        type = $bugType
         user_story = $userStory
         title = $title
         scenario = $scenario
+        component = $component
         file = $bugFile.FullName
     }
 

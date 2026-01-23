@@ -121,9 +121,11 @@ for bug_file in "$BUGS_DIR"/BUG-*.md; do
     # Parse frontmatter (between first --- and second ---)
     status=""
     severity=""
+    bug_type=""
     user_story=""
     title=""
     scenario=""
+    component=""
 
     in_frontmatter=false
     while IFS= read -r line; do
@@ -142,12 +144,16 @@ for bug_file in "$BUGS_DIR"/BUG-*.md; do
                 status="${BASH_REMATCH[1]}"
             elif [[ "$line" =~ ^severity:\ *(.+)$ ]]; then
                 severity="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^type:\ *(.+)$ ]]; then
+                bug_type="${BASH_REMATCH[1]}"
             elif [[ "$line" =~ ^user_story:\ *(.+)$ ]]; then
                 user_story="${BASH_REMATCH[1]}"
             elif [[ "$line" =~ ^title:\ *(.+)$ ]]; then
                 title="${BASH_REMATCH[1]}"
             elif [[ "$line" =~ ^scenario:\ *(.+)$ ]]; then
                 scenario="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^component:\ *(.+)$ ]]; then
+                component="${BASH_REMATCH[1]}"
             fi
         fi
     done < "$bug_file"
@@ -177,11 +183,12 @@ for bug_file in "$BUGS_DIR"/BUG-*.md; do
         # Escape quotes in title
         escaped_title="${title//\"/\\\"}"
         escaped_scenario="${scenario//\"/\\\"}"
+        escaped_component="${component//\"/\\\"}"
 
         if [[ -n "$bugs_json" ]]; then
             bugs_json+=","
         fi
-        bugs_json+="{\"id\":\"$bug_id\",\"status\":\"$status\",\"severity\":\"$severity\",\"user_story\":\"$user_story\",\"title\":\"$escaped_title\",\"scenario\":\"$escaped_scenario\",\"file\":\"$bug_file\"}"
+        bugs_json+="{\"id\":\"$bug_id\",\"status\":\"$status\",\"severity\":\"$severity\",\"type\":\"$bug_type\",\"user_story\":\"$user_story\",\"title\":\"$escaped_title\",\"scenario\":\"$escaped_scenario\",\"component\":\"$escaped_component\",\"file\":\"$bug_file\"}"
     elif ! $SUMMARY_ONLY; then
         # Text output
         status_icon="?"
