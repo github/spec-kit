@@ -1,5 +1,12 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+semantic_anchors:
+  - TDD London School    # Outside-in, mock collaborators, test behavior not state
+  - Clean Architecture   # Dependency rule, use cases, entities, Robert C. Martin
+  - SOLID Principles     # SRP, OCP, LSP, ISP, DIP for maintainable code
+  - Kanban               # Visualize work, limit WIP, manage flow, pull system
+  - Fail Fast            # Detect issues early, immediate feedback
+  - DRY                  # Don't Repeat Yourself, single source of truth
 handoffs:
   - label: Diagnose Issues
     agent: speckit.fix
@@ -141,11 +148,14 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Follow exact file paths**: Use file paths from "Codebase Impact Analysis" section for accuracy
 
 7. Execute implementation following the task plan:
-   - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
-   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
-   - **File-based coordination**: Tasks affecting the same files must run sequentially
-   - **Validation checkpoints**: Verify each phase completion before proceeding
+
+   > **Apply**: Kanban principles - visualize, limit WIP, manage flow. TDD London School for test-first.
+
+   - **Phase-by-phase execution**: Complete each phase before moving (Kanban: limit WIP)
+   - **Respect dependencies**: Sequential tasks in order, parallel [P] tasks together (Kanban: manage flow)
+   - **Follow TDD approach**: Test tasks before implementation (TDD London School: outside-in)
+   - **File-based coordination**: Same-file tasks run sequentially (Fail Fast: detect conflicts early)
+   - **Validation checkpoints**: Verify phase completion before proceeding (Kanban: quality gates)
 
    **For each task:**
 
@@ -233,11 +243,14 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If no blockers: Proceed to next phase
 
 8. Implementation execution rules:
-   - **Setup first**: Initialize project structure, dependencies, configuration
-   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
-   - **Core development**: Implement models, services, CLI commands, endpoints
-   - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+
+   > **Apply**: TDD London School (outside-in, test behavior), Clean Architecture (dependency rule), SOLID Principles, Kanban (limit WIP)
+
+   - **Setup first**: Initialize project structure, dependencies, configuration (Clean Architecture layers)
+   - **Tests before code**: TDD London School - write tests for contracts, entities, scenarios before implementation
+   - **Core development**: Implement models, services, endpoints following SOLID (SRP for focused components)
+   - **Integration work**: Database, middleware, logging - respecting Clean Architecture dependency rule
+   - **Polish and validation**: Unit tests (DRY - no repeated test logic), performance optimization
 
 9. Progress tracking and error handling:
    - Report progress after each completed task
@@ -256,13 +269,15 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 11. **Update Architecture Registry (CRITICAL for cross-feature consistency)**:
 
+    > **Apply**: ADR (Architecture Decision Records) for decisions, arc42 structure for documentation, DRY for pattern reuse.
+
     After successful implementation, extract and register new patterns:
 
-    a. **Analyze implemented code for patterns**:
+    a. **Analyze implemented code for patterns** (DRY - identify reuse opportunities):
        - Review task-results/*.md for patterns that worked well
-       - Identify new components that could be reused
-       - Note any anti-patterns discovered
-       - Find technology decisions made during implementation
+       - Identify new components that could be reused (DRY candidates)
+       - Note any anti-patterns discovered (SOLID violations)
+       - Find technology decisions made during implementation (ADR candidates)
 
     b. **Extract patterns to register**:
        ```markdown

@@ -1,5 +1,12 @@
 ---
 description: Execute the implementation planning workflow using the plan template to generate design artifacts.
+semantic_anchors:
+  - Clean Architecture    # Dependency rule, use cases, entities, Robert C. Martin
+  - Hexagonal Architecture  # Ports and Adapters, domain isolation, Alistair Cockburn
+  - ADR                   # Architecture Decision Records - Context, Decision, Consequences
+  - C4 Model              # Context → Containers → Components → Code, Simon Brown
+  - DRY                   # Don't Repeat Yourself - identify reuse opportunities first
+  - arc42                 # Architecture documentation template, 12 sections
 handoffs: 
   - label: Create Tasks
     agent: speckit.tasks
@@ -42,6 +49,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Store these as IDEA_TECHNICAL_CONSTRAINTS for validation in step 6
 
 4. **Load Architecture Registry (CRITICAL for consistency)**:
+
+   > **Apply**: DRY - reuse before creating. ADR for understanding past decisions. Clean/Hexagonal Architecture for layer constraints.
 
    BEFORE exploring the codebase, load the architecture registry to understand established patterns:
 

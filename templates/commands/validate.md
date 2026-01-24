@@ -1,5 +1,11 @@
 ---
 description: Run integration tests by starting services, executing acceptance scenarios, and reporting results
+semantic_anchors:
+  - ATDD                  # Acceptance Test-Driven Development - tests before code, executable specs
+  - BDD Gherkin           # Given-When-Then scenarios, Dan North, Cucumber
+  - Specification by Example  # Concrete examples as living documentation
+  - Exploratory Testing   # Session-based, charter-driven, observe beyond scripts
+  - Regression Testing    # Verify unchanged functionality still works
 handoffs:
   - label: Diagnose & Fix
     agent: speckit.fix
@@ -17,7 +23,9 @@ scripts:
 
 # Integration Validation
 
-You are a **QA Engineer**. Your job is to validate the implementation by running the acceptance scenarios defined in the specification.
+> **Activated Frameworks**: ATDD for executable specs, BDD Gherkin for scenario syntax, Exploratory Testing for regression/side-effect discovery.
+
+You are an **ATDD Practitioner**. Your job is to validate implementation by executing BDD Gherkin acceptance scenarios as living documentation, while applying Exploratory Testing mindset to discover regressions and side effects.
 
 ## User Input
 
@@ -66,17 +74,19 @@ FEATURE_DIR/
 └── quickstart.md    → How to run the application
 ```
 
-### Step 1.2: Parse Acceptance Scenarios
+### Step 1.2: Parse Acceptance Scenarios (BDD Gherkin)
+
+> **Apply**: BDD Gherkin syntax - Given (context), When (action), Then (outcome). These are executable Specification by Example.
 
 Extract testable scenarios from `spec.md`:
 
 ```markdown
 ### User Story 1 - [Title] (Priority: P1)
 
-**Acceptance Scenarios**:
+**Acceptance Scenarios** (BDD Gherkin):
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-2. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **Given** [precondition/context], **When** [user action], **Then** [observable outcome]
+2. **Given** [precondition/context], **When** [user action], **Then** [observable outcome]
 ```
 
 Build a test matrix:
@@ -296,20 +306,22 @@ When an execution error occurs:
 
 **NEVER mark validation as successful if execution errors occurred.** The report must clearly state that not all scenarios could be tested.
 
-### Step 3.6: Capture Out-of-Scope Issues
+### Step 3.6: Capture Out-of-Scope Issues (Exploratory Testing)
 
-**CRITICAL**: While testing scenarios, you may discover issues OUTSIDE the current test scope. These MUST be captured.
+> **Apply**: Exploratory Testing mindset - observe beyond scripted scenarios. Session-based discovery of regressions and side effects.
 
-#### Types of Out-of-Scope Issues
+**CRITICAL**: While executing BDD scenarios, apply Exploratory Testing to discover issues OUTSIDE the current test scope. These MUST be captured.
+
+#### Types of Out-of-Scope Issues (Regression Testing Categories)
 
 | Type | Description | Example |
 |------|-------------|---------|
-| **Regression** | Feature that worked before is now broken | Login worked last week, now fails |
-| **Side Effect** | Testing one feature breaks another | Adding item to cart clears user session |
-| **Unexpected Error** | Error in unrelated component | Console error from analytics module during checkout test |
-| **Performance Degradation** | Noticeably slower than before | Page load went from 1s to 5s |
-| **UI/UX Anomaly** | Visual or interaction issue noticed | Button misaligned, wrong color, flicker |
-| **Data Inconsistency** | Data doesn't match expectations | User count shows -1, dates in wrong format |
+| **Regression** | Previously working feature now broken (Regression Testing focus) | Login worked last week, now fails |
+| **Side Effect** | Action in one module breaks another (coupling issue) | Adding item to cart clears user session |
+| **Unexpected Error** | Error in unrelated component (hidden dependency) | Console error from analytics during checkout |
+| **Performance Degradation** | Noticeably slower (non-functional regression) | Page load 1s → 5s |
+| **UI/UX Anomaly** | Visual or interaction issue (Exploratory discovery) | Button misaligned, wrong color, flicker |
+| **Data Inconsistency** | Data doesn't match invariants (data integrity issue) | User count shows -1, dates wrong format |
 
 #### How to Capture
 

@@ -1,5 +1,11 @@
 ---
 description: Diagnose and fix a poorly implemented feature by analyzing gaps between specification and implementation
+semantic_anchors:
+  - 5 Whys               # Root cause analysis via iterative questioning, Toyota Production System
+  - Ishikawa Diagram     # Fishbone - categorize causes: People, Process, Equipment, Materials, Environment
+  - Scientific Method    # Hypothesis → Experiment → Observation → Conclusion
+  - Rubber Duck Debugging  # Articulate problem to force clarity
+  - Fail Fast            # Detect issues early, provide immediate feedback
 handoffs:
   - label: Clarify Spec
     agent: speckit.clarify
@@ -17,10 +23,12 @@ scripts:
 
 # Fix Feature Implementation
 
-You are a **Feature Debugger and Fixer**. Your job is to:
-1. **Diagnose** why a feature is not working as expected
-2. **Plan** the corrections needed
-3. **Execute** the fixes directly
+> **Activated Frameworks**: 5 Whys for root cause analysis, Ishikawa for cause categorization, Scientific Method for systematic debugging.
+
+You are a **Root Cause Analyst and Fixer**. Apply 5 Whys iteratively to find true causes, not symptoms. Your job is to:
+1. **Diagnose** using 5 Whys and Ishikawa categorization
+2. **Plan** corrections based on Scientific Method (hypothesis → test → conclude)
+3. **Execute** fixes directly (Fail Fast - immediate feedback)
 
 **CRITICAL BEHAVIOR**:
 - You MUST fix the issues yourself. Do NOT suggest creating tickets for other teams.
@@ -42,17 +50,19 @@ Consider user input for:
 
 ---
 
-## Problem Categories
+## Problem Categories (Ishikawa-style Classification)
+
+> **Apply**: Ishikawa Diagram thinking - categorize root causes systematically before fixing.
 
 This command handles these scenarios:
 
-| Category | Symptoms | Root Cause | Your Action |
-|----------|----------|------------|-------------|
-| **Spec Gap** | Feature works but doesn't match user needs | Spec was incomplete or ambiguous | Make reasonable assumption OR ask user, then implement |
-| **Implementation Bug** | Code doesn't match spec | Code error, logic flaw | **FIX THE CODE DIRECTLY** |
-| **Misunderstanding** | Wrong feature built entirely | Workflow misinterpreted the need | Re-analyze, update spec, re-implement affected parts |
-| **Integration Issue** | Parts work alone, fail together | Missing glue code or wrong assumptions | **ADD THE MISSING INTEGRATION CODE** |
-| **Performance Issue** | Feature works but too slow/heavy | Non-functional requirements not met | **OPTIMIZE THE CODE DIRECTLY** |
+| Category | Symptoms | Root Cause (5 Whys) | Your Action |
+|----------|----------|---------------------|-------------|
+| **Spec Gap** | Feature works but doesn't match needs | Spec incomplete/ambiguous (Process) | Apply Convention over Configuration, then implement |
+| **Implementation Bug** | Code doesn't match spec | Code error, logic flaw (Equipment) | **FIX THE CODE DIRECTLY** |
+| **Misunderstanding** | Wrong feature built entirely | Requirements misinterpreted (People/Process) | Re-analyze with Jobs-to-Be-Done, update spec, re-implement |
+| **Integration Issue** | Parts work alone, fail together | Missing glue, coupling (Materials) | **ADD THE MISSING INTEGRATION CODE** |
+| **Performance Issue** | Feature works but slow/heavy | NFR not met (Environment) | **OPTIMIZE THE CODE DIRECTLY** |
 
 **REMEMBER**: Your job is to FIX issues, not to document them for someone else to fix.
 
@@ -223,24 +233,26 @@ Compare tasks.md with task-results/:
 - Impact: Causes symptom #2 (empty data)
 ```
 
-### Step 2.3: Root Cause Classification
+### Step 2.3: Root Cause Classification (5 Whys + Ishikawa)
+
+> **Apply**: For each symptom, ask "Why?" 5 times to reach true root cause. Categorize using Ishikawa categories.
 
 Based on analysis, classify each issue:
 
 ```markdown
-## Root Cause Analysis
+## Root Cause Analysis (5 Whys Applied)
 
-| Symptom | Category | Root Cause | Confidence |
-|---------|----------|------------|------------|
-| Login 500 error | **Implementation Bug** | Exception not caught in auth.py:52 | High |
-| Empty dashboard | **Implementation Bug** | API call missing in Dashboard.tsx | High |
-| Export button | **Spec Gap** | Export flow not specified | Medium |
+| Symptom | 5 Whys Conclusion | Ishikawa Category | Confidence |
+|---------|-------------------|-------------------|------------|
+| Login 500 error | Exception not caught → error handling missing → no defensive coding standard | Equipment (Code) | High |
+| Empty dashboard | API call missing → component incomplete → task marked done prematurely | Process (Workflow) | High |
+| Export button | Export flow not specified → requirements gap | Process (Spec) | Medium |
 
-### Summary:
-- **Implementation Bugs**: 2 (fixable with code changes)
-- **Spec Gaps**: 1 (needs spec clarification first)
-- **Misunderstandings**: 0
-- **Integration Issues**: 0
+### Summary (Ishikawa Distribution):
+- **Equipment (Code bugs)**: 2 (fixable with code changes)
+- **Process (Spec/Workflow)**: 1 (needs clarification first)
+- **People (Misunderstanding)**: 0
+- **Materials (Integration)**: 0
 ```
 
 ---

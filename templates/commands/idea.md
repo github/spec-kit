@@ -1,5 +1,11 @@
 ---
 description: Transform a raw idea into a structured vision document and decompose complex ideas into manageable features. Use this BEFORE /speckit.specify to enrich context and reduce ambiguity.
+semantic_anchors:
+  - Double Diamond        # Discover → Define → Develop → Deliver, divergent/convergent thinking
+  - Jobs-to-Be-Done       # Outcome-focused: situation → motivation → outcome
+  - User Story Mapping    # Backbone (activities) → Skeleton (tasks) → Ribs (stories)
+  - Cynefin Framework     # Simple/Complicated/Complex/Chaotic - context-appropriate responses
+  - YAGNI                 # You Aren't Gonna Need It - no speculative features
 handoffs:
   - label: Specify Next Feature
     agent: speckit.specify
@@ -23,11 +29,13 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Purpose
 
-The `/speckit.idea` command transforms a raw, often vague idea into a comprehensive vision document AND decomposes complex ideas into smaller, manageable features. This provides the rich context that `/speckit.specify` needs to generate precise specifications incrementally.
+> **Activated Frameworks**: Double Diamond for discovery (diverge then converge), Jobs-to-Be-Done for user outcomes, User Story Mapping for feature decomposition, Cynefin for complexity assessment.
+
+The `/speckit.idea` command transforms a raw, often vague idea into a comprehensive vision document AND decomposes complex ideas into smaller, manageable features. This is the **Discover** phase of Double Diamond - divergent exploration before convergent specification.
 
 **Workflow position**: `idea` → `specify` (per feature) → `clarify` → `plan` → `tasks` → `implement`
 
-**Key principle**: Complex ideas should NOT be specified as a single monolithic feature. Instead, break them into focused features that can be specified, planned, and implemented independently.
+**Key principle**: Apply YAGNI - complex ideas should NOT be specified as a single monolithic feature. Use User Story Mapping to break them into focused features that can be specified, planned, and implemented independently.
 
 ## Outline
 
