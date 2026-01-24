@@ -1,5 +1,11 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
+semantic_anchors:
+  - User Story Mapping    # Backbone → Skeleton → Ribs, Jeff Patton
+  - Work Breakdown Structure  # Hierarchical decomposition, project management
+  - Dependency Graph      # DAG for task ordering, critical path
+  - Kanban                # Visualize flow, limit WIP, pull system
+  - INVEST Criteria       # Tasks should be Independent, Valuable, Estimable
 handoffs: 
   - label: Analyze For Consistency
     agent: speckit.analyze
@@ -23,6 +29,8 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
+
+> **Activated Frameworks**: User Story Mapping for organization, Work Breakdown Structure for decomposition, Dependency Graph for ordering, Kanban for flow visualization.
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 

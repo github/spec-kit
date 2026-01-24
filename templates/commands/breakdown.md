@@ -1,5 +1,11 @@
 ---
 description: Create detailed task implementation plans phase-by-phase with user confirmation between phases to avoid lazy execution
+semantic_anchors:
+  - Work Breakdown Structure  # Hierarchical decomposition, project management
+  - Spike                     # Timeboxed research/exploration, XP practice
+  - Dependency Injection      # Loose coupling for parallel development
+  - Critical Path Method      # Identify blocking sequences
+  - Progressive Elaboration   # Refine details as knowledge increases
 ---
 
 ## User Input
@@ -11,6 +17,8 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
+
+> **Activated Frameworks**: Work Breakdown Structure for decomposition, Critical Path Method for dependencies, Progressive Elaboration for detail refinement, Spike for research tasks.
 
 ### Phase 1: Context Loading and Progression Detection
 

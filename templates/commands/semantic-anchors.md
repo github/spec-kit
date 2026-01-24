@@ -74,6 +74,64 @@ Format: `Semantic Anchors: [anchor1], [anchor2], [anchor3]`
 | **Diataxis Framework** | Tutorials, How-to guides, Reference, Explanation. Four documentation types. Daniele Procida. | Documentation structure |
 | **Docs-as-Code** | Version controlled. Reviewed. Automated. Same tools as code. | Doc workflow |
 
+## Requirements Elicitation
+
+| Anchor | Core Concepts | When to Use |
+|--------|---------------|-------------|
+| **Socratic Method** | Guided questioning to uncover assumptions. Reveal gaps through dialogue. | Clarification sessions |
+| **Requirements Elicitation** | Structured discovery techniques. Stakeholder interviews. Observation. Workshops. | Gathering requirements |
+| **Active Listening** | Capture intent, not just words. Paraphrase. Clarify understanding. | User interviews |
+
+## Project Management
+
+| Anchor | Core Concepts | When to Use |
+|--------|---------------|-------------|
+| **Work Breakdown Structure** | Hierarchical decomposition. Deliverable-oriented. WBS Dictionary. | Task decomposition |
+| **User Story Mapping** | Backbone (activities) → Skeleton (tasks) → Ribs (stories). Jeff Patton. | Feature organization |
+| **Dependency Graph** | DAG for task ordering. Critical path identification. Blocking analysis. | Task sequencing |
+| **Critical Path Method** | Longest sequence of dependent tasks. Float calculation. Schedule optimization. | Project scheduling |
+| **Progressive Elaboration** | Refine details as knowledge increases. Rolling wave planning. | Iterative planning |
+| **Spike** | Timeboxed research/exploration. Reduce uncertainty. XP practice. | Research tasks |
+
+## Quality Assurance
+
+| Anchor | Core Concepts | When to Use |
+|--------|---------------|-------------|
+| **Definition of Ready** | Criteria for starting work. Scrum artifact. Prerequisites checklist. | Pre-work validation |
+| **Definition of Done** | Completion criteria. Quality gates. Acceptance checklist. | Work completion |
+| **Quality Gates** | Stage-gate process. Checkpoints. Go/no-go decisions. | Phase transitions |
+| **Acceptance Criteria** | Testable conditions. Pass/fail requirements. Gherkin scenarios. | Story validation |
+| **Exploratory Testing** | Session-based. Charter-driven. Observe beyond scripts. Discovery focus. | Finding edge cases |
+| **Regression Testing** | Verify unchanged functionality. Detect unintended changes. | Post-change validation |
+
+## Code Quality
+
+| Anchor | Core Concepts | When to Use |
+|--------|---------------|-------------|
+| **Code Smell Catalog** | Martin Fowler's refactoring patterns. Long method. God class. Feature envy. | Code review |
+| **OWASP Top 10** | Security vulnerability classification. Injection. Broken auth. XSS. | Security review |
+| **Technical Debt Quadrant** | Martin Fowler: Reckless/Prudent × Deliberate/Inadvertent. | Debt classification |
+| **Cyclomatic Complexity** | McCabe metric. Decision points. Branch counting. Testability indicator. | Complexity analysis |
+| **Boy Scout Rule** | Leave code better than you found it. Incremental improvement. | Continuous improvement |
+
+## Pattern Discovery
+
+| Anchor | Core Concepts | When to Use |
+|--------|---------------|-------------|
+| **Pattern Mining** | Extract recurring solutions. Identify conventions. Document idioms. | Codebase analysis |
+| **Code Archaeology** | Understanding existing systems. Historical analysis. Evolution tracking. | Legacy code |
+| **Conway's Law** | System structure mirrors organization. Communication patterns. | Architecture analysis |
+
+## Agent & System Design
+
+| Anchor | Core Concepts | When to Use |
+|--------|---------------|-------------|
+| **Single Responsibility** | One reason to change. Focused purpose. SOLID SRP. | Agent design |
+| **Separation of Concerns** | Independent aspects. Loose coupling. High cohesion. | System decomposition |
+| **Domain-Driven Design** | Bounded contexts. Ubiquitous language. Aggregates. Eric Evans. | Domain modeling |
+| **Microservices Pattern** | Independent deployment. Specialized components. API boundaries. | Service architecture |
+| **Capability Mapping** | Skills to roles. Competency alignment. Resource allocation. | Agent assignment |
+
 ---
 
 ## Anchor Combinations (Triangulation)
@@ -87,6 +145,12 @@ Combine anchors to create precise context:
 | `5 Whys + Ishikawa + Scientific Method` | Rigorous systematic debugging approach |
 | `INVEST + EARS + Jobs-to-Be-Done` | Complete requirements engineering toolkit |
 | `arc42 + C4 Model + ADR` | Comprehensive architecture documentation |
+| `Socratic Method + Requirements Elicitation + Active Listening` | Effective clarification and discovery sessions |
+| `Code Smell Catalog + OWASP Top 10 + Technical Debt Quadrant` | Comprehensive code review covering quality, security, and debt |
+| `User Story Mapping + Work Breakdown Structure + Dependency Graph` | Complete task organization and sequencing |
+| `Definition of Ready + Definition of Done + Quality Gates` | Full quality lifecycle management |
+| `Pattern Mining + ADR + Code Archaeology` | Systematic pattern extraction and documentation |
+| `Single Responsibility + Separation of Concerns + DDD` | Well-designed agent and component architecture |
 
 ---
 

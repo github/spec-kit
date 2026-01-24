@@ -1,5 +1,11 @@
 ---
 description: Perform a non-destructive cross-artifact consistency and quality analysis across spec.md, plan.md, and tasks.md after task generation.
+semantic_anchors:
+  - Traceability Matrix   # Requirements ↔ Implementation mapping, V-Model
+  - Gap Analysis          # Current state vs desired state, coverage assessment
+  - Static Analysis       # Code/doc analysis without execution
+  - EARS Syntax           # Requirements quality validation
+  - Semantic Consistency  # Terminology and concept alignment across artifacts
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
@@ -14,6 +20,8 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 ## Goal
+
+> **Activated Frameworks**: Traceability Matrix for coverage, Gap Analysis for completeness, Static Analysis for quality, Semantic Consistency for terminology alignment.
 
 Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (`spec.md`, `plan.md`, `tasks.md`) before implementation. This command MUST run only after `/speckit.tasks` has successfully produced a complete `tasks.md`.
 
