@@ -1,5 +1,11 @@
 ---
 description: Extract architectural patterns from existing codebase to initialize or update the architecture registry
+semantic_anchors:
+  - Pattern Mining           # Extract recurring solutions from code
+  - ADR                      # Architecture Decision Records, Michael Nygard
+  - arc42                    # Architecture documentation template
+  - Code Archaeology         # Understanding existing systems through analysis
+  - Conway's Law             # System structure mirrors organization structure
 ---
 
 ## User Input
@@ -12,6 +18,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 User can specify: "all" (full extraction), feature names, or specific directories to analyze.
 
 ## Purpose
+
+> **Activated Frameworks**: Pattern Mining for discovery, ADR for decision documentation, arc42 for structure, Code Archaeology for system understanding.
 
 This command analyzes the existing codebase to extract architectural patterns, technology decisions, and conventions. Use this to:
 

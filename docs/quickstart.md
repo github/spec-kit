@@ -149,16 +149,50 @@ Finally, implement the solution:
 /speckit.implement
 ```
 
+## Quick Changes (Bug Fixes, Tweaks, Feedback)
+
+For small modifications, use `/speckit.change` instead of the full workflow:
+
+```bash
+# Bug fix
+/speckit.change The login button doesn't work on mobile
+
+# Spec tweak
+/speckit.change Add requirement for email validation format
+
+# User feedback
+/speckit.change Users are confused by the Submit button - need better feedback
+
+# Refinement
+/speckit.change Improve error messages in the payment flow
+```
+
+**When to use `/speckit.change`:**
+- Bug fixes (code doesn't match spec)
+- Spec clarifications (add edge case, clarify wording)
+- User feedback responses
+- Small refinements and polish
+
+**When to use full workflow:**
+- New features
+- Changes affecting multiple user stories
+- Architectural changes
+- New data models or APIs
+
+See the [Workflow Guide](./workflows.md) for more details.
+
 ## Key Principles
 
 - **Be explicit** about what you're building and why
 - **Don't focus on tech stack** during specification phase
 - **Iterate and refine** your specifications before implementation
 - **Validate** the plan before coding begins
+- **Use `/speckit.change` for small modifications** - don't over-engineer
 - **Let the AI agent handle** the implementation details
 
 ## Next Steps
 
+- Read the [Workflow Guide](./workflows.md) for detailed workflow documentation
 - Read the [complete methodology](../spec-driven.md) for in-depth guidance
 - Check out [more examples](../templates) in the repository
 - Explore the [source code on GitHub](https://github.com/github/spec-kit)

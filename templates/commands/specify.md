@@ -1,5 +1,11 @@
 ---
 description: Create or update the feature specification from a natural language feature description or existing idea document.
+semantic_anchors:
+  - EARS Syntax           # Requirements patterns: Ubiquitous, Event-driven, State-driven
+  - INVEST Criteria       # Story quality: Independent, Negotiable, Valuable, Estimable, Small, Testable
+  - Specification by Example  # Concrete examples as specs, Gojko Adzic
+  - Jobs-to-Be-Done       # Outcome-focused: situation → motivation → outcome
+  - BDD Gherkin           # Given-When-Then acceptance scenarios
 handoffs:
   - label: Build Technical Plan
     agent: speckit.plan
@@ -173,25 +179,25 @@ Given that feature description (or idea document), do this:
 
     1. Parse user description from Input
        If empty: ERROR "No feature description provided"
-    2. Extract key concepts from description
-       Identify: actors, actions, data, constraints
-    3. For unclear aspects:
-       - Make informed guesses based on context and industry standards
+    2. Extract key concepts using Jobs-to-Be-Done lens
+       Identify: actors (who), actions (what), outcomes (why), constraints (boundaries)
+    3. For unclear aspects (apply Convention over Configuration):
+       - Make informed guesses using industry conventions
        - Only mark with [NEEDS CLARIFICATION: specific question] if:
-         - The choice significantly impacts feature scope or user experience
-         - Multiple reasonable interpretations exist with different implications
-         - No reasonable default exists
+         - Significantly impacts scope (INVEST violation)
+         - Multiple valid interpretations exist
+         - No reasonable convention applies
        - **LIMIT: Maximum 3 [NEEDS CLARIFICATION] markers total**
-       - Prioritize clarifications by impact: scope > security/privacy > user experience > technical details
-    4. Fill User Scenarios & Testing section
+       - Prioritize: scope > security > UX > technical
+    4. Fill User Scenarios using BDD Gherkin (Given-When-Then)
        If no clear user flow: ERROR "Cannot determine user scenarios"
-    5. Generate Functional Requirements
-       Each requirement must be testable
-       Use reasonable defaults for unspecified details (document assumptions in Assumptions section)
-    6. Define Success Criteria
-       Create measurable, technology-agnostic outcomes
-       Include both quantitative metrics (time, performance, volume) and qualitative measures (user satisfaction, task completion)
-       Each criterion must be verifiable without implementation details
+    5. Generate Functional Requirements using EARS Syntax patterns
+       Each requirement must pass INVEST "Testable" criterion
+       Apply Convention over Configuration for unspecified details
+    6. Define Success Criteria (SMART-style)
+       Measurable, technology-agnostic outcomes
+       Quantitative (time, performance) + qualitative (satisfaction, completion)
+       Verifiable via Specification by Example
     7. Identify Key Entities (if data involved)
     8. **Include Technical Hints section** (if extracted from idea):
        - Add a "Technical Hints" section at the end of the spec
@@ -331,12 +337,15 @@ Given that feature description (or idea document), do this:
 
 ## General Guidelines
 
+> **Activated Frameworks**: Apply EARS Syntax for unambiguous requirements. Validate stories with INVEST criteria. Use Specification by Example for acceptance criteria. Frame needs as Jobs-to-Be-Done.
+
 ## Quick Guidelines
 
-- Focus on **WHAT** users need and **WHY**.
-- Avoid HOW to implement (no tech stack, APIs, code structure).
-- Written for business stakeholders, not developers.
-- DO NOT create any checklists that are embedded in the spec. That will be a separate command.
+- Focus on **WHAT** users need and **WHY** (Jobs-to-Be-Done: "When [situation], I want [action], so I can [outcome]")
+- Avoid HOW to implement (no tech stack, APIs, code structure)
+- Written for business stakeholders, not developers
+- Requirements MUST pass INVEST: Independent, Negotiable, Valuable, Estimable, Small, Testable
+- DO NOT create any checklists that are embedded in the spec. That will be a separate command
 
 ### Section Requirements
 
@@ -346,20 +355,22 @@ Given that feature description (or idea document), do this:
 
 ### For AI Generation
 
+> **Apply**: Convention over Configuration (sensible defaults), Principle of Least Astonishment (predictable behavior), YAGNI (no speculative features)
+
 When creating this spec from a user prompt:
 
-1. **Make informed guesses**: Use context, industry standards, and common patterns to fill gaps
-2. **Document assumptions**: Record reasonable defaults in the Assumptions section
-3. **Limit clarifications**: Maximum 3 [NEEDS CLARIFICATION] markers - use only for critical decisions that:
-   - Significantly impact feature scope or user experience
-   - Have multiple reasonable interpretations with different implications
-   - Lack any reasonable default
-4. **Prioritize clarifications**: scope > security/privacy > user experience > technical details
-5. **Think like a tester**: Every vague requirement should fail the "testable and unambiguous" checklist item
-6. **Common areas needing clarification** (only if no reasonable default exists):
-   - Feature scope and boundaries (include/exclude specific use cases)
-   - User types and permissions (if multiple conflicting interpretations possible)
-   - Security/compliance requirements (when legally/financially significant)
+1. **Make informed guesses**: Apply Convention over Configuration - use industry standards and common patterns
+2. **Document assumptions**: Record defaults in Assumptions section (Principle of Least Astonishment)
+3. **Limit clarifications**: Maximum 3 [NEEDS CLARIFICATION] markers - only for decisions that:
+   - Significantly impact scope (violates INVEST "Small" or "Independent")
+   - Have multiple valid interpretations (fails "Testable" criteria)
+   - Lack any reasonable default (no Convention applies)
+4. **Prioritize clarifications**: scope > security/privacy > UX > technical details
+5. **INVEST validation**: Every requirement must be Testable - if not, it's underspecified
+6. **Common clarification areas** (only if no Convention applies):
+   - Feature scope boundaries (affects INVEST "Independent")
+   - User permissions (security-critical)
+   - Compliance requirements (legal/financial)
 
 **Examples of reasonable defaults** (don't ask about these):
 
@@ -371,12 +382,14 @@ When creating this spec from a user prompt:
 
 ### Success Criteria Guidelines
 
+> **Apply**: SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) adapted for features
+
 Success criteria must be:
 
-1. **Measurable**: Include specific metrics (time, percentage, count, rate)
-2. **Technology-agnostic**: No mention of frameworks, languages, databases, or tools
-3. **User-focused**: Describe outcomes from user/business perspective, not system internals
-4. **Verifiable**: Can be tested/validated without knowing implementation details
+1. **Measurable**: Specific metrics (time, percentage, count, rate) - SMART "Measurable"
+2. **Technology-agnostic**: No frameworks, languages, databases - focus on outcomes
+3. **User-focused**: Describe from user/business perspective - Jobs-to-Be-Done outcomes
+4. **Verifiable**: Testable via Specification by Example without implementation details
 
 **Good examples**:
 

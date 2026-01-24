@@ -246,27 +246,100 @@ specify check
 
 After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
 
-#### Core Commands
+#### Core Workflow Commands
 
 Essential commands for the Spec-Driven Development workflow:
 
 | Command                 | Description                                                              |
 | ----------------------- | ------------------------------------------------------------------------ |
 | `/speckit.constitution` | Create or update project governing principles and development guidelines |
+| `/speckit.idea`         | Transform raw ideas into structured vision documents with feature decomposition |
 | `/speckit.specify`      | Define what you want to build (requirements and user stories)            |
+| `/speckit.clarify`      | Clarify underspecified areas (recommended before `/speckit.plan`)        |
 | `/speckit.plan`         | Create technical implementation plans with your chosen tech stack        |
 | `/speckit.tasks`        | Generate actionable task lists for implementation                        |
 | `/speckit.implement`    | Execute all tasks to build the feature according to the plan             |
+| `/speckit.validate`     | Run integration tests by executing acceptance scenarios                  |
+| `/speckit.fix`          | Diagnose and fix bugs by analyzing gaps between spec and implementation  |
 
-#### Optional Commands
+#### Quick Change Command
 
-Additional commands for enhanced quality and validation:
+For small modifications without the full workflow overhead:
 
-| Command              | Description                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| Command            | Description                                                                      |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `/speckit.change`  | Apply focused changes (bug fixes, spec tweaks, user feedback, refinements)       |
+
+Use `/speckit.change` when:
+- Fixing a bug (code doesn't match spec)
+- Tweaking a spec (clarify wording, add edge case)
+- Responding to user feedback
+- Making small refinements or polish
+
+#### Quality & Analysis Commands
+
+| Command                    | Description                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------- |
+| `/speckit.analyze`         | Cross-artifact consistency & coverage analysis                                   |
+| `/speckit.review`          | Code quality analysis, technical debt detection, actionable recommendations      |
+| `/speckit.checklist`       | Generate quality checklists ("unit tests for English")                           |
+| `/speckit.extract-patterns`| Extract architectural patterns from codebase to update registry                  |
+
+#### Setup & Configuration Commands
+
+| Command                 | Description                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `/speckit.setup`        | Full project setup (hooks, skills, agents, constitution)                         |
+| `/speckit.setup-hooks`  | Configure hooks and skills for project                                           |
+| `/speckit.agents`       | Generate specialized subagents for the workflow                                  |
+| `/speckit.mcp`          | Generate MCP server for the project                                              |
+
+#### Utility Commands
+
+| Command                 | Description                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `/speckit.breakdown`    | Create detailed task plans phase-by-phase                                        |
+| `/speckit.taskstoissues`| Convert tasks.md to GitHub issues                                                |
+
+### Workflow Overview
+
+Spec Kit supports two main workflows:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           FULL WORKFLOW (New Features)                       │
+│                                                                              │
+│   idea ──► specify ──► clarify ──► plan ──► tasks ──► implement ──► validate│
+│     │         │           │          │        │           │            │     │
+│     ▼         ▼           ▼          ▼        ▼           ▼            ▼     │
+│  idea.md   spec.md    (updates)   plan.md  tasks.md    code         report   │
+│            + checklist            research.md                                │
+│                                   data-model.md                              │
+│                                   contracts/                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         QUICK WORKFLOW (Small Changes)                       │
+│                                                                              │
+│                              /speckit.change                                 │
+│                                    │                                         │
+│               ┌────────────────────┼────────────────────┐                    │
+│               │                    │                    │                    │
+│               ▼                    ▼                    ▼                    │
+│           Bug Fix            Spec Tweak           User Feedback              │
+│               │                    │                    │                    │
+│               ▼                    ▼                    ▼                    │
+│          Fix code           Edit spec.md          Apply change               │
+│               │                    │                    │                    │
+│               └────────────────────┴────────────────────┘                    │
+│                                    │                                         │
+│                                    ▼                                         │
+│                            Update traceability                               │
+│                            (tasks.md, spec.md)                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+See [Workflow Guide](./docs/workflows.md) for detailed workflow documentation.
 
 ### Environment Variables
 

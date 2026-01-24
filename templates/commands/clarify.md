@@ -1,5 +1,11 @@
 ---
 description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec.
+semantic_anchors:
+  - Socratic Method       # Guided questioning to uncover assumptions and gaps
+  - Requirements Elicitation  # Structured discovery techniques, stakeholder interviews
+  - INVEST Criteria       # Validate story quality through targeted questions
+  - Cynefin Framework     # Match question depth to problem complexity
+  - Active Listening      # Capture intent, not just words
 handoffs: 
   - label: Build Technical Plan
     agent: speckit.plan
@@ -18,6 +24,8 @@ $ARGUMENTS
 You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
+
+> **Activated Frameworks**: Socratic Method for guided questioning, Requirements Elicitation techniques, INVEST criteria validation.
 
 Goal: Detect and reduce ambiguity or missing decision points in the active feature specification and record the clarifications directly in the spec file.
 

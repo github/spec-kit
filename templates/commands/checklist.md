@@ -1,5 +1,11 @@
 ---
 description: Generate or review checklists for the current feature.
+semantic_anchors:
+  - Definition of Ready      # Criteria for starting work, Scrum artifact
+  - Definition of Done       # Completion criteria, quality gates
+  - INVEST Criteria          # Story quality validation
+  - Acceptance Criteria      # Testable conditions for requirements
+  - Quality Gates            # Stage-gate process checkpoints
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
@@ -21,6 +27,8 @@ scripts:
 ---
 
 ## Checklist Purpose: "Unit Tests for English"
+
+> **Activated Frameworks**: Definition of Ready/Done for quality gates, INVEST Criteria for story validation, Acceptance Criteria for testability.
 
 **CRITICAL CONCEPT**: Checklists are **UNIT TESTS FOR REQUIREMENTS WRITING** - they validate the quality, clarity, and completeness of requirements in a given domain.
 
