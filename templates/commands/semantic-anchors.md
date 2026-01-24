@@ -132,6 +132,15 @@ Format: `Semantic Anchors: [anchor1], [anchor2], [anchor3]`
 | **Microservices Pattern** | Independent deployment. Specialized components. API boundaries. | Service architecture |
 | **Capability Mapping** | Skills to roles. Competency alignment. Resource allocation. | Agent assignment |
 
+## Continuous Improvement
+
+| Anchor | Core Concepts | When to Use |
+|--------|---------------|-------------|
+| **Kaizen** | Continuous small improvements. Toyota Production System. Incremental change. | Quick changes, refinements |
+| **Hotfix** | Targeted fix with minimal scope. Emergency response. Isolated change. | Bug fixes, urgent issues |
+| **Ship of Theseus** | Incremental change while maintaining identity. Gradual evolution. | Refactoring, migrations |
+| **Continuous Delivery** | Small, frequent, safe changes. Always deployable. Fast feedback. | Frequent releases |
+
 ---
 
 ## Anchor Combinations (Triangulation)
@@ -151,6 +160,7 @@ Combine anchors to create precise context:
 | `Definition of Ready + Definition of Done + Quality Gates` | Full quality lifecycle management |
 | `Pattern Mining + ADR + Code Archaeology` | Systematic pattern extraction and documentation |
 | `Single Responsibility + Separation of Concerns + DDD` | Well-designed agent and component architecture |
+| `Kaizen + Boy Scout Rule + Hotfix + YAGNI` | Quick, focused changes without over-engineering |
 
 ---
 
