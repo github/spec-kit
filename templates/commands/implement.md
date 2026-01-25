@@ -13,6 +13,30 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Memory Provider Detection
+
+Before implementation:
+1. Check for `.specify/config.json` in repo root
+2. Parse JSON and read `memory.provider`:
+   - If `"hindsight"`: Use Hindsight MCP tools with `bank_id` from `memory.hindsight.bank_id`
+   - If `"local"` or config missing: Continue without Hindsight features
+3. If Hindsight configured but MCP tools unavailable: Warn user and continue
+
+## Hindsight Mode: Pre-Implementation Guidance (Optional)
+
+Before starting implementation, optionally query Hindsight for relevant patterns and learnings:
+
+```
+mcp__hindsight__reflect(
+  query: "What patterns and learnings are relevant for implementing {feature type}?",
+  context: "Pre-implementation guidance for {feature name}",
+  budget: "mid",
+  bank_id: {bank_id from config}
+)
+```
+
+This may surface useful patterns from previous implementations.
+
 ## Outline
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
@@ -134,5 +158,41 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
+
+10. **Hindsight Mode: Store Implementation Knowledge** (when `memory.provider == "hindsight"`):
+
+    After implementation completes, store valuable knowledge for future reference:
+
+    a. **Implementation Decisions** (for significant architectural choices):
+    ```
+    mcp__hindsight__retain(
+      content: "Decision: {decision title}\nFeature: {feature name}\nContext: {why this decision was needed}\nChoice: {what was chosen}\nAlternatives considered: {other options}\nRationale: {why this choice}",
+      context: "implementation-decision",
+      bank_id: {bank_id from config}
+    )
+    ```
+
+    b. **Implementation Learnings** (for problems encountered and solutions):
+    ```
+    mcp__hindsight__retain(
+      content: "Learning: {title}\nFeature: {feature name}\nProblem: {what went wrong or was challenging}\nSolution: {how it was resolved}\nPrevention: {how to avoid in future}",
+      context: "implementation-learning",
+      bank_id: {bank_id from config}
+    )
+    ```
+
+    c. **Code Patterns** (for reusable patterns discovered):
+    ```
+    mcp__hindsight__retain(
+      content: "Pattern: {pattern name}\nFeature: {feature name}\nUse case: {when to use this pattern}\nStructure: {brief description of the pattern}\nExample files: {file paths where pattern is implemented}",
+      context: "implementation-pattern",
+      bank_id: {bank_id from config}
+    )
+    ```
+
+    **Note**: Only store genuinely valuable insights. Not every implementation needs all three types. Focus on:
+    - Decisions that others might question later
+    - Problems that took significant time to solve
+    - Patterns that are likely to be reused
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.

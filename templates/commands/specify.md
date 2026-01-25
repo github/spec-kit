@@ -21,6 +21,28 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Memory Provider Detection
+
+Before performing any memory operations:
+1. Check for `.specify/config.json` in repo root
+2. Parse JSON and read `memory.provider`:
+   - If `"hindsight"`: Use Hindsight MCP tools with `bank_id` from `memory.hindsight.bank_id`
+   - If `"local"` or config missing: Use local file operations only
+3. If Hindsight configured but MCP tools unavailable: Warn user and continue without memory features
+
+## Hindsight Mode: Related Context (Optional)
+
+When creating a new spec in Hindsight mode, optionally recall related context:
+
+```
+mcp__hindsight__recall(
+  query: "{keywords from feature description} feature requirements patterns",
+  bank_id: {bank_id from config}
+)
+```
+
+This may surface related specs, patterns, or decisions that inform the new specification.
+
 ## Outline
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
@@ -194,6 +216,23 @@ Given that feature description, do this:
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
 7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
+
+8. **Hindsight Mode: Store Feature Spec Summary** (when `memory.provider == "hindsight"`):
+
+   After successfully writing the specification, store a summary in Hindsight:
+
+   ```
+   mcp__hindsight__retain(
+     content: "Feature: {FEATURE_NAME}\nBranch: {BRANCH_NAME}\nSpec: {SPEC_FILE_PATH}\n\nSummary: {2-3 sentence summary of what the feature does}\n\nKey Requirements:\n- {requirement 1}\n- {requirement 2}\n- {requirement 3}\n\nSuccess Criteria: {main success criteria}",
+     context: "feature-spec",
+     bank_id: {bank_id from config}
+   )
+   ```
+
+   This enables:
+   - Cross-feature pattern discovery
+   - Semantic search for related specifications
+   - Learning from past feature designs
 
 **NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
 

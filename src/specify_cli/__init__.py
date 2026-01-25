@@ -898,6 +898,45 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def generate_specify_config(project_path: Path, project_name: str, hindsight: bool = False, hindsight_bank: str = None, tracker: StepTracker | None = None) -> None:
+    """Generate .specify/config.json with memory provider configuration.
+
+    Args:
+        project_path: Path to the project directory
+        project_name: Name of the project (used for default bank_id)
+        hindsight: Whether to use Hindsight MCP for memory
+        hindsight_bank: Custom Hindsight bank ID (optional)
+        tracker: Optional StepTracker to update with results
+    """
+    config = {
+        "version": "1.0.0",
+        "memory": {
+            "provider": "hindsight" if hindsight else "local"
+        }
+    }
+
+    if hindsight:
+        # Generate bank_id: use custom or default to speckit-{project-name}
+        bank_id = hindsight_bank or f"speckit-{project_name.lower().replace(' ', '-')}"
+        config["memory"]["hindsight"] = {
+            "bank_id": bank_id
+        }
+
+    config_dir = project_path / ".specify"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "config.json"
+
+    try:
+        config_path.write_text(json.dumps(config, indent=2) + "\n")
+        if tracker:
+            provider_detail = f"hindsight (bank: {config['memory']['hindsight']['bank_id']})" if hindsight else "local files"
+            tracker.complete("config", provider_detail)
+    except Exception as e:
+        if tracker:
+            tracker.error("config", str(e))
+        raise
+
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -954,6 +993,8 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    hindsight: bool = typer.Option(False, "--hindsight", help="Use Hindsight MCP for project memory instead of local files"),
+    hindsight_bank: str = typer.Option(None, "--hindsight-bank", help="Custom Hindsight bank ID (default: speckit-{project-name})"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -1108,6 +1149,7 @@ def init(
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
+        ("config", "Configure memory provider"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -1127,6 +1169,16 @@ def init(
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            # Generate .specify/config.json with memory provider configuration
+            tracker.start("config")
+            generate_specify_config(
+                project_path,
+                project_name,
+                hindsight=hindsight,
+                hindsight_bank=hindsight_bank,
+                tracker=tracker
+            )
 
             if not no_git:
                 tracker.start("git")
@@ -1182,6 +1234,23 @@ def init(
             padding=(1, 2)
         )
         console.print(git_error_panel)
+
+    # Hindsight memory notice
+    if hindsight:
+        bank_id = hindsight_bank or f"speckit-{project_name.lower().replace(' ', '-')}"
+        hindsight_notice = Panel(
+            f"[green]Hindsight MCP memory is enabled[/green] for this project.\n\n"
+            f"Bank ID: [cyan]{bank_id}[/cyan]\n\n"
+            f"Project memory (constitution, decisions, learnings) will be stored in Hindsight\n"
+            f"and available across sessions via semantic search.\n\n"
+            f"[dim]Note: Ensure Hindsight MCP server is configured in your AI agent.[/dim]\n"
+            f"[dim]If Hindsight is unavailable, commands will fallback to local files.[/dim]",
+            title="[cyan]Hindsight Memory[/cyan]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+        console.print()
+        console.print(hindsight_notice)
 
     # Agent folder security notice
     agent_config = AGENT_CONFIG.get(selected_ai)

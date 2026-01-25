@@ -7,6 +7,34 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.23] - 2026-01-25
+
+### Added
+
+- **Hindsight MCP Integration**: New `--hindsight` flag for `specify init` enables persistent project memory via Hindsight MCP
+  - `--hindsight`: Use Hindsight MCP for project memory instead of local files
+  - `--hindsight-bank`: Custom Hindsight bank ID (default: `speckit-{project-name}`)
+  - Generates `.specify/config.json` with memory provider configuration
+- **Memory Provider Detection**: All `/speckit.*` commands now detect memory provider from config
+  - Hindsight mode: Uses `mcp__hindsight__retain`, `mcp__hindsight__recall`, and `mcp__hindsight__reflect`
+  - Local mode: Falls back to `/memory/constitution.md` (backward compatible)
+  - Automatic fallback if Hindsight unavailable
+- **New `/speckit.migrate-memory` command**: Migrate existing projects from local files to Hindsight
+  - Preserves local files as backup
+  - Migrates constitution, principles, governance
+  - Optionally migrates existing feature specs
+- **Enhanced Commands with Hindsight Support**:
+  - `/speckit.constitution`: Stores principles individually for better semantic search
+  - `/speckit.plan`: Recalls constitution, stores tech stack decisions
+  - `/speckit.specify`: Recalls related specs, stores feature summaries
+  - `/speckit.implement`: Stores implementation decisions, learnings, and patterns
+  - `/speckit.analyze`: Uses reflect for deeper constitution compliance analysis
+
+### Changed
+
+- All commands now check `.specify/config.json` for memory provider configuration
+- Commands gracefully fallback to local files when Hindsight is unavailable
+
 ## [0.0.22] - 2025-11-07
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.

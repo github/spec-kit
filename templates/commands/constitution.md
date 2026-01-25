@@ -14,6 +14,31 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Memory Provider Detection
+
+Before performing any memory operations, detect the memory provider:
+
+1. Check for `.specify/config.json` in repo root
+2. Parse JSON and read `memory.provider`:
+   - If `"hindsight"`: Use Hindsight MCP tools with `bank_id` from `memory.hindsight.bank_id`
+   - If `"local"` or config missing: Use `/memory/constitution.md` file
+3. If Hindsight configured but MCP tools unavailable: Warn user and fallback to local file
+
+Store the detected mode for use in later steps.
+
+## Hindsight Mode: Reading Existing Constitution
+
+When updating an existing constitution in Hindsight mode, first retrieve current state:
+
+```
+mcp__hindsight__recall(
+  query: "project constitution principles governance version",
+  bank_id: {bank_id from config}
+)
+```
+
+This provides context about existing principles before making changes.
+
 ## Outline
 
 You are updating the project constitution at `/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
@@ -61,7 +86,43 @@ Follow this execution flow:
    - Dates ISO format YYYY-MM-DD.
    - Principles are declarative, testable, and free of vague language ("should" → replace with MUST/SHOULD rationale where appropriate).
 
-7. Write the completed constitution back to `/memory/constitution.md` (overwrite).
+7. Save the constitution based on detected memory provider:
+
+   **Local Mode** (default):
+   - Write the completed constitution to `/memory/constitution.md` (overwrite)
+
+   **Hindsight Mode** (when `memory.provider == "hindsight"`):
+   - First, write to `/memory/constitution.md` for local reference (always keep a local copy)
+   - Then store each component in Hindsight using `mcp__hindsight__retain`:
+
+   a. **Project metadata**:
+      ```
+      mcp__hindsight__retain(
+        content: "Project: {PROJECT_NAME}, Version: {CONSTITUTION_VERSION}, Ratified: {RATIFICATION_DATE}, Last Amended: {LAST_AMENDED_DATE}",
+        context: "constitution-metadata",
+        bank_id: {bank_id from config}
+      )
+      ```
+
+   b. **Each principle** (repeat for all principles):
+      ```
+      mcp__hindsight__retain(
+        content: "Principle {N}: {PRINCIPLE_NAME}\n{DESCRIPTION}\nRationale: {RATIONALE}",
+        context: "constitution-principle",
+        bank_id: {bank_id from config}
+      )
+      ```
+
+   c. **Governance rules**:
+      ```
+      mcp__hindsight__retain(
+        content: "{Full governance section text}",
+        context: "constitution-governance",
+        bank_id: {bank_id from config}
+      )
+      ```
+
+   **Fallback**: If Hindsight tools fail (e.g., MCP not connected), warn user and confirm local save succeeded.
 
 8. Output a final summary to the user with:
    - New version and bump rationale.

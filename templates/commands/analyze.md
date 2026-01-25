@@ -13,6 +13,15 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Memory Provider Detection
+
+Before loading constitution:
+1. Check for `.specify/config.json` in repo root
+2. Parse JSON and read `memory.provider`:
+   - If `"hindsight"`: Use Hindsight MCP tools with `bank_id` from `memory.hindsight.bank_id`
+   - If `"local"` or config missing: Use `/memory/constitution.md` file
+3. If Hindsight configured but MCP tools unavailable: Warn user and fallback to local file
+
 ## Goal
 
 Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (`spec.md`, `plan.md`, `tasks.md`) before implementation. This command MUST run only after `/speckit.tasks` has successfully produced a complete `tasks.md`.
@@ -65,7 +74,15 @@ Load only the minimal necessary context from each artifact:
 
 **From constitution:**
 
-- Load `/memory/constitution.md` for principle validation
+- **Hindsight Mode** (when `memory.provider == "hindsight"`):
+  ```
+  mcp__hindsight__recall(
+    query: "constitution principles MUST SHOULD requirements governance",
+    bank_id: {bank_id from config}
+  )
+  ```
+- **Local Mode** (default): Load `/memory/constitution.md` for principle validation
+- **Fallback**: If Hindsight unavailable, use local file
 
 ### 3. Build Semantic Models
 
@@ -113,6 +130,21 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 - Data entities referenced in plan but absent in spec (or vice versa)
 - Task ordering contradictions (e.g., integration tasks before foundational setup tasks without dependency note)
 - Conflicting requirements (e.g., one requires Next.js while other specifies Vue)
+
+### 4.5 Hindsight Mode: Deep Analysis (Optional)
+
+When `memory.provider == "hindsight"`, optionally use reflect for deeper constitution alignment analysis:
+
+```
+mcp__hindsight__reflect(
+  query: "Based on these artifacts, are there any patterns or decisions that conflict with project principles? Spec summary: {brief spec summary}. Plan choices: {tech stack choices}. Task coverage: {coverage gaps if any}",
+  context: "Cross-artifact consistency analysis for {feature name}",
+  budget: "mid",
+  bank_id: {bank_id from config}
+)
+```
+
+This can surface non-obvious conflicts by reasoning across stored project knowledge.
 
 ### 5. Severity Assignment
 
