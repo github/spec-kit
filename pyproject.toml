@@ -10,6 +10,7 @@ dependencies = [
     "platformdirs",
     "readchar",
     "truststore>=0.10.4",
+    "babel>=2.12.0,<3.0.0",
 ]
 
 [project.scripts]

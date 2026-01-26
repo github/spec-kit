@@ -44,3 +44,8 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+.specify/
+
+# Cursor
+.cursor/
+

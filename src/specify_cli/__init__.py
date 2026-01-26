@@ -53,6 +53,15 @@ import ssl
 import truststore
 from datetime import datetime, timezone
 
+# Initialize i18n
+from specify_cli.i18n.core import setup_i18n, get_active_locale
+
+# Set up translation functions globally (will be re-initialized with CLI args)
+_, ngettext = setup_i18n()
+
+# Global language option - will be used by callback to re-initialize i18n
+_cli_lang: Optional[str] = None
+
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
@@ -241,7 +250,8 @@ BANNER = """
 ╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
 """
 
-TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
+# Note: TAGLINE is translatable
+TAGLINE = _("GitHub Spec Kit - Spec-Driven Development Toolkit")
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -456,11 +466,29 @@ def show_banner():
     console.print()
 
 @app.callback()
-def callback(ctx: typer.Context):
-    """Show banner when no subcommand is provided."""
+def callback(
+    ctx: typer.Context,
+    lang: Optional[str] = typer.Option(
+        None,
+        "--lang",
+        help="Language for CLI output (en_US, zh_CN)",
+        envvar="SPECIFY_LANG",
+    ),
+):
+    """
+    Show banner when no subcommand is provided.
+    
+    Global Options:
+        --lang: Language for CLI output (default: en_US)
+    """
+    # Re-initialize i18n with CLI language argument
+    global _, ngettext, _cli_lang
+    _cli_lang = lang
+    _, ngettext = setup_i18n(cli_lang=lang)
+    
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
-        console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
+        console.print(Align.center(_("[dim]Run 'specify --help' for usage information[/dim]")))
         console.print()
 
 def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
@@ -474,10 +502,10 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
             return None
     except subprocess.CalledProcessError as e:
         if check_return:
-            console.print(f"[red]Error running command:[/red] {' '.join(cmd)}")
-            console.print(f"[red]Exit code:[/red] {e.returncode}")
+            console.print(_("[red]Error running command:[/red] {cmd}").format(cmd=' '.join(cmd)))
+            console.print(_("[red]Exit code:[/red] {code}").format(code=e.returncode))
             if hasattr(e, 'stderr') and e.stderr:
-                console.print(f"[red]Error output:[/red] {e.stderr}")
+                console.print(_("[red]Error output:[/red] {output}").format(output=e.stderr))
             raise
         return None
 
@@ -562,7 +590,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Option
             error_msg += f"\nOutput: {e.stdout.strip()}"
         
         if not quiet:
-            console.print(f"[red]Error initializing git repository:[/red] {e}")
+            console.print(_("[red]Error initializing git repository:[/red] {error}").format(error=str(e)))
         return False, error_msg
     finally:
         os.chdir(original_cwd)
@@ -641,7 +669,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         client = httpx.Client(verify=ssl_context)
 
     if verbose:
-        console.print("[cyan]Fetching latest release information...[/cyan]")
+        console.print(_("[cyan]Fetching latest release information...[/cyan]"))
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
     try:
@@ -663,7 +691,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         except ValueError as je:
             raise RuntimeError(f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}")
     except Exception as e:
-        console.print(f"[red]Error fetching release information[/red]")
+        console.print(_("[red]Error fetching release information[/red]"))
         console.print(Panel(str(e), title="Fetch Error", border_style="red"))
         raise typer.Exit(1)
 
@@ -677,7 +705,10 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     asset = matching_assets[0] if matching_assets else None
 
     if asset is None:
-        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
+        console.print(
+            _("[red]No matching release asset found[/red] for [bold]{assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
+            .format(assistant=ai_assistant, pattern=pattern)
+        )
         asset_names = [a.get('name', '?') for a in assets]
         console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
         raise typer.Exit(1)
