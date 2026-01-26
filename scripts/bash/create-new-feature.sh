@@ -315,13 +315,23 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
     
     # For template-based names, truncate the short_name portion
-    # Re-resolve with truncated short_name
-    AVAILABLE_LENGTH=$((MAX_BRANCH_LENGTH - ${#RESOLVED_TEMPLATE} + ${#BRANCH_SUFFIX} + 12))  # +12 for {short_name} placeholder
-    if [ $AVAILABLE_LENGTH -lt 10 ]; then
-        AVAILABLE_LENGTH=10  # Minimum reasonable short_name length
+    # Compute template overhead: resolve {number} to the 3-digit feature number,
+    # then calculate the fixed portion length by removing {short_name} placeholder
+    TEMPLATE_WITH_NUMBER="${RESOLVED_TEMPLATE//\{number\}/$FEATURE_NUM}"
+    TEMPLATE_OVERHEAD=$((${#TEMPLATE_WITH_NUMBER} - 12))  # 12 = length of "{short_name}" placeholder
+    
+    # Maximum allowed length for short_name = MAX_BRANCH_LENGTH - fixed template overhead
+    MAX_SHORT_NAME_LENGTH=$((MAX_BRANCH_LENGTH - TEMPLATE_OVERHEAD))
+    
+    # Cap to current suffix length (don't expand) and ensure minimum
+    if [ $MAX_SHORT_NAME_LENGTH -gt ${#BRANCH_SUFFIX} ]; then
+        MAX_SHORT_NAME_LENGTH=${#BRANCH_SUFFIX}
+    fi
+    if [ $MAX_SHORT_NAME_LENGTH -lt 10 ]; then
+        MAX_SHORT_NAME_LENGTH=10  # Minimum reasonable short_name length
     fi
     
-    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$AVAILABLE_LENGTH)
+    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SHORT_NAME_LENGTH)
     TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
     
     # Re-resolve branch name with truncated suffix

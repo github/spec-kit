@@ -287,14 +287,23 @@ if ($branchName.Length -gt $maxBranchLength) {
     $originalBranchName = $branchName
     
     # For template-based names, truncate the short_name portion
-    # Calculate available length for short_name
-    $templateOverhead = $resolvedTemplate.Length - '{short_name}'.Length
-    $availableLength = $maxBranchLength - $templateOverhead
-    if ($availableLength -lt 10) {
-        $availableLength = 10  # Minimum reasonable short_name length
+    # Compute template overhead: resolve {number} to the 3-digit feature number,
+    # then calculate the fixed portion length by removing {short_name} placeholder
+    $templateWithNumber = $resolvedTemplate -replace '\{number\}', $featureNum
+    $templateOverhead = $templateWithNumber.Length - '{short_name}'.Length
+    
+    # Maximum allowed length for short_name = maxBranchLength - fixed template overhead
+    $maxShortNameLength = $maxBranchLength - $templateOverhead
+    
+    # Cap to current suffix length (don't expand) and ensure minimum
+    if ($maxShortNameLength -gt $branchSuffix.Length) {
+        $maxShortNameLength = $branchSuffix.Length
+    }
+    if ($maxShortNameLength -lt 10) {
+        $maxShortNameLength = 10  # Minimum reasonable short_name length
     }
     
-    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $availableLength))
+    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxShortNameLength))
     $truncatedSuffix = $truncatedSuffix -replace '-$', ''
     
     # Re-resolve branch name with truncated suffix

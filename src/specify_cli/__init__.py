@@ -992,12 +992,14 @@ def _init_settings_file(project_path: Path = None, force: bool = False) -> None:
     
     # Check if settings file already exists
     if settings_file.exists():
-        if not force:
-            console.print(f"[yellow]Settings file already exists:[/yellow] {settings_file}")
-            console.print("Use [cyan]--force[/cyan] to overwrite.")
-            raise typer.Exit(1)
-        else:
+        if force:
             console.print(f"[yellow]Overwriting existing settings file:[/yellow] {settings_file}")
+        else:
+            console.print(f"[yellow]Settings file already exists:[/yellow] {settings_file}")
+            response = typer.confirm("Overwrite?", default=False)
+            if not response:
+                console.print("[yellow]Operation cancelled[/yellow]")
+                raise typer.Exit(0)
     
     # Create .specify directory if it doesn't exist
     try:
