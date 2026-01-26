@@ -1232,6 +1232,7 @@ def init(
     enhancement_lines = [
         "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
         "",
+        f"○ [cyan]/speckit.designsystem[/] [bright_black](optional)[/bright_black] - Define design system (visual, components, UX) for consistent UI (run after [cyan]/speckit.constitution[/], before [cyan]/speckit.specify[/] if used)",
         f"○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
         f"○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
         f"○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])"

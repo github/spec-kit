@@ -102,6 +102,18 @@ After a plan is created, this command analyzes the plan and related design docum
 3. **Parallelization**: Marks independent tasks `[P]` and outlines safe parallel groups
 4. **Output**: Writes `tasks.md` in the feature directory, ready for execution by a Task agent
 
+### Optional: The `/speckit.designsystem` Command
+
+For projects with UI components, this optional command helps establish and maintain consistent design patterns:
+
+1. **Design Foundation**: Defines visual elements (colors, typography, spacing, icons)
+2. **Component Library**: Documents component patterns and their usage
+3. **UX Guidelines**: Establishes accessibility, responsiveness, and interaction standards
+4. **Implementation Guidance**: Specifies tech stack (CSS framework, component library) and naming conventions
+5. **Governance**: Sets versioning rules and change management processes
+
+The design system is stored in `.specify/memory/design-system.md` and can be referenced by specifications and plans to ensure UI consistency. Run this command after `/speckit.constitution` but before creating feature specifications if your project involves user interfaces.
+
 ### Example: Building a Chat Feature
 
 Here's how these commands transform the traditional development workflow:
