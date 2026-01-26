@@ -973,6 +973,120 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+def apply_localized_templates(project_path: Path, locale: str, selected_ai: str, tracker: StepTracker | None = None) -> None:
+    """Replace English command templates with localized versions if available.
+    
+    Args:
+        project_path: Path to the extracted project
+        locale: Target locale (e.g., 'zh_CN')
+        selected_ai: Selected AI assistant (e.g., 'claude', 'cursor-agent')
+        tracker: Optional step tracker for progress reporting
+    """
+    # Skip if English locale
+    if locale == "en_US":
+        return
+    
+    # Get the templates directory from the installed package
+    # This assumes templates are packaged with the CLI
+    try:
+        import importlib.resources
+        if hasattr(importlib.resources, 'files'):
+            # Python 3.9+
+            package_root = importlib.resources.files('specify_cli').parent
+        else:
+            # Fallback for older Python
+            import pkg_resources
+            package_root = Path(pkg_resources.resource_filename('specify_cli', '..'))
+        
+        localized_templates_dir = package_root / 'templates' / 'i18n' / locale / 'commands'
+        
+        # If templates don't exist in package, try relative to this file (development mode)
+        if not localized_templates_dir.exists():
+            # Try relative to __file__ (when running from source)
+            module_dir = Path(__file__).parent
+            localized_templates_dir = module_dir.parent.parent / 'templates' / 'i18n' / locale / 'commands'
+        
+        if not localized_templates_dir.exists():
+            # No localized templates available
+            if tracker:
+                tracker.skip("localize", f"no {locale} templates")
+            return
+        
+        # Map AI assistants to their command directories
+        agent_config = AGENT_CONFIG.get(selected_ai)
+        if not agent_config:
+            return
+        
+        # Determine target directory based on agent
+        agent_folder = agent_config["folder"].rstrip('/')
+        
+        # Common command directory patterns
+        command_dir_patterns = {
+            'claude': '.claude/commands',
+            'cursor-agent': '.cursor/commands',
+            'gemini': '.gemini/commands',
+            'copilot': '.github/agents',
+            'qwen': '.qwen/commands',
+            'opencode': '.opencode/command',
+            'codex': '.codex/commands',
+            'windsurf': '.windsurf/workflows',
+            'kilocode': '.kilocode/rules',
+            'auggie': '.augment/rules',
+            'roocode': '.roo/rules',
+            'codebuddy': '.codebuddy/commands',
+            'qoder': '.qoder/commands',
+            'q': '.amazonq/prompts',
+            'amp': '.agents/commands',
+            'shai': '.shai/commands',
+            'bob': '.bob/commands',
+        }
+        
+        target_pattern = command_dir_patterns.get(selected_ai)
+        if not target_pattern:
+            # Try to infer from agent_folder
+            target_pattern = f"{agent_folder}/commands"
+        
+        target_dir = project_path / target_pattern
+        
+        if not target_dir.exists():
+            # Try alternative patterns (commands vs command vs workflows vs rules)
+            for alt_suffix in ['command', 'workflows', 'rules', 'prompts']:
+                alt_dir = project_path / agent_folder / alt_suffix
+                if alt_dir.exists():
+                    target_dir = alt_dir
+                    break
+        
+        if not target_dir.exists():
+            if tracker:
+                tracker.skip("localize", f"target dir not found")
+            return
+        
+        # Copy localized templates, overwriting English versions
+        replaced_count = 0
+        for template_file in localized_templates_dir.glob('*.md'):
+            target_file = target_dir / template_file.name
+            if target_file.exists():
+                shutil.copy2(template_file, target_file)
+                replaced_count += 1
+        
+        # Also check for TOML files for Gemini/Qwen
+        for template_file in localized_templates_dir.glob('*.toml'):
+            target_file = target_dir / template_file.name
+            if target_file.exists():
+                shutil.copy2(template_file, target_file)
+                replaced_count += 1
+        
+        if tracker:
+            if replaced_count > 0:
+                tracker.complete("localize", f"{replaced_count} {locale} templates")
+            else:
+                tracker.skip("localize", "no files replaced")
+    
+    except Exception as e:
+        if tracker:
+            tracker.error("localize", str(e))
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
@@ -1138,6 +1252,7 @@ def init(
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
+        ("localize", "Apply language templates"),
         ("chmod", "Ensure scripts executable"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
@@ -1156,6 +1271,12 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+
+            # Apply localized templates if language is not English
+            active_locale = get_active_locale(_cli_lang)
+            if active_locale != "en_US":
+                tracker.start("localize")
+                apply_localized_templates(project_path, active_locale, selected_ai, tracker=tracker)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
