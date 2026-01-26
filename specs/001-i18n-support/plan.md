@@ -26,16 +26,19 @@ Add comprehensive internationalization (i18n) support to Specify CLI with Chines
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 ### Principle I: Template-First Development
+
 - ✅ **PASS**: Localized templates will maintain same placeholder structure as English templates
 - ✅ **PASS**: Template localization process documented and systematic
 - ⚠️ **VERIFY IN PHASE 1**: Ensure all agent-specific command templates can be localized
 
 ### Principle II: Multi-Agent Compatibility
+
 - ✅ **PASS**: Localization will be applied to all agent command templates (Claude, Cursor, Gemini, etc.)
 - ✅ **PASS**: Agent-specific directory structures preserved across languages
 - ⚠️ **VERIFY IN PHASE 1**: Test template generation for all supported agents in both English and Chinese
 
 ### Principle III: Internationalization & Accessibility (NON-NEGOTIABLE)
+
 - ✅ **PASS**: This feature directly implements the Phase 1 requirements of Constitution Principle III
 - ✅ **PASS**: Uses environment variable (`SPECIFY_LANG`) as specified in constitution
 - ✅ **PASS**: Translation files stored in `src/specify_cli/i18n/` as mandated
@@ -43,16 +46,19 @@ Add comprehensive internationalization (i18n) support to Specify CLI with Chines
 - ✅ **PASS**: Documentation in `docs/i18n/<lang>/` as mandated
 
 ### Principle IV: Simplicity & YAGNI
+
 - ✅ **PASS**: Uses industry-standard Babel library, avoiding custom i18n implementation
 - ✅ **PASS**: Simple environment variable configuration, no complex setup required
 - ✅ **PASS**: Fallback mechanism is straightforward (missing translation → English)
 
 ### Principle V: Documentation-First
+
 - ✅ **PASS**: Comprehensive documentation planned for both English and Chinese
 - ✅ **PASS**: Translation contribution guide will be created
 - ✅ **PASS**: Language selection guide in both languages
 
 ### Principle VI: Test Compatibility
+
 - ✅ **PASS**: I18n system does not interfere with test generation workflows
 - ✅ **PASS**: Test templates will be localized same as other templates
 
@@ -180,6 +186,7 @@ No API contracts needed - this is CLI-only functionality with file-based transla
 ### Agent Context
 
 ✅ Updated Cursor agent context file with:
+
 - Python 3.11+ as language
 - Babel added to framework dependencies
 - File-based translation catalogs as storage
@@ -188,6 +195,7 @@ No API contracts needed - this is CLI-only functionality with file-based transla
 ### Quickstart Guide
 
 Created comprehensive quickstart documentation covering:
+
 - **Users**: Setting `SPECIFY_LANG`, using CLI in Chinese, troubleshooting
 - **Developers**: Marking translatable strings, extraction workflow, testing
 - **Translators**: Editing PO files, translation guidelines, technical terms
@@ -237,4 +245,3 @@ The planning phase has established:
 - **5 core documentation files** to translate
 - **34 functional requirements** to implement
 - **4 user stories** (P1-P4) to deliver independently
-

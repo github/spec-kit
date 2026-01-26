@@ -23,6 +23,7 @@
 ### ✅ 保留的元素
 
 所有翻译都保留了:
+
 - **YAML frontmatter** - 完整保留英文（description字段已翻译）
 - **占位符变量** - `$ARGUMENTS`, `{SCRIPT}`, `{ARGS}`, `{AGENT_SCRIPT}` 等保持不变
 - **文件路径** - 所有路径保持英文
@@ -67,6 +68,7 @@ specify --lang zh_CN
 ### 系统行为
 
 `get_template_path()` 函数将根据语言设置自动选择:
+
 1. 如果 `--lang zh_CN` → 使用 `templates/i18n/zh_CN/commands/`
 2. 如果文件不存在 → 回退到 `templates/commands/` (英文)
 
@@ -89,6 +91,7 @@ specify --lang zh_CN
 ## 验证
 
 所有翻译已验证:
+
 - ✅ Markdown语法正确
 - ✅ 占位符完整保留
 - ✅ 代码示例未改动

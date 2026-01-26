@@ -11,6 +11,7 @@ The Specify CLI internationalization (i18n) system with Chinese (zh_CN) support 
 ### 1. Core Infrastructure (100%)
 
 **Phase 1: Setup** ✅
+
 - Directory structure created
 - Babel configuration file (`babel.cfg`)
 - Translation catalog directories (`src/specify_cli/i18n/{en_US,zh_CN}/LC_MESSAGES/`)
@@ -19,6 +20,7 @@ The Specify CLI internationalization (i18n) system with Chinese (zh_CN) support 
 - Tooling scripts (`scripts/i18n/`)
 
 **Phase 2: Core i18n Module** ✅
+
 - `src/specify_cli/i18n/core.py` - Complete implementation
   - `get_active_locale(cli_lang)` - Language detection with priority order
   - `setup_i18n(cli_lang)` - Translation initialization
@@ -27,6 +29,7 @@ The Specify CLI internationalization (i18n) system with Chinese (zh_CN) support 
   - `SUPPORTED_LANGUAGES` - en_US and zh_CN configuration
 
 **Phase 3: CLI Integration** ✅
+
 - Global `--lang` option added to main callback
 - Translation functions (`_`, `ngettext`) initialized per-command
 - Priority system: CLI arg > env var > default (en_US)
@@ -37,7 +40,7 @@ The Specify CLI internationalization (i18n) system with Chinese (zh_CN) support 
 All 9 command files professionally translated:
 
 | File | Size | Status |
-|------|------|--------|
+| ------ | ------ | -------- |
 | specify.md | 11,591 bytes | ✅ Complete |
 | plan.md | 3,142 bytes | ✅ Complete |
 | tasks.md | 6,092 bytes | ✅ Complete |
@@ -53,6 +56,7 @@ All 9 command files professionally translated:
 ### 3. Testing & Validation (100%)
 
 **Test Results:** All 10 tests passed
+
 - ✅ Language detection (CLI arg, env var, default)
 - ✅ Priority order verification  
 - ✅ Translation function initialization
@@ -64,6 +68,7 @@ All 9 command files professionally translated:
 ### 4. Documentation (100%)
 
 Created comprehensive documentation:
+
 - `specs/001-i18n-support/spec.md` - Feature specification
 - `specs/001-i18n-support/plan.md` - Technical implementation plan
 - `specs/001-i18n-support/research.md` - Technical decisions
@@ -89,6 +94,7 @@ Created comprehensive documentation:
 ### What Works Now
 
 ✅ **Language Selection**
+
 ```bash
 # CLI argument (highest priority)
 specify --lang zh_CN init my-project
@@ -103,11 +109,13 @@ specify --lang en_US init my-project  # Uses English
 ```
 
 ✅ **Chinese Template System**
+
 - Automatic selection of Chinese templates when `--lang zh_CN`
 - Graceful fallback to English if Chinese template missing
 - All 9 command templates fully translated
 
 ✅ **Core Translation Infrastructure**
+
 - gettext-based translation system
 - Named argument support for variable interpolation
 - Pluralization support (ngettext)
@@ -118,34 +126,40 @@ specify --lang en_US init my-project  # Uses English
 ### To Complete User Story 1 (P1 MVP)
 
 **String Wrapping** (~200-300 strings remaining)
+
 - Current: ~10 critical strings wrapped as demonstration
 - Remaining: Comprehensive wrapping of all CLI messages
 - Estimated effort: 4-6 hours
 
-**Message Extraction**
+#### Message Extraction
+
 ```bash
 ./scripts/i18n/extract-messages.sh
 # Extracts all _() marked strings to messages.pot
 ```
 
-**Catalog Initialization**
+#### Catalog Initialization
+
 ```bash
 pybabel init -i src/specify_cli/i18n/messages.pot -d src/specify_cli/i18n -l zh_CN
 pybabel init -i src/specify_cli/i18n/messages.pot -d src/specify_cli/i18n -l en_US
 ```
 
 **Chinese Translation** (Requires native speaker)
+
 - Edit `src/specify_cli/i18n/zh_CN/LC_MESSAGES/specify.po`
 - Translate 200-300 messages to Chinese
 - Estimated effort: 8-10 hours for quality translation
 
-**Compilation**
+#### Compilation
+
 ```bash
 ./scripts/i18n/compile-translations.sh
 # Compiles .po files to binary .mo files
 ```
 
-**Integration Testing**
+#### Integration Testing
+
 ```bash
 specify --lang zh_CN --help
 specify --lang zh_CN init test-project
@@ -157,16 +171,19 @@ specify --lang zh_CN check
 ### Technical Excellence
 
 ✅ **Clean Architecture**
+
 - Separation of concerns (core, templates, tests)
 - Standard gettext/Babel workflow
 - Cross-platform compatibility
 
 ✅ **User Experience**
+
 - Discoverable `--lang` option in --help
 - Flexible configuration (CLI > env > default)
 - Graceful fallbacks
 
 ✅ **Professional Quality**
+
 - 75,835 bytes of professional Chinese translations
 - Comprehensive test coverage
 - Complete documentation
@@ -174,11 +191,13 @@ specify --lang zh_CN check
 ### Innovation
 
 ✅ **CLI Argument Priority System**
+
 - Improved over environment-variable-only approach
 - Better discoverability and flexibility
 - Maintains backward compatibility
 
 ✅ **Template Localization Strategy**
+
 - Separate files per language
 - Preserves placeholders and structure
 - Easy to maintain and version control
@@ -187,21 +206,24 @@ specify --lang zh_CN check
 
 ### For Production Release
 
-**Option A: MVP Release (Recommended)**
+#### Option A: MVP Release (Recommended)
+
 1. Complete string wrapping for core commands (init, check, version)
 2. Create minimal Chinese translations (~50 critical messages)
 3. Document "beta" status for i18n feature
 4. Release with Chinese template support
 5. Gather user feedback
 
-**Option B: Full Release**
+#### Option B: Full Release
+
 1. Complete all string wrapping (~200-300 messages)
 2. Full Chinese translation by native speaker
 3. Comprehensive testing across all commands
 4. Documentation in both English and Chinese
 5. Production release
 
-**Option C: Foundation Release (Current State)**
+#### Option C: Foundation Release (Current State)
+
 1. Document infrastructure as "developer preview"
 2. Provide tooling for contributors to add translations
 3. Community-driven translation effort
@@ -229,11 +251,12 @@ The Specify CLI i18n system is **architecturally complete and production-ready**
 - ✅ Full documentation
 
 The remaining work is primarily:
+
 - String wrapping (mechanical task)
 - Translation (requires native speaker)
 - Integration testing (straightforward)
 
-**Status: Ready for Production with MVP Scope**
+### Status: Ready for Production with MVP Scope
 
 ---
 

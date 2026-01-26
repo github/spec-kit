@@ -21,9 +21,10 @@ Added comprehensive function to `src/specify_cli/__init__.py` (lines ~975-1115):
 ```python
 def apply_localized_templates(project_path: Path, locale: str, selected_ai: str, tracker: StepTracker | None = None) -> None:
     """Replace English command templates with localized versions if available."""
-```
+```text
 
 **Key Features:**
+
 - Discovers localized templates from package installation or source
 - Maps AI assistants to their command directory structures
 - Replaces English `.md` and `.toml` files with localized versions
@@ -32,6 +33,7 @@ def apply_localized_templates(project_path: Path, locale: str, selected_ai: str,
 - Progress reporting via StepTracker
 
 **Supported AI Assistant Mappings:**
+
 - `claude` → `.claude/commands`
 - `cursor-agent` → `.cursor/commands`
 - `gemini` → `.gemini/commands`
@@ -55,12 +57,14 @@ def apply_localized_templates(project_path: Path, locale: str, selected_ai: str,
 Modified `init()` command workflow:
 
 **Before:**
+
 ```python
 download_and_extract_template(...)
 ensure_executable_scripts(...)
-```
+```text
 
 **After:**
+
 ```python
 download_and_extract_template(...)
 
@@ -71,9 +75,10 @@ if active_locale != "en_US":
     apply_localized_templates(project_path, active_locale, selected_ai, tracker=tracker)
 
 ensure_executable_scripts(...)
-```
+```text
 
 **Progress Tracker Updated:**
+
 - Added `("localize", "Apply language templates")` step to tracker
 
 ### 3. Template Discovery Logic
@@ -81,17 +86,19 @@ ensure_executable_scripts(...)
 The function uses a multi-strategy approach to find templates:
 
 **Strategy 1: Package Installation** (Production)
+
 ```python
 import importlib.resources
 package_root = importlib.resources.files('specify_cli').parent
 localized_templates_dir = package_root / 'templates' / 'i18n' / locale / 'commands'
-```
+```text
 
 **Strategy 2: Source Directory** (Development)
+
 ```python
 module_dir = Path(__file__).parent
 localized_templates_dir = module_dir.parent.parent / 'templates' / 'i18n' / locale / 'commands'
-```
+```text
 
 ### 4. Package Configuration
 
@@ -100,13 +107,13 @@ Updated `pyproject.toml` to include templates in wheel distribution:
 ```toml
 [tool.hatch.build.targets.wheel.force-include]
 "templates" = "templates"
-```
+```text
 
 This ensures localized templates are bundled with the CLI package.
 
 ## Template File Structure
 
-```
+```text
 templates/
 └── i18n/
     └── zh_CN/
@@ -120,7 +127,7 @@ templates/
             ├── specify.md (11,591 bytes)
             ├── tasks.md (6,092 bytes)
             └── taskstoissues.md (1,161 bytes)
-```
+```text
 
 **Total:** 9 Chinese command templates (75,835 bytes)
 
@@ -129,9 +136,10 @@ templates/
 ### User Workflow
 
 1. **User runs init with Chinese:**
+
    ```bash
    specify --lang zh_CN init my-project
-   ```
+```text
 
 2. **CLI initialization sequence:**
    - ✅ Download English template from GitHub
@@ -154,7 +162,7 @@ Target: ./my-project/.cursor/commands/specify.md
 Action: Copy (overwrite)
 
 # Repeats for all 9 command files
-```
+```text
 
 ## Testing
 
@@ -164,10 +172,11 @@ Created `test_template_discovery.py` to verify:
 
 ```bash
 python3 test_template_discovery.py
-```
+```text
 
 **Results:**
-```
+
+```text
 ✅ Method 1: Relative to module file
    Templates: /home/rothcold/Workspaces/python/spec-kit/templates/i18n/zh_CN/commands
    Exists: True
@@ -177,7 +186,7 @@ python3 test_template_discovery.py
    Path: /home/rothcold/Workspaces/python/spec-kit/templates/i18n/zh_CN/commands
    Exists: True
    Files found: 9
-```
+```text
 
 ### Test 2: Integration Test (Recommended)
 
@@ -195,7 +204,7 @@ cat /tmp/test-zh-project/.cursor/commands/specify.md | head -10
 # Count Chinese characters
 grep -o '[\u4e00-\u9fff]' /tmp/test-zh-project/.cursor/commands/specify.md | wc -l
 # Should show thousands of Chinese characters
-```
+```text
 
 ### Test 3: Different AI Assistants
 
@@ -209,39 +218,47 @@ ls /tmp/test-claude/.claude/commands/
 specify --lang zh_CN init /tmp/test-windsurf --ai windsurf
 ls /tmp/test-windsurf/.windsurf/workflows/
 # Should contain Chinese templates
-```
+```text
 
 ## Expected Behavior
 
 ### English (Default)
+
 ```bash
 specify init my-project
 # or
 specify --lang en_US init my-project
-```
+```text
+
 **Result:** English templates (from GitHub release, no replacement)
 
 ### Chinese
+
 ```bash
 specify --lang zh_CN init my-project
-```
-**Result:** 
+```text
+
+**Result:**
+
 1. English templates downloaded
 2. Chinese templates applied (9 files replaced)
 3. Progress: `✓ localize | 9 zh_CN templates`
 
 ### Unsupported Language
+
 ```bash
 specify --lang fr_FR init my-project
-```
+```text
+
 **Result:**
+
 1. English templates downloaded
 2. Localization skipped (no French templates)
 3. Progress: `⊘ localize | no fr_FR templates`
 
 ## Progress Tracker Output
 
-```
+```text
 Initialize Specify Project
 
 ✓ precheck          | ok
@@ -255,7 +272,7 @@ Initialize Specify Project
 ✓ cleanup           | removed archive
 ✓ git               | initialized
 ✓ final             | project ready
-```
+```text
 
 ## File Changes Summary
 
@@ -294,30 +311,33 @@ specify --lang zh_CN init test-project --ai cursor-agent --here
 
 # Verify Chinese content
 cat .cursor/commands/specify.md | head -20
-```
+```text
 
 ### For Development
 
 1. **Add more languages:**
+
    ```bash
    mkdir -p templates/i18n/ja_JP/commands
    # Translate files to Japanese
    # No code changes needed!
-   ```
+```text
 
 2. **Test with different AI assistants:**
+
    ```bash
    for ai in claude gemini copilot windsurf; do
      specify --lang zh_CN init test-$ai --ai $ai
      # Verify templates
    done
-   ```
+```text
 
 3. **Package and distribute:**
+
    ```bash
    python -m build
    # Wheel includes templates/i18n/ directory
-   ```
+```text
 
 ## Known Limitations
 
@@ -346,9 +366,10 @@ The i18n system now provides **end-to-end Chinese language support**:
 5. ✅ All AI assistants supported
 
 Users can now run:
+
 ```bash
 specify --lang zh_CN init my-project
-```
+```text
 
 And receive a fully Chinese-localized Spec-Driven Development project! 🎉
 

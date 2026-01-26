@@ -142,7 +142,7 @@ specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
 ## 10. Rapid Edit Loop Summary
 
 | Action | Command |
-|--------|---------|
+| -------- | --------- |
 | Run CLI directly | `python -m src.specify_cli --help` |
 | Editable install | `uv pip install -e .` then `specify ...` |
 | Local uvx run (repo root) | `uvx --from . specify ...` |
@@ -161,7 +161,7 @@ rm -rf .venv dist build *.egg-info
 ## 12. Common Issues
 
 | Symptom | Fix |
-|---------|-----|
+| --------- | ----- |
 | `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
 | Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
 | Git step skipped | You passed `--no-git` or Git not installed |

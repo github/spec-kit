@@ -23,6 +23,7 @@ def get_template_path(template_name: str, locale: Optional[str] = None,
 ```
 
 **Priority Order:**
+
 1. `cli_lang` parameter (from `--lang` argument) - **highest priority**
 2. `SPECIFY_LANG` environment variable - persistent default
 3. `"en_US"` - fallback default
@@ -50,6 +51,7 @@ def callback(
 ```
 
 **Key Features:**
+
 - `--lang` option available on ALL commands (global option)
 - `envvar="SPECIFY_LANG"` automatically reads from environment
 - Translation functions re-initialized with user's choice
@@ -73,6 +75,7 @@ def test_env_var_used_when_no_cli_arg(self, monkeypatch):
 ### 4. Documentation Updates
 
 **Updated Files:**
+
 - `specs/001-i18n-support/quickstart.md` - Added CLI argument examples
 - `specs/001-i18n-support/research.md` - Updated Decision 2 rationale
 
@@ -118,21 +121,25 @@ specify --lang en_US --help  # Shows English help
 ## Benefits
 
 ### 1. **Discoverability**
+
 - `--lang` appears in `--help` output
 - Users immediately know the feature exists
 - No need to search documentation
 
 ### 2. **Flexibility**
+
 - CLI argument overrides environment variable
 - Users can test different languages without changing env
 - Perfect for one-off command execution
 
 ### 3. **Standard Practice**
+
 - Follows conventions of major CLI tools
 - Intuitive for developers familiar with other tools
 - Works alongside environment variable for CI/CD
 
 ### 4. **User-Friendly**
+
 - Easy to remember: `--lang zh_CN`
 - Clear, self-documenting
 - No hidden configuration
@@ -140,6 +147,7 @@ specify --lang en_US --help  # Shows English help
 ## Implementation Status
 
 ✅ **Completed:**
+
 - Core module updated with `cli_lang` parameter
 - CLI callback adds `--lang` global option
 - Translation functions re-initialized per-command
@@ -147,6 +155,7 @@ specify --lang en_US --help  # Shows English help
 - Documentation updated
 
 ⏸️ **Remaining Work:**
+
 - Wrap CLI strings with `_()` function (T024-T034)
 - Extract messages to POT file (T025)
 - Create Chinese translations (T028-T032)
@@ -156,11 +165,13 @@ specify --lang en_US --help  # Shows English help
 ## Migration Notes
 
 **For Users:**
+
 - `SPECIFY_LANG` still works exactly as before
 - `--lang` is now the recommended method
 - Both can be used together (CLI arg takes precedence)
 
 **For Developers:**
+
 - All new i18n functions accept optional `cli_lang` parameter
 - Call `setup_i18n(cli_lang=user_choice)` to reinitialize
 - Tests should use `cli_lang=` parameter instead of monkeypatching env vars

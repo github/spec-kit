@@ -986,105 +986,116 @@ def apply_localized_templates(project_path: Path, locale: str, selected_ai: str,
     if locale == "en_US":
         return
     
-    # Get the templates directory from the installed package
-    # This assumes templates are packaged with the CLI
-    try:
-        import importlib.resources
-        if hasattr(importlib.resources, 'files'):
-            # Python 3.9+
-            package_root = importlib.resources.files('specify_cli').parent
-        else:
-            # Fallback for older Python
-            import pkg_resources
-            package_root = Path(pkg_resources.resource_filename('specify_cli', '..'))
-        
-        localized_templates_dir = package_root / 'templates' / 'i18n' / locale / 'commands'
-        
-        # If templates don't exist in package, try relative to this file (development mode)
-        if not localized_templates_dir.exists():
-            # Try relative to __file__ (when running from source)
-            module_dir = Path(__file__).parent
-            localized_templates_dir = module_dir.parent.parent / 'templates' / 'i18n' / locale / 'commands'
-        
-        if not localized_templates_dir.exists():
-            # No localized templates available
-            if tracker:
-                tracker.skip("localize", f"no {locale} templates")
-            return
-        
-        # Map AI assistants to their command directories
-        agent_config = AGENT_CONFIG.get(selected_ai)
-        if not agent_config:
-            return
-        
-        # Determine target directory based on agent
-        agent_folder = agent_config["folder"].rstrip('/')
-        
-        # Common command directory patterns
-        command_dir_patterns = {
-            'claude': '.claude/commands',
-            'cursor-agent': '.cursor/commands',
-            'gemini': '.gemini/commands',
-            'copilot': '.github/agents',
-            'qwen': '.qwen/commands',
-            'opencode': '.opencode/command',
-            'codex': '.codex/commands',
-            'windsurf': '.windsurf/workflows',
-            'kilocode': '.kilocode/rules',
-            'auggie': '.augment/rules',
-            'roocode': '.roo/rules',
-            'codebuddy': '.codebuddy/commands',
-            'qoder': '.qoder/commands',
-            'q': '.amazonq/prompts',
-            'amp': '.agents/commands',
-            'shai': '.shai/commands',
-            'bob': '.bob/commands',
-        }
-        
-        target_pattern = command_dir_patterns.get(selected_ai)
-        if not target_pattern:
-            # Try to infer from agent_folder
-            target_pattern = f"{agent_folder}/commands"
-        
-        target_dir = project_path / target_pattern
-        
-        if not target_dir.exists():
-            # Try alternative patterns (commands vs command vs workflows vs rules)
-            for alt_suffix in ['command', 'workflows', 'rules', 'prompts']:
-                alt_dir = project_path / agent_folder / alt_suffix
-                if alt_dir.exists():
-                    target_dir = alt_dir
-                    break
-        
-        if not target_dir.exists():
-            if tracker:
-                tracker.skip("localize", f"target dir not found")
-            return
-        
-        # Copy localized templates, overwriting English versions
-        replaced_count = 0
-        for template_file in localized_templates_dir.glob('*.md'):
-            target_file = target_dir / template_file.name
-            if target_file.exists():
-                shutil.copy2(template_file, target_file)
-                replaced_count += 1
-        
-        # Also check for TOML files for Gemini/Qwen
-        for template_file in localized_templates_dir.glob('*.toml'):
-            target_file = target_dir / template_file.name
-            if target_file.exists():
-                shutil.copy2(template_file, target_file)
-                replaced_count += 1
-        
-        if tracker:
-            if replaced_count > 0:
-                tracker.complete("localize", f"{replaced_count} {locale} templates")
-            else:
-                tracker.skip("localize", "no files replaced")
+    # Strategy 1: Look for templates in the extracted project's .specify directory
+    # (This is where release packages place them)
+    localized_templates_dir = project_path / '.specify' / 'templates' / 'i18n' / locale / 'commands'
     
-    except Exception as e:
+    # Strategy 2: If not found in project, try package installation
+    if not localized_templates_dir.exists():
+        try:
+            import importlib.resources
+            if hasattr(importlib.resources, 'files'):
+                # Python 3.9+
+                package_root = importlib.resources.files('specify_cli').parent
+            else:
+                # Fallback for older Python
+                import pkg_resources
+                package_root = Path(pkg_resources.resource_filename('specify_cli', '..'))
+            
+            localized_templates_dir = package_root / 'templates' / 'i18n' / locale / 'commands'
+        except Exception:
+            pass
+    
+    # Strategy 3: If not found in package, try relative to this file (development mode)
+    if not localized_templates_dir.exists():
+        module_dir = Path(__file__).parent
+        localized_templates_dir = module_dir.parent.parent / 'templates' / 'i18n' / locale / 'commands'
+    
+    if not localized_templates_dir.exists():
+        # No localized templates available
         if tracker:
-            tracker.error("localize", str(e))
+            tracker.skip("localize", f"no {locale} templates")
+        return
+    
+    # Map AI assistants to their command directories
+    agent_config = AGENT_CONFIG.get(selected_ai)
+    if not agent_config:
+        if tracker:
+            tracker.skip("localize", "unknown agent")
+        return
+    
+    # Determine target directory based on agent
+    agent_folder = agent_config["folder"].rstrip('/')
+    
+    # Common command directory patterns
+    command_dir_patterns = {
+        'claude': '.claude/commands',
+        'cursor-agent': '.cursor/commands',
+        'gemini': '.gemini/commands',
+        'copilot': '.github/agents',
+        'qwen': '.qwen/commands',
+        'opencode': '.opencode/command',
+        'codex': '.codex/prompts',
+        'windsurf': '.windsurf/workflows',
+        'kilocode': '.kilocode/workflows',
+        'auggie': '.augment/commands',
+        'roo': '.roo/commands',
+        'codebuddy': '.codebuddy/commands',
+        'qoder': '.qoder/commands',
+        'q': '.amazonq/prompts',
+        'amp': '.agents/commands',
+        'shai': '.shai/commands',
+        'bob': '.bob/commands',
+    }
+    
+    target_pattern = command_dir_patterns.get(selected_ai)
+    if not target_pattern:
+        # Try to infer from agent_folder
+        target_pattern = f"{agent_folder}/commands"
+    
+    target_dir = project_path / target_pattern
+    
+    if not target_dir.exists():
+        # Try alternative patterns (commands vs command vs workflows vs rules vs prompts)
+        for alt_suffix in ['command', 'workflows', 'rules', 'prompts']:
+            alt_dir = project_path / agent_folder / alt_suffix
+            if alt_dir.exists():
+                target_dir = alt_dir
+                break
+    
+    if not target_dir.exists():
+        if tracker:
+            tracker.skip("localize", f"target dir not found")
+        return
+    
+    # Copy localized templates, overwriting English versions
+    replaced_count = 0
+    for template_file in localized_templates_dir.glob('*.md'):
+        # Convert speckit.*.md to match the actual command file names
+        # Template files in i18n are named like: specify.md, plan.md, etc.
+        # Target files are named like: speckit.specify.md, speckit.plan.md, etc.
+        base_name = template_file.stem  # e.g., "specify"
+        target_file = target_dir / f"speckit.{base_name}.md"
+        
+        if target_file.exists():
+            shutil.copy2(template_file, target_file)
+            replaced_count += 1
+    
+    # Also check for TOML files for Gemini/Qwen
+    for template_file in localized_templates_dir.glob('*.toml'):
+        base_name = template_file.stem
+        target_file = target_dir / f"speckit.{base_name}.toml"
+        
+        if target_file.exists():
+            shutil.copy2(template_file, target_file)
+            replaced_count += 1
+    
+    if tracker:
+        if replaced_count > 0:
+            tracker.complete("localize", f"{replaced_count} {locale} templates")
+        else:
+            tracker.skip("localize", "no files replaced")
+
 
 
 @app.command()

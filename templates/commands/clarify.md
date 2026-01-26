@@ -1,12 +1,15 @@
+<!-- markdownlint-disable MD046 -->
 ---
 description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec.
-handoffs: 
-  - label: Build Technical Plan
+handoffs:
+
+- label: Build Technical Plan
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
 scripts:
    sh: scripts/bash/check-prerequisites.sh --json --paths-only
    ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
+
 ---
 
 ## User Input
@@ -103,22 +106,30 @@ Execution steps:
     - Present EXACTLY ONE question at a time.
     - For multiple‑choice questions:
        - **Analyze all options** and determine the **most suitable option** based on:
-          - Best practices for the project type
-          - Common patterns in similar implementations
-          - Risk reduction (security, performance, maintainability)
-          - Alignment with any explicit project goals or constraints visible in the spec
+
+          ```text
+          Best practices for the project type
+          Common patterns in similar implementations
+          Risk reduction (security, performance, maintainability)
+          Alignment with any explicit project goals or constraints visible in the spec
+          ```
+
        - Present your **recommended option prominently** at the top with clear reasoning (1-2 sentences explaining why this is the best choice).
        - Format as: `**Recommended:** Option [X] - <reasoning>`
        - Then render all options as a Markdown table:
 
-       | Option | Description |
-       |--------|-------------|
-       | A | <Option A description> |
-       | B | <Option B description> |
-       | C | <Option C description> (add D/E as needed up to 5) |
-       | Short | Provide a different short answer (<=5 words) (Include only if free-form alternative is appropriate) |
+  | Option | Description |
+  | -------- | ------------- |
+  | A | <Option A description> |
+  | B | <Option B description> |
+  | C | <Option C description> (add D/E as needed up to 5) |
+  | Short | Provide a different short answer (<=5 words) (Include only if free-form alternative is appropriate) |
 
-       - After the table, add: `You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.`
+    - After the table, add:
+
+    ```text
+    You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.
+    ```
     - For short‑answer style (no meaningful discrete options):
        - Provide your **suggested answer** based on best practices and context.
        - Format as: `**Suggested:** <your proposed answer> - <brief reasoning>`
@@ -153,7 +164,7 @@ Execution steps:
     - Preserve formatting: do not reorder unrelated sections; keep heading hierarchy intact.
     - Keep each inserted clarification minimal and testable (avoid narrative drift).
 
-6. Validation (performed after EACH write plus final pass):
+1. Validation (performed after EACH write plus final pass):
    - Clarifications session contains exactly one bullet per accepted answer (no duplicates).
    - Total asked (accepted) questions ≤ 5.
    - Updated sections contain no lingering vague placeholders the new answer was meant to resolve.
@@ -161,9 +172,8 @@ Execution steps:
    - Markdown structure valid; only allowed new headings: `## Clarifications`, `### Session YYYY-MM-DD`.
    - Terminology consistency: same canonical term used across all updated sections.
 
-7. Write the updated spec back to `FEATURE_SPEC`.
-
-8. Report completion (after questioning loop ends or early termination):
+2. Write the updated spec back to `FEATURE_SPEC`.
+3. Report completion (after questioning loop ends or early termination):
    - Number of questions asked & answered.
    - Path to updated spec.
    - Sections touched (list names).

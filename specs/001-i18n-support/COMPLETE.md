@@ -1,8 +1,11 @@
 # 🎉 Specify CLI Internationalization (i18n) - COMPLETE
 
 ## Project: GitHub Spec Kit - Spec-Driven Development Toolkit
+
 ## Feature: 001-i18n-support
+
 ## Date: 2026-01-26
+
 ## Status: ✅ **PRODUCTION-READY INFRASTRUCTURE**
 
 ---
@@ -16,7 +19,8 @@ Successfully implemented complete internationalization (i18n) infrastructure for
 ### 1. Core i18n Infrastructure (100% Complete)
 
 **File Structure Created:**
-```
+
+```text
 src/specify_cli/i18n/
 ├── __init__.py              # Module exports
 ├── core.py                  # Core i18n logic (310 lines)
@@ -43,11 +47,12 @@ scripts/i18n/
 ├── extract-messages.sh      # Extract translatable strings
 ├── compile-translations.sh  # Compile PO to MO files
 └── check-coverage.sh        # Validate translation completeness
-```
+```text
 
 ### 2. Technical Implementation
 
 **Core Features:**
+
 - ✅ `get_active_locale(cli_lang)` - Language detection with priority
 - ✅ `setup_i18n(cli_lang)` - Translation initialization
 - ✅ `get_template_path(template, locale, cli_lang)` - Template selection
@@ -55,12 +60,14 @@ scripts/i18n/
 - ✅ `detect_terminal_encoding()` - UTF-8 support check
 
 **CLI Integration:**
+
 - ✅ Global `--lang` option on all commands
 - ✅ `SPECIFY_LANG` environment variable support
 - ✅ Priority: CLI arg > env var > default (en_US)
 - ✅ Translation functions (`_`, `ngettext`) available globally
 
 **Translation System:**
+
 - ✅ Python gettext for runtime translation
 - ✅ Babel for tooling (extraction, compilation)
 - ✅ Named arguments for variable interpolation
@@ -86,6 +93,7 @@ scripts/i18n/
 **Total:** 75,835 bytes of professional Chinese translations
 
 **Translation Quality:**
+
 - ✅ Technical terms preserved (API, OAuth2, JWT, REST, GraphQL)
 - ✅ All placeholders maintained (`$ARGUMENTS`, `{SCRIPT}`, etc.)
 - ✅ Code examples untouched (Bash, PowerShell)
@@ -96,7 +104,7 @@ scripts/i18n/
 
 **Test Suite: All 10 Tests Passed** ✅
 
-```
+```text
 ✅ Test 1: i18n core module import
 ✅ Test 2: Supported languages (en_US, zh_CN)
 ✅ Test 3: Language detection with --lang zh_CN
@@ -107,9 +115,10 @@ scripts/i18n/
 ✅ Test 8: Chinese template path resolution
 ✅ Test 9: All 9 Chinese templates verified
 ✅ Test 10: Terminal UTF-8 encoding support
-```
+```text
 
 **Test Coverage:**
+
 - Language detection and fallback
 - Translation function initialization
 - Template localization
@@ -136,14 +145,16 @@ scripts/i18n/
 ### For End Users
 
 **Option 1: CLI Argument (Recommended)**
+
 ```bash
 # Use Chinese for specific command
 specify --lang zh_CN init my-project
 specify --lang zh_CN check
 specify --lang zh_CN --help
-```
+```text
 
 **Option 2: Environment Variable (Persistent)**
+
 ```bash
 # Set default language
 export SPECIFY_LANG=zh_CN
@@ -154,20 +165,22 @@ specify check
 
 # Override with CLI argument
 specify --lang en_US --help  # Uses English
-```
+```text
 
 **Option 3: Per-Session**
+
 ```bash
 # Bash/Zsh
 SPECIFY_LANG=zh_CN specify init my-project
 
 # PowerShell
 $env:SPECIFY_LANG = "zh_CN"; specify init my-project
-```
+```text
 
 ### For Developers
 
 **Adding New Translatable Strings:**
+
 ```python
 # Simple message
 console.print(_("Project ready."))
@@ -185,9 +198,10 @@ console.print(msg)
 
 # Preserve Rich markup
 console.print(_("[green]Success:[/green] {message}").format(message=msg))
-```
+```text
 
 **Extraction and Compilation Workflow:**
+
 ```bash
 # 1. Extract translatable strings
 ./scripts/i18n/extract-messages.sh
@@ -210,7 +224,7 @@ pybabel update -i src/specify_cli/i18n/messages.pot \
 
 # 6. Test
 specify --lang zh_CN --help
-```
+```text
 
 ## 📊 Statistics
 
@@ -311,18 +325,21 @@ The infrastructure is production-ready. For complete Chinese CLI message support
 ### Immediate Next Steps
 
 **Option A: Release Infrastructure (Recommended)**
+
 - Document as "i18n infrastructure available"
 - Chinese templates ready for use
 - Community can contribute CLI message translations
 - Incremental releases as translations complete
 
 **Option B: Complete MVP First**
+
 - Finish string wrapping (4-6 hours)
 - Get native Chinese speaker for translations (8-10 hours)
 - Full testing and release
 - More complete initial release
 
 **Option C: Extend to More Languages**
+
 - Add other languages (Spanish, French, German, Japanese)
 - Leverage existing infrastructure
 - Community-driven translation effort
@@ -337,9 +354,10 @@ The infrastructure is production-ready. For complete Chinese CLI message support
 
 ## 🎉 Conclusion
 
-The Specify CLI internationalization system is **complete, tested, and production-ready**. 
+The Specify CLI internationalization system is **complete, tested, and production-ready**.
 
 **Key Achievements:**
+
 - ✅ Full i18n infrastructure implemented
 - ✅ Chinese language fully supported (templates)
 - ✅ CLI argument system working
@@ -348,6 +366,7 @@ The Specify CLI internationalization system is **complete, tested, and productio
 - ✅ Ready for production use
 
 **Impact:**
+
 - Makes Spec-Driven Development accessible to Chinese-speaking developers
 - Demonstrates commitment to global accessibility
 - Provides foundation for additional languages
@@ -375,6 +394,7 @@ The project successfully demonstrates how to build enterprise-grade internationa
 ## 📞 Support
 
 For questions about this implementation:
+
 - Review: `specs/001-i18n-support/quickstart.md`
 - Technical details: `specs/001-i18n-support/plan.md`
 - Task list: `specs/001-i18n-support/tasks.md`

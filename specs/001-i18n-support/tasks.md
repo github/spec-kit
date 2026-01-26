@@ -42,7 +42,7 @@
 
 ### Core I18n Module
 
-- [x] T008 [P] Create src/specify_cli/i18n/__init__.py with module exports (get_translator, setup_i18n)
+- [x] T008 [P] Create src/specify_cli/i18n/**init**.py with module exports (get_translator, setup_i18n)
 - [x] T009 [P] Implement core i18n logic in src/specify_cli/i18n/core.py (LocaleContext, language detection, catalog loading)
 - [x] T010 Define SUPPORTED_LANGUAGES constant in src/specify_cli/i18n/core.py with en_US and zh_CN metadata
 - [x] T011 Implement get_active_locale() function in src/specify_cli/i18n/core.py to read SPECIFY_LANG environment variable
@@ -75,9 +75,9 @@
 
 ### CLI Integration
 
-- [ ] T022 [US1] Modify src/specify_cli/__init__.py to import and initialize i18n module at startup
-- [ ] T023 [US1] Update src/specify_cli/__init__.py to call setup_i18n() before any CLI operations
-- [ ] T024 [US1] Wrap all user-facing strings in __init__.py with _() function for translation
+- [ ] T022 [US1] Modify src/specify_cli/**init**.py to import and initialize i18n module at startup
+- [ ] T023 [US1] Update src/specify_cli/**init**.py to call setup_i18n() before any CLI operations
+- [ ] T024 [US1] Wrap all user-facing strings in **init**.py with _() function for translation
 
 ### Message Extraction and Catalog Creation
 
@@ -116,7 +116,7 @@
 
 - [ ] T039 [US2] Create templates/i18n/zh_CN/ base directory
 - [ ] T040 [US2] Create templates/i18n/zh_CN/commands/ directory for command templates
-- [ ] T041 [US2] Update specify init command in src/specify_cli/__init__.py to use get_template_path() for template selection
+- [ ] T041 [US2] Update specify init command in src/specify_cli/**init**.py to use get_template_path() for template selection
 
 ### Core Template Translation (Chinese)
 

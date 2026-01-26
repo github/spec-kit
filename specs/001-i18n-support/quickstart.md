@@ -8,7 +8,7 @@
 
 ### 1. Set Your Language Preference
 
-**Option A: Use --lang Flag (Recommended)**
+#### Option A: Use --lang Flag (Recommended)
 
 Pass `--lang zh_CN` to any command:
 
@@ -23,7 +23,7 @@ specify --lang zh_CN init my-project
 specify --lang zh_CN check
 ```
 
-**Option B: Set Environment Variable (Persistent Default)**
+#### Option B: Set Environment Variable (Persistent Default)
 
 Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
 
@@ -45,6 +45,7 @@ set SPECIFY_LANG=zh_CN
 ```
 
 **Priority Order:**
+
 1. `--lang` CLI argument (highest priority) - overrides everything
 2. `SPECIFY_LANG` environment variable - persistent default
 3. English (en_US) - fallback default
@@ -75,7 +76,7 @@ set SPECIFY_LANG=    # CMD
 ### 4. Supported Languages
 
 | Code | Language | Status |
-|------|----------|--------|
+| ------ | ---------- | -------- |
 | `en_US` | English (US) | ✅ Default |
 | `zh_CN` | 简体中文 (Simplified Chinese) | ✅ Complete |
 
@@ -160,7 +161,8 @@ specify <your-command>
 
 ### 6. Important Patterns
 
-#### ✅ DO:
+#### ✅ DO
+
 ```python
 # Named arguments
 _("Project '{name}' initialized").format(name=project)
@@ -172,7 +174,8 @@ ngettext("{count} file", "{count} files", n).format(count=n)
 _("[green]Success:[/green] Created {count} files").format(count=n)
 ```
 
-#### ❌ DON'T:
+#### ❌ DON'T
+
 ```python
 # F-strings (can't be extracted)
 _(f"Project {name} initialized")
@@ -263,6 +266,7 @@ pybabel compile -d src/specify_cli/i18n
 ### 7. Translation Guidelines
 
 #### Technical Terms
+
 - **Specify CLI**: 保持英文 "Specify CLI" 或翻译为 "Specify 命令行工具"
 - **template**: 模板
 - **specification**: 规格 或 规范
@@ -272,11 +276,13 @@ pybabel compile -d src/specify_cli/i18n
 - **commit**: 提交
 
 #### Tone
+
 - **Formal but friendly**: Use polite Chinese, avoid overly casual language
 - **Clear and concise**: Chinese can be more concise than English
 - **Consistent terminology**: Use the same translation for repeated terms
 
 #### Formatting
+
 - **Preserve Rich markup**: `[green]Success:[/green]` → `[green]成功：[/green]`
 - **Preserve placeholders**: `{name}`, `{count}`, etc. must stay in English
 - **Punctuation**: Use Chinese punctuation (，。！？) in Chinese text
@@ -310,13 +316,15 @@ vim templates/i18n/zh_CN/spec-template.md
 
 ### 3. Translation Rules
 
-#### ✅ DO Translate:
+#### ✅ DO Translate
+
 - Section headings
 - Instructional comments
 - Examples and descriptions
 - Inline documentation
 
-#### ❌ DON'T Translate:
+#### ❌ DON'T Translate
+
 - Placeholders: `[FEATURE_NAME]`, `[PROJECT_NAME]`, etc.
 - Code examples (keep technical)
 - URLs and links
@@ -325,6 +333,7 @@ vim templates/i18n/zh_CN/spec-template.md
 ### 4. Example: Spec Template
 
 **English** (`templates/spec-template.md`):
+
 ```markdown
 # Feature Specification: [FEATURE_NAME]
 
@@ -340,6 +349,7 @@ vim templates/i18n/zh_CN/spec-template.md
 ```
 
 **Chinese** (`templates/i18n/zh_CN/spec-template.md`):
+
 ```markdown
 # 功能规格： [FEATURE_NAME]
 
@@ -465,26 +475,31 @@ jobs:
 ## Quick Reference
 
 ### Environment Variables
+
 - `SPECIFY_LANG`: Set user language (`en_US`, `zh_CN`)
 
 ### Developer Commands
+
 - `pybabel extract`: Extract translatable strings
 - `pybabel init`: Initialize new language
 - `pybabel update`: Update existing translations
 - `pybabel compile`: Compile PO to MO files
 
 ### Files
+
 - `babel.cfg`: Extraction configuration
 - `messages.pot`: Translation template
 - `*.po`: Human-editable translations
 - `*.mo`: Compiled binary translations
 
 ### Translation Markers
+
 - `_(...)`: Mark string as translatable
 - `ngettext(...)`: Plural forms
 - `{name}`: Named variable placeholder
 
 ### Testing
+
 - `SPECIFY_LANG=zh_CN specify <command>`: Test Chinese
 - `unset SPECIFY_LANG`: Test English (default)
 
@@ -492,10 +507,10 @@ jobs:
 
 ## Resources
 
-- **Babel Documentation**: https://babel.pocoo.org/
-- **Python gettext**: https://docs.python.org/3/library/gettext.html
-- **Poedit (GUI editor)**: https://poedit.net/
-- **PO file format**: https://www.gnu.org/software/gettext/manual/html_node/PO-Files.html
+- **Babel Documentation**: <https://babel.pocoo.org/>
+- **Python gettext**: <https://docs.python.org/3/library/gettext.html>
+- **Poedit (GUI editor)**: <https://poedit.net/>
+- **PO file format**: <https://www.gnu.org/software/gettext/manual/html_node/PO-Files.html>
 
 ---
 
