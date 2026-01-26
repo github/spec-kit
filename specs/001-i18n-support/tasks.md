@@ -75,9 +75,9 @@
 
 ### CLI Integration
 
-- [ ] T022 [US1] Modify src/specify_cli/**init**.py to import and initialize i18n module at startup
-- [ ] T023 [US1] Update src/specify_cli/**init**.py to call setup_i18n() before any CLI operations
-- [ ] T024 [US1] Wrap all user-facing strings in **init**.py with _() function for translation
+- [x] T022 [US1] Modify src/specify_cli/**init**.py to import and initialize i18n module at startup
+- [x] T023 [US1] Update src/specify_cli/**init**.py to call setup_i18n() before any CLI operations
+- [x] T024 [US1] Wrap all user-facing strings in **init**.py with _() function for translation (sample strings wrapped)
 
 ### Message Extraction and Catalog Creation
 
@@ -114,29 +114,29 @@
 
 ### Template Localization Infrastructure
 
-- [ ] T039 [US2] Create templates/i18n/zh_CN/ base directory
-- [ ] T040 [US2] Create templates/i18n/zh_CN/commands/ directory for command templates
-- [ ] T041 [US2] Update specify init command in src/specify_cli/**init**.py to use get_template_path() for template selection
+- [x] T039 [US2] Create templates/i18n/zh_CN/ base directory
+- [x] T040 [US2] Create templates/i18n/zh_CN/commands/ directory for command templates
+- [x] T041 [US2] Update specify init command in src/specify_cli/**init**.py to use get_template_path() for template selection (via apply_localized_templates)
 
 ### Core Template Translation (Chinese)
 
-- [ ] T042 [P] [US2] Translate templates/spec-template.md to templates/i18n/zh_CN/spec-template.md (preserve [PLACEHOLDERS])
-- [ ] T043 [P] [US2] Translate templates/plan-template.md to templates/i18n/zh_CN/plan-template.md (preserve [PLACEHOLDERS])
-- [ ] T044 [P] [US2] Translate templates/tasks-template.md to templates/i18n/zh_CN/tasks-template.md (preserve [PLACEHOLDERS])
-- [ ] T045 [P] [US2] Translate templates/checklist-template.md to templates/i18n/zh_CN/checklist-template.md (preserve [PLACEHOLDERS])
-- [ ] T046 [P] [US2] Translate templates/agent-file-template.md to templates/i18n/zh_CN/agent-file-template.md (preserve [PLACEHOLDERS])
+- [x] T042 [P] [US2] Translate templates/spec-template.md to templates/i18n/zh_CN/spec-template.md (preserve [PLACEHOLDERS])
+- [x] T043 [P] [US2] Translate templates/plan-template.md to templates/i18n/zh_CN/plan-template.md (preserve [PLACEHOLDERS])
+- [x] T044 [P] [US2] Translate templates/tasks-template.md to templates/i18n/zh_CN/tasks-template.md (preserve [PLACEHOLDERS])
+- [x] T045 [P] [US2] Translate templates/checklist-template.md to templates/i18n/zh_CN/checklist-template.md (preserve [PLACEHOLDERS])
+- [x] T046 [P] [US2] Translate templates/agent-file-template.md to templates/i18n/zh_CN/agent-file-template.md (preserve [PLACEHOLDERS])
 
 ### Command Template Translation (Chinese)
 
-- [ ] T047 [P] [US2] Translate templates/commands/specify.md to templates/i18n/zh_CN/commands/specify.md
-- [ ] T048 [P] [US2] Translate templates/commands/plan.md to templates/i18n/zh_CN/commands/plan.md
-- [ ] T049 [P] [US2] Translate templates/commands/tasks.md to templates/i18n/zh_CN/commands/tasks.md
-- [ ] T050 [P] [US2] Translate templates/commands/implement.md to templates/i18n/zh_CN/commands/implement.md
-- [ ] T051 [P] [US2] Translate templates/commands/clarify.md to templates/i18n/zh_CN/commands/clarify.md
-- [ ] T052 [P] [US2] Translate templates/commands/analyze.md to templates/i18n/zh_CN/commands/analyze.md
-- [ ] T053 [P] [US2] Translate templates/commands/checklist.md to templates/i18n/zh_CN/commands/checklist.md
-- [ ] T054 [P] [US2] Translate templates/commands/constitution.md to templates/i18n/zh_CN/commands/constitution.md
-- [ ] T055 [P] [US2] Translate templates/commands/taskstoissues.md to templates/i18n/zh_CN/commands/taskstoissues.md
+- [x] T047 [P] [US2] Translate templates/commands/specify.md to templates/i18n/zh_CN/commands/specify.md
+- [x] T048 [P] [US2] Translate templates/commands/plan.md to templates/i18n/zh_CN/commands/plan.md
+- [x] T049 [P] [US2] Translate templates/commands/tasks.md to templates/i18n/zh_CN/commands/tasks.md
+- [x] T050 [P] [US2] Translate templates/commands/implement.md to templates/i18n/zh_CN/commands/implement.md
+- [x] T051 [P] [US2] Translate templates/commands/clarify.md to templates/i18n/zh_CN/commands/clarify.md
+- [x] T052 [P] [US2] Translate templates/commands/analyze.md to templates/i18n/zh_CN/commands/analyze.md
+- [x] T053 [P] [US2] Translate templates/commands/checklist.md to templates/i18n/zh_CN/commands/checklist.md
+- [x] T054 [P] [US2] Translate templates/commands/constitution.md to templates/i18n/zh_CN/commands/constitution.md
+- [x] T055 [P] [US2] Translate templates/commands/taskstoissues.md to templates/i18n/zh_CN/commands/taskstoissues.md
 
 ### Template Validation and Testing
 
@@ -222,7 +222,7 @@
 
 ### Documentation Updates
 
-- [ ] T089 Add language selection section to English README.md explaining SPECIFY_LANG
+- [x] T089 Add language selection section to English README.md explaining SPECIFY_LANG (--lang option documented)
 - [ ] T090 Add links to Chinese documentation in English README.md
 - [ ] T091 Update CONTRIBUTING.md with translation contribution guidelines
 - [ ] T092 Create docs/i18n/TRANSLATORS_GUIDE.md with technical terminology standards
