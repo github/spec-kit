@@ -1711,8 +1711,15 @@ def ralph(
             console.print("[dim]Or run: npm install -g @github/copilot[/dim]")
             raise typer.Exit(1)
         
-        # Check for tasks.md
+        # Check for tasks.md - prioritize matching the current branch name
         cwd = Path.cwd()
+        
+        # First, get the current branch name for matching
+        current_branch = None
+        try:
+            current_branch = run_command(["git", "branch", "--show-current"], capture=True)
+        except Exception:
+            pass  # Will handle branch check later
         
         # Try to find spec directory (look for .specify or specs folder pattern)
         spec_dir = None
@@ -1726,12 +1733,23 @@ def ralph(
             # Look in specs/ for feature directories
             specs_dir = cwd / "specs"
             if specs_dir.exists():
-                for child in specs_dir.iterdir():
-                    if child.is_dir() and (child / "tasks.md").exists():
-                        # Use most recent or only spec directory
-                        spec_dir = child
-                        tasks_path = child / "tasks.md"
-                        break
+                # First pass: Try to match branch name to a feature folder
+                if current_branch:
+                    for child in specs_dir.iterdir():
+                        if child.is_dir() and child.name == current_branch and (child / "tasks.md").exists():
+                            spec_dir = child
+                            tasks_path = child / "tasks.md"
+                            break
+                
+                # If no branch match found, fallback to last alphabetically (most recent feature number)
+                if spec_dir is None:
+                    candidates = sorted(
+                        [c for c in specs_dir.iterdir() if c.is_dir() and (c / "tasks.md").exists()],
+                        key=lambda p: p.name
+                    )
+                    if candidates:
+                        spec_dir = candidates[-1]
+                        tasks_path = spec_dir / "tasks.md"
         
         if tasks_path and tasks_path.exists():
             tracker.complete("tasks", f"found: {tasks_path.relative_to(cwd)}")
