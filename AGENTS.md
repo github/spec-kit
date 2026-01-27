@@ -411,3 +411,10 @@ When adding new agents:
 ---
 
 *This documentation should be updated whenever new agents are added to maintain accuracy and completeness.*
+
+## Active Technologies
+- Python 3.10+ (CLI), Bash/PowerShell (Scripts), Markdown (Templates) + `typer`, `rich` (Existing CLI dependencies) (001-company-standards)
+- Filesystem (Templates and Agent Context files) (001-company-standards)
+
+## Recent Changes
+- 001-company-standards: Added Python 3.10+ (CLI), Bash/PowerShell (Scripts), Markdown (Templates) + `typer`, `rich` (Existing CLI dependencies)

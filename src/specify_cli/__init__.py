@@ -242,6 +242,81 @@ BANNER = """
 """
 
 TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
+
+AGENTS_MD_TEMPLATE = """# [PROJECT NAME] Development Guidelines
+
+Auto-generated from all feature plans. Last updated: [DATE]
+
+## Active Technologies
+
+[EXTRACTED FROM ALL PLAN.MD FILES]
+
+## Project Structure
+
+```text
+[ACTUAL STRUCTURE FROM PLANS]
+```
+
+## Commands
+
+[ONLY COMMANDS FOR ACTIVE TECHNOLOGIES]
+
+## Code Style
+
+[LANGUAGE-SPECIFIC, ONLY FOR LANGUAGES IN USE]
+
+## Recent Changes
+
+[LAST 3 FEATURES AND WHAT THEY ADDED]
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
+"""
+
+def create_agents_md(project_path: Path):
+    """Generate AGENTS.md from template."""
+    content = AGENTS_MD_TEMPLATE.replace("[PROJECT NAME]", project_path.name)
+    content = content.replace("[DATE]", datetime.now().strftime("%Y-%m-%d"))
+    
+    (project_path / "AGENTS.md").write_text(content, encoding="utf-8")
+
+def create_agent_pointers(project_path: Path, agent: str):
+    """Create pointer files for agents to reference AGENTS.md."""
+    pointer_content = (
+        "This project uses Spec-Driven Development.\n"
+        "Please refer to `AGENTS.md` in the project root for:\n"
+        "- Active technologies and context\n"
+        "- Project structure\n"
+        "- Coding standards and commands\n"
+        "- Recent changes\n"
+    )
+
+    # Map agents to their context file paths
+    # Agents using AGENTS.md directly are excluded: opencode, codex, amp, q, bob
+    agent_files = {
+        "claude": "CLAUDE.md",
+        "gemini": "GEMINI.md",
+        "copilot": ".github/agents/copilot-instructions.md",
+        "cursor-agent": ".cursor/rules/specify-rules.mdc",
+        "qwen": "QWEN.md",
+        "windsurf": ".windsurf/rules/specify-rules.md",
+        "kilocode": ".kilocode/rules/specify-rules.md",
+        "auggie": ".augment/rules/specify-rules.md",
+        "roo": ".roo/rules/specify-rules.md",
+        "codebuddy": "CODEBUDDY.md",
+        "qoder": "QODER.md",
+        "shai": "SHAI.md",
+    }
+
+    if agent in agent_files:
+        target_file = project_path / agent_files[agent]
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(pointer_content, encoding="utf-8")
+        
+        # For Cursor, also create .cursorrules as it's commonly used
+        if agent == "cursor-agent":
+            (project_path / ".cursorrules").write_text(pointer_content, encoding="utf-8")
+
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -1125,6 +1200,11 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+
+            # Generate AGENTS.md and pointers
+            create_agents_md(project_path)
+            if selected_ai:
+                create_agent_pointers(project_path, selected_ai)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 

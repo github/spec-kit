@@ -512,6 +512,12 @@ update_agent_file() {
         log_error "update_agent_file requires target_file and agent_name parameters"
         return 1
     fi
+
+    # Check for pointer files (referencing AGENTS.md)
+    if [[ -f "$target_file" ]] && grep -q "refer to \`AGENTS.md\`" "$target_file"; then
+        log_info "Skipping pointer file: $target_file"
+        return 0
+    fi
     
     log_info "Updating $agent_name context file: $target_file"
     
@@ -531,6 +537,12 @@ update_agent_file() {
     fi
     
     if [[ ! -f "$target_file" ]]; then
+        # Only create new files if it is AGENTS.md (SSOT)
+        if [[ "$target_file" != "$AGENTS_FILE" ]]; then
+            log_info "Skipping creation of non-SSOT file: $target_file"
+            return 0
+        fi
+
         # Create new file from template
         local temp_file
         temp_file=$(mktemp) || {
@@ -642,88 +654,63 @@ update_specific_agent() {
 }
 
 update_all_existing_agents() {
-    local found_agent=false
-    
     # Check each possible agent file and update if it exists
     if [[ -f "$CLAUDE_FILE" ]]; then
         update_agent_file "$CLAUDE_FILE" "Claude Code"
-        found_agent=true
     fi
     
     if [[ -f "$GEMINI_FILE" ]]; then
         update_agent_file "$GEMINI_FILE" "Gemini CLI"
-        found_agent=true
     fi
     
     if [[ -f "$COPILOT_FILE" ]]; then
         update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-        found_agent=true
     fi
     
     if [[ -f "$CURSOR_FILE" ]]; then
         update_agent_file "$CURSOR_FILE" "Cursor IDE"
-        found_agent=true
     fi
     
     if [[ -f "$QWEN_FILE" ]]; then
         update_agent_file "$QWEN_FILE" "Qwen Code"
-        found_agent=true
     fi
     
-    if [[ -f "$AGENTS_FILE" ]]; then
-        update_agent_file "$AGENTS_FILE" "Codex/opencode"
-        found_agent=true
-    fi
+    # AGENTS_FILE is updated by main function, no need to check here
     
     if [[ -f "$WINDSURF_FILE" ]]; then
         update_agent_file "$WINDSURF_FILE" "Windsurf"
-        found_agent=true
     fi
     
     if [[ -f "$KILOCODE_FILE" ]]; then
         update_agent_file "$KILOCODE_FILE" "Kilo Code"
-        found_agent=true
     fi
 
     if [[ -f "$AUGGIE_FILE" ]]; then
         update_agent_file "$AUGGIE_FILE" "Auggie CLI"
-        found_agent=true
     fi
     
     if [[ -f "$ROO_FILE" ]]; then
         update_agent_file "$ROO_FILE" "Roo Code"
-        found_agent=true
     fi
 
     if [[ -f "$CODEBUDDY_FILE" ]]; then
         update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
-        found_agent=true
     fi
 
     if [[ -f "$SHAI_FILE" ]]; then
         update_agent_file "$SHAI_FILE" "SHAI"
-        found_agent=true
     fi
 
     if [[ -f "$QODER_FILE" ]]; then
         update_agent_file "$QODER_FILE" "Qoder CLI"
-        found_agent=true
     fi
 
     if [[ -f "$Q_FILE" ]]; then
         update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
-        found_agent=true
     fi
     
     if [[ -f "$BOB_FILE" ]]; then
         update_agent_file "$BOB_FILE" "IBM Bob"
-        found_agent=true
-    fi
-    
-    # If no agent files exist, create a default Claude file
-    if [[ "$found_agent" == false ]]; then
-        log_info "No existing agent files found, creating default Claude file..."
-        update_agent_file "$CLAUDE_FILE" "Claude Code"
     fi
 }
 print_summary() {
