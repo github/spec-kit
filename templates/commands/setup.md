@@ -42,10 +42,10 @@ Run `{SCRIPT}` from repo root and parse the JSON output:
     {"name": "next", "docs_url": "https://nextjs.org/docs", "github_url": "https://github.com/vercel/next.js"},
     {"name": "spring", "docs_url": "https://spring.io/guides", "github_url": "https://github.com/spring-projects/spring-boot"}
   ],
-  "CLAUDE_DIR": "/path/to/.claude",
-  "SETTINGS_FILE": "/path/to/.claude/settings.json",
-  "SKILLS_DIR": "/path/to/.claude/skills",
-  "HOOKS_DIR": "/path/to/.claude/hooks"
+  "AGENT_DIR": "/path/to/__AGENT_DIR__",
+  "SETTINGS_FILE": "/path/to/__AGENT_DIR__/settings.json",
+  "SKILLS_DIR": "/path/to/__AGENT_DIR__/skills",
+  "HOOKS_DIR": "/path/to/__AGENT_DIR__/hooks"
 }
 ```
 
@@ -83,14 +83,14 @@ Proceed with setup? (yes/no/customize)
 ## Step 1.3: Create Directory Structure
 
 ```bash
-mkdir -p .claude/hooks
-mkdir -p .claude/skills
-mkdir -p .claude/agents/speckit
+mkdir -p __AGENT_DIR__/hooks
+mkdir -p __AGENT_DIR__/skills
+mkdir -p __AGENT_DIR__/agents/speckit
 ```
 
 ## Step 1.4: Generate Hook Scripts
 
-Create hook scripts in `.claude/hooks/` based on PROJECT_TYPE:
+Create hook scripts in `__AGENT_DIR__/hooks/` based on PROJECT_TYPE:
 
 ### session-setup.sh
 
@@ -203,7 +203,7 @@ exit 0
 ```bash
 #!/bin/bash
 
-# Pre-commit checks hook - runs when Claude finishes responding
+# Pre-commit checks hook - runs when the agent finishes responding
 
 echo "=== Running Pre-Commit Checks ==="
 
@@ -239,11 +239,11 @@ exit 0
 
 ## Step 1.5: Generate Settings File
 
-Create `.claude/settings.json`:
+Create `__AGENT_DIR__/settings.json`:
 
 ```json
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "$schema": "https://json.schemastore.org/__AGENT__-settings.json",
   "permissions": {
     "allow": ["Skill"]
   },
@@ -253,7 +253,7 @@ Create `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-setup.sh"
+            "command": "\"__AGENT_PROJECT_DIR_ENV__\"/__AGENT_DIR__/hooks/session-setup.sh"
           }
         ]
       }
@@ -264,7 +264,7 @@ Create `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto-format.sh"
+            "command": "\"__AGENT_PROJECT_DIR_ENV__\"/__AGENT_DIR__/hooks/auto-format.sh"
           }
         ]
       }
@@ -274,7 +274,7 @@ Create `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-commit-checks.sh"
+            "command": "\"__AGENT_PROJECT_DIR_ENV__\"/__AGENT_DIR__/hooks/pre-commit-checks.sh"
           }
         ]
       }
@@ -285,7 +285,7 @@ Create `.claude/settings.json`:
 
 ## Step 1.6: Generate Testing Skill
 
-Create `.claude/skills/testing-skill/SKILL.md`:
+Create `__AGENT_DIR__/skills/testing-skill/SKILL.md`:
 
 ```yaml
 ---
@@ -306,7 +306,7 @@ description: Run and write tests for this project. Activate when implementing fe
 
 ## Step 1.7: Generate Linting Skill
 
-Create `.claude/skills/linting-skill/SKILL.md`:
+Create `__AGENT_DIR__/skills/linting-skill/SKILL.md`:
 
 ```yaml
 ---
@@ -328,7 +328,7 @@ For EACH framework in `DETECTED_FRAMEWORKS`, create a skill:
 ### Skill Directory Structure
 
 ```
-.claude/skills/{framework}-architecture/
+__AGENT_DIR__/skills/{framework}-architecture/
 ├── SKILL.md              (required - lean instructions)
 └── references/
     ├── patterns.md       (detailed architectural patterns)
@@ -477,7 +477,7 @@ description: |
 
 Based on `PROJECT_TYPE`, create a language coding standards skill:
 
-### For TypeScript projects (.claude/skills/typescript-standards/)
+### For TypeScript projects (__AGENT_DIR__/skills/typescript-standards/)
 
 ```yaml
 ---
@@ -518,7 +518,7 @@ description: |
 - For advanced patterns: Read references/patterns.md
 ```
 
-### For Python projects (.claude/skills/python-standards/)
+### For Python projects (__AGENT_DIR__/skills/python-standards/)
 
 ```yaml
 ---
@@ -554,7 +554,7 @@ description: |
 - Never use `from module import *`
 ```
 
-### For Java projects (.claude/skills/java-standards/)
+### For Java projects (__AGENT_DIR__/skills/java-standards/)
 
 ```yaml
 ---
@@ -596,7 +596,7 @@ description: |
 - For enterprise patterns: Read references/enterprise-patterns.md
 ```
 
-### For Scala projects (.claude/skills/scala-standards/)
+### For Scala projects (__AGENT_DIR__/skills/scala-standards/)
 
 ```yaml
 ---
@@ -633,7 +633,7 @@ description: |
 - Never block on Futures/Effects
 ```
 
-### For Rust projects (.claude/skills/rust-standards/)
+### For Rust projects (__AGENT_DIR__/skills/rust-standards/)
 
 ```yaml
 ---
@@ -669,7 +669,7 @@ description: |
 - Never use unsafe without justification
 ```
 
-### For Go projects (.claude/skills/go-standards/)
+### For Go projects (__AGENT_DIR__/skills/go-standards/)
 
 ```yaml
 ---
@@ -707,12 +707,12 @@ description: |
 
 ## Step 1.10: Create Universal Skills (Always Created)
 
-### Code Review Skill (.claude/skills/code-review/)
+### Code Review Skill (__AGENT_DIR__/skills/code-review/)
 
 Copy from `.specify/templates/skills/code-review/` if available, otherwise create:
 
 ```
-.claude/skills/code-review/
+__AGENT_DIR__/skills/code-review/
 ├── SKILL.md
 └── references/
     ├── review-checklist.md
@@ -724,12 +724,12 @@ Content includes:
 - OWASP Top 10 security review guide with code examples
 - Language-specific security checks
 
-### Tech Debt Skill (.claude/skills/tech-debt/)
+### Tech Debt Skill (__AGENT_DIR__/skills/tech-debt/)
 
 Copy from `.specify/templates/skills/tech-debt/` if available, otherwise create:
 
 ```
-.claude/skills/tech-debt/
+__AGENT_DIR__/skills/tech-debt/
 ├── SKILL.md
 └── references/
     ├── debt-patterns.md
@@ -742,12 +742,12 @@ Content includes:
 - Refactoring techniques (Extract Method, Extract Class, Strangler Fig, etc.)
 - Prioritization framework
 
-### Architecture Patterns Skill (.claude/skills/architecture-patterns/)
+### Architecture Patterns Skill (__AGENT_DIR__/skills/architecture-patterns/)
 
 Copy from `.specify/templates/skills/architecture-patterns/` if available, otherwise create:
 
 ```
-.claude/skills/architecture-patterns/
+__AGENT_DIR__/skills/architecture-patterns/
 ├── SKILL.md
 └── references/
     ├── implementations.md
@@ -760,12 +760,12 @@ Content includes:
 - Production-ready code examples
 - Aggregate design, value objects, domain events
 
-### Microservices Patterns Skill (.claude/skills/microservices-patterns/)
+### Microservices Patterns Skill (__AGENT_DIR__/skills/microservices-patterns/)
 
 Copy from `.specify/templates/skills/microservices-patterns/` if available, otherwise create:
 
 ```
-.claude/skills/microservices-patterns/
+__AGENT_DIR__/skills/microservices-patterns/
 ├── SKILL.md
 └── references/
     ├── resilience-patterns.md
@@ -778,12 +778,12 @@ Content includes:
 - Resilience patterns (Circuit Breaker, Bulkhead, Retry)
 - Data patterns (Saga, Event Sourcing, CQRS, Outbox)
 
-### Architecture Decision Records Skill (.claude/skills/architecture-decision-records/)
+### Architecture Decision Records Skill (__AGENT_DIR__/skills/architecture-decision-records/)
 
 Copy from `.specify/templates/skills/architecture-decision-records/` if available, otherwise create:
 
 ```
-.claude/skills/architecture-decision-records/
+__AGENT_DIR__/skills/architecture-decision-records/
 ├── SKILL.md
 └── references/
     ├── templates.md
@@ -798,9 +798,9 @@ Content includes:
 ## Step 1.11: Make Hook Scripts Executable
 
 ```bash
-chmod +x .claude/hooks/session-setup.sh
-chmod +x .claude/hooks/auto-format.sh
-chmod +x .claude/hooks/pre-commit-checks.sh
+chmod +x __AGENT_DIR__/hooks/session-setup.sh
+chmod +x __AGENT_DIR__/hooks/auto-format.sh
+chmod +x __AGENT_DIR__/hooks/pre-commit-checks.sh
 ```
 
 ## Step 1.12: Validate Configuration
@@ -816,7 +816,7 @@ chmod +x .claude/hooks/pre-commit-checks.sh
 ## Step 2.1: Create Agents Directory
 
 ```bash
-mkdir -p .claude/agents/speckit
+mkdir -p __AGENT_DIR__/agents/speckit
 ```
 
 ## Step 2.2: Key Principle - Agents Use Skills
@@ -828,7 +828,7 @@ Agents reference skills via the `skills:` frontmatter field. **Skills provide do
 name: backend-coder
 tools: Read, Glob, Grep, Bash, Edit, Write
 model: sonnet
-skills: java-standards, spring-architecture  # Auto-loaded from .claude/skills/
+skills: java-standards, spring-architecture  # Auto-loaded from __AGENT_DIR__/skills/
 ---
 ```
 
@@ -925,8 +925,8 @@ You create technical designs following project architecture and framework patter
 ## Skills Usage
 
 Consult loaded skills for:
-- Architecture patterns: `Read .claude/skills/{framework}-architecture/references/patterns.md`
-- Best practices: `Read .claude/skills/{language}-standards/references/conventions.md`
+- Architecture patterns: `Read __AGENT_DIR__/skills/{framework}-architecture/references/patterns.md`
+- Best practices: `Read __AGENT_DIR__/skills/{language}-standards/references/conventions.md`
 
 ## Output Format
 
@@ -1021,7 +1021,7 @@ You implement code following technical designs and project patterns.
 ## Skills Usage
 
 Your loaded skills provide coding patterns. For complex patterns:
-- `Read .claude/skills/{framework}-architecture/references/examples.md`
+- `Read __AGENT_DIR__/skills/{framework}-architecture/references/examples.md`
 
 ## Guidelines
 
@@ -1064,8 +1064,8 @@ You write comprehensive tests and verify implementations.
 
 ## Skills Usage
 
-- Testing patterns: `Read .claude/skills/testing-skill/SKILL.md`
-- Language conventions: `Read .claude/skills/{language}-standards/references/`
+- Testing patterns: `Read __AGENT_DIR__/skills/testing-skill/SKILL.md`
+- Language conventions: `Read __AGENT_DIR__/skills/{language}-standards/references/`
 
 ## Test Organization
 
@@ -1103,8 +1103,8 @@ You implement backend services, APIs, and data layers following project patterns
 ## Skills Usage
 
 Your skills provide language and framework patterns:
-- Language conventions: `Read .claude/skills/{language}-standards/`
-- Framework patterns: `Read .claude/skills/{framework}-architecture/`
+- Language conventions: `Read __AGENT_DIR__/skills/{language}-standards/`
+- Framework patterns: `Read __AGENT_DIR__/skills/{framework}-architecture/`
 
 ## Collaboration
 
@@ -1140,8 +1140,8 @@ You implement user interfaces and frontend logic following project patterns.
 ## Skills Usage
 
 Your skills provide framework and styling patterns:
-- Framework patterns: `Read .claude/skills/{framework}-architecture/`
-- Language conventions: `Read .claude/skills/{language}-standards/`
+- Framework patterns: `Read __AGENT_DIR__/skills/{framework}-architecture/`
+- Language conventions: `Read __AGENT_DIR__/skills/{language}-standards/`
 
 ## Collaboration
 
@@ -1284,10 +1284,10 @@ Analyzes code quality and identifies technical debt.
 
 ## Skills Usage
 
-- Review checklist: `Read .claude/skills/code-review/references/review-checklist.md`
-- Security guide: `Read .claude/skills/code-review/references/security-review.md`
-- Debt patterns: `Read .claude/skills/tech-debt/references/debt-patterns.md`
-- Refactoring: `Read .claude/skills/tech-debt/references/refactoring-strategies.md`
+- Review checklist: `Read __AGENT_DIR__/skills/code-review/references/review-checklist.md`
+- Security guide: `Read __AGENT_DIR__/skills/code-review/references/security-review.md`
+- Debt patterns: `Read __AGENT_DIR__/skills/tech-debt/references/debt-patterns.md`
+- Refactoring: `Read __AGENT_DIR__/skills/tech-debt/references/refactoring-strategies.md`
 
 ## Output Format
 
@@ -1510,9 +1510,9 @@ npm run build
 npx playwright install chromium  # For browser automation
 ```
 
-## Step 4.5: Configure Claude Code Integration
+## Step 4.5: Configure __AGENT_NAME__ Integration
 
-Create or update `.claude/mcp.json`:
+Create or update `__AGENT_DIR__/mcp.json`:
 
 ```json
 {
@@ -1581,7 +1581,7 @@ After all phases complete, output:
 - planner (haiku) - Task decomposition
 - reviewer (sonnet) - Code quality + tech debt
 
-**Location**: .claude/agents/speckit/
+**Location**: __AGENT_DIR__/agents/speckit/
 
 ### Phase 3: Constitution
 - **Created**: .specify/memory/constitution.md
@@ -1600,7 +1600,7 @@ After all phases complete, output:
 ### Files Created
 
 ```
-.claude/
+__AGENT_DIR__/
 ├── settings.json
 ├── mcp.json                    # (if MCP configured)
 ├── hooks/
@@ -1649,17 +1649,17 @@ After all phases complete, output:
 
 ### How Skills Work
 
-- Claude auto-activates skills based on task context
+- The agent auto-activates skills based on task context
 - SKILL.md provides quick guidance (context-efficient)
 - references/ contains detailed docs loaded on-demand
 - Skills are model-invoked, not user-invoked
 
 ### Testing Your Setup
 
-1. Start a new Claude Code session in this project
+1. Start a new __AGENT_NAME__ session in this project
 2. The SessionStart hook will run automatically
 3. Edit a file to trigger the PostToolUse hook
-4. Ask Claude to "design a React component" to see skill activation
+4. Ask the agent to "design a React component" to see skill activation
 5. Use /clear to reset and re-trigger SessionStart
 
 ### Next Steps
@@ -1677,7 +1677,7 @@ After all phases complete, output:
 
 **Quick MCP Test**:
 ```
-Restart Claude Code to load the MCP server, then try:
+Restart __AGENT_NAME__ to load the MCP server, then try:
 > start_docker
 > start_service backend
 > browser_open /login
@@ -1690,7 +1690,7 @@ Restart Claude Code to load the MCP server, then try:
 ## Security Considerations
 
 - Hook scripts should not contain secrets
-- Use `$CLAUDE_PROJECT_DIR` for portable paths
+- Use `__AGENT_PROJECT_DIR_ENV__` for portable paths
 - Scripts should be idempotent (safe to run multiple times)
 - Avoid hooks that modify files outside the project
 

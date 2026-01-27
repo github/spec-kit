@@ -120,9 +120,9 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Execution flow**: Order and dependency requirements
 
 6. **Load available specialized agents** (REQUIRED):
-   - **MUST CHECK**: Run `ls .claude/agents/speckit/ 2>/dev/null` to check if agents exist
+   - **MUST CHECK**: Run `ls __AGENT_DIR__/agents/speckit/ 2>/dev/null` to check if agents exist
    - **If directory exists**:
-     * List all agent files: `ls .claude/agents/speckit/*.md`
+     * List all agent files: `ls __AGENT_DIR__/agents/speckit/*.md`
      * For each agent file found:
        - Read the file to extract frontmatter (name, description, model)
        - Parse file patterns from description or create default pattern from name

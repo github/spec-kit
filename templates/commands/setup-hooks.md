@@ -1,5 +1,5 @@
 ---
-description: Configure Claude Code skills and hooks for the current project to automate tests, linters, setup tasks, and generate architecture/best practices skills from framework documentation.
+description: Configure __AGENT_NAME__ skills and hooks for the current project to automate tests, linters, setup tasks, and generate architecture/best practices skills from framework documentation.
 scripts:
   sh: scripts/bash/setup-hooks.sh --json
   ps: scripts/powershell/setup-hooks.ps1 -Json
@@ -15,9 +15,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-This command sets up Claude Code skills and hooks for your project, enabling automated workflows for:
+This command sets up __AGENT_NAME__ skills and hooks for your project, enabling automated workflows for:
 
-- **SessionStart**: Automatic dependency installation when Claude starts
+- **SessionStart**: Automatic dependency installation when the agent starts
 - **PostToolUse**: Auto-formatting and linting after file edits
 - **Stop**: Run tests and checks before session ends
 - **Architecture Skills**: Best practices and patterns from detected frameworks
@@ -33,10 +33,10 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
        {"name": "next", "docs_url": "https://nextjs.org/docs", "github_url": "https://github.com/vercel/next.js"}
      ]
      ```
-   - `CLAUDE_DIR`: Path to `.claude/` directory
-   - `SETTINGS_FILE`: Path to `.claude/settings.json`
-   - `SKILLS_DIR`: Path to `.claude/skills/` directory
-   - `HOOKS_DIR`: Path to `.claude/hooks/` directory
+   - `AGENT_DIR`: Path to `__AGENT_DIR__/` directory
+   - `SETTINGS_FILE`: Path to `__AGENT_DIR__/settings.json`
+   - `SKILLS_DIR`: Path to `__AGENT_DIR__/skills/` directory
+   - `HOOKS_DIR`: Path to `__AGENT_DIR__/hooks/` directory
 
 2. **Analyze User Input** (if provided):
    - Parse user preferences from `$ARGUMENTS`
@@ -81,9 +81,9 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    ```
 
 4. **Create Directory Structure**:
-   - Ensure `.claude/` directory exists
-   - Create `.claude/hooks/` for hook scripts
-   - Create `.claude/skills/` for skill definitions
+   - Ensure `__AGENT_DIR__/` directory exists
+   - Create `__AGENT_DIR__/hooks/` for hook scripts
+   - Create `__AGENT_DIR__/skills/` for skill definitions
 
 5. **Generate Hook Scripts** based on project type:
 
@@ -127,13 +127,13 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    - Skip auto-format if no formatter detected
    - Skip tests if no test runner detected
 
-6. **Generate Settings File** (`.claude/settings.json`):
+6. **Generate Settings File** (`__AGENT_DIR__/settings.json`):
 
    Create or update the settings file with hook configuration:
 
    ```json
    {
-     "$schema": "https://json.schemastore.org/claude-code-settings.json",
+     "$schema": "https://json.schemastore.org/__AGENT__-settings.json",
      "permissions": {
        "allow": ["Skill"]
      },
@@ -143,7 +143,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
            "hooks": [
              {
                "type": "command",
-               "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-setup.sh"
+               "command": "\"__AGENT_PROJECT_DIR_ENV__\"/__AGENT_DIR__/hooks/session-setup.sh"
              }
            ]
          }
@@ -154,7 +154,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
            "hooks": [
              {
                "type": "command",
-               "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto-format.sh"
+               "command": "\"__AGENT_PROJECT_DIR_ENV__\"/__AGENT_DIR__/hooks/auto-format.sh"
              }
            ]
          }
@@ -164,7 +164,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
            "hooks": [
              {
                "type": "command",
-               "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-commit-checks.sh"
+               "command": "\"__AGENT_PROJECT_DIR_ENV__\"/__AGENT_DIR__/hooks/pre-commit-checks.sh"
              }
            ]
          }
@@ -175,7 +175,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 
 7. **Generate Skills** (based on detected tools and frameworks):
 
-   **Testing Skill** (`.claude/skills/testing-skill/SKILL.md`):
+   **Testing Skill** (`__AGENT_DIR__/skills/testing-skill/SKILL.md`):
    ```yaml
    ---
    name: testing-skill
@@ -193,7 +193,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    [Generated based on project structure]
    ```
 
-   **Linting Skill** (`.claude/skills/linting-skill/SKILL.md`):
+   **Linting Skill** (`__AGENT_DIR__/skills/linting-skill/SKILL.md`):
    ```yaml
    ---
    name: linting-skill
@@ -236,7 +236,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 
    Create the skill folder with the following structure:
    ```
-   .claude/skills/{framework}-architecture/
+   __AGENT_DIR__/skills/{framework}-architecture/
    ├── SKILL.md              (required - lean instructions)
    ├── references/
    │   ├── patterns.md       (detailed architectural patterns)
@@ -247,7 +247,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 
    **Step 8.4: Create SKILL.md** (keep it lean - context is precious)
 
-   Create `.claude/skills/{framework}-architecture/SKILL.md`:
+   Create `__AGENT_DIR__/skills/{framework}-architecture/SKILL.md`:
 
    ```yaml
    ---
@@ -394,7 +394,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    Based on `PROJECT_TYPE`, create a language coding standards skill with the same structure:
 
    ```
-   .claude/skills/{language}-standards/
+   __AGENT_DIR__/skills/{language}-standards/
    ├── SKILL.md
    └── references/
        ├── conventions.md
@@ -402,7 +402,7 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
        └── anti-patterns.md
    ```
 
-   **For TypeScript projects** (`.claude/skills/typescript-standards/`):
+   **For TypeScript projects** (`__AGENT_DIR__/skills/typescript-standards/`):
 
    `SKILL.md`:
    ```yaml
@@ -444,14 +444,14 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    - For advanced patterns: Read references/patterns.md
    ```
 
-   **For Python projects** (`.claude/skills/python-standards/`):
+   **For Python projects** (`__AGENT_DIR__/skills/python-standards/`):
    - PEP 8 style guide essentials
    - Type hints best practices (PEP 484, 585)
    - Async/await patterns
    - Context managers for resource handling
    - references/conventions.md with detailed PEP 8
 
-   **For Java projects** (`.claude/skills/java-standards/`):
+   **For Java projects** (`__AGENT_DIR__/skills/java-standards/`):
    - Google Java Style Guide essentials
    - Enterprise patterns (Spring DI, layered architecture)
    - Optional and null-safety patterns
@@ -459,20 +459,20 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
    - references/spring-patterns.md for Spring Boot projects
    - references/enterprise-patterns.md for general Java
 
-   **For Scala projects** (`.claude/skills/scala-standards/`):
+   **For Scala projects** (`__AGENT_DIR__/skills/scala-standards/`):
    - Functional programming core principles
    - Effect systems patterns (ZIO, Cats Effect)
    - Implicits and type classes usage
    - Error handling with Either/Option/Try
    - references/fp-patterns.md with detailed examples
 
-   **For Rust projects** (`.claude/skills/rust-standards/`):
+   **For Rust projects** (`__AGENT_DIR__/skills/rust-standards/`):
    - Ownership and borrowing rules
    - Error handling with Result/Option
    - Trait-based design patterns
    - Memory safety best practices
 
-   **For Go projects** (`.claude/skills/go-standards/`):
+   **For Go projects** (`__AGENT_DIR__/skills/go-standards/`):
    - Effective Go principles
    - Error handling patterns
    - Interface design
@@ -495,25 +495,25 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
       Setup Complete!
 
       Created files:
-      ├── .claude/settings.json
-      ├── .claude/hooks/
+      ├── __AGENT_DIR__/settings.json
+      ├── __AGENT_DIR__/hooks/
       │   ├── session-setup.sh
       │   ├── auto-format.sh
       │   └── pre-commit-checks.sh
-      ├── .claude/skills/testing-skill/
+      ├── __AGENT_DIR__/skills/testing-skill/
       │   └── SKILL.md
-      ├── .claude/skills/linting-skill/
+      ├── __AGENT_DIR__/skills/linting-skill/
       │   └── SKILL.md
-      ├── .claude/skills/react-architecture/    (if React detected)
+      ├── __AGENT_DIR__/skills/react-architecture/    (if React detected)
       │   ├── SKILL.md
       │   └── references/
       │       ├── patterns.md
       │       ├── best-practices.md
       │       └── examples.md
-      ├── .claude/skills/nextjs-patterns/       (if Next.js detected)
+      ├── __AGENT_DIR__/skills/nextjs-patterns/       (if Next.js detected)
       │   ├── SKILL.md
       │   └── references/...
-      └── .claude/skills/typescript-standards/  (if TypeScript)
+      └── __AGENT_DIR__/skills/typescript-standards/  (if TypeScript)
           ├── SKILL.md
           └── references/
               ├── conventions.md
@@ -525,23 +525,23 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
       └── typescript-standards: TypeScript coding standards
 
       How Skills Work:
-      - Claude auto-activates skills based on your task context
+      - The agent auto-activates skills based on your task context
       - SKILL.md provides quick guidance (context-efficient)
       - references/ contains detailed docs loaded on-demand
       - Skills are model-invoked, not user-invoked
 
       To test your setup:
-      1. Start a new Claude Code session in this project
+      1. Start a new __AGENT_NAME__ session in this project
       2. The SessionStart hook will run automatically
       3. Edit a file to trigger the PostToolUse hook
-      4. Ask Claude to "design a React component" to see skill activation
+      4. Ask the agent to "design a React component" to see skill activation
       5. Use /clear to reset and re-trigger SessionStart
 
       Next steps:
-      - Customize hooks in .claude/hooks/ as needed
+      - Customize hooks in __AGENT_DIR__/hooks/ as needed
       - Review generated skills for project-specific accuracy
       - Add your own patterns to references/ folders
-      - Review .claude/settings.json for advanced options
+      - Review __AGENT_DIR__/settings.json for advanced options
       ```
 
 ## Hook Script Templates
@@ -552,8 +552,8 @@ This command sets up Claude Code skills and hooks for your project, enabling aut
 #!/bin/bash
 set -e
 
-# Session setup hook - runs when Claude Code starts
-# This script's stdout is injected into Claude's context
+# Session setup hook - runs when __AGENT_NAME__ starts
+# This script's stdout is injected into the agent's context
 
 echo "=== Project Setup ==="
 
@@ -638,7 +638,7 @@ exit 0
 ```bash
 #!/bin/bash
 
-# Pre-commit checks hook - runs when Claude finishes responding
+# Pre-commit checks hook - runs when the agent finishes responding
 # Use exit code 0 to show info, exit code 2 to block with feedback
 
 echo "=== Running Pre-Commit Checks ==="
@@ -669,7 +669,7 @@ exit 0
 ### When to Use This Command
 
 - After initializing a new project with `/speckit.specify`
-- When setting up an existing project for Claude Code
+- When setting up an existing project for __AGENT_NAME__
 - When you want to automate repetitive development tasks
 
 ### Customization Options
@@ -683,6 +683,6 @@ Users can customize the setup by providing arguments:
 ### Security Considerations
 
 - Hook scripts should not contain secrets
-- Use `$CLAUDE_PROJECT_DIR` for portable paths
+- Use `__AGENT_PROJECT_DIR_ENV__` for portable paths
 - Scripts should be idempotent (safe to run multiple times)
 - Avoid hooks that modify files outside the project

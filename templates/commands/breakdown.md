@@ -54,8 +54,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Anti-patterns to avoid (what NOT to do)
 
 2b. **Check for specialized agents**:
-   - Check if .claude/agents/speckit/researcher.md exists
-   - Check if .claude/agents/speckit/planner.md exists
+   - Check if __AGENT_DIR__/agents/speckit/researcher.md exists
+   - Check if __AGENT_DIR__/agents/speckit/planner.md exists
    - Store availability for later use (will determine which subagent_type to use)
 
 3. **Analyze tasks.md progression**:
@@ -104,7 +104,7 @@ This phase runs **ONLY** after user confirms which phase to process.
 7. **Launch researcher agent for codebase analysis**:
 
    Use Task tool with:
-   - If .claude/agents/speckit/researcher.md exists: subagent_type="researcher"
+   - If __AGENT_DIR__/agents/speckit/researcher.md exists: subagent_type="researcher"
    - Otherwise: subagent_type="Explore" with thoroughness="medium"
    - **Model**: sonnet (requires judgment for REUSE validation, not just file exploration)
 
@@ -266,7 +266,7 @@ This phase plans tasks **by logical groups** for efficiency (fewer agent calls, 
     a. **Launch planner agent for entire group**:
 
        Use Task tool with:
-       - If .claude/agents/speckit/planner.md exists: subagent_type="planner"
+       - If __AGENT_DIR__/agents/speckit/planner.md exists: subagent_type="planner"
        - Otherwise: subagent_type="general-purpose"
        - **Model selection** (adaptive):
          - Default: **sonnet** (good balance of reasoning and speed)

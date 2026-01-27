@@ -131,102 +131,153 @@ AGENT_CONFIG = {
         "folder": ".github/",
         "install_url": None,  # IDE-based, no CLI check needed
         "requires_cli": False,
+        "context_file": "copilot-instructions.md",
+        "context_glob": "**/*copilot-instructions.md",
+        "project_dir_env": "$PWD",
     },
     "claude": {
         "name": "Claude Code",
         "folder": ".claude/",
         "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
         "requires_cli": True,
+        "context_file": "CLAUDE.md",
+        "context_glob": "**/*CLAUDE.md",
+        "project_dir_env": "$CLAUDE_PROJECT_DIR",
     },
     "gemini": {
         "name": "Gemini CLI",
         "folder": ".gemini/",
         "install_url": "https://github.com/google-gemini/gemini-cli",
         "requires_cli": True,
+        "context_file": "GEMINI.md",
+        "context_glob": "**/*GEMINI.md",
+        "project_dir_env": "$PWD",
     },
     "cursor-agent": {
         "name": "Cursor",
         "folder": ".cursor/",
         "install_url": None,  # IDE-based
         "requires_cli": False,
+        "context_file": "specify-rules.mdc",
+        "context_glob": "**/*specify-rules.mdc",
+        "project_dir_env": "$PWD",
     },
     "qwen": {
         "name": "Qwen Code",
         "folder": ".qwen/",
         "install_url": "https://github.com/QwenLM/qwen-code",
         "requires_cli": True,
+        "context_file": "QWEN.md",
+        "context_glob": "**/*QWEN.md",
+        "project_dir_env": "$PWD",
     },
     "opencode": {
         "name": "opencode",
         "folder": ".opencode/",
         "install_url": "https://opencode.ai",
         "requires_cli": True,
+        "context_file": "OPENCODE.md",
+        "context_glob": "**/*OPENCODE.md",
+        "project_dir_env": "$PWD",
     },
     "codex": {
         "name": "Codex CLI",
         "folder": ".codex/",
         "install_url": "https://github.com/openai/codex",
         "requires_cli": True,
+        "context_file": "CODEX.md",
+        "context_glob": "**/*CODEX.md",
+        "project_dir_env": "$PWD",
     },
     "windsurf": {
         "name": "Windsurf",
         "folder": ".windsurf/",
         "install_url": None,  # IDE-based
         "requires_cli": False,
+        "context_file": "specify-rules.md",
+        "context_glob": "**/*specify-rules.md",
+        "project_dir_env": "$PWD",
     },
     "kilocode": {
         "name": "Kilo Code",
         "folder": ".kilocode/",
         "install_url": None,  # IDE-based
         "requires_cli": False,
+        "context_file": "specify-rules.md",
+        "context_glob": "**/*specify-rules.md",
+        "project_dir_env": "$PWD",
     },
     "auggie": {
         "name": "Auggie CLI",
         "folder": ".augment/",
         "install_url": "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli",
         "requires_cli": True,
+        "context_file": "specify-rules.md",
+        "context_glob": "**/*specify-rules.md",
+        "project_dir_env": "$PWD",
     },
     "codebuddy": {
         "name": "CodeBuddy",
         "folder": ".codebuddy/",
         "install_url": "https://www.codebuddy.ai/cli",
         "requires_cli": True,
+        "context_file": "CODEBUDDY.md",
+        "context_glob": "**/*CODEBUDDY.md",
+        "project_dir_env": "$PWD",
     },
     "qoder": {
         "name": "Qoder CLI",
         "folder": ".qoder/",
         "install_url": "https://qoder.com/cli",
         "requires_cli": True,
+        "context_file": "QODER.md",
+        "context_glob": "**/*QODER.md",
+        "project_dir_env": "$PWD",
     },
     "roo": {
         "name": "Roo Code",
         "folder": ".roo/",
         "install_url": None,  # IDE-based
         "requires_cli": False,
+        "context_file": "specify-rules.md",
+        "context_glob": "**/*specify-rules.md",
+        "project_dir_env": "$PWD",
     },
     "q": {
         "name": "Amazon Q Developer CLI",
         "folder": ".amazonq/",
         "install_url": "https://aws.amazon.com/developer/learning/q-developer-cli/",
         "requires_cli": True,
+        "context_file": "AGENTS.md",
+        "context_glob": "**/*AGENTS.md",
+        "project_dir_env": "$PWD",
     },
     "amp": {
         "name": "Amp",
         "folder": ".agents/",
         "install_url": "https://ampcode.com/manual#install",
         "requires_cli": True,
+        "context_file": "AGENTS.md",
+        "context_glob": "**/*AGENTS.md",
+        "project_dir_env": "$PWD",
     },
     "shai": {
         "name": "SHAI",
         "folder": ".shai/",
         "install_url": "https://github.com/ovh/shai",
         "requires_cli": True,
+        "context_file": "SHAI.md",
+        "context_glob": "**/*SHAI.md",
+        "project_dir_env": "$PWD",
     },
     "bob": {
         "name": "IBM Bob",
         "folder": ".bob/",
         "install_url": None,  # IDE-based
         "requires_cli": False,
+        "context_file": "AGENTS.md",
+        "context_glob": "**/*AGENTS.md",
+        "project_dir_env": "$PWD",
     },
 }
 
@@ -409,6 +460,18 @@ def build_template_from_bundled(
 
             # Apply substitutions
             content = content.replace("{ARGS}", arg_format)
+
+            # Agent-agnostic placeholders (MUST be replaced before __AGENT__
+            # to avoid substring collision: __AGENT_DIR__ contains __AGENT__)
+            agent_cfg = AGENT_CONFIG[ai_assistant]
+            agent_dir = agent_cfg["folder"].rstrip("/")
+            content = content.replace("__AGENT_DIR__", agent_dir)
+            content = content.replace("__AGENT_NAME__", agent_cfg["name"])
+            content = content.replace("__AGENT_CONTEXT_FILE__", agent_cfg.get("context_file", ""))
+            content = content.replace("__AGENT_CONTEXT_GLOB__", agent_cfg.get("context_glob", ""))
+            content = content.replace("__AGENT_PROJECT_DIR_ENV__", agent_cfg.get("project_dir_env", "$PWD"))
+
+            # Agent key placeholder (e.g. "claude", "opencode")
             content = content.replace("__AGENT__", ai_assistant)
             content = _rewrite_paths_for_bundled(content)
 
