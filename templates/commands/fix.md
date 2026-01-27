@@ -419,7 +419,7 @@ Save to `FEATURE_DIR/fix-analysis-{date}.md`:
 
 **Date**: {current_date}
 **Feature**: {feature-name}
-**Analyst**: Claude (speckit.fix)
+**Analyst**: __AGENT_NAME__ (speckit.fix)
 
 ## Executive Summary
 

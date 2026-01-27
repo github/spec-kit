@@ -25,7 +25,7 @@ Consider user input for customization (tech stack, services, ports).
 
 ## What This Command Does
 
-Creates a custom MCP server in `.mcp/project-server/` that provides Claude Code with tools to:
+Creates a custom MCP server in `.mcp/project-server/` that provides __AGENT_NAME__ with tools to:
 
 1. **Manage Services**: Start/stop backend, frontend, databases, microservices
 2. **Monitor Logs**: View and filter logs from running processes
@@ -255,11 +255,11 @@ cd .mcp/project-server && npx playwright install chromium
 
 ---
 
-## Phase 5: Claude Code Integration
+## Phase 5: __AGENT_NAME__ Integration
 
 ### Step 5.1: Generate MCP Configuration
 
-Create or update `.claude/mcp.json`:
+Create or update `__AGENT_DIR__/mcp.json`:
 
 ```json
 {
@@ -339,14 +339,14 @@ node .mcp/project-server/dist/index.js --test
 
 ### Next Steps
 
-1. Restart Claude Code to load the MCP server
+1. Restart __AGENT_NAME__ to load the MCP server
 2. Use `/speckit.validate` to run integration tests
 3. Or use tools directly: `start_service backend`
 
 ### Files Created
 
 - `.mcp/project-server/` - MCP server code
-- `.claude/mcp.json` - Claude Code configuration
+- `__AGENT_DIR__/mcp.json` - __AGENT_NAME__ configuration
 ```
 
 ---
