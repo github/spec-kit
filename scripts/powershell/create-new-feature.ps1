@@ -101,69 +101,25 @@ function Get-HighestNumberFromBranches {
 
 function Get-NextBranchNumber {
     param(
-        [string]$ShortName,
         [string]$SpecsDir
     )
-    
+
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
     try {
         git fetch --all --prune 2>$null | Out-Null
     } catch {
         # Ignore fetch errors
     }
-    
-    # Find remote branches matching the pattern using git ls-remote
-    $remoteBranches = @()
-    try {
-        $remoteRefs = git ls-remote --heads origin 2>$null
-        if ($remoteRefs) {
-            $remoteBranches = $remoteRefs | Where-Object { $_ -match "refs/heads/(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "refs/heads/(\d+)-") {
-                    [int]$matches[1]
-                }
-            }
-        }
-    } catch {
-        # Ignore errors
-    }
-    
-    # Check local branches
-    $localBranches = @()
-    try {
-        $allBranches = git branch 2>$null
-        if ($allBranches) {
-            $localBranches = $allBranches | Where-Object { $_ -match "^\*?\s*(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_ -match "(\d+)-") {
-                    [int]$matches[1]
-                }
-            }
-        }
-    } catch {
-        # Ignore errors
-    }
-    
-    # Check specs directory
-    $specDirs = @()
-    if (Test-Path $SpecsDir) {
-        try {
-            $specDirs = Get-ChildItem -Path $SpecsDir -Directory | Where-Object { $_.Name -match "^(\d+)-$([regex]::Escape($ShortName))$" } | ForEach-Object {
-                if ($_.Name -match "^(\d+)-") {
-                    [int]$matches[1]
-                }
-            }
-        } catch {
-            # Ignore errors
-        }
-    }
-    
-    # Combine all sources and get the highest number
-    $maxNum = 0
-    foreach ($num in ($remoteBranches + $localBranches + $specDirs)) {
-        if ($num -gt $maxNum) {
-            $maxNum = $num
-        }
-    }
-    
+
+    # Get highest number from ALL branches (not just matching short name)
+    $highestBranch = Get-HighestNumberFromBranches
+
+    # Get highest number from ALL specs (not just matching short name)
+    $highestSpec = Get-HighestNumberFromSpecs -SpecsDir $SpecsDir
+
+    # Take the maximum of both
+    $maxNum = [Math]::Max($highestBranch, $highestSpec)
+
     # Return next number
     return $maxNum + 1
 }
@@ -254,7 +210,7 @@ if ($ShortName) {
 if ($Number -eq 0) {
     if ($hasGit) {
         # Check existing branches on remotes
-        $Number = Get-NextBranchNumber -ShortName $branchSuffix -SpecsDir $specsDir
+        $Number = Get-NextBranchNumber -SpecsDir $specsDir
     } else {
         # Fall back to local directory check
         $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
