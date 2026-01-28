@@ -2,26 +2,30 @@
 
 <#
 .SYNOPSIS
-    Setup Claude Code hooks and skills for the current project.
+    Setup agent hooks and skills for the current project.
 
 .DESCRIPTION
     This script detects the project type, frameworks, and generates appropriate
-    hook configurations for Claude Code.
+    hook configurations for the specified AI coding agent.
 
 .PARAMETER Json
     Output in JSON format
 
+.PARAMETER AgentDir
+    Agent directory name (e.g. .claude, .opencode, .gemini). Defaults to .claude.
+
 .EXAMPLE
-    ./setup-hooks.ps1 -Json
-    # Detect project and output JSON
+    ./setup-hooks.ps1 -Json -AgentDir .opencode
+    # Detect project for opencode and output JSON
 
 .EXAMPLE
     ./setup-hooks.ps1
-    # Human-readable output
+    # Human-readable output (defaults to .claude)
 #>
 
 param(
     [switch]$Json,
+    [string]$AgentDir = ".claude",
     [switch]$Help
 )
 
@@ -523,14 +527,14 @@ function Detect-Project {
 # Run detection
 Detect-Project
 
-# Define output paths
-$ClaudeDir = Join-Path $RepoRoot ".claude"
-$SettingsFile = Join-Path $ClaudeDir "settings.json"
-$SkillsDir = Join-Path $ClaudeDir "skills"
-$HooksDir = Join-Path $ClaudeDir "hooks"
+# Define output paths using agent directory
+$AgentDirPath = Join-Path $RepoRoot $AgentDir
+$SettingsFile = Join-Path $AgentDirPath "settings.json"
+$SkillsDir = Join-Path $AgentDirPath "skills"
+$HooksDir = Join-Path $AgentDirPath "hooks"
 
-# Check if .claude directory already exists
-$ClaudeExists = Test-Path $ClaudeDir
+# Check if agent directory already exists
+$AgentDirExists = Test-Path $AgentDirPath
 $SettingsExists = Test-Path $SettingsFile
 
 # Output results
@@ -563,11 +567,11 @@ if ($Json) {
         DETECTED_TOOLS = $DetectedTools
         DETECTED_FRAMEWORKS = $frameworksArray
         REPO_ROOT = $RepoRoot
-        CLAUDE_DIR = $ClaudeDir
+        AGENT_DIR = $AgentDirPath
         SETTINGS_FILE = $SettingsFile
         SKILLS_DIR = $SkillsDir
         HOOKS_DIR = $HooksDir
-        CLAUDE_EXISTS = $ClaudeExists
+        AGENT_DIR_EXISTS = $AgentDirExists
         SETTINGS_EXISTS = $SettingsExists
     }
 
@@ -599,8 +603,8 @@ if ($Json) {
         Write-Output "  No frameworks detected"
     }
     Write-Output ""
-    Write-Output "=== Claude Code Paths ==="
-    Write-Output "Claude Directory: $ClaudeDir (exists: $ClaudeExists)"
+    Write-Output "=== Agent Paths ==="
+    Write-Output "Agent Directory: $AgentDirPath (exists: $AgentDirExists)"
     Write-Output "Settings File: $SettingsFile (exists: $SettingsExists)"
     Write-Output "Skills Directory: $SkillsDir"
     Write-Output "Hooks Directory: $HooksDir"

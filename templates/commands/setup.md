@@ -1,8 +1,8 @@
 ---
 description: Complete project setup - configures hooks, skills, agents, constitution, and optionally MCP server
 scripts:
-  sh: scripts/bash/setup-hooks.sh --json
-  ps: scripts/powershell/setup-hooks.ps1 -Json
+  sh: scripts/bash/setup-hooks.sh --json --agent-dir __AGENT_DIR__
+  ps: scripts/powershell/setup-hooks.ps1 -Json -AgentDir __AGENT_DIR__
 ---
 
 # SpecKit Project Setup
