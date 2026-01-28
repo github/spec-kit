@@ -209,11 +209,11 @@ format_technology_stack() {
     local lang="$1"
     local framework="$2"
     local parts=()
-    
+
     # Add non-empty parts
     [[ -n "$lang" && "$lang" != "NEEDS CLARIFICATION" ]] && parts+=("$lang")
     [[ -n "$framework" && "$framework" != "NEEDS CLARIFICATION" && "$framework" != "N/A" ]] && parts+=("$framework")
-    
+
     # Join with proper formatting
     if [[ ${#parts[@]} -eq 0 ]]; then
         echo ""
@@ -227,6 +227,70 @@ format_technology_stack() {
         done
         echo "$result"
     fi
+}
+
+# Split a technology string into individual technologies
+# Splits on " + " and ", " to extract individual items
+split_technologies() {
+    local tech_string="$1"
+    # Replace " + " with newlines, then ", " with newlines, then trim each line
+    echo "$tech_string" | sed 's/ + /\n/g' | sed 's/, /\n/g' | sed 's/^[ \t]*//;s/[ \t]*$//' | grep -v '^$' | sort -u
+}
+
+# Extract existing technologies from the Active Technologies section
+extract_existing_technologies() {
+    local target_file="$1"
+    local in_tech_section=false
+    local techs=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "## Active Technologies" ]]; then
+            in_tech_section=true
+            continue
+        elif [[ $in_tech_section == true ]] && [[ "$line" =~ ^##[[:space:]] ]]; then
+            break
+        elif [[ $in_tech_section == true ]] && [[ "$line" == "- "* ]]; then
+            # Remove the leading "- " and any trailing branch annotation like "(001-feature)"
+            local entry="${line#- }"
+            entry=$(echo "$entry" | sed 's/ ([^)]*-[^)]*)$//')
+            techs="$techs"$'\n'"$entry"
+        fi
+    done < "$target_file"
+
+    # Split all collected entries into individual technologies
+    echo "$techs" | while IFS= read -r entry; do
+        [[ -n "$entry" ]] && split_technologies "$entry"
+    done | sort -u
+}
+
+# Check if a specific technology already exists in the file
+tech_exists_in_file() {
+    local tech="$1"
+    local target_file="$2"
+    local existing_techs="$3"
+
+    # Check if this exact tech is in the existing list
+    echo "$existing_techs" | grep -Fxq "$tech"
+}
+
+# Filter out technologies that already exist, returning only new ones
+filter_new_technologies() {
+    local tech_string="$1"
+    local existing_techs="$2"
+    local new_techs=""
+
+    while IFS= read -r tech; do
+        [[ -z "$tech" ]] && continue
+        if ! echo "$existing_techs" | grep -Fxq "$tech"; then
+            if [[ -z "$new_techs" ]]; then
+                new_techs="$tech"
+            else
+                new_techs="$new_techs, $tech"
+            fi
+        fi
+    done < <(split_technologies "$tech_string")
+
+    echo "$new_techs"
 }
 
 #==============================================================================
@@ -363,28 +427,40 @@ create_new_agent_file() {
 update_existing_agent_file() {
     local target_file="$1"
     local current_date="$2"
-    
+
     log_info "Updating existing agent context file..."
-    
+
     # Use a single temporary file for atomic update
     local temp_file
     temp_file=$(mktemp) || {
         log_error "Failed to create temporary file"
         return 1
     }
-    
+
     # Process the file in one pass
     local tech_stack=$(format_technology_stack "$NEW_LANG" "$NEW_FRAMEWORK")
     local new_tech_entries=()
     local new_change_entry=""
-    
-    # Prepare new technology entries
-    if [[ -n "$tech_stack" ]] && ! grep -q "$tech_stack" "$target_file"; then
-        new_tech_entries+=("- $tech_stack ($CURRENT_BRANCH)")
+
+    # Extract existing technologies for smart deduplication
+    local existing_techs=""
+    if [[ -f "$target_file" ]]; then
+        existing_techs=$(extract_existing_technologies "$target_file")
     fi
-    
-    if [[ -n "$NEW_DB" ]] && [[ "$NEW_DB" != "N/A" ]] && [[ "$NEW_DB" != "NEEDS CLARIFICATION" ]] && ! grep -q "$NEW_DB" "$target_file"; then
-        new_tech_entries+=("- $NEW_DB ($CURRENT_BRANCH)")
+
+    # Prepare new technology entries - only add truly new technologies
+    if [[ -n "$tech_stack" ]]; then
+        local new_techs=$(filter_new_technologies "$tech_stack" "$existing_techs")
+        if [[ -n "$new_techs" ]]; then
+            new_tech_entries+=("- $new_techs ($CURRENT_BRANCH)")
+        fi
+    fi
+
+    if [[ -n "$NEW_DB" ]] && [[ "$NEW_DB" != "N/A" ]] && [[ "$NEW_DB" != "NEEDS CLARIFICATION" ]]; then
+        local new_db_techs=$(filter_new_technologies "$NEW_DB" "$existing_techs")
+        if [[ -n "$new_db_techs" ]]; then
+            new_tech_entries+=("- $new_db_techs ($CURRENT_BRANCH)")
+        fi
     fi
     
     # Prepare new change entry
