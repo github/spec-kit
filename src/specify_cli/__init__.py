@@ -176,8 +176,8 @@ AGENT_CONFIG = {
         "folder": ".opencode/",
         "install_url": "https://opencode.ai",
         "requires_cli": True,
-        "context_file": "OPENCODE.md",
-        "context_glob": "**/*OPENCODE.md",
+        "context_file": "AGENTS.md",
+        "context_glob": "**/*AGENTS.md",
         "project_dir_env": "$PWD",
     },
     "codex": {
@@ -185,8 +185,8 @@ AGENT_CONFIG = {
         "folder": ".codex/",
         "install_url": "https://github.com/openai/codex",
         "requires_cli": True,
-        "context_file": "CODEX.md",
-        "context_glob": "**/*CODEX.md",
+        "context_file": "AGENTS.md",
+        "context_glob": "**/*AGENTS.md",
         "project_dir_env": "$PWD",
     },
     "windsurf": {
