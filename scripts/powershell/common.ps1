@@ -376,16 +376,38 @@ function Get-HighestNumberForPrefix {
     $specsDir = Join-Path $RepoRoot 'specs'
     $highest = 0
     
-    # Escape special regex characters in prefix
+    # Escape special regex characters in prefix for branch matching
     $escapedPrefix = [regex]::Escape($Prefix)
     
     # Check specs directory for matching directories
+    # For slashed prefixes (e.g., "johndoe/"), the structure is specs/johndoe/001-feature/
+    # We need to navigate into the prefix path and match numbered directories there
     if (Test-Path $specsDir) {
-        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-            if ($_.Name -match "^$escapedPrefix(\d{3})-") {
-                $num = [int]$matches[1]
-                if ($num -gt $highest) {
-                    $highest = $num
+        # Normalize prefix: remove trailing slash for path joining
+        $prefixPath = $Prefix.TrimEnd('/')
+        
+        if ($prefixPath -match '/') {
+            # Slashed prefix: navigate to the nested directory and look for numbered dirs
+            $prefixDir = Join-Path $specsDir $prefixPath
+            if (Test-Path $prefixDir) {
+                Get-ChildItem -Path $prefixDir -Directory | ForEach-Object {
+                    # Match directories starting with 3-digit number
+                    if ($_.Name -match '^(\d{3})-') {
+                        $num = [int]$matches[1]
+                        if ($num -gt $highest) {
+                            $highest = $num
+                        }
+                    }
+                }
+            }
+        } else {
+            # Non-slashed prefix: look at immediate children with prefix pattern
+            Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+                if ($_.Name -match "^$escapedPrefix(\d{3})-") {
+                    $num = [int]$matches[1]
+                    if ($num -gt $highest) {
+                        $highest = $num
+                    }
                 }
             }
         }

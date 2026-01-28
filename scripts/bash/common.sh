@@ -312,24 +312,49 @@ get_highest_for_prefix() {
     local specs_dir="$repo_root/specs"
     local highest=0
     
-    # Escape special regex characters in prefix for grep
+    # Escape special regex characters in prefix for branch matching
     local escaped_prefix
     escaped_prefix=$(printf '%s' "$prefix" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
     
     # Check specs directory for matching directories
+    # For slashed prefixes (e.g., "johndoe/"), the structure is specs/johndoe/001-feature/
+    # We need to navigate into the prefix path and match numbered directories there
     if [[ -d "$specs_dir" ]]; then
-        for dir in "$specs_dir"/"${prefix}"*; do
-            [[ -d "$dir" ]] || continue
-            local dirname
-            dirname=$(basename "$dir")
-            # Extract number after prefix: prefix + 3-digit number
-            if [[ "$dirname" =~ ^${escaped_prefix}([0-9]{3})- ]]; then
-                local num=$((10#${BASH_REMATCH[1]}))
-                if [[ "$num" -gt "$highest" ]]; then
-                    highest=$num
-                fi
+        # Normalize prefix: remove trailing slash for path joining
+        local prefix_path="${prefix%/}"
+        
+        if [[ "$prefix_path" == *"/"* ]]; then
+            # Slashed prefix: navigate to the nested directory and look for numbered dirs
+            local prefix_dir="$specs_dir/$prefix_path"
+            if [[ -d "$prefix_dir" ]]; then
+                for dir in "$prefix_dir"/*; do
+                    [[ -d "$dir" ]] || continue
+                    local dirname
+                    dirname=$(basename "$dir")
+                    # Match directories starting with 3-digit number
+                    if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
+                        local num=$((10#${BASH_REMATCH[1]}))
+                        if [[ "$num" -gt "$highest" ]]; then
+                            highest=$num
+                        fi
+                    fi
+                done
             fi
-        done
+        else
+            # Non-slashed prefix: look at immediate children with prefix pattern
+            for dir in "$specs_dir"/"${prefix}"*; do
+                [[ -d "$dir" ]] || continue
+                local dirname
+                dirname=$(basename "$dir")
+                # Extract number after prefix: prefix + 3-digit number
+                if [[ "$dirname" =~ ^${escaped_prefix}([0-9]{3})- ]]; then
+                    local num=$((10#${BASH_REMATCH[1]}))
+                    if [[ "$num" -gt "$highest" ]]; then
+                        highest=$num
+                    fi
+                fi
+            done
+        fi
     fi
     
     # Also check git branches if available
