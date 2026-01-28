@@ -171,9 +171,15 @@ Map skills to agents:
 - `frontend-coder` → `react-architecture`, `typescript-standards`, `{ui-framework}-patterns`
 - `tester` → `testing-skill`, `{language}-standards`
 
-## Agent File Structure (Official Format)
+## Agent File Structure (Format varies by agent platform)
 
-Each agent MUST follow the **official __AGENT_NAME__ subagent format**:
+**IMPORTANT**: Agent file format differs by platform. Use the format that matches your agent (`__AGENT__`).
+
+---
+
+### Format A: Claude Code (`claude`)
+
+Claude Code uses a simple frontmatter with comma-separated tools and skills:
 
 ```markdown
 ---
@@ -182,53 +188,103 @@ description: |
   [What this agent does]. Use for [specific use cases].
   Invoke when: [trigger conditions].
 tools: Read, Glob, Grep, Bash, Edit, Write
-model: sonnet  # or haiku (fast/cheap) or opus (complex) or inherit
+model: sonnet  # or haiku (fast/cheap) or opus (complex)
 skills: skill-1, skill-2  # Reference skills from __AGENT_DIR__/skills/
 ---
 
 # [Agent Name]
 
-You are a [role] specialized in [domain]. Your isolated context window allows focused work on [specific tasks].
-
-## Core Responsibilities
-
-1. **[Responsibility]**: [Description]
-2. **[Responsibility]**: [Description]
-
-## Workflow Integration
-
-This agent is part of the SpecKit SDD workflow:
-- **Input**: [What this agent receives]
-- **Output**: [What this agent produces]
-- **Handoff to**: [Next agent in workflow]
-
-## Guidelines
-
-[Concise guidelines - detailed expertise comes from skills]
-
-## Skills Available
-
-Your loaded skills provide:
-- `{skill-1}`: [what it provides]
-- `{skill-2}`: [what it provides]
-
-Consult skill references for detailed patterns: `Read __AGENT_DIR__/skills/{skill}/references/`
-
-## Best Practices
-
-- ✅ [Practice from project docs/code]
-- ✅ [Another practice]
-- ❌ [Anti-pattern to avoid]
-
-## Collaboration
-
-- **With [Agent]**: [How they work together]
-- **Use TodoWrite**: Track task progress
-
-Remember: [Key principle for this agent]
+[System prompt content...]
 ```
 
+**Fields:**
+- `name`: Agent identifier (required)
+- `description`: Multi-line description (required)
+- `tools`: Comma-separated list: `Read, Glob, Grep, Bash, Edit, Write, WebFetch, WebSearch`
+- `model`: `haiku` (fast), `sonnet` (balanced), `opus` (complex)
+- `skills`: Comma-separated skill names from `__AGENT_DIR__/skills/`
+
+---
+
+### Format B: opencode (`opencode`)
+
+opencode uses explicit boolean tool flags and granular permissions:
+
+```markdown
+---
+description: |
+  [What this agent does]. Use for [specific use cases].
+  Invoke when: [trigger conditions].
+mode: subagent
+model: anthropic/claude-sonnet-4-20250514
+temperature: 0.3
+tools:
+  read: true
+  write: true
+  edit: true
+  bash: true
+  grep: true
+  glob: true
+permissions:
+  edit: ask
+  write: ask
+  bash:
+    "rm -rf *": deny
+    "git push --force*": deny
+    "*": ask
+---
+
+# [Agent Name]
+
+[System prompt content...]
+```
+
+**Fields:**
+- `description`: Multi-line description (required)
+- `mode`: `subagent` for specialized agents
+- `model`: Full model path (e.g., `anthropic/claude-sonnet-4-20250514`, `anthropic/claude-haiku-4-20250514`)
+- `temperature`: 0.1 (precise) to 0.7 (creative)
+- `tools`: Object with boolean flags per tool
+- `permissions`: Granular permission rules with patterns
+
+**Tool mapping (Claude Code → opencode):**
+| Claude Code | opencode |
+|-------------|----------|
+| `Read` | `read: true` |
+| `Write` | `write: true` |
+| `Edit` | `edit: true` |
+| `Bash` | `bash: true` |
+| `Grep` | `grep: true` |
+| `Glob` | `glob: true` |
+
+**Model mapping:**
+| Claude Code | opencode |
+|-------------|----------|
+| `haiku` | `anthropic/claude-haiku-4-20250514` |
+| `sonnet` | `anthropic/claude-sonnet-4-20250514` |
+| `opus` | `anthropic/claude-opus-4-20250514` |
+
+---
+
+### Format C: Other agents (gemini, cursor-agent, windsurf, etc.)
+
+Most other agents follow Claude Code format (Format A) with minor variations. Use Format A as the baseline.
+
+---
+
 ## SpecKit Workflow Agents (Primary)
+
+> **FORMAT NOTE**: The templates below show Claude Code format for brevity.
+> **If you are `__AGENT__`**: Adapt the frontmatter to your platform's format (see Format A/B/C above).
+>
+> **Quick conversion for opencode:**
+> - Remove `name:` (inferred from filename)
+> - Add `mode: subagent`
+> - Convert `tools: Read, Glob, Grep` → `tools:\n  read: true\n  glob: true\n  grep: true`
+> - Convert `model: sonnet` → `model: anthropic/claude-sonnet-4-20250514`
+> - Add `temperature: 0.3` (0.1 for analysis, 0.5 for creative)
+> - Remove `skills:` (not supported in opencode)
+> - Add `permissions:` block as needed
 
 These agents form the **Spec-Driven Development (SDD) pipeline**:
 
