@@ -171,6 +171,115 @@ function Format-TechnologyStack {
     return ($parts -join ' + ')
 }
 
+# Split a technology string into individual technologies
+# Splits on " + " and ", " to extract individual items
+# Also strips parenthetical annotations like "(primary)", "(sessions/cache)" from base tech names
+function Split-Technologies {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TechString
+    )
+    $techs = $TechString -split '\s*\+\s*' | ForEach-Object { $_ -split ',\s*' } |
+        ForEach-Object { $_.Trim() } |
+        ForEach-Object { $_ -replace '\s*\(primary\)$', '' } |
+        ForEach-Object { $_ -replace '\s*\(sessions\)$', '' } |
+        ForEach-Object { $_ -replace '\s*\(cache\)$', '' } |
+        ForEach-Object { $_ -replace '\s*\(sessions/cache\)$', '' } |
+        ForEach-Object { $_ -replace '\s*\(pub/sub\)$', '' } |
+        Where-Object { $_ -ne '' } | Sort-Object -Unique
+    return $techs
+}
+
+# Check if a technology looks like a database/storage technology
+function Test-DatabaseTech {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Tech
+    )
+    # Common database/storage patterns
+    if ($Tech -match '(PostgreSQL|MySQL|MariaDB|MongoDB|Redis|SQLite|Oracle|SQL Server|Cassandra|DynamoDB|Firebase|Supabase)') {
+        return $true
+    }
+    return $false
+}
+
+# Extract existing technologies from the Active Technologies section
+function Get-ExistingTechnologiesByCategory {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TargetFile
+    )
+    if (-not (Test-Path $TargetFile)) { return @() }
+
+    $lines = Get-Content -LiteralPath $TargetFile -Encoding utf8
+    $inTechSection = $false
+    $allTechs = @()
+
+    foreach ($line in $lines) {
+        if ($line -eq '## Active Technologies') {
+            $inTechSection = $true
+            continue
+        }
+        if ($inTechSection -and $line -match '^##\s') {
+            break
+        }
+        if ($inTechSection -and $line -match '^- (.+)$') {
+            $entry = $Matches[1]
+            # Remove trailing branch annotation like "(001-feature)"
+            $entry = $entry -replace '\s*\([^)]*-[^)]*\)$', ''
+            $splitTechs = Split-Technologies -TechString $entry
+            $allTechs += $splitTechs
+        }
+    }
+
+    return $allTechs | Sort-Object -Unique
+}
+
+# Consolidate technologies into a clean, deduplicated list
+# Separates into two categories: languages/frameworks and databases
+function Get-ConsolidatedTechnologies {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TargetFile,
+        [Parameter(Mandatory=$false)]
+        [string]$NewTechStack = '',
+        [Parameter(Mandatory=$false)]
+        [string]$NewDb = ''
+    )
+
+    $langsFrameworks = @()
+    $databases = @()
+
+    # Get all existing technologies
+    $existingTechs = @()
+    if (Test-Path $TargetFile) {
+        $existingTechs = Get-ExistingTechnologiesByCategory -TargetFile $TargetFile
+    }
+
+    # Add new technologies to the pool
+    $allTechs = @($existingTechs)
+    if ($NewTechStack) {
+        $allTechs += Split-Technologies -TechString $NewTechStack
+    }
+    if ($NewDb -and $NewDb -notin @('N/A', 'NEEDS CLARIFICATION')) {
+        $allTechs += Split-Technologies -TechString $NewDb
+    }
+
+    # Deduplicate and categorize
+    $allTechs | Sort-Object -Unique | Where-Object { $_ -ne '' } | ForEach-Object {
+        if (Test-DatabaseTech -Tech $_) {
+            $databases += $_
+        } else {
+            $langsFrameworks += $_
+        }
+    }
+
+    return @{
+        Langs = ($langsFrameworks -join ', ')
+        Dbs = ($databases -join ', ')
+    }
+}
+
 function Get-ProjectStructure { 
     param(
         [Parameter(Mandatory=$false)]
@@ -274,19 +383,19 @@ function Update-ExistingAgentFile {
     if (-not (Test-Path $TargetFile)) { return (New-AgentFile -TargetFile $TargetFile -ProjectName (Split-Path $REPO_ROOT -Leaf) -Date $Date) }
 
     $techStack = Format-TechnologyStack -Lang $NEW_LANG -Framework $NEW_FRAMEWORK
-    $newTechEntries = @()
-    if ($techStack) {
-        $escapedTechStack = [Regex]::Escape($techStack)
-        if (-not (Select-String -Pattern $escapedTechStack -Path $TargetFile -Quiet)) { 
-            $newTechEntries += "- $techStack ($CURRENT_BRANCH)" 
-        }
+
+    # Consolidate all technologies (existing + new) into deduplicated categories
+    $consolidated = Get-ConsolidatedTechnologies -TargetFile $TargetFile -NewTechStack $techStack -NewDb $NEW_DB
+
+    # Build consolidated tech entries (replacing all existing entries)
+    $consolidatedTechEntries = @()
+    if ($consolidated.Langs) {
+        $consolidatedTechEntries += "- $($consolidated.Langs)"
     }
-    if ($NEW_DB -and $NEW_DB -notin @('N/A','NEEDS CLARIFICATION')) {
-        $escapedDB = [Regex]::Escape($NEW_DB)
-        if (-not (Select-String -Pattern $escapedDB -Path $TargetFile -Quiet)) { 
-            $newTechEntries += "- $NEW_DB ($CURRENT_BRANCH)" 
-        }
+    if ($consolidated.Dbs) {
+        $consolidatedTechEntries += "- $($consolidated.Dbs)"
     }
+
     $newChangeEntry = ''
     if ($techStack) { $newChangeEntry = "- ${CURRENT_BRANCH}: Added ${techStack}" }
     elseif ($NEW_DB -and $NEW_DB -notin @('N/A','NEEDS CLARIFICATION')) { $newChangeEntry = "- ${CURRENT_BRANCH}: Added ${NEW_DB}" }
@@ -303,12 +412,24 @@ function Update-ExistingAgentFile {
             continue
         }
         if ($inTech -and $line -match '^##\s') {
-            if (-not $techAdded -and $newTechEntries.Count -gt 0) { $newTechEntries | ForEach-Object { $output.Add($_) }; $techAdded = $true }
+            # Write consolidated entries before closing the section
+            if (-not $techAdded -and $consolidatedTechEntries.Count -gt 0) {
+                $consolidatedTechEntries | ForEach-Object { $output.Add($_) }
+                $techAdded = $true
+            }
             $output.Add($line); $inTech = $false; continue
         }
         if ($inTech -and [string]::IsNullOrWhiteSpace($line)) {
-            if (-not $techAdded -and $newTechEntries.Count -gt 0) { $newTechEntries | ForEach-Object { $output.Add($_) }; $techAdded = $true }
+            # Write consolidated entries before empty line in tech section
+            if (-not $techAdded -and $consolidatedTechEntries.Count -gt 0) {
+                $consolidatedTechEntries | ForEach-Object { $output.Add($_) }
+                $techAdded = $true
+            }
             $output.Add($line); continue
+        }
+        if ($inTech -and $line -match '^- ') {
+            # Skip existing tech entries - they will be replaced by consolidated entries
+            continue
         }
         if ($line -eq '## Recent Changes') {
             $output.Add($line)
@@ -328,9 +449,9 @@ function Update-ExistingAgentFile {
         $output.Add($line)
     }
 
-    # Post-loop check: if we're still in the Active Technologies section and haven't added new entries
-    if ($inTech -and -not $techAdded -and $newTechEntries.Count -gt 0) {
-        $newTechEntries | ForEach-Object { $output.Add($_) }
+    # Post-loop check: if we're still in the Active Technologies section and haven't added entries
+    if ($inTech -and -not $techAdded -and $consolidatedTechEntries.Count -gt 0) {
+        $consolidatedTechEntries | ForEach-Object { $output.Add($_) }
     }
 
     Set-Content -LiteralPath $TargetFile -Value ($output -join [Environment]::NewLine) -Encoding utf8
