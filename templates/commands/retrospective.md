@@ -1,4 +1,3 @@
-```markdown
 ---
 description: Perform a post-implementation retrospective analysis measuring spec drift, implementation deviations, and generating lessons learned for future features.
 scripts:
@@ -112,7 +111,7 @@ Compare specification artifacts against implementation reality across these dime
 
 #### A. Requirement Coverage Analysis
 
-For each Functional Requirement (FR-XXX):
+For each Functional Requirement (FR-XXX) and Non-Functional Requirement (NFR-XXX):
 
 | Status | Meaning |
 |--------|---------|
@@ -124,7 +123,7 @@ For each Functional Requirement (FR-XXX):
 
 Track:
 
-- Which requirements were implemented as specified
+- Which requirements (FR and NFR) were implemented as specified
 - Which requirements were modified during implementation
 - Which requirements were dropped or deferred
 - Which capabilities were added without specification
@@ -213,7 +212,7 @@ Output a comprehensive Markdown report with the following structure:
 
 [2-3 sentence summary of overall spec adherence and key findings]
 
-**Spec Drift Score**: [Calculate as percentage: implemented_as_specified / total_requirements * 100]
+**Spec Adherence Score**: [Calculate as percentage: implemented_as_specified / total_requirements * 100]
 
 | Metric | Value |
 |--------|-------|
@@ -222,7 +221,7 @@ Output a comprehensive Markdown report with the following structure:
 | Modified During Implementation | X |
 | Not Implemented | X |
 | Unspecified Additions | X |
-| Spec Drift Score | X% |
+| Spec Adherence Score | X% |
 
 ---
 
@@ -231,6 +230,7 @@ Output a comprehensive Markdown report with the following structure:
 | Req ID | Description | Status | Deviation Notes |
 |--------|-------------|--------|-----------------|
 | FR-001 | [Brief desc] | ✅/⚠️/❌/🔄 | [If applicable] |
+| NFR-001 | [Brief desc] | ✅/⚠️/❌/🔄 | [If applicable] |
 | ... | ... | ... | ... |
 
 ---
@@ -346,13 +346,13 @@ Output a comprehensive Markdown report with the following structure:
 
 ---
 
-### 9. Save Retrospective (Optional)
+## 9. Save Retrospective (Optional)
 
 Ask user: "Would you like me to save this retrospective report to `FEATURE_DIR/retrospective.md`?"
 
 If yes, write the report file.
 
-### 10. Offer Follow-up Actions
+## 10. Offer Follow-up Actions
 
 Based on findings, suggest next steps:
 
@@ -397,8 +397,3 @@ Based on findings, suggest next steps:
 - Use tables for structured data
 - Keep recommendations actionable and specific
 - Cap total report at ~2000 lines
-
-## Context
-
-{ARGS}
-```
