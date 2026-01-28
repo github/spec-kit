@@ -943,8 +943,28 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 console.print(f"  - {f}")
 
 
-# Settings file template content for branch template customization
-SETTINGS_TEMPLATE = '''# Spec Kit Settings
+def _get_settings_template() -> str:
+    """Get the settings template content.
+    
+    Tries to load from templates/settings.toml (for development/source installs),
+    falls back to embedded template if not found (for pip-installed package).
+    
+    Returns:
+        The settings template content as a string.
+    """
+    # Try to load from templates/settings.toml relative to repo root
+    # This works when running from source or development install
+    try:
+        repo_root = Path(__file__).parent.parent.parent
+        template_file = repo_root / "templates" / "settings.toml"
+        if template_file.exists():
+            return template_file.read_text()
+    except Exception:
+        pass
+    
+    # Fallback: embedded template for pip-installed package
+    # This is kept in sync with templates/settings.toml
+    return '''# Spec Kit Settings
 # Documentation: https://github.github.io/spec-kit/
 #
 # This file configures project-level settings for the Spec Kit workflow.
@@ -1010,7 +1030,7 @@ def _init_settings_file(project_path: Path = None, force: bool = False) -> None:
     
     # Write the settings file
     try:
-        settings_file.write_text(SETTINGS_TEMPLATE)
+        settings_file.write_text(_get_settings_template())
     except Exception as e:
         console.print(f"[red]Error:[/red] Could not write settings file: {e}")
         raise typer.Exit(2)

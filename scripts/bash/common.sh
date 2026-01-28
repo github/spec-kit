@@ -385,11 +385,12 @@ get_highest_for_prefix() {
     # For slashed prefixes (e.g., "johndoe/"), the structure is specs/johndoe/001-feature/
     # We need to navigate into the prefix path and match numbered directories there
     if [[ -d "$specs_dir" ]]; then
-        # Normalize prefix: remove trailing slash for path joining
-        local prefix_path="${prefix%/}"
-        
-        if [[ "$prefix_path" == *"/"* ]]; then
+        # Check if prefix contains or ends with slash (indicating nested structure)
+        # e.g., "johndoe/" or "feature/johndoe/" both indicate nested directories
+        if [[ "$prefix" == *"/"* ]]; then
             # Slashed prefix: navigate to the nested directory and look for numbered dirs
+            # Remove trailing slash for path joining
+            local prefix_path="${prefix%/}"
             local prefix_dir="$specs_dir/$prefix_path"
             if [[ -d "$prefix_dir" ]]; then
                 for dir in "$prefix_dir"/*; do
