@@ -75,7 +75,7 @@ AMP_FILE="$REPO_ROOT/AGENTS.md"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
 BOB_FILE="$REPO_ROOT/AGENTS.md"
-VIBE_FILE="$REPO_ROOT/VIBE.md"
+VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.toml"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"

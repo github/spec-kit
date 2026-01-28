@@ -60,7 +60,7 @@ $AMP_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
 $SHAI_FILE     = Join-Path $REPO_ROOT 'SHAI.md'
 $Q_FILE        = Join-Path $REPO_ROOT 'AGENTS.md'
 $BOB_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
-$VIBE_FILE     = Join-Path $REPO_ROOT 'VIBE.md'
+$VIBE_FILE     = Join-Path $REPO_ROOT '.vibe/agents/specify-agents.toml'
 
 $TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
 

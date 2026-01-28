@@ -218,8 +218,8 @@ build_variant() {
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
     vibe)
-      mkdir -p "$base_dir/.vibe/commands"
-      generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/commands" "$script" ;;
+      mkdir -p "$base_dir/.vibe/agents"
+      generate_commands vibe toml "{{args}}" "$base_dir/.vibe/agents" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
