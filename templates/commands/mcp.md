@@ -259,6 +259,10 @@ cd .mcp/project-server && npx playwright install chromium
 
 ### Step 5.1: Generate MCP Configuration
 
+**IMPORTANT**: MCP configuration format varies by agent platform.
+
+#### For Claude Code (`claude`)
+
 Create or update `__AGENT_DIR__/mcp.json`:
 
 ```json
@@ -270,6 +274,27 @@ Create or update `__AGENT_DIR__/mcp.json`:
     }
   }
 }
+```
+
+#### For opencode (`opencode`)
+
+Create or update `opencode.json` in **project root** (not in `.opencode/`):
+
+```json
+{
+  "mcp": {
+    "project": {
+      "type": "local",
+      "command": ["node", ".mcp/project-server/dist/index.js"],
+      "enabled": true
+    }
+  }
+}
+```
+
+#### For other agents
+
+Check your agent's MCP documentation. Most follow a similar pattern to Claude Code.
 ```
 
 ### Step 5.2: Add to .gitignore
