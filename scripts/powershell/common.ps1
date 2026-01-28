@@ -70,7 +70,8 @@ function Test-HasGit {
 function Test-FeatureBranch {
     param(
         [string]$Branch,
-        [bool]$HasGit = $true
+        [bool]$HasGit = $true,
+        [string]$RepoRoot = (Get-RepoRoot)
     )
     
     # For non-git repos, we can't enforce branch naming but still provide output
@@ -79,17 +80,129 @@ function Test-FeatureBranch {
         return $true
     }
     
-    if ($Branch -notmatch '^[0-9]{3}-') {
+    # Load branch template to build validation pattern
+    $template = Get-BranchTemplate -RepoRoot $RepoRoot
+    if (-not $template) {
+        $template = '{number}-{short_name}'
+    }
+    
+    # Build a regex pattern from template by replacing placeholders
+    # {number} -> [0-9]{3}
+    # {short_name} -> .+
+    # {username}, {email_prefix} -> [a-z0-9-]+
+    $pattern = $template
+    $pattern = $pattern -replace '\{number\}', '[0-9]{3}'
+    $pattern = $pattern -replace '\{short_name\}', '.+'
+    $pattern = $pattern -replace '\{username\}', '[a-z0-9-]+'
+    $pattern = $pattern -replace '\{email_prefix\}', '[a-z0-9.-]+'
+    $pattern = "^${pattern}$"
+    
+    if ($Branch -notmatch $pattern) {
+        # Build example from template
+        $example = $template
+        $example = $example -replace '\{number\}', '001'
+        $example = $example -replace '\{short_name\}', 'feature-name'
+        $example = $example -replace '\{username\}', 'jdoe'
+        $example = $example -replace '\{email_prefix\}', 'jdoe'
+        
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name"
+        Write-Output "Feature branches should match pattern: $template"
+        Write-Output "Example: $example"
         return $false
     }
     return $true
 }
 
+<#
+.SYNOPSIS
+    Find feature directory by numeric prefix instead of exact branch match
+.DESCRIPTION
+    This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature).
+    Supports template-based branch names like "jdoe/001-feature" where number appears after prefix.
+.PARAMETER RepoRoot
+    Repository root path
+.PARAMETER Branch
+    Branch name to find spec directory for
+.RETURNS
+    Path to the feature directory
+#>
 function Get-FeatureDir {
-    param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    param(
+        [string]$RepoRoot,
+        [string]$Branch
+    )
+    
+    $specsDir = Join-Path $RepoRoot 'specs'
+    
+    # Load branch template to understand where {number} appears
+    $template = Get-BranchTemplate -RepoRoot $RepoRoot
+    if (-not $template) {
+        $template = '{number}-{short_name}'
+    }
+    
+    # Build regex to extract the numeric portion based on template structure
+    # Replace {number} with capture group, other placeholders with matchers
+    $extractPattern = $template
+    $extractPattern = $extractPattern -replace '\{number\}', '([0-9]{3})'
+    $extractPattern = $extractPattern -replace '\{short_name\}', '.+'
+    $extractPattern = $extractPattern -replace '\{username\}', '[a-z0-9-]+'
+    $extractPattern = $extractPattern -replace '\{email_prefix\}', '[a-z0-9.-]+'
+    $extractPattern = "^${extractPattern}$"
+    
+    # Extract numeric prefix from branch based on template pattern
+    if ($Branch -notmatch $extractPattern) {
+        # If branch doesn't match template, fall back to exact match
+        return Join-Path $specsDir $Branch
+    }
+    
+    $prefix = $matches[1]
+    
+    # Search for directories in specs/ that contain this prefix number
+    # For template "jdoe/{number}-{short_name}", branch "jdoe/001-feature" -> look in specs/jdoe/001-*
+    # For template "{number}-{short_name}", branch "001-feature" -> look in specs/001-*
+    
+    # Determine the search path based on template structure (prefix before {number})
+    $templatePrefix = ''
+    if ($template -match '^(.*?)\{number\}') {
+        $templatePrefix = $matches[1]
+    }
+    
+    if ($templatePrefix -and $templatePrefix.Contains('/')) {
+        # Template has path prefix (e.g., "{username}/") - extract from branch
+        $branchPrefix = ''
+        if ($Branch -match "^(.*?)${prefix}-") {
+            $branchPrefix = $matches[1]
+        }
+        $searchDir = Join-Path $specsDir $branchPrefix.TrimEnd('/')
+    } else {
+        $searchDir = $specsDir
+    }
+    
+    if (-not (Test-Path $searchDir)) {
+        return Join-Path $specsDir $Branch
+    }
+    
+    # Search for directories starting with this prefix
+    $matchingDirs = @()
+    Get-ChildItem -Path $searchDir -Directory | ForEach-Object {
+        if ($_.Name -match "^${prefix}-") {
+            $matchingDirs += $_
+        }
+    }
+    
+    # Handle results
+    if ($matchingDirs.Count -eq 0) {
+        # No match found - return the branch name path
+        return Join-Path $specsDir $Branch
+    } elseif ($matchingDirs.Count -eq 1) {
+        # Exactly one match
+        return $matchingDirs[0].FullName
+    } else {
+        # Multiple matches - warn and return first
+        Write-Warning "Multiple spec directories found with prefix '$prefix': $($matchingDirs.Name -join ', ')"
+        Write-Warning "Please ensure only one spec directory exists per numeric prefix."
+        return Join-Path $specsDir $Branch
+    }
 }
 
 function Get-FeaturePathsEnv {

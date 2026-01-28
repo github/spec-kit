@@ -65,6 +65,7 @@ has_git() {
 check_feature_branch() {
     local branch="$1"
     local has_git_repo="$2"
+    local repo_root="${3:-$(get_repo_root)}"
 
     # For non-git repos, we can't enforce branch naming but still provide output
     if [[ "$has_git_repo" != "true" ]]; then
@@ -72,9 +73,35 @@ check_feature_branch() {
         return 0
     fi
 
-    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+    # Load branch template to build validation pattern
+    local template
+    template=$(load_branch_template "$repo_root")
+    if [[ -z "$template" ]]; then
+        template="{number}-{short_name}"
+    fi
+
+    # Build a regex pattern from template by replacing placeholders
+    # {number} -> [0-9]{3}
+    # {short_name} -> .+
+    # {username}, {email_prefix} -> [a-z0-9-]+
+    local pattern="$template"
+    pattern=$(echo "$pattern" | sed 's/{number}/[0-9]\{3\}/g')
+    pattern=$(echo "$pattern" | sed 's/{short_name}/.\+/g')
+    pattern=$(echo "$pattern" | sed 's/{username}/[a-z0-9-]\+/g')
+    pattern=$(echo "$pattern" | sed 's/{email_prefix}/[a-z0-9.-]\+/g')
+    pattern="^${pattern}$"
+
+    if [[ ! "$branch" =~ $pattern ]]; then
+        # Build example from template
+        local example="$template"
+        example=$(echo "$example" | sed 's/{number}/001/g')
+        example=$(echo "$example" | sed 's/{short_name}/feature-name/g')
+        example=$(echo "$example" | sed 's/{username}/jdoe/g')
+        example=$(echo "$example" | sed 's/{email_prefix}/jdoe/g')
+        
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: 001-feature-name" >&2
+        echo "Feature branches should match pattern: $template" >&2
+        echo "Example: $example" >&2
         return 1
     fi
 
@@ -85,26 +112,60 @@ get_feature_dir() { echo "$1/specs/$2"; }
 
 # Find feature directory by numeric prefix instead of exact branch match
 # This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
+# Supports template-based branch names like "jdoe/001-feature" where number appears after prefix
 find_feature_dir_by_prefix() {
     local repo_root="$1"
     local branch_name="$2"
     local specs_dir="$repo_root/specs"
 
-    # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
-    if [[ ! "$branch_name" =~ ^([0-9]{3})- ]]; then
-        # If branch doesn't have numeric prefix, fall back to exact match
+    # Load branch template to understand where {number} appears
+    local template
+    template=$(load_branch_template "$repo_root")
+    if [[ -z "$template" ]]; then
+        template="{number}-{short_name}"
+    fi
+
+    # Build regex to extract the numeric portion based on template structure
+    # Replace {number} with capture group, other placeholders with matchers
+    local extract_pattern="$template"
+    extract_pattern=$(echo "$extract_pattern" | sed 's/{number}/([0-9]\{3\})/g')
+    extract_pattern=$(echo "$extract_pattern" | sed 's/{short_name}/.\+/g')
+    extract_pattern=$(echo "$extract_pattern" | sed 's/{username}/[a-z0-9-]\+/g')
+    extract_pattern=$(echo "$extract_pattern" | sed 's/{email_prefix}/[a-z0-9.-]\+/g')
+    extract_pattern="^${extract_pattern}$"
+
+    # Extract numeric prefix from branch based on template pattern
+    if [[ ! "$branch_name" =~ $extract_pattern ]]; then
+        # If branch doesn't match template, fall back to exact match
         echo "$specs_dir/$branch_name"
         return
     fi
 
     local prefix="${BASH_REMATCH[1]}"
+    
+    # Determine the search path based on template structure (prefix before {number})
+    local template_prefix=""
+    if [[ "$template" =~ ^(.*)\{number\} ]]; then
+        template_prefix="${BASH_REMATCH[1]}"
+    fi
+    
+    local search_dir="$specs_dir"
+    if [[ -n "$template_prefix" && "$template_prefix" == *"/"* ]]; then
+        # Template has path prefix (e.g., "{username}/") - extract from branch
+        local branch_prefix=""
+        if [[ "$branch_name" =~ ^(.*/)${prefix}- ]]; then
+            branch_prefix="${BASH_REMATCH[1]}"
+        fi
+        # Remove trailing slash and join with specs dir
+        search_dir="$specs_dir/${branch_prefix%/}"
+    fi
 
-    # Search for directories in specs/ that start with this prefix
+    # Search for directories starting with this prefix number
     local matches=()
-    if [[ -d "$specs_dir" ]]; then
-        for dir in "$specs_dir"/"$prefix"-*; do
+    if [[ -d "$search_dir" ]]; then
+        for dir in "$search_dir"/"$prefix"-*; do
             if [[ -d "$dir" ]]; then
-                matches+=("$(basename "$dir")")
+                matches+=("$dir")
             fi
         done
     fi
@@ -115,10 +176,14 @@ find_feature_dir_by_prefix() {
         echo "$specs_dir/$branch_name"
     elif [[ ${#matches[@]} -eq 1 ]]; then
         # Exactly one match - perfect!
-        echo "$specs_dir/${matches[0]}"
+        echo "${matches[0]}"
     else
         # Multiple matches - this shouldn't happen with proper naming convention
-        echo "ERROR: Multiple spec directories found with prefix '$prefix': ${matches[*]}" >&2
+        local match_names=""
+        for m in "${matches[@]}"; do
+            match_names="$match_names $(basename "$m")"
+        done
+        echo "ERROR: Multiple spec directories found with prefix '$prefix':$match_names" >&2
         echo "Please ensure only one spec directory exists per numeric prefix." >&2
         echo "$specs_dir/$branch_name"  # Return something to avoid breaking the script
     fi

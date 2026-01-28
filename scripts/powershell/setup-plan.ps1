@@ -24,7 +24,7 @@ if ($Help) {
 $paths = Get-FeaturePathsEnv
 
 # Check if we're on a proper feature branch (only for git repos)
-if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GIT)) { 
+if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GIT -RepoRoot $paths.REPO_ROOT)) { 
     exit 1 
 }
 
