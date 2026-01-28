@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 
-# Setup Claude Code hooks and skills for the current project
+# Setup agent hooks and skills for the current project
 #
 # This script detects the project type and generates appropriate
-# hook configurations for Claude Code.
+# hook configurations for the specified AI coding agent.
 #
 # Usage: ./setup-hooks.sh [OPTIONS]
 #
 # OPTIONS:
 #   --json              Output in JSON format
+#   --agent-dir DIR     Agent directory (e.g. .claude, .opencode, .gemini)
 #   --help, -h          Show help message
 #
 # OUTPUTS:
@@ -19,38 +20,50 @@ set -e
 
 # Parse command line arguments
 JSON_MODE=false
+AGENT_DIR_NAME=""
 
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --json)
             JSON_MODE=true
+            shift
+            ;;
+        --agent-dir)
+            AGENT_DIR_NAME="$2"
+            shift 2
             ;;
         --help|-h)
             cat << 'EOF'
 Usage: setup-hooks.sh [OPTIONS]
 
-Setup Claude Code hooks and skills for the current project.
+Setup agent hooks and skills for the current project.
 
 OPTIONS:
   --json              Output in JSON format
+  --agent-dir DIR     Agent directory name (e.g. .claude, .opencode, .gemini)
   --help, -h          Show this help message
 
 EXAMPLES:
-  # Detect project and output JSON
-  ./setup-hooks.sh --json
+  # Detect project for opencode and output JSON
+  ./setup-hooks.sh --json --agent-dir .opencode
 
-  # Human-readable output
+  # Human-readable output (defaults to .claude)
   ./setup-hooks.sh
 
 EOF
             exit 0
             ;;
         *)
-            echo "ERROR: Unknown option '$arg'. Use --help for usage information." >&2
+            echo "ERROR: Unknown option '$1'. Use --help for usage information." >&2
             exit 1
             ;;
     esac
 done
+
+# Default to .claude for backwards compatibility
+if [[ -z "$AGENT_DIR_NAME" ]]; then
+    AGENT_DIR_NAME=".claude"
+fi
 
 # Source common functions
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -645,16 +658,16 @@ detect_project() {
 # Run detection
 detect_project
 
-# Define output paths
-CLAUDE_DIR="$REPO_ROOT/.claude"
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-SKILLS_DIR="$CLAUDE_DIR/skills"
-HOOKS_DIR="$CLAUDE_DIR/hooks"
+# Define output paths using agent directory
+AGENT_DIR="$REPO_ROOT/$AGENT_DIR_NAME"
+SETTINGS_FILE="$AGENT_DIR/settings.json"
+SKILLS_DIR="$AGENT_DIR/skills"
+HOOKS_DIR="$AGENT_DIR/hooks"
 
-# Check if .claude directory already exists
-CLAUDE_EXISTS="false"
-if [[ -d "$CLAUDE_DIR" ]]; then
-    CLAUDE_EXISTS="true"
+# Check if agent directory already exists
+AGENT_DIR_EXISTS="false"
+if [[ -d "$AGENT_DIR" ]]; then
+    AGENT_DIR_EXISTS="true"
 fi
 
 # Check if settings.json already exists
@@ -712,11 +725,11 @@ if $JSON_MODE; then
   "DETECTED_TOOLS": $TOOLS_JSON,
   "DETECTED_FRAMEWORKS": $FRAMEWORKS_JSON,
   "REPO_ROOT": "$REPO_ROOT",
-  "CLAUDE_DIR": "$CLAUDE_DIR",
+  "AGENT_DIR": "$AGENT_DIR",
   "SETTINGS_FILE": "$SETTINGS_FILE",
   "SKILLS_DIR": "$SKILLS_DIR",
   "HOOKS_DIR": "$HOOKS_DIR",
-  "CLAUDE_EXISTS": $CLAUDE_EXISTS,
+  "AGENT_DIR_EXISTS": $AGENT_DIR_EXISTS,
   "SETTINGS_EXISTS": $SETTINGS_EXISTS
 }
 EOF
@@ -749,8 +762,8 @@ else
         echo "  No frameworks detected"
     fi
     echo ""
-    echo "=== Claude Code Paths ==="
-    echo "Claude Directory: $CLAUDE_DIR (exists: $CLAUDE_EXISTS)"
+    echo "=== Agent Paths ==="
+    echo "Agent Directory: $AGENT_DIR (exists: $AGENT_DIR_EXISTS)"
     echo "Settings File: $SETTINGS_FILE (exists: $SETTINGS_EXISTS)"
     echo "Skills Directory: $SKILLS_DIR"
     echo "Hooks Directory: $HOOKS_DIR"

@@ -1,8 +1,8 @@
 ---
 description: Configure __AGENT_NAME__ skills and hooks for the current project to automate tests, linters, setup tasks, and generate architecture/best practices skills from framework documentation.
 scripts:
-  sh: scripts/bash/setup-hooks.sh --json
-  ps: scripts/powershell/setup-hooks.ps1 -Json
+  sh: scripts/bash/setup-hooks.sh --json --agent-dir __AGENT_DIR__
+  ps: scripts/powershell/setup-hooks.ps1 -Json -AgentDir __AGENT_DIR__
 ---
 
 ## User Input
