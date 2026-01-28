@@ -171,6 +171,71 @@ function Format-TechnologyStack {
     return ($parts -join ' + ')
 }
 
+# Split a technology string into individual technologies
+# Splits on " + " and ", " to extract individual items
+function Split-Technologies {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TechString
+    )
+    $techs = $TechString -split '\s*\+\s*' | ForEach-Object { $_ -split ',\s*' } |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' } | Sort-Object -Unique
+    return $techs
+}
+
+# Extract existing technologies from the Active Technologies section
+function Get-ExistingTechnologies {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TargetFile
+    )
+    if (-not (Test-Path $TargetFile)) { return @() }
+
+    $lines = Get-Content -LiteralPath $TargetFile -Encoding utf8
+    $inTechSection = $false
+    $allTechs = @()
+
+    foreach ($line in $lines) {
+        if ($line -eq '## Active Technologies') {
+            $inTechSection = $true
+            continue
+        }
+        if ($inTechSection -and $line -match '^##\s') {
+            break
+        }
+        if ($inTechSection -and $line -match '^- (.+)$') {
+            $entry = $Matches[1]
+            # Remove trailing branch annotation like "(001-feature)"
+            $entry = $entry -replace '\s*\([^)]*-[^)]*\)$', ''
+            $splitTechs = Split-Technologies -TechString $entry
+            $allTechs += $splitTechs
+        }
+    }
+
+    return $allTechs | Sort-Object -Unique
+}
+
+# Filter out technologies that already exist, returning only new ones
+function Get-NewTechnologies {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TechString,
+        [Parameter(Mandatory=$false)]
+        [string[]]$ExistingTechs = @()
+    )
+    $newTechs = @()
+    $inputTechs = Split-Technologies -TechString $TechString
+
+    foreach ($tech in $inputTechs) {
+        if ($tech -and $tech -notin $ExistingTechs) {
+            $newTechs += $tech
+        }
+    }
+
+    if ($newTechs.Count -eq 0) { return '' }
+    return ($newTechs -join ', ')
+}
+
 function Get-ProjectStructure { 
     param(
         [Parameter(Mandatory=$false)]
@@ -274,17 +339,22 @@ function Update-ExistingAgentFile {
     if (-not (Test-Path $TargetFile)) { return (New-AgentFile -TargetFile $TargetFile -ProjectName (Split-Path $REPO_ROOT -Leaf) -Date $Date) }
 
     $techStack = Format-TechnologyStack -Lang $NEW_LANG -Framework $NEW_FRAMEWORK
+
+    # Extract existing technologies for smart deduplication
+    $existingTechs = Get-ExistingTechnologies -TargetFile $TargetFile
+
+    # Prepare new technology entries - only add truly new technologies
     $newTechEntries = @()
     if ($techStack) {
-        $escapedTechStack = [Regex]::Escape($techStack)
-        if (-not (Select-String -Pattern $escapedTechStack -Path $TargetFile -Quiet)) { 
-            $newTechEntries += "- $techStack ($CURRENT_BRANCH)" 
+        $newTechs = Get-NewTechnologies -TechString $techStack -ExistingTechs $existingTechs
+        if ($newTechs) {
+            $newTechEntries += "- $newTechs ($CURRENT_BRANCH)"
         }
     }
     if ($NEW_DB -and $NEW_DB -notin @('N/A','NEEDS CLARIFICATION')) {
-        $escapedDB = [Regex]::Escape($NEW_DB)
-        if (-not (Select-String -Pattern $escapedDB -Path $TargetFile -Quiet)) { 
-            $newTechEntries += "- $NEW_DB ($CURRENT_BRANCH)" 
+        $newDbTechs = Get-NewTechnologies -TechString $NEW_DB -ExistingTechs $existingTechs
+        if ($newDbTechs) {
+            $newTechEntries += "- $newDbTechs ($CURRENT_BRANCH)"
         }
     }
     $newChangeEntry = ''
