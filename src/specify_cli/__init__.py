@@ -942,6 +942,106 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+
+def _get_settings_template() -> str:
+    """Get the settings template content.
+    
+    Tries to load from templates/settings.toml (for development/source installs),
+    falls back to embedded template if not found (for pip-installed package).
+    
+    Returns:
+        The settings template content as a string.
+    """
+    # Try to load from templates/settings.toml relative to repo root
+    # This works when running from source or development install
+    try:
+        repo_root = Path(__file__).parent.parent.parent
+        template_file = repo_root / "templates" / "settings.toml"
+        if template_file.exists():
+            return template_file.read_text()
+    except Exception:
+        # Any issue locating or reading the dev template is non-fatal;
+        # we intentionally fall back to the embedded template below.
+        pass
+    
+    # Fallback: embedded template for pip-installed package
+    # This is kept in sync with templates/settings.toml
+    return '''# Spec Kit Settings
+# Documentation: https://github.github.io/spec-kit/
+#
+# This file configures project-level settings for the Spec Kit workflow.
+# Place this file at .specify/settings.toml in your project root.
+
+[branch]
+# Template for generating feature branch names.
+#
+# Available variables:
+#   {number}       - Auto-incrementing 3-digit feature number (001, 002, ...)
+#   {short_name}   - Generated or provided short feature name
+#   {username}     - Git user.name, normalized for branch names (lowercase, hyphens)
+#   {email_prefix} - Portion of Git user.email before the @ symbol
+#
+# Examples:
+#   "{number}-{short_name}"                      # 001-add-login (default, solo dev)
+#   "{username}/{number}-{short_name}"           # johndoe/001-add-login (team)
+#   "feature/{username}/{number}-{short_name}"  # feature/johndoe/001-add-login
+#   "users/{email_prefix}/{number}-{short_name}" # users/jsmith/001-add-login
+#
+# When using {username} or a static prefix, each prefix gets its own number
+# sequence to avoid conflicts between team members.
+#
+# IMPORTANT: Template MUST contain both {number} and {short_name} placeholders.
+
+template = "{number}-{short_name}"
+'''
+
+
+def _init_settings_file(project_path: Path = None, force: bool = False) -> None:
+    """Generate a settings file with branch template configuration.
+    
+    This is called when `specify init --settings` is used.
+    Creates .specify/settings.toml with documented template options.
+    
+    Args:
+        project_path: Path to the project directory. Defaults to current directory.
+        force: If True, overwrite existing settings file without prompting.
+    """
+    if project_path is None:
+        project_path = Path.cwd()
+    
+    settings_dir = project_path / ".specify"
+    settings_file = settings_dir / "settings.toml"
+    
+    # Check if settings file already exists
+    if settings_file.exists():
+        if force:
+            console.print(f"[yellow]Overwriting existing settings file:[/yellow] {settings_file}")
+        else:
+            console.print(f"[yellow]Settings file already exists:[/yellow] {settings_file}")
+            response = typer.confirm("Overwrite?", default=False)
+            if not response:
+                console.print("[yellow]Operation cancelled[/yellow]")
+                raise typer.Exit(0)
+    
+    # Create .specify directory if it doesn't exist
+    try:
+        settings_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not create directory {settings_dir}: {e}")
+        raise typer.Exit(2)
+    
+    # Write the settings file
+    try:
+        settings_file.write_text(_get_settings_template())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not write settings file: {e}")
+        raise typer.Exit(2)
+    
+    # Success message per contracts/cli.md
+    console.print(f"[green]✓[/green] Created settings file: [cyan]{settings_file}[/cyan]")
+    console.print("  Edit the [cyan]branch.template[/cyan] setting to customize branch naming.")
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
@@ -950,10 +1050,11 @@ def init(
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
-    force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
+    force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here or --settings (skip confirmation)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    settings: bool = typer.Option(False, "--settings", help="Generate a settings file with branch template configuration instead of full project initialization"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -965,6 +1066,8 @@ def init(
     4. Extract the template to a new project directory or current directory
     5. Initialize a fresh git repository (if not --no-git and no existing repo)
     6. Optionally set up AI assistant commands
+    
+    Use --settings to generate only a settings file for branch template customization.
     
     Examples:
         specify init my-project
@@ -978,7 +1081,16 @@ def init(
         specify init --here --ai codebuddy
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+        specify init --settings      # Generate settings file in current directory
+        specify init --settings --force  # Overwrite existing settings file
+        specify init --here --settings   # Full init plus settings file
+        specify init my-project --settings --ai claude  # New project with settings
     """
+
+    # Handle --settings mode without other arguments: generate settings file only in current directory
+    if settings and not here and not project_name:
+        _init_settings_file(project_path=Path.cwd(), force=force)
+        return
 
     show_banner()
 
@@ -1165,6 +1277,11 @@ def init(
 
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
+    
+    # Create settings file if --settings flag was passed
+    if settings:
+        console.print()
+        _init_settings_file(project_path=project_path, force=force)
     
     # Show git error details if initialization failed
     if git_error_message:

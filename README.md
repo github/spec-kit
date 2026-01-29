@@ -188,6 +188,7 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                  |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                             |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                    |
+| `--settings`           | Flag     | Generate `.specify/settings.toml` for branch template customization. Can be combined with other flags.                                                                                       |
 
 ### Examples
 
@@ -238,9 +239,48 @@ specify init my-project --ai claude --debug
 # Use GitHub token for API requests (helpful for corporate environments)
 specify init my-project --ai claude --github-token ghp_your_token_here
 
+# Generate settings file for branch template customization
+specify init --settings
+
 # Check system requirements
 specify check
 ```
+
+### Branch Template Configuration
+
+Teams can customize branch naming patterns by creating a `.specify/settings.toml` file:
+
+```bash
+# Generate a settings file with documented options
+specify init --settings
+```
+
+The settings file supports the following template variables:
+
+| Variable         | Description                                                    | Example Output    |
+| ---------------- | -------------------------------------------------------------- | ----------------- |
+| `{number}`       | Auto-incrementing 3-digit feature number                       | `001`, `002`      |
+| `{short_name}`   | Generated or provided short feature name                       | `add-login`       |
+| `{username}`     | Git user.name, normalized (lowercase, hyphens)                 | `jane-smith`      |
+| `{email_prefix}` | Portion of Git user.email before the @ symbol                  | `jsmith`          |
+
+**Example templates:**
+
+```toml
+# Solo developer (default)
+template = "{number}-{short_name}"
+# Result: 001-add-login
+
+# Team with username prefix
+template = "{username}/{number}-{short_name}"
+# Result: johndoe/001-add-login
+
+# Team with feature prefix
+template = "feature/{username}/{number}-{short_name}"
+# Result: feature/johndoe/001-add-login
+```
+
+When using `{username}` or a static prefix, each prefix gets its own independent number sequence, avoiding conflicts between team members.
 
 ### Available Slash Commands
 

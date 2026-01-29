@@ -11,6 +11,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# Source common functions for TOML parsing and template resolution
+. (Join-Path $PSScriptRoot 'common.ps1')
+
 # Show help if requested
 if ($Help) {
     Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] <feature description>"
@@ -206,10 +209,58 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
-# Determine branch number
+# =============================================================================
+# Template-based branch naming (FR-001, FR-002, FR-007, FR-008)
+# =============================================================================
+
+# Load branch template from settings file (defaults to {number}-{short_name})
+$branchTemplate = Get-BranchTemplate -RepoRoot $repoRoot
+if (-not $branchTemplate) {
+    $branchTemplate = '{number}-{short_name}'
+}
+
+# Validate template contains required placeholders
+if ($branchTemplate -notmatch '\{number\}') {
+    Write-Error "Error: Template must contain {number} placeholder: $branchTemplate"
+    exit 1
+}
+if ($branchTemplate -notmatch '\{short_name\}') {
+    Write-Error "Error: Template must contain {short_name} placeholder: $branchTemplate"
+    exit 1
+}
+
+# Resolve template variables (except {number} and {short_name})
+$resolvedTemplate = $branchTemplate
+
+# Resolve {username} if present
+if ($resolvedTemplate -match '\{username\}') {
+    $usernameValue = Resolve-Username
+    $resolvedTemplate = $resolvedTemplate -replace '\{username\}', $usernameValue
+}
+
+# Resolve {email_prefix} if present
+if ($resolvedTemplate -match '\{email_prefix\}') {
+    $emailPrefixValue = Resolve-EmailPrefix
+    if (-not $emailPrefixValue) {
+        Write-Warning 'Warning: {email_prefix} used but no Git email configured'
+    }
+    $resolvedTemplate = $resolvedTemplate -replace '\{email_prefix\}', $emailPrefixValue
+}
+
+# Extract prefix (everything before {number}) for per-user number scoping
+$prefixPattern = ''
+if ($resolvedTemplate -match '^(.*?)\{number\}') {
+    $prefixPattern = $matches[1]
+}
+
+# Determine branch number using prefix-scoped lookup (FR-008)
 if ($Number -eq 0) {
-    if ($hasGit) {
-        # Check existing branches on remotes
+    if ($prefixPattern) {
+        # Use prefix-scoped number lookup
+        $highest = Get-HighestNumberForPrefix -Prefix $prefixPattern -RepoRoot $repoRoot
+        $Number = $highest + 1
+    } elseif ($hasGit) {
+        # No prefix - check all existing branches on remotes
         $Number = Get-NextBranchNumber -SpecsDir $specsDir
     } else {
         # Fall back to local directory check
@@ -218,23 +269,58 @@ if ($Number -eq 0) {
 }
 
 $featureNum = ('{0:000}' -f $Number)
-$branchName = "$featureNum-$branchSuffix"
+
+# Complete template resolution
+$branchName = $resolvedTemplate -replace '\{number\}', $featureNum
+$branchName = $branchName -replace '\{short_name\}', $branchSuffix
+
+# Validate the final branch name (FR-004)
+if (-not (Test-BranchName -Name $branchName)) {
+    Write-Error "Error: Generated branch name is invalid: $branchName"
+    exit 1
+}
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 $maxBranchLength = 244
 if ($branchName.Length -gt $maxBranchLength) {
-    # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    $maxSuffixLength = $maxBranchLength - 4
+    $originalBranchName = $branchName
     
-    # Truncate suffix
-    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
-    # Remove trailing hyphen if truncation created one
+    # For template-based names, truncate the short_name portion
+    # Compute template overhead: resolve {number} to the 3-digit feature number,
+    # then calculate the fixed portion length by removing {short_name} placeholder
+    $templateWithNumber = $resolvedTemplate -replace '\{number\}', $featureNum
+    $templateOverhead = $templateWithNumber.Length - '{short_name}'.Length
+    
+    # Maximum allowed length for short_name = maxBranchLength - fixed template overhead
+    # Never exceed this value, even if it results in a very short {short_name}
+    $maxShortNameLength = $maxBranchLength - $templateOverhead
+    
+    # Cap to current suffix length (don't expand)
+    if ($maxShortNameLength -gt $branchSuffix.Length) {
+        $maxShortNameLength = $branchSuffix.Length
+    }
+    
+    # Ensure we have at least 1 character for short_name (warn if very short)
+    if ($maxShortNameLength -lt 1) {
+        $maxShortNameLength = 1
+        Write-Warning "[specify] Template overhead ($templateOverhead bytes) leaves very little room for short_name"
+    } elseif ($maxShortNameLength -lt 10) {
+        Write-Warning "[specify] Template overhead limits short_name to $maxShortNameLength characters"
+    }
+    
+    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxShortNameLength))
     $truncatedSuffix = $truncatedSuffix -replace '-$', ''
     
-    $originalBranchName = $branchName
-    $branchName = "$featureNum-$truncatedSuffix"
+    # Re-resolve branch name with truncated suffix
+    $branchName = $resolvedTemplate -replace '\{number\}', $featureNum
+    $branchName = $branchName -replace '\{short_name\}', $truncatedSuffix
+    
+    # Final safety check: ensure we stay within the limit
+    if ($branchName.Length -gt $maxBranchLength) {
+        # Hard truncate as last resort (should rarely happen)
+        $branchName = $branchName.Substring(0, $maxBranchLength) -replace '-$', ''
+    }
     
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
     Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
