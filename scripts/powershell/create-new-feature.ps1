@@ -293,14 +293,20 @@ if ($branchName.Length -gt $maxBranchLength) {
     $templateOverhead = $templateWithNumber.Length - '{short_name}'.Length
     
     # Maximum allowed length for short_name = maxBranchLength - fixed template overhead
+    # Never exceed this value, even if it results in a very short {short_name}
     $maxShortNameLength = $maxBranchLength - $templateOverhead
     
-    # Cap to current suffix length (don't expand) and ensure minimum
+    # Cap to current suffix length (don't expand)
     if ($maxShortNameLength -gt $branchSuffix.Length) {
         $maxShortNameLength = $branchSuffix.Length
     }
-    if ($maxShortNameLength -lt 10) {
-        $maxShortNameLength = 10  # Minimum reasonable short_name length
+    
+    # Ensure we have at least 1 character for short_name (warn if very short)
+    if ($maxShortNameLength -lt 1) {
+        $maxShortNameLength = 1
+        Write-Warning "[specify] Template overhead ($templateOverhead bytes) leaves very little room for short_name"
+    } elseif ($maxShortNameLength -lt 10) {
+        Write-Warning "[specify] Template overhead limits short_name to $maxShortNameLength characters"
     }
     
     $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxShortNameLength))
@@ -309,6 +315,12 @@ if ($branchName.Length -gt $maxBranchLength) {
     # Re-resolve branch name with truncated suffix
     $branchName = $resolvedTemplate -replace '\{number\}', $featureNum
     $branchName = $branchName -replace '\{short_name\}', $truncatedSuffix
+    
+    # Final safety check: ensure we stay within the limit
+    if ($branchName.Length -gt $maxBranchLength) {
+        # Hard truncate as last resort (should rarely happen)
+        $branchName = $branchName.Substring(0, $maxBranchLength) -replace '-$', ''
+    }
     
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
     Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"

@@ -960,6 +960,8 @@ def _get_settings_template() -> str:
         if template_file.exists():
             return template_file.read_text()
     except Exception:
+        # Any issue locating or reading the dev template is non-fatal;
+        # we intentionally fall back to the embedded template below.
         pass
     
     # Fallback: embedded template for pip-installed package

@@ -323,12 +323,14 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     # Maximum allowed length for short_name = MAX_BRANCH_LENGTH - fixed template overhead
     MAX_SHORT_NAME_LENGTH=$((MAX_BRANCH_LENGTH - TEMPLATE_OVERHEAD))
     
-    # Cap to current suffix length (don't expand) and ensure minimum
+    # Prevent negative lengths; a non-positive value means no room for short_name
+    if [ $MAX_SHORT_NAME_LENGTH -lt 0 ]; then
+        MAX_SHORT_NAME_LENGTH=0
+    fi
+    
+    # Cap to current suffix length (don't expand)
     if [ $MAX_SHORT_NAME_LENGTH -gt ${#BRANCH_SUFFIX} ]; then
         MAX_SHORT_NAME_LENGTH=${#BRANCH_SUFFIX}
-    fi
-    if [ $MAX_SHORT_NAME_LENGTH -lt 10 ]; then
-        MAX_SHORT_NAME_LENGTH=10  # Minimum reasonable short_name length
     fi
     
     TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SHORT_NAME_LENGTH)

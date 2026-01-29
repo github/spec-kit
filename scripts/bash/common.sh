@@ -85,10 +85,20 @@ check_feature_branch() {
     # {short_name} -> .+
     # {username}, {email_prefix} -> [a-z0-9-]+
     local pattern="$template"
-    pattern=$(echo "$pattern" | sed 's/{number}/[0-9]\{3\}/g')
-    pattern=$(echo "$pattern" | sed 's/{short_name}/.\+/g')
-    pattern=$(echo "$pattern" | sed 's/{username}/[a-z0-9-]\+/g')
-    pattern=$(echo "$pattern" | sed 's/{email_prefix}/[a-z0-9.-]\+/g')
+
+    # First, replace placeholders with neutral tokens so we can safely escape
+    pattern="${pattern//\{number\}/__NUMBER__}"
+    pattern="${pattern//\{short_name\}/__SHORT_NAME__}"
+    pattern="${pattern//\{username\}/__USERNAME__}"
+    pattern="${pattern//\{email_prefix\}/__EMAIL_PREFIX__}"
+    # Escape all regex metacharacters in the remaining literal text
+    pattern=$(printf '%s' "$pattern" | sed 's/[][\\.^$*+?(){}|]/\\&/g')
+    # Replace tokens with their intended regex fragments
+    pattern="${pattern//__NUMBER__/[0-9]{3}}"
+    pattern="${pattern//__SHORT_NAME__/.+}"
+    pattern="${pattern//__USERNAME__/[a-z0-9-]+}"
+    pattern="${pattern//__EMAIL_PREFIX__/[a-z0-9.-]+}"
+
     pattern="^${pattern}$"
 
     if [[ ! "$branch" =~ $pattern ]]; then

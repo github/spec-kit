@@ -86,15 +86,27 @@ function Test-FeatureBranch {
         $template = '{number}-{short_name}'
     }
     
-    # Build a regex pattern from template by replacing placeholders
-    # {number} -> [0-9]{3}
-    # {short_name} -> .+
-    # {username}, {email_prefix} -> [a-z0-9-]+
+    # Build a regex pattern from template by replacing placeholders.
+    # First, substitute placeholders with temporary markers so we can safely escape
+    # all other characters, then replace markers with regex fragments:
+    # {number}      -> [0-9]{3}
+    # {short_name}  -> .+
+    # {username}    -> [a-z0-9-]+
+    # {email_prefix}-> [a-z0-9.-]+
     $pattern = $template
-    $pattern = $pattern -replace '\{number\}', '[0-9]{3}'
-    $pattern = $pattern -replace '\{short_name\}', '.+'
-    $pattern = $pattern -replace '\{username\}', '[a-z0-9-]+'
-    $pattern = $pattern -replace '\{email_prefix\}', '[a-z0-9.-]+'
+    # Replace placeholders with marker tokens
+    $pattern = $pattern -replace '\{number\}', '__NUMBER__'
+    $pattern = $pattern -replace '\{short_name\}', '__SHORT_NAME__'
+    $pattern = $pattern -replace '\{username\}', '__USERNAME__'
+    $pattern = $pattern -replace '\{email_prefix\}', '__EMAIL_PREFIX__'
+    # Escape all non-placeholder characters so the template is treated as literal text
+    $pattern = [regex]::Escape($pattern)
+    # Replace markers with their regex fragments
+    $pattern = $pattern -replace '__NUMBER__', '[0-9]{3}'
+    $pattern = $pattern -replace '__SHORT_NAME__', '.+'
+    $pattern = $pattern -replace '__USERNAME__', '[a-z0-9-]+'
+    $pattern = $pattern -replace '__EMAIL_PREFIX__', '[a-z0-9.-]+'
+    
     $pattern = "^${pattern}$"
     
     if ($Branch -notmatch $pattern) {
