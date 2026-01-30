@@ -197,25 +197,30 @@ Given that feature description, do this:
         - "Create a dashboard for analytics" → "analytics-dashboard"
         - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Check for existing branches before creating new one**:
+2. **Check current branch before creating new one**:
 
-   a. First, fetch all remote branches to ensure we have the latest information:
+   a. First, check the current branch:
+
+      - If the current branch is **not** `main` **and** the user did **not** specify a branch: **reuse the current branch** for this spec and **skip all branch-creation steps** in this section. Use the existing branch name as `BRANCH_NAME`.
+      - Otherwise, continue with the steps below to create a new branch.
+
+   b. Fetch all remote branches to ensure we have the latest information:
 
       ```bash
       git fetch --all --prune
       ```
 
-   b. Find the highest feature number across all sources for the short-name:
+   c. Find the highest feature number across all sources for the short-name:
       - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
       - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
       - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
 
-   c. Determine the next available number:
+   d. Determine the next available number:
       - Extract all numbers from all three sources
       - Find the highest number N
       - Use N+1 for the new branch number
 
-   d. Run the script `{SCRIPT}` with the calculated number and short-name:
+   e. Run the script `{SCRIPT}` with the calculated number and short-name:
       - **CRITICAL**: Use the spec number and branch prefix **extracted in Step 1a** if available.
       - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
       - If branch prefix was extracted, also pass `--branch-prefix "prefix/"`
