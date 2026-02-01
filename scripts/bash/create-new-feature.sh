@@ -174,6 +174,9 @@ fi
 
 cd "$REPO_ROOT"
 
+# Save original directory for error recovery
+ORIGINAL_DIR="$PWD"
+
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
@@ -326,6 +329,19 @@ if [ "$HAS_GIT" = true ]; then
 
         WORKTREE_PATH="$WORKTREE_FOLDER/$BRANCH_NAME"
 
+        # Check if worktree path already exists (FR-016)
+        if [ -e "$WORKTREE_PATH" ]; then
+            >&2 echo "[specify] Error: Worktree path already exists: $WORKTREE_PATH"
+            >&2 echo "[specify] "
+            >&2 echo "[specify] Resolution options:"
+            >&2 echo "[specify]   1. Remove existing worktree: git worktree remove $BRANCH_NAME"
+            >&2 echo "[specify]   2. Use a different branch name with --short-name"
+            >&2 echo "[specify]   3. Manually delete the directory: rm -rf '$WORKTREE_PATH'"
+            >&2 echo "[specify] "
+            >&2 echo "[specify] To list all worktrees: git worktree list"
+            exit 1
+        fi
+
         # Create worktree with new branch
         git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" || {
             >&2 echo "[specify] Error: Failed to create worktree"
@@ -336,7 +352,11 @@ if [ "$HAS_GIT" = true ]; then
         >&2 echo "[specify] Branch: $BRANCH_NAME"
 
         # Change to worktree directory for spec creation
-        cd "$WORKTREE_PATH"
+        cd "$WORKTREE_PATH" || {
+            >&2 echo "[specify] Error: Failed to change to worktree directory"
+            cd "$ORIGINAL_DIR"
+            exit 1
+        }
         # Update REPO_ROOT to worktree location
         REPO_ROOT="$WORKTREE_PATH"
 
@@ -348,7 +368,14 @@ if [ "$HAS_GIT" = true ]; then
         git checkout -b "$BRANCH_NAME"
     fi
 else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    # Warn user if source mode expects Git but Git is unavailable
+    if [ "$SOURCE_MODE" = "worktree" ] || [ "$SOURCE_MODE" = "branch" ]; then
+        >&2 echo "[specify] Warning: Git repository not detected but source mode is set to '$SOURCE_MODE'"
+        >&2 echo "[specify] Creating spec in main repository instead of using Git-based workflow"
+        >&2 echo "[specify] To use $SOURCE_MODE mode, initialize Git with: git init"
+    else
+        >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    fi
 fi
 
 # Update SPECS_DIR if we're in a worktree
@@ -357,11 +384,27 @@ if [ "$SOURCE_MODE" = "worktree" ] && [ "$HAS_GIT" = true ]; then
 fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
-mkdir -p "$FEATURE_DIR"
+mkdir -p "$FEATURE_DIR" || {
+    >&2 echo "[specify] Error: Failed to create feature directory: $FEATURE_DIR"
+    cd "$ORIGINAL_DIR"
+    exit 1
+}
 
 TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
 SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+if [ -f "$TEMPLATE" ]; then 
+    cp "$TEMPLATE" "$SPEC_FILE" || {
+        >&2 echo "[specify] Error: Failed to copy template file"
+        cd "$ORIGINAL_DIR"
+        exit 1
+    }
+else 
+    touch "$SPEC_FILE" || {
+        >&2 echo "[specify] Error: Failed to create spec file"
+        cd "$ORIGINAL_DIR"
+        exit 1
+    }
+fi
 
 # Set the SPECIFY_FEATURE environment variable for the current session
 export SPECIFY_FEATURE="$BRANCH_NAME"

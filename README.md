@@ -285,7 +285,7 @@ Traditional branch-based workflow where each feature is developed on its own bra
 
 ```bash
 specify init my-project --ai claude
-# Automatically detects standard Git repo → suggests "branch" mode
+# Detects standard Git repo → recommends "branch" mode (you can choose during init)
 ```
 
 **Best for:**
@@ -304,8 +304,7 @@ Isolated working directories per feature using [Git worktrees](https://git-scm.c
 
 ```bash
 specify init my-project --ai claude
-# In a bare repository → automatically suggests "worktree" mode
-# Or manually select "worktree" when prompted
+# In a bare repository → recommends "worktree" mode (you can choose during init)
 ```
 
 **Best for:**
@@ -351,7 +350,7 @@ Skip Git operations entirely for non-Git projects or manual Git control.
 
 ```bash
 specify init my-project --ai claude --no-git
-# Automatically selects "none" mode
+# Recommends "none" mode (you can choose during init)
 ```
 
 **Best for:**
@@ -364,9 +363,32 @@ specify init my-project --ai claude --no-git
 - Specs stored in `specs/001-feature-name/` as normal
 - Feature numbers still auto-increment
 
+### Mode Selection
+
+During `specify init`, you'll be prompted to select your preferred source management mode:
+
+1. **Environment Detection**: The CLI detects your Git environment (bare repo, worktree, standard repo, or no Git)
+2. **Recommendation**: Based on the detection, a recommended mode is shown
+3. **Interactive Choice**: You select your preferred mode using arrow keys:
+   - `branch` - Traditional Git branches (recommended for most projects)
+   - `worktree` - Git worktrees (advanced, for parallel feature development)
+   - `none` - No Git integration (manual source management)
+4. **Configuration**: Your selected mode is saved to `.specify/memory/config.json`
+
+**Example selection screen:**
+```
+Detected environment: Standard Git repository
+Recommended mode: branch
+
+Select source management mode:
+▶ branch (Traditional Git branches - recommended for most projects)
+  worktree (Git worktrees - advanced, for parallel feature development)
+  none (No Git integration - manual source management)
+```
+
 ### Mode Configuration
 
-Your chosen mode is saved in `.specify/memory/config.json`:
+Your selected mode is saved in `.specify/memory/config.json`:
 
 ```json
 {

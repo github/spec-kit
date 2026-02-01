@@ -149,6 +149,9 @@ try {
 
 Set-Location $repoRoot
 
+# Save original directory for error recovery
+$originalDir = Get-Location
+
 $specsDir = Join-Path $repoRoot 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
@@ -310,6 +313,19 @@ if ($hasGit) {
 
         $worktreePath = Join-Path $worktreeFolder $branchName
 
+        # Check if worktree path already exists (FR-016)
+        if (Test-Path $worktreePath) {
+            Write-Error "[specify] Error: Worktree path already exists: $worktreePath"
+            Write-Error "[specify] "
+            Write-Error "[specify] Resolution options:"
+            Write-Error "[specify]   1. Remove existing worktree: git worktree remove $branchName"
+            Write-Error "[specify]   2. Use a different branch name with --short-name"
+            Write-Error "[specify]   3. Manually delete the directory: Remove-Item -Recurse -Force '$worktreePath'"
+            Write-Error "[specify] "
+            Write-Error "[specify] To list all worktrees: git worktree list"
+            exit 1
+        }
+
         # Create worktree with new branch
         try {
             git worktree add -b $branchName $worktreePath | Out-Null
@@ -317,11 +333,18 @@ if ($hasGit) {
             Write-Host "[specify] Branch: $branchName" -ForegroundColor Green
 
             # Change to worktree directory for spec creation
-            Set-Location $worktreePath
+            try {
+                Set-Location $worktreePath
+            } catch {
+                Write-Error "[specify] Error: Failed to change to worktree directory"
+                Set-Location $originalDir
+                exit 1
+            }
             # Update repoRoot to worktree location
             $repoRoot = $worktreePath
         } catch {
             Write-Error "[specify] Error: Failed to create worktree - $_"
+            Set-Location $originalDir
             exit 1
         }
 
@@ -337,7 +360,14 @@ if ($hasGit) {
         }
     }
 } else {
-    Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    # Warn user if source mode expects Git but Git is unavailable
+    if ($sourceMode -eq 'worktree' -or $sourceMode -eq 'branch') {
+        Write-Warning "[specify] Warning: Git repository not detected but source mode is set to '$sourceMode'"
+        Write-Warning "[specify] Creating spec in main repository instead of using Git-based workflow"
+        Write-Warning "[specify] To use $sourceMode mode, initialize Git with: git init"
+    } else {
+        Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    }
 }
 
 # Update specsDir if we're in a worktree
@@ -346,14 +376,26 @@ if ($sourceMode -eq 'worktree' -and $hasGit) {
 }
 
 $featureDir = Join-Path $specsDir $branchName
-New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+try {
+    New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+} catch {
+    Write-Error "[specify] Error: Failed to create feature directory: $featureDir"
+    Set-Location $originalDir
+    exit 1
+}
 
 $template = Join-Path $repoRoot '.specify/templates/spec-template.md'
 $specFile = Join-Path $featureDir 'spec.md'
-if (Test-Path $template) { 
-    Copy-Item $template $specFile -Force 
-} else { 
-    New-Item -ItemType File -Path $specFile | Out-Null 
+try {
+    if (Test-Path $template) { 
+        Copy-Item $template $specFile -Force 
+    } else { 
+        New-Item -ItemType File -Path $specFile | Out-Null 
+    }
+} catch {
+    Write-Error "[specify] Error: Failed to create spec file: $_"
+    Set-Location $originalDir
+    exit 1
 }
 
 # Set the SPECIFY_FEATURE environment variable for the current session
