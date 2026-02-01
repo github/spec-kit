@@ -34,6 +34,7 @@ import shlex
 import json
 from pathlib import Path
 from typing import Optional, Tuple
+from dataclasses import dataclass
 
 import typer
 import httpx
@@ -45,6 +46,7 @@ from rich.live import Live
 from rich.align import Align
 from rich.table import Table
 from rich.tree import Tree
+from rich.prompt import Prompt, Confirm
 from typer.core import TyperGroup
 
 # For cross-platform keyboard input
@@ -531,6 +533,257 @@ def is_git_repo(path: Path = None) -> bool:
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
+
+@dataclass
+class GitEnvironment:
+    """Represents the detected Git environment state."""
+
+    has_git: bool
+    is_bare: bool
+    is_worktree: bool
+
+    def suggest_mode(self) -> str:
+        """Returns suggested source_management_flow based on environment.
+
+        Decision tree:
+        1. No Git → "none"
+        2. Bare repo → "worktree" (bare repos are designed for worktrees)
+        3. Currently in worktree → "worktree" (preserve existing setup)
+        4. Standard Git repo → "branch" (default for normal repos)
+        """
+        if not self.has_git:
+            return "none"
+        if self.is_bare or self.is_worktree:
+            return "worktree"
+        return "branch"
+
+
+def is_git_worktree() -> bool:
+    """Check if current directory is a registered Git worktree.
+
+    A worktree (not the main repo) has .git as a file (not a directory).
+    The main repository has .git as a directory.
+
+    Returns:
+        True if current directory is a worktree (not the main repo)
+        False otherwise (main repo, not in git, or Git error)
+    """
+    try:
+        git_path = Path.cwd() / ".git"
+
+        # If .git is a file (not a directory), it's a worktree
+        if git_path.exists() and git_path.is_file():
+            return True
+
+        return False
+    except (OSError, PermissionError):
+        return False
+
+
+def is_bare_repo() -> bool:
+    """Check if the current Git repository is bare (has no working tree).
+
+    Returns:
+        True if `git rev-parse --is-bare-repository` outputs "true"
+        False otherwise (not bare, Git error, or not in repo)
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-bare-repository"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=Path.cwd(),
+        )
+        return result.stdout.strip() == "true"
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def detect_git_environment() -> GitEnvironment:
+    """Detect current Git environment and classify it.
+
+    Detection order:
+    1. Check if Git is installed and in a repo
+    2. Check if repository is bare
+    3. Check if current directory is a worktree (only if not bare)
+
+    Returns:
+        GitEnvironment object with detection results
+    """
+    # Check 1: Git installed and in a repo?
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            check=True,
+            capture_output=True,
+            cwd=Path.cwd(),
+        )
+        has_git = True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return GitEnvironment(has_git=False, is_bare=False, is_worktree=False)
+
+    # Check 2: Is it a bare repository?
+    is_bare = is_bare_repo()
+
+    # Check 3: Is current directory a worktree? (skip if bare)
+    is_worktree_val = is_git_worktree() if not is_bare else False
+
+    return GitEnvironment(has_git=has_git, is_bare=is_bare, is_worktree=is_worktree_val)
+
+
+def get_config_path(override: Optional[Path] = None) -> Path:
+    """Returns absolute path to config file with optional override.
+
+    Args:
+        override: Custom path to config file (optional)
+
+    Returns:
+        Absolute Path object to config file
+    """
+    if override:
+        return override.resolve()
+    else:
+        return (Path.cwd() / ".specify" / "memory" / "config.json").resolve()
+
+
+def validate_config(config: dict) -> None:
+    """Validate config dictionary against schema.
+
+    Args:
+        config: Configuration dictionary to validate
+
+    Raises:
+        ValueError: If config doesn't match schema
+    """
+    # Check required fields
+    required_keys = {"source_management_flow", "version"}
+    if not required_keys.issubset(config.keys()):
+        missing = required_keys - config.keys()
+        raise ValueError(f"Config missing required fields: {', '.join(missing)}")
+
+    # Validate version
+    if config["version"] != "1.0":
+        raise ValueError(
+            f"Invalid config version: {config['version']} (expected '1.0')"
+        )
+
+    # Validate source_management_flow
+    valid_modes = {"branch", "worktree", "none"}
+    mode = config["source_management_flow"]
+    if mode not in valid_modes:
+        raise ValueError(
+            f"Invalid source_management_flow '{mode}' (must be branch/worktree/none)"
+        )
+
+    # Conditional field validation
+    if mode == "worktree":
+        if "worktree_folder" not in config:
+            raise ValueError(
+                "worktree_folder required when source_management_flow=worktree"
+            )
+
+    # Check for additional properties (strict schema)
+    allowed_keys = {"version", "source_management_flow", "worktree_folder"}
+    extra_keys = set(config.keys()) - allowed_keys
+    if extra_keys:
+        raise ValueError(f"Unknown config fields: {', '.join(extra_keys)}")
+
+
+def load_config(path: Optional[Path] = None) -> Optional[dict]:
+    """Loads and validates the source management configuration file.
+
+    Args:
+        path: Override config file location (defaults to .specify/memory/config.json)
+
+    Returns:
+        Parsed and validated configuration dict if file exists and is valid
+        None if config file doesn't exist (project may not be initialized)
+
+    Raises:
+        ValueError: If config file exists but is invalid (malformed JSON, schema violation)
+    """
+    config_path = get_config_path(path)
+
+    if not config_path.exists():
+        return None
+
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Invalid JSON syntax in {config_path} at line {e.lineno}: {e.msg}"
+        )
+
+    # Validate schema
+    validate_config(config)
+
+    return config
+
+
+def save_config(config: dict, path: Optional[Path] = None) -> None:
+    """Validates and writes configuration to disk.
+
+    Args:
+        config: Configuration dictionary matching schema
+        path: Override config file location (defaults to .specify/memory/config.json)
+
+    Raises:
+        ValueError: If config doesn't match schema
+        OSError: If directory doesn't exist or lacks write permissions
+    """
+    # Validate before writing
+    validate_config(config)
+
+    config_path = get_config_path(path)
+
+    # Create directory if it doesn't exist
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write with pretty formatting
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def get_current_mode(path: Optional[Path] = None, warn_if_missing: bool = True) -> str:
+    """Get current source management mode from config.
+
+    Args:
+        path: Override config file location (defaults to .specify/memory/config.json)
+        warn_if_missing: Whether to print warning if config doesn't exist
+
+    Returns:
+        Current mode: "branch", "worktree", or "none"
+        Defaults to "branch" if config doesn't exist (backward compatibility)
+    """
+    try:
+        config = load_config(path)
+
+        if config is None:
+            # Backward compatibility: treat missing config as branch mode
+            if warn_if_missing:
+                console.print(
+                    "[yellow]Note:[/yellow] No source management config found. "
+                    "Using default 'branch' mode."
+                )
+                console.print(
+                    "[dim]Run 'specify init' in a new project to configure mode.[/dim]"
+                )
+            return "branch"
+
+        return config["source_management_flow"]
+
+    except ValueError as e:
+        # Config exists but is invalid
+        console.print(f"[red]Error:[/red] Invalid config file: {e}")
+        console.print(f"[yellow]Config location:[/yellow] {get_config_path(path)}")
+        console.print(
+            "[dim]Delete the config file and run 'specify init' to recreate it.[/dim]"
+        )
+        # Return safe default
+        return "branch"
+
 
 def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Optional[str]]:
     """Initialize a git repository in the specified path.
@@ -1128,6 +1381,28 @@ def init(
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
+            # Detect Git environment and create config (Feature 001: Worktree Detection)
+            # Always create config, even with --no-git (will detect "none" mode)
+            original_cwd = Path.cwd()
+            os.chdir(project_path)
+            try:
+                git_env = detect_git_environment()
+                suggested_mode = git_env.suggest_mode()
+
+                # Create config with suggested mode
+                config_data = {
+                    "version": "1.0",
+                    "source_management_flow": suggested_mode
+                }
+
+                # Add worktree_folder if in worktree mode
+                if suggested_mode == "worktree":
+                    config_data["worktree_folder"] = "./worktrees"
+
+                save_config(config_data)
+            finally:
+                os.chdir(original_cwd)
+
             if not no_git:
                 tracker.start("git")
                 if is_git_repo(project_path):
@@ -1244,6 +1519,16 @@ def init(
 def check():
     """Check that all required tools are installed."""
     show_banner()
+
+    # Display current mode if in a Specify project
+    current_mode = get_current_mode(warn_if_missing=False)
+    mode_display = {
+        "branch": "[cyan]Branch mode active[/cyan]",
+        "worktree": "[cyan]Worktree mode active[/cyan]",
+        "none": "[yellow]No Git mode[/yellow]",
+    }
+    console.print(mode_display.get(current_mode, "[dim]Unknown mode[/dim]"))
+
     console.print("[bold]Checking for installed tools...[/bold]\n")
 
     tracker = StepTracker("Check Available Tools")

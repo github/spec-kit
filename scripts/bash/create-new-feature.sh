@@ -177,6 +177,22 @@ cd "$REPO_ROOT"
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
+# Feature 001: Read source management mode from config
+CONFIG_FILE="$REPO_ROOT/.specify/memory/config.json"
+SOURCE_MODE="branch"  # Default to branch mode for backward compatibility
+WORKTREE_FOLDER=""
+
+if [ -f "$CONFIG_FILE" ]; then
+    # Parse JSON config using grep/sed (no jq dependency needed)
+    SOURCE_MODE=$(grep -o '"source_management_flow"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" | sed 's/.*"\([^"]*\)".*/\1/' || echo "branch")
+    WORKTREE_FOLDER=$(grep -o '"worktree_folder"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" | sed 's/.*"\([^"]*\)".*/\1/' || echo "")
+fi
+
+# Fallback to branch mode if config is invalid
+if [ -z "$SOURCE_MODE" ]; then
+    SOURCE_MODE="branch"
+fi
+
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
     local description="$1"
@@ -272,9 +288,72 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
 fi
 
 if [ "$HAS_GIT" = true ]; then
-    git checkout -b "$BRANCH_NAME"
+    # Feature 001: Create worktree or branch based on mode
+    if [ "$SOURCE_MODE" = "worktree" ]; then
+        # Worktree mode: create worktree instead of branch
+        if [ -z "$WORKTREE_FOLDER" ]; then
+            WORKTREE_FOLDER="./worktrees"
+        fi
+
+        # Resolve to absolute path
+        if [[ "$WORKTREE_FOLDER" != /* ]]; then
+            WORKTREE_FOLDER="$REPO_ROOT/$WORKTREE_FOLDER"
+        fi
+
+        # Check if worktree folder exists (FR-015)
+        if [ ! -d "$WORKTREE_FOLDER" ]; then
+            >&2 echo "[specify] The configured worktree folder does not exist: $WORKTREE_FOLDER"
+            read -p "Create this directory? (y/N): " -n 1 -r CREATE_FOLDER
+            echo
+            if [[ $CREATE_FOLDER =~ ^[Yy]$ ]]; then
+                mkdir -p "$WORKTREE_FOLDER" || {
+                    >&2 echo "[specify] Error: Failed to create worktree folder (permission denied or invalid path)"
+                    exit 1
+                }
+                >&2 echo "[specify] Created worktree folder: $WORKTREE_FOLDER"
+            else
+                >&2 echo "[specify] Error: Cannot create worktree without folder"
+                exit 1
+            fi
+        fi
+
+        # Check write permissions (FR-015b)
+        if [ ! -w "$WORKTREE_FOLDER" ]; then
+            >&2 echo "[specify] Error: Worktree folder is not writable: $WORKTREE_FOLDER"
+            >&2 echo "[specify] Check folder permissions and try again"
+            exit 1
+        fi
+
+        WORKTREE_PATH="$WORKTREE_FOLDER/$BRANCH_NAME"
+
+        # Create worktree with new branch
+        git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" || {
+            >&2 echo "[specify] Error: Failed to create worktree"
+            exit 1
+        }
+
+        >&2 echo "[specify] Created worktree: $WORKTREE_PATH"
+        >&2 echo "[specify] Branch: $BRANCH_NAME"
+
+        # Change to worktree directory for spec creation
+        cd "$WORKTREE_PATH"
+        # Update REPO_ROOT to worktree location
+        REPO_ROOT="$WORKTREE_PATH"
+
+    elif [ "$SOURCE_MODE" = "none" ]; then
+        # None mode: skip Git operations
+        >&2 echo "[specify] Git operations disabled (mode: none)"
+    else
+        # Branch mode: traditional branch creation
+        git checkout -b "$BRANCH_NAME"
+    fi
 else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+fi
+
+# Update SPECS_DIR if we're in a worktree
+if [ "$SOURCE_MODE" = "worktree" ] && [ "$HAS_GIT" = true ]; then
+    SPECS_DIR="$REPO_ROOT/specs"
 fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
@@ -288,8 +367,14 @@ if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","SOURCE_MODE":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM" "$SOURCE_MODE"
 else
+    # Feature 001: Display source management mode
+    case "$SOURCE_MODE" in
+        "worktree") echo "MODE: Worktree mode active" ;;
+        "none")     echo "MODE: No Git mode" ;;
+        *)          echo "MODE: Branch mode active" ;;
+    esac
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"

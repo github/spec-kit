@@ -78,6 +78,24 @@ check_feature_branch() {
         return 1
     fi
 
+    # Feature 001: Worktree/branch alignment validation
+    # Check if we're in a worktree and validate directory/branch name alignment
+    if [[ -f .git ]]; then
+        # We're in a worktree (.git is a file, not a directory)
+        local worktree_dir=$(basename "$(pwd)")
+
+        if [[ "$worktree_dir" != "$branch" ]]; then
+            echo "[specify] Warning: Worktree directory name doesn't match branch name" >&2
+            echo "  Directory: $worktree_dir" >&2
+            echo "  Branch:    $branch" >&2
+            echo "  This may indicate a configuration mismatch or manual worktree creation." >&2
+            echo "  Consider re-creating the worktree with matching names for consistency." >&2
+            return 1
+        else
+            echo "[specify] ✓ Worktree/branch alignment validated: $branch" >&2
+        fi
+    fi
+
     return 0
 }
 
