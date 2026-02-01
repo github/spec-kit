@@ -160,10 +160,20 @@ clean_branch_name() {
 # were initialised with --no-git.
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if git rev-parse --show-toplevel >/dev/null 2>&1; then
-    REPO_ROOT=$(git rev-parse --show-toplevel)
+# Check if we're in any Git repository (works for both bare and non-bare repos)
+if git rev-parse --git-dir >/dev/null 2>&1; then
     HAS_GIT=true
+    # Check if this is a bare repository
+    if [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = "true" ]; then
+        # Bare repository - use git-dir as root
+        REPO_ROOT=$(git rev-parse --git-dir)
+        REPO_ROOT=$(cd "$REPO_ROOT" && pwd)  # Resolve to absolute path
+    else
+        # Non-bare repository - use show-toplevel
+        REPO_ROOT=$(git rev-parse --show-toplevel)
+    fi
 else
+    # Not a Git repository - fall back to marker search
     REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
     if [ -z "$REPO_ROOT" ]; then
         echo "Error: Could not determine repository root. Please run this script from within the repository." >&2

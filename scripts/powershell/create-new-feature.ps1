@@ -135,14 +135,29 @@ if (-not $fallbackRoot) {
     exit 1
 }
 
+# Check if we're in any Git repository (works for both bare and non-bare repos)
 try {
-    $repoRoot = git rev-parse --show-toplevel 2>$null
+    $gitDir = git rev-parse --git-dir 2>$null
     if ($LASTEXITCODE -eq 0) {
         $hasGit = $true
+        # Check if this is a bare repository
+        $isBare = git rev-parse --is-bare-repository 2>$null
+        if ($LASTEXITCODE -eq 0 -and $isBare -eq "true") {
+            # Bare repository - use git-dir as root
+            $repoRoot = git rev-parse --git-dir 2>$null
+            $repoRoot = Resolve-Path $repoRoot
+        } else {
+            # Non-bare repository - use show-toplevel
+            $repoRoot = git rev-parse --show-toplevel 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Git show-toplevel failed"
+            }
+        }
     } else {
         throw "Git not available"
     }
 } catch {
+    # Not a Git repository - fall back to marker search
     $repoRoot = $fallbackRoot
     $hasGit = $false
 }

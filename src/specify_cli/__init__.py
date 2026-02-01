@@ -741,6 +741,13 @@ def validate_config(config: dict) -> None:
             raise ValueError(
                 "worktree_folder required when source_management_flow=worktree"
             )
+    else:
+        # For branch/none modes, worktree_folder should not be present
+        if "worktree_folder" in config:
+            raise ValueError(
+                f"worktree_folder not allowed when source_management_flow={mode} "
+                "(only valid for worktree mode)"
+            )
 
     # Check for additional properties (strict schema)
     allowed_keys = {"version", "source_management_flow", "worktree_folder"}
