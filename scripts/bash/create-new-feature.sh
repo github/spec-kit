@@ -160,10 +160,20 @@ clean_branch_name() {
 # were initialised with --no-git.
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if git rev-parse --show-toplevel >/dev/null 2>&1; then
-    REPO_ROOT=$(git rev-parse --show-toplevel)
+# Check if we're in any Git repository (works for both bare and non-bare repos)
+if git rev-parse --git-dir >/dev/null 2>&1; then
     HAS_GIT=true
+    # Check if this is a bare repository
+    if [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = "true" ]; then
+        # Bare repository - use git-dir as root
+        REPO_ROOT=$(git rev-parse --git-dir)
+        REPO_ROOT=$(cd "$REPO_ROOT" && pwd)  # Resolve to absolute path
+    else
+        # Non-bare repository - use show-toplevel
+        REPO_ROOT=$(git rev-parse --show-toplevel)
+    fi
 else
+    # Not a Git repository - fall back to marker search
     REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
     if [ -z "$REPO_ROOT" ]; then
         echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
@@ -174,8 +184,27 @@ fi
 
 cd "$REPO_ROOT"
 
+# Save original directory for error recovery
+ORIGINAL_DIR="$PWD"
+
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
+
+# Feature 001: Read source management mode from config
+CONFIG_FILE="$REPO_ROOT/.specify/memory/config.json"
+SOURCE_MODE="branch"  # Default to branch mode for backward compatibility
+WORKTREE_FOLDER=""
+
+if [ -f "$CONFIG_FILE" ]; then
+    # Parse JSON config using grep/sed (no jq dependency needed)
+    SOURCE_MODE=$(grep -o '"source_management_flow"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" | sed 's/.*"\([^"]*\)".*/\1/' || echo "branch")
+    WORKTREE_FOLDER=$(grep -o '"worktree_folder"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" | sed 's/.*"\([^"]*\)".*/\1/' || echo "")
+fi
+
+# Fallback to branch mode if config is invalid
+if [ -z "$SOURCE_MODE" ]; then
+    SOURCE_MODE="branch"
+fi
 
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
@@ -272,24 +301,133 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
 fi
 
 if [ "$HAS_GIT" = true ]; then
-    git checkout -b "$BRANCH_NAME"
+    # Feature 001: Create worktree or branch based on mode
+    if [ "$SOURCE_MODE" = "worktree" ]; then
+        # Worktree mode: create worktree instead of branch
+        if [ -z "$WORKTREE_FOLDER" ]; then
+            WORKTREE_FOLDER="./worktrees"
+        fi
+
+        # Resolve to absolute path
+        if [[ "$WORKTREE_FOLDER" != /* ]]; then
+            WORKTREE_FOLDER="$REPO_ROOT/$WORKTREE_FOLDER"
+        fi
+
+        # Check if worktree folder exists (FR-015)
+        if [ ! -d "$WORKTREE_FOLDER" ]; then
+            >&2 echo "[specify] The configured worktree folder does not exist: $WORKTREE_FOLDER"
+            read -p "Create this directory? (y/N): " -n 1 -r CREATE_FOLDER
+            echo
+            if [[ $CREATE_FOLDER =~ ^[Yy]$ ]]; then
+                mkdir -p "$WORKTREE_FOLDER" || {
+                    >&2 echo "[specify] Error: Failed to create worktree folder (permission denied or invalid path)"
+                    exit 1
+                }
+                >&2 echo "[specify] Created worktree folder: $WORKTREE_FOLDER"
+            else
+                >&2 echo "[specify] Error: Cannot create worktree without folder"
+                exit 1
+            fi
+        fi
+
+        # Check write permissions (FR-015b)
+        if [ ! -w "$WORKTREE_FOLDER" ]; then
+            >&2 echo "[specify] Error: Worktree folder is not writable: $WORKTREE_FOLDER"
+            >&2 echo "[specify] Check folder permissions and try again"
+            exit 1
+        fi
+
+        WORKTREE_PATH="$WORKTREE_FOLDER/$BRANCH_NAME"
+
+        # Check if worktree path already exists (FR-016)
+        if [ -e "$WORKTREE_PATH" ]; then
+            >&2 echo "[specify] Error: Worktree path already exists: $WORKTREE_PATH"
+            >&2 echo "[specify] "
+            >&2 echo "[specify] Resolution options:"
+            >&2 echo "[specify]   1. Remove existing worktree: git worktree remove $BRANCH_NAME"
+            >&2 echo "[specify]   2. Use a different branch name with --short-name"
+            >&2 echo "[specify]   3. Manually delete the directory: rm -rf '$WORKTREE_PATH'"
+            >&2 echo "[specify] "
+            >&2 echo "[specify] To list all worktrees: git worktree list"
+            exit 1
+        fi
+
+        # Create worktree with new branch
+        git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" || {
+            >&2 echo "[specify] Error: Failed to create worktree"
+            exit 1
+        }
+
+        >&2 echo "[specify] Created worktree: $WORKTREE_PATH"
+        >&2 echo "[specify] Branch: $BRANCH_NAME"
+
+        # Change to worktree directory for spec creation
+        cd "$WORKTREE_PATH" || {
+            >&2 echo "[specify] Error: Failed to change to worktree directory"
+            cd "$ORIGINAL_DIR"
+            exit 1
+        }
+        # Update REPO_ROOT to worktree location
+        REPO_ROOT="$WORKTREE_PATH"
+
+    elif [ "$SOURCE_MODE" = "none" ]; then
+        # None mode: skip Git operations
+        >&2 echo "[specify] Git operations disabled (mode: none)"
+    else
+        # Branch mode: traditional branch creation
+        git checkout -b "$BRANCH_NAME"
+    fi
 else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    # Warn user if source mode expects Git but Git is unavailable
+    if [ "$SOURCE_MODE" = "worktree" ] || [ "$SOURCE_MODE" = "branch" ]; then
+        >&2 echo "[specify] Warning: Git repository not detected but source mode is set to '$SOURCE_MODE'"
+        >&2 echo "[specify] Creating spec in main repository instead of using Git-based workflow"
+        >&2 echo "[specify] To use $SOURCE_MODE mode, initialize Git with: git init"
+    else
+        >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    fi
+fi
+
+# Update SPECS_DIR if we're in a worktree
+if [ "$SOURCE_MODE" = "worktree" ] && [ "$HAS_GIT" = true ]; then
+    SPECS_DIR="$REPO_ROOT/specs"
 fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
-mkdir -p "$FEATURE_DIR"
+mkdir -p "$FEATURE_DIR" || {
+    >&2 echo "[specify] Error: Failed to create feature directory: $FEATURE_DIR"
+    cd "$ORIGINAL_DIR"
+    exit 1
+}
 
 TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
 SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+if [ -f "$TEMPLATE" ]; then 
+    cp "$TEMPLATE" "$SPEC_FILE" || {
+        >&2 echo "[specify] Error: Failed to copy template file"
+        cd "$ORIGINAL_DIR"
+        exit 1
+    }
+else 
+    touch "$SPEC_FILE" || {
+        >&2 echo "[specify] Error: Failed to create spec file"
+        cd "$ORIGINAL_DIR"
+        exit 1
+    }
+fi
 
 # Set the SPECIFY_FEATURE environment variable for the current session
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","SOURCE_MODE":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM" "$SOURCE_MODE"
 else
+    # Feature 001: Display source management mode
+    case "$SOURCE_MODE" in
+        "worktree") echo "MODE: Worktree mode active" ;;
+        "none")     echo "MODE: No Git mode" ;;
+        *)          echo "MODE: Branch mode active" ;;
+    esac
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"

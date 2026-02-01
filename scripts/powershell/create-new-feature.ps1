@@ -135,22 +135,65 @@ if (-not $fallbackRoot) {
     exit 1
 }
 
+# Check if we're in any Git repository (works for both bare and non-bare repos)
 try {
-    $repoRoot = git rev-parse --show-toplevel 2>$null
+    $gitDir = git rev-parse --git-dir 2>$null
     if ($LASTEXITCODE -eq 0) {
         $hasGit = $true
+        # Check if this is a bare repository
+        $isBare = git rev-parse --is-bare-repository 2>$null
+        if ($LASTEXITCODE -eq 0 -and $isBare -eq "true") {
+            # Bare repository - use git-dir as root
+            $repoRoot = git rev-parse --git-dir 2>$null
+            $repoRoot = Resolve-Path $repoRoot
+        } else {
+            # Non-bare repository - use show-toplevel
+            $repoRoot = git rev-parse --show-toplevel 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Git show-toplevel failed"
+            }
+        }
     } else {
         throw "Git not available"
     }
 } catch {
+    # Not a Git repository - fall back to marker search
     $repoRoot = $fallbackRoot
     $hasGit = $false
 }
 
 Set-Location $repoRoot
 
+# Save original directory for error recovery
+$originalDir = Get-Location
+
 $specsDir = Join-Path $repoRoot 'specs'
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
+
+# Feature 001: Read source management mode from config
+$configFile = Join-Path $repoRoot '.specify/memory/config.json'
+$sourceMode = 'branch'  # Default to branch mode for backward compatibility
+$worktreeFolder = ''
+
+if (Test-Path $configFile) {
+    try {
+        $config = Get-Content $configFile | ConvertFrom-Json
+        if ($config.source_management_flow) {
+            $sourceMode = $config.source_management_flow
+        }
+        if ($config.worktree_folder) {
+            $worktreeFolder = $config.worktree_folder
+        }
+    } catch {
+        Write-Verbose "Could not parse config file, using default branch mode"
+        $sourceMode = 'branch'
+    }
+}
+
+# Fallback to branch mode if config is invalid
+if (-not $sourceMode) {
+    $sourceMode = 'branch'
+}
 
 # Function to generate branch name with stop word filtering and length filtering
 function Get-BranchName {
@@ -242,24 +285,132 @@ if ($branchName.Length -gt $maxBranchLength) {
 }
 
 if ($hasGit) {
-    try {
-        git checkout -b $branchName | Out-Null
-    } catch {
-        Write-Warning "Failed to create git branch: $branchName"
+    # Feature 001: Create worktree or branch based on mode
+    if ($sourceMode -eq 'worktree') {
+        # Worktree mode: create worktree instead of branch
+        if (-not $worktreeFolder) {
+            $worktreeFolder = './worktrees'
+        }
+
+        # Resolve to absolute path
+        if (-not [System.IO.Path]::IsPathRooted($worktreeFolder)) {
+            $worktreeFolder = Join-Path $repoRoot $worktreeFolder
+        }
+
+        # Check if worktree folder exists (FR-015)
+        if (-not (Test-Path $worktreeFolder)) {
+            Write-Warning "[specify] The configured worktree folder does not exist: $worktreeFolder"
+            $createFolder = Read-Host "Create this directory? (y/N)"
+            if ($createFolder -match '^[Yy]') {
+                try {
+                    New-Item -ItemType Directory -Path $worktreeFolder -Force | Out-Null
+                    Write-Host "[specify] Created worktree folder: $worktreeFolder" -ForegroundColor Green
+                } catch {
+                    Write-Error "[specify] Error: Failed to create worktree folder (permission denied or invalid path)"
+                    exit 1
+                }
+            } else {
+                Write-Error "[specify] Error: Cannot create worktree without folder"
+                exit 1
+            }
+        }
+
+        # Check write permissions (FR-015b)
+        try {
+            $testFile = Join-Path $worktreeFolder ".write-test-$([guid]::NewGuid().ToString())"
+            New-Item -ItemType File -Path $testFile -Force | Out-Null
+            Remove-Item $testFile -Force
+        } catch {
+            Write-Error "[specify] Error: Worktree folder is not writable: $worktreeFolder"
+            Write-Error "[specify] Check folder permissions and try again"
+            exit 1
+        }
+
+        $worktreePath = Join-Path $worktreeFolder $branchName
+
+        # Check if worktree path already exists (FR-016)
+        if (Test-Path $worktreePath) {
+            Write-Error "[specify] Error: Worktree path already exists: $worktreePath"
+            Write-Error "[specify] "
+            Write-Error "[specify] Resolution options:"
+            Write-Error "[specify]   1. Remove existing worktree: git worktree remove $branchName"
+            Write-Error "[specify]   2. Use a different branch name with --short-name"
+            Write-Error "[specify]   3. Manually delete the directory: Remove-Item -Recurse -Force '$worktreePath'"
+            Write-Error "[specify] "
+            Write-Error "[specify] To list all worktrees: git worktree list"
+            exit 1
+        }
+
+        # Create worktree with new branch
+        try {
+            git worktree add -b $branchName $worktreePath | Out-Null
+            Write-Host "[specify] Created worktree: $worktreePath" -ForegroundColor Green
+            Write-Host "[specify] Branch: $branchName" -ForegroundColor Green
+
+            # Change to worktree directory for spec creation
+            try {
+                Set-Location $worktreePath
+            } catch {
+                Write-Error "[specify] Error: Failed to change to worktree directory"
+                Set-Location $originalDir
+                exit 1
+            }
+            # Update repoRoot to worktree location
+            $repoRoot = $worktreePath
+        } catch {
+            Write-Error "[specify] Error: Failed to create worktree - $_"
+            Set-Location $originalDir
+            exit 1
+        }
+
+    } elseif ($sourceMode -eq 'none') {
+        # None mode: skip Git operations
+        Write-Warning "[specify] Git operations disabled (mode: none)"
+    } else {
+        # Branch mode: traditional branch creation
+        try {
+            git checkout -b $branchName | Out-Null
+        } catch {
+            Write-Warning "Failed to create git branch: $branchName"
+        }
     }
 } else {
-    Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    # Warn user if source mode expects Git but Git is unavailable
+    if ($sourceMode -eq 'worktree' -or $sourceMode -eq 'branch') {
+        Write-Warning "[specify] Warning: Git repository not detected but source mode is set to '$sourceMode'"
+        Write-Warning "[specify] Creating spec in main repository instead of using Git-based workflow"
+        Write-Warning "[specify] To use $sourceMode mode, initialize Git with: git init"
+    } else {
+        Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    }
+}
+
+# Update specsDir if we're in a worktree
+if ($sourceMode -eq 'worktree' -and $hasGit) {
+    $specsDir = Join-Path $repoRoot 'specs'
 }
 
 $featureDir = Join-Path $specsDir $branchName
-New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+try {
+    New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+} catch {
+    Write-Error "[specify] Error: Failed to create feature directory: $featureDir"
+    Set-Location $originalDir
+    exit 1
+}
 
 $template = Join-Path $repoRoot '.specify/templates/spec-template.md'
 $specFile = Join-Path $featureDir 'spec.md'
-if (Test-Path $template) { 
-    Copy-Item $template $specFile -Force 
-} else { 
-    New-Item -ItemType File -Path $specFile | Out-Null 
+try {
+    if (Test-Path $template) { 
+        Copy-Item $template $specFile -Force 
+    } else { 
+        New-Item -ItemType File -Path $specFile | Out-Null 
+    }
+} catch {
+    Write-Error "[specify] Error: Failed to create spec file: $_"
+    Set-Location $originalDir
+    exit 1
 }
 
 # Set the SPECIFY_FEATURE environment variable for the current session
@@ -271,9 +422,16 @@ if ($Json) {
         SPEC_FILE = $specFile
         FEATURE_NUM = $featureNum
         HAS_GIT = $hasGit
+        SOURCE_MODE = $sourceMode
     }
     $obj | ConvertTo-Json -Compress
 } else {
+    # Feature 001: Display source management mode
+    switch ($sourceMode) {
+        'worktree' { Write-Output "MODE: Worktree mode active" }
+        'none'     { Write-Output "MODE: No Git mode" }
+        default    { Write-Output "MODE: Branch mode active" }
+    }
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"

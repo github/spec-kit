@@ -24,6 +24,7 @@
 - [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
+- [🔀 Source Management Modes](#-source-management-modes)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
@@ -273,6 +274,133 @@ Additional commands for enhanced quality and validation:
 | Variable          | Description                                                                                                                                                                                                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+
+## 🔀 Source Management Modes
+
+Spec Kit supports three Git workflow modes to match your development style:
+
+### Branch Mode (Default)
+
+Traditional branch-based workflow where each feature is developed on its own branch.
+
+```bash
+specify init my-project --ai claude
+# Detects standard Git repo → recommends "branch" mode (you can choose during init)
+```
+
+**Best for:**
+- Standard Git repositories
+- Small to medium teams
+- Projects with simple branching strategies
+
+**How it works:**
+- `create-new-feature.sh` creates a new Git branch (e.g., `001-feature-name`)
+- Specs stored in `specs/001-feature-name/`
+- Switch between features with `git checkout`
+
+### Worktree Mode
+
+Isolated working directories per feature using [Git worktrees](https://git-scm.com/docs/git-worktree).
+
+```bash
+specify init my-project --ai claude
+# In a bare repository → recommends "worktree" mode (you can choose during init)
+```
+
+**Best for:**
+- Bare repositories (highly recommended)
+- Working on multiple features simultaneously
+- Large teams with many parallel features
+- Projects requiring quick context switching without stashing
+
+**How it works:**
+- `create-new-feature.sh` creates a Git worktree in `./worktrees/001-feature-name/`
+- Each feature has its own isolated directory
+- No need to switch branches or stash changes
+- All worktrees share the same Git history
+
+**Configuration:**
+During initialization, you'll be prompted for the worktree folder location (default: `./worktrees`).
+
+**Example workflow:**
+```bash
+# Initialize project in worktree mode
+specify init --here --ai claude
+# Select "worktree" mode when prompted
+
+# Create first feature (creates worktree)
+.specify/scripts/bash/create-new-feature.sh "Add user authentication"
+# Creates: ./worktrees/001-user-authentication/
+
+# Work in first feature
+cd ./worktrees/001-user-authentication/
+# Edit code, run tests...
+
+# Create second feature without leaving first
+cd ../..
+.specify/scripts/bash/create-new-feature.sh "Add payment processing"
+# Creates: ./worktrees/002-payment-processing/
+
+# Both features are independent and isolated!
+```
+
+### None Mode
+
+Skip Git operations entirely for non-Git projects or manual Git control.
+
+```bash
+specify init my-project --ai claude --no-git
+# Recommends "none" mode (you can choose during init)
+```
+
+**Best for:**
+- Non-Git version control systems
+- Projects where you want manual Git control
+- Prototyping or exploration without version control
+
+**How it works:**
+- No Git branches or worktrees created
+- Specs stored in `specs/001-feature-name/` as normal
+- Feature numbers still auto-increment
+
+### Mode Selection
+
+During `specify init`, you'll be prompted to select your preferred source management mode:
+
+1. **Environment Detection**: The CLI detects your Git environment (bare repo, worktree, standard repo, or no Git)
+2. **Recommendation**: Based on the detection, a recommended mode is shown
+3. **Interactive Choice**: You select your preferred mode using arrow keys:
+   - `branch` - Traditional Git branches (recommended for most projects)
+   - `worktree` - Git worktrees (advanced, for parallel feature development)
+   - `none` - No Git integration (manual source management)
+4. **Configuration**: Your selected mode is saved to `.specify/memory/config.json`
+
+**Example selection screen:**
+```
+Detected environment: Standard Git repository
+Recommended mode: branch
+
+Select source management mode:
+▶ branch (Traditional Git branches - recommended for most projects)
+  worktree (Git worktrees - advanced, for parallel feature development)
+  none (No Git integration - manual source management)
+```
+
+### Mode Configuration
+
+Your selected mode is saved in `.specify/memory/config.json`:
+
+```json
+{
+  "version": "1.0",
+  "source_management_flow": "worktree",
+  "worktree_folder": "./worktrees"
+}
+```
+
+**Mode detection:** Run `specify check` to see your current mode.
+
+**Important:** Source management mode cannot be changed after initialization. To switch modes, delete `.specify/memory/config.json` and run `specify init` again.
 
 ## 📚 Core Philosophy
 
