@@ -85,11 +85,17 @@ check_feature_branch() {
         local worktree_dir=$(basename "$(pwd)")
 
         if [[ "$worktree_dir" != "$branch" ]]; then
-            echo "[specify] Warning: Worktree directory name doesn't match branch name" >&2
+            echo "ERROR: Worktree directory name doesn't match branch name" >&2
             echo "  Directory: $worktree_dir" >&2
             echo "  Branch:    $branch" >&2
-            echo "  This may indicate a configuration mismatch or manual worktree creation." >&2
-            echo "  Consider re-creating the worktree with matching names for consistency." >&2
+            echo "" >&2
+            echo "Spec Kit expects worktree directory names to match branch names." >&2
+            echo "This mismatch may have occurred due to manual worktree creation or directory renaming." >&2
+            echo "" >&2
+            echo "To fix this issue:" >&2
+            echo "  1. Return to the main repository" >&2
+            echo "  2. Remove this worktree: git worktree remove $worktree_dir" >&2
+            echo "  3. Recreate using Spec Kit: ./scripts/bash/create-new-feature.sh '$branch'" >&2
             return 1
         else
             echo "[specify] ✓ Worktree/branch alignment validated: $branch" >&2
