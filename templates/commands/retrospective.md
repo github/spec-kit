@@ -39,7 +39,7 @@ Analyze completed implementation against spec.md, plan.md, and tasks.md to measu
 
 ### 1. Initialize Context
 
-Run `{SCRIPT}` from repo root. Parse JSON for FEATURE_DIR. Derive paths: SPEC, PLAN, TASKS = FEATURE_DIR/{spec,plan,tasks}.md. Abort if missing.
+Run `{SCRIPT}` from repo root. Parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive paths: SPEC, PLAN, TASKS = FEATURE_DIR/{spec,plan,tasks}.md. Abort if missing.
 
 For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
@@ -54,7 +54,10 @@ fi
 completion_rate=$((completed_tasks * 100 / total_tasks))
 ```
 
-- **≥80%**: Full retrospective | **50-79%**: Warn, partial analysis | **<50%**: Confirm before proceeding
+**Completion Thresholds:**
+- **≥80%**: Proceed with full retrospective
+- **50-79%**: Display warning about incomplete implementation, then proceed with partial analysis noting the incompleteness
+- **<50%**: STOP and display: `⚠️ Only ${completion_rate}% tasks complete. Retrospective requires ≥50% completion. Continue anyway? (y/N)`. Exit if user declines.
 
 ### 3. Load Artifacts
 
@@ -65,7 +68,7 @@ completion_rate=$((completed_tasks * 100 / total_tasks))
 
 ### 4. Discover Implementation
 
-- Extract file paths from completed tasks + `git log --name-only --since="1 month ago" 2>/dev/null || git log --name-only`
+- Extract file paths from completed tasks + `git log --name-only --since="1 month ago" --max-count=100 2>/dev/null || git log --name-only --max-count=100`
 - Inventory: Models, APIs, Services, Tests, Config changes
 - Audit: Libraries, frameworks, integrations actually used
 
@@ -85,6 +88,12 @@ completion_rate=$((completed_tasks * 100 / total_tasks))
 #### C. Architecture Drift - Data model, API, stack, structure changes vs plan.md
 #### D. Task Fidelity - Tasks completed/modified/added/dropped
 #### E. Timeline (if available) - Phase delays, scope changes, blockers
+
+**Calculate Spec Adherence:**
+```
+Spec Adherence % = ((IMPLEMENTED + MODIFIED + (PARTIAL * 0.5)) / (Total Requirements - UNSPECIFIED)) * 100
+```
+Where Total Requirements = Count of all FR-XXX, NFR-XXX, SC-XXX from spec.md
 
 ### 6. Severity Classification
 
@@ -115,6 +124,19 @@ Check each article against implementation. All violations = CRITICAL.
 ### 10. Generate Report
 
 ```markdown
+---
+feature: [Feature Name]
+branch: [branch-name]
+date: [YYYY-MM-DD]
+completion_rate: [X]
+spec_adherence: [X]
+total_requirements: [X]
+implemented: [X]
+modified: [X]
+not_implemented: [X]
+unspecified: [X]
+---
+
 ## 📊 Feature Retrospective Report
 **Feature**: [Name] | **Branch**: [branch] | **Date**: [date] | **Completion**: [X]%
 
@@ -224,5 +246,5 @@ Implementation details, optimizations within boundaries, bug fixes, refactoring,
 
 ### Principles
 - Facts over judgments, process over blame, positive deviations = learning
-- Progressive disclosure, max 50 detailed deviations, compact tables
+- Progressive disclosure, max 50 detailed deviations (summarize overflow), compact tables
 - Executive summary <500 words, report <2000 lines
