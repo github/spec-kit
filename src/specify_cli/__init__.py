@@ -1387,6 +1387,8 @@ def get_speckit_version() -> str:
                     data = tomllib.load(f)
                     return data.get("project", {}).get("version", "unknown")
         except Exception:
+            # Intentionally ignore any errors while reading/parsing pyproject.toml.
+            # If this lookup fails for any reason, we fall back to returning "unknown" below.
             pass
     return "unknown"
 
@@ -1474,7 +1476,20 @@ def extension_add(
                 # Install from URL (ZIP file)
                 import urllib.request
                 import urllib.error
+                from urllib.parse import urlparse
 
+                # Validate URL
+                parsed = urlparse(from_url)
+                is_localhost = parsed.netloc.startswith("localhost") or parsed.netloc.startswith("127.0.0.1")
+
+                if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+                    console.print("[red]Error:[/red] URL must use HTTPS for security.")
+                    console.print("HTTP is only allowed for localhost URLs.")
+                    raise typer.Exit(1)
+
+                # Warn about untrusted sources
+                console.print("[yellow]Warning:[/yellow] Installing from external URL.")
+                console.print("Only install extensions from sources you trust.\n")
                 console.print(f"Downloading from {from_url}...")
 
                 # Download ZIP to temp location

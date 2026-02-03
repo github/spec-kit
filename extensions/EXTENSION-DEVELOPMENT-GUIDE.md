@@ -102,8 +102,6 @@ echo "Arguments: $ARGUMENTS"
 
 Load extension config from `.specify/extensions/my-ext/my-ext-config.yml`.
 
-```
-
 ### 5. Test Locally
 
 ```bash
@@ -247,7 +245,7 @@ Use standard Markdown with special placeholders:
 
 **Example**:
 
-```markdown
+````markdown
 ## Steps
 
 1. Parse arguments
@@ -257,14 +255,14 @@ Use standard Markdown with special placeholders:
 args="$ARGUMENTS"
 echo "Running with args: $args"
 ```
-
-```
+````
 
 ### Script Path Rewriting
 
 Extension commands use relative paths that get rewritten during registration:
 
 **In extension**:
+
 ```yaml
 scripts:
   sh: ../../scripts/bash/helper.sh
@@ -425,7 +423,7 @@ def test_command_files_exist():
 1. **Create repository**: `spec-kit-my-ext`
 2. **Add files**:
 
-   ```
+   ```text
    spec-kit-my-ext/
    ├── extension.yml
    ├── commands/
@@ -531,7 +529,7 @@ provides:
       file: "commands/hello.md"
 ```
 
-```markdown
+````markdown
 <!-- commands/hello.md -->
 ---
 description: "Hello command"
@@ -542,8 +540,7 @@ description: "Hello command"
 ```bash
 echo "Hello, $ARGUMENTS!"
 ```
-
-```
+````
 
 ### Extension with Config
 
@@ -565,7 +562,7 @@ api_endpoint: "https://api.example.com"
 timeout: 30
 ```
 
-```markdown
+````markdown
 <!-- commands/use-config.md -->
 # Use Config
 
@@ -575,8 +572,7 @@ config_file=".specify/extensions/tool/tool-config.yml"
 endpoint=$(yq eval '.api_endpoint' "$config_file")
 echo "Using endpoint: $endpoint"
 ```
-
-```
+````
 
 ### Extension with Hooks
 

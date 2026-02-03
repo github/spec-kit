@@ -679,7 +679,7 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 
 ## File System Layout
 
-```
+```text
 .specify/
 ├── extensions/
 │   ├── .registry               # Extension registry (JSON)

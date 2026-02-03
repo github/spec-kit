@@ -1,45 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-01-28T15:54:00Z",
+  "updated_at": "2026-02-03T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
-  "extensions": {
-    "jira": {
-      "name": "Jira Integration",
-      "id": "jira",
-      "description": "Create Jira Epics, Stories, and Issues from spec-kit artifacts",
-      "author": "Michal Bachorik",
-      "version": "2.1.0",
-      "download_url": "https://github.com/mbachorik/spec-kit-jira/archive/refs/tags/v2.1.0.zip",
-      "repository": "https://github.com/mbachorik/spec-kit-jira",
-      "homepage": "https://github.com/mbachorik/spec-kit-jira",
-      "documentation": "https://github.com/mbachorik/spec-kit-jira/blob/main/docs/",
-      "changelog": "https://github.com/mbachorik/spec-kit-jira/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0",
-        "tools": [
-          {
-            "name": "atlassian/atlassian-mcp-server",
-            "version": ">=1.0.0",
-            "required": true
-          }
-        ]
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "issue-tracking",
-        "jira",
-        "atlassian",
-        "project-management"
-      ],
-      "verified": true,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-01-28T15:54:00Z",
-      "updated_at": "2026-01-28T15:54:00Z"
-    }
-  }
+  "extensions": {}
 }

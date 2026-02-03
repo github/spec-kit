@@ -32,7 +32,7 @@ Before publishing an extension, ensure you have:
 
 Ensure your extension follows the standard structure:
 
-```
+```text
 your-extension/
 ├── extension.yml              # Required: Extension manifest
 ├── README.md                  # Required: Documentation
@@ -109,7 +109,7 @@ git push origin v1.0.0
 
 The release archive URL will be:
 
-```
+```text
 https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip
 ```
 

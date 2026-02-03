@@ -104,7 +104,7 @@ Introduce an extension system to Spec Kit that allows modular integration with e
 
 ### Directory Structure
 
-```
+```text
 project/
 ├── .specify/
 │   ├── scripts/                 # Core scripts (unchanged)
@@ -125,7 +125,7 @@ project/
 
 ### Component Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    Spec Kit Core                        │
 │  ┌──────────────────────────────────────────────────┐   │
@@ -627,7 +627,7 @@ export SPECKIT_JIRA_PROJECT_KEY="DEVTEST"
 
 **Location**: Extension command (e.g., `commands/specstoissues.md`)
 
-```markdown
+````markdown
 ## Load Configuration
 
 1. Run helper script to load and merge config:
@@ -638,8 +638,7 @@ echo "$config_json"
 ```
 
 1. Parse JSON and use in subsequent steps
-
-```
+````
 
 **Script**: `.specify/extensions/jira/scripts/parse-jira-config.sh`
 
@@ -679,7 +678,7 @@ echo "$defaults"
 
 **In command file**:
 
-```markdown
+````markdown
 ## Validate Configuration
 
 1. Load config (from previous step)
@@ -700,8 +699,7 @@ except jsonschema.ValidationError as e:
 ```
 
 1. Proceed with validated config
-
-```
+````
 
 ---
 
@@ -760,7 +758,7 @@ hooks:
 
 Add at end of command:
 
-```markdown
+````markdown
 ## Extension Hooks
 
 After task generation completes, check for registered hooks:
@@ -802,8 +800,7 @@ if [ -f ".specify/extensions.yml" ]; then
   fi
 fi
 ```
-
-```
+````
 
 **AI Agent Handling:**
 
@@ -1243,7 +1240,7 @@ provides:
 
 **At runtime, show warning:**
 
-```
+```text
 ⚠️  Warning: /speckit.jira.old-command is deprecated
    Use /speckit.jira.new-command instead
    This command will be removed in v2.0.0
@@ -1276,7 +1273,7 @@ Extensions run with **same privileges as AI agent**:
 - Not verified, use at own risk
 - Show warning during installation:
 
-  ```
+  ```text
   ⚠️  This extension is not verified.
      Review code before installing: https://github.com/...
 
@@ -1594,7 +1591,7 @@ AI agent registers both names, so old scripts work.
 
 **Complete structure of `spec-kit-jira` extension:**
 
-```
+```text
 spec-kit-jira/
 ├── README.md                        # Overview, features, installation
 ├── LICENSE                          # MIT license

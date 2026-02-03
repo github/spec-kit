@@ -388,8 +388,15 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            # Extract ZIP
+            # Extract ZIP safely (prevent Zip Slip attack)
             with zipfile.ZipFile(zip_path, 'r') as zf:
+                for member in zf.namelist():
+                    # Resolve the target path and ensure it's within temp_path
+                    member_path = (temp_path / member).resolve()
+                    if not str(member_path).startswith(str(temp_path.resolve())):
+                        raise ValidationError(
+                            f"Unsafe path in ZIP archive: {member} (potential path traversal)"
+                        )
                 zf.extractall(temp_path)
 
             # Find extension directory (may be nested)
@@ -445,9 +452,18 @@ class ExtensionManager:
 
         if keep_config:
             # Preserve config files, only remove non-config files
-            # For now, just skip deletion entirely (simpler approach)
-            # Future: could selectively preserve only *-config.yml files
-            pass
+            if extension_dir.exists():
+                for child in extension_dir.iterdir():
+                    # Keep top-level *-config.yml and *-config.local.yml files
+                    if child.is_file() and (
+                        child.name.endswith("-config.yml") or
+                        child.name.endswith("-config.local.yml")
+                    ):
+                        continue
+                    if child.is_dir():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
         else:
             # Backup config files before deleting
             if extension_dir.exists():
@@ -939,12 +955,42 @@ class ExtensionCatalog:
 
         Returns:
             URL to fetch catalog from
+
+        Raises:
+            ValidationError: If custom URL is invalid (non-HTTPS)
         """
         import os
+        import sys
+        from urllib.parse import urlparse
 
         # Environment variable override (useful for testing)
-        if catalog_url := os.environ.get("SPECKIT_CATALOG_URL"):
-            return catalog_url.strip()
+        if env_value := os.environ.get("SPECKIT_CATALOG_URL"):
+            catalog_url = env_value.strip()
+            parsed = urlparse(catalog_url)
+
+            # Require HTTPS for security (prevent man-in-the-middle attacks)
+            # Allow http://localhost for local development/testing
+            is_localhost = parsed.netloc.startswith("localhost") or parsed.netloc.startswith("127.0.0.1")
+            if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+                raise ValidationError(
+                    f"Invalid SPECKIT_CATALOG_URL: must use HTTPS (got {parsed.scheme}://). "
+                    "HTTP is only allowed for localhost."
+                )
+
+            if not parsed.netloc:
+                raise ValidationError(
+                    "Invalid SPECKIT_CATALOG_URL: must be a valid URL with a host."
+                )
+
+            # Warn users when using a non-default catalog
+            if catalog_url != self.DEFAULT_CATALOG_URL:
+                print(
+                    "Warning: Using non-default extension catalog. "
+                    "Only use catalogs from sources you trust.",
+                    file=sys.stderr,
+                )
+
+            return catalog_url
 
         # TODO: Support custom catalogs from .specify/extension-catalogs.yml
         return self.DEFAULT_CATALOG_URL
@@ -1517,7 +1563,6 @@ class HookExecutor:
             True if condition is met, False otherwise
         """
         import os
-        import re
 
         condition = condition.strip()
 

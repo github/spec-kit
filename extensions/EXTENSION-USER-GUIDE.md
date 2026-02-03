@@ -170,7 +170,7 @@ specify extension add --dev /path/to/extension
 
 ### Installation Output
 
-```
+```text
 ✓ Extension installed successfully!
 
 Jira Integration (v1.0.0)
@@ -193,7 +193,7 @@ Provided commands:
 
 Extensions add commands that appear in your AI agent (Claude Code):
 
-```
+```text
 # In Claude Code
 > /speckit.jira.specstoissues
 
@@ -226,7 +226,7 @@ Some extensions provide hooks that execute after core commands:
 
 **Example**: Jira extension hooks into `/speckit.tasks`
 
-```
+```text
 # Run core command
 > /speckit.tasks
 
@@ -255,7 +255,7 @@ specify extension list
 
 Output:
 
-```
+```text
 Installed Extensions:
 
   ✓ Jira Integration (v1.0.0)
@@ -275,7 +275,7 @@ specify extension update jira
 
 Output:
 
-```
+```text
 🔄 Checking for updates...
 
 Updates available:
@@ -326,7 +326,7 @@ specify extension remove jira --force
 
 Extensions can have multiple configuration files:
 
-```
+```text
 .specify/extensions/jira/
 ├── jira-config.yml           # Main config (version controlled)
 ├── jira-config.local.yml     # Local overrides (gitignored)
@@ -400,10 +400,10 @@ In addition to extension-specific environment variables (`SPECKIT_{EXT_ID}_*`), 
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SPECKIT_CATALOG_URL` | Override the extension catalog URL | GitHub-hosted catalog |
-| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub API token for downloads | None |
+| `SPECKIT_CATALOG_URL`       | Override the extension catalog URL | GitHub-hosted catalog |
+| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub API token for downloads     | None                  |
 
-**Example: Using a custom catalog for testing**
+#### Example: Using a custom catalog for testing
 
 ```bash
 # Point to a local or alternative catalog
@@ -519,7 +519,7 @@ export SPECKIT_CATALOG_URL="https://example.com/staging/catalog.json"
 
 Add to `.gitignore`:
 
-```
+```gitignore
 .specify/extensions/.cache/
 .specify/extensions/.backup/
 .specify/extensions/*/*.local.yml

@@ -449,7 +449,7 @@ $ARGUMENTS
         claude_dir = project_dir / ".claude" / "commands"
         claude_dir.mkdir(parents=True)
 
-        manager = ExtensionManager(project_dir)
+        ExtensionManager(project_dir)  # Initialize manager (side effects only)
         manifest = ExtensionManifest(extension_dir / "extension.yml")
 
         registrar = CommandRegistrar()
@@ -562,7 +562,7 @@ class TestIntegration:
         manager = ExtensionManager(project_dir)
 
         # Install
-        manifest = manager.install_from_directory(
+        manager.install_from_directory(
             extension_dir,
             "0.1.0",
             register_commands=True
