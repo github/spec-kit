@@ -387,9 +387,9 @@ class TestExtensionManager:
         # Remove extension (without keep_config)
         manager.remove("test-ext", keep_config=False)
 
-        # Check backup was created
-        backup_dir = project_dir / ".specify" / "extensions" / ".backup"
-        backup_file = backup_dir / "test-ext-test-ext-config.yml"
+        # Check backup was created (now in subdirectory per extension)
+        backup_dir = project_dir / ".specify" / "extensions" / ".backup" / "test-ext"
+        backup_file = backup_dir / "test-ext-config.yml"
         assert backup_file.exists()
         assert backup_file.read_text() == "test: config"
 
@@ -578,9 +578,14 @@ class TestIntegration:
         cmd_file = project_dir / ".claude" / "commands" / "speckit.test.hello.md"
         assert cmd_file.exists()
 
-        # Verify registry has registered commands
+        # Verify registry has registered commands (now a dict keyed by agent)
         metadata = manager.registry.get("test-ext")
-        assert "speckit.test.hello" in metadata["registered_commands"]
+        registered_commands = metadata["registered_commands"]
+        # Check that the command is registered for at least one agent
+        assert any(
+            "speckit.test.hello" in cmds
+            for cmds in registered_commands.values()
+        )
 
         # Remove
         result = manager.remove("test-ext")
