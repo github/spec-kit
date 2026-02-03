@@ -33,7 +33,7 @@ Analyze completed implementation against spec.md, plan.md, and tasks.md to measu
 ## Constraints
 
 - **Output**: Generates and saves `retrospective.md` report to FEATURE_DIR
-- **Post-Implementation**: Run after implementation complete; warn if <80% tasks done, abort if <50%
+- **Post-Implementation**: Run after implementation complete; warn if <80% tasks done, confirm before proceeding if <50%
 
 ## Execution Steps
 
@@ -46,8 +46,11 @@ For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot
 ### 2. Validate Completeness
 
 ```bash
-total_tasks=$(grep -c '^\- \[[ Xx]\]' "$TASKS")
-completed_tasks=$(grep -c '^\- \[[Xx]\]' "$TASKS")
+total_tasks=$(grep -c '^- \[[ Xx]\]' "$TASKS" || echo 0)
+completed_tasks=$(grep -c '^- \[[Xx]\]' "$TASKS" || echo 0)
+if [ "$total_tasks" -eq 0 ]; then
+  echo "No tasks found in $TASKS" && exit 1
+fi
 completion_rate=$((completed_tasks * 100 / total_tasks))
 ```
 
@@ -62,7 +65,7 @@ completion_rate=$((completed_tasks * 100 / total_tasks))
 
 ### 4. Discover Implementation
 
-- Extract file paths from completed tasks + `git log --name-only HEAD~50..HEAD`
+- Extract file paths from completed tasks + `git log --name-only --since="1 month ago" 2>/dev/null || git log --name-only`
 - Inventory: Models, APIs, Services, Tests, Config changes
 - Audit: Libraries, frameworks, integrations actually used
 
@@ -120,16 +123,23 @@ Check each article against implementation. All violations = CRITICAL.
 
 | Metric | Value |
 |--------|-------|
-| Total/Implemented/Modified/Not Implemented/Unspecified | X |
+| Total Requirements | X |
+| Implemented | X |
+| Modified | X |
+| Not Implemented | X |
+| Unspecified | X |
 
 ### Requirement Coverage Matrix
 | Req ID | Description | Status | Notes |
+|--------|-------------|--------|-------|
 
 ### Success Criteria Assessment
 | Criterion | Target | Actual | Met? |
+|-----------|--------|--------|------|
 
 ### Architecture Drift
 | Entity/Component | Specified | Actual | Change Type/Reason |
+|------------------|-----------|--------|--------------------|
 
 ### Significant Deviations
 For each: Severity, Requirements Affected, Specified vs Implemented, Discovery, Root Cause, Impact, Lesson
@@ -144,19 +154,23 @@ For each: Severity, Requirements Affected, Specified vs Implemented, Discovery, 
 
 ### Innovations & Best Practices
 | Innovation | Description | Benefit | Reusability | Constitution Candidate? |
+|------------|-------------|---------|-------------|-------------------------|
 
 **Example:**
 | Response caching | Redis cache for frequent queries | 85% less DB load, 60% faster | All read-heavy endpoints | Yes - "Cache-First" principle |
 
 ### Constitution Compliance
 | Article | Title | Status | Notes |
+|---------|-------|--------|-------|
 **Violations**: [None / List with justifications]
 
 ### Unspecified Implementations
 | Addition | Description | Justification | Should Have Been Specified? |
+|----------|-------------|---------------|-----------------------------|
 
 ### Task Execution Analysis
 | Phase | Planned | Completed | Added | Dropped |
+|-------|---------|-----------|-------|---------|
 
 ### Lessons Learned
 - Specification/Planning/Process/Technical improvements
@@ -166,12 +180,13 @@ For each: Severity, Requirements Affected, Specified vs Implemented, Discovery, 
 
 ### Appendix: File Traceability
 | File | Created/Modified | Requirements |
+|------|------------------|--------------|
 ```
 
 ### 11. Save Report
 
 1. Write to `FEATURE_DIR/retrospective.md` with YAML frontmatter (feature, branch, date, rates, counts)
-2. Commit: `Add retrospective analysis - Spec adherence: X% | Completion: X%`
+2. Commit: `feat(retrospective): add spec drift report (adherence X%, completion X%)`
 3. Confirm: `✅ Retrospective saved | 📊 Adherence: X% | ⚠️ Critical: X`
 
 ### 12. Follow-up Actions
