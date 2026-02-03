@@ -415,6 +415,215 @@ export SPECKIT_CATALOG_URL="https://example.com/staging/catalog.json"
 
 ---
 
+## Organization Catalog Customization
+
+### Why the Default Catalog is Empty
+
+The default spec-kit catalog ships empty by design. This allows organizations to:
+
+- **Control available extensions** - Curate which extensions your team can install
+- **Host private extensions** - Internal tools that shouldn't be public
+- **Customize for compliance** - Meet security/audit requirements
+- **Support air-gapped environments** - Work without internet access
+
+### Setting Up a Custom Catalog
+
+#### 1. Create Your Catalog File
+
+Create a `catalog.json` file with your extensions:
+
+```json
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-02-03T00:00:00Z",
+  "catalog_url": "https://your-org.com/spec-kit/catalog.json",
+  "extensions": {
+    "jira": {
+      "name": "Jira Integration",
+      "id": "jira",
+      "description": "Create Jira issues from spec-kit artifacts",
+      "author": "Your Organization",
+      "version": "2.1.0",
+      "download_url": "https://github.com/your-org/spec-kit-jira/archive/refs/tags/v2.1.0.zip",
+      "repository": "https://github.com/your-org/spec-kit-jira",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {"name": "atlassian-mcp-server", "required": true}
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": ["jira", "atlassian", "issue-tracking"],
+      "verified": true
+    },
+    "internal-tool": {
+      "name": "Internal Tool Integration",
+      "id": "internal-tool",
+      "description": "Connect to internal company systems",
+      "author": "Your Organization",
+      "version": "1.0.0",
+      "download_url": "https://internal.your-org.com/extensions/internal-tool-1.0.0.zip",
+      "repository": "https://github.internal.your-org.com/spec-kit-internal",
+      "license": "Proprietary",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2
+      },
+      "tags": ["internal", "proprietary"],
+      "verified": true
+    }
+  }
+}
+```
+
+#### 2. Host the Catalog
+
+Options for hosting your catalog:
+
+| Method | URL Example | Use Case |
+| ------ | ----------- | -------- |
+| GitHub Pages | `https://your-org.github.io/spec-kit-catalog/catalog.json` | Public or org-visible |
+| Internal web server | `https://internal.company.com/spec-kit/catalog.json` | Corporate network |
+| S3/Cloud storage | `https://s3.amazonaws.com/your-bucket/catalog.json` | Cloud-hosted teams |
+| Local file server | `http://localhost:8000/catalog.json` | Development/testing |
+
+**Security requirement**: URLs must use HTTPS (except `localhost` for testing).
+
+#### 3. Configure Your Environment
+
+##### Option A: Environment variable (recommended for CI/CD)
+
+```bash
+# In ~/.bashrc, ~/.zshrc, or CI pipeline
+export SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json"
+```
+
+##### Option B: Per-project configuration
+
+Create `.env` or set in your shell before running spec-kit commands:
+
+```bash
+SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json" specify extension search
+```
+
+#### 4. Verify Configuration
+
+```bash
+# Search should now show your catalog's extensions
+specify extension search
+
+# Install from your catalog
+specify extension add jira
+```
+
+### Catalog JSON Schema
+
+Required fields for each extension entry:
+
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| `name` | string | Yes | Human-readable name |
+| `id` | string | Yes | Unique identifier (lowercase, hyphens) |
+| `version` | string | Yes | Semantic version (X.Y.Z) |
+| `download_url` | string | Yes | URL to ZIP archive |
+| `repository` | string | Yes | Source code URL |
+| `description` | string | No | Brief description |
+| `author` | string | No | Author/organization |
+| `license` | string | No | SPDX license identifier |
+| `requires.speckit_version` | string | No | Version constraint |
+| `requires.tools` | array | No | Required external tools |
+| `provides.commands` | number | No | Number of commands |
+| `provides.hooks` | number | No | Number of hooks |
+| `tags` | array | No | Search tags |
+| `verified` | boolean | No | Verification status |
+
+### Use Cases
+
+#### Private/Internal Extensions
+
+Host proprietary extensions that integrate with internal systems:
+
+```json
+{
+  "internal-auth": {
+    "name": "Internal SSO Integration",
+    "download_url": "https://artifactory.company.com/spec-kit/internal-auth-1.0.0.zip",
+    "verified": true
+  }
+}
+```
+
+#### Curated Team Catalog
+
+Limit which extensions your team can install:
+
+```json
+{
+  "extensions": {
+    "jira": { "..." },
+    "github": { "..." }
+  }
+}
+```
+
+Only `jira` and `github` will appear in `specify extension search`.
+
+#### Air-Gapped Environments
+
+For networks without internet access:
+
+1. Download extension ZIPs to internal file server
+2. Create catalog pointing to internal URLs
+3. Host catalog on internal web server
+
+```json
+{
+  "jira": {
+    "download_url": "https://files.internal/spec-kit/jira-2.1.0.zip"
+  }
+}
+```
+
+#### Development/Testing
+
+Test new extensions before publishing:
+
+```bash
+# Start local server
+python -m http.server 8000 --directory ./my-catalog/
+
+# Point spec-kit to local catalog
+export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
+
+# Test installation
+specify extension add my-new-extension
+```
+
+### Combining with Direct Installation
+
+You can still install extensions not in your catalog using `--from`:
+
+```bash
+# From catalog
+specify extension add jira
+
+# Direct URL (bypasses catalog)
+specify extension add --from https://github.com/someone/spec-kit-ext/archive/v1.0.0.zip
+
+# Local development
+specify extension add --dev /path/to/extension
+```
+
+**Note**: Direct URL installation shows a security warning since the extension isn't from your configured catalog.
+
+---
+
 ## Troubleshooting
 
 ### Extension Not Found
