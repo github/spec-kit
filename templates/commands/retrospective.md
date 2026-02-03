@@ -9,6 +9,10 @@ handoffs:
     agent: speckit.specify
     prompt: Create a new feature incorporating learnings from retrospective
     send: true
+  - label: Create Checklist
+    agent: speckit.checklist
+    prompt: Create checklist based on retrospective findings
+    send: true
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
@@ -28,7 +32,7 @@ Analyze completed implementation against spec.md, plan.md, and tasks.md to measu
 
 ## Constraints
 
-- **READ-ONLY**: Output report only, no file modifications
+- **Output**: Generates and saves `retrospective.md` report to FEATURE_DIR
 - **Post-Implementation**: Run after implementation complete; warn if <80% tasks done, abort if <50%
 
 ## Execution Steps
@@ -56,17 +60,13 @@ completion_rate=$((completed_tasks * 100 / total_tasks))
 - **tasks.md**: All tasks with status, file paths, blockers
 - **constitution**: `/memory/constitution.md` (if exists)
 
-### 4. Load Pre-Implementation Analysis
-
-Check FEATURE_DIR for analysis-report.md. Track: predicted vs actual issues.
-
-### 5. Discover Implementation
+### 4. Discover Implementation
 
 - Extract file paths from completed tasks + `git log --name-only HEAD~50..HEAD`
 - Inventory: Models, APIs, Services, Tests, Config changes
 - Audit: Libraries, frameworks, integrations actually used
 
-### 6. Spec Drift Analysis
+### 5. Spec Drift Analysis
 
 #### A. Requirement Coverage
 
@@ -83,7 +83,7 @@ Check FEATURE_DIR for analysis-report.md. Track: predicted vs actual issues.
 #### D. Task Fidelity - Tasks completed/modified/added/dropped
 #### E. Timeline (if available) - Phase delays, scope changes, blockers
 
-### 7. Severity Classification
+### 6. Severity Classification
 
 | Severity | Criteria | Example |
 |----------|----------|--------|
@@ -92,28 +92,24 @@ Check FEATURE_DIR for analysis-report.md. Track: predicted vs actual issues.
 | **MINOR** | Small variations, cosmetic | Button color differs |
 | **POSITIVE** | Improvements over spec | Added response caching |
 
-### 8. Innovation Opportunities
+### 7. Innovation Opportunities
 
 For positive deviations: What improved, why better, reusability, constitution candidate?
 
-### 9. Root Cause Analysis
+### 8. Root Cause Analysis
 
 - **Discovery Point**: Planning/Implementation/Testing/Review
 - **Cause**: Spec Gap, Tech Constraint, Scope Evolution, Misunderstanding, Improvement, Process Skip
 - **Prevention**: How to avoid in future
 
-### 10. Constitution Compliance
+### 9. Constitution Compliance
 
 Check each article against implementation. All violations = CRITICAL.
 
 | Article | Title | Status | Notes |
 |---------|-------|--------|-------|
 
-### 11. Analysis Effectiveness (if applicable)
-
-Compare predicted vs actual issues. Calculate accuracy: `(correctly_predicted / total_actual) * 100`
-
-### 12. Generate Report
+### 10. Generate Report
 
 ```markdown
 ## 📊 Feature Retrospective Report
@@ -156,9 +152,6 @@ For each: Severity, Requirements Affected, Specified vs Implemented, Discovery, 
 | Article | Title | Status | Notes |
 **Violations**: [None / List with justifications]
 
-### Analysis Effectiveness (if applicable)
-| Category | Predicted & Found | Predicted & Not Found | Found & Not Predicted |
-
 ### Unspecified Implementations
 | Addition | Description | Justification | Should Have Been Specified? |
 
@@ -175,13 +168,13 @@ For each: Severity, Requirements Affected, Specified vs Implemented, Discovery, 
 | File | Created/Modified | Requirements |
 ```
 
-### 13. Save Report
+### 11. Save Report
 
 1. Write to `FEATURE_DIR/retrospective.md` with YAML frontmatter (feature, branch, date, rates, counts)
 2. Commit: `Add retrospective analysis - Spec adherence: X% | Completion: X%`
 3. Confirm: `✅ Retrospective saved | 📊 Adherence: X% | ⚠️ Critical: X`
 
-### 14. Follow-up Actions
+### 12. Follow-up Actions
 
 **By Priority:**
 1. **CRITICAL**: Constitution violations, breaking changes, security issues
