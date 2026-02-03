@@ -942,6 +942,41 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+def ensure_constitution_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Copy constitution template to memory if it doesn't exist (preserves existing constitution on reinitialization)."""
+    memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
+    template_constitution = project_path / ".specify" / "templates" / "constitution-template.md"
+
+    # If constitution already exists in memory, preserve it
+    if memory_constitution.exists():
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.skip("constitution", "existing file preserved")
+        return
+
+    # If template doesn't exist, something went wrong with extraction
+    if not template_constitution.exists():
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.error("constitution", "template not found")
+        return
+
+    # Copy template to memory directory
+    try:
+        memory_constitution.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(template_constitution, memory_constitution)
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.complete("constitution", "copied from template")
+        else:
+            console.print(f"[cyan]Initialized constitution from template[/cyan]")
+    except Exception as e:
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.error("constitution", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
@@ -1108,6 +1143,7 @@ def init(
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
+        ("constitution", "Constitution setup"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -1127,6 +1163,8 @@ def init(
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            ensure_constitution_from_template(project_path, tracker=tracker)
 
             if not no_git:
                 tracker.start("git")
