@@ -44,3 +44,13 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Extension system
+.specify/extensions/.cache/
+.specify/extensions/.backup/
+.specify/extensions/*/local-config.yml
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/

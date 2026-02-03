@@ -7,6 +7,120 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-01-28
+
+### Added
+
+- **Extension System**: Introduced modular extension architecture for Spec Kit
+  - Extensions are self-contained packages that add commands and functionality without bloating core
+  - Extension manifest schema (`extension.yml`) with validation
+  - Extension registry (`.specify/extensions/.registry`) for tracking installed extensions
+  - Extension manager module (`src/specify_cli/extensions.py`) for installation/removal
+  - New CLI commands:
+    - `specify extension list` - List installed extensions
+    - `specify extension add` - Install extension from local directory or URL
+    - `specify extension remove` - Uninstall extension
+    - `specify extension search` - Search extension catalog
+    - `specify extension info` - Show detailed extension information
+  - Semantic versioning compatibility checks
+  - Support for extension configuration files
+  - Command registration system for AI agents (Claude support initially)
+  - Added dependencies: `pyyaml>=6.0`, `packaging>=23.0`
+
+- **Extension Catalog**: Extension discovery and distribution system
+  - Central catalog (`extensions/catalog.json`) for published extensions
+  - Extension catalog manager (`ExtensionCatalog` class) with:
+    - Catalog fetching from GitHub
+    - 1-hour local caching for performance
+    - Search by query, tag, author, or verification status
+    - Extension info retrieval
+  - Catalog cache stored in `.specify/extensions/.cache/`
+  - Search and info commands with rich console output
+  - Added 9 catalog-specific unit tests (100% pass rate)
+
+- **Jira Extension**: First official extension for Jira integration
+  - Extension ID: `jira`
+  - Version: 1.0.0
+  - Commands:
+    - `/speckit.jira.specstoissues` - Create Jira hierarchy from spec and tasks
+    - `/speckit.jira.discover-fields` - Discover Jira custom fields
+    - `/speckit.jira.sync-status` - Sync task completion status
+  - Comprehensive documentation (README, usage guide, examples)
+  - MIT licensed
+
+- **Hook System**: Extension lifecycle hooks for automation
+  - `HookExecutor` class for managing extension hooks
+  - Hooks registered in `.specify/extensions.yml`
+  - Hook registration during extension installation
+  - Hook unregistration during extension removal
+  - Support for optional and mandatory hooks
+  - Hook execution messages for AI agent integration
+  - Condition support for conditional hook execution (placeholder)
+
+- **Extension Management**: Advanced extension management commands
+  - `specify extension update` - Check and update extensions to latest version
+  - `specify extension enable` - Enable a disabled extension
+  - `specify extension disable` - Disable extension without removing it
+  - Version comparison with catalog
+  - Update notifications
+  - Preserve configuration during updates
+
+- **Multi-Agent Support**: Extensions now work with all supported AI agents (Phase 6)
+  - Automatic detection and registration for all agents in project
+  - Support for 16+ AI agents (Claude, Gemini, Copilot, Cursor, Qwen, and more)
+  - Agent-specific command formats (Markdown and TOML)
+  - Automatic argument placeholder conversion ($ARGUMENTS → {{args}})
+  - Commands registered for all detected agents during installation
+  - Multi-agent command unregistration on extension removal
+  - `CommandRegistrar.register_commands_for_agent()` method
+  - `CommandRegistrar.register_commands_for_all_agents()` method
+
+- **Configuration Layers**: Full configuration cascade system (Phase 6)
+  - **Layer 1**: Defaults from extension manifest (`extension.yml`)
+  - **Layer 2**: Project config (`.specify/extensions/{ext-id}/{ext-id}-config.yml`)
+  - **Layer 3**: Local config (`.specify/extensions/{ext-id}/local-config.yml`, gitignored)
+  - **Layer 4**: Environment variables (`SPECKIT_{EXT_ID}_{KEY}` pattern)
+  - Recursive config merging with proper precedence
+  - `ConfigManager` class for programmatic config access
+  - `get_config()`, `get_value()`, `has_value()` methods
+  - Support for nested configuration paths with dot-notation
+
+- **Hook Condition Evaluation**: Smart hook execution based on runtime conditions (Phase 6)
+  - Config conditions: `config.key.path is set`, `config.key == 'value'`, `config.key != 'value'`
+  - Environment conditions: `env.VAR is set`, `env.VAR == 'value'`, `env.VAR != 'value'`
+  - Automatic filtering of hooks based on condition evaluation
+  - Safe fallback behavior on evaluation errors
+  - Case-insensitive pattern matching
+
+- **Hook Integration**: Agent-level hook checking and execution (Phase 6)
+  - `check_hooks_for_event()` method for AI agents to query hooks after core commands
+  - Condition-aware hook filtering before execution
+  - `enable_hooks()` and `disable_hooks()` methods per extension
+  - Formatted hook messages for agent display
+  - `execute_hook()` method for hook execution information
+
+- **Documentation Suite**: Comprehensive documentation for users and developers
+  - **EXTENSION-USER-GUIDE.md**: Complete user guide with installation, usage, configuration, and troubleshooting
+  - **EXTENSION-API-REFERENCE.md**: Technical API reference with manifest schema, Python API, and CLI commands
+  - **EXTENSION-PUBLISHING-GUIDE.md**: Publishing guide for extension authors
+  - **RFC-EXTENSION-SYSTEM.md**: Extension architecture design document
+
+- **Extension Template**: Starter template in `extensions/template/` for creating new extensions
+  - Fully commented `extension.yml` manifest template
+  - Example command file with detailed explanations
+  - Configuration template with all options
+  - Complete project structure (README, LICENSE, CHANGELOG, .gitignore)
+  - EXAMPLE-README.md showing final documentation format
+
+- **Unit Tests**: Comprehensive test suite with 39 tests covering all extension system components
+  - Test coverage: 83% of extension module code
+  - Test dependencies: `pytest>=7.0`, `pytest-cov>=4.0`
+  - Configured pytest in `pyproject.toml`
+
+### Changed
+
+- Version bumped to 0.1.0 (minor release for new feature)
+
 ## [0.0.22] - 2025-11-07
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.
