@@ -54,7 +54,7 @@ advanced:
   timeout: 30
 
   # Retry attempts
- retry_count: 3
+  retry_count: 3
 
   # Cache duration in seconds
   cache_duration: 3600

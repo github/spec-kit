@@ -1480,7 +1480,7 @@ def extension_add(
 
                 # Validate URL
                 parsed = urlparse(from_url)
-                is_localhost = parsed.netloc.startswith("localhost") or parsed.netloc.startswith("127.0.0.1")
+                is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
 
                 if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
                     console.print("[red]Error:[/red] URL must use HTTPS for security.")

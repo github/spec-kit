@@ -169,7 +169,7 @@ cp .specify/extensions/my-extension/config-template.yml \
 <!-- CUSTOMIZE: Add helpful notes and tips -->
 
 - This command requires an active connection to the external service
-- Results are cached for  performance
+- Results are cached for performance
 - Re-run the command to refresh data
 
 ## Examples
