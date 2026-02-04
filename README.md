@@ -290,6 +290,7 @@ Use `/speckit.change` when:
 
 | Command                 | Description                                                                      |
 | ----------------------- | -------------------------------------------------------------------------------- |
+| `/speckit.bootstrap`    | Initialize /docs from code, existing docs, or migrate from specs/               |
 | `/speckit.setup`        | Full project setup (hooks, skills, agents, constitution)                         |
 | `/speckit.setup-hooks`  | Configure hooks and skills for project                                           |
 | `/speckit.agents`       | Generate specialized subagents for the workflow                                  |

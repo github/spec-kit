@@ -402,12 +402,15 @@ For small, focused modifications without the full workflow overhead.
 
 | Phase | Command | Input | Output |
 |-------|---------|-------|--------|
+| **Setup** | `/speckit.bootstrap` | from-code/from-docs/from-specs | /docs/{domain}/spec.md |
 | Explore | `/speckit.idea` | Raw idea | idea.md, features/ |
 | Specify | `/speckit.specify` | Description | spec.md |
 | Clarify | `/speckit.clarify` | - | Updated spec.md |
 | Plan | `/speckit.plan` | Tech stack | plan.md, research.md, data-model.md, contracts/ |
 | Tasks | `/speckit.tasks` | - | tasks.md |
 | Implement | `/speckit.implement` | - | Code, task-results/ |
+| **Merge** | `/speckit.merge` | - | /docs/{domain}/spec.md updated |
+| **Learn** | `/speckit.learn` | - | architecture-registry, CLAUDE.md |
 | Validate | `/speckit.validate` | - | validation/, bugs/ |
 | Fix | `/speckit.fix` | Bug ID | Fixed code |
 | Change | `/speckit.change` | Description | Updated code/spec |
