@@ -231,17 +231,33 @@ format_technology_stack() {
 
 # Split a technology string into individual technologies
 # Splits on " + " and ", " to extract individual items
+# Also strips parenthetical annotations like "(primary)", "(sessions/cache)" from base tech names
 split_technologies() {
     local tech_string="$1"
     # Replace " + " with newlines, then ", " with newlines, then trim each line
-    echo "$tech_string" | sed 's/ + /\n/g' | sed 's/, /\n/g' | sed 's/^[ \t]*//;s/[ \t]*$//' | grep -v '^$' | sort -u
+    # Also remove parenthetical suffixes that describe usage (primary, sessions, cache, etc.)
+    echo "$tech_string" | sed 's/ + /\n/g' | sed 's/, /\n/g' | \
+        sed 's/^[ \t]*//;s/[ \t]*$//' | \
+        sed 's/ (primary)$//; s/ (sessions)$//; s/ (cache)$//; s/ (sessions\/cache)$//; s/ (pub\/sub)$//' | \
+        grep -v '^$' | sort -u
+}
+
+# Check if a technology looks like a database/storage technology
+is_database_tech() {
+    local tech="$1"
+    # Common database/storage patterns
+    if [[ "$tech" =~ (PostgreSQL|MySQL|MariaDB|MongoDB|Redis|SQLite|Oracle|SQL\ Server|Cassandra|DynamoDB|Firebase|Supabase|primary|sessions|cache|storage) ]]; then
+        return 0
+    fi
+    return 1
 }
 
 # Extract existing technologies from the Active Technologies section
-extract_existing_technologies() {
+# Returns two categories: LANGS (languages/frameworks) and DBS (databases)
+extract_existing_technologies_by_category() {
     local target_file="$1"
     local in_tech_section=false
-    local techs=""
+    local all_techs=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         if [[ "$line" == "## Active Technologies" ]]; then
@@ -253,44 +269,63 @@ extract_existing_technologies() {
             # Remove the leading "- " and any trailing branch annotation like "(001-feature)"
             local entry="${line#- }"
             entry=$(echo "$entry" | sed 's/ ([^)]*-[^)]*)$//')
-            techs="$techs"$'\n'"$entry"
+            all_techs="$all_techs"$'\n'"$entry"
         fi
     done < "$target_file"
 
     # Split all collected entries into individual technologies
-    echo "$techs" | while IFS= read -r entry; do
+    echo "$all_techs" | while IFS= read -r entry; do
         [[ -n "$entry" ]] && split_technologies "$entry"
     done | sort -u
 }
 
-# Check if a specific technology already exists in the file
-tech_exists_in_file() {
-    local tech="$1"
-    local target_file="$2"
-    local existing_techs="$3"
+# Consolidate technologies into a clean, deduplicated list
+# Separates into two categories: languages/frameworks and databases
+consolidate_technologies() {
+    local target_file="$1"
+    local new_tech_stack="$2"
+    local new_db="$3"
 
-    # Check if this exact tech is in the existing list
-    echo "$existing_techs" | grep -Fxq "$tech"
-}
+    local langs_frameworks=""
+    local databases=""
 
-# Filter out technologies that already exist, returning only new ones
-filter_new_technologies() {
-    local tech_string="$1"
-    local existing_techs="$2"
-    local new_techs=""
+    # Get all existing technologies
+    local existing_techs=""
+    if [[ -f "$target_file" ]]; then
+        existing_techs=$(extract_existing_technologies_by_category "$target_file")
+    fi
 
+    # Add new technologies to the pool
+    local all_techs="$existing_techs"
+    if [[ -n "$new_tech_stack" ]]; then
+        all_techs="$all_techs"$'\n'"$(split_technologies "$new_tech_stack")"
+    fi
+    if [[ -n "$new_db" ]] && [[ "$new_db" != "N/A" ]] && [[ "$new_db" != "NEEDS CLARIFICATION" ]]; then
+        all_techs="$all_techs"$'\n'"$(split_technologies "$new_db")"
+    fi
+
+    # Deduplicate and categorize
     while IFS= read -r tech; do
         [[ -z "$tech" ]] && continue
-        if ! echo "$existing_techs" | grep -Fxq "$tech"; then
-            if [[ -z "$new_techs" ]]; then
-                new_techs="$tech"
+
+        if is_database_tech "$tech"; then
+            if [[ -z "$databases" ]]; then
+                databases="$tech"
             else
-                new_techs="$new_techs, $tech"
+                databases="$databases, $tech"
+            fi
+        else
+            if [[ -z "$langs_frameworks" ]]; then
+                langs_frameworks="$tech"
+            else
+                langs_frameworks="$langs_frameworks, $tech"
             fi
         fi
-    done < <(split_technologies "$tech_string")
+    done < <(echo "$all_techs" | sort -u | grep -v '^$')
 
-    echo "$new_techs"
+    # Output the two categories
+    echo "LANGS:$langs_frameworks"
+    echo "DBS:$databases"
 }
 
 #==============================================================================
@@ -439,41 +474,33 @@ update_existing_agent_file() {
 
     # Process the file in one pass
     local tech_stack=$(format_technology_stack "$NEW_LANG" "$NEW_FRAMEWORK")
-    local new_tech_entries=()
     local new_change_entry=""
 
-    # Extract existing technologies for smart deduplication
-    local existing_techs=""
-    if [[ -f "$target_file" ]]; then
-        existing_techs=$(extract_existing_technologies "$target_file")
+    # Consolidate all technologies (existing + new) into deduplicated categories
+    local consolidated=$(consolidate_technologies "$target_file" "$tech_stack" "$NEW_DB")
+    local consolidated_langs=$(echo "$consolidated" | grep "^LANGS:" | sed 's/^LANGS://')
+    local consolidated_dbs=$(echo "$consolidated" | grep "^DBS:" | sed 's/^DBS://')
+
+    # Build consolidated tech entries (replacing all existing entries)
+    local consolidated_tech_entries=()
+    if [[ -n "$consolidated_langs" ]]; then
+        consolidated_tech_entries+=("- $consolidated_langs")
+    fi
+    if [[ -n "$consolidated_dbs" ]]; then
+        consolidated_tech_entries+=("- $consolidated_dbs")
     fi
 
-    # Prepare new technology entries - only add truly new technologies
-    if [[ -n "$tech_stack" ]]; then
-        local new_techs=$(filter_new_technologies "$tech_stack" "$existing_techs")
-        if [[ -n "$new_techs" ]]; then
-            new_tech_entries+=("- $new_techs ($CURRENT_BRANCH)")
-        fi
-    fi
-
-    if [[ -n "$NEW_DB" ]] && [[ "$NEW_DB" != "N/A" ]] && [[ "$NEW_DB" != "NEEDS CLARIFICATION" ]]; then
-        local new_db_techs=$(filter_new_technologies "$NEW_DB" "$existing_techs")
-        if [[ -n "$new_db_techs" ]]; then
-            new_tech_entries+=("- $new_db_techs ($CURRENT_BRANCH)")
-        fi
-    fi
-    
     # Prepare new change entry
     if [[ -n "$tech_stack" ]]; then
         new_change_entry="- $CURRENT_BRANCH: Added $tech_stack"
     elif [[ -n "$NEW_DB" ]] && [[ "$NEW_DB" != "N/A" ]] && [[ "$NEW_DB" != "NEEDS CLARIFICATION" ]]; then
         new_change_entry="- $CURRENT_BRANCH: Added $NEW_DB"
     fi
-    
+
     # Check if sections exist in the file
     local has_active_technologies=0
     local has_recent_changes=0
-    
+
     if grep -q "^## Active Technologies" "$target_file" 2>/dev/null; then
         has_active_technologies=1
     fi
@@ -489,7 +516,7 @@ update_existing_agent_file() {
     local changes_entries_added=false
     local existing_changes_count=0
     local file_ended=false
-    
+
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Handle Active Technologies section
         if [[ "$line" == "## Active Technologies" ]]; then
@@ -497,21 +524,24 @@ update_existing_agent_file() {
             in_tech_section=true
             continue
         elif [[ $in_tech_section == true ]] && [[ "$line" =~ ^##[[:space:]] ]]; then
-            # Add new tech entries before closing the section
-            if [[ $tech_entries_added == false ]] && [[ ${#new_tech_entries[@]} -gt 0 ]]; then
-                printf '%s\n' "${new_tech_entries[@]}" >> "$temp_file"
+            # Write consolidated entries before closing the section
+            if [[ $tech_entries_added == false ]] && [[ ${#consolidated_tech_entries[@]} -gt 0 ]]; then
+                printf '%s\n' "${consolidated_tech_entries[@]}" >> "$temp_file"
                 tech_entries_added=true
             fi
             echo "$line" >> "$temp_file"
             in_tech_section=false
             continue
         elif [[ $in_tech_section == true ]] && [[ -z "$line" ]]; then
-            # Add new tech entries before empty line in tech section
-            if [[ $tech_entries_added == false ]] && [[ ${#new_tech_entries[@]} -gt 0 ]]; then
-                printf '%s\n' "${new_tech_entries[@]}" >> "$temp_file"
+            # Write consolidated entries before empty line in tech section
+            if [[ $tech_entries_added == false ]] && [[ ${#consolidated_tech_entries[@]} -gt 0 ]]; then
+                printf '%s\n' "${consolidated_tech_entries[@]}" >> "$temp_file"
                 tech_entries_added=true
             fi
             echo "$line" >> "$temp_file"
+            continue
+        elif [[ $in_tech_section == true ]] && [[ "$line" == "- "* ]]; then
+            # Skip existing tech entries - they will be replaced by consolidated entries
             continue
         fi
         
@@ -546,17 +576,17 @@ update_existing_agent_file() {
         fi
     done < "$target_file"
     
-    # Post-loop check: if we're still in the Active Technologies section and haven't added new entries
-    if [[ $in_tech_section == true ]] && [[ $tech_entries_added == false ]] && [[ ${#new_tech_entries[@]} -gt 0 ]]; then
-        printf '%s\n' "${new_tech_entries[@]}" >> "$temp_file"
+    # Post-loop check: if we're still in the Active Technologies section and haven't added entries
+    if [[ $in_tech_section == true ]] && [[ $tech_entries_added == false ]] && [[ ${#consolidated_tech_entries[@]} -gt 0 ]]; then
+        printf '%s\n' "${consolidated_tech_entries[@]}" >> "$temp_file"
         tech_entries_added=true
     fi
-    
+
     # If sections don't exist, add them at the end of the file
-    if [[ $has_active_technologies -eq 0 ]] && [[ ${#new_tech_entries[@]} -gt 0 ]]; then
+    if [[ $has_active_technologies -eq 0 ]] && [[ ${#consolidated_tech_entries[@]} -gt 0 ]]; then
         echo "" >> "$temp_file"
         echo "## Active Technologies" >> "$temp_file"
-        printf '%s\n' "${new_tech_entries[@]}" >> "$temp_file"
+        printf '%s\n' "${consolidated_tech_entries[@]}" >> "$temp_file"
         tech_entries_added=true
     fi
     
