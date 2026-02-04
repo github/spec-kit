@@ -46,9 +46,66 @@ You **MUST** consider the user input before proceeding (if not empty).
      - "Constraints & Assumptions" → technical constraints
      - "Discovery Notes" → technical decisions made during exploration
      - Feature files → "Technical Hints" or "Notes" sections
-   - Store these as IDEA_TECHNICAL_CONSTRAINTS for validation in step 6
+   - Store these as IDEA_TECHNICAL_CONSTRAINTS for validation in step 7
 
-4. **Load Architecture Registry (CRITICAL for consistency)**:
+4. **Load Existing Documentation (CRITICAL for consistency)**:
+
+   > **Apply**: Single Source of Truth - ensure new feature aligns with existing project documentation.
+
+   BEFORE designing, load existing project documentation to understand context:
+
+   a. **Check if `/docs` directory exists**:
+      - If `/docs/README.md` exists → project has consolidated documentation
+      - List existing domains from `/docs/*/spec.md`
+
+   b. **Identify target domain** from spec.md:
+      - Extract domain from DOCUMENTATION_CONTEXT (set by specify)
+      - If not set, infer from feature name/description
+
+   c. **Load domain spec** from `/docs/{domain}/spec.md`:
+      - Extract existing features in this domain
+      - Identify entities, business rules, API contracts
+      - Understand how new feature fits with existing ones
+
+   d. **Load cross-domain dependencies** (if needed):
+      - Check spec.md for dependencies on other domains
+      - Load related domain specs for integration context
+      - Identify shared entities or contracts
+
+   e. **Create DOCUMENTATION_CONTEXT**:
+      ```markdown
+      ## Existing Documentation Context
+
+      ### Target Domain: {domain}
+
+      #### Features in Domain
+      | Feature | Business Rules | Integration Points |
+      |---------|----------------|-------------------|
+      | [feature] | [rules] | [APIs, events] |
+
+      #### Reusable Entities (from domain)
+      | Entity | Fields | Extension Needed |
+      |--------|--------|------------------|
+      | [entity] | [key fields] | [yes/no - what] |
+
+      #### Domain API Patterns
+      | Endpoint | Purpose | Reuse For |
+      |----------|---------|-----------|
+      | [endpoint] | [what it does] | [new feature usage] |
+
+      ### Cross-Domain Dependencies
+      | Domain | Dependency | Contract |
+      |--------|------------|----------|
+      | [domain] | [what we need] | [API/event] |
+      ```
+
+   f. **If no `/docs` exists**:
+      - Log: "No consolidated documentation found - this is likely the first feature"
+      - Recommend running `/speckit.merge` after implementation to initialize `/docs`
+
+   **CRITICAL PRINCIPLE**: New features MUST be consistent with domain's documented business rules and entities.
+
+5. **Load Architecture Registry (CRITICAL for technical consistency)**:
 
    > **Apply**: DRY - reuse before creating. ADR for understanding past decisions. Clean/Hexagonal Architecture for layer constraints.
 
@@ -82,12 +139,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    c. **If no registry exists**:
       - Log: "⚠️ No architecture registry found - this is the first feature or registry not initialized"
-      - Recommend running `/speckit.extract-patterns` after this feature to initialize registry
+      - Recommend running `/speckit.learn` after this feature to initialize registry
       - Proceed without constraints (but document all decisions for later extraction)
 
    **CRITICAL PRINCIPLE**: New features MUST align with established patterns. Divergence requires explicit justification.
 
-5. **Explore existing codebase (CRITICAL for reuse, guided by registry)**:
+6. **Explore existing codebase (CRITICAL for reuse, guided by registry)**:
 
    BEFORE designing any new solution, thoroughly explore what already exists in the codebase:
 
@@ -146,7 +203,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Refactoring existing code would be more costly than creating new
    - The new solution would benefit multiple features (justify in research.md)
 
-6. **Validate Architecture Alignment (CRITICAL - prevents drift)**:
+7. **Validate Architecture Alignment (CRITICAL - prevents drift)**:
 
    BEFORE proceeding to design, validate that planned approach aligns with ARCHITECTURE_CONSTRAINTS:
 
@@ -201,18 +258,18 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    **HARD RULE**: Undocumented divergence = architectural drift = rejected plan
 
-7. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+8. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
-   - Phase 0: Generate research.md (include Existing Codebase Analysis from step 5)
+   - Phase 0: Generate research.md (include Existing Codebase Analysis from step 6)
    - Phase 1: Generate data-model.md, contracts/, quickstart.md
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
    - **Prefer extending existing components over creating new ones**
    - **Ensure Architecture Alignment section is included in plan.md**
 
-8. **Validate alignment with source idea (CRITICAL)**:
+9. **Validate alignment with source idea (CRITICAL)**:
 
    Before finalizing, verify that the plan respects IDEA_TECHNICAL_CONSTRAINTS:
 
@@ -254,7 +311,7 @@ You **MUST** consider the user input before proceeding (if not empty).
       - Ask user to confirm before proceeding
       - Document the decision in research.md
 
-9. **Stop and report**: Command ends after Phase 2 planning. Report:
+10. **Stop and report**: Command ends after Phase 2 planning. Report:
    - Branch and IMPL_PLAN path
    - Generated artifacts
    - **Architecture alignment status** (patterns followed, divergences approved)
@@ -266,9 +323,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ### Phase 0: Outline & Research
 
-1. **Include Existing Codebase Analysis** (from step 5):
-   - Copy the findings from step 5 into research.md
-   - Include Architecture Constraints from step 4
+1. **Include Existing Codebase Analysis** (from step 6):
+   - Copy the findings from step 6 into research.md
+   - Include Architecture Constraints from step 5
    - This MUST be the first section of research.md
    - All subsequent decisions should reference this analysis and registry constraints
 
@@ -292,7 +349,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    ```markdown
    ## Existing Codebase Analysis
-   [From step 4 - reusable components, patterns, conflicts]
+   [From step 6 - reusable components, patterns, conflicts]
 
    ## Technical Decisions
 
@@ -325,7 +382,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **First check**: Do similar endpoints already exist?
    - If similar endpoint exists: Consider extending or reusing patterns
    - For each user action → endpoint
-   - Use existing patterns from codebase (discovered in step 5) and registry (step 4)
+   - Use existing patterns from codebase (discovered in step 6) and registry (step 5)
    - Output OpenAPI/GraphQL schema to `/contracts/`
    - **Mark each endpoint**: EXISTING / MODIFIED / NEW
 

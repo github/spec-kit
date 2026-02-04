@@ -283,16 +283,19 @@ Use `/speckit.change` when:
 | `/speckit.analyze`         | Cross-artifact consistency & coverage analysis                                   |
 | `/speckit.review`          | Code quality analysis, technical debt detection, actionable recommendations      |
 | `/speckit.checklist`       | Generate quality checklists ("unit tests for English")                           |
-| `/speckit.extract-patterns`| Extract architectural patterns from codebase to update registry                  |
+| `/speckit.learn`           | Analyze codebase to update architecture registry + module CLAUDE.md files        |
+| `/speckit.merge`           | Merge feature branch to main, consolidate docs to /docs                          |
 
 #### Setup & Configuration Commands
 
-| Command                 | Description                                                                      |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| `/speckit.setup`        | Full project setup (hooks, skills, agents, constitution)                         |
-| `/speckit.setup-hooks`  | Configure hooks and skills for project                                           |
-| `/speckit.agents`       | Generate specialized subagents for the workflow                                  |
-| `/speckit.mcp`          | Generate MCP server for the project                                              |
+| Command                       | Description                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `/speckit.setup`              | **Orchestrator** - runs all setup-xxx sub-commands                          |
+| `/speckit.setup-constitution` | Create/update project constitution                                          |
+| `/speckit.setup-docs`         | Initialize /docs domain structure (from-code/from-docs/from-specs)          |
+| `/speckit.setup-skills`       | Configure skills based on detected frameworks                               |
+| `/speckit.setup-agents`       | Generate specialized subagents                                              |
+| `/speckit.setup-mcp`          | Configure MCP server for testing/automation                                 |
 
 #### Utility Commands
 

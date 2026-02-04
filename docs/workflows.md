@@ -6,13 +6,13 @@ This guide describes the different workflows available in Spec Kit and when to u
 
 | Scenario | Workflow | Commands |
 |----------|----------|----------|
-| New feature from scratch | Full Workflow | idea → specify → clarify → plan → tasks → implement → validate |
-| New feature (simple) | Standard Workflow | specify → plan → tasks → implement |
+| New feature from scratch | Full Workflow | idea → specify → clarify → plan → tasks → implement → validate → merge |
+| New feature (simple) | Standard Workflow | specify → plan → tasks → implement → merge |
 | Bug fix | Quick Change | change |
 | Spec clarification | Quick Change | change |
 | User feedback | Quick Change | change |
 | Code refinement | Quick Change | change |
-| Major refactoring | Full Workflow | specify → plan → tasks → implement |
+| Major refactoring | Full Workflow | specify → plan → tasks → implement → merge |
 
 ---
 
@@ -21,28 +21,29 @@ This guide describes the different workflows available in Spec Kit and when to u
 The complete Spec-Driven Development workflow for building new features from scratch.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                 │
-│    ┌──────┐    ┌─────────┐    ┌─────────┐    ┌──────┐    ┌───────┐    ┌──────┐ │
-│    │ idea │───►│ specify │───►│ clarify │───►│ plan │───►│ tasks │───►│ impl │ │
-│    └──────┘    └─────────┘    └─────────┘    └──────┘    └───────┘    └──────┘ │
-│        │            │              │             │            │           │     │
-│        ▼            ▼              ▼             ▼            ▼           ▼     │
-│    idea.md      spec.md        spec.md       plan.md     tasks.md      code    │
-│    features/    checklists/    (updated)     research.md               tests   │
-│                                              data-model.md                      │
-│                                              contracts/                         │
-│                                                                                 │
-│    ┌──────────┐    ┌─────┐                                                     │
-│───►│ validate │───►│ fix │──► (if issues found, loop back)                     │
-│    └──────────┘    └─────┘                                                     │
-│         │                                                                       │
-│         ▼                                                                       │
-│    validation/                                                                  │
-│    report.md                                                                    │
-│    bugs/                                                                        │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                          │
+│    ┌──────┐    ┌─────────┐    ┌─────────┐    ┌──────┐    ┌───────┐    ┌──────┐          │
+│    │ idea │───►│ specify │───►│ clarify │───►│ plan │───►│ tasks │───►│ impl │          │
+│    └──────┘    └─────────┘    └─────────┘    └──────┘    └───────┘    └──────┘          │
+│        │            │              │             │            │           │              │
+│        ▼            ▼              ▼             ▼            ▼           ▼              │
+│    idea.md      spec.md        spec.md       plan.md     tasks.md      code             │
+│    features/    checklists/    (updated)     research.md               tests            │
+│                 (/docs read)                 data-model.md                               │
+│                                              contracts/                                  │
+│                                              (/docs read)                                │
+│                                                                                          │
+│    ┌──────────┐    ┌─────┐    ┌───────┐    ┌───────┐                                    │
+│───►│ validate │───►│ fix │───►│ merge │───►│ learn │                                    │
+│    └──────────┘    └─────┘    └───────┘    └───────┘                                    │
+│         │              │           │            │                                        │
+│         ▼              ▼           ▼            ▼                                        │
+│    validation/    (loop back)   /docs/     architecture-registry.md                      │
+│    report.md                    + main     {module}/CLAUDE.md                            │
+│    bugs/                                                                                 │
+│                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Phase 1: Exploration (Optional)
@@ -336,13 +337,13 @@ For small, focused modifications without the full workflow overhead.
 ### Quality Analysis
 
 ```
-┌─────────┐    ┌─────────┐    ┌───────────────────┐
-│ analyze │───►│ review  │───►│ extract-patterns  │
-└─────────┘    └─────────┘    └───────────────────┘
-     │              │                   │
-     ▼              ▼                   ▼
- Coverage      Tech debt        Architecture
- report        report           registry
+┌─────────┐    ┌─────────┐    ┌─────────┐
+│ analyze │───►│ review  │───►│  learn  │
+└─────────┘    └─────────┘    └─────────┘
+     │              │              │
+     ▼              ▼              ▼
+ Coverage      Tech debt     Architecture
+ report        report        + CLAUDE.md
 ```
 
 **`/speckit.analyze`** - Cross-artifact consistency
@@ -356,10 +357,30 @@ For small, focused modifications without the full workflow overhead.
 - Technical debt classification
 - Generates improvement tasks
 
-**`/speckit.extract-patterns`** - Pattern discovery
+**`/speckit.learn`** - Pattern discovery and documentation
 - Analyze existing codebase
-- Update architecture registry
-- Document established patterns
+- Update architecture registry (HIGH LEVEL patterns only)
+- Update module CLAUDE.md files (local conventions)
+- Auto-loaded by Claude Code during implementation
+
+### Merge Workflow
+
+```
+┌───────────┐    ┌─────────┐    ┌─────────┐
+│ implement │───►│  merge  │───►│  learn  │
+└───────────┘    └─────────┘    └─────────┘
+                      │              │
+                      ▼              ▼
+                   /docs/      CLAUDE.md
+                 + main       files updated
+```
+
+**`/speckit.merge`** - Feature completion and documentation
+- Verify all tasks completed
+- Merge feature branch to main
+- Consolidate specs to `/docs/{domain}/spec.md` (OpenSpec-style, by domain)
+- Optionally run `/speckit.learn` to update patterns
+- `/docs/{domain}/` becomes source of truth for future specify/plan
 
 ### Checklist Workflow
 
@@ -381,12 +402,17 @@ For small, focused modifications without the full workflow overhead.
 
 | Phase | Command | Input | Output |
 |-------|---------|-------|--------|
+| **Setup** | `/speckit.setup` | - | Full setup (orchestrator) |
+| | `/speckit.setup-bootstrap` | from-code/from-docs/from-specs | constitution + /docs/{domain}/ |
+| | `/speckit.setup-agents` | - | agents + skills + MCP |
 | Explore | `/speckit.idea` | Raw idea | idea.md, features/ |
 | Specify | `/speckit.specify` | Description | spec.md |
 | Clarify | `/speckit.clarify` | - | Updated spec.md |
 | Plan | `/speckit.plan` | Tech stack | plan.md, research.md, data-model.md, contracts/ |
 | Tasks | `/speckit.tasks` | - | tasks.md |
 | Implement | `/speckit.implement` | - | Code, task-results/ |
+| **Merge** | `/speckit.merge` | - | /docs/{domain}/spec.md updated |
+| **Learn** | `/speckit.learn` | - | architecture-registry, CLAUDE.md |
 | Validate | `/speckit.validate` | - | validation/, bugs/ |
 | Fix | `/speckit.fix` | Bug ID | Fixed code |
 | Change | `/speckit.change` | Description | Updated code/spec |

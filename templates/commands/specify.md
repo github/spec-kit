@@ -102,7 +102,53 @@ ELSE:
    - If found, load it for additional context
    - Suggest `/speckit.idea` first if description is very vague (< 20 words)
 
-#### 0.3 Feature File Status Update
+#### 0.3 Load Existing Documentation for Consistency (CRITICAL)
+
+Before creating the specification, load existing project documentation to ensure consistency:
+
+1. **Check if `/docs` directory exists**:
+   - If `/docs/README.md` exists → project has consolidated documentation
+   - Scan `/docs/*/spec.md` to list existing domains
+
+2. **Identify relevant domain(s)**:
+   - Infer domain from feature description (auth, payments, dashboard, etc.)
+   - Load `/docs/{domain}/spec.md` if domain exists
+   - If new domain → note for later creation during merge
+
+3. **Load domain context** from `/docs/{domain}/spec.md`:
+   - Extract existing features in this domain
+   - Identify entities already defined
+   - Understand business rules established
+   - Extract API patterns used
+
+4. **Create DOCUMENTATION_CONTEXT**:
+   ```markdown
+   ## Existing Documentation Context
+
+   ### Target Domain
+   - **Domain**: {domain}
+   - **Existing**: Yes/No
+   - **Related Features**: [list from domain spec]
+
+   ### Existing Entities (from domain)
+   | Entity | Description | Reuse Opportunity |
+   |--------|-------------|-------------------|
+   | [entity] | [what it is] | [extend/reuse as-is] |
+
+   ### Domain Business Rules
+   - [rule]: [description from domain spec]
+
+   ### Domain Terminology
+   - [term]: [definition from domain spec]
+   ```
+
+5. **Use DOCUMENTATION_CONTEXT during specification**:
+   - Reuse existing entity names and definitions from domain
+   - Follow domain's established patterns
+   - Reference related features within same domain
+   - Ensure terminology consistency with domain spec
+
+#### 0.4 Feature File Status Update
 
 After successfully creating a specification from a feature file:
 
