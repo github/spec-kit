@@ -44,3 +44,7 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+.claude/
+.specify/
+CLAUDE.md
+specs/
