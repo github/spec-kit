@@ -1,10 +1,10 @@
 ---
-description: Project setup orchestrator - runs setup-bootstrap and setup-agents
+description: Project setup orchestrator - runs all setup-xxx sub-commands
 ---
 
 # SpecKit Project Setup
 
-You are the **Setup Orchestrator**. Initialize this project for SpecKit in 2 phases.
+You are the **Setup Orchestrator**. Initialize this project by running sub-commands.
 
 ## User Input
 
@@ -13,55 +13,82 @@ $ARGUMENTS
 ```
 
 **Options**:
-- `--bootstrap-only`: Only run setup-bootstrap (constitution + /docs)
-- `--agents-only`: Only run setup-agents (agents + skills + mcp)
-- `--skip-learn`: Don't run /speckit.learn at end of bootstrap
-- No args: Run both phases
+- `--skip-constitution`: Skip constitution setup
+- `--skip-docs`: Skip docs initialization
+- `--skip-skills`: Skip skills configuration
+- `--skip-agents`: Skip agents generation
+- `--skip-mcp`: Skip MCP server setup
+- `--only-xxx`: Only run specific sub-command (e.g., `--only-docs`)
+- `from-code`, `from-docs`, `from-specs`: Pass to setup-docs
 
 ---
 
-## Phase 1: Bootstrap
+## Sub-Commands
 
-Run `/speckit.setup-bootstrap` as a sub-agent.
+Run each sub-command as a sub-agent, in order:
 
-This will:
-1. Create `/memory/constitution.md` if missing
-2. Initialize `/docs/{domain}/` structure from code/docs/specs
-3. Run `/speckit.learn` to extract patterns + create module CLAUDE.md files
+### 1. Constitution
 
-**Skip if**: `--agents-only` flag provided
+Run `/speckit.setup-constitution`
+
+Creates `/memory/constitution.md` with project principles.
+
+**Skip if**: `--skip-constitution` or constitution already exists
 
 ---
 
-## Phase 2: Agents
+### 2. Docs
 
-Run `/speckit.setup-agents` as a sub-agent.
+Run `/speckit.setup-docs` (pass through `from-code`/`from-docs`/`from-specs` if provided)
 
-This will:
-1. Generate specialized subagents for the workflow
-2. Configure skills in agent directory
-3. Generate MCP server configuration
+Initializes `/docs/{domain}/spec.md` structure.
 
-**Skip if**: `--bootstrap-only` flag provided
+**Skip if**: `--skip-docs`
+
+---
+
+### 3. Skills
+
+Run `/speckit.setup-skills`
+
+Configures skills based on detected frameworks.
+
+**Skip if**: `--skip-skills`
+
+---
+
+### 4. Agents
+
+Run `/speckit.setup-agents`
+
+Generates specialized subagents for SpecKit workflow.
+
+**Skip if**: `--skip-agents`
+
+---
+
+### 5. MCP
+
+Run `/speckit.setup-mcp`
+
+Configures MCP server for testing and automation.
+
+**Skip if**: `--skip-mcp`
 
 ---
 
 ## Completion
 
-Report what was set up:
-
 ```markdown
 ## Setup Complete
 
-### Phase 1: Bootstrap
-- Constitution: ✓ Created / Already exists
-- /docs: ✓ Initialized ({n} domains)
-- Learn: ✓ Patterns extracted
-
-### Phase 2: Agents
-- Agents: ✓ Generated
-- Skills: ✓ Configured
-- MCP: ✓ Configured
+| Sub-Command | Status |
+|-------------|--------|
+| Constitution | ✓ / Skipped |
+| Docs | ✓ / Skipped |
+| Skills | ✓ / Skipped |
+| Agents | ✓ / Skipped |
+| MCP | ✓ / Skipped |
 
 ### Next Steps
 1. Review /memory/constitution.md

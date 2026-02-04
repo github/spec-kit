@@ -290,11 +290,12 @@ Use `/speckit.change` when:
 
 | Command                       | Description                                                                 |
 | ----------------------------- | --------------------------------------------------------------------------- |
-| `/speckit.setup`              | **Orchestrator** - runs setup-bootstrap then setup-agents                   |
-| `/speckit.setup-bootstrap`    | **Orchestrator** - runs constitution + docs + learn                         |
+| `/speckit.setup`              | **Orchestrator** - runs all setup-xxx sub-commands                          |
 | `/speckit.setup-constitution` | Create/update project constitution                                          |
 | `/speckit.setup-docs`         | Initialize /docs domain structure (from-code/from-docs/from-specs)          |
-| `/speckit.setup-agents`       | **Orchestrator** - runs agents + mcp                                        |
+| `/speckit.setup-skills`       | Configure skills based on detected frameworks                               |
+| `/speckit.setup-agents`       | Generate specialized subagents                                              |
+| `/speckit.setup-mcp`          | Configure MCP server for testing/automation                                 |
 
 #### Utility Commands
 
