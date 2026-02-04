@@ -288,11 +288,13 @@ Use `/speckit.change` when:
 
 #### Setup & Configuration Commands
 
-| Command                    | Description                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------- |
-| `/speckit.setup`           | **Orchestrator** - runs setup-bootstrap then setup-agents                        |
-| `/speckit.setup-bootstrap` | Initialize constitution + /docs structure + run learn                            |
-| `/speckit.setup-agents`    | Configure agents + skills + MCP server                                           |
+| Command                       | Description                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `/speckit.setup`              | **Orchestrator** - runs setup-bootstrap then setup-agents                   |
+| `/speckit.setup-bootstrap`    | **Orchestrator** - runs constitution + docs + learn                         |
+| `/speckit.setup-constitution` | Create/update project constitution                                          |
+| `/speckit.setup-docs`         | Initialize /docs domain structure (from-code/from-docs/from-specs)          |
+| `/speckit.setup-agents`       | **Orchestrator** - runs agents + mcp                                        |
 
 #### Utility Commands
 
