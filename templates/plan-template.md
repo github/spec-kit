@@ -102,3 +102,23 @@ directories captured above]
 |-----------|------------|-------------------------------------|
 | [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
 | [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+
+## Progress Tracking
+
+*This checklist is updated during execution flow*
+
+**Phase Status**:
+
+- [ ] Phase 0: Research complete (/speckit.plan command)
+- [ ] Phase 1: Design complete (/speckit.plan command)
+- [ ] Phase 2: Task planning complete (/speckit.plan command - describe approach only)
+- [ ] Phase 3: Tasks generated (/speckit.tasks command)
+- [ ] Phase 4: Implementation complete
+- [ ] Phase 5: Validation passed
+
+**Gate Status**:
+
+- [ ] Initial Constitution Check: PASS
+- [ ] Post-Design Constitution Check: PASS
+- [ ] All NEEDS CLARIFICATION resolved
+- [ ] Complexity deviations documented

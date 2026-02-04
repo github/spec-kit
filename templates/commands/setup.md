@@ -1512,6 +1512,10 @@ npx playwright install chromium  # For browser automation
 
 ## Step 4.5: Configure __AGENT_NAME__ Integration
 
+**MCP configuration format varies by agent platform:**
+
+### For Claude Code (`claude`)
+
 Create or update `__AGENT_DIR__/mcp.json`:
 
 ```json
@@ -1524,6 +1528,26 @@ Create or update `__AGENT_DIR__/mcp.json`:
   }
 }
 ```
+
+### For opencode (`opencode`)
+
+Create or update `opencode.json` in **project root**:
+
+```json
+{
+  "mcp": {
+    "project": {
+      "type": "local",
+      "command": ["node", ".mcp/project-server/dist/index.js"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### For other agents
+
+Check your agent's MCP documentation for the correct format.
 
 ## Step 4.6: Update .gitignore
 
