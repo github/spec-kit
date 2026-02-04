@@ -32,6 +32,7 @@ import tempfile
 import shutil
 import shlex
 import json
+import yaml
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -977,6 +978,134 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
         else:
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
+
+def install_agent_skills(project_path: Path, tracker: StepTracker = None) -> bool:
+    """
+    Install Prompt.MD files from templates/commands/ as agent skills per agentskills.io spec.
+    
+    Args:
+        project_path: Target project directory
+        tracker: Optional progress tracker
+    
+    Returns:
+        True if installation successful, False otherwise
+    """
+    # Find the spec-kit templates directory
+    # The templates are bundled with the package, so look relative to this file
+    script_dir = Path(__file__).parent.parent.parent  # Go up from src/specify_cli/ to repo root
+    templates_dir = script_dir / "templates" / "commands"
+    
+    if not templates_dir.exists():
+        if tracker:
+            tracker.error("agent-skills", "templates/commands not found")
+        else:
+            console.print("[yellow]Warning: templates/commands directory not found, skipping skills installation[/yellow]")
+        return False
+    
+    # Get all markdown files
+    command_files = list(templates_dir.glob("*.md"))
+    if not command_files:
+        if tracker:
+            tracker.skip("agent-skills", "no command templates found")
+        else:
+            console.print("[yellow]No command templates found to install[/yellow]")
+        return False
+    
+    # Create skills directory
+    skills_dir = project_path / ".agent" / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    
+    if tracker:
+        tracker.add("agent-skills", f"Install {len(command_files)} agent skills")
+        tracker.start("agent-skills")
+    
+    installed_count = 0
+    for command_file in command_files:
+        try:
+            # Read the template file
+            with open(command_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Parse YAML frontmatter
+            if content.startswith('---'):
+                parts = content.split('---', 2)
+                if len(parts) >= 3:
+                    frontmatter = yaml.safe_load(parts[1])
+                    body = parts[2].strip()
+                else:
+                    frontmatter = {}
+                    body = content
+            else:
+                frontmatter = {}
+                body = content
+            
+            # Generate skill name: speckit-<command-name>
+            command_name = command_file.stem
+            skill_name = f"speckit-{command_name}"
+            
+            # Create skill directory
+            skill_dir = skills_dir / skill_name
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate enhanced description
+            original_desc = frontmatter.get('description', '')
+            if command_name == 'specify':
+                enhanced_desc = "Create or update feature specifications from natural language descriptions. Use when starting new features or refining requirements. Generates spec.md with user stories, functional requirements, and acceptance criteria following spec-driven development methodology."
+            elif command_name == 'plan':
+                enhanced_desc = "Generate technical implementation plans from feature specifications. Use after creating a spec to define architecture, tech stack, and implementation phases. Creates plan.md with detailed technical design."
+            elif command_name == 'tasks':
+                enhanced_desc = "Break down implementation plans into actionable task lists. Use after planning to create a structured task breakdown. Generates tasks.md with ordered, dependency-aware tasks."
+            elif command_name == 'implement':
+                enhanced_desc = "Execute all tasks from the task breakdown to build the feature. Use after task generation to systematically implement the planned solution following TDD approach where applicable."
+            elif command_name == 'analyze':
+                enhanced_desc = "Perform cross-artifact consistency analysis across spec.md, plan.md, and tasks.md. Use after task generation to identify gaps, duplications, and inconsistencies before implementation."
+            elif command_name == 'clarify':
+                enhanced_desc = "Structured clarification workflow for underspecified requirements. Use before planning to resolve ambiguities through coverage-based questioning. Records answers in spec clarifications section."
+            elif command_name == 'constitution':
+                enhanced_desc = "Create or update project governing principles and development guidelines. Use at project start to establish code quality, testing standards, and architectural constraints that guide all development."
+            elif command_name == 'checklist':
+                enhanced_desc = "Generate custom quality checklists for validating requirements completeness and clarity. Use to create unit tests for English that ensure spec quality before implementation."
+            elif command_name == 'taskstoissues':
+                enhanced_desc = "Convert tasks from tasks.md into GitHub issues. Use after task breakdown to track work items in GitHub project management."
+            else:
+                enhanced_desc = original_desc or f"Spec-kit workflow command: {command_name}"
+            
+            # Create SKILL.md following agentskills.io spec
+            skill_content = f"""---
+name: {skill_name}
+description: {enhanced_desc}
+compatibility: Requires git and spec-kit project structure with .specify/ directory
+---
+
+# Speckit {command_name.title()} Skill
+
+{body}
+"""
+            
+            # Write SKILL.md
+            skill_file = skill_dir / "SKILL.md"
+            with open(skill_file, 'w', encoding='utf-8') as f:
+                f.write(skill_content)
+            
+            installed_count += 1
+            
+        except Exception as e:
+            console.print(f"[yellow]Warning: Failed to install skill {command_name}: {e}[/yellow]")
+            continue
+    
+    if tracker:
+        if installed_count > 0:
+            tracker.complete("agent-skills", f"{installed_count} skills installed")
+        else:
+            tracker.error("agent-skills", "no skills installed")
+    else:
+        if installed_count > 0:
+            console.print(f"[green]✓[/green] Installed {installed_count} agent skills to .agent/skills/")
+        else:
+            console.print("[yellow]No skills were installed[/yellow]")
+    
+    return installed_count > 0
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
@@ -989,6 +1118,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    agent_skills: bool = typer.Option(False, "--agent-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -1028,6 +1158,13 @@ def init(
     if not here and not project_name:
         console.print("[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag")
         raise typer.Exit(1)
+
+    # Validate --agent-skills requires --ai
+    if agent_skills and not ai_assistant:
+        console.print("[red]Error:[/red] --agent-skills requires --ai to be specified")
+        console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --agent-skills")
+        raise typer.Exit(1)
+
 
     if here:
         project_name = Path.cwd().name
@@ -1166,6 +1303,10 @@ def init(
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
+            # Install agent skills if requested
+            if agent_skills:
+                install_agent_skills(project_path, tracker=tracker)
+
             if not no_git:
                 tracker.start("git")
                 if is_git_repo(project_path):
@@ -1278,6 +1419,8 @@ def init(
     console.print()
     console.print(enhancements_panel)
 
+
+
 @app.command()
 def check():
     """Check that all required tools are installed."""
@@ -1319,6 +1462,8 @@ def check():
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+
+
 
 @app.command()
 def version():

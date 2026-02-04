@@ -122,6 +122,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version bumped to 0.1.0 (minor release for new feature)
 
 ## [0.0.22] - 2025-11-07
+## [0.0.23] - 2026-02-03
+
+### Added
+
+- **Agent Skills Installation**: New `--agent-skills` CLI option to install Prompt.MD templates as agent skills following [agentskills.io specification](https://agentskills.io/specification)
+  - Skills are installed to `.agent/skills/<skill-name>/SKILL.md` directory structure
+  - Requires `--ai` flag to be specified
+  - Converts all 9 spec-kit command templates (specify, plan, tasks, implement, analyze, clarify, constitution, checklist, taskstoissues) to properly formatted SKILL.md files
+  - Each skill includes enhanced descriptions, compatibility information, and usage guidance
+  - Integrated into the initialize workflow with progress tracking
+
+### Changed
+
+- Updated `pyyaml` dependency for YAML frontmatter parsing
+- Enhanced CLI help text and documentation with agent skills examples
+
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.
 - Move to use `AGENTS.md` for Copilot workloads, since it's already supported out-of-the-box.
