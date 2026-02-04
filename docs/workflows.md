@@ -402,7 +402,9 @@ For small, focused modifications without the full workflow overhead.
 
 | Phase | Command | Input | Output |
 |-------|---------|-------|--------|
-| **Setup** | `/speckit.bootstrap` | from-code/from-docs/from-specs | /docs/{domain}/spec.md |
+| **Setup** | `/speckit.setup` | - | Full setup (orchestrator) |
+| | `/speckit.setup-bootstrap` | from-code/from-docs/from-specs | constitution + /docs/{domain}/ |
+| | `/speckit.setup-agents` | - | agents + skills + MCP |
 | Explore | `/speckit.idea` | Raw idea | idea.md, features/ |
 | Specify | `/speckit.specify` | Description | spec.md |
 | Clarify | `/speckit.clarify` | - | Updated spec.md |
