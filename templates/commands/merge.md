@@ -55,94 +55,117 @@ The `/docs` directory becomes the **single source of truth** for business and fu
 
 ### Phase 2: Documentation Consolidation
 
-5. **Ensure /docs structure exists**:
+5. **Determine target domain**:
+
+   a. **Check if domain already specified** in spec.md:
+      - Look for `**Domain**:` metadata in spec header
+      - If found, use that domain
+
+   b. **If no domain specified, infer from context**:
+      - Analyze feature name and spec content
+      - Suggest a domain name (kebab-case, e.g., `user-auth`, `payments`, `dashboard`)
+      - Common domain patterns: auth, users, payments, orders, notifications, settings, etc.
+
+   c. **Confirm with user**:
+      ```markdown
+      Inferred domain: **{domain}**
+
+      This feature will be consolidated into `/docs/{domain}/spec.md`
+
+      Options:
+      - [Enter] Accept suggested domain
+      - Type new name to use different domain
+      - Type existing domain name to add to existing domain spec
+      ```
+
+   d. **List existing domains** for context:
+      ```bash
+      ls -d docs/*/ 2>/dev/null | xargs -I {} basename {}
+      ```
+
+   **NOTE**: Domains are user-defined, not hardcoded. The command suggests but user decides.
+
+6. **Ensure /docs structure exists**:
 
    ```bash
-   mkdir -p docs/features docs/domain docs/api
+   mkdir -p docs/{domain}
    ```
 
-6. **Extract and consolidate from spec.md → /docs/features/{feature}.md**:
+7. **Consolidate spec into /docs/{domain}/spec.md** (OpenSpec-style):
 
-   Create a clean, reusable specification:
+   a. **If domain spec doesn't exist** → Create new spec:
 
    ```markdown
-   # {Feature Name}
+   # {Domain} Specification
 
-   > Consolidated from specs/{feature-id}/ on {date}
+   > Source of truth for {domain} functionality.
+   > Last updated: {date}
 
    ## Overview
 
-   [Extract summary from spec.md]
+   [Domain description]
 
-   ## User Stories
+   ## Features
+
+   ### {Feature Name}
+
+   > Added: {date} | Source: specs/{feature-id}/
+
+   #### User Stories
 
    [Extract user stories with acceptance criteria]
 
-   ## Business Rules
+   #### Business Rules
 
    [Extract any business rules or constraints]
 
-   ## Error Scenarios
+   #### Entities
 
-   [Extract error handling requirements]
+   [Extract entities from data-model.md]
 
-   ## Related Features
+   #### API Contracts
 
-   - [Links to dependent/related features in /docs/features/]
+   [Extract from contracts/]
+
+   ---
    ```
 
-7. **Extract entities from data-model.md → /docs/domain/entities.md**:
+   b. **If domain spec exists** → Merge delta (like OpenSpec):
 
-   Append new entities (avoid duplicates):
+   - **ADDED**: Append new feature section
+   - **MODIFIED**: Update existing feature section (mark changes)
+   - **REMOVED**: Delete feature section (rare, requires confirmation)
 
+   Mark modifications:
    ```markdown
-   ## {Entity Name}
+   ### {Feature Name}
 
-   > Added by feature: {feature-id}
-
-   ### Fields
-   | Field | Type | Constraints |
-   |-------|------|-------------|
-
-   ### Relationships
-   [Entity relationships]
-
-   ### Validation Rules
-   [Business validation]
+   > Added: {original-date} | **Modified: {date}** | Source: specs/{feature-id}/
    ```
 
-8. **Extract contracts from contracts/ → /docs/api/**:
-
-   For each contract file:
-   - If endpoint already exists → update with changes
-   - If new endpoint → add to appropriate API doc
-   - Maintain OpenAPI/GraphQL format if present
-
-9. **Update /docs/README.md** (index):
+8. **Update /docs/README.md** (domain index):
 
    ```markdown
    # Project Documentation
 
    > Auto-maintained by /speckit.merge. Last updated: {date}
 
-   ## Features
+   ## Domains
 
-   | Feature | Status | Added |
-   |---------|--------|-------|
-   | [{feature}](features/{feature}.md) | Implemented | {date} |
+   | Domain | Description | Features | Last Updated |
+   |--------|-------------|----------|--------------|
+   | [auth](auth/spec.md) | Authentication & authorization | login, signup, oauth | {date} |
+   | [payments](payments/spec.md) | Payment processing | checkout, refunds | {date} |
 
-   ## Domain Model
+   ## Quick Links
 
-   See [entities.md](domain/entities.md) for the complete data model.
-
-   ## API Reference
-
-   See [api/](api/) for endpoint documentation.
+   - [Architecture Registry](/memory/architecture-registry.md)
+   - [Constitution](/memory/constitution.md)
    ```
 
 ### Phase 3: Git Operations
 
-10. **Merge into main**:
+9. **Merge into main**:
 
     ```bash
     # Switch to main
@@ -157,23 +180,22 @@ The `/docs` directory becomes the **single source of truth** for business and fu
     Merged from specs/{feature-id}/
     - [summary of what was implemented]
 
-    Docs: /docs/features/{feature}.md"
+    Docs: /docs/{domain}/spec.md"
     ```
 
-11. **Commit documentation updates** (if not already included):
+10. **Commit documentation updates** (if not already included):
 
     ```bash
     git add docs/
-    git commit -m "docs: consolidate {feature-name} into /docs
+    git commit -m "docs: consolidate {feature-name} into /docs/{domain}
 
-    - Added docs/features/{feature}.md
-    - Updated docs/domain/entities.md
-    - Updated docs/api/ contracts"
+    - Updated docs/{domain}/spec.md
+    - Updated docs/README.md"
     ```
 
 ### Phase 4: Post-Merge Actions
 
-12. **Offer to run /speckit.learn**:
+11. **Offer to run /speckit.learn**:
 
     ```markdown
     Feature merged successfully.
@@ -187,13 +209,13 @@ The `/docs` directory becomes the **single source of truth** for business and fu
 
     If yes → execute `/speckit.learn {feature-id}`
 
-13. **Push to remote**:
+12. **Push to remote**:
 
     ```bash
     git push origin main
     ```
 
-14. **Cleanup (optional)**:
+13. **Cleanup (optional)**:
 
     Ask user:
     ```markdown
@@ -206,7 +228,7 @@ The `/docs` directory becomes the **single source of truth** for business and fu
 
 ### Phase 5: Summary
 
-15. **Report completion**:
+14. **Report completion**:
 
     ```markdown
     ## Merge Complete
@@ -219,9 +241,7 @@ The `/docs` directory becomes the **single source of truth** for business and fu
     ### Documentation Updated
     | File | Action |
     |------|--------|
-    | docs/features/{feature}.md | Created |
-    | docs/domain/entities.md | Updated (+{n} entities) |
-    | docs/api/{endpoint}.md | Updated |
+    | docs/{domain}/spec.md | Created/Updated |
     | docs/README.md | Updated |
 
     ### Architecture (if learn was run)
@@ -229,16 +249,14 @@ The `/docs` directory becomes the **single source of truth** for business and fu
     - CLAUDE.md: {modules} updated
 
     ### Next Steps
-    - Review /docs/features/{feature}.md for accuracy
+    - Review /docs/{domain}/spec.md for accuracy
     - Start next feature with /speckit.specify
     ```
 
 ## Output Files
 
-- `/docs/features/{feature}.md` - Consolidated feature specification
-- `/docs/domain/entities.md` - Updated entity definitions
-- `/docs/api/*.md` - Updated API contracts
-- `/docs/README.md` - Updated index
+- `/docs/{domain}/spec.md` - Domain specification (source of truth)
+- `/docs/README.md` - Domain index
 
 ## Key Principles
 

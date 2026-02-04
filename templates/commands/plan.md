@@ -56,47 +56,54 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    a. **Check if `/docs` directory exists**:
       - If `/docs/README.md` exists → project has consolidated documentation
+      - List existing domains from `/docs/*/spec.md`
 
-   b. **Load feature context** from `/docs/features/`:
-      - Identify related features and their boundaries
-      - Understand how existing features interact
-      - Extract business rules that may apply to new feature
+   b. **Identify target domain** from spec.md:
+      - Extract domain from DOCUMENTATION_CONTEXT (set by specify)
+      - If not set, infer from feature name/description
 
-   c. **Load domain context** from `/docs/domain/`:
-      - Read `entities.md` for existing data models
-      - Identify entities that can be reused or extended
-      - Understand established domain terminology
+   c. **Load domain spec** from `/docs/{domain}/spec.md`:
+      - Extract existing features in this domain
+      - Identify entities, business rules, API contracts
+      - Understand how new feature fits with existing ones
 
-   d. **Load API context** from `/docs/api/`:
-      - Review existing endpoints and patterns
-      - Identify integration points for new feature
-      - Ensure new APIs follow established conventions
+   d. **Load cross-domain dependencies** (if needed):
+      - Check spec.md for dependencies on other domains
+      - Load related domain specs for integration context
+      - Identify shared entities or contracts
 
    e. **Create DOCUMENTATION_CONTEXT**:
       ```markdown
       ## Existing Documentation Context
 
-      ### Related Features
-      | Feature | Integration Points | Business Rules |
-      |---------|-------------------|----------------|
-      | [feature] | [how it connects] | [rules to respect] |
+      ### Target Domain: {domain}
 
-      ### Reusable Entities
-      | Entity | Location | Extension Needed |
-      |--------|----------|------------------|
-      | [entity] | docs/domain/entities.md | [yes/no - what] |
+      #### Features in Domain
+      | Feature | Business Rules | Integration Points |
+      |---------|----------------|-------------------|
+      | [feature] | [rules] | [APIs, events] |
 
-      ### Existing API Patterns
-      | Pattern | Example | Apply To New Feature |
-      |---------|---------|---------------------|
-      | [pattern] | [endpoint] | [where to apply] |
+      #### Reusable Entities (from domain)
+      | Entity | Fields | Extension Needed |
+      |--------|--------|------------------|
+      | [entity] | [key fields] | [yes/no - what] |
+
+      #### Domain API Patterns
+      | Endpoint | Purpose | Reuse For |
+      |----------|---------|-----------|
+      | [endpoint] | [what it does] | [new feature usage] |
+
+      ### Cross-Domain Dependencies
+      | Domain | Dependency | Contract |
+      |--------|------------|----------|
+      | [domain] | [what we need] | [API/event] |
       ```
 
    f. **If no `/docs` exists**:
       - Log: "No consolidated documentation found - this is likely the first feature"
       - Recommend running `/speckit.merge` after implementation to initialize `/docs`
 
-   **CRITICAL PRINCIPLE**: New features MUST be consistent with documented business rules and domain models.
+   **CRITICAL PRINCIPLE**: New features MUST be consistent with domain's documented business rules and entities.
 
 5. **Load Architecture Registry (CRITICAL for technical consistency)**:
 

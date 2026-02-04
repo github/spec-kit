@@ -378,9 +378,9 @@ For small, focused modifications without the full workflow overhead.
 **`/speckit.merge`** - Feature completion and documentation
 - Verify all tasks completed
 - Merge feature branch to main
-- Consolidate specs to `/docs/` (persistent reference)
+- Consolidate specs to `/docs/{domain}/spec.md` (OpenSpec-style, by domain)
 - Optionally run `/speckit.learn` to update patterns
-- `/docs/` becomes source of truth for future specify/plan
+- `/docs/{domain}/` becomes source of truth for future specify/plan
 
 ### Checklist Workflow
 

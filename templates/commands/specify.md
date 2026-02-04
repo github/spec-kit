@@ -108,40 +108,45 @@ Before creating the specification, load existing project documentation to ensure
 
 1. **Check if `/docs` directory exists**:
    - If `/docs/README.md` exists → project has consolidated documentation
+   - Scan `/docs/*/spec.md` to list existing domains
 
-2. **Load feature context** from `/docs/features/`:
-   - Scan existing feature specs for related functionality
-   - Identify potential overlaps or dependencies
-   - Extract business terminology and patterns used
+2. **Identify relevant domain(s)**:
+   - Infer domain from feature description (auth, payments, dashboard, etc.)
+   - Load `/docs/{domain}/spec.md` if domain exists
+   - If new domain → note for later creation during merge
 
-3. **Load domain context** from `/docs/domain/`:
-   - Read `entities.md` for existing data models
-   - Extract glossary terms if available
-   - Understand established domain concepts
+3. **Load domain context** from `/docs/{domain}/spec.md`:
+   - Extract existing features in this domain
+   - Identify entities already defined
+   - Understand business rules established
+   - Extract API patterns used
 
 4. **Create DOCUMENTATION_CONTEXT**:
    ```markdown
    ## Existing Documentation Context
 
-   ### Related Features
-   | Feature | Relevance | Potential Overlap |
-   |---------|-----------|-------------------|
-   | [feature] | [why related] | [what might overlap] |
+   ### Target Domain
+   - **Domain**: {domain}
+   - **Existing**: Yes/No
+   - **Related Features**: [list from domain spec]
 
-   ### Existing Entities
+   ### Existing Entities (from domain)
    | Entity | Description | Reuse Opportunity |
    |--------|-------------|-------------------|
-   | [entity] | [what it is] | [how it relates to new feature] |
+   | [entity] | [what it is] | [extend/reuse as-is] |
+
+   ### Domain Business Rules
+   - [rule]: [description from domain spec]
 
    ### Domain Terminology
-   - [term]: [definition from existing docs]
+   - [term]: [definition from domain spec]
    ```
 
 5. **Use DOCUMENTATION_CONTEXT during specification**:
-   - Reuse existing entity names and definitions
-   - Follow established naming conventions
-   - Reference related features in Dependencies section
-   - Ensure terminology consistency across specifications
+   - Reuse existing entity names and definitions from domain
+   - Follow domain's established patterns
+   - Reference related features within same domain
+   - Ensure terminology consistency with domain spec
 
 #### 0.4 Feature File Status Update
 
