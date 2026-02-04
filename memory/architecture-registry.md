@@ -1,8 +1,10 @@
 # Architecture Registry
 
-> **Purpose**: This registry captures **implementation decisions** that MUST be followed across all features. It serves as the source of truth for code consistency.
+> **Purpose**: This registry captures **high-level architectural patterns** and **technology decisions** that apply across all features. It serves as the source of truth for architectural consistency.
 >
-> **Scope**: Code patterns, technology choices, conventions. For specification rules, see `/memory/constitution.md`.
+> **Scope**: Architectural patterns, interface contracts between modules, major technology decisions.
+> For module-specific conventions (naming, file organization, code patterns), see `{module}/CLAUDE.md` files.
+> For specification rules, see `/memory/constitution.md`.
 
 **CRITICAL**: Before planning ANY new feature, load this registry and verify alignment.
 New features MUST follow established patterns unless explicitly diverging with documented justification.
@@ -10,213 +12,156 @@ New features MUST follow established patterns unless explicitly diverging with d
 ## How This Registry Works
 
 1. **During Planning** (`/speckit.plan`): Load this registry and verify new design aligns
-2. **During Implementation** (`/speckit.implement`): Follow patterns from registry, update after completion
-3. **Retrospective** (`/speckit.extract-patterns`): Extract patterns from existing features into this registry
+2. **During Implementation** (`/speckit.implement`): Module-specific CLAUDE.md files are auto-loaded by Claude Code
+3. **After Merge** (`/speckit.merge` + `/speckit.learn`): Update registry with new patterns, update module CLAUDE.md files
 4. **Quality Gate** (`/speckit.checklist`): Validates plan alignment with registry patterns
 
 ---
 
-## Established Patterns
+## Architectural Patterns
 
-> Reusable code patterns that MUST be applied in similar contexts.
+> High-level patterns that define how the system is structured. For implementation details, see module CLAUDE.md files.
 
-| Pattern | First Used In | Files/Locations | When to Use | Example |
-|---------|---------------|-----------------|-------------|---------|
-| [PATTERN_NAME] | [feature-id] | [file paths] | [context/trigger] | [code reference] |
+| Pattern | Description | Modules Using | Key Interfaces |
+|---------|-------------|---------------|----------------|
+| [PATTERN_NAME] | [what problem it solves] | [which modules] | [main interfaces/contracts] |
 
 <!--
 Example entries:
-| Repository Pattern | 001-user-auth | src/repositories/*.ts | Data access for any entity | src/repositories/userRepository.ts |
-| Service Layer | 001-user-auth | src/services/*.ts | Business logic encapsulation | src/services/authService.ts |
-| Zod Validation | 002-forms | src/schemas/*.ts | Input validation with types | src/schemas/userSchema.ts |
-| Error Boundary | 003-dashboard | src/components/ErrorBoundary.tsx | Component error handling | See file |
+| Repository Pattern | Abstracts data access from business logic | backend, api | IRepository<T> interface |
+| Service Layer | Encapsulates business logic | backend | *Service classes |
+| Event-Driven | Decouples components via events | backend, frontend | EventBus, IEvent |
+| Clean Architecture | Dependency rule: outer depends on inner | all | UseCases, Entities |
 -->
 
 ---
 
-## Technology Decisions
+## Technology Stack
 
-> Technology choices that MUST be used consistently across features.
+> Major technology decisions that affect multiple modules. Version-specific details belong in module CLAUDE.md files.
 
-| Category | Decision | Made In | Rationale | Alternatives Rejected |
-|----------|----------|---------|-----------|----------------------|
-| [category] | [what to use] | [feature-id] | [why] | [what NOT to use] |
+| Category | Technology | Rationale | Alternatives Rejected |
+|----------|------------|-----------|----------------------|
+| [category] | [what to use] | [why] | [what NOT to use] |
 
 <!--
 Example entries:
-| Validation | Zod | 002-forms | Type inference + runtime validation | Yup (no inference), Joi (Node-only) |
-| Data Fetching | TanStack Query | 003-dashboard | Caching, devtools, suspense | SWR (less features), fetch (manual caching) |
-| State Management | Zustand | 004-settings | Simple API, no boilerplate | Redux (too verbose), Context (re-render issues) |
-| Date Handling | date-fns | 005-reports | Tree-shakeable, immutable | Moment.js (heavy), Day.js (less features) |
+| Framework | Next.js | SSR + App Router, React ecosystem | Remix (less mature), Nuxt (Vue) |
+| Validation | Zod | Type inference + runtime validation | Yup (no inference), Joi (Node-only) |
+| Database | PostgreSQL | Relational integrity, JSON support | MongoDB (no relations), MySQL (less features) |
+| ORM | Prisma | Type-safe, migrations | TypeORM (verbose), Drizzle (newer) |
 -->
 
 ---
 
-## Component Conventions
+## Module Contracts
 
-> Standard locations, naming, and structure for different component types.
+> Interface contracts between modules. These are the "handshake agreements" that modules must respect.
 
-| Component Type | Standard Location | Naming Convention | Structure/Template |
-|----------------|-------------------|-------------------|-------------------|
-| [type] | [path pattern] | [naming rule] | [structure notes] |
+### [Module A] ↔ [Module B]
 
-<!--
-Example entries:
-| Services | src/services/ | {domain}Service.ts | Class with constructor injection |
-| Repositories | src/repositories/ | {entity}Repository.ts | Interface + implementation |
-| React Components | src/components/{domain}/ | PascalCase.tsx | Functional + hooks |
-| API Routes | src/routes/{domain}/ | {action}.ts | Express router pattern |
-| Schemas | src/schemas/ | {entity}Schema.ts | Zod schema + inferred type |
--->
+**Communication**: [REST API / Events / Shared Types]
 
----
+**Contract Location**: `[file path]`
 
-## Anti-Patterns
-
-> Approaches that were tried and MUST be avoided. New features violating these will be flagged.
-
-| Anti-Pattern | Discovered In | Why Avoided | What to Do Instead |
-|--------------|---------------|-------------|-------------------|
-| [what not to do] | [feature-id] | [problems caused] | [correct approach] |
-
-<!--
-Example entries:
-| Direct DB in routes | 001-user-auth | Tight coupling, untestable | Use repository layer |
-| Global state for forms | 002-forms | Re-renders, stale data | Use local state + react-hook-form |
-| Inline styles | 003-dashboard | Inconsistent, unmaintainable | Use Tailwind classes |
-| Any type | 001-user-auth | Loses type safety | Define proper types/interfaces |
--->
-
----
-
-## Cross-Feature Dependencies
-
-> Components/services that are shared across features and their ownership.
-
-| Shared Component | Owner Feature | Used By | API/Interface |
-|------------------|---------------|---------|---------------|
-| [component] | [feature-id] | [list of features] | [key methods/props] |
-
-<!--
-Example entries:
-| AuthService | 001-user-auth | 003-dashboard, 004-settings, 005-reports | login(), logout(), getCurrentUser() |
-| Button | 001-user-auth | ALL | variant, size, disabled, onClick |
-| useNotification | 002-forms | 003-dashboard, 005-reports | show(type, message), dismiss() |
--->
-
----
-
-## File Organization
-
-> Standard project structure that MUST be followed.
-
-```
-[PROJECT_STRUCTURE]
+**Key Interfaces**:
+```typescript
+// Example interface definition
+interface IContract {
+  method(param: Type): ReturnType;
+}
 ```
 
 <!--
 Example:
-src/
-├── components/     # Reusable UI components
-│   ├── common/     # Shared across all features
-│   └── {domain}/   # Feature-specific components
-├── services/       # Business logic layer
-├── repositories/   # Data access layer
-├── schemas/        # Validation schemas (Zod)
-├── hooks/          # Custom React hooks
-├── routes/         # API routes (if applicable)
-├── types/          # TypeScript type definitions
-└── utils/          # Pure utility functions
+### Frontend ↔ Backend API
+
+**Communication**: REST API over HTTPS
+
+**Contract Location**: `docs/api/` or `specs/{feature}/contracts/`
+
+**Key Interfaces**:
+- Authentication: POST /auth/login, POST /auth/logout
+- Users: GET /users/:id, PUT /users/:id
+- All responses follow: { data: T, error?: { code, message } }
 -->
 
 ---
 
-## Naming Conventions
+## Cross-Module Dependencies
 
-> Consistent naming rules across the codebase.
+> Shared components that multiple modules depend on.
 
-| Element | Convention | Examples |
-|---------|------------|----------|
-| [element type] | [rule] | [examples] |
+| Component | Owner Module | Used By | Stability |
+|-----------|--------------|---------|-----------|
+| [component] | [module] | [list of modules] | Stable / Evolving |
 
 <!--
 Example entries:
-| Files (components) | PascalCase | Button.tsx, UserCard.tsx |
-| Files (utilities) | camelCase | formatDate.ts, parseQuery.ts |
-| Functions | camelCase, verb-first | getUser, validateInput, handleSubmit |
-| Constants | SCREAMING_SNAKE | MAX_RETRIES, API_BASE_URL |
-| Types/Interfaces | PascalCase, I-prefix optional | User, IUserRepository |
-| CSS classes | kebab-case | user-card, btn-primary |
+| AuthService | backend | frontend, api, workers | Stable |
+| shared-types | shared | all | Stable |
+| EventBus | backend | api, workers | Evolving |
 -->
 
 ---
 
-## Error Handling Patterns
+## Architectural Anti-Patterns
 
-> Standard approach to error handling across the application.
+> Approaches that were tried and MUST be avoided at the architectural level.
 
-| Layer | Pattern | Example |
-|-------|---------|---------|
-| [layer] | [how to handle errors] | [code reference] |
+| Anti-Pattern | Issue | Correct Approach |
+|--------------|-------|------------------|
+| [what to avoid] | [why it's problematic] | [what to do instead] |
 
 <!--
 Example entries:
-| API Routes | Try-catch + AppError class | src/middleware/errorHandler.ts |
-| Services | Throw typed errors | throw new ValidationError("...") |
-| React Components | Error Boundary | src/components/ErrorBoundary.tsx |
-| Async Operations | Result type (success/error) | src/types/Result.ts |
+| Direct DB access from routes | Tight coupling, untestable | Use repository/service layer |
+| Shared mutable state | Race conditions, unpredictable | Use immutable patterns or proper state management |
+| Circular dependencies | Build failures, complexity | Dependency injection, event-driven |
 -->
 
 ---
 
-## Testing Conventions
+## Architectural Decisions Log
 
-> Standard testing approaches by component type.
+> Key architectural decisions with context. For detailed ADRs, see `docs/adr/` if available.
 
-| Component Type | Test Location | Framework | Coverage Target |
-|----------------|---------------|-----------|-----------------|
-| [type] | [path pattern] | [framework] | [percentage] |
+### ADR-001: [Decision Title]
 
-<!--
-Example entries:
-| Services | __tests__/services/*.test.ts | Vitest | 80% |
-| Components | __tests__/components/*.test.tsx | Vitest + Testing Library | 70% |
-| API Routes | __tests__/integration/*.test.ts | Vitest + Supertest | 90% |
-| E2E | e2e/*.spec.ts | Playwright | Critical paths |
--->
+- **Date**: [YYYY-MM-DD]
+- **Status**: Accepted / Superseded by ADR-XXX
+- **Context**: [Why was this decision needed?]
+- **Decision**: [What was decided?]
+- **Consequences**: [What are the implications?]
 
 ---
 
 ## Registry Maintenance
 
-### Adding New Entries
+### When to Update This Registry
 
-When a feature establishes a new pattern:
+Update this registry when:
+- A new **architectural pattern** is established (not just code conventions)
+- A **technology decision** affects multiple modules
+- A new **module contract** is defined
+- An **anti-pattern** is discovered at the architectural level
 
-1. **During `/speckit.implement`**: Agent identifies pattern-worthy decisions
-2. **Post-implementation**: Update this registry with:
-   - Pattern name and description
-   - Feature that introduced it
-   - File locations as reference
-   - When to apply it
-3. **Commit**: Registry changes committed with feature
+### What Does NOT Belong Here
 
-### Divergence Protocol
+These belong in `{module}/CLAUDE.md` instead:
+- File naming conventions
+- Code formatting rules
+- Module-specific patterns (React hooks, service class structure)
+- Testing conventions for specific modules
+- Error handling details
 
-If a new feature MUST diverge from an established pattern:
+### Update Process
 
-1. **Document in plan.md**: "Diverges from [PATTERN] because [REASON]"
-2. **Get approval**: Divergence requires explicit user confirmation
-3. **Update registry**: Either update the pattern or add as alternative
-4. **Never silently diverge**: Undocumented divergence = architectural drift
-
-### Periodic Review
-
-- Review registry quarterly or after major features
-- Archive obsolete patterns (don't delete, mark deprecated)
-- Consolidate similar patterns
-- Update examples with better references
+1. Run `/speckit.learn` after `/speckit.merge`
+2. Review proposed changes
+3. Keep only high-level patterns in this file
+4. Module-specific details go to respective CLAUDE.md files
 
 ---
 
-**Version**: 1.0.0 | **Created**: [DATE] | **Last Updated**: [DATE]
+**Version**: 2.0.0 | **Last Updated**: [DATE]

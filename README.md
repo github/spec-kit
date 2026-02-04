@@ -283,7 +283,8 @@ Use `/speckit.change` when:
 | `/speckit.analyze`         | Cross-artifact consistency & coverage analysis                                   |
 | `/speckit.review`          | Code quality analysis, technical debt detection, actionable recommendations      |
 | `/speckit.checklist`       | Generate quality checklists ("unit tests for English")                           |
-| `/speckit.extract-patterns`| Extract architectural patterns from codebase to update registry                  |
+| `/speckit.learn`           | Analyze codebase to update architecture registry + module CLAUDE.md files        |
+| `/speckit.merge`           | Merge feature branch to main, consolidate docs to /docs                          |
 
 #### Setup & Configuration Commands
 

@@ -102,7 +102,48 @@ ELSE:
    - If found, load it for additional context
    - Suggest `/speckit.idea` first if description is very vague (< 20 words)
 
-#### 0.3 Feature File Status Update
+#### 0.3 Load Existing Documentation for Consistency (CRITICAL)
+
+Before creating the specification, load existing project documentation to ensure consistency:
+
+1. **Check if `/docs` directory exists**:
+   - If `/docs/README.md` exists → project has consolidated documentation
+
+2. **Load feature context** from `/docs/features/`:
+   - Scan existing feature specs for related functionality
+   - Identify potential overlaps or dependencies
+   - Extract business terminology and patterns used
+
+3. **Load domain context** from `/docs/domain/`:
+   - Read `entities.md` for existing data models
+   - Extract glossary terms if available
+   - Understand established domain concepts
+
+4. **Create DOCUMENTATION_CONTEXT**:
+   ```markdown
+   ## Existing Documentation Context
+
+   ### Related Features
+   | Feature | Relevance | Potential Overlap |
+   |---------|-----------|-------------------|
+   | [feature] | [why related] | [what might overlap] |
+
+   ### Existing Entities
+   | Entity | Description | Reuse Opportunity |
+   |--------|-------------|-------------------|
+   | [entity] | [what it is] | [how it relates to new feature] |
+
+   ### Domain Terminology
+   - [term]: [definition from existing docs]
+   ```
+
+5. **Use DOCUMENTATION_CONTEXT during specification**:
+   - Reuse existing entity names and definitions
+   - Follow established naming conventions
+   - Reference related features in Dependencies section
+   - Ensure terminology consistency across specifications
+
+#### 0.4 Feature File Status Update
 
 After successfully creating a specification from a feature file:
 
