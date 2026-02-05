@@ -1460,7 +1460,7 @@ def init(
         location_desc = strategy_desc.get(selected_worktree_strategy, "in a separate directory")
 
         # Use the correct script path based on selected script type
-        configure_script = ".specify/scripts/powershell/configure-worktree.ps1" if selected_script == "ps" else ".specify/scripts/bash/configure-worktree.sh"
+        configure_script = "scripts/powershell/configure-worktree.ps1" if selected_script == "ps" else "scripts/bash/configure-worktree.sh"
 
         worktree_notice = Panel(
             f"[bold]Git Worktree Mode Enabled[/bold]\n\n"

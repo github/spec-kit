@@ -141,8 +141,9 @@ function Get-WorktreePath {
         [string]$RepoRoot
     )
 
-    $strategy = Get-ConfigValue -Key "worktree_strategy" -Default "sibling"
-    $customPath = Get-ConfigValue -Key "worktree_custom_path" -Default ""
+    $cfgFile = Join-Path $RepoRoot ".specify/config.json"
+    $strategy = Get-ConfigValue -Key "worktree_strategy" -Default "sibling" -ConfigFile $cfgFile
+    $customPath = Get-ConfigValue -Key "worktree_custom_path" -Default "" -ConfigFile $cfgFile
     $repoName = Split-Path $RepoRoot -Leaf
 
     switch ($strategy) {
@@ -308,7 +309,8 @@ if ($branchName.Length -gt $maxBranchLength) {
 }
 
 # Determine git mode and create feature
-$gitMode = Get-ConfigValue -Key "git_mode" -Default "branch"
+$configFile = Join-Path $repoRoot ".specify/config.json"
+$gitMode = Get-ConfigValue -Key "git_mode" -Default "branch" -ConfigFile $configFile
 
 # Worktree-specific pre-flight checks (only in worktree mode)
 if ($hasGit -and $gitMode -eq "worktree") {

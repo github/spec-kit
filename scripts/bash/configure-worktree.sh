@@ -220,14 +220,13 @@ else
         CURRENT_PATH=""
     fi
 
+    # Escape backslashes and double quotes for JSON safety
+    CURRENT_PATH="${CURRENT_PATH//\\/\\\\}"
+    CURRENT_PATH="${CURRENT_PATH//\"/\\\"}"
+
     # Write JSON manually
-    cat > "$CONFIG_FILE" << EOF
-{
-  "git_mode": "$CURRENT_MODE",
-  "worktree_strategy": "$CURRENT_STRATEGY",
-  "worktree_custom_path": "$CURRENT_PATH"
-}
-EOF
+    printf '{\n  "git_mode": "%s",\n  "worktree_strategy": "%s",\n  "worktree_custom_path": "%s"\n}\n' \
+        "$CURRENT_MODE" "$CURRENT_STRATEGY" "$CURRENT_PATH" > "$CONFIG_FILE"
 fi
 
 echo "Configuration updated:"

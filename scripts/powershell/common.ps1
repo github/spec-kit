@@ -136,17 +136,21 @@ function Test-DirHasFiles {
 }
 
 # Read a value from .specify/config.json
-# Usage: Get-ConfigValue -Key "git_mode" [-Default "branch"]
+# Usage: Get-ConfigValue -Key "git_mode" [-Default "branch"] [-ConfigFile "path"]
 # Returns the value or default if not found
 function Get-ConfigValue {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Key,
-        [string]$Default = ""
+        [string]$Default = "",
+        [string]$ConfigFile = ""
     )
 
-    $repoRoot = Get-RepoRoot
-    $configFile = Join-Path $repoRoot ".specify/config.json"
+    if (-not $ConfigFile) {
+        $repoRoot = Get-RepoRoot
+        $ConfigFile = Join-Path $repoRoot ".specify/config.json"
+    }
+    $configFile = $ConfigFile
 
     if (-not (Test-Path $configFile)) {
         return $Default
