@@ -177,6 +177,16 @@ cd "$REPO_ROOT"
 SPECS_DIR="$(get_specs_dir "$REPO_ROOT")" || exit 1
 mkdir -p "$SPECS_DIR"
 
+# Scaffold _shared directory with README if it doesn't exist yet
+SHARED_DIR="$SPECS_DIR/_shared"
+if [ ! -d "$SHARED_DIR" ]; then
+    mkdir -p "$SHARED_DIR"
+    SHARED_README="$REPO_ROOT/.specify/templates/_shared/README.md"
+    if [ -f "$SHARED_README" ]; then
+        cp "$SHARED_README" "$SHARED_DIR/README.md"
+    fi
+fi
+
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
     local description="$1"

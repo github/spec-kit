@@ -156,6 +156,16 @@ if (-not $specsDir) {
 }
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
+# Scaffold _shared directory with README if it doesn't exist yet
+$sharedDir = Join-Path $specsDir '_shared'
+if (-not (Test-Path $sharedDir)) {
+    New-Item -ItemType Directory -Path $sharedDir -Force | Out-Null
+    $sharedReadme = Join-Path $repoRoot '.specify/templates/_shared/README.md'
+    if (Test-Path $sharedReadme) {
+        Copy-Item $sharedReadme (Join-Path $sharedDir 'README.md') -Force
+    }
+}
+
 # Function to generate branch name with stop word filtering and length filtering
 function Get-BranchName {
     param([string]$Description)
