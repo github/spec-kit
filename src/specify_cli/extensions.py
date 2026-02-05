@@ -390,13 +390,18 @@ class ExtensionManager:
 
             # Extract ZIP safely (prevent Zip Slip attack)
             with zipfile.ZipFile(zip_path, 'r') as zf:
+                # Validate all paths first before extracting anything
+                temp_path_resolved = temp_path.resolve()
                 for member in zf.namelist():
-                    # Resolve the target path and ensure it's within temp_path
                     member_path = (temp_path / member).resolve()
-                    if not str(member_path).startswith(str(temp_path.resolve())):
+                    # Use is_relative_to for safe path containment check
+                    try:
+                        member_path.relative_to(temp_path_resolved)
+                    except ValueError:
                         raise ValidationError(
                             f"Unsafe path in ZIP archive: {member} (potential path traversal)"
                         )
+                # Only extract after all paths are validated
                 zf.extractall(temp_path)
 
             # Find extension directory (may be nested)
@@ -472,7 +477,10 @@ class ExtensionManager:
                 backup_dir = self.extensions_dir / ".backup" / extension_id
                 backup_dir.mkdir(parents=True, exist_ok=True)
 
-                config_files = list(extension_dir.glob("*-config.yml"))
+                # Backup both primary and local override config files
+                config_files = list(extension_dir.glob("*-config.yml")) + list(
+                    extension_dir.glob("*-config.local.yml")
+                )
                 for config_file in config_files:
                     backup_path = backup_dir / config_file.name
                     shutil.copy2(config_file, backup_path)
@@ -982,13 +990,15 @@ class ExtensionCatalog:
                     "Invalid SPECKIT_CATALOG_URL: must be a valid URL with a host."
                 )
 
-            # Warn users when using a non-default catalog
+            # Warn users when using a non-default catalog (once per instance)
             if catalog_url != self.DEFAULT_CATALOG_URL:
-                print(
-                    "Warning: Using non-default extension catalog. "
-                    "Only use catalogs from sources you trust.",
-                    file=sys.stderr,
-                )
+                if not getattr(self, "_non_default_catalog_warning_shown", False):
+                    print(
+                        "Warning: Using non-default extension catalog. "
+                        "Only use catalogs from sources you trust.",
+                        file=sys.stderr,
+                    )
+                    self._non_default_catalog_warning_shown = True
 
             return catalog_url
 
@@ -1157,6 +1167,15 @@ class ExtensionCatalog:
         download_url = ext_info.get("download_url")
         if not download_url:
             raise ExtensionError(f"Extension '{extension_id}' has no download URL")
+
+        # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
+        from urllib.parse import urlparse
+        parsed = urlparse(download_url)
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+            raise ExtensionError(
+                f"Extension download URL must use HTTPS: {download_url}"
+            )
 
         # Determine target path
         if target_dir is None:
@@ -1587,10 +1606,17 @@ class HookExecutor:
             config_manager = ConfigManager(self.project_root, extension_id)
             actual_value = config_manager.get_value(key_path)
 
+            # Normalize boolean values to lowercase for comparison
+            # (YAML True/False vs condition strings 'true'/'false')
+            if isinstance(actual_value, bool):
+                normalized_value = "true" if actual_value else "false"
+            else:
+                normalized_value = str(actual_value)
+
             if operator == "==":
-                return str(actual_value) == expected_value
+                return normalized_value == expected_value
             else:  # !=
-                return str(actual_value) != expected_value
+                return normalized_value != expected_value
 
         # Pattern: "env.VAR_NAME is set"
         if match := re.match(r'env\.([A-Z0-9_]+)\s+is\s+set', condition, re.IGNORECASE):
