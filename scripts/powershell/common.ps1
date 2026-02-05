@@ -21,15 +21,9 @@ function Get-SpecsDir {
     
     if ($env:SPECIFY_SPECS_DIR) {
         $specsDir = $env:SPECIFY_SPECS_DIR
-        # Require absolute path
+        # Resolve relative paths against repo root
         if (-not [System.IO.Path]::IsPathRooted($specsDir)) {
-            Write-Error "[specify] ERROR: SPECIFY_SPECS_DIR must be an absolute path (got: '$specsDir')"
-            throw "SPECIFY_SPECS_DIR must be an absolute path"
-        }
-        # Block path traversal
-        if ($specsDir -match '\.\.') {
-            Write-Error "[specify] ERROR: SPECIFY_SPECS_DIR must not contain '..' (got: '$specsDir')"
-            throw "SPECIFY_SPECS_DIR must not contain '..'"
+            $specsDir = Join-Path $RepoRoot $specsDir
         }
         return $specsDir
     }

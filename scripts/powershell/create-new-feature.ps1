@@ -149,7 +149,11 @@ try {
 
 Set-Location $repoRoot
 
-$specsDir = if ($env:SPECIFY_SPECS_DIR) { $env:SPECIFY_SPECS_DIR } else { Join-Path $repoRoot 'specs' }
+$specsDir = Get-SpecsDir -RepoRoot $repoRoot
+if (-not $specsDir) {
+    Write-Host "`n[specify] ERROR: Invalid SPECIFY_SPECS_DIR configuration. Aborting." -ForegroundColor Red
+    exit 1
+}
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 # Function to generate branch name with stop word filtering and length filtering

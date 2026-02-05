@@ -84,7 +84,7 @@ check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
 # If paths-only mode, output paths and exit (support JSON + paths-only combined)
 if $PATHS_ONLY; then
-    SPECS_DIR="$(get_specs_dir "$REPO_ROOT")"
+    SPECS_DIR="$(get_specs_dir "$REPO_ROOT")" || exit 1
     if $JSON_MODE; then
         # Minimal JSON paths payload (no validation performed)
         printf '{"REPO_ROOT":"%s","BRANCH":"%s","FEATURE_DIR":"%s","FEATURE_SPEC":"%s","IMPL_PLAN":"%s","TASKS":"%s","SPECS_DIR":"%s"}\n' \
@@ -151,7 +151,8 @@ if $JSON_MODE; then
         json_docs="[${json_docs%,}]"
     fi
     
-    SPECS_DIR="$(get_specs_dir "$REPO_ROOT")"
+    SPECS_DIR="$(get_specs_dir "$REPO_ROOT")" || exit 1
+    # Note: $json_docs is not escaped because it is already a pre-formatted JSON array
     printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s,"SPECS_DIR":"%s"}\n' "$(json_escape "$FEATURE_DIR")" "$json_docs" "$(json_escape "$SPECS_DIR")"
 else
     # Text output

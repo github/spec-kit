@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
-# Escape a string for safe inclusion in JSON
+# Escape a string for safe inclusion in JSON (handles all JSON-required escapes)
 json_escape() {
     local str="$1"
-    # Escape backslashes first, then quotes, then other special chars
+    # Escape backslashes first, then quotes, then control characters
     str="${str//\\/\\\\}"
     str="${str//\"/\\\"}"
     str="${str//$'\n'/\\n}"
     str="${str//$'\r'/\\r}"
     str="${str//$'\t'/\\t}"
-    echo "$str"
+    str="${str//$'\b'/\\b}"
+    str="${str//$'\f'/\\f}"
+    # Remove any remaining control characters (U+0000-U+001F) that are
+    # not covered above, since they are invalid unescaped in JSON strings.
+    str="$(printf '%s' "$str" | tr -d '\000-\006\016-\037')"
+    printf '%s' "$str"
 }
 
 # Get repository root, with fallback for non-git repositories
@@ -31,15 +36,9 @@ get_specs_dir() {
     
     if [[ -n "${SPECIFY_SPECS_DIR:-}" ]]; then
         specs_dir="$SPECIFY_SPECS_DIR"
-        # Require absolute path
+        # Resolve relative paths against repo root
         if [[ "$specs_dir" != /* ]]; then
-            echo "[specify] ERROR: SPECIFY_SPECS_DIR must be an absolute path (got: '$specs_dir')" >&2
-            return 1
-        fi
-        # Block path traversal
-        if [[ "$specs_dir" == *".."* ]]; then
-            echo "[specify] ERROR: SPECIFY_SPECS_DIR must not contain '..' (got: '$specs_dir')" >&2
-            return 1
+            specs_dir="$repo_root/$specs_dir"
         fi
     else
         specs_dir="$repo_root/specs"

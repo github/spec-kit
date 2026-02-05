@@ -174,7 +174,7 @@ fi
 
 cd "$REPO_ROOT"
 
-SPECS_DIR="${SPECIFY_SPECS_DIR:-$REPO_ROOT/specs}"
+SPECS_DIR="$(get_specs_dir "$REPO_ROOT")" || exit 1
 mkdir -p "$SPECS_DIR"
 
 # Function to generate branch name with stop word filtering and length filtering
