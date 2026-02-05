@@ -14,7 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Git Worktree Support**: `create-new-feature` scripts now support worktree-based feature isolation as an alternative to branch switching
   - Configure with `configure-worktree.sh` / `configure-worktree.ps1` to choose between `branch` (default) and `worktree` modes
   - Three worktree placement strategies: `nested` (inside repo), `sibling` (alongside repo), `custom` (user-specified path)
-  - Automatic fallback to branch mode when worktree creation fails (e.g., unwritable paths)
   - Pre-flight warnings for uncommitted changes and orphaned worktrees (worktree mode only)
   - JSON output includes `FEATURE_ROOT` and `MODE` fields for automation
 
