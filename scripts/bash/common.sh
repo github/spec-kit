@@ -154,3 +154,46 @@ EOF
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+# Read a value from .specify/config.json
+# Usage: read_config_value "git_mode" [default_value] [config_file_path]
+# Returns the value or default if not found
+read_config_value() {
+    local key="$1"
+    local default_value="${2:-}"
+    local config_file="${3:-}"
+
+    if [[ -z "$config_file" ]]; then
+        local repo_root
+        repo_root=$(get_repo_root)
+        config_file="$repo_root/.specify/config.json"
+    fi
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "$default_value"
+        return
+    fi
+
+    local value=""
+    if command -v jq &>/dev/null; then
+        # Use jq if available (preferred)
+        value=$(jq -r ".$key // empty" "$config_file" 2>/dev/null)
+    else
+        # Fallback: simple grep/sed for JSON values
+        # Try quoted string first: "key": "value"
+        value=$(grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$config_file" 2>/dev/null | \
+            sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
+
+        # If no quoted value found, try unquoted (booleans/numbers): "key": true/false/123
+        if [[ -z "$value" ]]; then
+            value=$(grep -o "\"$key\"[[:space:]]*:[[:space:]]*[^,}\"]*" "$config_file" 2>/dev/null | \
+                sed 's/.*:[[:space:]]*\([^,}]*\).*/\1/' | tr -d ' ' | head -1)
+        fi
+    fi
+
+    if [[ -n "$value" ]]; then
+        echo "$value"
+    else
+        echo "$default_value"
+    fi
+}
+

@@ -68,7 +68,12 @@ Given that feature description, do this:
    - If no existing branches/directories found with this short-name, start with number 1
    - You must only ever run this script once per feature
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
-   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
+   - The JSON output will contain:
+     - `BRANCH_NAME`: The feature branch name
+     - `SPEC_FILE`: Absolute path to spec.md
+     - `FEATURE_ROOT`: **Working directory** - use this as the base for all file operations
+     - `MODE`: Either "branch" (standard mode) or "worktree" (parallel development mode)
+   - **When MODE is "worktree"**: The feature is in a separate working directory. Use `FEATURE_ROOT` as your working directory for all subsequent commands and file operations
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
 3. Load `templates/spec-template.md` to understand required sections.
@@ -194,6 +199,28 @@ Given that feature description, do this:
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
 7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
+
+   **CRITICAL - Worktree Mode Notification**: If `MODE` is `worktree`, you **MUST** include a prominent warning section at the end of your completion report:
+
+   ```markdown
+   ---
+
+   ## ⚠️ ACTION REQUIRED: Switch to Worktree
+
+   This feature was created in **worktree mode**. Your files are in a separate directory:
+
+   **Worktree Path**: `[FEATURE_ROOT]`
+
+   **You must switch your coding agent/IDE to this directory** before running any subsequent commands (`/speckit.clarify`, `/speckit.plan`, `/speckit.implement`, etc.).
+
+   ```bash
+   cd [FEATURE_ROOT]
+   ```
+
+   ---
+   ```
+
+   Replace `[FEATURE_ROOT]` with the actual path from the script output. This notification is essential because the agent will not automatically change directories and will operate on the wrong files if the user doesn't switch.
 
 **NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
 

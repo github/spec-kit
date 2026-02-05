@@ -7,6 +7,26 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.23] - 2026-02-05
+
+### Added
+
+- **Git Worktree Support**: `create-new-feature` scripts now support worktree-based feature isolation as an alternative to branch switching
+  - Configure with `configure-worktree.sh` / `configure-worktree.ps1` to choose between `branch` (default) and `worktree` modes
+  - Three worktree placement strategies: `nested` (inside repo), `sibling` (alongside repo), `custom` (user-specified path)
+  - Pre-flight warnings for uncommitted changes and orphaned worktrees (worktree mode only)
+  - JSON output includes `FEATURE_ROOT` and `MODE` fields for automation
+
+### Changed
+
+- Worktree configuration stored in `.specify/config.json` (supports `git_mode`, `worktree_strategy`, `worktree_custom_path`)
+- Worktree creation failures now exit with clear, actionable error messages instead of silently falling back to branch mode
+- `HAS_GIT` field added to bash JSON output and restored in PowerShell JSON output for backward compatibility
+- `read_config_value` now accepts an optional config file path parameter to avoid redundant repository root lookups
+- Fixed jq injection vulnerability in `configure-worktree.sh` by using `--arg` for user input
+- Fixed PowerShell temp file leak in writability checks with proper `try/finally` cleanup
+- Moved `WORKTREE_DESIGN.md` into `specs/001-git-worktrees/` to keep design docs with their spec
+
 ## [0.0.22] - 2025-11-07
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.

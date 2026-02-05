@@ -11,6 +11,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# Import common functions (for Get-ConfigValue)
+. (Join-Path $PSScriptRoot "common.ps1")
+
 # Show help if requested
 if ($Help) {
     Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] <feature description>"
@@ -126,9 +129,73 @@ function Get-NextBranchNumber {
 
 function ConvertTo-CleanBranchName {
     param([string]$Name)
-    
+
     return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
+
+# Calculate worktree path based on strategy
+# Naming convention: <repo_name>-<branch_name> for sibling/custom strategies
+function Get-WorktreePath {
+    param(
+        [string]$BranchName,
+        [string]$RepoRoot
+    )
+
+    $cfgFile = Join-Path $RepoRoot ".specify/config.json"
+    $strategy = Get-ConfigValue -Key "worktree_strategy" -Default "sibling" -ConfigFile $cfgFile
+    $customPath = Get-ConfigValue -Key "worktree_custom_path" -Default "" -ConfigFile $cfgFile
+    $repoName = Split-Path $RepoRoot -Leaf
+
+    switch ($strategy) {
+        "nested" {
+            # Nested uses just branch name since it's inside the repo
+            return Join-Path $RepoRoot ".worktrees/$BranchName"
+        }
+        "sibling" {
+            # Sibling uses repo_name-branch_name for clarity
+            return Join-Path (Split-Path $RepoRoot -Parent) "$repoName-$BranchName"
+        }
+        "custom" {
+            if ($customPath) {
+                # Custom also uses repo_name-branch_name for clarity
+                return Join-Path $customPath "$repoName-$BranchName"
+            }
+            else {
+                # Fallback to nested if custom path not set
+                return Join-Path $RepoRoot ".worktrees/$BranchName"
+            }
+        }
+        default {
+            return Join-Path $RepoRoot ".worktrees/$BranchName"
+        }
+    }
+}
+
+# Check if a git branch exists (locally or remotely)
+function Test-BranchExists {
+    param([string]$BranchName)
+
+    # Check local branches
+    try {
+        git rev-parse --verify $BranchName 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+    }
+    catch { }
+
+    # Check remote branches
+    try {
+        git rev-parse --verify "origin/$BranchName" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+    }
+    catch { }
+
+    return $false
+}
+
 $fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
 if (-not $fallbackRoot) {
     Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
@@ -241,42 +308,171 @@ if ($branchName.Length -gt $maxBranchLength) {
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
 }
 
-if ($hasGit) {
-    try {
-        git checkout -b $branchName | Out-Null
-    } catch {
-        Write-Warning "Failed to create git branch: $branchName"
+# Determine git mode and create feature
+$configFile = Join-Path $repoRoot ".specify/config.json"
+$gitMode = Get-ConfigValue -Key "git_mode" -Default "branch" -ConfigFile $configFile
+
+# Worktree-specific pre-flight checks (only in worktree mode)
+if ($hasGit -and $gitMode -eq "worktree") {
+    # Check for uncommitted changes (warning only, per FR-013)
+    $status = git status --porcelain 2>$null
+    if ($status) {
+        Write-Warning "[specify] Warning: Uncommitted changes in working directory will not appear in new worktree."
     }
-} else {
+
+    # Check for orphaned worktrees (warning only, per FR-012)
+    $worktreeInfo = git worktree list --porcelain 2>$null
+    if ($worktreeInfo -match "prunable") {
+        Write-Warning "[specify] Warning: Orphaned worktree entries detected. Run 'git worktree prune' to clean up."
+    }
+}
+$creationMode = "branch"
+$featureRoot = $repoRoot
+$worktreePath = ""
+
+if ($hasGit) {
+    if ($gitMode -eq "worktree") {
+        # Worktree mode
+        $worktreePath = Get-WorktreePath -BranchName $branchName -RepoRoot $repoRoot
+        $worktreeParent = Split-Path $worktreePath -Parent
+
+        # Check if parent path is writable (T033)
+        if (-not (Test-Path $worktreeParent)) {
+            try {
+                New-Item -ItemType Directory -Path $worktreeParent -Force -ErrorAction Stop | Out-Null
+            }
+            catch {
+                Write-Error "[specify] Error: Cannot create worktree parent directory: $worktreeParent"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Use nested strategy: configure-worktree.ps1 -Strategy nested"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                Write-Error "[specify]   - Create the directory manually and retry"
+                exit 1
+            }
+        }
+        else {
+            # Test writability by attempting to create a temp file
+            $testFile = Join-Path $worktreeParent ".specify-write-test-$(Get-Random)"
+            try {
+                New-Item -ItemType File -Path $testFile -Force -ErrorAction Stop | Out-Null
+            }
+            catch {
+                Write-Error "[specify] Error: Worktree parent directory is not writable: $worktreeParent"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Use nested strategy: configure-worktree.ps1 -Strategy nested"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                Write-Error "[specify]   - Fix directory permissions and retry"
+                exit 1
+            }
+            finally {
+                Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    if ($gitMode -eq "worktree") {
+        # Check if branch already exists
+        if (Test-BranchExists -BranchName $branchName) {
+            # Attach worktree to existing branch (without -b flag)
+            try {
+                git worktree add $worktreePath $branchName 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $creationMode = "worktree"
+                    $featureRoot = $worktreePath
+                }
+                else {
+                    throw "Worktree creation failed"
+                }
+            }
+            catch {
+                Write-Error "[specify] Error: Failed to create worktree for existing branch '$branchName' at $worktreePath"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Check existing worktrees: git worktree list"
+                Write-Error "[specify]   - Remove stale worktree: git worktree remove <path>"
+                Write-Error "[specify]   - Prune orphaned entries: git worktree prune"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                exit 1
+            }
+        }
+        else {
+            # Create new branch with worktree
+            try {
+                git worktree add $worktreePath -b $branchName 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $creationMode = "worktree"
+                    $featureRoot = $worktreePath
+                }
+                else {
+                    throw "Worktree creation failed"
+                }
+            }
+            catch {
+                Write-Error "[specify] Error: Failed to create worktree for new branch '$branchName' at $worktreePath"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Check existing worktrees: git worktree list"
+                Write-Error "[specify]   - Prune orphaned entries: git worktree prune"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                exit 1
+            }
+        }
+    }
+    else {
+        # Standard branch mode
+        try {
+            git checkout -b $branchName | Out-Null
+        }
+        catch {
+            Write-Warning "Failed to create git branch: $branchName"
+        }
+        $creationMode = "branch"
+        $featureRoot = $repoRoot
+    }
+}
+else {
     Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+    $creationMode = "branch"
+    $featureRoot = $repoRoot
 }
 
-$featureDir = Join-Path $specsDir $branchName
+# Create feature directory and spec file
+# In worktree mode, create specs in the worktree; in branch mode, create in main repo
+if ($creationMode -eq "worktree") {
+    $featureDir = Join-Path $featureRoot "specs/$branchName"
+}
+else {
+    $featureDir = Join-Path $specsDir $branchName
+}
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
 $template = Join-Path $repoRoot '.specify/templates/spec-template.md'
 $specFile = Join-Path $featureDir 'spec.md'
-if (Test-Path $template) { 
-    Copy-Item $template $specFile -Force 
-} else { 
-    New-Item -ItemType File -Path $specFile | Out-Null 
+if (Test-Path $template) {
+    Copy-Item $template $specFile -Force
+}
+else {
+    New-Item -ItemType File -Path $specFile | Out-Null
 }
 
 # Set the SPECIFY_FEATURE environment variable for the current session
 $env:SPECIFY_FEATURE = $branchName
 
 if ($Json) {
-    $obj = [PSCustomObject]@{ 
-        BRANCH_NAME = $branchName
-        SPEC_FILE = $specFile
-        FEATURE_NUM = $featureNum
-        HAS_GIT = $hasGit
+    $obj = [PSCustomObject]@{
+        BRANCH_NAME  = $branchName
+        SPEC_FILE    = $specFile
+        FEATURE_NUM  = $featureNum
+        FEATURE_ROOT = $featureRoot
+        MODE         = $creationMode
+        HAS_GIT      = $hasGit
     }
     $obj | ConvertTo-Json -Compress
-} else {
+}
+else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
+    Write-Output "FEATURE_ROOT: $featureRoot"
+    Write-Output "MODE: $creationMode"
     Write-Output "HAS_GIT: $hasGit"
     Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
 }

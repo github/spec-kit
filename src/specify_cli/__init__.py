@@ -230,6 +230,17 @@ AGENT_CONFIG = {
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
+GIT_MODE_CHOICES = {
+    "branch": "Switch branches in place (traditional)",
+    "worktree": "Parallel directories per feature"
+}
+
+WORKTREE_STRATEGY_CHOICES = {
+    "sibling": "Alongside repo (../feature-name)",
+    "nested": "Inside repo (.worktrees/feature-name)",
+    "custom": "Custom path (specify location)"
+}
+
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
 BANNER = """
@@ -516,7 +527,7 @@ def is_git_repo(path: Path = None) -> bool:
     """Check if the specified path is inside a git repository."""
     if path is None:
         path = Path.cwd()
-    
+
     if not path.is_dir():
         return False
 
@@ -531,6 +542,54 @@ def is_git_repo(path: Path = None) -> bool:
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
+
+def get_git_version() -> Optional[Tuple[int, int, int]]:
+    """Get the installed git version as a tuple (major, minor, patch).
+
+    Returns:
+        Tuple of (major, minor, patch) version numbers, or None if git not found.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "--version"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        # Output is like: "git version 2.39.0" or "git version 2.39.0.windows.1"
+        version_str = result.stdout.strip()
+        # Extract version number after "git version "
+        if version_str.startswith("git version "):
+            version_part = version_str[12:].split()[0]  # Get first part after "git version "
+            # Handle versions like "2.39.0.windows.1" by taking first 3 parts
+            parts = version_part.split(".")[:3]
+            try:
+                major = int(parts[0]) if len(parts) > 0 else 0
+                minor = int(parts[1]) if len(parts) > 1 else 0
+                patch = int(parts[2]) if len(parts) > 2 else 0
+                return (major, minor, patch)
+            except ValueError:
+                return None
+        return None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+def check_git_worktree_support() -> Tuple[bool, Optional[str]]:
+    """Check if git version supports worktrees (requires 2.5+).
+
+    Returns:
+        Tuple of (supported: bool, message: Optional[str])
+    """
+    version = get_git_version()
+    if version is None:
+        return False, "Git is not installed"
+
+    major, minor, _ = version
+    if major < 2 or (major == 2 and minor < 5):
+        version_str = f"{major}.{minor}"
+        return False, f"Git {version_str} found, but worktree requires Git 2.5+"
+
+    return True, None
 
 def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Optional[str]]:
     """Initialize a git repository in the specified path.
@@ -947,6 +1006,9 @@ def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, bob, or qoder "),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+    git_mode: str = typer.Option(None, "--git-mode", help="Git workflow mode: branch (traditional) or worktree (parallel directories)"),
+    worktree_strategy: str = typer.Option(None, "--worktree-strategy", help="Worktree location strategy: sibling, nested, or custom"),
+    worktree_path: str = typer.Option(None, "--worktree-path", help="Custom worktree base path (required if --worktree-strategy is 'custom')"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -957,15 +1019,16 @@ def init(
 ):
     """
     Initialize a new Specify project from the latest template.
-    
+
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant
-    3. Download the appropriate template from GitHub
-    4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
-    6. Optionally set up AI assistant commands
-    
+    3. Configure git workflow (branch or worktree mode)
+    4. Download the appropriate template from GitHub
+    5. Extract the template to a new project directory or current directory
+    6. Initialize a fresh git repository (if not --no-git and no existing repo)
+    7. Save git workflow configuration to .specify/config.json
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
@@ -978,6 +1041,11 @@ def init(
         specify init --here --ai codebuddy
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
+
+        # Git worktree mode examples:
+        specify init my-project --git-mode worktree --worktree-strategy sibling
+        specify init my-project --git-mode worktree --worktree-strategy nested
+        specify init my-project --git-mode worktree --worktree-strategy custom --worktree-path /tmp/worktrees
     """
 
     show_banner()
@@ -1088,8 +1156,117 @@ def init(
         else:
             selected_script = default_script
 
+    # Git workflow mode selection
+    selected_git_mode = "branch"  # Default
+    selected_worktree_strategy = "sibling"  # Default
+    selected_worktree_path = ""
+
+    # Check for --no-git + --git-mode worktree conflict
+    if no_git and git_mode == "worktree":
+        console.print("[red]Error:[/red] Cannot use --git-mode worktree with --no-git (worktrees require git)")
+        raise typer.Exit(1)
+
+    # Determine if git workflow selection should be shown
+    git_available = should_init_git  # Already checked above
+    worktree_supported = False
+    worktree_error_msg = None
+
+    if git_available:
+        worktree_supported, worktree_error_msg = check_git_worktree_support()
+
+    if git_mode:
+        if git_mode not in GIT_MODE_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid git mode '{git_mode}'. Choose from: {', '.join(GIT_MODE_CHOICES.keys())}")
+            raise typer.Exit(1)
+
+        # Validate worktree mode requirements
+        if git_mode == "worktree":
+            if not git_available:
+                console.print("[red]Error:[/red] Cannot use --git-mode worktree: Git is not installed")
+                raise typer.Exit(1)
+            if not worktree_supported:
+                console.print(f"[red]Error:[/red] Cannot use --git-mode worktree: {worktree_error_msg}")
+                raise typer.Exit(1)
+
+        selected_git_mode = git_mode
+    else:
+        # Interactive selection if TTY available and git is available
+        if sys.stdin.isatty() and git_available:
+            if worktree_supported:
+                selected_git_mode = select_with_arrows(GIT_MODE_CHOICES, "Choose git workflow", "branch")
+            else:
+                # Git available but worktree not supported - skip selection, default to branch
+                console.print(f"[yellow]Note:[/yellow] {worktree_error_msg}. Using branch mode.")
+                selected_git_mode = "branch"
+        elif not git_available:
+            # Git not available - silently default to branch (config will still be written)
+            selected_git_mode = "branch"
+        # else: default to "branch"
+
+    # Worktree strategy selection (only if worktree mode)
+    if selected_git_mode == "worktree":
+        if worktree_strategy:
+            if worktree_strategy not in WORKTREE_STRATEGY_CHOICES:
+                console.print(f"[red]Error:[/red] Invalid worktree strategy '{worktree_strategy}'. Choose from: {', '.join(WORKTREE_STRATEGY_CHOICES.keys())}")
+                raise typer.Exit(1)
+            selected_worktree_strategy = worktree_strategy
+        else:
+            # Interactive selection if TTY available
+            if sys.stdin.isatty():
+                selected_worktree_strategy = select_with_arrows(WORKTREE_STRATEGY_CHOICES, "Choose worktree location", "sibling")
+            # else: default to "sibling"
+
+        # Custom path handling
+        if selected_worktree_strategy == "custom":
+            if worktree_path:
+                # Validate it's an absolute path
+                if not Path(worktree_path).is_absolute():
+                    console.print(f"[red]Error:[/red] --worktree-path must be an absolute path (got: {worktree_path})")
+                    raise typer.Exit(1)
+                # Validate parent exists
+                parent = Path(worktree_path).parent
+                if not parent.exists():
+                    console.print(f"[red]Error:[/red] Parent directory does not exist: {parent}")
+                    raise typer.Exit(1)
+                selected_worktree_path = worktree_path
+            else:
+                # Prompt for custom path
+                if sys.stdin.isatty():
+                    console.print()
+                    selected_worktree_path = typer.prompt("Enter custom worktree base path (absolute path)")
+                    if not Path(selected_worktree_path).is_absolute():
+                        console.print(f"[red]Error:[/red] Path must be absolute (got: {selected_worktree_path})")
+                        raise typer.Exit(1)
+                    parent = Path(selected_worktree_path).parent
+                    if not parent.exists():
+                        console.print(f"[red]Error:[/red] Parent directory does not exist: {parent}")
+                        raise typer.Exit(1)
+                else:
+                    console.print("[red]Error:[/red] --worktree-path is required when --worktree-strategy is 'custom'")
+                    raise typer.Exit(1)
+
+        # Show worktree location preview
+        # Naming convention: <repo_name>-<feature-branch> for sibling/custom
+        repo_name = project_path.name
+        if selected_worktree_strategy == "sibling":
+            preview_path = project_path.parent / f"{repo_name}-<feature-branch>"
+        elif selected_worktree_strategy == "nested":
+            # Nested uses just branch name since it's inside the repo
+            preview_path = project_path / ".worktrees" / "<feature-branch>"
+        else:  # custom
+            preview_path = Path(selected_worktree_path) / f"{repo_name}-<feature-branch>"
+
+        console.print()
+        console.print(f"[cyan]Worktree preview:[/cyan] Features will be created at [green]{preview_path}[/green]")
+
     console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+    console.print(f"[cyan]Selected git mode:[/cyan] {selected_git_mode}")
+    if selected_git_mode == "worktree":
+        strategy_display = selected_worktree_strategy
+        if selected_worktree_strategy == "custom" and selected_worktree_path:
+            strategy_display = f"custom ({selected_worktree_path})"
+        console.print(f"[cyan]Worktree strategy:[/cyan] {strategy_display}")
 
     tracker = StepTracker("Initialize Specify Project")
 
@@ -1101,17 +1278,32 @@ def init(
     tracker.complete("ai-select", f"{selected_ai}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
-    for key, label in [
+    tracker.add("git-workflow", "Configure git workflow")
+    if selected_git_mode == "worktree":
+        strategy_info = selected_worktree_strategy
+        if selected_worktree_strategy == "custom":
+            strategy_info = f"custom path"
+        tracker.complete("git-workflow", f"worktree ({strategy_info})")
+    else:
+        tracker.complete("git-workflow", "branch")
+    tracker_steps = [
         ("fetch", "Fetch latest release"),
         ("download", "Download template"),
         ("extract", "Extract template"),
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
+        ("write-config", "Save git workflow config"),
+    ]
+    # Add gitignore step only for nested worktree strategy
+    if selected_git_mode == "worktree" and selected_worktree_strategy == "nested":
+        tracker_steps.append(("update-gitignore", "Update .gitignore"))
+    tracker_steps.extend([
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
-    ]:
+    ])
+    for key, label in tracker_steps:
         tracker.add(key, label)
 
     # Track git error message outside Live context so it persists
@@ -1127,6 +1319,66 @@ def init(
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            # Write git workflow configuration to .specify/config.json
+            tracker.start("write-config")
+            try:
+                config_dir = project_path / ".specify"
+                config_dir.mkdir(parents=True, exist_ok=True)
+                config_file = config_dir / "config.json"
+
+                # Build config object
+                config_data = {
+                    "git_mode": selected_git_mode,
+                    "worktree_strategy": selected_worktree_strategy,
+                    "worktree_custom_path": selected_worktree_path
+                }
+
+                # If config file exists, merge with existing content
+                if config_file.exists():
+                    try:
+                        with open(config_file, 'r', encoding='utf-8') as f:
+                            existing_config = json.load(f)
+                        # Update existing config with new git workflow settings
+                        existing_config.update(config_data)
+                        config_data = existing_config
+                    except (json.JSONDecodeError, IOError):
+                        pass  # Use new config if existing is invalid
+
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, indent=2)
+                    f.write('\n')
+
+                tracker.complete("write-config", ".specify/config.json")
+            except Exception as e:
+                tracker.error("write-config", str(e))
+
+            # Update .gitignore for nested worktree strategy
+            if selected_git_mode == "worktree" and selected_worktree_strategy == "nested":
+                tracker.start("update-gitignore")
+                try:
+                    gitignore_path = project_path / ".gitignore"
+                    worktree_entry = ".worktrees/"
+                    existing_content = ""
+
+                    # Read existing content once
+                    if gitignore_path.exists():
+                        with open(gitignore_path, 'r', encoding='utf-8') as f:
+                            existing_content = f.read()
+
+                    # Check if entry already exists (with or without trailing newline)
+                    if worktree_entry in existing_content or ".worktrees" in existing_content:
+                        tracker.complete("update-gitignore", "already present")
+                    else:
+                        # Append .worktrees/ to .gitignore
+                        with open(gitignore_path, 'a', encoding='utf-8') as f:
+                            # Ensure we start on a new line (reuse existing_content)
+                            if existing_content and not existing_content.endswith('\n'):
+                                f.write('\n')
+                            f.write(f"\n# Git worktrees (nested strategy)\n{worktree_entry}\n")
+                        tracker.complete("update-gitignore", "added .worktrees/")
+                except Exception as e:
+                    tracker.error("update-gitignore", str(e))
 
             if not no_git:
                 tracker.start("git")
@@ -1196,6 +1448,31 @@ def init(
         )
         console.print()
         console.print(security_notice)
+
+    # Worktree mode notice
+    if selected_git_mode == "worktree":
+        proj_name = project_path.name
+        strategy_desc = {
+            "sibling": f"alongside this repo (e.g., [cyan]../{proj_name}-<feature-branch>[/cyan])",
+            "nested": f"inside [cyan].worktrees/<feature-branch>[/cyan]",
+            "custom": f"in [cyan]{selected_worktree_path}/{proj_name}-<feature-branch>[/cyan]"
+        }
+        location_desc = strategy_desc.get(selected_worktree_strategy, "in a separate directory")
+
+        # Use the correct script path based on selected script type
+        configure_script = "scripts/powershell/configure-worktree.ps1" if selected_script == "ps" else "scripts/bash/configure-worktree.sh"
+
+        worktree_notice = Panel(
+            f"[bold]Git Worktree Mode Enabled[/bold]\n\n"
+            f"When you run [cyan]/speckit.specify[/cyan], each feature will be created in its own directory {location_desc}.\n\n"
+            f"[yellow]Important:[/yellow] After creating a feature, you must switch your coding agent/IDE to the new worktree directory to continue working on that feature.\n\n"
+            f"To change this later, run: [cyan]{configure_script} --show[/cyan]",
+            title="[cyan]Worktree Mode[/cyan]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+        console.print()
+        console.print(worktree_notice)
 
     steps_lines = []
     if not here:
