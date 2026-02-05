@@ -115,14 +115,16 @@ if ($Path) {
         exit 1
     }
     # Test writability by attempting to create a temp file
+    $testFile = Join-Path $parentPath ".specify-write-test-$(Get-Random)"
     try {
-        $testFile = Join-Path $parentPath ".specify-write-test-$(Get-Random)"
-        New-Item -ItemType File -Path $testFile -Force | Out-Null
-        Remove-Item $testFile -Force
+        New-Item -ItemType File -Path $testFile -Force -ErrorAction Stop | Out-Null
     }
     catch {
         Write-Error "Error: Parent directory is not writable: $parentPath"
         exit 1
+    }
+    finally {
+        Remove-Item $testFile -Force -ErrorAction SilentlyContinue
     }
 }
 

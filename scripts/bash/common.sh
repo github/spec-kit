@@ -155,14 +155,18 @@ check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
 # Read a value from .specify/config.json
-# Usage: read_config_value "git_mode" [default_value]
+# Usage: read_config_value "git_mode" [default_value] [config_file_path]
 # Returns the value or default if not found
 read_config_value() {
     local key="$1"
     local default_value="${2:-}"
-    local repo_root
-    repo_root=$(get_repo_root)
-    local config_file="$repo_root/.specify/config.json"
+    local config_file="${3:-}"
+
+    if [[ -z "$config_file" ]]; then
+        local repo_root
+        repo_root=$(get_repo_root)
+        config_file="$repo_root/.specify/config.json"
+    fi
 
     if [[ ! -f "$config_file" ]]; then
         echo "$default_value"

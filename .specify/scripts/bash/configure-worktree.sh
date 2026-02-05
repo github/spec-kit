@@ -175,25 +175,29 @@ fi
 
 # Update configuration using jq if available
 if command -v jq &>/dev/null; then
-    # Build jq update expression
+    # Build jq update using --arg to prevent injection via user input
+    JQ_ARGS=()
     UPDATE_EXPR="."
 
     if [[ -n "$MODE" ]]; then
-        UPDATE_EXPR="$UPDATE_EXPR | .git_mode = \"$MODE\""
+        JQ_ARGS+=(--arg mode "$MODE")
+        UPDATE_EXPR="$UPDATE_EXPR | .git_mode = \$mode"
     fi
 
     if [[ -n "$STRATEGY" ]]; then
-        UPDATE_EXPR="$UPDATE_EXPR | .worktree_strategy = \"$STRATEGY\""
+        JQ_ARGS+=(--arg strategy "$STRATEGY")
+        UPDATE_EXPR="$UPDATE_EXPR | .worktree_strategy = \$strategy"
     fi
 
     if [[ -n "$CUSTOM_PATH" ]]; then
-        UPDATE_EXPR="$UPDATE_EXPR | .worktree_custom_path = \"$CUSTOM_PATH\""
+        JQ_ARGS+=(--arg cpath "$CUSTOM_PATH")
+        UPDATE_EXPR="$UPDATE_EXPR | .worktree_custom_path = \$cpath"
     elif [[ "$STRATEGY" == "nested" || "$STRATEGY" == "sibling" ]]; then
         # Clear custom path when switching to non-custom strategy
         UPDATE_EXPR="$UPDATE_EXPR | .worktree_custom_path = \"\""
     fi
 
-    echo "$EXISTING_CONFIG" | jq "$UPDATE_EXPR" > "$CONFIG_FILE"
+    echo "$EXISTING_CONFIG" | jq "${JQ_ARGS[@]}" "$UPDATE_EXPR" > "$CONFIG_FILE"
 else
     # Fallback without jq: construct JSON manually
     # Warn user about potential data loss

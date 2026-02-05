@@ -307,24 +307,23 @@ if ($branchName.Length -gt $maxBranchLength) {
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
 }
 
-# Check for uncommitted changes (warning only, per FR-013)
-if ($hasGit) {
+# Determine git mode and create feature
+$gitMode = Get-ConfigValue -Key "git_mode" -Default "branch"
+
+# Worktree-specific pre-flight checks (only in worktree mode)
+if ($hasGit -and $gitMode -eq "worktree") {
+    # Check for uncommitted changes (warning only, per FR-013)
     $status = git status --porcelain 2>$null
     if ($status) {
         Write-Warning "[specify] Warning: Uncommitted changes in working directory will not appear in new worktree."
     }
-}
 
-# Check for orphaned worktrees (warning only, per FR-012)
-if ($hasGit) {
+    # Check for orphaned worktrees (warning only, per FR-012)
     $worktreeInfo = git worktree list --porcelain 2>$null
     if ($worktreeInfo -match "prunable") {
         Write-Warning "[specify] Warning: Orphaned worktree entries detected. Run 'git worktree prune' to clean up."
     }
 }
-
-# Determine git mode and create feature
-$gitMode = Get-ConfigValue -Key "git_mode" -Default "branch"
 $creationMode = "branch"
 $featureRoot = $repoRoot
 $worktreePath = ""
@@ -341,20 +340,30 @@ if ($hasGit) {
                 New-Item -ItemType Directory -Path $worktreeParent -Force -ErrorAction Stop | Out-Null
             }
             catch {
-                Write-Warning "[specify] Warning: Cannot write to $worktreeParent. Falling back to branch mode."
-                $gitMode = "branch"
+                Write-Error "[specify] Error: Cannot create worktree parent directory: $worktreeParent"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Use nested strategy: configure-worktree.ps1 -Strategy nested"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                Write-Error "[specify]   - Create the directory manually and retry"
+                exit 1
             }
         }
         else {
             # Test writability by attempting to create a temp file
+            $testFile = Join-Path $worktreeParent ".specify-write-test-$(Get-Random)"
             try {
-                $testFile = Join-Path $worktreeParent ".specify-write-test-$(Get-Random)"
                 New-Item -ItemType File -Path $testFile -Force -ErrorAction Stop | Out-Null
-                Remove-Item $testFile -Force
             }
             catch {
-                Write-Warning "[specify] Warning: Cannot write to $worktreeParent. Falling back to branch mode."
-                $gitMode = "branch"
+                Write-Error "[specify] Error: Worktree parent directory is not writable: $worktreeParent"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Use nested strategy: configure-worktree.ps1 -Strategy nested"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                Write-Error "[specify]   - Fix directory permissions and retry"
+                exit 1
+            }
+            finally {
+                Remove-Item $testFile -Force -ErrorAction SilentlyContinue
             }
         }
     }
@@ -374,12 +383,13 @@ if ($hasGit) {
                 }
             }
             catch {
-                # Fallback to branch mode
-                Write-Warning "[specify] Warning: Worktree creation failed. Falling back to branch mode."
-                Write-Warning "[specify] Note: Your current directory will switch to branch '$branchName'."
-                git checkout $branchName | Out-Null
-                $creationMode = "branch"
-                $featureRoot = $repoRoot
+                Write-Error "[specify] Error: Failed to create worktree for existing branch '$branchName' at $worktreePath"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Check existing worktrees: git worktree list"
+                Write-Error "[specify]   - Remove stale worktree: git worktree remove <path>"
+                Write-Error "[specify]   - Prune orphaned entries: git worktree prune"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                exit 1
             }
         }
         else {
@@ -395,12 +405,12 @@ if ($hasGit) {
                 }
             }
             catch {
-                # Fallback to branch mode
-                Write-Warning "[specify] Warning: Worktree creation failed. Falling back to branch mode."
-                Write-Warning "[specify] Note: Your current directory will switch to branch '$branchName'."
-                git checkout -b $branchName | Out-Null
-                $creationMode = "branch"
-                $featureRoot = $repoRoot
+                Write-Error "[specify] Error: Failed to create worktree for new branch '$branchName' at $worktreePath"
+                Write-Error "[specify] Suggestions:"
+                Write-Error "[specify]   - Check existing worktrees: git worktree list"
+                Write-Error "[specify]   - Prune orphaned entries: git worktree prune"
+                Write-Error "[specify]   - Switch to branch mode: configure-worktree.ps1 -Mode branch"
+                exit 1
             }
         }
     }
@@ -451,6 +461,7 @@ if ($Json) {
         FEATURE_NUM  = $featureNum
         FEATURE_ROOT = $featureRoot
         MODE         = $creationMode
+        HAS_GIT      = $hasGit
     }
     $obj | ConvertTo-Json -Compress
 }
@@ -460,6 +471,7 @@ else {
     Write-Output "FEATURE_NUM: $featureNum"
     Write-Output "FEATURE_ROOT: $featureRoot"
     Write-Output "MODE: $creationMode"
+    Write-Output "HAS_GIT: $hasGit"
     Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
 }
 
