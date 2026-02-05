@@ -51,9 +51,9 @@ When Spec Kit releases new features (like new slash commands or updated template
 Running `specify init --here --force` will update:
 
 - ✅ **Slash command files** (`.claude/commands/`, `.github/prompts/`, etc.)
-- ✅ **Script files** (`.specify/scripts/`)
-- ✅ **Template files** (`.specify/templates/`)
-- ✅ **Shared memory files** (`.specify/memory/`) - **⚠️ See warnings below**
+- ✅ **Script files** (`scripts/`)
+- ✅ **Template files** (`templates/`)
+- ✅ **Shared memory files** (`memory/`) - **⚠️ See warnings below**
 
 ### What stays safe?
 
@@ -334,9 +334,9 @@ This warning appears when you run `specify init --here` (or `specify init .`) in
 Only Spec Kit infrastructure files:
 
 - Agent command files (`.claude/commands/`, `.github/prompts/`, etc.)
-- Scripts in `.specify/scripts/`
-- Templates in `.specify/templates/`
-- Memory files in `.specify/memory/` (including constitution)
+- Scripts in `scripts/`
+- Templates in `templates/`
+- Memory files in `memory/` (including constitution)
 
 **What stays untouched:**
 
