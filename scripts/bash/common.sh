@@ -12,6 +12,12 @@ get_repo_root() {
     fi
 }
 
+# Get specs directory, with support for external location via SPECIFY_SPECS_DIR
+get_specs_dir() {
+    local repo_root="${1:-$(get_repo_root)}"
+    echo "${SPECIFY_SPECS_DIR:-$repo_root/specs}"
+}
+
 # Get current branch, with fallback for non-git repositories
 get_current_branch() {
     # First check if SPECIFY_FEATURE environment variable is set
@@ -28,7 +34,7 @@ get_current_branch() {
 
     # For non-git repos, try to find the latest feature directory
     local repo_root=$(get_repo_root)
-    local specs_dir="$repo_root/specs"
+    local specs_dir="$(get_specs_dir "$repo_root")"
 
     if [[ -d "$specs_dir" ]]; then
         local latest_feature=""
@@ -81,14 +87,14 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
+get_feature_dir() { echo "$(get_specs_dir "$1")/$2"; }
 
 # Find feature directory by numeric prefix instead of exact branch match
 # This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
 find_feature_dir_by_prefix() {
     local repo_root="$1"
     local branch_name="$2"
-    local specs_dir="$repo_root/specs"
+    local specs_dir="$(get_specs_dir "$repo_root")"
 
     # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
     if [[ ! "$branch_name" =~ ^([0-9]{3})- ]]; then

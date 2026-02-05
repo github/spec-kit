@@ -149,7 +149,7 @@ try {
 
 Set-Location $repoRoot
 
-$specsDir = Join-Path $repoRoot 'specs'
+$specsDir = if ($env:SPECIFY_SPECS_DIR) { $env:SPECIFY_SPECS_DIR } else { Join-Path $repoRoot 'specs' }
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
 
 # Function to generate branch name with stop word filtering and length filtering

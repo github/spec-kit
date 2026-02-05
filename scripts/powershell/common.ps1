@@ -15,6 +15,15 @@ function Get-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
 
+# Get specs directory, with support for external location via SPECIFY_SPECS_DIR
+function Get-SpecsDir {
+    param([string]$RepoRoot = (Get-RepoRoot))
+    if ($env:SPECIFY_SPECS_DIR) {
+        return $env:SPECIFY_SPECS_DIR
+    }
+    return Join-Path $RepoRoot "specs"
+}
+
 function Get-CurrentBranch {
     # First check if SPECIFY_FEATURE environment variable is set
     if ($env:SPECIFY_FEATURE) {
@@ -33,7 +42,7 @@ function Get-CurrentBranch {
     
     # For non-git repos, try to find the latest feature directory
     $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
+    $specsDir = Get-SpecsDir -RepoRoot $repoRoot
     
     if (Test-Path $specsDir) {
         $latestFeature = ""
@@ -89,7 +98,7 @@ function Test-FeatureBranch {
 
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    Join-Path (Get-SpecsDir -RepoRoot $RepoRoot) $Branch
 }
 
 function Get-FeaturePathsEnv {

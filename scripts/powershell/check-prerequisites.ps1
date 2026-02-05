@@ -65,6 +65,7 @@ if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GI
 
 # If paths-only mode, output paths and exit (support combined -Json -PathsOnly)
 if ($PathsOnly) {
+    $specsDir = Get-SpecsDir -RepoRoot $paths.REPO_ROOT
     if ($Json) {
         [PSCustomObject]@{
             REPO_ROOT    = $paths.REPO_ROOT
@@ -73,6 +74,7 @@ if ($PathsOnly) {
             FEATURE_SPEC = $paths.FEATURE_SPEC
             IMPL_PLAN    = $paths.IMPL_PLAN
             TASKS        = $paths.TASKS
+            SPECS_DIR    = $specsDir
         } | ConvertTo-Json -Compress
     } else {
         Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
@@ -81,6 +83,7 @@ if ($PathsOnly) {
         Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
         Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
         Write-Output "TASKS: $($paths.TASKS)"
+        Write-Output "SPECS_DIR: $specsDir"
     }
     exit 0
 }
@@ -127,9 +130,11 @@ if ($IncludeTasks -and (Test-Path $paths.TASKS)) {
 # Output results
 if ($Json) {
     # JSON output
+    $specsDir = Get-SpecsDir -RepoRoot $paths.REPO_ROOT
     [PSCustomObject]@{ 
         FEATURE_DIR = $paths.FEATURE_DIR
-        AVAILABLE_DOCS = $docs 
+        AVAILABLE_DOCS = $docs
+        SPECS_DIR = $specsDir
     } | ConvertTo-Json -Compress
 } else {
     # Text output
