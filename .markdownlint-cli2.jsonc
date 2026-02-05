@@ -1,10 +1,12 @@
 {
-    "rules": {
-        "no-inline-html": false,
-        "heading-increment": true,
-        "line-length": { "maximum": 80 },
-        "list-item-bullet-indent": { "indent": 2 },
-        "no-multiple-blanks": true,
-        "final-newline": true
-    }
+  "default": true,
+  "headings": {
+    "style": "atx"
+  },
+  "line-length": {
+    "line-length": 80
+  },
+  "list-item-bullet-indent": {
+    "style": "consistent"
+  }
 }
