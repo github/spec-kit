@@ -50,7 +50,11 @@ jobs:
           set -euo pipefail
 
           # List the artifacts the provenance will refer to.
-          files=$(ls artifact*)
+          files=$(compgen -G "artifact*" || true)
+          if [ -z "$files" ]; then
+            echo "Error: no artifacts found matching pattern 'artifact*'." >&2
+            exit 1
+          fi
           # Generate the subjects (base64 encoded).
           echo "hashes=$(sha256sum $files | base64 -w0)" >> "${GITHUB_OUTPUT}"
 
