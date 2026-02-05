@@ -36,6 +36,11 @@ jobs:
             echo "artifact1" > artifact1
             echo "artifact2" > artifact2
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifact*
       # ========================================================
       #
       # Step 2: Add a step to generate the provenance subjects
