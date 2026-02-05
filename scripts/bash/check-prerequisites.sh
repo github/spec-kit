@@ -88,7 +88,8 @@ if $PATHS_ONLY; then
     if $JSON_MODE; then
         # Minimal JSON paths payload (no validation performed)
         printf '{"REPO_ROOT":"%s","BRANCH":"%s","FEATURE_DIR":"%s","FEATURE_SPEC":"%s","IMPL_PLAN":"%s","TASKS":"%s","SPECS_DIR":"%s"}\n' \
-            "$REPO_ROOT" "$CURRENT_BRANCH" "$FEATURE_DIR" "$FEATURE_SPEC" "$IMPL_PLAN" "$TASKS" "$SPECS_DIR"
+            "$(json_escape "$REPO_ROOT")" "$(json_escape "$CURRENT_BRANCH")" "$(json_escape "$FEATURE_DIR")" \
+            "$(json_escape "$FEATURE_SPEC")" "$(json_escape "$IMPL_PLAN")" "$(json_escape "$TASKS")" "$(json_escape "$SPECS_DIR")"
     else
         echo "REPO_ROOT: $REPO_ROOT"
         echo "BRANCH: $CURRENT_BRANCH"
@@ -151,7 +152,7 @@ if $JSON_MODE; then
     fi
     
     SPECS_DIR="$(get_specs_dir "$REPO_ROOT")"
-    printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s,"SPECS_DIR":"%s"}\n' "$FEATURE_DIR" "$json_docs" "$SPECS_DIR"
+    printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s,"SPECS_DIR":"%s"}\n' "$(json_escape "$FEATURE_DIR")" "$json_docs" "$(json_escape "$SPECS_DIR")"
 else
     # Text output
     echo "FEATURE_DIR:$FEATURE_DIR"

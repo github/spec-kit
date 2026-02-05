@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
+# Escape a string for safe inclusion in JSON
+json_escape() {
+    local str="$1"
+    # Escape backslashes first, then quotes, then other special chars
+    str="${str//\\/\\\\}"
+    str="${str//\"/\\\"}"
+    str="${str//$'\n'/\\n}"
+    str="${str//$'\r'/\\r}"
+    str="${str//$'\t'/\\t}"
+    echo "$str"
+}
+
 # Get repository root, with fallback for non-git repositories
 get_repo_root() {
     if git rev-parse --show-toplevel >/dev/null 2>&1; then
@@ -15,7 +27,25 @@ get_repo_root() {
 # Get specs directory, with support for external location via SPECIFY_SPECS_DIR
 get_specs_dir() {
     local repo_root="${1:-$(get_repo_root)}"
-    echo "${SPECIFY_SPECS_DIR:-$repo_root/specs}"
+    local specs_dir
+    
+    if [[ -n "${SPECIFY_SPECS_DIR:-}" ]]; then
+        specs_dir="$SPECIFY_SPECS_DIR"
+        # Require absolute path
+        if [[ "$specs_dir" != /* ]]; then
+            echo "[specify] ERROR: SPECIFY_SPECS_DIR must be an absolute path (got: '$specs_dir')" >&2
+            return 1
+        fi
+        # Block path traversal
+        if [[ "$specs_dir" == *".."* ]]; then
+            echo "[specify] ERROR: SPECIFY_SPECS_DIR must not contain '..' (got: '$specs_dir')" >&2
+            return 1
+        fi
+    else
+        specs_dir="$repo_root/specs"
+    fi
+    
+    echo "$specs_dir"
 }
 
 # Get current branch, with fallback for non-git repositories

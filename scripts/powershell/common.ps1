@@ -18,8 +18,20 @@ function Get-RepoRoot {
 # Get specs directory, with support for external location via SPECIFY_SPECS_DIR
 function Get-SpecsDir {
     param([string]$RepoRoot = (Get-RepoRoot))
+    
     if ($env:SPECIFY_SPECS_DIR) {
-        return $env:SPECIFY_SPECS_DIR
+        $specsDir = $env:SPECIFY_SPECS_DIR
+        # Require absolute path
+        if (-not [System.IO.Path]::IsPathRooted($specsDir)) {
+            Write-Error "[specify] ERROR: SPECIFY_SPECS_DIR must be an absolute path (got: '$specsDir')"
+            throw "SPECIFY_SPECS_DIR must be an absolute path"
+        }
+        # Block path traversal
+        if ($specsDir -match '\.\.') {
+            Write-Error "[specify] ERROR: SPECIFY_SPECS_DIR must not contain '..' (got: '$specsDir')"
+            throw "SPECIFY_SPECS_DIR must not contain '..'"
+        }
+        return $specsDir
     }
     return Join-Path $RepoRoot "specs"
 }

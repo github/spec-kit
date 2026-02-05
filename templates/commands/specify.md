@@ -73,7 +73,7 @@ Given that feature description, do this:
 
 3. Load `templates/spec-template.md` to understand required sections.
 
-4. **Load shared context (if available)**: Check if `SPECS_DIR/_shared/` directory exists (SPECS_DIR is returned in the script JSON output). If it exists, read all `.md` files from it. These contain project-wide standards (architecture decisions, API conventions, coding standards, security requirements). Use this context to inform spec structure and ensure alignment with established patterns. Do not modify shared files.
+4. **Load shared context (if available)**: Check if `SPECS_DIR/_shared/` directory exists (SPECS_DIR is provided in the JSON output from the setup script). If it exists, read all `.md` files from it. These contain project-wide standards (architecture decisions, API conventions, coding standards, security requirements). Use this context to inform spec structure and ensure alignment with established patterns. Do not modify shared files.
 
 5. Follow this execution flow:
 

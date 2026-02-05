@@ -271,6 +271,7 @@ if ($Json) {
         SPEC_FILE = $specFile
         FEATURE_NUM = $featureNum
         HAS_GIT = $hasGit
+        SPECS_DIR = $specsDir
     }
     $obj | ConvertTo-Json -Compress
 } else {
