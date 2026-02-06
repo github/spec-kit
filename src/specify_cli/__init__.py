@@ -47,6 +47,8 @@ from rich.table import Table
 from rich.tree import Tree
 from typer.core import TyperGroup
 
+from .template_packager import TemplatePackagerError, build_commands_for_agents
+
 # For cross-platform keyboard input
 import readchar
 import ssl
@@ -1517,6 +1519,52 @@ def version():
     )
 
     console.print(panel)
+
+
+@app.command("package-templates")
+def package_templates(
+    ai_assistant: str = typer.Option("all", "--ai", help="AI assistant(s) to build for (comma-separated) or 'all'."),
+    script_type: str = typer.Option("sh", "--script", help="Script type to use: sh or ps"),
+    templates_dir: str = typer.Option("templates/commands", "--templates-dir", help="Directory containing command templates"),
+    out_dir: str = typer.Option(".", "--out", help="Output directory (defaults to current directory)"),
+    include_vscode_settings: bool = typer.Option(False, "--include-vscode-settings", help="Include templates/vscode-settings.json for Copilot outputs"),
+):
+    """Package command templates into agent-specific command files."""
+    script_type = script_type.lower().strip()
+    if script_type not in SCRIPT_TYPE_CHOICES:
+        console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
+        raise typer.Exit(1)
+
+    if ai_assistant == "all":
+        agents = list(AGENT_CONFIG.keys())
+    else:
+        agents = [a.strip() for a in ai_assistant.split(",") if a.strip()]
+        invalid = [a for a in agents if a not in AGENT_CONFIG]
+        if invalid:
+            console.print(f"[red]Error:[/red] Unknown AI assistant(s): {', '.join(invalid)}")
+            raise typer.Exit(1)
+
+    templates_path = Path(templates_dir).expanduser().resolve()
+    output_path = Path(out_dir).expanduser().resolve()
+
+    try:
+        results = build_commands_for_agents(
+            templates_dir=templates_path,
+            output_dir=output_path,
+            agents=agents,
+            script_variant=script_type,
+            include_vscode_settings=include_vscode_settings,
+        )
+    except TemplatePackagerError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print()
+    for agent, files in results.items():
+        console.print(f"[cyan]{agent}[/cyan]: wrote {len(files)} file(s)")
+        for file_path in files:
+            rel = file_path.relative_to(output_path)
+            console.print(f"  - {rel}")
     console.print()
 
 def main():
