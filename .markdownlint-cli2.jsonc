@@ -1,12 +1,10 @@
 {
-  "default": true,
-  "headings": {
-    "style": "atx"
-  },
-  "line-length": {
-    "line-length": 80
-  },
-  "list-item-bullet-indent": {
-    "style": "consistent"
+  "extends": ["markdownlint-rule-helpers"],
+  "rules": {
+    "line-length": { "line_length": 80 },
+    "no-inline-html": false,
+    "header-style": { "style": "atx" },
+    "ul-indent": false,
+    "no-empty-links": true
   }
 }
