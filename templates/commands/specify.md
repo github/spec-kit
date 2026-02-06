@@ -41,8 +41,6 @@ Given that feature description, do this:
 
 2. **Check for existing branches before creating new one**:
 
-   **IF the environment variable `SPECIFY_SPECS_DIR` is set** (worktree mode), skip steps 2a-2c entirely and go directly to 2d. The script will detect worktree mode automatically and skip branch creation/checkout. The feature directory and spec file will still be created under the custom specs directory.
-
    a. First, fetch all remote branches to ensure we have the latest information:
 
       ```bash
@@ -200,7 +198,7 @@ Given that feature description, do this:
 
 8. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
-**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing. In worktree mode (WORKTREE_MODE is true in JSON output), the script skips branch creation/checkout since the worktree already represents the feature branch.
+**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing. If `WORKTREE_MODE` is `true` in the JSON output, the script skipped branch creation/checkout because the user has configured a custom specs directory -- the current branch is used as-is. When reporting completion in worktree mode, note that the branch was not created by the script.
 
 ## General Guidelines
 
