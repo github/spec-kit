@@ -634,9 +634,74 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
 
     return merged
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
-    repo_owner = "github"
-    repo_name = "spec-kit"
+def _parse_template_repo(repo_value: str | None, *, default_owner: str = "github", default_name: str = "spec-kit") -> tuple[str, str]:
+    if not repo_value:
+        return default_owner, default_name
+
+    repo_value = repo_value.strip()
+    if repo_value.startswith("https://github.com/"):
+        repo_value = repo_value.replace("https://github.com/", "", 1)
+    if repo_value.startswith("http://github.com/"):
+        repo_value = repo_value.replace("http://github.com/", "", 1)
+
+    repo_value = repo_value.strip("/")
+    if "/" not in repo_value:
+        raise RuntimeError(
+            "SPECIFY_TEMPLATE_REPO must be in the form 'owner/name' or a GitHub URL"
+        )
+    owner, name = repo_value.split("/", 1)
+    return owner, name
+
+
+def _resolve_template_root(source_dir: Path) -> Path:
+    try:
+        entries = list(source_dir.iterdir())
+    except FileNotFoundError:
+        return source_dir
+
+    if len(entries) == 1 and entries[0].is_dir():
+        return entries[0]
+    return source_dir
+
+
+def _merge_template_dir(source_dir: Path, dest_dir: Path, *, verbose: bool = True, tracker: StepTracker | None = None) -> None:
+    for item in source_dir.iterdir():
+        dest_path = dest_dir / item.name
+        if item.is_dir():
+            if dest_path.exists():
+                if verbose and not tracker:
+                    console.print(f"[yellow]Merging directory:[/yellow] {item.name}")
+                for sub_item in item.rglob('*'):
+                    if sub_item.is_file():
+                        rel_path = sub_item.relative_to(item)
+                        dest_file = dest_path / rel_path
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        # Special handling for .vscode/settings.json - merge instead of overwrite
+                        if dest_file.name == "settings.json" and dest_file.parent.name == ".vscode":
+                            handle_vscode_settings(sub_item, dest_file, rel_path, verbose, tracker)
+                        else:
+                            shutil.copy2(sub_item, dest_file)
+            else:
+                shutil.copytree(item, dest_path)
+        else:
+            if dest_path.exists() and verbose and not tracker:
+                console.print(f"[yellow]Overwriting file:[/yellow] {item.name}")
+            shutil.copy2(item, dest_path)
+
+
+def download_template_from_github(
+    ai_assistant: str,
+    download_dir: Path,
+    *,
+    script_type: str = "sh",
+    verbose: bool = True,
+    show_progress: bool = True,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None,
+    repo_owner: str = "github",
+    repo_name: str = "spec-kit",
+) -> Tuple[Path, dict]:
     if client is None:
         client = httpx.Client(verify=ssl_context)
 
@@ -748,12 +813,27 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(
+    project_path: Path,
+    ai_assistant: str,
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    verbose: bool = True,
+    tracker: StepTracker | None = None,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None,
+    base_repo_owner: str = "github",
+    base_repo_name: str = "spec-kit",
+    overlay_repo_owner: str | None = None,
+    overlay_repo_name: str | None = None,
+    overlay_path: Path | None = None,
+) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
     current_dir = Path.cwd()
-
     if tracker:
         tracker.start("fetch", "contacting GitHub API")
     try:
@@ -765,7 +845,9 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             show_progress=(tracker is None),
             client=client,
             debug=debug,
-            github_token=github_token
+            github_token=github_token,
+            repo_owner=base_repo_owner,
+            repo_name=base_repo_name,
         )
         if tracker:
             tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
@@ -894,6 +976,55 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                 tracker.complete("cleanup")
             elif verbose:
                 console.print(f"Cleaned up: {zip_path.name}")
+
+    if overlay_repo_owner and overlay_repo_name:
+        if verbose and not tracker:
+            console.print(f"[cyan]Applying template overlay from {overlay_repo_owner}/{overlay_repo_name}[/cyan]")
+        with tempfile.TemporaryDirectory() as overlay_tmp:
+            overlay_tmp_path = Path(overlay_tmp)
+            overlay_zip, overlay_meta = download_template_from_github(
+                ai_assistant,
+                overlay_tmp_path,
+                script_type=script_type,
+                verbose=False,
+                show_progress=False,
+                client=client,
+                debug=debug,
+                github_token=github_token,
+                repo_owner=overlay_repo_owner,
+                repo_name=overlay_repo_name,
+            )
+            extract_root = overlay_tmp_path / "extract"
+            extract_root.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(overlay_zip, 'r') as zip_ref:
+                zip_ref.extractall(extract_root)
+            overlay_root = _resolve_template_root(extract_root)
+            _merge_template_dir(overlay_root, project_path, verbose=verbose and tracker is None, tracker=tracker)
+            if tracker:
+                tracker.add("overlay", f"Applied overlay {overlay_meta.get('release', '')}".strip())
+                tracker.complete("overlay")
+
+    if overlay_path:
+        overlay_path = overlay_path.expanduser()
+        if overlay_path.exists():
+            if verbose and not tracker:
+                console.print(f"[cyan]Applying template overlay from {overlay_path}[/cyan]")
+            if overlay_path.is_file() and overlay_path.suffix == ".zip":
+                with tempfile.TemporaryDirectory() as overlay_tmp:
+                    overlay_tmp_path = Path(overlay_tmp)
+                    extract_root = overlay_tmp_path / "extract"
+                    extract_root.mkdir(parents=True, exist_ok=True)
+                    with zipfile.ZipFile(overlay_path, 'r') as zip_ref:
+                        zip_ref.extractall(extract_root)
+                    overlay_root = _resolve_template_root(extract_root)
+                    _merge_template_dir(overlay_root, project_path, verbose=verbose and tracker is None, tracker=tracker)
+            elif overlay_path.is_dir():
+                overlay_root = _resolve_template_root(overlay_path)
+                _merge_template_dir(overlay_root, project_path, verbose=verbose and tracker is None, tracker=tracker)
+            else:
+                console.print(f"[yellow]Overlay path ignored (not a dir or .zip):[/yellow] {overlay_path}")
+        else:
+            console.print(f"[yellow]Overlay path not found:[/yellow] {overlay_path}")
 
     return project_path
 
@@ -1124,7 +1255,33 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            template_repo_value = os.getenv("SPECIFY_TEMPLATE_REPO")
+            overlay_repo_value = os.getenv("SPECIFY_TEMPLATE_OVERLAY_REPO")
+            overlay_path_value = os.getenv("SPECIFY_TEMPLATE_OVERLAY_PATH")
+
+            base_repo_owner, base_repo_name = _parse_template_repo(template_repo_value)
+            overlay_repo_owner = None
+            overlay_repo_name = None
+            if overlay_repo_value:
+                overlay_repo_owner, overlay_repo_name = _parse_template_repo(overlay_repo_value)
+            overlay_path = Path(overlay_path_value).expanduser() if overlay_path_value else None
+
+            download_and_extract_template(
+                project_path,
+                selected_ai,
+                selected_script,
+                here,
+                verbose=False,
+                tracker=tracker,
+                client=local_client,
+                debug=debug,
+                github_token=github_token,
+                base_repo_owner=base_repo_owner,
+                base_repo_name=base_repo_name,
+                overlay_repo_owner=overlay_repo_owner,
+                overlay_repo_name=overlay_repo_name,
+                overlay_path=overlay_path,
+            )
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1308,8 +1465,8 @@ def version():
             pass
     
     # Fetch latest template release version
-    repo_owner = "github"
-    repo_name = "spec-kit"
+    template_repo_value = os.getenv("SPECIFY_TEMPLATE_REPO")
+    repo_owner, repo_name = _parse_template_repo(template_repo_value)
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
     
     template_version = "unknown"
