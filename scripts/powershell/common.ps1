@@ -88,6 +88,12 @@ function Test-FeatureBranch {
         [bool]$HasGit = $true
     )
     
+    # When SPECIFY_SPECS_DIR is set (e.g., worktree mode), skip branch naming
+    # validation since the branch/worktree may not follow the NNN- convention.
+    if ($env:SPECIFY_SPECS_DIR) {
+        return $true
+    }
+    
     # For non-git repos, we can't enforce branch naming but still provide output
     if (-not $HasGit) {
         Write-Warning "[specify] Warning: Git repository not detected; skipped branch validation"

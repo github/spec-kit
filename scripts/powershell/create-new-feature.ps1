@@ -149,6 +149,11 @@ try {
 
 Set-Location $repoRoot
 
+# When SPECIFY_SPECS_DIR is set, we assume an external specs directory (e.g., a
+# git worktree dedicated to this feature). Skip branch creation and git fetch
+# since the caller controls the branch lifecycle.
+$worktreeMode = [bool]$env:SPECIFY_SPECS_DIR
+
 $specsDir = Get-SpecsDir -RepoRoot $repoRoot
 if (-not $specsDir) {
     Write-Host "`n[specify] ERROR: Invalid SPECIFY_SPECS_DIR configuration. Aborting." -ForegroundColor Red
@@ -222,11 +227,12 @@ if ($ShortName) {
 
 # Determine branch number
 if ($Number -eq 0) {
-    if ($hasGit) {
+    if ($hasGit -and -not $worktreeMode) {
         # Check existing branches on remotes
         $Number = Get-NextBranchNumber -SpecsDir $specsDir
     } else {
-        # Fall back to local directory check
+        # Fall back to local directory check (also used in worktree mode to
+        # avoid running git fetch --all --prune against the parent repo)
         $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
     }
 }
@@ -255,7 +261,9 @@ if ($branchName.Length -gt $maxBranchLength) {
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
 }
 
-if ($hasGit) {
+if ($worktreeMode) {
+    Write-Warning "[specify] Worktree mode: skipping branch creation (SPECIFY_SPECS_DIR is set)"
+} elseif ($hasGit) {
     try {
         git checkout -b $branchName | Out-Null
     } catch {
@@ -286,6 +294,7 @@ if ($Json) {
         FEATURE_NUM = $featureNum
         HAS_GIT = $hasGit
         SPECS_DIR = $specsDir
+        WORKTREE_MODE = $worktreeMode
     }
     $obj | ConvertTo-Json -Compress
 } else {

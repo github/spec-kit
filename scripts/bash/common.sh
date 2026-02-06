@@ -101,6 +101,12 @@ check_feature_branch() {
     local branch="$1"
     local has_git_repo="$2"
 
+    # When SPECIFY_SPECS_DIR is set (e.g., worktree mode), skip branch naming
+    # validation since the branch/worktree may not follow the NNN- convention.
+    if [[ -n "${SPECIFY_SPECS_DIR:-}" ]]; then
+        return 0
+    fi
+
     # For non-git repos, we can't enforce branch naming but still provide output
     if [[ "$has_git_repo" != "true" ]]; then
         echo "[specify] Warning: Git repository not detected; skipped branch validation" >&2

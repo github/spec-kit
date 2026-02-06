@@ -160,6 +160,10 @@ clean_branch_name() {
 # were initialised with --no-git.
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Source shared functions (get_specs_dir, json_escape, etc.)
+# shellcheck source=common.sh
+source "${SCRIPT_DIR}/common.sh"
+
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)
     HAS_GIT=true
@@ -244,13 +248,22 @@ else
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
 fi
 
+# When SPECIFY_SPECS_DIR is set, we assume an external specs directory (e.g., a
+# git worktree dedicated to this feature). Skip branch creation and git fetch
+# since the caller controls the branch lifecycle.
+WORKTREE_MODE=false
+if [ -n "${SPECIFY_SPECS_DIR:-}" ]; then
+    WORKTREE_MODE=true
+fi
+
 # Determine branch number
 if [ -z "$BRANCH_NUMBER" ]; then
-    if [ "$HAS_GIT" = true ]; then
+    if [ "$HAS_GIT" = true ] && [ "$WORKTREE_MODE" = false ]; then
         # Check existing branches on remotes
         BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
     else
-        # Fall back to local directory check
+        # Fall back to local directory check (also used in worktree mode to
+        # avoid running git fetch --all --prune against the parent repo)
         HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
         BRANCH_NUMBER=$((HIGHEST + 1))
     fi
@@ -281,7 +294,9 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
-if [ "$HAS_GIT" = true ]; then
+if [ "$WORKTREE_MODE" = true ]; then
+    >&2 echo "[specify] Worktree mode: skipping branch creation (SPECIFY_SPECS_DIR is set)"
+elif [ "$HAS_GIT" = true ]; then
     git checkout -b "$BRANCH_NAME"
 else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
@@ -298,8 +313,8 @@ if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","SPECS_DIR":"%s"}\n' \
-        "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "$SPECS_DIR")"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","SPECS_DIR":"%s","WORKTREE_MODE":%s}\n' \
+        "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "$SPECS_DIR")" "$WORKTREE_MODE"
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
