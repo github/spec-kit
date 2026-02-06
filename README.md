@@ -173,6 +173,7 @@ The `specify` command supports the following options:
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `init`  | Initialize a new Specify project from the latest template                                                                                               |
 | `check` | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`, `shai`, `qoder`) |
+| `run`   | Execute a Spec Kit script from the scripts directory (bash or PowerShell)                                                                               |
 
 ### `specify init` Arguments & Options
 
@@ -240,6 +241,40 @@ specify init my-project --ai claude --github-token ghp_your_token_here
 
 # Check system requirements
 specify check
+```
+
+### `specify run` Arguments & Options
+
+| Argument/Option   | Type     | Description                                                                    |
+| ----------------- | -------- | ------------------------------------------------------------------------------ |
+| `<script>`        | Argument | Script name or path to run (e.g., 'check-prerequisites.sh', 'setup-plan.sh')  |
+| `[script_args]`   | Argument | Arguments to pass to the script                                                |
+| `--script-type`   | Option   | Force script type: `sh` or `ps` (auto-detected by default)                     |
+| `--verbose`, `-v` | Flag     | Show verbose output including script path                                      |
+
+#### Examples
+
+```bash
+# Run a prerequisite check script
+specify run check-prerequisites.sh --json
+
+# Run setup-plan script
+specify run setup-plan.sh --json
+
+# Run with multiple arguments
+specify run check-prerequisites.sh --json --require-tasks
+
+# Update agent context for Claude
+specify run update-agent-context.sh claude
+
+# Run with verbose output
+specify run check-prerequisites.sh --paths-only --verbose
+
+# Force PowerShell script (on Windows or cross-platform PowerShell)
+specify run setup-plan.ps1 --json --script-type ps
+
+# Script name without extension (auto-detects .sh or .ps1)
+specify run check-prerequisites --json
 ```
 
 ### Available Slash Commands

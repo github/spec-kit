@@ -7,6 +7,17 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- New `run` command to execute Spec Kit scripts from the CLI
+  - Automatically detects platform (Linux/macOS vs Windows) and runs appropriate scripts
+  - Supports both bash scripts (`.sh`) and PowerShell scripts (`.ps1`)
+  - Passes all arguments directly to the underlying script
+  - Includes `--verbose` flag for debugging
+  - Examples: `specify run check-prerequisites.sh --json`, `specify run setup-plan.sh --json`
+
 ## [0.0.22] - 2025-11-07
 
 - Support for VS Code/Copilot agents, and moving away from prompts to proper agents with hand-offs.
