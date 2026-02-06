@@ -39,9 +39,11 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Check for existing branches before creating new one**:
+2. **Set up feature branch and run the create-new-feature script**:
 
-   a. First, fetch all remote branches to ensure we have the latest information:
+   **IF `--no-branch` is NOT present in the user's input**, perform branch scanning first:
+
+   a. Fetch all remote branches to ensure we have the latest information:
 
       ```bash
       git fetch --all --prune
@@ -57,19 +59,24 @@ Given that feature description, do this:
       - Find the highest number N
       - Use N+1 for the new branch number
 
+   **IF `--no-branch` IS present in the user's input**, skip steps 2a-2c entirely. The script will determine the feature number from local directories only and will not create or switch git branches. Pass `--no-branch` through to the script.
+
    d. Run the script `{SCRIPT}` with the calculated number and short-name:
       - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
+      - If `--no-branch` was specified, also pass `--no-branch` to the script
       - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
+      - Bash example (no-branch): `{SCRIPT} --json --no-branch --short-name "user-auth" "Add user authentication"`
       - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+      - PowerShell example (no-branch): `{SCRIPT} -Json -NoBranch -ShortName "user-auth" "Add user authentication"`
 
    **IMPORTANT**:
-   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
+   - When doing branch scanning (steps 2a-2c), check all three sources (remote branches, local branches, specs directories) to find the highest number
    - Only match branches/directories with the exact short-name pattern
    - If no existing branches/directories found with this short-name, start with number 1
    - You must only ever run this script once per feature
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
-   - If WORKTREE_MODE is true in the JSON output, the script skipped branch creation/checkout (the current branch is used as-is)
+   - If NO_BRANCH is true in the JSON output, the script skipped branch creation/checkout (the current branch is used as-is)
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
 3. Load `templates/spec-template.md` to understand required sections.
@@ -198,7 +205,7 @@ Given that feature description, do this:
 
 8. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
-**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing. If `WORKTREE_MODE` is `true` in the JSON output, the script skipped branch creation/checkout because the user has configured a custom specs directory -- the current branch is used as-is. When reporting completion in worktree mode, note that the branch was not created by the script.
+**NOTE:** By default, the script creates and checks out a new branch and initializes the spec file before writing. If `NO_BRANCH` is `true` in the JSON output (set by `--no-branch` flag or automatically when the user has configured a custom specs directory via `SPECIFY_SPECS_DIR`), the script skipped branch creation/checkout -- the current branch is used as-is. When reporting completion in no-branch mode, note that the branch was not created by the script.
 
 ## General Guidelines
 

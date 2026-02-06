@@ -5,6 +5,7 @@ set -e
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+NO_BRANCH=false
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -12,6 +13,9 @@ while [ $i -le $# ]; do
     case "$arg" in
         --json) 
             JSON_MODE=true 
+            ;;
+        --no-branch)
+            NO_BRANCH=true
             ;;
         --short-name)
             if [ $((i + 1)) -gt $# ]; then
@@ -41,17 +45,19 @@ while [ $i -le $# ]; do
             BRANCH_NUMBER="$next_arg"
             ;;
         --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--no-branch] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
+            echo "  --no-branch         Skip branch creation/checkout and git fetch"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
+            echo "  $0 --no-branch 'Fix payment timeout' --short-name 'fix-payment'"
             exit 0
             ;;
         *) 
@@ -248,21 +254,20 @@ else
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
 fi
 
-# When SPECIFY_SPECS_DIR is set, we assume an external specs directory (e.g., a
-# git worktree dedicated to this feature). Skip branch creation and git fetch
-# since the caller controls the branch lifecycle.
-WORKTREE_MODE=false
+# When SPECIFY_SPECS_DIR is set, automatically enable --no-branch since the
+# caller controls the branch lifecycle (e.g., a git worktree dedicated to this
+# feature).
 if [ -n "${SPECIFY_SPECS_DIR:-}" ]; then
-    WORKTREE_MODE=true
+    NO_BRANCH=true
 fi
 
 # Determine branch number
 if [ -z "$BRANCH_NUMBER" ]; then
-    if [ "$HAS_GIT" = true ] && [ "$WORKTREE_MODE" = false ]; then
+    if [ "$HAS_GIT" = true ] && [ "$NO_BRANCH" = false ]; then
         # Check existing branches on remotes
         BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
     else
-        # Fall back to local directory check (also used in worktree mode to
+        # Fall back to local directory check (also used in --no-branch mode to
         # avoid running git fetch --all --prune against the parent repo)
         HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
         BRANCH_NUMBER=$((HIGHEST + 1))
@@ -294,8 +299,8 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
-if [ "$WORKTREE_MODE" = true ]; then
-    >&2 echo "[specify] Worktree mode: skipping branch creation (SPECIFY_SPECS_DIR is set)"
+if [ "$NO_BRANCH" = true ]; then
+    >&2 echo "[specify] --no-branch: skipping branch creation"
 elif [ "$HAS_GIT" = true ]; then
     git checkout -b "$BRANCH_NAME"
 else
@@ -313,8 +318,8 @@ if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"
 export SPECIFY_FEATURE="$BRANCH_NAME"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","SPECS_DIR":"%s","WORKTREE_MODE":%s}\n' \
-        "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "$SPECS_DIR")" "$WORKTREE_MODE"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","SPECS_DIR":"%s","NO_BRANCH":%s}\n' \
+        "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$(json_escape "$SPECS_DIR")" "$NO_BRANCH"
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"

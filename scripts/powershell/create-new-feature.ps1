@@ -5,6 +5,7 @@ param(
     [switch]$Json,
     [string]$ShortName,
     [int]$Number = 0,
+    [switch]$NoBranch,
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -19,6 +20,7 @@ if ($Help) {
     Write-Host "  -Json               Output in JSON format"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
+     Write-Host "  -NoBranch           Skip branch creation (auto-enabled when SPECIFY_SPECS_DIR is set)"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
@@ -149,10 +151,11 @@ try {
 
 Set-Location $repoRoot
 
-# When SPECIFY_SPECS_DIR is set, we assume an external specs directory (e.g., a
-# git worktree dedicated to this feature). Skip branch creation and git fetch
-# since the caller controls the branch lifecycle.
-$worktreeMode = [bool]$env:SPECIFY_SPECS_DIR
+# Auto-enable --no-branch when SPECIFY_SPECS_DIR is set (e.g., worktree scenario
+# where the caller controls the branch lifecycle).
+if (-not $NoBranch -and $env:SPECIFY_SPECS_DIR) {
+    $NoBranch = $true
+}
 
 $specsDir = Get-SpecsDir -RepoRoot $repoRoot
 if (-not $specsDir) {
@@ -227,12 +230,12 @@ if ($ShortName) {
 
 # Determine branch number
 if ($Number -eq 0) {
-    if ($hasGit -and -not $worktreeMode) {
+    if ($hasGit -and -not $NoBranch) {
         # Check existing branches on remotes
         $Number = Get-NextBranchNumber -SpecsDir $specsDir
     } else {
-        # Fall back to local directory check (also used in worktree mode to
-        # avoid running git fetch --all --prune against the parent repo)
+        # Fall back to local directory check (also used in --no-branch mode
+        # to avoid running git fetch --all --prune against the parent repo)
         $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
     }
 }
@@ -261,8 +264,8 @@ if ($branchName.Length -gt $maxBranchLength) {
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
 }
 
-if ($worktreeMode) {
-    Write-Warning "[specify] Worktree mode: skipping branch creation (SPECIFY_SPECS_DIR is set)"
+if ($NoBranch) {
+    Write-Warning "[specify] --no-branch: skipping branch creation"
 } elseif ($hasGit) {
     try {
         git checkout -b $branchName | Out-Null
@@ -294,7 +297,7 @@ if ($Json) {
         FEATURE_NUM = $featureNum
         HAS_GIT = $hasGit
         SPECS_DIR = $specsDir
-        WORKTREE_MODE = $worktreeMode
+        NO_BRANCH = $NoBranch
     }
     $obj | ConvertTo-Json -Compress
 } else {
