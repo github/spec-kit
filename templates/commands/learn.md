@@ -71,21 +71,27 @@ This command analyzes the existing codebase and specifications to learn and docu
    - Look for `specs/*/task-results/` (completed implementations)
    - Extract patterns from plan.md and research.md files
 
-4. **Scan specs for project state**:
+4. **Load consolidated docs** (primary source of truth):
+   - Read all `/docs/*/spec.md` for domain-level vocabulary, business rules, entities, API contracts
+   - Read `/docs/README.md` for domain index and existing domain boundaries
+   - `/docs/` is the **merged, reviewed** specification — it takes precedence over `specs/` working files when both define the same entity, contract, or term
+
+5. **Scan specs for in-progress state**:
    - Read all `specs/*/spec.md` for domain vocabulary, entities, user stories, invariants
    - Read all `specs/*/data-model.md` for entity definitions and relationships
    - Read all `specs/*/contracts/` for API and event contracts
    - Read all `specs/*/plan.md` for architecture decisions, cross-feature dependencies
    - Load existing `specs/__AGENT_CONTEXT_FILE__` (if exists) to identify what needs updating
+   - **Merge with `/docs/` data**: `/docs/` is authoritative for completed features, `specs/` adds in-progress features not yet merged
 
-5. **Evaluate sub-module complexity**:
+6. **Evaluate sub-module complexity**:
    - For each module directory, inspect subdirectories:
      - Count source files (exclude tests, configs, generated files)
      - Count exported functions/classes/types
      - Check if directory name matches a known architectural layer
    - Record results for Phase 5 threshold evaluation
 
-6. **Determine scope**:
+7. **Determine scope**:
    - If user specified "all": Analyze entire codebase and all specs
    - If user specified "specs-only": Only update `specs/__AGENT_CONTEXT_FILE__` (skip module analysis)
    - If user specified "modules-only": Only update module/sub-module files (skip specs context)
@@ -98,45 +104,56 @@ This command analyzes the existing codebase and specifications to learn and docu
 > **Purpose**: Build the project-state snapshot that guides agents working in `specs/`.
 > This is NOT a duplicate of `/memory/constitution.md`. Constitution = governance rules (WHAT specs must include). Specs context = project state (WHAT exists in this project right now).
 
-7. **Extract project-wide state from all feature specs**:
+8. **Extract project-wide state from docs and specs**:
 
-   **Skip this phase** if: `specs/` directory is empty or doesn't exist. Log: "No feature specs found — skipping specs context generation. Run `/speckit.learn` again after your first feature is specified."
+   **Data source priority**: `/docs/{domain}/spec.md` (merged, reviewed) > `specs/*/spec.md` (in-progress working files).
+   When both sources define the same entity, contract, or term, `/docs/` wins.
+   `specs/` adds what is not yet merged (in-progress features).
+
+   **Skip this phase** if: both `specs/` and `/docs/` are empty or don't exist. Log: "No feature specs or docs found — skipping specs context generation. Run `/speckit.learn` again after your first feature is specified."
 
    a. **Domain Vocabulary**:
-      - Scan all `specs/*/spec.md` for entity names, business terms, acronyms
-      - Scan all `specs/*/data-model.md` for entity definitions and field names
-      - Cross-reference with `/docs/*/spec.md` (consolidated docs) if they exist
-      - Build canonical term table: term → definition → source spec
+      - **From `/docs/*/spec.md`** (primary): Extract entity names, business terms, acronyms from consolidated domain specs — these are the **canonical terms** (merged, reviewed)
+      - **From `specs/*/spec.md`** (supplement): Add terms from in-progress features not yet in `/docs/`
+      - From `specs/*/data-model.md`: Extract entity definitions and field names
+      - Build canonical term table: term → definition → source (`/docs/` or `specs/`)
       - Flag conflicting definitions across specs (same term, different meaning)
       - Identify aliases to prohibit (e.g., "Client" vs canonical "User")
 
    b. **Data Model State**:
-      - Aggregate all entities from `specs/*/data-model.md`
-      - For each entity: name, key fields, relationships, which feature owns it
+      - **From `/docs/*/spec.md`** (primary): Extract entities from "Entities" sections of domain specs — these are **established entities**
+      - **From `specs/*/data-model.md`** (supplement): Add entities from features not yet merged
+      - For each entity: name, key fields, relationships, which feature/domain owns it
       - Mark entity status:
-        - ACTIVE: entity exists in code (found in source files)
-        - PLANNED: entity is in spec but not yet implemented
-        - DEPRECATED: entity was in spec but is no longer referenced
-      - Identify shared entities (referenced by multiple features)
+        - ACTIVE: entity exists in code AND in `/docs/` (merged and implemented)
+        - PLANNED: entity is in `specs/` but not yet in `/docs/` or code
+        - DEPRECATED: entity was in `/docs/` but is no longer referenced in code
+      - Identify shared entities (referenced by multiple features/domains)
       - Document change impact for shared entities
 
    c. **Active Interface Contracts**:
-      - Aggregate all contracts from `specs/*/contracts/`
-      - For each endpoint/event: method, path/name, request/response types, owning feature
+      - **From `/docs/*/spec.md`** (primary): Extract API contracts from "API Contracts" sections — these are **established contracts**
+      - **From `specs/*/contracts/`** (supplement): Add contracts from features not yet merged
+      - For each endpoint/event: method, path/name, request/response types, owning feature/domain
       - Group by: REST APIs, Events, Shared Types
-      - Identify contract conflicts or overlaps across features
-      - Mark status: ACTIVE (in code) or PLANNED (in spec only)
+      - Identify contract conflicts or overlaps across features/domains
+      - Mark status: ACTIVE (in `/docs/` and code) or PLANNED (in `specs/` only)
 
    d. **Feature Dependency Graph**:
-      - Extract from each feature's spec.md: "Requires" and "Enables" sections (from feature-template.md)
-      - Extract from each feature's plan.md: cross-feature dependencies
+      - **From `/docs/*/spec.md`**: Extract features listed per domain with their status
+      - **From `specs/*/spec.md`**: Extract "Requires" and "Enables" sections (from feature-template.md)
+      - From `specs/*/plan.md`: Cross-feature dependencies
       - Build adjacency list: feature → [depends-on features]
-      - Mark feature status: COMPLETE / IN_PROGRESS / PLANNED
+      - Mark feature status:
+        - COMPLETE: feature is in `/docs/` (merged)
+        - IN_PROGRESS: feature is in `specs/` with task-results
+        - PLANNED: feature is in `specs/` without task-results
       - **Detect circular dependencies** → flag as warnings
 
    e. **Business Invariants**:
-      - Extract from `specs/*/spec.md`: functional requirements with MUST / MUST NOT language
-      - Extract from `specs/*/spec.md`: acceptance criteria (Given/When/Then) that encode rules
+      - **From `/docs/*/spec.md`** (primary): Extract business rules sections — these are **established invariants**
+      - **From `specs/*/spec.md`** (supplement): Extract functional requirements with MUST / MUST NOT language from in-progress features
+      - From `specs/*/spec.md`: Acceptance criteria (Given/When/Then) that encode rules
       - Cross-reference with `/memory/constitution.md` Specification Principles
       - Categorize:
         - **Data invariants**: constraints on entity state (uniqueness, ranges, formats)
@@ -153,7 +170,7 @@ This command analyzes the existing codebase and specifications to learn and docu
 
 ### Phase 3: High-Level Pattern Extraction
 
-8. **Extract architectural patterns**:
+9. **Extract architectural patterns**:
 
    a. **Layer patterns**:
       - Service layer, repository pattern, controller pattern
@@ -177,7 +194,7 @@ This command analyzes the existing codebase and specifications to learn and docu
 
 ### Phase 4: Module Convention Extraction
 
-9. **For each detected module directory** (frontend/, backend/, api/, etc.):
+10. **For each detected module directory** (frontend/, backend/, api/, etc.):
 
    a. **Analyze directory structure**:
       ```bash
@@ -243,7 +260,7 @@ This command analyzes the existing codebase and specifications to learn and docu
 
 ### Phase 5: Sub-Module Analysis
 
-10. **For each module, evaluate sub-directories for granular context**:
+11. **For each module, evaluate sub-directories for granular context**:
 
     a. **Complexity threshold evaluation**:
 
@@ -289,7 +306,7 @@ This command analyzes the existing codebase and specifications to learn and docu
 
 ### Phase 6: Generate/Update Files
 
-11. **Update `/memory/architecture-registry.md`**:
+12. **Update `/memory/architecture-registry.md`**:
 
     Generate HIGH-LEVEL content only:
 
@@ -326,7 +343,7 @@ This command analyzes the existing codebase and specifications to learn and docu
     | [what to avoid] | [why bad] | [what to do instead] |
     ```
 
-12. **Create/Update `specs/__AGENT_CONTEXT_FILE__`**:
+13. **Create/Update `specs/__AGENT_CONTEXT_FILE__`**:
 
     Use template structure from `templates/specs-context-template.md`.
     Fill sections from Phase 2 extraction results.
@@ -334,11 +351,11 @@ This command analyzes the existing codebase and specifications to learn and docu
 
     **If specs/ is empty**: Skip this step (logged in Phase 2).
 
-13. **Create/Update `{module}/__AGENT_CONTEXT_FILE__`** for each detected module:
+14. **Create/Update `{module}/__AGENT_CONTEXT_FILE__`** for each detected module:
 
     Use template structure from `templates/module-claude-template.md`.
-    Fill existing sections (Overview, Structure, Naming, Patterns, Components, Error Handling, Testing, Dependencies, Gotchas, Related Modules) from Phase 4 steps 9a-9e.
-    Fill new sections (Interface Contracts, Business Invariants, State Machines, Guard Rails, Module Dependency Graph) from Phase 4 steps 9f-9j.
+    Fill existing sections (Overview, Structure, Naming, Patterns, Components, Error Handling, Testing, Dependencies, Gotchas, Related Modules) from Phase 4 steps 10a-10e.
+    Fill new sections (Interface Contracts, Business Invariants, State Machines, Guard Rails, Module Dependency Graph) from Phase 4 steps 10f-10j.
     Preserve content between `<!-- MANUAL ADDITIONS START -->` and `<!-- MANUAL ADDITIONS END -->` markers.
 
     ```markdown
@@ -347,43 +364,43 @@ This command analyzes the existing codebase and specifications to learn and docu
     > Auto-generated by /speckit.learn. Manual additions preserved between markers.
 
     ## Directory Structure
-    [from step 9a]
+    [from step 10a]
 
     ## Naming Conventions
-    [from step 9b]
+    [from step 10b]
 
     ## Code Patterns
-    [from step 9c]
+    [from step 10c]
 
     ## Error Handling
-    [from step 9d]
+    [from step 10d]
 
     ## Testing
-    [from step 9e]
+    [from step 10e]
 
     ## Interface Contracts
-    [from step 9f — exposed and consumed interfaces with spec sources]
+    [from step 10f — exposed and consumed interfaces with spec/docs sources]
 
     ## Business Invariants
-    [from step 9g — invariant rules this module must enforce]
+    [from step 10g — invariant rules this module must enforce]
 
     ## State Machines & Lifecycle Rules
-    [from step 9h — entities with state transitions, valid/invalid transitions]
+    [from step 10h — entities with state transitions, valid/invalid transitions]
 
     ## Guard Rails
-    [from step 9i — DO NOT rules specific to this module]
+    [from step 10i — DO NOT rules specific to this module]
 
     ## Module Dependency Graph
-    [from step 9j — internal modules, external packages, spec sources]
+    [from step 10j — internal modules, external packages, spec sources]
 
     ## Gotchas
-    [from step 9e + discovered issues]
+    [from step 10e + discovered issues]
 
     <!-- MANUAL ADDITIONS START -->
     <!-- MANUAL ADDITIONS END -->
     ```
 
-14. **Create/Update `{module}/{subdir}/__AGENT_CONTEXT_FILE__`** for qualifying sub-directories:
+15. **Create/Update `{module}/{subdir}/__AGENT_CONTEXT_FILE__`** for qualifying sub-directories:
 
     Only for directories that passed Phase 5 threshold evaluation.
     Generate with this structure (no separate template — content varies by layer type):
@@ -437,7 +454,7 @@ This command analyzes the existing codebase and specifications to learn and docu
 
 ### Phase 7: Review and Apply
 
-15. **Present changes to user**:
+16. **Present changes to user**:
 
     ```markdown
     ## Learn Summary
@@ -481,7 +498,7 @@ This command analyzes the existing codebase and specifications to learn and docu
     Apply changes? (yes/no/selective)
     ```
 
-16. **Apply changes** (with user confirmation):
+17. **Apply changes** (with user confirmation):
     - Update `/memory/architecture-registry.md`
     - Create/Update `specs/__AGENT_CONTEXT_FILE__`
     - Create/Update each `{module}/__AGENT_CONTEXT_FILE__`
@@ -500,8 +517,9 @@ This command analyzes the existing codebase and specifications to learn and docu
 
 - **High-level vs Local**: Architecture registry = cross-cutting patterns, module files = module-specific, specs context = project state
 - **Specs context ≠ Constitution**: Constitution = governance rules (WHAT specs must include). Specs context = project state (WHAT exists in this project right now)
-- **Extract, don't invent**: Only document patterns, contracts, and invariants actually present in code/specs
-- **Aggregate, don't duplicate**: Specs context aggregates from individual specs; it does not copy verbatim
+- **Docs over specs**: `/docs/{domain}/spec.md` is the merged, reviewed source of truth. `specs/` adds in-progress features not yet merged. When both define the same term, entity, or contract, `/docs/` wins
+- **Extract, don't invent**: Only document patterns, contracts, and invariants actually present in code, docs, or specs
+- **Aggregate, don't duplicate**: Specs context aggregates from `/docs/` and `specs/`; it does not copy verbatim
 - **Preserve manual additions**: Never overwrite content between MANUAL markers
 - **Non-destructive**: Update, don't replace existing documentation
 - **Sub-module is conditional**: Only generate sub-module files when complexity warrants it (threshold: ≥8 files, ≥15 exports, or known layer name)
@@ -534,15 +552,19 @@ This command analyzes the existing codebase and specifications to learn and docu
 
 ```
 After /speckit.merge:
-  /speckit.learn → updates all context files (registry + specs + modules + sub-modules)
+  /speckit.merge consolidates feature into /docs/{domain}/spec.md
+  /speckit.learn → reads /docs/ (source of truth) + specs/ (in-progress)
+                 → updates all context files (registry + specs + modules + sub-modules)
 
 During /speckit.specify:
   Agent auto-loads specs/__AGENT_CONTEXT_FILE__ for vocabulary consistency,
   existing entities, active contracts — prevents inventing conflicting terms
+  (specs context was built primarily from /docs/, so it reflects merged state)
 
 During /speckit.plan:
   Loads architecture-registry.md for alignment validation
   Agent auto-loads specs/__AGENT_CONTEXT_FILE__ for contract and invariant awareness
+  Reads /docs/{domain}/spec.md directly for domain context
 
 During /speckit.implement:
   Agent auto-loads {module}/__AGENT_CONTEXT_FILE__ when editing files in that module
