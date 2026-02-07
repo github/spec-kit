@@ -110,6 +110,96 @@
 
 ---
 
+## Interface Contracts
+
+> APIs and interfaces this module exposes and consumes. Extracted from specs.
+
+### Exposed Interfaces (this module provides)
+
+| Interface | Type | Signature / Path | Consumers | Source Spec |
+|-----------|------|------------------|-----------|-------------|
+| {interface} | REST/Function/Event | {signature_or_path} | {consumer_modules} | specs/{feature}/contracts/ |
+
+### Consumed Interfaces (this module depends on)
+
+| Interface | From Module | Type | Source Spec |
+|-----------|-------------|------|-------------|
+| {interface} | {provider_module} | REST/Function/Event | specs/{feature}/contracts/ |
+
+---
+
+## Business Invariants
+
+> Rules from specifications that this module MUST enforce. Violations = bugs.
+
+| ID | Invariant | Type | Enforcement | Source Spec |
+|----|-----------|------|-------------|-------------|
+| {id} | {rule} | Data/Workflow/Security | {how_enforced_in_this_module} | specs/{feature}/spec.md |
+
+---
+
+## State Machines & Lifecycle Rules
+
+> Entities managed by this module that have state transitions.
+
+### {Entity Name} Lifecycle
+
+**States**: {state1} → {state2} → {state3}
+
+```text
+{state_diagram_as_ascii}
+```
+
+**Valid Transitions**:
+
+| From | To | Trigger | Guard Condition | Source Spec |
+|------|----|---------|-----------------|-------------|
+| {from_state} | {to_state} | {event} | {condition} | specs/{feature}/spec.md |
+
+**Invalid Transitions (MUST reject)**:
+
+| From | To | Reason |
+|------|----|--------|
+| {from_state} | {to_state} | {why_forbidden} |
+
+---
+
+## Guard Rails
+
+> DO NOT rules specific to this module. Violating these causes drift or bugs.
+
+| Rule | Reason | Source |
+|------|--------|--------|
+| DO NOT {prohibited_action} | {why_prohibited} | {architecture-registry / spec / lesson-learned} |
+
+---
+
+## Module Dependency Graph
+
+> Internal and external dependencies for this module.
+
+### Internal Dependencies (project modules)
+
+| Module | What We Use | Direction |
+|--------|------------|-----------|
+| {module} | {what_imported} | imports-from / imported-by |
+
+### External Dependencies (packages)
+
+| Package | Purpose | Version Constraint |
+|---------|---------|-------------------|
+| {package} | {what_for} | {version_or_any} |
+
+### Spec Sources
+
+> Which specs define requirements for this module.
+
+| Spec | What It Defines For This Module |
+|------|-------------------------------|
+| specs/{feature}/ | {requirements_summary} |
+
+---
+
 <!-- MANUAL ADDITIONS START -->
 <!-- Add custom guidelines here - they will be preserved across regenerations -->
 

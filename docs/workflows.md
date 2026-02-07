@@ -343,7 +343,9 @@ For small, focused modifications without the full workflow overhead.
      │              │              │
      ▼              ▼              ▼
  Coverage      Tech debt     Architecture
- report        report        + CLAUDE.md
+ report        report        + specs context
+                              + module context
+                              + sub-module context
 ```
 
 **`/speckit.analyze`** - Cross-artifact consistency
@@ -358,10 +360,12 @@ For small, focused modifications without the full workflow overhead.
 - Generates improvement tasks
 
 **`/speckit.learn`** - Pattern discovery and documentation
-- Analyze existing codebase
+- Analyze existing codebase and all feature specifications
 - Update architecture registry (HIGH LEVEL patterns only)
-- Update module CLAUDE.md files (local conventions)
-- Auto-loaded by Claude Code during implementation
+- Generate/update `specs/__AGENT_CONTEXT_FILE__` (project state: vocabulary, entities, contracts, invariants)
+- Update module `__AGENT_CONTEXT_FILE__` files (local conventions + interface contracts + invariants + guard rails)
+- Generate sub-module `__AGENT_CONTEXT_FILE__` files for high-complexity directories
+- Auto-loaded by AI agents during implementation and specification
 
 ### Merge Workflow
 
@@ -412,7 +416,7 @@ For small, focused modifications without the full workflow overhead.
 | Tasks | `/speckit.tasks` | - | tasks.md |
 | Implement | `/speckit.implement` | - | Code, task-results/ |
 | **Merge** | `/speckit.merge` | - | /docs/{domain}/spec.md updated |
-| **Learn** | `/speckit.learn` | - | architecture-registry, CLAUDE.md |
+| **Learn** | `/speckit.learn` | - | architecture-registry, specs context, module + sub-module context |
 | Validate | `/speckit.validate` | - | validation/, bugs/ |
 | Fix | `/speckit.fix` | Bug ID | Fixed code |
 | Change | `/speckit.change` | Description | Updated code/spec |
