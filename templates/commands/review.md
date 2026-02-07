@@ -115,16 +115,245 @@ Check for common code smells:
 | **Large Class** | Classes > 300 lines | Medium |
 | **Long Parameter List** | Functions with > 4 params | Low |
 | **Duplicate Code** | Similar code blocks | High |
-| **Dead Code** | Unused functions/variables | Low |
 | **Magic Numbers** | Hardcoded values without constants | Low |
 | **Deep Nesting** | > 3 levels of nesting | Medium |
 | **God Object** | Class doing too many things | High |
 | **Feature Envy** | Method using other class data excessively | Medium |
 | **Primitive Obsession** | Using primitives instead of objects | Low |
 
-### 2.2: Security Vulnerabilities
+### 2.2: Dead Code Detection
 
-Check for security issues:
+Identify code that is never executed, never called, or no longer reachable:
+
+| Pattern | Detection Method | Severity |
+|---------|-----------------|----------|
+| **Unused exports** | Exported functions/classes with zero imports across the project | High |
+| **Unused variables/params** | Declared but never read (beyond linter suppression `_var`) | Medium |
+| **Unreachable code** | Code after unconditional `return`, `throw`, `break`, `continue` | Medium |
+| **Dead branches** | Conditions that always evaluate to the same value | Medium |
+| **Commented-out code** | Large blocks of commented code (> 5 lines) — not comments explaining why | High |
+| **Orphaned files** | Source files not imported by any other file and not an entry point | High |
+| **Unused dependencies** | Packages in package.json/requirements.txt not imported anywhere | Medium |
+| **Stale feature flags** | Feature flags that are always on/off with no toggle path | Low |
+
+**Detection approach**:
+```bash
+# Unused exports (TypeScript/JavaScript example)
+# For each exported symbol, check if it's imported anywhere else
+grep -r "export " {scope}/ --include="*.ts" --include="*.tsx" | while read export_line; do
+  symbol=$(echo "$export_line" | grep -oP '(?:export\s+(?:default\s+)?(?:function|class|const|let|var|type|interface|enum)\s+)\K\w+')
+  if [ -n "$symbol" ]; then
+    import_count=$(grep -r "$symbol" {scope}/ --include="*.ts" --include="*.tsx" -l | wc -l)
+    if [ "$import_count" -le 1 ]; then
+      echo "UNUSED: $symbol in $export_line"
+    fi
+  fi
+done
+
+# Commented-out code blocks
+grep -n "^\s*//.*[;{}()=]" {scope}/ -r --include="*.ts" --include="*.tsx" | head -20
+grep -n "^\s*/\*" {scope}/ -r --include="*.ts" | head -20
+
+# Orphaned files (no imports found)
+for file in $(find {scope}/ -name "*.ts" -not -name "*.test.*" -not -name "*.spec.*"); do
+  basename=$(basename "$file" .ts)
+  import_count=$(grep -r "$basename" {scope}/ --include="*.ts" -l | grep -v "$file" | wc -l)
+  if [ "$import_count" -eq 0 ]; then
+    echo "ORPHAN: $file"
+  fi
+done
+```
+
+**Report format**:
+
+| File | Line | Dead Code Type | Evidence | Recommendation |
+|------|------|---------------|----------|----------------|
+| {file} | {line} | Unused export / Orphaned file / etc. | {why it's dead} | Remove / Archive / Investigate |
+
+### 2.3: Fake Implementations & Incomplete Code
+
+> **Critical**: Detect code that appears implemented but is actually a placeholder, mock, stub, or incomplete implementation left in production code. These are the most dangerous form of technical debt because they pass superficial review.
+
+**Scan for these patterns**:
+
+| Pattern | Detection Method | Severity |
+|---------|-----------------|----------|
+| **TODO/FIXME/HACK/XXX** | Comments containing `TODO`, `FIXME`, `HACK`, `XXX`, `TEMP`, `TEMPORARY` | High |
+| **Placeholder returns** | Functions returning hardcoded values (`return []`, `return {}`, `return null`, `return "placeholder"`) | Critical |
+| **Empty implementations** | Functions with empty body or only a `pass`/`return` statement | Critical |
+| **Mock data in production** | Hardcoded test data, fake emails, "test@test.com", "lorem ipsum", dummy IDs | Critical |
+| **Stubbed error handling** | `catch(e) {}`, `catch(e) { console.log(e) }`, silently swallowed errors | High |
+| **Disabled validations** | Validation functions that always return `true` or skip checks | Critical |
+| **Hardcoded feature bypasses** | `if (true)`, `if (false)`, `// skip for now`, `// disabled` | High |
+| **Console.log/print left behind** | Debug output in production code | Medium |
+| **NotImplementedError stubs** | `raise NotImplementedError`, `throw new Error("not implemented")` | Critical |
+| **Fake async operations** | `setTimeout` or `sleep` simulating real operations | High |
+
+**Detection approach**:
+```bash
+# TODO/FIXME/HACK markers
+grep -rn "TODO\|FIXME\|HACK\|XXX\|TEMP\b\|TEMPORARY\|PLACEHOLDER" {scope}/ \
+  --include="*.ts" --include="*.tsx" --include="*.py" --include="*.go" --include="*.rs" \
+  --exclude-dir=node_modules --exclude-dir=.git
+
+# Placeholder returns
+grep -rn "return \[\]\|return {}\|return null\|return None\|return ''\|return \"\"" {scope}/ \
+  --include="*.ts" --include="*.py" --include="*.go"
+
+# Empty function bodies
+grep -rn -A1 "function\|def \|fn " {scope}/ --include="*.ts" --include="*.py" --include="*.rs" | \
+  grep -B1 "^\s*[}]\|^\s*pass\|^\s*return;"
+
+# Mock data patterns
+grep -rn "test@test\|example@\|lorem ipsum\|foo\|bar\|baz\|dummy\|fake\|mock" {scope}/ \
+  --include="*.ts" --include="*.tsx" --include="*.py" \
+  --exclude-dir=__tests__ --exclude-dir=tests --exclude-dir=test --exclude-dir=*.test.* --exclude-dir=*.spec.*
+
+# Not implemented stubs
+grep -rn "NotImplementedError\|not implemented\|throw.*Error.*implement\|todo.*implement\|stub" {scope}/ \
+  --include="*.ts" --include="*.py" --include="*.go" --include="*.rs"
+
+# Swallowed errors
+grep -rn "catch.*{}\|catch.*{\s*}\|except.*pass\|except.*:\s*$" {scope}/ \
+  --include="*.ts" --include="*.py"
+```
+
+**Report format**:
+
+| File | Line | Fake Pattern | Code Snippet | Impact | Recommendation |
+|------|------|-------------|--------------|--------|----------------|
+| {file} | {line} | TODO / Placeholder / Mock data / etc. | `{snippet}` | {what breaks} | {what to implement} |
+
+**Classification**:
+- **Blocker**: Placeholder returns, empty implementations, disabled validations, NotImplementedError in production paths → MUST fix before merge
+- **High**: TODOs in critical paths, mock data, swallowed errors → Fix in current iteration
+- **Medium**: TODOs in non-critical paths, debug logs → Track for next iteration
+
+### 2.4: Spec Deviation Detection
+
+> **Purpose**: Compare the actual implementation against the feature specification to detect functional drift — where code does something different from what the spec requires.
+
+**Prerequisites**: Requires `specs/{feature}/` with at least `spec.md` and ideally `plan.md`, `contracts/`, `data-model.md`.
+
+#### Step 2.4.1: Load Spec Artifacts
+
+For the feature being reviewed:
+1. Read `spec.md` → Extract functional requirements (FR-xxx), acceptance criteria (Given/When/Then), success criteria
+2. Read `plan.md` → Extract file-to-requirement mapping, architecture decisions
+3. Read `contracts/` → Extract API contracts (endpoints, request/response schemas)
+4. Read `data-model.md` → Extract entity definitions, fields, relationships, constraints
+5. Read `task-results/` → Extract what was actually implemented per task, deviations already noted
+
+#### Step 2.4.2: Requirement Coverage Analysis
+
+For each functional requirement (FR-xxx) in `spec.md`:
+
+| Requirement | Expected Behavior | Implementation File(s) | Actual Behavior | Status |
+|-------------|-------------------|----------------------|-----------------|--------|
+| FR-001 | {from spec} | {from plan/task-results} | {from code analysis} | MATCH / DRIFT / MISSING / PARTIAL |
+
+**Status definitions**:
+- **MATCH**: Implementation aligns with spec requirement
+- **DRIFT**: Implementation exists but behavior differs from spec (most dangerous)
+- **MISSING**: No implementation found for this requirement
+- **PARTIAL**: Implementation exists but is incomplete (some scenarios not handled)
+
+#### Step 2.4.3: Contract Compliance
+
+For each API contract in `contracts/`:
+
+```bash
+# Compare contract definition with actual implementation
+# For each endpoint defined in contracts/:
+
+# 1. Check route exists
+grep -rn "{method} {path}\|{path}" {scope}/ --include="*.ts" --include="*.py"
+
+# 2. Check request validation matches contract schema
+# 3. Check response shape matches contract schema
+# 4. Check error responses match contract error definitions
+# 5. Check HTTP status codes match
+```
+
+| Contract | Endpoint | Contract Says | Code Does | Status |
+|----------|----------|--------------|-----------|--------|
+| {contract_file} | POST /api/users | Returns `{id, email, role}` | Returns `{id, email}` (missing `role`) | DRIFT |
+| {contract_file} | GET /api/users/:id | 404 if not found | 500 (unhandled null) | DRIFT |
+
+#### Step 2.4.4: Data Model Compliance
+
+For each entity in `data-model.md`:
+
+| Entity | Field | Spec Says | Code Says | Status |
+|--------|-------|-----------|-----------|--------|
+| User | email | UNIQUE, NOT NULL, format: RFC 5322 | UNIQUE, NOT NULL (no format validation) | DRIFT |
+| Order | status | enum: draft, pending, confirmed, shipped | enum: draft, pending, confirmed (missing shipped) | DRIFT |
+
+Check:
+- All fields defined in spec exist in code (models, schemas, migrations)
+- Field constraints match (unique, not null, types, formats)
+- Relationships match (foreign keys, cardinality)
+- Enum values match spec definitions
+
+#### Step 2.4.5: Acceptance Criteria Verification
+
+For each acceptance scenario (Given/When/Then) in `spec.md`:
+
+| Scenario | Given | When | Then (Expected) | Code Path | Status |
+|----------|-------|------|-----------------|-----------|--------|
+| SC-001 | Valid credentials | POST /auth/login | Return JWT + 200 | auth.controller:45 | MATCH |
+| SC-002 | Expired token | GET /api/data | Return 401 + refresh hint | middleware:22 | DRIFT (returns 403) |
+| SC-003 | 5 failed attempts | POST /auth/login | Lock account 15min | — | MISSING |
+
+**Detection approach**: For each scenario, trace the code path and verify:
+1. The trigger (When) is handled by a route/function
+2. The precondition (Given) is checked
+3. The outcome (Then) matches what the code actually does
+4. Error scenarios are handled as specified
+
+#### Step 2.4.6: Spec Deviation Report
+
+```markdown
+## Spec Deviation Report
+
+**Feature**: {feature_name}
+**Spec**: specs/{feature}/spec.md
+**Files Analyzed**: {count}
+
+### Deviation Summary
+
+| Category | Match | Drift | Missing | Partial | Total |
+|----------|-------|-------|---------|---------|-------|
+| Functional Requirements | X | X | X | X | X |
+| API Contracts | X | X | X | X | X |
+| Data Model | X | X | X | X | X |
+| Acceptance Criteria | X | X | X | X | X |
+| **Total** | **X** | **X** | **X** | **X** | **X** |
+
+### Compliance Score: {matched / total * 100}%
+
+### Critical Deviations (DRIFT)
+
+| ID | What Spec Says | What Code Does | File:Line | Impact |
+|----|---------------|----------------|-----------|--------|
+| {id} | {spec_requirement} | {actual_behavior} | {file:line} | {user_impact} |
+
+### Missing Implementations
+
+| ID | Requirement | Expected In | Priority | Blocking? |
+|----|------------|-------------|----------|-----------|
+| {id} | {requirement} | {expected_file} | {P1/P2/P3} | {yes/no} |
+
+### Partial Implementations
+
+| ID | Requirement | What's Done | What's Missing | File:Line |
+|----|------------|-------------|----------------|-----------|
+| {id} | {requirement} | {done_part} | {missing_part} | {file:line} |
+```
+
+### 2.5: Security Vulnerabilities
+
+Check for security issues (OWASP Top 10):
 
 | Issue | Pattern | Severity |
 |-------|---------|----------|
@@ -135,7 +364,7 @@ Check for security issues:
 | **Missing Auth Checks** | Unprotected endpoints | High |
 | **Sensitive Data Exposure** | Logging PII/secrets | Medium |
 
-### 2.3: Performance Issues
+### 2.6: Performance Issues
 
 Check for performance problems:
 
@@ -147,7 +376,7 @@ Check for performance problems:
 | **Blocking Operations** | Sync calls in async context | Medium |
 | **Unnecessary Computation** | Repeated calculations | Low |
 
-### 2.4: Maintainability Issues
+### 2.7: Maintainability Issues
 
 Check for maintainability concerns:
 
@@ -172,6 +401,9 @@ Classify identified issues into debt categories:
 |----------|-------------|----------|
 | **Design Debt** | Architectural shortcuts | Missing abstractions, tight coupling |
 | **Code Debt** | Implementation shortcuts | Code smells, missing error handling |
+| **Dead Code Debt** | Unreachable or unused code | Orphaned files, unused exports, commented blocks |
+| **Fake Implementation Debt** | Placeholders left in production | TODOs, stubs, mock data, empty catch, hardcoded returns |
+| **Spec Deviation Debt** | Code doesn't match specification | Missing requirements, contract drift, incomplete scenarios |
 | **Test Debt** | Insufficient testing | Missing tests, flaky tests |
 | **Documentation Debt** | Missing/outdated docs | No API docs, stale comments |
 | **Dependency Debt** | Outdated dependencies | Old packages, deprecated APIs |
@@ -217,6 +449,9 @@ Create a structured report in `FEATURE_DIR/reviews/` or project root:
 
 - **Overall Health**: {score}/100
 - **Critical Issues**: {count}
+- **Spec Compliance**: {compliance_score}% ({matched}/{total} requirements)
+- **Fake Implementations Found**: {count} (blockers: {blocker_count})
+- **Dead Code Items**: {count}
 - **Technical Debt Score**: {score}
 - **Recommended Actions**: {top_3_actions}
 
@@ -246,10 +481,41 @@ Create a structured report in `FEATURE_DIR/reviews/` or project root:
 |------|-------|------|----------------|
 | ... | ... | ... | ... |
 
+## Spec Deviation Summary
+
+| Category | Match | Drift | Missing | Partial |
+|----------|-------|-------|---------|---------|
+| Functional Requirements | X | X | X | X |
+| API Contracts | X | X | X | X |
+| Data Model | X | X | X | X |
+| Acceptance Criteria | X | X | X | X |
+
+**Compliance Score**: {score}%
+
+### Critical Deviations
+| Requirement | Spec Says | Code Does | File:Line |
+|-------------|-----------|-----------|-----------|
+| ... | ... | ... | ... |
+
+## Fake Implementations Found
+
+| File | Line | Type | Snippet | Severity |
+|------|------|------|---------|----------|
+| ... | ... | TODO/Placeholder/Mock/Stub | ... | Blocker/High/Medium |
+
+## Dead Code Found
+
+| File | Line | Type | Evidence |
+|------|------|------|----------|
+| ... | ... | Orphaned/Unused export/Commented block | ... |
+
 ## Technical Debt Summary
 
 | Category | Items | Estimated Effort | Priority |
 |----------|-------|------------------|----------|
+| Spec Deviation Debt | X | Y hours | Critical |
+| Fake Implementation Debt | X | Y hours | Critical |
+| Dead Code Debt | X | Y hours | Medium |
 | Design Debt | X | Y hours | High |
 | Code Debt | X | Y hours | Medium |
 | Test Debt | X | Y hours | High |
@@ -293,6 +559,21 @@ For high-priority issues, create actionable tasks with proper IDs:
 ```markdown
 ## Review Action Items
 
+### Spec Deviations (fix first — these are functional drift)
+- [ ] [DRIFT] FR-003: Password reset returns 200 instead of 204 (spec says no body)
+- [ ] [MISSING] FR-007: Account locking after 5 failed attempts — not implemented
+- [ ] [DRIFT] Contract: GET /api/users/:id returns 500 on not found, spec says 404
+
+### Fake Implementations (blockers — code appears done but isn't)
+- [ ] [FAKE] src/services/email.ts:23 — sendEmail() returns hardcoded `true`
+- [ ] [FAKE] src/validators/payment.ts:15 — validateAmount() always returns `true`
+- [ ] [FAKE] src/api/reports.ts:42 — TODO: implement actual report generation
+
+### Dead Code (cleanup)
+- [ ] [DEAD] src/utils/legacy-auth.ts — orphaned file, zero imports
+- [ ] [DEAD] src/services/old-payment.ts — 45 lines commented-out code
+
+### Code Quality
 - [ ] [CRITICAL] Fix SQL injection in user_controller.py:45
 - [ ] [HIGH] Add authentication to /api/admin endpoints
 - [ ] [HIGH] Add tests for PaymentService
@@ -346,9 +627,20 @@ Insert a review block after the last completed task:
 > **Source**: Code review on branch `{branch_name}` vs `{base_branch}`
 > **Must complete before**: Continuing with pending tasks
 
-- [ ] T048 [CRITICAL] [US1] Fix SQL injection in user_controller.py:45
-- [ ] T049 [HIGH] [US1] Add input validation to createUser endpoint
-- [ ] T050 [MEDIUM] [US2] Refactor OrderProcessor to reduce complexity
+#### Spec Deviations
+- [ ] T048 [DRIFT] [US1] Fix POST /auth/login response to match contract (returns 200, spec says 204)
+- [ ] T049 [MISSING] [US2] Implement account locking after 5 failed attempts (FR-007)
+
+#### Fake Implementations
+- [ ] T050 [FAKE] [US1] Replace stub in email.ts:23 — sendEmail() returns hardcoded true
+- [ ] T051 [FAKE] [US3] Implement real report generation in reports.ts:42 (currently TODO)
+
+#### Dead Code
+- [ ] T052 [DEAD] Remove orphaned file src/utils/legacy-auth.ts (zero imports)
+
+#### Code Quality
+- [ ] T053 [CRITICAL] [US1] Fix SQL injection in user_controller.py:45
+- [ ] T054 [HIGH] [US1] Add input validation to createUser endpoint
 
 ---
 ```
@@ -423,13 +715,16 @@ Before saving the updated tasks.md:
 
 Present findings to user with:
 
-1. **Summary**: Overall health score and critical issues count
-2. **Diff Scope**: Show base branch and number of files changed
-3. **Top 5 Issues**: Most important findings with recommendations
-4. **Quick Wins**: Easy fixes that improve quality immediately
-5. **Tasks Created**: List of new review tasks with IDs
-6. **Tasks Amended**: List of pending tasks that were modified
-7. **Report Location**: Path to full report file
+1. **Summary**: Overall health score, critical issues count, spec compliance score
+2. **Spec Deviations**: DRIFT/MISSING/PARTIAL requirements with file:line references
+3. **Fake Implementations**: Blockers (stubs, placeholders, mock data in production code)
+4. **Dead Code**: Orphaned files, unused exports, commented-out blocks
+5. **Diff Scope**: Show base branch and number of files changed
+6. **Top 5 Issues**: Most important findings with recommendations
+7. **Quick Wins**: Easy fixes that improve quality immediately
+8. **Tasks Created**: List of new review tasks with IDs (tagged: DRIFT/FAKE/DEAD/CRITICAL/HIGH/etc.)
+9. **Tasks Amended**: List of pending tasks that were modified
+10. **Report Location**: Path to full report file
 
 Ask if user wants to:
 - Generate detailed report file
