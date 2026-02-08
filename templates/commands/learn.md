@@ -91,13 +91,28 @@ This command analyzes the existing codebase and specifications to learn and docu
      - Check if directory name matches a known architectural layer
    - Record results for Phase 5 threshold evaluation
 
-7. **Determine scope**:
-   - If user specified "all": Analyze entire codebase and all specs
-   - If user specified "specs-only": Only update `specs/__AGENT_CONTEXT_FILE__` (skip module analysis)
-   - If user specified "modules-only": Only update module/sub-module files (skip specs context)
-   - If user specified features: Analyze only those features
-   - If user specified directories: Analyze those directories
-   - Default: Analyze features with task-results but not in registry
+7. **Determine scope and active phases**:
+
+   | Scope | Phase 2 (Specs Context) | Phase 3 (Arch Patterns) | Phase 4 (Module) | Phase 5 (Sub-Module) |
+   |-------|:-:|:-:|:-:|:-:|
+   | `all` | Yes | Yes | Yes | **Yes** |
+   | `specs-only` | Yes | — | — | — |
+   | `modules-only` | — | Yes | Yes | **Yes** |
+   | `deep` | Yes | Yes | Yes | **Yes (force all layers)** |
+   | `{feature names}` | Yes (scoped) | — | Yes (scoped) | Yes (scoped) |
+   | `{directories}` | — | — | Yes (scoped) | Yes (scoped) |
+   | Default (no args) | Yes | Yes | Yes | — |
+
+   **Scope rules**:
+   - If user specified **"all"**: Analyze entire codebase, all specs, all docs — including sub-modules where threshold is met
+   - If user specified **"specs-only"**: Only update `specs/__AGENT_CONTEXT_FILE__` (skip module/sub-module analysis)
+   - If user specified **"modules-only"**: Only update module + sub-module files (skip specs context)
+   - If user specified **"deep"**: Same as "all" but **force sub-module generation for ALL recognized architectural layers** regardless of file count threshold (only the 3-file minimum still applies)
+   - If user specified **feature names**: Analyze those features + their impacted modules + sub-modules
+   - If user specified **directories**: Analyze those directories + their sub-modules
+   - **Default** (no args): Analyze features with task-results but not in registry — **does NOT generate sub-modules** (use "all" or "deep" for sub-module generation)
+
+   **IMPORTANT**: Sub-module generation (Phase 5) only runs when explicitly included in scope. This prevents generating context files that may be noisy for small projects. Use `/speckit.learn all` or `/speckit.learn deep` to include sub-modules.
 
 ### Phase 2: Specs Context Extraction
 
@@ -529,24 +544,37 @@ This command analyzes the existing codebase and specifications to learn and docu
 ## Usage Examples
 
 ```bash
-# Full codebase + specs analysis
+# Quick update after implementation (modules + specs context, NO sub-modules)
+/speckit.learn
+
+# Full analysis INCLUDING sub-module context files
 /speckit.learn all
 
-# Learn from specific features
+# Full analysis + force sub-modules for ALL recognized layers (even small ones)
+/speckit.learn deep
+
+# Learn from specific features (includes their impacted modules + sub-modules)
 /speckit.learn feat-001-auth feat-002-dashboard
 
-# Analyze specific directories only
+# Analyze specific directories + their sub-modules
 /speckit.learn src/frontend src/backend
 
-# Update only the specs context file
+# Update only the specs context file (skip modules entirely)
 /speckit.learn specs-only
 
-# Update only module/sub-module files
+# Update only module + sub-module files (skip specs context)
 /speckit.learn modules-only
-
-# Quick update after implementation
-/speckit.learn
 ```
+
+### When to use which scope
+
+| You want to... | Use |
+|----------------|-----|
+| Quick refresh after a merge | `/speckit.learn` |
+| Generate everything including sub-module files | `/speckit.learn all` |
+| Maximum granularity (force sub-modules on all layers) | `/speckit.learn deep` |
+| Update context for a specific feature you just finished | `/speckit.learn feat-001-auth` |
+| Only refresh the specs directory context | `/speckit.learn specs-only` |
 
 ## Integration with Workflow
 
