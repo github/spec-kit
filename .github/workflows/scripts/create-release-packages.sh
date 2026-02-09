@@ -89,6 +89,15 @@ generate_commands() {
     # Apply other substitutions
     body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
     
+    # If agent is 'continue', prepend special YAML header
+    if [[ $agent == "continue" ]]; then
+      # Find description in body and write invokable: true in next line
+      if [[ -n "$description" ]]; then
+        # Insert name and invokable fields after the first --- delimiter
+        body=$(insert_yaml_frontmatter "$body" "$name" "invokable" "true")
+      fi
+    fi
+
     case $ext in
       toml)
         body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
@@ -99,6 +108,40 @@ generate_commands() {
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
     esac
   done
+}
+
+# Generic function to insert custom YAML frontmatter into prompt files
+insert_yaml_frontmatter() {
+  local body=$1
+  local name=$2
+  local field_name=$3
+  local field_value=$4
+  
+  printf '%s' "$body" | awk -v name="$name" -v field="$field_name" -v value="$field_value" '
+    BEGIN { in_frontmatter = 0; processed = 0 }
+    /^---$/ { 
+      print
+      if (!processed) {
+        in_frontmatter = 1
+      }
+      next
+    }
+    in_frontmatter && /^description:/ && !processed { 
+      print "name: speckit." name
+      print
+      print field ": " value
+      processed = 1
+      next
+    }
+    in_frontmatter && /^[a-zA-Z]/ && !processed {
+      print "name: speckit." name
+      print field ": " value
+      print
+      processed = 1
+      in_frontmatter = 0
+    }
+    !in_frontmatter || processed { print }
+  '
 }
 
 generate_copilot_prompts() {
@@ -217,13 +260,16 @@ build_variant() {
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
+    continue)
+      mkdir -p "$base_dir/.continue/prompts"
+      generate_commands continue md "\$ARGUMENTS" "$base_dir/.continue/prompts" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder continue)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
