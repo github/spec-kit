@@ -1,10 +1,6 @@
 {
-  "extends": ["markdownlint-rule-helpers"],
-  "rules": {
-    "line-length": { "line_length": 80 },
-    "no-inline-html": false,
-    "header-style": { "style": "atx" },
-    "ul-indent": false,
-    "no-empty-links": true
-  }
+  "default": true,
+  "MD013": { "lineLength": 80 },
+  "MD029": { "style": "ordered" },
+  "MD041": false
 }
