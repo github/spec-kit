@@ -4,6 +4,7 @@ set -e
 
 JSON_MODE=false
 SHORT_NAME=""
+BRANCH_PREFIX_ARG=""
 BRANCH_NUMBER=""
 ARGS=()
 i=1
@@ -27,6 +28,20 @@ while [ $i -le $# ]; do
             fi
             SHORT_NAME="$next_arg"
             ;;
+        --branch-prefix)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --branch-prefix requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            # Check if the next argument is another option (starts with --)
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --branch-prefix requires a value' >&2
+                exit 1
+            fi
+            BRANCH_PREFIX_ARG="$next_arg"
+            ;;
         --number)
             if [ $((i + 1)) -gt $# ]; then
                 echo 'Error: --number requires a value' >&2
@@ -41,17 +56,20 @@ while [ $i -le $# ]; do
             BRANCH_NUMBER="$next_arg"
             ;;
         --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--branch-prefix <prefix>] [--number N] <feature_description>"
             echo ""
             echo "Options:"
-            echo "  --json              Output in JSON format"
-            echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --number N          Specify branch number manually (overrides auto-detection)"
-            echo "  --help, -h          Show this help message"
+            echo "  --json                  Output in JSON format"
+            echo "  --short-name <name>     Provide a custom short name (2-4 words) for the branch"
+            echo "  --branch-prefix <prefix> Override branch prefix (e.g., 'feature/', 'bugfix/')"
+            echo "  --number N              Specify branch number manually (overrides auto-detection)"
+            echo "  --help, -h              Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
+            echo "  $0 'Fix login bug' --branch-prefix 'bugfix/'"
+            echo "  $0 'Add payment processing' --number 42 --branch-prefix 'feature/'"
             exit 0
             ;;
         *) 
@@ -236,7 +254,10 @@ fi
 
 # Determine branch number
 if [ -z "$BRANCH_NUMBER" ]; then
-    if [ "$HAS_GIT" = true ]; then
+    # Check environment variable first
+    if [ -n "$SPECIFY_SPEC_NUMBER" ]; then
+        BRANCH_NUMBER="$SPECIFY_SPEC_NUMBER"
+    elif [ "$HAS_GIT" = true ]; then
         # Check existing branches on remotes
         BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
     else
@@ -248,15 +269,56 @@ fi
 
 # Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
 FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+
+# Function to determine branch prefix
+get_branch_prefix() {
+    # Priority: CLI arg > environment variable > config file > empty string
+    if [ -n "$BRANCH_PREFIX_ARG" ]; then
+        echo "$BRANCH_PREFIX_ARG"
+        return
+    fi
+    
+    if [ -n "$SPECIFY_BRANCH_PREFIX" ]; then
+        echo "$SPECIFY_BRANCH_PREFIX"
+        return
+    fi
+    
+    # Check config file
+    local config_file="$REPO_ROOT/.specify/config.json"
+    if [ -f "$config_file" ]; then
+        # Extract branch_prefix from config (avoid jq dependency)
+        local branch_prefix=$(grep '"branch_prefix"' "$config_file" | sed 's/.*"branch_prefix"[^"]*"\([^"]*\)".*/\1/')
+        if [ -n "$branch_prefix" ]; then
+            echo "$branch_prefix"
+            return
+        fi
+    fi
+    
+    echo ""
+}
+
+# Determine branch prefix
+BRANCH_PREFIX=$(get_branch_prefix)
+
+# Construct branch name with optional prefix
+if [ -n "$BRANCH_PREFIX" ]; then
+    # Ensure prefix ends with /
+    if [[ ! "$BRANCH_PREFIX" =~ /$ ]]; then
+        BRANCH_PREFIX="${BRANCH_PREFIX}/"
+    fi
+    BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${BRANCH_SUFFIX}"
+else
+    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+fi
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 MAX_BRANCH_LENGTH=244
 if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
+    # Account for: prefix length + feature number (3) + hyphen (1)
+    local prefix_length=${#BRANCH_PREFIX}
+    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - prefix_length - 4))
     
     # Truncate suffix at word boundary if possible
     TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
@@ -264,7 +326,11 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
     
     ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+    if [ -n "$BRANCH_PREFIX" ]; then
+        BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+    else
+        BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+    fi
     
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
     >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"

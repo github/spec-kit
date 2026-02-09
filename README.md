@@ -270,9 +270,73 @@ Additional commands for enhanced quality and validation:
 
 ### Environment Variables
 
-| Variable          | Description                                                                                                                                                                                                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+| Variable                | Description                                                                                                                                                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SPECIFY_FEATURE`       | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+| `SPECIFY_BRANCH_PREFIX` | Configure a prefix for git branch names (e.g., `feature/`, `bugfix/`). When set, this prefix is prepended to auto-generated branch names. Overrides the `branch.prefix` setting in `.specify/config.json`. Example: With prefix `feature/`, branch `001-user-auth` becomes `feature/001-user-auth`.   |
+| `SPECIFY_SPEC_NUMBER`   | Override the auto-incremented spec number with a custom value (e.g., to match an issue tracker number). When set, the specified number is used instead of finding the next available number. Example: `SPECIFY_SPEC_NUMBER=42` creates spec `042-feature-name`. Can be overridden per-feature using the `--number` parameter in `/speckit.specify`. |
+
+### Configuration File
+
+The `.specify/config.json` file allows you to configure project-specific settings. This file is automatically created when you initialize a new project with `specify init`.
+
+#### Branch Prefix Configuration
+
+You can configure a default branch prefix for your project that will be applied to all auto-generated branch names:
+
+```json
+{
+  "branch": {
+    "prefix": "feature/"
+  }
+}
+```
+
+**Common patterns:**
+
+- **Feature branches:** `"prefix": "feature/"` → Creates branches like `feature/001-user-auth`
+- **Bugfix branches:** `"prefix": "bugfix/"` → Creates branches like `bugfix/001-fix-login`
+- **Development branches:** `"prefix": "dev/"` → Creates branches like `dev/001-new-api`
+- **No prefix (default):** `"prefix": ""` → Creates branches like `001-user-auth`
+
+**Priority order:**
+
+1. `--branch-prefix` command-line parameter (highest priority, per-feature override)
+2. `SPECIFY_BRANCH_PREFIX` environment variable (per-session override)
+3. `.specify/config.json` file setting (project-wide default)
+4. Default: no prefix (empty string)
+
+This allows you to set project-wide defaults in the config file, override them per-session using the environment variable, or specify them per-feature when creating a new specification.
+
+**Per-feature branch prefix:**
+
+When using the `/speckit.specify` command, you can specify a branch prefix for that specific feature:
+
+```text
+/speckit.specify Add user authentication --branch-prefix feature/
+/speckit.specify Fix login timeout --branch-prefix bugfix/
+/speckit.specify Update API endpoints with prefix hotfix/
+```
+
+The AI agent will recognize the prefix specification and pass it to the `create-new-feature` script.
+
+**Per-feature spec number:**
+
+You can also specify a custom spec number to match your issue tracker:
+
+```text
+/speckit.specify Add user authentication --number 42
+/speckit.specify Fix payment bug for issue #123 --number 123
+/speckit.specify Implement search API --number 1234 --branch-prefix feature/
+```
+
+**Spec number priority:**
+
+1. `--number` command-line parameter (highest priority, per-feature override)
+2. `SPECIFY_SPEC_NUMBER` environment variable (per-session override)
+3. Auto-increment from existing specs (default)
+
+This allows you to align spec numbers with your issue tracker (GitHub Issues, Jira, Linear, etc.) while maintaining the structured workflow.
 
 ## 📚 Core Philosophy
 
@@ -410,6 +474,8 @@ With your project principles established, you can now create the functional spec
 > [!IMPORTANT]
 > Be as explicit as possible about *what* you are trying to build and *why*. **Do not focus on the tech stack at this point**.
 
+#### Basic Example
+
 An example prompt:
 
 ```text
@@ -430,6 +496,32 @@ assigned to you, the currently logged in user, in a different color from all the
 see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can
 delete any comments that you made, but you can't delete comments anybody else made.
 ```
+
+#### Issue Tracker Integration
+
+You can align spec numbers with your issue tracker (GitHub Issues, Jira, Linear, etc.) by specifying a custom spec number:
+
+```text
+/speckit.specify Add user authentication system --number 42
+```
+
+This creates spec `042-add-user-auth` matching issue #42 in your tracker. You can also combine with branch prefixes:
+
+```text
+/speckit.specify Fix payment processing timeout --number 123 --branch-prefix bugfix/
+```
+
+This creates:
+- Spec directory: `specs/123-fix-payment-timeout/`
+- Git branch: `bugfix/123-fix-payment-timeout`
+
+**Common workflows:**
+
+- **GitHub Issues:** `--number <issue-number>` (e.g., `--number 456`)
+- **Jira Tickets:** `--number <ticket-id>` (e.g., `--number 789` for PROJ-789)
+- **Linear Issues:** `--number <issue-id>` (e.g., `--number 1234`)
+
+#### After Running /speckit.specify
 
 After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
 

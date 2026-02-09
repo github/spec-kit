@@ -5,6 +5,7 @@ param(
     [switch]$Json,
     [string]$ShortName,
     [int]$Number = 0,
+    [string]$BranchPrefix,
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -13,17 +14,23 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] [-BranchPrefix <prefix>] <feature description>"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  -Json               Output in JSON format"
-    Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
-    Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
-    Write-Host "  -Help               Show this help message"
+    Write-Host "  -Json                 Output in JSON format"
+    Write-Host "  -ShortName <name>     Provide a custom short name (2-4 words) for the branch"
+    Write-Host "  -Number N             Specify branch number manually (overrides auto-detection)"
+    Write-Host "  -BranchPrefix <prefix> Specify branch prefix (e.g., 'feature', 'bugfix')"
+    Write-Host "  -Help                 Show this help message"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth'"
     Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API'"
+    Write-Host "  ./create-new-feature.ps1 'Fix login bug' -Number 42 -BranchPrefix 'bugfix'"
+    Write-Host ""
+    Write-Host "Environment Variables:"
+    Write-Host "  SPECIFY_SPEC_NUMBER    Set default spec/branch number"
+    Write-Host "  SPECIFY_BRANCH_PREFIX  Set default branch prefix"
     exit 0
 }
 
@@ -34,6 +41,14 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 }
 
 $featureDesc = ($FeatureDescription -join ' ').Trim()
+
+# Check environment variables
+if ($Number -eq 0 -and $env:SPECIFY_SPEC_NUMBER) {
+    $Number = [int]$env:SPECIFY_SPEC_NUMBER
+}
+if (-not $BranchPrefix -and $env:SPECIFY_BRANCH_PREFIX) {
+    $BranchPrefix = $env:SPECIFY_BRANCH_PREFIX
+}
 
 # Resolve repository root. Prefer git information when available, but fall back
 # to searching for repository markers so the workflow still functions in repositories that
@@ -218,15 +233,61 @@ if ($Number -eq 0) {
 }
 
 $featureNum = ('{0:000}' -f $Number)
-$branchName = "$featureNum-$branchSuffix"
+
+# Function to determine branch prefix
+function Get-BranchPrefix {
+    param(
+        [string]$BranchPrefixArg,
+        [string]$RepoRoot
+    )
+    
+    # Priority: CLI arg > environment variable > config file > empty string
+    if ($BranchPrefixArg) {
+        return $BranchPrefixArg
+    }
+    
+    if ($env:SPECIFY_BRANCH_PREFIX) {
+        return $env:SPECIFY_BRANCH_PREFIX
+    }
+    
+    # Check config file
+    $configFile = Join-Path $RepoRoot '.specify/config.json'
+    if (Test-Path $configFile) {
+        try {
+            $config = Get-Content $configFile -Raw | ConvertFrom-Json
+            if ($config.branch_prefix) {
+                return $config.branch_prefix
+            }
+        } catch {
+            # Ignore config parsing errors
+        }
+    }
+    
+    return ""
+}
+
+# Determine branch prefix
+$branchPrefix = Get-BranchPrefix -BranchPrefixArg $BranchPrefix -RepoRoot $repoRoot
+
+# Construct branch name with optional prefix
+if ($branchPrefix) {
+    # Ensure prefix ends with /
+    if (-not $branchPrefix.EndsWith('/')) {
+        $branchPrefix = "$branchPrefix/"
+    }
+    $branchName = "$branchPrefix$featureNum-$branchSuffix"
+} else {
+    $branchName = "$featureNum-$branchSuffix"
+}
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 $maxBranchLength = 244
 if ($branchName.Length -gt $maxBranchLength) {
     # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    $maxSuffixLength = $maxBranchLength - 4
+    # Account for: prefix length + feature number (3) + hyphen (1)
+    $prefixLength = $branchPrefix.Length
+    $maxSuffixLength = $maxBranchLength - $prefixLength - 4
     
     # Truncate suffix
     $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
@@ -234,7 +295,11 @@ if ($branchName.Length -gt $maxBranchLength) {
     $truncatedSuffix = $truncatedSuffix -replace '-$', ''
     
     $originalBranchName = $branchName
-    $branchName = "$featureNum-$truncatedSuffix"
+    if ($branchPrefix) {
+        $branchName = "$branchPrefix$featureNum-$truncatedSuffix"
+    } else {
+        $branchName = "$featureNum-$truncatedSuffix"
+    }
     
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
     Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"

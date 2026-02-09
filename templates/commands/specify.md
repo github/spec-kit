@@ -21,23 +21,181 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Spec Number Option
+
+Users can optionally specify a custom spec number when creating a feature by including it in their command. This is particularly useful for matching issue tracker numbers (GitHub issues, Jira tickets, etc.).
+
+**How to recognize spec number in user input:**
+
+- `--number <number>` or `-SpecNumber <number>` format
+- Keywords like "issue #42", "ticket 123", "for issue 1234"
+- Direct number references: "spec 42", "number 99"
+- **Natural language patterns combining prefix and number:**
+  
+  **Detection algorithm (use in order):**
+  
+  1. **First, look for adjacent prefix + number** (most common):
+     - Pattern: `[prefix_keyword] [number]` appearing together
+     - Pattern: `[prefix_keyword], number [number]` (e.g., "feature branch, number 123")
+     - Pattern: `[prefix_keyword] number [number]` (e.g., "feature number 123")
+     - Examples: "feature 303", "bugfix 666", "hotfix 42", "fix 123", "feature branch, number 9696"
+     - If found: Extract both prefix and number, done.
+  
+  2. **If not found, scan the entire input more broadly**:
+     - Search **anywhere** in the input for prefix keywords:
+       - "feature" or "features" or "feature branch" → `feature/`
+       - "bugfix" or "bug fix" or "fix" → `bugfix/`
+       - "hotfix" or "hot fix" → `hotfix/`
+       - "chore" → `chore/`
+       - "refactor" or "refactoring" → `refactor/`
+     - Search **anywhere** in the input for number patterns: "#221", "221", "issue 221", "ticket 221", "spec 221", "number 221"
+     - If BOTH prefix keyword AND number found: Combine them
+     - If only number found: Extract just the number (auto-prefix from config)
+     - If only prefix keyword found: Ignore (not enough information)
+  
+  3. **Handle conflicts** (if multiple prefix keywords found):
+     - Use the keyword that appears closest to the number
+     - If equidistant, prefer more specific: "bugfix" > "fix"
+     - If still tied, use first occurrence (left to right)
+  
+  **This handles all these patterns:**
+  - "feature 303 add cart" ✓ (adjacent)
+  - "feature branch, number 9696" ✓ (separated, explicit branch type)
+  - "This is feature 221" ✓ (adjacent within sentence)
+  - "For issue #221, make it a feature" ✓ (separated, closest keyword)
+  - "#221 feature" ✓ (separated, number first)
+  - "issue #221" ✓ (just number)
+  - "Add shopping cart feature 303" ✓ (adjacent but later in sentence)
+
+**Examples of user input with spec number:**
+
+- "Add user authentication --number 42" (explicit parameter)
+- "Fix login timeout for issue #123" (extract `123` only)
+- "Add search feature --number 99 --branch-prefix feature/" (explicit parameters)
+- "feature branch, number 9696" (extract `feature/` and `9696` - separated pattern)
+- "feature 303 add shopping cart" (extract `feature/` and `303` - adjacent pattern)
+- "bugfix 666 fix payment timeout" (extract `bugfix/` and `666` - adjacent pattern)
+- "This is feature 221" (extract `feature/` and `221` - adjacent pattern in sentence)
+- "For issue #221, make it a feature" (extract `feature/` and `221` - separated, keyword closest to number)
+- "Add hotfix 42 for critical bug" (extract `hotfix/` and `42` - adjacent pattern)
+- "#999 chore cleanup old files" (extract `chore/` and `999` - number first, then keyword)
+
+**If spec number is specified:**
+
+1. **Scan and extract** using the detection algorithm above:
+   - Look for adjacent patterns first (e.g., "feature 303")
+   - If not found, scan entire input for separated keywords and numbers
+   - Extract both prefix type and number if found together
+   
+2. **Process extracted values:**
+   - Normalize "fix" to "bugfix/" for consistency
+   - Normalize "bug fix" to "bugfix/" for consistency  
+   - Normalize "hot fix" to "hotfix/" for consistency
+   - Add trailing slash to create proper prefix (e.g., "feature" → "feature/")
+   - Validate the number is a positive integer
+   
+3. **Clean the feature description:**
+   - Remove the spec number from the description (e.g., "221" or "#221" or "issue 221")
+   - Remove the prefix keyword if it was used as a branch type indicator (e.g., remove "feature" from "This is feature 221" to get "This is")
+   - Clean up any resulting double spaces or hanging prepositions
+   
+4. **Pass to script:**
+   - Bash: `--number 42` and optionally `--branch-prefix "feature/"`
+   - PowerShell: `-SpecNumber 42` and optionally `-BranchPrefix "feature/"`
+
+**If no spec number is specified:** The script will auto-increment from the highest existing spec number (default behavior).
+
+**Priority order:**
+1. `--number` CLI parameter (highest priority)
+2. `SPECIFY_SPEC_NUMBER` environment variable
+3. Auto-increment (default)
+**Recognized prefix types for natural language patterns:**
+- `feature` or `features` or `feature branch` → `feature/`
+- `bugfix` or `bug fix` → `bugfix/`
+- `fix` → `bugfix/` (normalized, lower priority if "bugfix" also present)
+- `hotfix` or `hot fix` → `hotfix/`
+- `chore` → `chore/`
+- `refactor` or `refactoring` → `refactor/`
+
+**Key principle:** Scan the ENTIRE user input for these keywords and numbers. They don't need to be adjacent or in any particular order. The algorithm will find them wherever they appear.
+
+## Branch Prefix Option
+
+Users can optionally specify a branch prefix when creating a feature by including it in their command. Look for these patterns in the user input:
+
+- `--branch-prefix <prefix>` or `-BranchPrefix <prefix>` format
+- Keywords like "use prefix", "with prefix", "as a feature branch", "as a bugfix", etc.
+- **Natural language patterns** (also extracts spec number if present):
+  - Scan the entire input for prefix keywords: "feature", "feature branch", "bugfix", "hotfix", "chore", "refactor"
+  - These keywords can appear anywhere in the sentence, not just adjacent to a number
+  - Examples:
+    - "feature 303" → prefix `feature/` and number `303` (adjacent)
+    - "feature branch, number 9696" → prefix `feature/` and number `9696` (separated)
+    - "This is feature 221" → prefix `feature/` and number `221` (adjacent in sentence)
+    - "bugfix 666 fix timeout" → prefix `bugfix/` and number `666` (adjacent)
+    - "For issue #42, make it a hotfix" → prefix `hotfix/` and number `42` (separated)
+    - "#999 chore task" → prefix `chore/` and number `999` (number first)
+
+  **Key:** The reference to prefix and number may come anywhere in the prompt - scan the entire input.
+
+**Common prefix patterns:**
+
+- `feature/` - For feature branches
+- `bugfix/` or `fix/` - For bug fixes
+- `hotfix/` - For urgent production fixes
+- `refactor/` - For refactoring work
+- `chore/` - For maintenance tasks
+
+**Examples of user input with branch prefix:**
+
+- "Add user authentication --branch-prefix feature/" (explicit parameter)
+- "Fix login timeout as a bugfix" (infer `bugfix/` prefix from keyword)
+- "Update payment API with prefix hotfix/" (explicit mention of prefix)
+- "feature branch, number 9696" (extract `feature/` and `9696` - separated)
+- "feature 303 implement shopping cart" (extract `feature/` and `303` - adjacent)
+- "This is feature 221 for auth" (extract `feature/` and `221` - adjacent in sentence)
+- "bugfix 666 resolve payment issue" (extract `bugfix/` and `666` - adjacent)
+- "For issue #42, create hotfix branch" (extract `hotfix/` and `42` - separated)
+- "Make #100 a chore task" (extract `chore/` and `100` - separated)
+
+**If branch prefix is specified:**
+
+1. Extract the prefix from the user input
+2. **If using natural language pattern** (e.g., "feature 303"):
+   - The spec number will also be extracted (see "Spec Number Option" above)
+   - Both prefix and number are removed from the feature description before processing
+3. Remove the prefix specification from the feature description before processing
+4. Pass the prefix to the script using the appropriate parameter:
+   - Bash: `--branch-prefix "prefix-value"`
+   - PowerShell: `-BranchPrefix "prefix-value"`
+
+**If no prefix is specified:** The script will use the default from configuration (`.specify/config.json`) or environment variable.
+
 ## Outline
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
 Given that feature description, do this:
 
-1. **Generate a concise short name** (2-4 words) for the branch:
-   - Analyze the feature description and extract the most meaningful keywords
-   - Create a 2-4 word short name that captures the essence of the feature
-   - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
-   - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
-   - Keep it concise but descriptive enough to understand the feature at a glance
-   - Examples:
-     - "I want to add user authentication" → "user-auth"
-     - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
-     - "Create a dashboard for analytics" → "analytics-dashboard"
-     - "Fix payment processing timeout bug" → "fix-payment-timeout"
+1. **Process Input & Generate Short Name**:
+   
+   a. **Extract & Clean**: 
+      - Scan the **ENTIRE** input for spec numbers and branch prefixes using the algorithms defined in "Spec Number Option" and "Branch Prefix Option" sections.
+      - **EXTRACT** these values if found (e.g., "feature branch, number 9696" → prefix=`feature/`, number=`9696`).
+      - **REMOVE** the matched patterns from the input text to get the clean feature description.
+      - **Example**: Input "Fix login bug. feature branch, number 9696" → Description "Fix login bug.", Prefix "feature/", Number "9696".
+   
+   b. **Generate Short Name**: 
+      - Analyze the **Clean Feature Description** (from step 1a) and extract the most meaningful keywords
+      - Create a 2-4 word short name that captures the essence of the feature
+      - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
+      - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
+      - Keep it concise but descriptive enough to understand the feature at a glance
+      - Examples:
+        - "I want to add user authentication" → "user-auth"
+        - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
+        - "Create a dashboard for analytics" → "analytics-dashboard"
+        - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
 2. **Check for existing branches before creating new one**:
 
@@ -58,18 +216,42 @@ Given that feature description, do this:
       - Use N+1 for the new branch number
 
    d. Run the script `{SCRIPT}` with the calculated number and short-name:
+      - **CRITICAL**: Use the spec number and branch prefix **extracted in Step 1a** if available.
       - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+      - If branch prefix was extracted, also pass `--branch-prefix "prefix/"`
+      - Bash example without prefix: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
+      - Bash example with prefix: `{SCRIPT} --json --number 5 --branch-prefix "feature/" --short-name "user-auth" "Add user authentication"`
+      - PowerShell example without prefix: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+      - PowerShell example with prefix: `{SCRIPT} -Json -Number 5 -BranchPrefix "feature/" -ShortName "user-auth" "Add user authentication"`   
 
    **IMPORTANT**:
+
    - Check all three sources (remote branches, local branches, specs directories) to find the highest number
    - Only match branches/directories with the exact short-name pattern
    - If no existing branches/directories found with this short-name, start with number 1
-   - You must only ever run this script once per feature
+   - Append the short-name argument to the `{SCRIPT}` command with the 2-4 word short name you created in step 1. Keep the feature description as the final argument.
+   - **CRITICAL**: If a spec number was extracted in Step 1a, include `--number <number>` parameter (Bash) or `-SpecNumber <number>` (PowerShell)
+   - **CRITICAL**: If a branch prefix was extracted in Step 1a, include `--branch-prefix "prefix/"` parameter (Bash) or `-BranchPrefix "prefix/"` (PowerShell)
+   - **Note:** Natural language patterns like "feature 303" or "bugfix 666" provide BOTH prefix and number - you MUST extract and pass BOTH parameters to the script
+
+   - Bash examples: 
+     - `--short-name "your-generated-short-name" "Feature description here"`
+     - `--short-name "user-auth" "Add user authentication"`
+     - `--number 42 --short-name "payment-api" "Add payment processing"`
+     - `--number 1234 --short-name "user-auth" --branch-prefix "feature/" "Add user authentication"`
+     - `--number 303 --branch-prefix "feature/" --short-name "shopping-cart" "Add shopping cart"` (from "feature 303 add shopping cart")
+     - `--number 666 --branch-prefix "bugfix/" --short-name "payment-timeout" "Fix payment timeout"` (from "bugfix 666 fix payment timeout")
+   - PowerShell examples:
+     - `-ShortName "your-generated-short-name" "Feature description here"`
+     - `-ShortName "user-auth" "Add user authentication"`
+     - `-SpecNumber 42 -ShortName "payment-api" "Add payment processing"`
+     - `-SpecNumber 1234 -ShortName "user-auth" -BranchPrefix "feature/" "Add user authentication"`
+     - `-SpecNumber 303 -BranchPrefix "feature/" -ShortName "shopping-cart" "Add shopping cart"` (from "feature 303 add shopping cart")
+     - `-SpecNumber 666 -BranchPrefix "bugfix/" -ShortName "payment-timeout" "Fix payment timeout"` (from "bugfix 666 fix payment timeout")
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
+   - You must only ever run this script once per feature
 
 3. Load `templates/spec-template.md` to understand required sections.
 
@@ -99,7 +281,13 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+5. Write the specification to SPEC_FILE using the template structure:
+   - Replace `[FEATURE NAME]` with a human-readable title derived from the description
+   - Replace `[###-feature-name]` with the **exact** `BRANCH_NAME` from the script output (including any prefix like `feature/` or `bugfix/`)
+   - Replace `[DATE]` with the current date
+   - Replace `"$ARGUMENTS"` with the original feature description
+   - Fill in the rest of the sections with concrete details derived from the feature description
+   - Preserve section order and headings
 
 6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
