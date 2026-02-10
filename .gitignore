@@ -44,3 +44,6 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# Ralph loop progress files (regenerated per session)
+specs/*/progress.txt
