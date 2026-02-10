@@ -34,7 +34,8 @@ rewrite_paths() {
   sed -E \
     -e 's@(/?)memory/@.specify/memory/@g' \
     -e 's@(/?)scripts/@.specify/scripts/@g' \
-    -e 's@(/?)templates/@.specify/templates/@g'
+    -e 's@(/?)templates/@.specify/templates/@g' \
+    -e 's@\.specify\.specify/@.specify/@g'
 }
 
 generate_commands() {
