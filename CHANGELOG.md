@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adds support for the version command. ([#486](https://github.com/github/spec-kit/issues/486))
 - Fixes potential bug with the `create-new-feature.ps1` script that ignores existing feature branches when determining next feature number ([#975](https://github.com/github/spec-kit/issues/975))
 - Add graceful fallback and logging for GitHub API rate-limiting during template fetch ([#970](https://github.com/github/spec-kit/issues/970))
+- **Factory CLI (`droid`)**: end-to-end support in Specify CLI init flow, agent context updaters, release packaging, and GitHub release artifacts.
 
 ## [0.0.21] - 2025-10-21
 
