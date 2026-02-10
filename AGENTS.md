@@ -48,6 +48,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Use `#` to reference files  |
 
 ### Step-by-Step Integration Guide
 
@@ -325,11 +326,18 @@ Work within integrated development environments:
 - **Windsurf**: Built into Windsurf IDE
 - **IBM Bob**: Built into IBM Bob IDE
 
+### Trae IDE
+
+Trae uses the `.trae/rules/` directory for context. To use Spec-Kit commands in Trae:
+
+1. Use **`#`** in the chat (e.g., `#speckit.plan.md`) to load the rule file.
+2. The AI will follow the instructions in the file.
+
 ## Command File Formats
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob, Trae
 
 **Standard format:**
 
@@ -371,6 +379,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
+  - Trae: `.trae/rules/`
 
 ## Argument Patterns
 
