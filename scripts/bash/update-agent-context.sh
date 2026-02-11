@@ -74,6 +74,7 @@ QODER_FILE="$REPO_ROOT/QODER.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
+JOYCODE_FILE="$REPO_ROOT/.joycode/rules/specify-rules.md"
 BOB_FILE="$REPO_ROOT/AGENTS.md"
 
 # Template file
@@ -627,6 +628,9 @@ update_specific_agent() {
         shai)
             update_agent_file "$SHAI_FILE" "SHAI"
             ;;
+        joycode)
+            update_agent_file "$JOYCODE_FILE" "JoyCode"
+            ;;
         q)
             update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
             ;;
@@ -635,7 +639,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder|joycode"
             exit 1
             ;;
     esac
@@ -705,6 +709,10 @@ update_all_existing_agents() {
         found_agent=true
     fi
 
+    if [[ -f "$JOYCODE_FILE" ]]; then
+        update_agent_file "$JOYCODE_FILE" "JoyCode"
+        found_agent=true
+         
     if [[ -f "$QODER_FILE" ]]; then
         update_agent_file "$QODER_FILE" "Qoder CLI"
         found_agent=true
