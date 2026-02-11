@@ -16,18 +16,18 @@ jobs:
       - uses: actions/stale@v9
         with:
           # Days of inactivity before an issue or PR becomes stale
-          days-before-stale: 180
+          days-before-stale: 150
           # Days of inactivity before a stale issue or PR is closed (after being marked stale)
-          days-before-close: 7
+          days-before-close: 30
           
           # Stale issue settings
-          stale-issue-message: 'This issue has been automatically marked as stale because it has not had any activity for 180 days. It will be closed in 7 days if no further activity occurs.'
-          close-issue-message: 'This issue has been automatically closed due to inactivity. If you believe this issue is still relevant, please reopen it or create a new issue.'
+          stale-issue-message: 'This issue has been automatically marked as stale because it has not had any activity for 150 days. It will be closed in 30 days if no further activity occurs.'
+          close-issue-message: 'This issue has been automatically closed due to inactivity (180 days total). If you believe this issue is still relevant, please reopen it or create a new issue.'
           stale-issue-label: 'stale'
           
           # Stale PR settings
-          stale-pr-message: 'This pull request has been automatically marked as stale because it has not had any activity for 180 days. It will be closed in 7 days if no further activity occurs.'
-          close-pr-message: 'This pull request has been automatically closed due to inactivity. If you believe this PR is still relevant, please reopen it or create a new PR.'
+          stale-pr-message: 'This pull request has been automatically marked as stale because it has not had any activity for 150 days. It will be closed in 30 days if no further activity occurs.'
+          close-pr-message: 'This pull request has been automatically closed due to inactivity (180 days total). If you believe this PR is still relevant, please reopen it or create a new PR.'
           stale-pr-label: 'stale'
           
           # Exempt issues and PRs with these labels from being marked as stale
