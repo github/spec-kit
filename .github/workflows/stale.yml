@@ -17,16 +17,16 @@ jobs:
         with:
           # Days of inactivity before an issue or PR becomes stale
           days-before-stale: 180
-          # Days of inactivity before a stale issue or PR is closed
-          days-before-close: 0
+          # Days of inactivity before a stale issue or PR is closed (after being marked stale)
+          days-before-close: 7
           
           # Stale issue settings
-          stale-issue-message: 'This issue has been automatically marked as stale because it has not had any activity for 180 days. It will be closed if no further activity occurs.'
+          stale-issue-message: 'This issue has been automatically marked as stale because it has not had any activity for 180 days. It will be closed in 7 days if no further activity occurs.'
           close-issue-message: 'This issue has been automatically closed due to inactivity. If you believe this issue is still relevant, please reopen it or create a new issue.'
           stale-issue-label: 'stale'
           
           # Stale PR settings
-          stale-pr-message: 'This pull request has been automatically marked as stale because it has not had any activity for 180 days. It will be closed if no further activity occurs.'
+          stale-pr-message: 'This pull request has been automatically marked as stale because it has not had any activity for 180 days. It will be closed in 7 days if no further activity occurs.'
           close-pr-message: 'This pull request has been automatically closed due to inactivity. If you believe this PR is still relevant, please reopen it or create a new PR.'
           stale-pr-label: 'stale'
           
