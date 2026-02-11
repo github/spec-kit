@@ -30,7 +30,7 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder, Amp, SHAI, or Amazon Q Developer CLI
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
@@ -619,7 +619,7 @@ update_specific_agent() {
             update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
             ;;
         qoder)
-            update_agent_file "$QODER_FILE" "Qoder CLI"
+            update_agent_file "$QODER_FILE" "Qoder"
             ;;
         amp)
             update_agent_file "$AMP_FILE" "Amp"
@@ -706,7 +706,7 @@ update_all_existing_agents() {
     fi
 
     if [[ -f "$QODER_FILE" ]]; then
-        update_agent_file "$QODER_FILE" "Qoder CLI"
+        update_agent_file "$QODER_FILE" "Qoder"
         found_agent=true
     fi
 

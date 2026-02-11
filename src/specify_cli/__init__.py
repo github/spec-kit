@@ -191,9 +191,9 @@ AGENT_CONFIG = {
         "requires_cli": True,
     },
     "qoder": {
-        "name": "Qoder CLI",
+        "name": "Qoder",
         "folder": ".qoder/",
-        "install_url": "https://qoder.com/cli",
+        "install_url": "https://qoder.com",
         "requires_cli": True,
     },
     "roo": {
