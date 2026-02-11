@@ -48,6 +48,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| **CatPaw**                 | `.catpaw/commands/`    | Markdown | N/A (IDE-based) | CatPaw IDE                  |
 
 ### Step-by-Step Integration Guide
 
@@ -322,6 +323,7 @@ Require a command-line tool to be installed:
 Work within integrated development environments:
 
 - **GitHub Copilot**: Built into VS Code/compatible editors
+- **CatPaw**: Built into CatPaw IDE
 - **Windsurf**: Built into Windsurf IDE
 - **IBM Bob**: Built into IBM Bob IDE
 
