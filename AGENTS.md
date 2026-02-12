@@ -47,6 +47,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amazon Q Developer CLI** | `.amazonq/prompts/`    | Markdown | `q`             | Amazon Q Developer CLI      |
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
+| **Tabnine CLI**            | `.tabnine/commands/`   | TOML     | `tabnine`       | Tabnine CLI                 |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 
 ### Step-by-Step Integration Guide
@@ -316,6 +317,7 @@ Require a command-line tool to be installed:
 - **Qoder CLI**: `qoder` CLI
 - **Amp**: `amp` CLI
 - **SHAI**: `shai` CLI
+- **Tabnine CLI**: `tabnine` CLI
 
 ### IDE-Based Agents
 
@@ -354,7 +356,7 @@ Command content with {SCRIPT} and $ARGUMENTS placeholders.
 
 ### TOML Format
 
-Used by: Gemini, Qwen
+Used by: Gemini, Qwen, Tabnine
 
 ```toml
 description = "Command description"

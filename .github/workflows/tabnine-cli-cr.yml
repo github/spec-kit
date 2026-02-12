@@ -1,0 +1,178 @@
+name: "Tabnine: Code Review"
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # Prevent runaway jobs
+    # Only run on certain conditions
+    if: github.actor != 'dependabot[bot]' && github.actor != 'github-actions[bot]' && github.actor != 'TabnineCLI@tabnine.com'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          
+      - name: Install Tabnine CLI
+        timeout-minutes: 10
+        run: |
+          export TABNINE_HOST=https://console.tabnine.com
+          
+          # Download installer first, verify, then execute
+          curl -fsSL "$TABNINE_HOST/update/cli/installer.mjs" -o installer.mjs
+
+          node installer.mjs "$TABNINE_HOST"
+
+          # Verify installation succeeded
+          if [ ! -f ~/.local/bin/tabnine ]; then
+            echo "Error: Tabnine CLI installation failed"
+            exit 1
+          fi
+          
+      - name: Configure git
+        run: |
+          git config user.name "Tabnine CLI Agent"
+          git config user.email "TabnineCLI@tabnine.com"
+
+      - name: Configure Tabnine Auth & Settings
+        env:
+          TABNINE_KEY: ${{ secrets.TABNINE_KEY }}
+        run: |
+          # Validate TABNINE_KEY secret
+          if [ -z "$TABNINE_KEY" ]; then
+            echo "Error: Required authentication secret is not configured"
+            exit 1
+          fi
+          
+          mkdir -p ~/.tabnine/agent
+          
+          # Write Settings
+          cat << 'EOF' > ~/.tabnine/agent/settings.json
+          {
+            "general": {
+              "tabnineHost": "https://console.tabnine.com"
+            },
+            "security": {
+              "auth": {
+                "selectedType": "tabnine-personal"
+              }
+            }
+          }
+          EOF
+          
+          # Write Credentials securely with error handling
+          if ! printf "%s" "$TABNINE_KEY" > ~/.tabnine/agent/tabnine_creds.json; then
+            echo "Error: Failed to write credentials"
+            exit 1
+          fi
+          
+          chmod 600 ~/.tabnine/agent/tabnine_creds.json
+
+      - name: Authenticate GitHub CLI
+        run: |
+          gh auth login --with-token <<< ${{ github.token }}
+
+      - name: Code Review
+        timeout-minutes: 25
+        run: |
+          ~/.local/bin/tabnine -y -p "## 1. Persona & Context
+          You are a Senior Software Engineer performing a rigorous code review for the this project.
+          Your goal is to ensure the codebase remains high-quality, maintainable, and secure.
+
+          ## 2. Environment & Tools
+          You are running in a GitHub Actions CI environment with full access to the shell and the pre-authenticated 'gh' CLI.
+          - Repository: ${{ github.repository }}
+          - PR Number: ${{ github.event.pull_request.number }}
+          - PR Head SHA: ${{ github.event.pull_request.head.sha }}
+          - PR Base SHA: ${{ github.event.pull_request.base.sha }}
+
+          ## 3. Operational Procedure
+
+          ### Phase A: Understanding the Change
+          1. Execute 'gh pr view --json title,body,comments' to understand the intent.
+          2. Execute 'gh pr diff' to examine the implementation.
+
+          ### Phase B: Check Existing Comments
+          1. Get existing comments: 'gh pr view --json comments'
+          2. If a previously reported issue appears fixed, reply with a resolved comment.
+
+          ### Phase C: Engineering Audit
+          Evaluate the code against these Software Engineering pillars:
+
+          **Correctness & Logic**: Does the code solve the problem? Are there edge cases, off-by-one errors, or race conditions?
+
+          **Maintainability & Readability**: Are names self-explanatory? Is the code simple and modular? Are complex parts documented?
+
+          **Security & Reliability**: Are inputs sanitized? Are secrets exposed? Does error handling fail safely?
+
+          **Performance**: Are there unnecessary allocations or blocking operations?
+
+          **Project Specifics**: Cross-platform paths (Windows/Linux), backward compatibility with config files.
+
+          ## 4. Comment Value Threshold (CRITICAL FILTER)
+          
+          Before posting ANY comment, it MUST pass ALL of these criteria:
+
+          **DO comment if the issue:**
+          - Introduces a bug, security vulnerability, or data loss risk
+          - Breaks backward compatibility or cross-platform support
+          - Causes performance regression or memory leak
+          - Violates critical project patterns (e.g., error handling, path handling)
+          - Makes the code significantly harder to maintain or debug
+
+          **DO NOT comment on:**
+          - Style preferences unless they harm readability (e.g., variable naming is fine unless truly confusing)
+          - Minor optimizations that don't impact real-world performance
+          - Suggestions to 'improve' code that is already clear and working
+          - Nitpicks about formatting, spacing, or trivial refactoring opportunities
+          - Personal preferences about code structure when existing approach is valid
+          - Educational comments explaining what the code does (assume the author understands their code)
+
+          **Golden Rule**: If removing your comment would NOT increase the risk of bugs, security issues, or maintenance problems, DO NOT POST IT.
+
+          ### Phase D: Inline Comments
+          
+          For each potential issue from Phase C:
+          1. Apply the Comment Value Threshold filter above
+          2. If it passes the filter, verify:
+             - The file exists in the diff output
+             - The line number is within changed lines
+             - No duplicate feedback exists on nearby lines
+          3. Only then submit the comment
+
+          Submit inline comments using:
+
+          For SINGLE-LINE comments:
+          gh api --method POST -H 'Accept: application/vnd.github+json' /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f body='YOUR_COMMENT' -f commit_id='${{ github.event.pull_request.head.sha }}' -f path='FILE_PATH' -F line=LINE_NUMBER -f side='RIGHT'
+
+          For MULTI-LINE comments:
+          gh api --method POST -H 'Accept: application/vnd.github+json' /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f body='YOUR_COMMENT' -f commit_id='${{ github.event.pull_request.head.sha }}' -f path='FILE_PATH' -F start_line=START_LINE_NUMBER -f start_side='RIGHT' -F line=END_LINE_NUMBER -f side='RIGHT'
+
+          **Code Suggestions**: Use GitHub's suggestion syntax ONLY when the fix is clear, unambiguous, and replaces 10 or fewer lines:
+          ```suggestion
+          // Your replacement code
+          ```
+
+          For larger changes or context-dependent fixes, provide guidance as a regular comment without the suggestion block.
+
+          ### Phase E: Final Summary
+          After submitting inline comments (or if zero comments were posted), post a holistic summary:
+
+          gh pr review --comment -b 'YOUR_SUMMARY'
+
+          Your summary must:
+          - Acknowledge what the PR accomplishes
+          - Note any critical issues found (or state 'No critical issues identified')
+          - Be concise
+
+          ## 5. Tone Guidelines
+          - Constructive: Suggest improvements or alternatives.
+          - Objective: Focus on code, not author.
+          - Professional: Use clear, concise language.
+          - High Signal: Only comment when it genuinely helps prevent problems."
