@@ -948,6 +948,41 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+def ensure_constitution_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Copy constitution template to memory if it doesn't exist (preserves existing constitution on reinitialization)."""
+    memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
+    template_constitution = project_path / ".specify" / "templates" / "constitution-template.md"
+
+    # If constitution already exists in memory, preserve it
+    if memory_constitution.exists():
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.skip("constitution", "existing file preserved")
+        return
+
+    # If template doesn't exist, something went wrong with extraction
+    if not template_constitution.exists():
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.error("constitution", "template not found")
+        return
+
+    # Copy template to memory directory
+    try:
+        memory_constitution.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(template_constitution, memory_constitution)
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.complete("constitution", "copied from template")
+        else:
+            console.print(f"[cyan]Initialized constitution from template[/cyan]")
+    except Exception as e:
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.error("constitution", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
@@ -1114,6 +1149,7 @@ def init(
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
+        ("constitution", "Constitution setup"),
         ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
@@ -1133,6 +1169,8 @@ def init(
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             ensure_executable_scripts(project_path, tracker=tracker)
+
+            ensure_constitution_from_template(project_path, tracker=tracker)
 
             if not no_git:
                 tracker.start("git")
@@ -1366,6 +1404,641 @@ def version():
 
     console.print(panel)
     console.print()
+
+
+# ===== Extension Commands =====
+
+extension_app = typer.Typer(
+    name="extension",
+    help="Manage spec-kit extensions",
+    add_completion=False,
+)
+app.add_typer(extension_app, name="extension")
+
+
+def get_speckit_version() -> str:
+    """Get current spec-kit version."""
+    import importlib.metadata
+    try:
+        return importlib.metadata.version("specify-cli")
+    except Exception:
+        # Fallback: try reading from pyproject.toml
+        try:
+            import tomllib
+            pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+            if pyproject_path.exists():
+                with open(pyproject_path, "rb") as f:
+                    data = tomllib.load(f)
+                    return data.get("project", {}).get("version", "unknown")
+        except Exception:
+            # Intentionally ignore any errors while reading/parsing pyproject.toml.
+            # If this lookup fails for any reason, we fall back to returning "unknown" below.
+            pass
+    return "unknown"
+
+
+@extension_app.command("list")
+def extension_list(
+    available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
+    all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
+):
+    """List installed extensions."""
+    from .extensions import ExtensionManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+    installed = manager.list_installed()
+
+    if not installed and not (available or all_extensions):
+        console.print("[yellow]No extensions installed.[/yellow]")
+        console.print("\nInstall an extension with:")
+        console.print("  specify extension add <extension-name>")
+        return
+
+    if installed:
+        console.print("\n[bold cyan]Installed Extensions:[/bold cyan]\n")
+
+        for ext in installed:
+            status_icon = "✓" if ext["enabled"] else "✗"
+            status_color = "green" if ext["enabled"] else "red"
+
+            console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']})")
+            console.print(f"     {ext['description']}")
+            console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
+            console.print()
+
+    if available or all_extensions:
+        console.print("\nInstall an extension:")
+        console.print("  [cyan]specify extension add <name>[/cyan]")
+
+
+@extension_app.command("add")
+def extension_add(
+    extension: str = typer.Argument(help="Extension name or path"),
+    dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
+    from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
+):
+    """Install an extension."""
+    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+    speckit_version = get_speckit_version()
+
+    try:
+        with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
+            if dev:
+                # Install from local directory
+                source_path = Path(extension).expanduser().resolve()
+                if not source_path.exists():
+                    console.print(f"[red]Error:[/red] Directory not found: {source_path}")
+                    raise typer.Exit(1)
+
+                if not (source_path / "extension.yml").exists():
+                    console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
+                    raise typer.Exit(1)
+
+                manifest = manager.install_from_directory(source_path, speckit_version)
+
+            elif from_url:
+                # Install from URL (ZIP file)
+                import urllib.request
+                import urllib.error
+                from urllib.parse import urlparse
+
+                # Validate URL
+                parsed = urlparse(from_url)
+                is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+
+                if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+                    console.print("[red]Error:[/red] URL must use HTTPS for security.")
+                    console.print("HTTP is only allowed for localhost URLs.")
+                    raise typer.Exit(1)
+
+                # Warn about untrusted sources
+                console.print("[yellow]Warning:[/yellow] Installing from external URL.")
+                console.print("Only install extensions from sources you trust.\n")
+                console.print(f"Downloading from {from_url}...")
+
+                # Download ZIP to temp location
+                download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+                download_dir.mkdir(parents=True, exist_ok=True)
+                zip_path = download_dir / f"{extension}-url-download.zip"
+
+                try:
+                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                        zip_data = response.read()
+                    zip_path.write_bytes(zip_data)
+
+                    # Install from downloaded ZIP
+                    manifest = manager.install_from_zip(zip_path, speckit_version)
+                except urllib.error.URLError as e:
+                    console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
+                    raise typer.Exit(1)
+                finally:
+                    # Clean up downloaded ZIP
+                    if zip_path.exists():
+                        zip_path.unlink()
+
+            else:
+                # Install from catalog
+                catalog = ExtensionCatalog(project_root)
+
+                # Check if extension exists in catalog
+                ext_info = catalog.get_extension_info(extension)
+                if not ext_info:
+                    console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
+                    console.print("\nSearch available extensions:")
+                    console.print("  specify extension search")
+                    raise typer.Exit(1)
+
+                # Download extension ZIP
+                console.print(f"Downloading {ext_info['name']} v{ext_info.get('version', 'unknown')}...")
+                zip_path = catalog.download_extension(extension)
+
+                try:
+                    # Install from downloaded ZIP
+                    manifest = manager.install_from_zip(zip_path, speckit_version)
+                finally:
+                    # Clean up downloaded ZIP
+                    if zip_path.exists():
+                        zip_path.unlink()
+
+        console.print(f"\n[green]✓[/green] Extension installed successfully!")
+        console.print(f"\n[bold]{manifest.name}[/bold] (v{manifest.version})")
+        console.print(f"  {manifest.description}")
+        console.print(f"\n[bold cyan]Provided commands:[/bold cyan]")
+        for cmd in manifest.commands:
+            console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
+
+        console.print(f"\n[yellow]⚠[/yellow]  Configuration may be required")
+        console.print(f"   Check: .specify/extensions/{manifest.id}/")
+
+    except ValidationError as e:
+        console.print(f"\n[red]Validation Error:[/red] {e}")
+        raise typer.Exit(1)
+    except CompatibilityError as e:
+        console.print(f"\n[red]Compatibility Error:[/red] {e}")
+        raise typer.Exit(1)
+    except ExtensionError as e:
+        console.print(f"\n[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@extension_app.command("remove")
+def extension_remove(
+    extension: str = typer.Argument(help="Extension ID to remove"),
+    keep_config: bool = typer.Option(False, "--keep-config", help="Don't remove config files"),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation"),
+):
+    """Uninstall an extension."""
+    from .extensions import ExtensionManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+
+    # Check if extension is installed
+    if not manager.registry.is_installed(extension):
+        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
+        raise typer.Exit(1)
+
+    # Get extension info
+    ext_manifest = manager.get_extension(extension)
+    if ext_manifest:
+        ext_name = ext_manifest.name
+        cmd_count = len(ext_manifest.commands)
+    else:
+        ext_name = extension
+        cmd_count = 0
+
+    # Confirm removal
+    if not force:
+        console.print(f"\n[yellow]⚠  This will remove:[/yellow]")
+        console.print(f"   • {cmd_count} commands from AI agent")
+        console.print(f"   • Extension directory: .specify/extensions/{extension}/")
+        if not keep_config:
+            console.print(f"   • Config files (will be backed up)")
+        console.print()
+
+        confirm = typer.confirm("Continue?")
+        if not confirm:
+            console.print("Cancelled")
+            raise typer.Exit(0)
+
+    # Remove extension
+    success = manager.remove(extension, keep_config=keep_config)
+
+    if success:
+        console.print(f"\n[green]✓[/green] Extension '{ext_name}' removed successfully")
+        if keep_config:
+            console.print(f"\nConfig files preserved in .specify/extensions/{extension}/")
+        else:
+            console.print(f"\nConfig files backed up to .specify/extensions/.backup/{extension}/")
+        console.print(f"\nTo reinstall: specify extension add {extension}")
+    else:
+        console.print(f"[red]Error:[/red] Failed to remove extension")
+        raise typer.Exit(1)
+
+
+@extension_app.command("search")
+def extension_search(
+    query: str = typer.Argument(None, help="Search query (optional)"),
+    tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
+    author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
+    verified: bool = typer.Option(False, "--verified", help="Show only verified extensions"),
+):
+    """Search for available extensions in catalog."""
+    from .extensions import ExtensionCatalog, ExtensionError
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    catalog = ExtensionCatalog(project_root)
+
+    try:
+        console.print("🔍 Searching extension catalog...")
+        results = catalog.search(query=query, tag=tag, author=author, verified_only=verified)
+
+        if not results:
+            console.print("\n[yellow]No extensions found matching criteria[/yellow]")
+            if query or tag or author or verified:
+                console.print("\nTry:")
+                console.print("  • Broader search terms")
+                console.print("  • Remove filters")
+                console.print("  • specify extension search (show all)")
+            raise typer.Exit(0)
+
+        console.print(f"\n[green]Found {len(results)} extension(s):[/green]\n")
+
+        for ext in results:
+            # Extension header
+            verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
+            console.print(f"[bold]{ext['name']}[/bold] (v{ext['version']}){verified_badge}")
+            console.print(f"  {ext['description']}")
+
+            # Metadata
+            console.print(f"\n  [dim]Author:[/dim] {ext.get('author', 'Unknown')}")
+            if ext.get('tags'):
+                tags_str = ", ".join(ext['tags'])
+                console.print(f"  [dim]Tags:[/dim] {tags_str}")
+
+            # Stats
+            stats = []
+            if ext.get('downloads') is not None:
+                stats.append(f"Downloads: {ext['downloads']:,}")
+            if ext.get('stars') is not None:
+                stats.append(f"Stars: {ext['stars']}")
+            if stats:
+                console.print(f"  [dim]{' | '.join(stats)}[/dim]")
+
+            # Links
+            if ext.get('repository'):
+                console.print(f"  [dim]Repository:[/dim] {ext['repository']}")
+
+            # Install command
+            console.print(f"\n  [cyan]Install:[/cyan] specify extension add {ext['id']}")
+            console.print()
+
+    except ExtensionError as e:
+        console.print(f"\n[red]Error:[/red] {e}")
+        console.print("\nTip: The catalog may be temporarily unavailable. Try again later.")
+        raise typer.Exit(1)
+
+
+@extension_app.command("info")
+def extension_info(
+    extension: str = typer.Argument(help="Extension ID or name"),
+):
+    """Show detailed information about an extension."""
+    from .extensions import ExtensionCatalog, ExtensionManager, ExtensionError
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    catalog = ExtensionCatalog(project_root)
+    manager = ExtensionManager(project_root)
+
+    try:
+        ext_info = catalog.get_extension_info(extension)
+
+        if not ext_info:
+            console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
+            console.print("\nTry: specify extension search")
+            raise typer.Exit(1)
+
+        # Header
+        verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
+        console.print(f"\n[bold]{ext_info['name']}[/bold] (v{ext_info['version']}){verified_badge}")
+        console.print(f"ID: {ext_info['id']}")
+        console.print()
+
+        # Description
+        console.print(f"{ext_info['description']}")
+        console.print()
+
+        # Author and License
+        console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
+        console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
+        console.print()
+
+        # Requirements
+        if ext_info.get('requires'):
+            console.print("[bold]Requirements:[/bold]")
+            reqs = ext_info['requires']
+            if reqs.get('speckit_version'):
+                console.print(f"  • Spec Kit: {reqs['speckit_version']}")
+            if reqs.get('tools'):
+                for tool in reqs['tools']:
+                    tool_name = tool['name']
+                    tool_version = tool.get('version', 'any')
+                    required = " (required)" if tool.get('required') else " (optional)"
+                    console.print(f"  • {tool_name}: {tool_version}{required}")
+            console.print()
+
+        # Provides
+        if ext_info.get('provides'):
+            console.print("[bold]Provides:[/bold]")
+            provides = ext_info['provides']
+            if provides.get('commands'):
+                console.print(f"  • Commands: {provides['commands']}")
+            if provides.get('hooks'):
+                console.print(f"  • Hooks: {provides['hooks']}")
+            console.print()
+
+        # Tags
+        if ext_info.get('tags'):
+            tags_str = ", ".join(ext_info['tags'])
+            console.print(f"[bold]Tags:[/bold] {tags_str}")
+            console.print()
+
+        # Statistics
+        stats = []
+        if ext_info.get('downloads') is not None:
+            stats.append(f"Downloads: {ext_info['downloads']:,}")
+        if ext_info.get('stars') is not None:
+            stats.append(f"Stars: {ext_info['stars']}")
+        if stats:
+            console.print(f"[bold]Statistics:[/bold] {' | '.join(stats)}")
+            console.print()
+
+        # Links
+        console.print("[bold]Links:[/bold]")
+        if ext_info.get('repository'):
+            console.print(f"  • Repository: {ext_info['repository']}")
+        if ext_info.get('homepage'):
+            console.print(f"  • Homepage: {ext_info['homepage']}")
+        if ext_info.get('documentation'):
+            console.print(f"  • Documentation: {ext_info['documentation']}")
+        if ext_info.get('changelog'):
+            console.print(f"  • Changelog: {ext_info['changelog']}")
+        console.print()
+
+        # Installation status and command
+        is_installed = manager.registry.is_installed(ext_info['id'])
+        if is_installed:
+            console.print("[green]✓ Installed[/green]")
+            console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
+        else:
+            console.print("[yellow]Not installed[/yellow]")
+            console.print(f"\n[cyan]Install:[/cyan] specify extension add {ext_info['id']}")
+
+    except ExtensionError as e:
+        console.print(f"\n[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@extension_app.command("update")
+def extension_update(
+    extension: str = typer.Argument(None, help="Extension ID to update (or all)"),
+):
+    """Update extension(s) to latest version."""
+    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError
+    from packaging import version as pkg_version
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+    catalog = ExtensionCatalog(project_root)
+
+    try:
+        # Get list of extensions to update
+        if extension:
+            # Update specific extension
+            if not manager.registry.is_installed(extension):
+                console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
+                raise typer.Exit(1)
+            extensions_to_update = [extension]
+        else:
+            # Update all extensions
+            installed = manager.list_installed()
+            extensions_to_update = [ext["id"] for ext in installed]
+
+        if not extensions_to_update:
+            console.print("[yellow]No extensions installed[/yellow]")
+            raise typer.Exit(0)
+
+        console.print("🔄 Checking for updates...\n")
+
+        updates_available = []
+
+        for ext_id in extensions_to_update:
+            # Get installed version
+            metadata = manager.registry.get(ext_id)
+            installed_version = pkg_version.Version(metadata["version"])
+
+            # Get catalog info
+            ext_info = catalog.get_extension_info(ext_id)
+            if not ext_info:
+                console.print(f"⚠  {ext_id}: Not found in catalog (skipping)")
+                continue
+
+            catalog_version = pkg_version.Version(ext_info["version"])
+
+            if catalog_version > installed_version:
+                updates_available.append(
+                    {
+                        "id": ext_id,
+                        "installed": str(installed_version),
+                        "available": str(catalog_version),
+                        "download_url": ext_info.get("download_url"),
+                    }
+                )
+            else:
+                console.print(f"✓ {ext_id}: Up to date (v{installed_version})")
+
+        if not updates_available:
+            console.print("\n[green]All extensions are up to date![/green]")
+            raise typer.Exit(0)
+
+        # Show available updates
+        console.print("\n[bold]Updates available:[/bold]\n")
+        for update in updates_available:
+            console.print(
+                f"  • {update['id']}: {update['installed']} → {update['available']}"
+            )
+
+        console.print()
+        confirm = typer.confirm("Update these extensions?")
+        if not confirm:
+            console.print("Cancelled")
+            raise typer.Exit(0)
+
+        # Perform updates
+        console.print()
+        for update in updates_available:
+            ext_id = update["id"]
+            console.print(f"📦 Updating {ext_id}...")
+
+            # TODO: Implement download and reinstall from URL
+            # For now, just show  message
+            console.print(
+                f"[yellow]Note:[/yellow] Automatic update not yet implemented. "
+                f"Please update manually:"
+            )
+            console.print(f"  specify extension remove {ext_id} --keep-config")
+            console.print(f"  specify extension add {ext_id}")
+
+        console.print(
+            "\n[cyan]Tip:[/cyan] Automatic updates will be available in a future version"
+        )
+
+    except ExtensionError as e:
+        console.print(f"\n[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@extension_app.command("enable")
+def extension_enable(
+    extension: str = typer.Argument(help="Extension ID to enable"),
+):
+    """Enable a disabled extension."""
+    from .extensions import ExtensionManager, HookExecutor
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+    hook_executor = HookExecutor(project_root)
+
+    if not manager.registry.is_installed(extension):
+        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
+        raise typer.Exit(1)
+
+    # Update registry
+    metadata = manager.registry.get(extension)
+    if metadata.get("enabled", True):
+        console.print(f"[yellow]Extension '{extension}' is already enabled[/yellow]")
+        raise typer.Exit(0)
+
+    metadata["enabled"] = True
+    manager.registry.add(extension, metadata)
+
+    # Enable hooks in extensions.yml
+    config = hook_executor.get_project_config()
+    if "hooks" in config:
+        for hook_name in config["hooks"]:
+            for hook in config["hooks"][hook_name]:
+                if hook.get("extension") == extension:
+                    hook["enabled"] = True
+        hook_executor.save_project_config(config)
+
+    console.print(f"[green]✓[/green] Extension '{extension}' enabled")
+
+
+@extension_app.command("disable")
+def extension_disable(
+    extension: str = typer.Argument(help="Extension ID to disable"),
+):
+    """Disable an extension without removing it."""
+    from .extensions import ExtensionManager, HookExecutor
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+    hook_executor = HookExecutor(project_root)
+
+    if not manager.registry.is_installed(extension):
+        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
+        raise typer.Exit(1)
+
+    # Update registry
+    metadata = manager.registry.get(extension)
+    if not metadata.get("enabled", True):
+        console.print(f"[yellow]Extension '{extension}' is already disabled[/yellow]")
+        raise typer.Exit(0)
+
+    metadata["enabled"] = False
+    manager.registry.add(extension, metadata)
+
+    # Disable hooks in extensions.yml
+    config = hook_executor.get_project_config()
+    if "hooks" in config:
+        for hook_name in config["hooks"]:
+            for hook in config["hooks"][hook_name]:
+                if hook.get("extension") == extension:
+                    hook["enabled"] = False
+        hook_executor.save_project_config(config)
+
+    console.print(f"[green]✓[/green] Extension '{extension}' disabled")
+    console.print(f"\nCommands will no longer be available. Hooks will not execute.")
+    console.print(f"To re-enable: specify extension enable {extension}")
+
 
 def main():
     app()
