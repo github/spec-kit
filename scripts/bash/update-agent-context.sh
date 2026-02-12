@@ -30,7 +30,7 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, Cline, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
@@ -69,6 +69,7 @@ WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
 KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
 AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
+CLINE_FILE="$REPO_ROOT/.clinerules/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 QODER_FILE="$REPO_ROOT/QODER.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
@@ -615,6 +616,9 @@ update_specific_agent() {
         roo)
             update_agent_file "$ROO_FILE" "Roo Code"
             ;;
+        cline)
+            update_agent_file "$CLINE_FILE" "Cline"
+            ;;
         codebuddy)
             update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
             ;;
@@ -635,7 +639,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|cline|amp|shai|q|bob|qoder"
             exit 1
             ;;
     esac
@@ -695,6 +699,11 @@ update_all_existing_agents() {
         found_agent=true
     fi
 
+    if [[ -f "$CLINE_FILE" ]]; then
+        update_agent_file "$CLINE_FILE" "Cline"
+        found_agent=true
+    fi
+
     if [[ -f "$CODEBUDDY_FILE" ]]; then
         update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
         found_agent=true
@@ -744,7 +753,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|cline|codebuddy|shai|q|bob|qoder]"
 }
 
 #==============================================================================
