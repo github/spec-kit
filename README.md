@@ -188,8 +188,7 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                  |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                             |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                    |
-
-| `--ai-skills`       | Flag     | Install Prompt.MD templates as agent skills in `.agent/skills/` directory (requires `--ai`)                                                                                                  |
+| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in `.agent/skills/` directory (requires `--ai`)                                                                                                  |
 ### Examples
 
 ```bash

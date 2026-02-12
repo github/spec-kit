@@ -1071,10 +1071,18 @@ def install_ai_skills(project_path: Path, tracker: StepTracker = None) -> bool:
                 enhanced_desc = original_desc or f"Spec-kit workflow command: {command_name}"
             
             # Create SKILL.md following agentskills.io spec
+            frontmatter = {
+                "name": skill_name,
+                "description": enhanced_desc,
+                "compatibility": "Requires git and spec-kit project structure with .agent/skills/ directory",
+            }
+            frontmatter_yaml = yaml.safe_dump(
+                frontmatter,
+                sort_keys=False,
+                default_flow_style=False,
+            ).strip()
             skill_content = f"""---
-name: {skill_name}
-description: {enhanced_desc}
-compatibility: Requires git and spec-kit project structure with .agent/skills/ directory
+{frontmatter_yaml}
 ---
 
 # Speckit {command_name.title()} Skill
@@ -1420,7 +1428,6 @@ def init(
     console.print(enhancements_panel)
 
 
-
 @app.command()
 def check():
     """Check that all required tools are installed."""
@@ -1462,7 +1469,6 @@ def check():
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
-
 
 
 @app.command()
