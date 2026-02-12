@@ -48,6 +48,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| **PI**                     | `.pi/skills/`          | Markdown | `pi`            | PI coding agent CLI         |
 
 ### Step-by-Step Integration Guide
 
@@ -316,6 +317,7 @@ Require a command-line tool to be installed:
 - **Qoder CLI**: `qoder` CLI
 - **Amp**: `amp` CLI
 - **SHAI**: `shai` CLI
+- **PI**: `pi` CLI
 
 ### IDE-Based Agents
 
@@ -329,7 +331,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob, PI
 
 **Standard format:**
 
