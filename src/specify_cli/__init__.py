@@ -223,8 +223,8 @@ AGENT_CONFIG = {
     "agy": {
         "name": "Antigravity",
         "folder": ".agent/",
-        "install_url": None,
-        "requires_cli": True,
+        "install_url": None,  # IDE-based
+        "requires_cli": False,
     },
     "bob": {
         "name": "IBM Bob",
