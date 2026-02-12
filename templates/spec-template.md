@@ -113,3 +113,56 @@
 - **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
 - **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
 - **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+
+## Design Considerations *(optional)*
+
+<!--
+  Include this section when the feature has specific design/UI requirements.
+  Reference: See `.specify/memory/design-system.md` for full design system guidelines.
+  
+  This section bridges the gap between functional requirements and visual implementation.
+  Focus on WHAT the UI should accomplish, not HOW it should be built (that's for the plan).
+-->
+
+[DESIGN_NOTES]
+<!-- Example:
+
+**Visual Elements from Design System:**
+- Primary buttons for main actions (Sign Up, Submit)
+- Card components for content grouping
+- Form inputs with validation states (error, success)
+- Badge components for status indicators
+
+**Component Patterns to Use:**
+- Form pattern (vertical stacking, clear labels, helper text)
+- Card grid pattern for feature display (3 columns on desktop, 1 on mobile)
+- Navigation pattern with user menu
+
+**Accessibility Requirements:**
+- All interactive elements keyboard accessible
+- Color contrast meets WCAG AA (minimum 4.5:1 for text)
+- Screen reader labels for icon-only buttons
+- Error messages announced to screen readers
+- Focus indicators visible on all focusable elements
+
+**Responsive Behavior:**
+- Mobile-first approach (single column on mobile)
+- 2-column layout on tablet (768px+)
+- 3-column layout on desktop (1024px+)
+- Touch-optimized buttons on mobile (min 44x44px)
+
+**Specific Design Guidance:**
+- Use primary color for CTAs, secondary for less prominent actions
+- Success state shown with green checkmark + message
+- Loading states with spinner + disabled interaction
+- Empty states with icon + helpful message + CTA
+
+**Custom Requirements Not in Design System:**
+- [Any feature-specific design needs that deviate from or extend the design system]
+- [Justify why custom approach is needed]
+- [Ensure doesn't conflict with design system principles]
+
+**Questions for Design Review:**
+- [Any uncertain UI/UX decisions that need design input]
+- [Trade-offs between different design approaches]
+-->
