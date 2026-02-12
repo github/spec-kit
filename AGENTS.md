@@ -45,6 +45,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **CodeBuddy CLI**          | `.codebuddy/commands/` | Markdown | `codebuddy`     | CodeBuddy CLI               |
 | **Qoder CLI**              | `.qoder/commands/`     | Markdown | `qoder`         | Qoder CLI                   |
 | **Amazon Q Developer CLI** | `.amazonq/prompts/`    | Markdown | `q`             | Amazon Q Developer CLI      |
+| **Kiro CLI**               | `.kiro/prompts/`       | Markdown | `kiro`          | Kiro CLI                    |
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
@@ -312,6 +313,7 @@ Require a command-line tool to be installed:
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
 - **Amazon Q Developer CLI**: `q` CLI
+- **Kiro CLI**: `kiro` CLI
 - **CodeBuddy CLI**: `codebuddy` CLI
 - **Qoder CLI**: `qoder` CLI
 - **Amp**: `amp` CLI
@@ -329,7 +331,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob, Kiro
 
 **Standard format:**
 

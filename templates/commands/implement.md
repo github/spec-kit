@@ -25,7 +25,7 @@ You **MUST** consider the user input before proceeding (if not empty).
      - Incomplete items: Lines matching `- [ ]`
    - Create a status table:
 
-     ```text
+     ```
      | Checklist | Total | Completed | Incomplete | Status |
      |-----------|-------|-----------|------------|--------|
      | ux.md     | 12    | 12        | 0          | ✓ PASS |
