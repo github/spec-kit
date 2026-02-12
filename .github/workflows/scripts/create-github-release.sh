@@ -52,5 +52,6 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-agy-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-bob-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-bob-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-hoosh-sh-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \
   --notes-file release_notes.md
