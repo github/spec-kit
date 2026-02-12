@@ -17,4 +17,6 @@ jobs:
       - name: Run markdownlint-cli2
         uses: DavidAnson/markdownlint-cli2-action@v19
         with:
-          globs: '**/*.md'
+          globs: |
+            '**/*.md'
+            !extensions/**/*.md

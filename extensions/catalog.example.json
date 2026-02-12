@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-02-03T00:00:00Z",
+  "catalog_url": "https://your-org.example.com/speckit/catalog.json",
+  "extensions": {
+    "jira": {
+      "name": "Jira Integration",
+      "id": "jira",
+      "description": "Create Jira Epics, Stories, and Issues from spec-kit artifacts",
+      "author": "Your Organization",
+      "version": "2.1.0",
+      "download_url": "https://github.com/your-org/spec-kit-jira/archive/refs/tags/v2.1.0.zip",
+      "repository": "https://github.com/your-org/spec-kit-jira",
+      "homepage": "https://github.com/your-org/spec-kit-jira",
+      "documentation": "https://github.com/your-org/spec-kit-jira/blob/main/README.md",
+      "changelog": "https://github.com/your-org/spec-kit-jira/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "atlassian",
+            "version": ">=1.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": ["jira", "atlassian", "issue-tracking"],
+      "verified": true,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-01-28T00:00:00Z",
+      "updated_at": "2026-02-03T00:00:00Z"
+    },
+    "linear": {
+      "name": "Linear Integration",
+      "id": "linear",
+      "description": "Sync specs and tasks with Linear issues",
+      "author": "Your Organization",
+      "version": "1.0.0",
+      "download_url": "https://github.com/your-org/spec-kit-linear/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/your-org/spec-kit-linear",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2
+      },
+      "tags": ["linear", "issue-tracking"],
+      "verified": false,
+      "created_at": "2026-01-30T00:00:00Z",
+      "updated_at": "2026-01-30T00:00:00Z"
+    }
+  }
+}

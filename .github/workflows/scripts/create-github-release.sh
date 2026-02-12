@@ -48,6 +48,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-shai-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-q-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-q-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-agy-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-agy-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-bob-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-bob-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-hoosh-sh-"$VERSION".zip \
