@@ -990,16 +990,15 @@ def install_ai_skills(project_path: Path, tracker: StepTracker = None) -> bool:
     Returns:
         True if installation successful, False otherwise
     """
-    # Find the spec-kit templates directory
-    # The templates are bundled with the package, so look relative to this file
-    script_dir = Path(__file__).parent.parent.parent  # Go up from src/specify_cli/ to repo root
-    templates_dir = script_dir / "templates" / "commands"
+    # Find the project-local templates directory
+    # Use the extracted templates under the initialized project, consistent with ensure_constitution_from_template
+    templates_dir = project_path / ".specify" / "templates" / "commands"
     
     if not templates_dir.exists():
         if tracker:
-            tracker.error("ai-skills", "templates/commands not found")
+            tracker.error("ai-skills", "project .specify/templates/commands not found")
         else:
-            console.print("[yellow]Warning: templates/commands directory not found, skipping skills installation[/yellow]")
+            console.print("[yellow]Warning: project .specify/templates/commands directory not found, skipping skills installation[/yellow]")
         return False
     
     # Get all markdown files
