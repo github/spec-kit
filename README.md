@@ -189,7 +189,7 @@ The `specify` command supports the following options:
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                             |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                    |
 
-| `--agent-skills`       | Flag     | Install Prompt.MD templates as agent skills in `.agent/skills/` directory (requires `--ai`)                                                                                                  |
+| `--ai-skills`       | Flag     | Install Prompt.MD templates as agent skills in `.agent/skills/` directory (requires `--ai`)                                                                                                  |
 ### Examples
 
 ```bash
@@ -240,10 +240,10 @@ specify init my-project --ai claude --debug
 specify init my-project --ai claude --github-token ghp_your_token_here
 
 # Install agent skills with the project
-specify init my-project --ai claude --agent-skills
+specify init my-project --ai claude --ai-skills
 
 # Initialize in current directory with agent skills
-specify init --here --ai gemini --agent-skills
+specify init --here --ai gemini --ai-skills
 
 # Check system requirements
 specify check

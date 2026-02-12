@@ -979,7 +979,7 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
 
-def install_agent_skills(project_path: Path, tracker: StepTracker = None) -> bool:
+def install_ai_skills(project_path: Path, tracker: StepTracker = None) -> bool:
     """
     Install Prompt.MD files from templates/commands/ as agent skills per agentskills.io spec.
     
@@ -997,7 +997,7 @@ def install_agent_skills(project_path: Path, tracker: StepTracker = None) -> boo
     
     if not templates_dir.exists():
         if tracker:
-            tracker.error("agent-skills", "templates/commands not found")
+            tracker.error("ai-skills", "templates/commands not found")
         else:
             console.print("[yellow]Warning: templates/commands directory not found, skipping skills installation[/yellow]")
         return False
@@ -1006,7 +1006,7 @@ def install_agent_skills(project_path: Path, tracker: StepTracker = None) -> boo
     command_files = list(templates_dir.glob("*.md"))
     if not command_files:
         if tracker:
-            tracker.skip("agent-skills", "no command templates found")
+            tracker.skip("ai-skills", "no command templates found")
         else:
             console.print("[yellow]No command templates found to install[/yellow]")
         return False
@@ -1016,8 +1016,8 @@ def install_agent_skills(project_path: Path, tracker: StepTracker = None) -> boo
     skills_dir.mkdir(parents=True, exist_ok=True)
     
     if tracker:
-        tracker.add("agent-skills", f"Install {len(command_files)} agent skills")
-        tracker.start("agent-skills")
+        tracker.add("ai-skills", f"Install {len(command_files)} agent skills")
+        tracker.start("ai-skills")
     
     installed_count = 0
     for command_file in command_files:
@@ -1074,7 +1074,7 @@ def install_agent_skills(project_path: Path, tracker: StepTracker = None) -> boo
             skill_content = f"""---
 name: {skill_name}
 description: {enhanced_desc}
-compatibility: Requires git and spec-kit project structure with .specify/ directory
+compatibility: Requires git and spec-kit project structure with .agent/skills/ directory
 ---
 
 # Speckit {command_name.title()} Skill
@@ -1090,14 +1090,14 @@ compatibility: Requires git and spec-kit project structure with .specify/ direct
             installed_count += 1
             
         except Exception as e:
-            console.print(f"[yellow]Warning: Failed to install skill {command_name}: {e}[/yellow]")
+            console.print(f"[yellow]Warning: Failed to install skill {command_file.stem}: {e}[/yellow]")
             continue
     
     if tracker:
         if installed_count > 0:
-            tracker.complete("agent-skills", f"{installed_count} skills installed")
+            tracker.complete("ai-skills", f"{installed_count} skills installed")
         else:
-            tracker.error("agent-skills", "no skills installed")
+            tracker.error("ai-skills", "no skills installed")
     else:
         if installed_count > 0:
             console.print(f"[green]✓[/green] Installed {installed_count} agent skills to .agent/skills/")
@@ -1118,7 +1118,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
-    agent_skills: bool = typer.Option(False, "--agent-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
+    ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -1159,10 +1159,10 @@ def init(
         console.print("[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag")
         raise typer.Exit(1)
 
-    # Validate --agent-skills requires --ai
-    if agent_skills and not ai_assistant:
-        console.print("[red]Error:[/red] --agent-skills requires --ai to be specified")
-        console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --agent-skills")
+    # Validate --ai-skills requires --ai
+    if ai_skills and not ai_assistant:
+        console.print("[red]Error:[/red] --ai-skills requires --ai to be specified")
+        console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
         raise typer.Exit(1)
 
 
@@ -1304,8 +1304,8 @@ def init(
             ensure_constitution_from_template(project_path, tracker=tracker)
 
             # Install agent skills if requested
-            if agent_skills:
-                install_agent_skills(project_path, tracker=tracker)
+            if ai_skills:
+                install_ai_skills(project_path, tracker=tracker)
 
             if not no_git:
                 tracker.start("git")

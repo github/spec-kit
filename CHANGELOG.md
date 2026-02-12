@@ -126,7 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Agent Skills Installation**: New `--agent-skills` CLI option to install Prompt.MD templates as agent skills following [agentskills.io specification](https://agentskills.io/specification)
+- **Agent Skills Installation**: New `--ai-skills` CLI option to install Prompt.MD templates as agent skills following [agentskills.io specification](https://agentskills.io/specification)
   - Skills are installed to `.agent/skills/<skill-name>/SKILL.md` directory structure
   - Requires `--ai` flag to be specified
   - Converts all 9 spec-kit command templates (specify, plan, tasks, implement, analyze, clarify, constitution, checklist, taskstoissues) to properly formatted SKILL.md files
