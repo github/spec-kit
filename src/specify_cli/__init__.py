@@ -1130,29 +1130,6 @@ metadata:
         else:
             console.print("[yellow]No skills were installed[/yellow]")
 
-    # When skills are installed, remove the duplicate command files that were
-    # extracted from the template archive.  This prevents the agent from
-    # seeing both /commands and /skills for the same functionality.
-    if installed_count > 0:
-        agent_config = AGENT_CONFIG.get(selected_ai, {})
-        agent_folder = agent_config.get("folder", "")
-        if agent_folder:
-            commands_dir = project_path / agent_folder.rstrip("/") / "commands"
-            if commands_dir.exists():
-                removed = 0
-                for cmd_file in list(commands_dir.glob("speckit.*")):
-                    try:
-                        cmd_file.unlink()
-                        removed += 1
-                    except OSError:
-                        pass
-                # Remove the commands directory if it is now empty
-                try:
-                    if commands_dir.exists() and not any(commands_dir.iterdir()):
-                        commands_dir.rmdir()
-                except OSError:
-                    pass
-
     return installed_count > 0
 
 
@@ -1353,6 +1330,19 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+
+            # When --ai-skills is used on a NEW project, remove the command
+            # files that the template archive just created.  Skills replace
+            # commands, so keeping both would be confusing.  For --here on an
+            # existing repo we leave pre-existing commands untouched to avoid
+            # a breaking change.
+            if ai_skills and not here:
+                agent_cfg = AGENT_CONFIG.get(selected_ai, {})
+                agent_folder = agent_cfg.get("folder", "")
+                if agent_folder:
+                    cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
+                    if cmds_dir.exists():
+                        shutil.rmtree(cmds_dir)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
