@@ -7,6 +7,19 @@ All notable changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-02-13
+
+### Added
+
+- **Agent Skills Installation**: New `--ai-skills` CLI option to install Prompt.MD templates as agent skills following [agentskills.io specification](https://agentskills.io/specification)
+  - Skills are installed to agent-specific directories (e.g., `.claude/skills/`, `.gemini/skills/`, `.github/skills/`)
+  - Codex uses `.agents/skills/` per [OpenAI Codex docs](https://developers.openai.com/codex/skills)
+  - Default fallback directory is `.agents/skills/` for agents without a specific mapping
+  - Requires `--ai` flag to be specified
+  - Converts all 9 spec-kit command templates (specify, plan, tasks, implement, analyze, clarify, constitution, checklist, taskstoissues) to properly formatted SKILL.md files
+  - Additive only: does not duplicate or interfere with existing prompt commands
+  - `pyyaml` dependency (already present) used for YAML frontmatter parsing
+
 ## [0.1.0] - 2026-01-28
 
 ### Added
