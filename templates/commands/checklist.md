@@ -82,6 +82,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - spec.md: Feature requirements and scope
    - plan.md (if exists): Technical details, dependencies
    - tasks.md (if exists): Implementation tasks
+   - **IF `SPECS_DIR/_shared/` exists**: Read all `.md` files for project-wide standards (security requirements, accessibility standards, coding conventions). Incorporate these into checklist generation to ensure project-wide requirements are validated.
 
    **Context Loading Strategy**:
    - Load only necessary portions relevant to active focus areas (avoid full-file dumping)

@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
+# Escape a string for safe inclusion in JSON (handles all JSON-required escapes)
+json_escape() {
+    local str="$1"
+    # Escape backslashes first, then quotes, then control characters
+    str="${str//\\/\\\\}"
+    str="${str//\"/\\\"}"
+    str="${str//$'\n'/\\n}"
+    str="${str//$'\r'/\\r}"
+    str="${str//$'\t'/\\t}"
+    str="${str//$'\b'/\\b}"
+    str="${str//$'\f'/\\f}"
+    # Remove any remaining control characters (U+0000-U+001F) that are
+    # not covered above, since they are invalid unescaped in JSON strings.
+    str="$(printf '%s' "$str" | tr -d '\000-\006\016-\037')"
+    printf '%s' "$str"
+}
+
 # Get repository root, with fallback for non-git repositories
 get_repo_root() {
     if git rev-parse --show-toplevel >/dev/null 2>&1; then
@@ -10,6 +27,24 @@ get_repo_root() {
         local script_dir="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         (cd "$script_dir/../../.." && pwd)
     fi
+}
+
+# Get specs directory, with support for external location via SPECIFY_SPECS_DIR
+get_specs_dir() {
+    local repo_root="${1:-$(get_repo_root)}"
+    local specs_dir
+    
+    if [[ -n "${SPECIFY_SPECS_DIR:-}" ]]; then
+        specs_dir="$SPECIFY_SPECS_DIR"
+        # Resolve relative paths against repo root
+        if [[ "$specs_dir" != /* ]]; then
+            specs_dir="$repo_root/$specs_dir"
+        fi
+    else
+        specs_dir="$repo_root/specs"
+    fi
+    
+    echo "$specs_dir"
 }
 
 # Get current branch, with fallback for non-git repositories
@@ -28,7 +63,7 @@ get_current_branch() {
 
     # For non-git repos, try to find the latest feature directory
     local repo_root=$(get_repo_root)
-    local specs_dir="$repo_root/specs"
+    local specs_dir="$(get_specs_dir "$repo_root")"
 
     if [[ -d "$specs_dir" ]]; then
         local latest_feature=""
@@ -66,6 +101,12 @@ check_feature_branch() {
     local branch="$1"
     local has_git_repo="$2"
 
+    # When SPECIFY_SPECS_DIR is set (e.g., worktree mode), skip branch naming
+    # validation since the branch/worktree may not follow the NNN- convention.
+    if [[ -n "${SPECIFY_SPECS_DIR:-}" ]]; then
+        return 0
+    fi
+
     # For non-git repos, we can't enforce branch naming but still provide output
     if [[ "$has_git_repo" != "true" ]]; then
         echo "[specify] Warning: Git repository not detected; skipped branch validation" >&2
@@ -81,14 +122,14 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
+get_feature_dir() { echo "$(get_specs_dir "$1")/$2"; }
 
 # Find feature directory by numeric prefix instead of exact branch match
 # This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
 find_feature_dir_by_prefix() {
     local repo_root="$1"
     local branch_name="$2"
-    local specs_dir="$repo_root/specs"
+    local specs_dir="$(get_specs_dir "$repo_root")"
 
     # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
     if [[ ! "$branch_name" =~ ^([0-9]{3})- ]]; then
