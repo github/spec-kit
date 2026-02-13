@@ -1,0 +1,11 @@
+ticket_id: <TICKET-ID>
+status: draft  # draft|in_progress|done
+owner: <name>
+created: <YYYY-MM-DD>
+updated: <YYYY-MM-DD>
+links:
+  jira: <url-or-key>
+  pr: []
+  runs: []
+notes: |
+  <free-form notes>
