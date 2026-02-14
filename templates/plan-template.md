@@ -3,7 +3,7 @@
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
+**Note**: This template is filled in by the `/speckit.plan` command. The execution workflow is defined in your AI agent's command configuration (e.g., `.claude/commands/speckit.plan.md`, `.cursor/commands/speckit.plan.md`, `.codex/prompts/speckit.plan.md`, etc.).
 
 ## Summary
 
