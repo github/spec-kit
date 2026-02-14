@@ -35,6 +35,12 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
+# Validate description is not empty after trimming (e.g., user passed only whitespace)
+if ([string]::IsNullOrWhiteSpace($featureDesc)) {
+    Write-Error "Error: Feature description cannot be empty or contain only whitespace"
+    exit 1
+}
+
 # Resolve repository root. Prefer git information when available, but fall back
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialized with --no-git.
@@ -242,10 +248,26 @@ if ($branchName.Length -gt $maxBranchLength) {
 }
 
 if ($hasGit) {
+    $branchCreated = $false
     try {
-        git checkout -b $branchName | Out-Null
+        git checkout -b $branchName 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $branchCreated = $true
+        }
     } catch {
-        Write-Warning "Failed to create git branch: $branchName"
+        # Exception during git command
+    }
+
+    if (-not $branchCreated) {
+        # Check if branch already exists
+        $existingBranch = git branch --list $branchName 2>$null
+        if ($existingBranch) {
+            Write-Error "Error: Branch '$branchName' already exists. Please use a different feature name or specify a different number with -Number."
+            exit 1
+        } else {
+            Write-Error "Error: Failed to create git branch '$branchName'. Please check your git configuration and try again."
+            exit 1
+        }
     }
 } else {
     Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
