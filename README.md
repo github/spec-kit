@@ -75,6 +75,12 @@ To upgrade Specify, see the [Upgrade Guide](./docs/upgrade.md) for detailed inst
 uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
 ```
 
+**Note**: To use custom templates from your own fork, install from your fork URL:
+
+```bash
+uv tool install specify-cli --from git+https://github.com/gouzhuang/spec-kit.git
+```
+
 #### Option 2: One-time Usage
 
 Run directly without installing:
@@ -189,6 +195,7 @@ The `specify` command supports the following options:
 | `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                  |
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                             |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                    |
+| `--template-repo`      | Option   | Custom template repository in `owner/repo` format (e.g., `gouzhuang/spec-kit`)                                                                                                              |
 
 ### Examples
 
@@ -238,6 +245,9 @@ specify init my-project --ai claude --debug
 
 # Use GitHub token for API requests (helpful for corporate environments)
 specify init my-project --ai claude --github-token ghp_your_token_here
+
+# Use custom template repository (for forks or private deployments)
+specify init my-project --ai claude --template-repo gouzhuang/spec-kit
 
 # Check system requirements
 specify check
