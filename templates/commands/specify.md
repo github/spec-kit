@@ -51,9 +51,10 @@ Given that feature description, do this:
       - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
       - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
       - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
+      - Use the highest branch number found across all sources, or if none exists, set the number to one more than the count of existing specs
 
    c. Determine the next available number:
-      - Extract all numbers from all three sources
+      - Extract all numbers from all four sources
       - Find the highest number N
       - Use N+1 for the new branch number
 
