@@ -1,0 +1,33 @@
+# Kimi CLI Configuration for Spec Kit
+# This file configures Kimi CLI to work with Spec Kit
+
+# Default model to use
+default_model = "kimi"
+default_thinking = false
+default_yolo = false
+
+[models]
+
+[models.kimi]
+provider = "moonshot"
+model = "kimi-k2-5"
+max_context_size = 256000
+
+[providers]
+
+[providers.moonshot]
+type = "kimi"
+# Set your API key via environment variable: MOONSHOT_API_KEY
+# or configure it here: api_key = "your-api-key"
+base_url = "https://api.moonshot.cn/v1"
+
+[loop_control]
+max_steps_per_turn = 100
+max_retries_per_step = 3
+max_ralph_iterations = 0
+reserved_context_size = 50000
+
+[services]
+
+[mcp.client]
+tool_call_timeout_ms = 60000
