@@ -5,6 +5,15 @@ scripts:
   ps: scripts/powershell/check-prerequisites.ps1 -Json
 ---
 
+## Language Requirements
+
+**ALL checklist content MUST be written in Korean (한글)**
+- Section headings in the checklist file should remain in English for template compatibility
+- All checklist items, questions, and descriptions must be in Korean
+- Technical terms can be kept in English when appropriate (e.g., API, UX, NFR)
+- Quality dimension markers remain in English (e.g., [Completeness], [Clarity], [Gap])
+- Spec section references remain as-is (e.g., [Spec §FR-1])
+
 ## Checklist Purpose: "Unit Tests for English"
 
 **CRITICAL CONCEPT**: Checklists are **UNIT TESTS FOR REQUIREMENTS WRITING** - they validate the quality, clarity, and completeness of requirements in a given domain.

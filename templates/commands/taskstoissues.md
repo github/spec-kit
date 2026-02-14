@@ -14,6 +14,15 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Language Requirements
+
+**ALL GitHub issue content MUST be written in Korean (한글)**
+- Issue titles must be in Korean
+- Issue descriptions must be in Korean
+- Technical terms can be kept in English when appropriate (e.g., API, GitHub)
+- File paths and code identifiers remain in English
+- User interaction and reporting must be in Korean
+
 ## Outline
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").

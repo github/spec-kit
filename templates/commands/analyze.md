@@ -167,6 +167,14 @@ Ask the user: "Would you like me to suggest concrete remediation edits for the t
 
 ## Operating Principles
 
+### Language Requirements
+
+**ALL analysis output MUST be written in Korean (한글)**
+- Section headings should remain in English for template compatibility
+- All descriptions, findings, recommendations, and summaries must be in Korean
+- Technical terms can be kept in English when appropriate (e.g., API, CRITICAL, HIGH)
+- Report tables should have Korean column headers and content
+
 ### Context Efficiency
 
 - **Minimal high-signal tokens**: Focus on actionable findings, not exhaustive documentation

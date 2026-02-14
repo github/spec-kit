@@ -24,6 +24,15 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Language Requirements
+
+**ALL planning content MUST be written in Korean (한글)**
+- Section headings in planning documents should remain in English for template compatibility
+- All descriptions, decisions, rationales, and technical context must be in Korean
+- Technical terms can be kept in English when appropriate (e.g., API, REST, GraphQL)
+- File paths and code identifiers remain in English
+- User interaction and reporting must be in Korean
+
 ## Outline
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
