@@ -133,7 +133,7 @@ AGENT_CONFIG = {
     "claude": {
         "name": "Claude Code",
         "folder": ".claude/",
-        "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
+        "install_url": "https://code.claude.com/docs/en/setup",
         "requires_cli": True,
     },
     "gemini": {
