@@ -102,6 +102,17 @@ After a plan is created, this command analyzes the plan and related design docum
 3. **Parallelization**: Marks independent tasks `[P]` and outlines safe parallel groups
 4. **Output**: Writes `tasks.md` in the feature directory, ready for execution by a Task agent
 
+### The `/speckit.status` Command
+
+At any point in the workflow, this command provides visibility into project and feature progress:
+
+1. **Project Overview**: Shows all features with their workflow stage (specify → plan → tasks → implement)
+2. **Artifact Status**: Displays which documents exist for the current feature
+3. **Progress Tracking**: For features in implementation, shows task completion percentages
+4. **Next Action**: Recommends the logical next command based on current state
+
+This is particularly useful when resuming work after a break, managing multiple features, or onboarding to an existing project.
+
 ### Example: Building a Chat Feature
 
 Here's how these commands transform the traditional development workflow:
