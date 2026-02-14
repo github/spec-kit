@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-This guide will help you get started with Spec-Driven Development using Spec Kit.
+This guide will help you get started with Spec-Driven Development using Spec Kit for **new projects**.
 
 > [!NOTE]
 > All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
@@ -33,7 +33,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 **In your AI Agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
 
-```markdown
+```bash
 /speckit.constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
 ```
 
@@ -41,7 +41,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 **In the chat**, use the `/speckit.specify` slash command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
-```markdown
+```bash
 /speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
@@ -57,7 +57,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 **In the chat**, use the `/speckit.plan` slash command to provide your tech stack and architecture choices.
 
-```markdown
+```bash
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
@@ -65,21 +65,24 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 **In the chat**, use the `/speckit.tasks` slash command to create an actionable task list.
 
-```markdown
+```bash
 /speckit.tasks
 ```
 
 Optionally, validate the plan with `/speckit.analyze`:
 
-```markdown
+```bash
 /speckit.analyze
 ```
 
 Then, use the `/speckit.implement` slash command to execute the plan.
 
-```markdown
+```bash
 /speckit.implement
 ```
+
+> [!TIP]
+> The `implement` prompt automatically tells your agent to work on tasks for the branch currently checked out.
 
 ## Detailed Example: Building Taskify
 
@@ -89,13 +92,13 @@ Here's a complete example of building a team productivity platform:
 
 Initialize the project's constitution to set ground rules:
 
-```markdown
+```bash
 /speckit.constitution Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
 ```
 
 ### Step 2: Define Requirements with `/speckit.specify`
 
-```text
+```bash
 Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
 assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
 let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
@@ -143,9 +146,10 @@ Have your AI agent audit the implementation plan using `/speckit.analyze`:
 /speckit.analyze
 ```
 
-Finally, implement the solution:
+Finally, generate tasks and implement the solution:
 
 ```bash
+/speckit.tasks
 /speckit.implement
 ```
 
