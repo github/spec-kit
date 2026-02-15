@@ -167,8 +167,8 @@ Shallow Git clones of registry repos, cached between sessions. Refreshed explici
 3. For each registry, check cache (clone/fetch if missing or `--refresh`)
 4. Search `packages/*/package.yaml` for matching name
 5. If found in multiple registries — error, require `--registry` flag
-6. Validate `minispec` version compatibility
-7. Check `agents` compatibility with current project
+6. ~~Validate `minispec` version compatibility~~ (deferred — field is stored but not enforced)
+7. ~~Check `agents` compatibility with current project~~ (deferred — field is stored but not enforced)
 8. Copy files per `files` mapping (merge where `merge: true`)
 9. Update `installed` section in `.minispec/registries.yaml`
 
@@ -183,5 +183,5 @@ Shallow Git clones of registry repos, cached between sessions. Refreshed explici
 
 - Should `package.yaml` support dependencies between packages?
 - Should there be a `minispec validate` command that checks installed packages against their registry versions?
-- How should `merge: true` handle conflicts in JSON/YAML files?
+- ~~How should `merge: true` handle conflicts in JSON/YAML files?~~ **Resolved**: Uses deep merge with "last writer wins" — nested dicts are merged recursively, scalars and lists from the package overwrite existing values. See `_deep_merge()` in `registry.py`.
 - Should packages support pre/post install scripts, or is that a security risk?
