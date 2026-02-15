@@ -1,1 +1,11 @@
 * text=auto eol=lf
+
+# Polyglot wrappers - MUST use Unix line endings (LF) to work on Windows
+scripts/check-prerequisites text eol=lf
+scripts/setup-plan text eol=lf
+scripts/create-new-feature text eol=lf
+scripts/update-agent-context text eol=lf
+
+# Platform-specific scripts (explicit for clarity)
+scripts/bash/*.sh text eol=lf
+scripts/powershell/*.ps1 text eol=crlf

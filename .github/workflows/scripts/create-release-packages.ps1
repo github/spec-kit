@@ -92,27 +92,27 @@ function Generate-Commands {
             $description = $matches[1]
         }
         
-        # Extract script command from YAML frontmatter
+        # Extract script command from scripts: section (both sh and ps now have same path)
         $scriptCommand = ""
-        if ($fileContent -match "(?m)^\s*${ScriptVariant}:\s*(.+)$") {
-            $scriptCommand = $matches[1]
+        if ($fileContent -match '(?m)^\s*sh:\s*(.+)$') {
+            $scriptCommand = $matches[1].Trim()
         }
         
         if ([string]::IsNullOrEmpty($scriptCommand)) {
-            Write-Warning "No script command found for $ScriptVariant in $($template.Name)"
-            $scriptCommand = "(Missing script command for $ScriptVariant)"
+            Write-Warning "No script command found in $($template.Name)"
+            $scriptCommand = "(Missing script command)"
         }
         
-        # Extract agent_script command from YAML frontmatter if present
+        # Extract agent_script command from agent_scripts: section if present
         $agentScriptCommand = ""
-        if ($fileContent -match "(?ms)agent_scripts:.*?^\s*${ScriptVariant}:\s*(.+?)$") {
+        if ($fileContent -match '(?ms)agent_scripts:.*?^\s*sh:\s*(.+?)$') {
             $agentScriptCommand = $matches[1].Trim()
         }
         
-        # Replace {SCRIPT} placeholder with the script command
+        # Replace {SCRIPT} placeholder with the actual polyglot wrapper path
         $body = $fileContent -replace '\{SCRIPT\}', $scriptCommand
         
-        # Replace {AGENT_SCRIPT} placeholder with the agent script command if found
+        # Replace {AGENT_SCRIPT} placeholder if found
         if (-not [string]::IsNullOrEmpty($agentScriptCommand)) {
             $body = $body -replace '\{AGENT_SCRIPT\}', $agentScriptCommand
         }

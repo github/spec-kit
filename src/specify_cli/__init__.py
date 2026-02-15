@@ -905,7 +905,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
+    """Ensure POSIX .sh scripts and polyglot wrappers under .specify/scripts have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
     scripts_root = project_path / ".specify" / "scripts"
@@ -913,6 +913,8 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
         return
     failures: list[str] = []
     updated = 0
+    
+    # Process .sh files (existing logic)
     for script in scripts_root.rglob("*.sh"):
         try:
             if script.is_symlink() or not script.is_file():
@@ -936,13 +938,50 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             updated += 1
         except Exception as e:
             failures.append(f"{script.relative_to(scripts_root)}: {e}")
+    
+    # Process polyglot wrappers (extensionless files with shebang)
+    polyglot_wrappers = [
+        "check-prerequisites",
+        "setup-plan",
+        "create-new-feature",
+        "update-agent-context"
+    ]
+    
+    for wrapper_name in polyglot_wrappers:
+        wrapper = scripts_root / wrapper_name
+        if not wrapper.is_file():
+            continue
+        try:
+            # Check for shebang
+            with wrapper.open("rb") as f:
+                if f.read(2) != b"#!":
+                    continue
+            
+            st = wrapper.stat()
+            mode = st.st_mode
+            if mode & 0o111:  # Already executable
+                continue
+            
+            # Set execute permissions
+            new_mode = mode
+            if mode & 0o400: new_mode |= 0o100
+            if mode & 0o040: new_mode |= 0o010
+            if mode & 0o004: new_mode |= 0o001
+            if not (new_mode & 0o100):
+                new_mode |= 0o100
+            
+            os.chmod(wrapper, new_mode)
+            updated += 1
+        except Exception as e:
+            failures.append(f"{wrapper_name}: {e}")
+    
     if tracker:
         detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
-        tracker.add("chmod", "Set script permissions recursively")
+        tracker.add("chmod", "Set script permissions")
         (tracker.error if failures else tracker.complete)("chmod", detail)
     else:
         if updated:
-            console.print(f"[cyan]Updated execute permissions on {updated} script(s) recursively[/cyan]")
+            console.print(f"[cyan]Updated execute permissions on {updated} script(s)[/cyan]")
         if failures:
             console.print("[yellow]Some scripts could not be updated:[/yellow]")
             for f in failures:

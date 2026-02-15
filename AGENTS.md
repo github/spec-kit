@@ -14,6 +14,117 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 - Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
 
+## Polyglot Wrapper Scripts
+
+To eliminate platform-specific script references and merge conflicts in mixed-OS teams, Spec Kit uses polyglot wrapper scripts that work on both Unix and Windows.
+
+### How Polyglot Wrappers Work
+
+Wrapper scripts (e.g., `scripts/check-prerequisites`) have no file extension and use a special pattern:
+
+```bash
+#!/usr/bin/env bash
+# 2>nul & @echo off & goto :batch
+
+# ===== UNIX SECTION =====
+"$(dirname "$0")/bash/script-name.sh" "$@"
+exit $?
+
+:batch
+@REM ===== WINDOWS SECTION =====
+@powershell -ExecutionPolicy Bypass -File "%~dp0powershell\script-name.ps1" %*
+```
+
+**On Unix/macOS:**
+- Shebang (`#!/usr/bin/env bash`) executes bash
+- `#` lines are comments
+- Runs Unix section, exits before `:batch`
+
+**On Windows cmd.exe:**
+- `#` fails silently (redirected to `nul`)
+- `goto :batch` jumps to Windows section
+- Executes PowerShell script
+
+**On Git Bash (Windows):**
+- Behaves like Unix (shebang works)
+
+### Benefits
+
+✅ **Single reference** - All agents use same path: `scripts/check-prerequisites`
+✅ **No merge conflicts** - Same path works on all platforms
+✅ **Team harmony** - Mixed OS teams use identical commands
+✅ **Simpler docs** - No platform-specific instructions
+✅ **Backward compatible** - Original scripts still work
+
+### Implementation Details
+
+**Polyglot wrappers:**
+- `scripts/check-prerequisites`
+- `scripts/setup-plan`
+- `scripts/create-new-feature`
+- `scripts/update-agent-context`
+
+**Platform-specific implementations:**
+- `scripts/bash/*.sh` (Unix/macOS)
+- `scripts/powershell/*.ps1` (Windows)
+
+**Argument conversion:**
+- Windows wrappers automatically convert kebab-case to PowerShell PascalCase
+- `--json` → `-Json`, `--require-tasks` → `-RequireTasks`, etc.
+- Uses helper script: `scripts/powershell/Convert-KebabToPascal.ps1`
+- Escape hatch: Use `--` separator to pass remaining args unchanged
+- Debug mode: Set `DEBUG_WRAPPER=1` to see conversions
+
+**Git configuration:**
+- Polyglot wrappers MUST use LF line endings (enforced in `.gitattributes`)
+- Execute permissions set automatically by `specify init`
+
+### Command Template Architecture
+
+Command templates (`templates/commands/*.md`) use a `scripts:` section during package generation:
+
+```yaml
+---
+description: "Command description"
+scripts:
+  sh: scripts/check-prerequisites --json
+  ps: scripts/check-prerequisites --json
+---
+
+## Outline
+
+1. **Setup**: Run `{SCRIPT}` from repo root...
+```
+
+**How it works:**
+
+1. **Template files** contain both `sh:` and `ps:` entries with identical paths (pointing to polyglot wrappers)
+2. **During package generation**, the `{SCRIPT}` placeholder is replaced with the actual polyglot wrapper path
+3. **The `scripts:` section is removed** from the generated command files
+4. **Generated files contain direct paths** like `.specify/scripts/setup-plan --json`
+5. **Polyglot wrappers** handle platform detection internally and delegate to the correct implementation
+
+**Critical design principle:**
+
+The `{SCRIPT}` placeholder is **expanded during package generation** to create platform-agnostic command files with direct, concrete paths. This ensures:
+
+- ✅ Generated command files have direct executable paths
+- ✅ No frontmatter parsing required by AI agents
+- ✅ LLMs simply execute the literal command as written
+- ✅ Same command files work on Windows, macOS, and Linux via polyglot wrappers
+- ✅ No merge conflicts when teams use different operating systems
+
+**Example flow:**
+
+1. User on Windows runs `specify init --ai bob`
+2. Package generation expands `{SCRIPT}` to `.specify/scripts/setup-plan --json`
+3. Bob command file contains: `1. **Setup**: Run .specify/scripts/setup-plan --json from repo root...`
+4. Bob executes the literal path `.specify/scripts/setup-plan`
+5. Polyglot wrapper detects Windows and runs `scripts/powershell/setup-plan.ps1`
+6. User commits file - it works identically on macOS teammate's machine (polyglot wrapper detects macOS and runs bash version)
+
+This architecture allows 19+ AI agents to share the same command templates while providing simple, direct execution paths that work across all platforms.
+
 ## Adding New Agent Support
 
 This section explains how to add support for new AI agents/assistants to the Specify CLI. Use this guide as a reference when integrating new AI tools into the Spec-Driven Development workflow.
@@ -139,7 +250,7 @@ gh release create "$VERSION" \
 
 #### 5. Update Agent Context Scripts
 
-##### Bash script (`scripts/bash/update-agent-context.sh`)
+##### Bash script (`scripts/update-agent-context`)
 
 Add file variable:
 
@@ -161,7 +272,9 @@ case "$AGENT_TYPE" in
 esac
 ```
 
-##### PowerShell script (`scripts/powershell/update-agent-context.ps1`)
+**Note:** The polyglot wrapper `scripts/update-agent-context` automatically delegates to the appropriate platform-specific implementation (`scripts/bash/update-agent-context.sh` or `scripts/powershell/update-agent-context.ps1`).
+
+##### PowerShell script (`scripts/update-agent-context`)
 
 Add file variable:
 
