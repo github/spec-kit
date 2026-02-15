@@ -117,6 +117,12 @@ Use `/minispec.validate-docs` to check documentation freshness against code chan
 | `/minispec.checklist`     | Generate quality checklists for requirements |
 | `/minispec.validate-docs` | Check documentation freshness                |
 | `/minispec.status`        | Show progress dashboard                      |
+| `minispec registry`       | Manage package registries (add/remove/list)  |
+| `minispec search`         | Search packages across registries            |
+| `minispec install`        | Install a package from a registry            |
+| `minispec list`           | List installed packages                      |
+| `minispec uninstall`      | Uninstall a package                          |
+| `minispec update`         | Update packages to latest versions           |
 
 ## How It's Different
 
@@ -206,6 +212,58 @@ Set these during `/minispec.constitution`:
 - Review all changes
 - Only review decisions
 - Trust AI (recommended)
+
+## Package Registry
+
+MiniSpec includes an opt-in package registry for distributing slash commands, skills, and hooks via Git repos. Registries are additive — MiniSpec works out of the box without them.
+
+### Registry Management
+
+```bash
+# Add a registry (Git repo URL)
+minispec registry add https://github.com/acme-corp/minispec-registry.git
+minispec registry add git@internal.acme.com:security/hooks.git --name acme-internal
+
+# List configured registries
+minispec registry list
+
+# Remove a registry
+minispec registry remove acme-internal
+
+# Refresh registry cache (fetch latest from remote)
+minispec registry update
+minispec registry update acme-internal
+```
+
+### Package Operations
+
+```bash
+# Search across all registries
+minispec search protect-main
+minispec search --type hook
+minispec search --type command --agent claude
+
+# Install a package
+minispec install protect-main
+minispec install protect-main --registry acme-internal
+minispec install protect-main@1.0.0
+
+# List installed packages
+minispec list
+
+# Uninstall a package
+minispec uninstall protect-main
+
+# Update packages
+minispec update protect-main
+minispec update --all
+```
+
+### How It Works
+
+Registries are Git repos with a `packages/` directory. Each package has a `package.yaml` that declares its name, version, type, file mappings, and agent compatibility. When you install a package, its files are copied into your project and tracked in `.minispec/registries.yaml`.
+
+For details on creating your own registry, see the [registry design doc](.minispec/specs/registry/design.md).
 
 ## Project Structure
 
