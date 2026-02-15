@@ -1483,6 +1483,75 @@ def registry_update(
             console.print(f"  [red]Failed: {e}[/red]")
 
 
+@app.command()
+def search(
+    query: str = typer.Argument("", help="Package name to search for (substring match)"),
+    type_filter: str = typer.Option(None, "--type", "-t", help="Filter by type: command, skill, hook"),
+    agent_filter: str = typer.Option(None, "--agent", "-a", help="Filter by agent compatibility"),
+    refresh: bool = typer.Option(False, "--refresh", help="Refresh registry cache before searching"),
+):
+    """Search for packages across all registries."""
+    from minispec_cli.registry import RegistryError, load_registries, discover_packages
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured. Use 'minispec registry add <url>' to add one.[/dim]")
+        return
+
+    all_packages = []
+    warnings = []
+    for reg in state.registries:
+        try:
+            packages = discover_packages(reg, refresh=refresh, warnings=warnings)
+            all_packages.extend(packages)
+        except RegistryError as e:
+            console.print(f"[yellow]Warning: could not fetch {reg.name}: {e}[/yellow]")
+
+    for w in warnings:
+        console.print(f"[yellow]{w}[/yellow]")
+
+    # Apply filters
+    results = all_packages
+    if query:
+        results = [p for p in results if query.lower() in p.name.lower()]
+    if type_filter:
+        results = [p for p in results if p.type == type_filter]
+    if agent_filter:
+        results = [p for p in results if agent_filter in p.agents]
+
+    if not results:
+        if query:
+            console.print(f"[dim]No packages matching '{query}'.[/dim]")
+        else:
+            console.print("[dim]No packages found.[/dim]")
+        return
+
+    table = Table(title="Available Packages")
+    table.add_column("Name", style="cyan")
+    table.add_column("Version")
+    table.add_column("Type")
+    table.add_column("Description")
+    table.add_column("Agents", style="dim")
+    table.add_column("Registry", style="dim")
+    table.add_column("Review", style="dim")
+
+    for p in results:
+        review_style = {"approved": "[green]approved[/green]", "rejected": "[red]rejected[/red]"}.get(
+            p.review.status, p.review.status
+        )
+        table.add_row(
+            p.name,
+            p.version,
+            p.type,
+            p.description,
+            ", ".join(p.agents) if p.agents else "-",
+            p.registry_name,
+            review_style,
+        )
+
+    console.print(table)
+
+
 def main():
     app()
 

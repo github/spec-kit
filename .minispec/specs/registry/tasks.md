@@ -101,10 +101,10 @@ Implement a local-first package system for distributing slash commands, skills, 
 - Pre/post install scripts are deferred (security implications need design)
 
 ## Progress
-- [ ] Task 1: Registry state model + YAML read/write
-- [ ] Task 2: Registry cache manager
-- [ ] Task 3: Package discovery
-- [ ] Task 4: `minispec registry` subcommands
+- [x] Task 1: Registry state model + YAML read/write
+- [x] Task 2: Registry cache manager
+- [x] Task 3: Package discovery
+- [x] Task 4: `minispec registry` subcommands
 - [ ] Task 5: `minispec search`
 - [ ] Task 6: `minispec install`
 - [ ] Task 7: `minispec list` (installed packages)
