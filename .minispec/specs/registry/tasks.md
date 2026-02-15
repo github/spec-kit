@@ -1,6 +1,6 @@
 ---
 feature: registry
-status: planned
+status: complete
 created: 2026-02-15
 chunk_size: adaptive
 total_tasks: 10
@@ -105,9 +105,9 @@ Implement a local-first package system for distributing slash commands, skills, 
 - [x] Task 2: Registry cache manager
 - [x] Task 3: Package discovery
 - [x] Task 4: `minispec registry` subcommands
-- [ ] Task 5: `minispec search`
-- [ ] Task 6: `minispec install`
-- [ ] Task 7: `minispec list` (installed packages)
-- [ ] Task 8: `minispec uninstall`
-- [ ] Task 9: File merge logic for JSON/YAML
-- [ ] Task 10: `minispec update`
+- [x] Task 5: `minispec search`
+- [x] Task 6: `minispec install`
+- [x] Task 7: `minispec list` (installed packages)
+- [x] Task 8: `minispec uninstall`
+- [x] Task 9: File merge logic for JSON/YAML
+- [x] Task 10: `minispec update`

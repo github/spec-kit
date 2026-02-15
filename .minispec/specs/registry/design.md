@@ -1,6 +1,6 @@
 ---
 feature: registry
-status: planned
+status: implemented
 created: 2026-02-15
 decisions:
   - 001-package-per-directory

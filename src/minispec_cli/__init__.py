@@ -1686,6 +1686,72 @@ def uninstall(
     console.print(f"[green]Uninstalled {pkg.name} ({removed} file{'s' if removed != 1 else ''} removed).[/green]")
 
 
+@app.command()
+def update(
+    package_name: str = typer.Argument(None, help="Package to update (all installed if omitted)"),
+    all_packages: bool = typer.Option(False, "--all", help="Update all installed packages"),
+):
+    """Update installed packages to latest registry versions."""
+    from minispec_cli.registry import (
+        RegistryError, load_registries, save_registries,
+        discover_packages, install_package_files,
+    )
+
+    state = load_registries()
+    if not state.installed:
+        console.print("[dim]No packages installed.[/dim]")
+        return
+
+    if not package_name and not all_packages:
+        console.print("[dim]Specify a package name or use --all to update everything.[/dim]")
+        return
+
+    # Build package index from all registries (refresh to get latest)
+    registry_packages: dict[str, tuple] = {}  # name -> (PackageSpec, RegistryConfig)
+    for reg in state.registries:
+        try:
+            packages = discover_packages(reg, refresh=True)
+            for pkg in packages:
+                if pkg.name not in registry_packages:
+                    registry_packages[pkg.name] = (pkg, reg)
+        except RegistryError as e:
+            console.print(f"[yellow]Warning: could not fetch {reg.name}: {e}[/yellow]")
+
+    targets = state.installed
+    if package_name:
+        targets = [p for p in state.installed if p.name == package_name]
+        if not targets:
+            console.print(f"[red]Package '{package_name}' is not installed.[/red]")
+            raise typer.Exit(1)
+
+    updated = 0
+    for installed in targets:
+        if installed.name not in registry_packages:
+            console.print(f"  [yellow]{installed.name}: not found in any registry, skipping[/yellow]")
+            continue
+
+        spec, reg = registry_packages[installed.name]
+        if spec.version == installed.version:
+            console.print(f"  [dim]{installed.name} v{installed.version} is up to date[/dim]")
+            continue
+
+        console.print(f"  Updating [cyan]{installed.name}[/cyan] v{installed.version} -> v{spec.version}...")
+        try:
+            new_files = install_package_files(spec, reg)
+            installed.version = spec.version
+            installed.files = new_files
+            updated += 1
+            console.print(f"  [green]Updated to v{spec.version}[/green]")
+        except RegistryError as e:
+            console.print(f"  [red]Failed to update {installed.name}: {e}[/red]")
+
+    if updated:
+        save_registries(state)
+        console.print(f"\n[green]{updated} package{'s' if updated != 1 else ''} updated.[/green]")
+    else:
+        console.print("\n[dim]Everything is up to date.[/dim]")
+
+
 def main():
     app()
 
