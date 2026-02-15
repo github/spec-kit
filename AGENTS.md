@@ -48,6 +48,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| **Mistral Vibe CLI**       | `.vibe/skills/`        | Markdown | `vibe`          | Mistral Vibe CLI            |
 
 ### Step-by-Step Integration Guide
 
@@ -67,6 +68,13 @@ AGENT_CONFIG = {
         "folder": ".newagent/",  # Directory for agent files
         "install_url": "https://example.com/install",  # URL for installation docs (or None if IDE-based)
         "requires_cli": True,  # True if CLI tool required, False for IDE-based agents
+    },
+    # Example: Mistral Vibe CLI
+    "vibe": {
+        "name": "Mistral Vibe CLI",
+        "folder": ".vibe/",
+        "install_url": "https://docs.mistral.ai/mistral-vibe/introduction/install",
+        "requires_cli": True,
     },
 }
 ```
@@ -90,7 +98,7 @@ This eliminates the need for special-case mappings throughout the codebase.
 Update the `--ai` parameter help text in the `init()` command to include the new agent:
 
 ```python
-ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, new-agent-cli, or q"),
+ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, vibe, new-agent-cli, or q"),
 ```
 
 Also update any function docstrings, examples, and error messages that list available agents.
@@ -316,6 +324,7 @@ Require a command-line tool to be installed:
 - **Qoder CLI**: `qoder` CLI
 - **Amp**: `amp` CLI
 - **SHAI**: `shai` CLI
+- **Mistral Vibe CLI**: `vibe` CLI
 
 ### IDE-Based Agents
 
@@ -329,7 +338,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob
+Used by: Claude, Cursor, opencode, Windsurf, Amazon Q Developer, Amp, SHAI, IBM Bob, Mistral Vibe
 
 **Standard format:**
 

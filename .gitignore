@@ -46,6 +46,20 @@ env/
 sdd-*/
 docs/dev
 
+# Local development (Mistral Vibe)
+local-templates/
+*-vibe-test/
+*-vibe-init/
+test-vibe-project/
+mon-projet-vibe-test/
+install-local.sh
+create-local-vibe-template.sh
+create-vibe-release-packages.sh
+test-vibe-init.sh
+DEVELOPPEMENT_LOCAL.md
+QUICK_START.md
+MISTRAL_VIBE_IMPLEMENTATION.md
+
 # Extension system
 .specify/extensions/.cache/
 .specify/extensions/.backup/
