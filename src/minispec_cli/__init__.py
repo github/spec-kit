@@ -1361,6 +1361,128 @@ def version():
     console.print(panel)
     console.print()
 
+# --- Registry Commands ---
+
+registry_app = typer.Typer(
+    name="registry",
+    help="Manage package registries (add, remove, list, update)",
+    add_completion=False,
+)
+app.add_typer(registry_app, name="registry")
+
+
+def _derive_registry_name(url: str) -> str:
+    """Derive a short registry name from a Git URL."""
+    # git@host:org/repo.git -> repo
+    # https://host/org/repo.git -> repo
+    name = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name
+
+
+@registry_app.command("add")
+def registry_add(
+    url: str = typer.Argument(help="Git URL of the registry repository"),
+    name: str = typer.Option(None, "--name", "-n", help="Short name for this registry (auto-derived from URL if omitted)"),
+):
+    """Add a package registry."""
+    from minispec_cli.registry import (
+        RegistryConfig, RegistryError, load_registries, save_registries, ensure_cached,
+    )
+
+    registry_name = name or _derive_registry_name(url)
+    state = load_registries()
+
+    # Check for duplicate
+    for r in state.registries:
+        if r.name == registry_name:
+            console.print(f"[red]Registry '{registry_name}' already exists. Remove it first or use a different --name.[/red]")
+            raise typer.Exit(1)
+
+    reg = RegistryConfig(name=registry_name, url=url)
+
+    # Verify we can clone it
+    console.print(f"Adding registry [cyan]{registry_name}[/cyan] from {url}...")
+    try:
+        ensure_cached(reg)
+    except RegistryError as e:
+        console.print(f"[red]Failed to fetch registry: {e}[/red]")
+        raise typer.Exit(1)
+
+    state.registries.append(reg)
+    save_registries(state)
+    console.print(f"[green]Registry '{registry_name}' added successfully.[/green]")
+
+
+@registry_app.command("list")
+def registry_list():
+    """List configured registries."""
+    from minispec_cli.registry import load_registries
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured. Use 'minispec registry add <url>' to add one.[/dim]")
+        return
+
+    table = Table(title="Configured Registries")
+    table.add_column("Name", style="cyan")
+    table.add_column("URL")
+    table.add_column("Added", style="dim")
+
+    for r in state.registries:
+        table.add_row(r.name, r.url, r.added_at)
+
+    console.print(table)
+
+
+@registry_app.command("remove")
+def registry_remove(
+    name: str = typer.Argument(help="Name of the registry to remove"),
+):
+    """Remove a registry and its local cache."""
+    from minispec_cli.registry import load_registries, save_registries, remove_cache
+
+    state = load_registries()
+    found = [r for r in state.registries if r.name == name]
+    if not found:
+        console.print(f"[red]Registry '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    state.registries = [r for r in state.registries if r.name != name]
+    save_registries(state)
+    remove_cache(name)
+    console.print(f"[green]Registry '{name}' removed.[/green]")
+
+
+@registry_app.command("update")
+def registry_update(
+    name: str = typer.Argument(None, help="Registry to update (all if omitted)"),
+):
+    """Refresh registry cache from remote."""
+    from minispec_cli.registry import RegistryError, load_registries, ensure_cached
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured.[/dim]")
+        return
+
+    targets = state.registries
+    if name:
+        targets = [r for r in state.registries if r.name == name]
+        if not targets:
+            console.print(f"[red]Registry '{name}' not found.[/red]")
+            raise typer.Exit(1)
+
+    for reg in targets:
+        console.print(f"Updating [cyan]{reg.name}[/cyan]...")
+        try:
+            ensure_cached(reg, refresh=True)
+            console.print(f"  [green]Updated.[/green]")
+        except RegistryError as e:
+            console.print(f"  [red]Failed: {e}[/red]")
+
+
 def main():
     app()
 
