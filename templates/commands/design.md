@@ -1,5 +1,8 @@
 ---
 description: Interactively design a feature through collaborative conversation, making architectural decisions together.
+scripts:
+  sh: scripts/bash/create-new-feature.sh --json "$ARGUMENTS"
+  ps: scripts/powershell/create-new-feature.ps1 -Json -Description "$ARGUMENTS"
 ---
 
 ## User Input
@@ -29,6 +32,25 @@ Before starting, verify:
    - If not: Create the directory structure
 
 ## Execution Flow
+
+### Phase 0: Set Up Feature Structure
+
+**IMPORTANT: Before doing anything else, run the setup script to create the feature branch and spec directory.**
+
+Run this command:
+```
+{SCRIPT}
+```
+
+This will:
+- Create a numbered feature branch (e.g., `001-feature-name`)
+- Create the `.minispec/specs/[branch-name]/` directory
+- Copy the design template to `design.md`
+- Set the `MINISPEC_FEATURE` environment variable
+
+Parse the JSON output to get `BRANCH_NAME`, `DESIGN_FILE`, and `FEATURE_NUM`. Use these throughout the design conversation.
+
+If the script fails (e.g., already on a feature branch, or no git), proceed without it — you can create the spec directory and design file manually.
 
 ### Phase 1: Understand the Request
 

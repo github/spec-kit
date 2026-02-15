@@ -1,5 +1,8 @@
 ---
 description: Interactively break down a design into reviewable implementation chunks sized for pair programming.
+scripts:
+  sh: scripts/bash/setup-plan.sh --json
+  ps: scripts/powershell/setup-plan.ps1 -Json
 ---
 
 ## User Input
@@ -46,6 +49,22 @@ Based on constitution preference:
 | Adaptive | Varies | AI suggests based on complexity |
 
 ## Execution Flow
+
+### Phase 0: Set Up Tasks File
+
+**IMPORTANT: Before doing anything else, run the setup script to prepare the tasks file.**
+
+Run this command:
+```
+{SCRIPT}
+```
+
+This will:
+- Ensure the feature spec directory exists
+- Copy the tasks template to `tasks.md`
+- Output paths for `DESIGN`, `TASKS`, `FEATURE_DIR`, and `BRANCH`
+
+Parse the JSON output to locate the design and tasks files. If the script fails, create the tasks file manually at `.minispec/specs/[feature-name]/tasks.md`.
 
 ### Phase 1: Load Context
 
