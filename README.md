@@ -117,6 +117,7 @@ Use `/minispec.validate-docs` to check documentation freshness against code chan
 | `/minispec.checklist`     | Generate quality checklists for requirements |
 | `/minispec.validate-docs` | Check documentation freshness                |
 | `/minispec.status`        | Show progress dashboard                      |
+| `minispec init-registry`  | Scaffold a new package registry repo         |
 | `minispec registry`       | Manage package registries (add/remove/list)  |
 | `minispec search`         | Search packages across registries            |
 | `minispec install`        | Install a package from a registry            |
@@ -263,7 +264,21 @@ minispec update --all
 
 Registries are Git repos with a `packages/` directory. Each package has a `package.yaml` that declares its name, version, type, file mappings, and agent compatibility. When you install a package, its files are copied into your project and tracked in `.minispec/registries.yaml`.
 
-For details on creating your own registry, see the [registry design doc](.minispec/specs/registry/design.md).
+### Creating a Registry
+
+Use `init-registry` to scaffold a new registry repo, then use the `/minispec.registry` skill to create packages interactively:
+
+```bash
+# Scaffold a registry
+minispec init-registry my-registry --ai claude
+cd my-registry
+
+# Open your AI agent and create packages
+claude
+/minispec.registry create-package
+```
+
+The skill guides you through package creation, content authoring, and validation.
 
 ## Project Structure
 

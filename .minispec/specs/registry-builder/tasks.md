@@ -55,7 +55,7 @@ Implement `minispec init-registry` CLI command and the `/minispec.registry` slas
 - Package testing/dry-run mode is deferred (noted as open question in design)
 
 ## Progress
-- [ ] Task 1: Skill template — `/minispec.registry`
-- [ ] Task 2: `minispec init-registry` CLI command
-- [ ] Task 3: Tests for `init-registry`
-- [ ] Task 4: README and docs
+- [x] Task 1: Skill template — `/minispec.registry`
+- [x] Task 2: `minispec init-registry` CLI command
+- [x] Task 3: Tests for `init-registry`
+- [x] Task 4: README and docs

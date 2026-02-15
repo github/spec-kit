@@ -230,6 +230,28 @@ AGENT_CONFIG = {
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
+# Agent command installation paths (where slash commands go per agent)
+# Differs from AGENT_CONFIG["folder"] for some agents (e.g., copilot, windsurf)
+AGENT_COMMAND_CONFIG = {
+    "claude":       {"path": ".claude/commands",     "ext": "md",       "fmt": "md"},
+    "gemini":       {"path": ".gemini/commands",     "ext": "toml",     "fmt": "toml"},
+    "copilot":      {"path": ".github/agents",       "ext": "agent.md", "fmt": "md"},
+    "cursor-agent": {"path": ".cursor/commands",     "ext": "md",       "fmt": "md"},
+    "qwen":         {"path": ".qwen/commands",       "ext": "toml",     "fmt": "toml"},
+    "opencode":     {"path": ".opencode/command",    "ext": "md",       "fmt": "md"},
+    "windsurf":     {"path": ".windsurf/workflows",  "ext": "md",       "fmt": "md"},
+    "codex":        {"path": ".codex/prompts",       "ext": "md",       "fmt": "md"},
+    "kilocode":     {"path": ".kilocode/workflows",  "ext": "md",       "fmt": "md"},
+    "auggie":       {"path": ".augment/commands",    "ext": "md",       "fmt": "md"},
+    "roo":          {"path": ".roo/commands",        "ext": "md",       "fmt": "md"},
+    "codebuddy":    {"path": ".codebuddy/commands",  "ext": "md",       "fmt": "md"},
+    "qoder":        {"path": ".qoder/commands",      "ext": "md",       "fmt": "md"},
+    "amp":          {"path": ".agents/commands",     "ext": "md",       "fmt": "md"},
+    "shai":         {"path": ".shai/commands",       "ext": "md",       "fmt": "md"},
+    "q":            {"path": ".amazonq/prompts",     "ext": "md",       "fmt": "md"},
+    "bob":          {"path": ".bob/commands",        "ext": "md",       "fmt": "md"},
+}
+
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
 BANNER = """
@@ -1750,6 +1772,232 @@ def update(
         console.print(f"\n[green]{updated} package{'s' if updated != 1 else ''} updated.[/green]")
     else:
         console.print("\n[dim]Everything is up to date.[/dim]")
+
+
+def _format_skill_for_agent(description: str, body: str, agent: str) -> str:
+    """Format a skill template for the target agent's expected format."""
+    config = AGENT_COMMAND_CONFIG.get(agent)
+    if not config or config["fmt"] == "md":
+        return f"---\ndescription: {description}\n---\n\n{body}"
+    # TOML format (gemini, qwen)
+    escaped_body = body.replace("\\", "\\\\")
+    return f'description = "{description}"\n\nprompt = """\n{escaped_body}\n"""'
+
+
+def _read_registry_skill(agent: str) -> tuple[str, str]:
+    """Read the registry skill template and format it for the target agent.
+
+    Returns (filename, content) tuple.
+    """
+    config = AGENT_COMMAND_CONFIG[agent]
+    filename = f"minispec.registry.{config['ext']}"
+
+    # Read template from source tree
+    template_path = Path(__file__).parent.parent.parent / "templates" / "commands" / "registry.md"
+    if not template_path.exists():
+        raise FileNotFoundError(f"Registry skill template not found at {template_path}")
+
+    raw = template_path.read_text(encoding="utf-8")
+
+    # Parse frontmatter
+    if raw.startswith("---"):
+        parts = raw.split("---", 2)
+        if len(parts) >= 3:
+            frontmatter = parts[1].strip()
+            body = parts[2].strip()
+            description = ""
+            for line in frontmatter.splitlines():
+                if line.startswith("description:"):
+                    description = line.split(":", 1)[1].strip()
+                    break
+            content = _format_skill_for_agent(description, body, agent)
+            return filename, content
+
+    # Fallback: use raw content
+    return filename, raw
+
+
+@app.command("init-registry")
+def init_registry(
+    name: str = typer.Argument(None, help="Registry directory name (optional with --here)"),
+    ai: str = typer.Option(None, "--ai", help="AI agent to install skill for"),
+    here: bool = typer.Option(False, "--here", help="Initialize in current directory"),
+    no_git: bool = typer.Option(False, "--no-git", help="Skip git init"),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation when directory not empty"),
+):
+    """Scaffold a new MiniSpec package registry.
+
+    Creates a registry repo structure with registry.yaml, packages/ directory,
+    README, and the /minispec.registry skill for your AI agent.
+
+    Examples:
+        minispec init-registry my-registry --ai claude
+        minispec init-registry --here --ai claude
+        minispec init-registry my-registry  # interactive AI picker
+    """
+    show_banner()
+
+    if name == ".":
+        here = True
+        name = None
+
+    if here and name:
+        console.print("[red]Error:[/red] Cannot specify both a name and --here")
+        raise typer.Exit(1)
+
+    if not here and not name:
+        console.print("[red]Error:[/red] Specify a registry name or use --here")
+        raise typer.Exit(1)
+
+    # Resolve target directory
+    if here:
+        target = Path.cwd()
+        name = target.name
+        existing = list(target.iterdir())
+        if existing and not force:
+            console.print(f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing)} items)")
+            if not typer.confirm("Continue? Registry files will be merged with existing content"):
+                raise typer.Exit(0)
+    else:
+        target = Path(name).resolve()
+        if target.exists():
+            console.print(f"[red]Error:[/red] Directory '{name}' already exists")
+            raise typer.Exit(1)
+        target.mkdir(parents=True)
+
+    # Select AI agent
+    if ai:
+        if ai not in AGENT_CONFIG:
+            console.print(f"[red]Error:[/red] Unknown agent '{ai}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+            raise typer.Exit(1)
+        selected_ai = ai
+    else:
+        ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
+        selected_ai = select_with_arrows(ai_choices, "Choose your AI assistant:", "claude")
+
+    # Read skill template
+    try:
+        skill_filename, skill_content = _read_registry_skill(selected_ai)
+    except FileNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    tracker = StepTracker("Initialize Registry")
+    tracker.add("dirs", "Create directory structure")
+    tracker.add("registry-yaml", "Generate registry.yaml")
+    tracker.add("readme", "Generate README.md")
+    tracker.add("skill", "Install registry skill")
+    tracker.add("git", "Initialize git repository")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        # Create directories
+        tracker.start("dirs")
+        packages_dir = target / "packages"
+        packages_dir.mkdir(parents=True, exist_ok=True)
+        (packages_dir / ".gitkeep").touch()
+        tracker.complete("dirs")
+
+        # Generate registry.yaml
+        tracker.start("registry-yaml")
+        registry_yaml = target / "registry.yaml"
+        if not registry_yaml.exists():
+            registry_yaml.write_text(
+                f"name: {name}\ndescription: \"\"\nmaintainers: []\n",
+                encoding="utf-8",
+            )
+            tracker.complete("registry-yaml", "created")
+        else:
+            tracker.skip("registry-yaml", "already exists")
+
+        # Generate README.md
+        tracker.start("readme")
+        readme_path = target / "README.md"
+        if not readme_path.exists():
+            readme_path.write_text(
+                f"# {name}\n\n"
+                "A MiniSpec package registry.\n\n"
+                "## Structure\n\n"
+                "```\n"
+                "registry.yaml          # Registry metadata\n"
+                "packages/              # Package directories\n"
+                "  my-package/\n"
+                "    package.yaml       # Package metadata and file mappings\n"
+                "    command.md         # Package content\n"
+                "    README.md          # Package documentation\n"
+                "```\n\n"
+                "## Getting Started\n\n"
+                "Use the registry builder skill to create packages:\n\n"
+                "```\n/minispec.registry\n```\n\n"
+                "This skill guides you through creating well-structured packages, "
+                "writing actual content, and validating registry integrity.\n\n"
+                "## Using This Registry\n\n"
+                "Consumers can add this registry to their MiniSpec projects:\n\n"
+                "```bash\n"
+                "minispec registry add <git-url-of-this-repo>\n"
+                "minispec search\n"
+                "minispec install <package-name>\n"
+                "```\n",
+                encoding="utf-8",
+            )
+            tracker.complete("readme", "created")
+        else:
+            tracker.skip("readme", "already exists")
+
+        # Install skill template
+        tracker.start("skill")
+        cmd_config = AGENT_COMMAND_CONFIG[selected_ai]
+        skill_dir = target / cmd_config["path"]
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_path = skill_dir / skill_filename
+        skill_path.write_text(skill_content, encoding="utf-8")
+        tracker.complete("skill", f"{cmd_config['path']}/{skill_filename}")
+
+        # Git init
+        if no_git:
+            tracker.skip("git", "--no-git flag")
+        elif is_git_repo(target):
+            tracker.complete("git", "existing repo detected")
+        elif check_tool("git"):
+            tracker.start("git")
+            success, error_msg = init_git_repo(target, quiet=True)
+            if success:
+                tracker.complete("git", "initialized")
+            else:
+                tracker.error("git", error_msg or "init failed")
+        else:
+            tracker.skip("git", "git not available")
+
+    console.print(tracker.render())
+
+    # Success panel
+    cmd_path = f"{cmd_config['path']}/{skill_filename}"
+    tree_lines = [
+        f"[green]{name}/[/green]",
+        f"  registry.yaml",
+        f"  packages/",
+        f"  README.md",
+        f"  {cmd_path}",
+    ]
+    console.print(Panel(
+        "\n".join(tree_lines),
+        title="[bold green]Registry created[/bold green]",
+        border_style="green",
+        padding=(1, 2),
+    ))
+
+    agent_display = AGENT_CONFIG[selected_ai]["name"]
+    steps = [
+        f"1. {'Open' if here else f'cd {name} && open'} your AI agent ({agent_display})",
+        "2. Run [cyan]/minispec.registry[/cyan] to start creating packages",
+    ]
+    console.print(Panel(
+        "\n".join(steps),
+        title="Next Steps",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
 
 
 def main():
