@@ -10,6 +10,7 @@ dependencies = [
     "platformdirs",
     "readchar",
     "truststore>=0.10.4",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
