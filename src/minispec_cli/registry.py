@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -294,3 +295,137 @@ def discover_packages(
         results.append(spec)
 
     return results
+
+
+def resolve_package(
+    name: str,
+    state: RegistriesState,
+    registry_filter: str | None = None,
+    refresh: bool = False,
+) -> tuple[PackageSpec, list[str]]:
+    """Find a package by name across registries. Returns (package, warnings).
+
+    Raises RegistryError if not found, or found in multiple registries without filter.
+    """
+    warnings: list[str] = []
+    matches: list[PackageSpec] = []
+
+    targets = state.registries
+    if registry_filter:
+        targets = [r for r in targets if r.name == registry_filter]
+        if not targets:
+            raise RegistryError(f"Registry '{registry_filter}' not found.")
+
+    for reg in targets:
+        packages = discover_packages(reg, refresh=refresh, warnings=warnings)
+        for pkg in packages:
+            if pkg.name == name:
+                matches.append(pkg)
+
+    if not matches:
+        raise RegistryError(f"Package '{name}' not found in any registry.")
+
+    if len(matches) > 1:
+        registries = ", ".join(m.registry_name for m in matches)
+        raise RegistryError(
+            f"Package '{name}' found in multiple registries: {registries}. "
+            f"Use --registry to specify which one."
+        )
+
+    return matches[0], warnings
+
+
+def install_package_files(
+    spec: PackageSpec,
+    registry: RegistryConfig,
+    project_dir: Path | None = None,
+) -> list[str]:
+    """Copy/merge package files into the project. Returns list of installed target paths."""
+    import shutil
+
+    proj = project_dir or Path.cwd()
+    repo = ensure_cached(registry)
+    pkg_dir = repo / "packages" / spec.name
+    installed_files: list[str] = []
+
+    for fm in spec.files:
+        source = pkg_dir / fm.source
+        target = proj / fm.target
+
+        if not source.exists():
+            raise RegistryError(f"Package file not found: {fm.source}")
+
+        if fm.merge:
+            merge_file(source, target)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+        installed_files.append(fm.target)
+
+    return installed_files
+
+
+# --- File Merge Logic ---
+
+
+def _deep_merge(base: dict, update: dict) -> dict:
+    """Recursively merge update dict into base dict.
+
+    - New keys are added
+    - Existing keys are preserved unless overwritten
+    - Nested dicts are merged recursively
+    - Lists and scalars are replaced
+    """
+    result = base.copy()
+    for key, value in update.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def merge_file(source: Path, target: Path) -> None:
+    """Deep-merge a source file into a target file. Creates target if missing.
+
+    Supports JSON and YAML files based on extension.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    if not target.exists():
+        # No existing file — just copy
+        import shutil
+        shutil.copy2(source, target)
+        return
+
+    suffix = target.suffix.lower()
+
+    if suffix == ".json":
+        with open(source, encoding="utf-8") as f:
+            source_data = json.load(f)
+        try:
+            with open(target, encoding="utf-8") as f:
+                target_data = json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            target_data = {}
+        merged = _deep_merge(target_data, source_data)
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=2)
+
+    elif suffix in (".yaml", ".yml"):
+        with open(source, encoding="utf-8") as f:
+            source_data = yaml.safe_load(f) or {}
+        try:
+            with open(target, encoding="utf-8") as f:
+                target_data = yaml.safe_load(f) or {}
+        except yaml.YAMLError:
+            target_data = {}
+        merged = _deep_merge(target_data, source_data)
+        with open(target, "w", encoding="utf-8") as f:
+            yaml.dump(merged, f, default_flow_style=False, sort_keys=False)
+
+    else:
+        # Non-structured files: overwrite
+        import shutil
+        shutil.copy2(source, target)
