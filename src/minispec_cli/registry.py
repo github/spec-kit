@@ -215,3 +215,82 @@ def remove_cache(registry_name: str) -> None:
     if dest.exists():
         import shutil
         shutil.rmtree(dest)
+
+
+# --- Package Discovery ---
+
+
+def _parse_package_yaml(path: Path, registry_name: str) -> PackageSpec | None:
+    """Parse a package.yaml into a PackageSpec. Returns None if malformed."""
+    try:
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+
+        # Required fields
+        if not all(k in data for k in ("name", "version", "type")):
+            return None
+
+        files = [
+            FileMapping(
+                source=fm["source"],
+                target=fm["target"],
+                merge=fm.get("merge", False),
+            )
+            for fm in data.get("files", [])
+            if "source" in fm and "target" in fm
+        ]
+
+        review_data = data.get("review", {})
+        review = ReviewInfo(
+            status=review_data.get("status", "pending"),
+            reviewed_by=review_data.get("reviewed-by", ""),
+            reviewed_at=review_data.get("reviewed-at", ""),
+        )
+
+        return PackageSpec(
+            name=data["name"],
+            version=str(data["version"]),
+            type=data["type"],
+            description=data.get("description", ""),
+            author=data.get("author", ""),
+            license=data.get("license", ""),
+            agents=data.get("agents", []),
+            minispec=data.get("minispec", ""),
+            files=files,
+            review=review,
+            registry_name=registry_name,
+        )
+    except (yaml.YAMLError, KeyError, TypeError):
+        return None
+
+
+def discover_packages(
+    registry: RegistryConfig,
+    refresh: bool = False,
+    warnings: list[str] | None = None,
+) -> list[PackageSpec]:
+    """Discover all packages in a registry. Returns list of parsed PackageSpecs.
+
+    Skips malformed packages. If warnings list is provided, appends skip messages.
+    """
+    repo_path = ensure_cached(registry, refresh=refresh)
+    packages_dir = repo_path / "packages"
+    if not packages_dir.is_dir():
+        return []
+
+    results = []
+    for pkg_dir in sorted(packages_dir.iterdir()):
+        if not pkg_dir.is_dir():
+            continue
+        pkg_yaml = pkg_dir / "package.yaml"
+        if not pkg_yaml.exists():
+            continue
+
+        spec = _parse_package_yaml(pkg_yaml, registry.name)
+        if spec is None:
+            if warnings is not None:
+                warnings.append(f"Skipping malformed package at {pkg_dir.name} in {registry.name}")
+            continue
+        results.append(spec)
+
+    return results
