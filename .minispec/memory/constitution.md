@@ -1,112 +1,102 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: PhotoAlbum Constitution, TaskFlow Constitution, etc. -->
+# MiniSpec Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Code Quality -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: All code must be readable, maintainable, and follow established patterns; No magic numbers; Meaningful names; Single responsibility -->
+### I. Template Quality
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. Testing Standards -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Unit tests for business logic; Integration tests for APIs; E2E tests for critical paths; Minimum 80% coverage on new code -->
+**Priority: MUST**
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Documentation -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: Public APIs must be documented; Complex logic requires inline comments; Architecture decisions recorded -->
+Prompts are the product. All slash command templates must:
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Security -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: No secrets in code; Input validation on all boundaries; Principle of least privilege -->
+- Guide engineers toward good decisions without being prescriptive
+- Support collaborative workflows that increase velocity and productivity
+- Use clear, unambiguous language that works across different AI agents
+- Feel like a skilled pair partner, not a checklist
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Performance, VI. Accessibility, VII. Error Handling -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Lazy loading for large datasets; Core Web Vitals targets; Graceful degradation -->
+### II. Extensibility
 
-## [SECTION_2_NAME]
-<!-- Example: Technology Stack, Constraints, Standards -->
+**Priority: MUST**
 
-[SECTION_2_CONTENT]
-<!-- Example: React 18+, TypeScript strict mode, PostgreSQL, deployed on AWS -->
+MiniSpec is a platform, not just a tool. The architecture must support:
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process -->
+- Community-contributed slash commands, skills, and hooks
+- A registry model for distributing extensions (public curated + private enterprise)
+- Engineers adjusting MiniSpec to suit their specific workflows and needs
+- Clean extension points that don't require forking the core
 
-[SECTION_3_CONTENT]
-<!-- Example: Feature branches, PR reviews required, CI must pass -->
+### III. Enterprise Safety
+
+**Priority: MUST**
+
+Enterprise adoption requires trust. All extensibility must be matched with safety:
+
+- Public registries are heavily controlled and reviewed before publishing
+- Private registries allow enterprises to maintain internal-only extensions
+- Both process (vetting, review) and technical (sandboxing, signing, permissions) guardrails
+- Skills and hooks from external sources must be safe for enterprise environments
+- Registry installation from internal repos (e.g., private Git, Artifactory)
+
+### IV. Documentation
+
+**Priority: MUST**
+
+Enterprise context demands transparency:
+
+- User-facing documentation for all features and workflows
+- Architecture decisions recorded as ADRs for transparency
+- Documentation maintained as a byproduct of development, not an afterthought
+
+### V. Test Coverage
+
+**Priority: SHOULD**
+
+- CLI behavior and commands must be tested
+- Template validation is out of scope (would require an evals suite)
+- Tests should catch regressions in core functionality
+
+## Technology Stack
+
+- **Language**: Python 3.11+
+- **CLI Framework**: Typer
+- **Package Manager**: uv
+- **Target Users**: Enterprise software engineers
+- **AI Agents**: Claude Code (primary), with support for Cursor, Copilot, Gemini CLI, and others
+
+## Development Workflow
+
+- Feature branches off main
+- PR reviews required
+- CI must pass (markdownlint, tests)
+- Conventional commit messages
 
 ---
 
 ## MiniSpec Preferences
 
-<!--
-This section configures how MiniSpec's pair programming workflow operates.
-These preferences shape the collaboration between engineer and AI.
--->
-
 ### Review Chunk Size
 
-[CHUNK_SIZE_PREFERENCE]
-<!--
-Options:
-- small: 20-40 lines per chunk (maximum engagement, best for learning new codebases)
-- medium: 40-80 lines per chunk (balanced pace, recommended default)
-- large: 80-150 lines per chunk (for experienced engineers comfortable with larger reviews)
-- adaptive: AI assesses complexity and suggests appropriate size per task
--->
+adaptive
 
 ### Documentation Review Policy
 
-[DOC_REVIEW_POLICY]
-<!--
-Options:
-- review-all: Engineer reviews all documentation changes before commit
-- review-decisions: Engineer reviews decisions/ only, AI trusted for patterns/modules
-- trust-ai: AI handles all documentation autonomously (recommended for velocity)
--->
+trust-ai
 
 ### Autonomy Level
 
-[AUTONOMY_LEVEL]
-<!--
-Options:
-- always-confirm: AI always pauses for engineer approval before proceeding
-- tests-passing: AI proceeds automatically if tests pass, pauses on failure
-- familiar-areas: AI proceeds in code areas already reviewed this session
-- explicit-batch: AI only batches when engineer explicitly says "next N"
--->
+familiar-areas
 
 ### Design Evolution Handling
 
-[DESIGN_EVOLUTION_POLICY]
-<!--
-Options:
-- always-discuss: AI stops implementation to discuss any design deviation
-- flag-and-continue: AI flags issues, proposes spec updates, continues if minor
-- auto-update: AI updates specs automatically, notifies engineer after (experienced teams)
--->
+always-discuss
 
 ### Walkthrough Depth
 
-[WALKTHROUGH_DEPTH]
-<!--
-Options:
-- quick: High-level architecture overview (5-10 min)
-- standard: Architecture + key patterns + conventions (15-20 min)
-- deep: Full codebase tour with all modules explained (30+ min)
--->
+standard
 
 ---
 
 ## Governance
 
-[GOVERNANCE_RULES]
-<!-- Example: Constitution supersedes all other practices; Amendments require team discussion; MiniSpec preferences can be adjusted per-feature if needed -->
+This constitution supersedes default practices for the MiniSpec project. Principles are non-negotiable unless amended through explicit discussion. MiniSpec preferences can be adjusted per-feature if needed.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 1.0.0 | Ratified: 2025-02-01 | Last Amended: 2025-02-01 -->
+**Version**: 1.0.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-02-15
