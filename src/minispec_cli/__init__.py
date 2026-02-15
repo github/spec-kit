@@ -1552,6 +1552,140 @@ def search(
     console.print(table)
 
 
+@app.command()
+def install(
+    package_name: str = typer.Argument(help="Package name to install (use name@version for specific version)"),
+    registry_name: str = typer.Option(None, "--registry", "-r", help="Install from specific registry (required if package exists in multiple)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Refresh registry cache before installing"),
+):
+    """Install a package from a registry."""
+    from minispec_cli.registry import (
+        InstalledPackage, RegistryError, load_registries, save_registries,
+        resolve_package, install_package_files,
+    )
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured. Use 'minispec registry add <url>' to add one.[/dim]")
+        raise typer.Exit(1)
+
+    # Parse name@version
+    version = None
+    if "@" in package_name:
+        package_name, version = package_name.rsplit("@", 1)
+
+    # Check if already installed
+    for p in state.installed:
+        if p.name == package_name:
+            console.print(f"[yellow]Package '{package_name}' is already installed (v{p.version}). Use 'minispec uninstall {package_name}' first.[/yellow]")
+            raise typer.Exit(1)
+
+    # Resolve package
+    try:
+        spec, warnings = resolve_package(package_name, state, registry_filter=registry_name, refresh=refresh)
+    except RegistryError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    for w in warnings:
+        console.print(f"[yellow]{w}[/yellow]")
+
+    # Version check
+    if version and spec.version != version:
+        console.print(f"[red]Requested version {version} but registry has {spec.version}.[/red]")
+        raise typer.Exit(1)
+
+    # Find the registry config for file installation
+    reg = next(r for r in state.registries if r.name == spec.registry_name)
+
+    console.print(f"Installing [cyan]{spec.name}[/cyan] v{spec.version} from {spec.registry_name}...")
+
+    try:
+        installed_files = install_package_files(spec, reg)
+    except RegistryError as e:
+        console.print(f"[red]Installation failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Track installation
+    state.installed.append(InstalledPackage(
+        name=spec.name,
+        version=spec.version,
+        type=spec.type,
+        registry=spec.registry_name,
+        files=installed_files,
+    ))
+    save_registries(state)
+
+    console.print(f"[green]Installed {spec.name} v{spec.version}[/green]")
+    for f in installed_files:
+        console.print(f"  [dim]{f}[/dim]")
+
+
+@app.command("list")
+def list_installed():
+    """List installed packages."""
+    from minispec_cli.registry import load_registries
+
+    state = load_registries()
+    if not state.installed:
+        console.print("[dim]No packages installed. Use 'minispec search' to find packages.[/dim]")
+        return
+
+    table = Table(title="Installed Packages")
+    table.add_column("Name", style="cyan")
+    table.add_column("Version")
+    table.add_column("Type")
+    table.add_column("Registry", style="dim")
+    table.add_column("Installed", style="dim")
+    table.add_column("Files", style="dim")
+
+    for p in state.installed:
+        table.add_row(
+            p.name,
+            p.version,
+            p.type,
+            p.registry,
+            p.installed_at,
+            str(len(p.files)),
+        )
+
+    console.print(table)
+
+
+@app.command()
+def uninstall(
+    package_name: str = typer.Argument(help="Package name to uninstall"),
+):
+    """Uninstall a package and remove its files."""
+    from minispec_cli.registry import load_registries, save_registries
+
+    state = load_registries()
+
+    pkg = next((p for p in state.installed if p.name == package_name), None)
+    if not pkg:
+        console.print(f"[red]Package '{package_name}' is not installed.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Uninstalling [cyan]{pkg.name}[/cyan] v{pkg.version}...")
+
+    # Remove tracked files
+    removed = 0
+    for file_path in pkg.files:
+        target = Path.cwd() / file_path
+        if target.exists():
+            target.unlink()
+            removed += 1
+            console.print(f"  [dim]Removed {file_path}[/dim]")
+        else:
+            console.print(f"  [yellow]Already missing: {file_path}[/yellow]")
+
+    # Update state
+    state.installed = [p for p in state.installed if p.name != package_name]
+    save_registries(state)
+
+    console.print(f"[green]Uninstalled {pkg.name} ({removed} file{'s' if removed != 1 else ''} removed).[/green]")
+
+
 def main():
     app()
 
