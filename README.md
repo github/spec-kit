@@ -266,7 +266,7 @@ Registries are Git repos with a `packages/` directory. Each package has a `packa
 
 ### Creating a Registry
 
-Use `init-registry` to scaffold a new registry repo, then use the `/minispec.registry` skill to create packages interactively:
+Use `init-registry` to scaffold a new registry repo with example packages, then use the `/minispec.registry` skill to create more packages interactively:
 
 ```bash
 # Scaffold a registry

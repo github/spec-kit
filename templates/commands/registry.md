@@ -20,6 +20,130 @@ Building a registry is iterative. You guide registry authors through:
 
 You are a full authoring partner — you don't just scaffold, you help write content.
 
+## Package Type Reference
+
+Understanding what hooks, commands, and skills are is essential for authoring good packages.
+
+### Hooks
+
+Hooks are event-driven automations that run in response to AI agent lifecycle events. They act as guardrails, validators, or side-effect triggers.
+
+**Event model**: Hooks fire on specific events during the agent's operation. For Claude Code, the available hook events are:
+
+| Event | When it fires |
+|-------|---------------|
+| `PreToolUse` | Before a tool executes (e.g., before running a Bash command) |
+| `PostToolUse` | After a tool executes (e.g., after a file is written) |
+| `Notification` | When the agent sends a notification |
+| `Stop` | When the agent finishes a response |
+| `SubagentStop` | When a subagent (Task tool) completes |
+
+**Exit code conventions**:
+- `0` — Allow (no output means allow too)
+- `2` — Block the action (stderr is shown to the user as the reason)
+- Any other non-zero — Error (logged but doesn't block)
+
+**Hook types**:
+- `command` — Runs a shell command. Receives JSON on stdin with tool name and input. Example: `bash .minispec/hooks/scripts/protect-main.sh "$TOOL_INPUT"`
+- `prompt` — Sends output to the AI model as additional context (no blocking capability)
+
+**Matcher syntax**: The `matcher` field filters which tool invocations trigger the hook. Use tool names like `Bash`, `Write`, `Edit`, `Read`, or a regex pattern.
+
+**Configuration** (Claude Code `settings.json`):
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .minispec/hooks/scripts/my-hook.sh \"$TOOL_INPUT\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+For other agents, hooks are installed as shell scripts in `.minispec/hooks/scripts/` and wired up through each agent's configuration mechanism.
+
+### Commands (Slash Commands)
+
+Commands are markdown templates that users invoke via `/command-name` in their AI agent. They provide structured instructions that guide the agent through a specific workflow.
+
+**Location**: Commands live in the agent's commands directory (e.g., `.claude/commands/`, `.cursor/commands/`).
+
+**Format**: Markdown with YAML frontmatter for agents that support it (Claude, Cursor, Copilot). TOML format for Gemini and Qwen.
+
+````markdown
+---
+description: What this command does (shown in command picker)
+---
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+[Command body — instructions for the AI agent]
+````
+
+**Key features**:
+- `$ARGUMENTS` is replaced with whatever the user types after the command name
+- Phase-based structure (Philosophy → Execution Flow → Output Artifacts) is the MiniSpec convention
+- Commands are stateless — each invocation starts fresh
+
+**Note**: For Claude Code, "skills" (see below) are the newer approach and supersede commands for advanced use cases. Commands still work and are the most portable format across agents.
+
+### Skills
+
+Skills are an enhanced version of commands specific to Claude Code. They use `SKILL.md` files placed in `.claude/skills/<name>/` directories with additional capabilities.
+
+**Location**: `.claude/skills/<skill-name>/SKILL.md`
+
+**Format**: Markdown with extended YAML frontmatter:
+
+````markdown
+---
+description: What this skill does (also used for auto-invocation matching)
+context: fork
+allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+disable-model-invocation: false
+---
+
+[Skill instructions — same markdown body as commands]
+````
+
+**Frontmatter options**:
+- `description` — Shown in skill picker; also used for auto-invocation (if the user's request matches, Claude may suggest the skill)
+- `context: fork` — Runs the skill in an isolated subagent context (protects main conversation)
+- `allowed-tools` — Restricts which tools the skill can use
+- `disable-model-invocation` — If true, prevents the skill from being auto-suggested
+
+**Supporting files**: Skills can include additional files in the same directory (templates, configs, examples) and reference them from the SKILL.md.
+
+**Difference from commands**: Skills support subagent isolation (`context: fork`), tool restrictions, auto-invocation, and supporting files. Commands are simpler and more portable across agents.
+
+When creating a **skill package**, the `package.yaml` should map files to `.claude/skills/<name>/` rather than `.claude/commands/`.
+
+---
+
+## Example Packages
+
+Registries created with `minispec init-registry` include three reference packages in `packages/`. Use these as examples when helping authors create new packages:
+
+| Package | Type | Demonstrates |
+|---------|------|-------------|
+| `protect-main` | hook | PreToolUse event guard, exit code 2 blocking, `settings.json` merge config |
+| `quick-review` | command | Multi-agent file mappings (Claude, Cursor, Copilot), `$ARGUMENTS` usage, phase-based structure |
+| `changelog-writer` | skill | `.claude/skills/` path, `context: fork` frontmatter, supporting files (`template.md`) |
+
+When a user asks "how do I..." or is unsure about structure, read the relevant example package and show them the pattern.
+
 ## Context Detection
 
 Before starting, assess the current state:
@@ -29,6 +153,7 @@ Before starting, assess the current state:
 
 2. **Check `packages/` directory**
    - If empty: Suggest creating the first package
+   - If has example packages only (`protect-main`, `quick-review`, `changelog-writer`): These are reference implementations installed by `minispec init-registry`. Point them out as examples of each package type (hook, command, skill respectively) and suggest creating a new package or reviewing the examples.
    - If has packages: Offer create another, validate, or update metadata
 
 3. **Check `$ARGUMENTS`**
@@ -75,14 +200,14 @@ Based on the package type and target agents, generate the `files:` section of `p
 |-------|---------------------|------------|-------------|--------|
 | claude | `.claude/commands/` | `.minispec/hooks/` | `.claude/settings.json` | Markdown |
 | cursor | `.cursor/commands/` | `.minispec/hooks/` | `.cursor/rules/` | Markdown |
-| copilot | `.github/prompts/` | `.minispec/hooks/` | `.github/copilot-instructions.md` | Markdown |
+| copilot | `.github/agents/` | `.minispec/hooks/` | `.github/copilot-instructions.md` | Markdown |
 | gemini | `.gemini/commands/` | `.minispec/hooks/` | `.gemini/settings.json` | TOML |
 | qwen | `.qwen/commands/` | `.minispec/hooks/` | `.qwen/settings.json` | TOML |
-| opencode | `.opencode/commands/` | `.minispec/hooks/` | `.opencode/` | Markdown |
-| windsurf | `.windsurf/commands/` | `.minispec/hooks/` | `.windsurf/rules/` | Markdown |
-| codex | `.codex/commands/` | `.minispec/hooks/` | `.codex/` | Markdown |
+| opencode | `.opencode/command/` | `.minispec/hooks/` | `.opencode/` | Markdown |
+| windsurf | `.windsurf/workflows/` | `.minispec/hooks/` | `.windsurf/rules/` | Markdown |
+| codex | `.codex/prompts/` | `.minispec/hooks/` | `.codex/` | Markdown |
 | roo | `.roo/commands/` | `.minispec/hooks/` | `.roo/` | Markdown |
-| q | `.amazonq/commands/` | `.minispec/hooks/` | `.amazonq/` | Markdown |
+| q | `.amazonq/prompts/` | `.minispec/hooks/` | `.amazonq/` | Markdown |
 
 For each target agent, create appropriate file mappings:
 
@@ -108,8 +233,10 @@ files:
 **For skill packages:**
 ```yaml
 files:
-  - source: skill.md
-    target: .claude/commands/package-name.md
+  - source: SKILL.md
+    target: .claude/skills/package-name/SKILL.md
+  - source: template.md
+    target: .claude/skills/package-name/template.md
 ```
 
 Use `merge: true` for config files that should be deep-merged into existing configs rather than overwriting.
@@ -130,7 +257,7 @@ This is where you act as a full authoring partner. Based on the package type:
 
 Create a slash command template following MiniSpec conventions:
 
-```markdown
+````markdown
 ---
 description: [Package description]
 ---
@@ -162,7 +289,7 @@ $ARGUMENTS
 
 ## Output Artifacts
 [Files created/modified by this command]
-```
+````
 
 Ask the user what the command should do, then write the full template content. Use the phase-based structure consistently.
 

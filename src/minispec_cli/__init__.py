@@ -1884,6 +1884,7 @@ def init_registry(
 
     tracker = StepTracker("Initialize Registry")
     tracker.add("dirs", "Create directory structure")
+    tracker.add("samples", "Install example packages")
     tracker.add("registry-yaml", "Generate registry.yaml")
     tracker.add("readme", "Generate README.md")
     tracker.add("skill", "Install registry skill")
@@ -1898,6 +1899,22 @@ def init_registry(
         packages_dir.mkdir(parents=True, exist_ok=True)
         (packages_dir / ".gitkeep").touch()
         tracker.complete("dirs")
+
+        # Copy sample packages
+        tracker.start("samples")
+        samples_src = Path(__file__).parent.parent.parent / "templates" / "registry-samples"
+        sample_names = []
+        if samples_src.is_dir():
+            for sample_dir in sorted(samples_src.iterdir()):
+                if sample_dir.is_dir():
+                    dest = packages_dir / sample_dir.name
+                    if not dest.exists():
+                        shutil.copytree(sample_dir, dest)
+                        sample_names.append(sample_dir.name)
+        if sample_names:
+            tracker.complete("samples", ", ".join(sample_names))
+        else:
+            tracker.skip("samples", "no samples found")
 
         # Generate registry.yaml
         tracker.start("registry-yaml")
@@ -1977,9 +1994,16 @@ def init_registry(
         f"[green]{name}/[/green]",
         f"  registry.yaml",
         f"  packages/",
-        f"  README.md",
-        f"  {cmd_path}",
     ]
+    # List installed sample packages
+    installed_samples = sorted(
+        d.name for d in (target / "packages").iterdir()
+        if d.is_dir() and d.name != ".gitkeep"
+    )
+    for sample in installed_samples:
+        tree_lines.append(f"    {sample}/")
+    tree_lines.append(f"  README.md")
+    tree_lines.append(f"  {cmd_path}")
     console.print(Panel(
         "\n".join(tree_lines),
         title="[bold green]Registry created[/bold green]",

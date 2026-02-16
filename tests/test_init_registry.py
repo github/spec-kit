@@ -1,5 +1,9 @@
 """Tests for minispec init-registry command."""
 
+from pathlib import Path
+
+import yaml
+
 from minispec_cli import (
     AGENT_COMMAND_CONFIG,
     AGENT_CONFIG,
@@ -130,3 +134,103 @@ class TestInitRegistryScaffold:
 
         # The init_registry command skips if registry.yaml exists
         assert existing.read_text().startswith("name: my-existing")
+
+
+# --- Sample packages ---
+
+
+SAMPLES_DIR = Path(__file__).parent.parent / "templates" / "registry-samples"
+EXPECTED_SAMPLES = ["changelog-writer", "protect-main", "quick-review"]
+
+
+class TestSamplePackagesExist:
+    def test_samples_directory_exists(self):
+        assert SAMPLES_DIR.is_dir(), f"Missing {SAMPLES_DIR}"
+
+    def test_expected_samples_present(self):
+        sample_names = sorted(d.name for d in SAMPLES_DIR.iterdir() if d.is_dir())
+        assert sample_names == EXPECTED_SAMPLES
+
+
+class TestSamplePackageYaml:
+    """Verify each sample has a valid package.yaml with required fields."""
+
+    def test_all_samples_have_package_yaml(self):
+        for name in EXPECTED_SAMPLES:
+            pkg = SAMPLES_DIR / name / "package.yaml"
+            assert pkg.exists(), f"Missing package.yaml in {name}"
+
+    def test_package_yaml_required_fields(self):
+        required = {"name", "version", "type", "description", "agents", "files"}
+        for name in EXPECTED_SAMPLES:
+            data = yaml.safe_load((SAMPLES_DIR / name / "package.yaml").read_text())
+            missing = required - set(data.keys())
+            assert not missing, f"{name}/package.yaml missing fields: {missing}"
+
+    def test_package_yaml_types_valid(self):
+        valid_types = {"hook", "command", "skill"}
+        for name in EXPECTED_SAMPLES:
+            data = yaml.safe_load((SAMPLES_DIR / name / "package.yaml").read_text())
+            assert data["type"] in valid_types, f"{name} has invalid type: {data['type']}"
+
+    def test_package_yaml_files_sources_exist(self):
+        """Every source file referenced in files[] must exist in the package directory."""
+        for name in EXPECTED_SAMPLES:
+            pkg_dir = SAMPLES_DIR / name
+            data = yaml.safe_load((pkg_dir / "package.yaml").read_text())
+            for mapping in data.get("files", []):
+                source = pkg_dir / mapping["source"]
+                assert source.exists(), f"{name}: source file '{mapping['source']}' not found"
+
+    def test_all_samples_have_readme(self):
+        for name in EXPECTED_SAMPLES:
+            readme = SAMPLES_DIR / name / "README.md"
+            assert readme.exists(), f"Missing README.md in {name}"
+
+
+class TestSamplesCopiedByInit:
+    """Verify that init_registry copies samples into packages/."""
+
+    def test_copy_samples_to_packages(self, tmp_path):
+        """Simulate the sample-copy logic from init_registry."""
+        import shutil
+
+        packages_dir = tmp_path / "packages"
+        packages_dir.mkdir()
+
+        for sample_dir in sorted(SAMPLES_DIR.iterdir()):
+            if sample_dir.is_dir():
+                dest = packages_dir / sample_dir.name
+                shutil.copytree(sample_dir, dest)
+
+        copied = sorted(d.name for d in packages_dir.iterdir() if d.is_dir())
+        assert copied == EXPECTED_SAMPLES
+
+        # Verify each copied package has package.yaml
+        for name in EXPECTED_SAMPLES:
+            assert (packages_dir / name / "package.yaml").exists()
+
+    def test_does_not_overwrite_existing_package(self, tmp_path):
+        """If a package directory already exists, it should not be overwritten."""
+        import shutil
+
+        packages_dir = tmp_path / "packages"
+        packages_dir.mkdir()
+
+        # Pre-create one package with custom content
+        existing = packages_dir / "protect-main"
+        existing.mkdir()
+        marker = existing / "custom.txt"
+        marker.write_text("do not overwrite")
+
+        # Copy samples (skip existing)
+        for sample_dir in sorted(SAMPLES_DIR.iterdir()):
+            if sample_dir.is_dir():
+                dest = packages_dir / sample_dir.name
+                if not dest.exists():
+                    shutil.copytree(sample_dir, dest)
+
+        # Custom content preserved
+        assert marker.read_text() == "do not overwrite"
+        # Other samples still installed
+        assert (packages_dir / "quick-review" / "package.yaml").exists()
