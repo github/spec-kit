@@ -34,19 +34,18 @@ get_current_branch() {
         local latest_feature=""
         local highest=0
 
-        for dir in "$specs_dir"/*; do
-            if [[ -d "$dir" ]]; then
-                local dirname=$(basename "$dir")
-                if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
-                    local number=${BASH_REMATCH[1]}
-                    number=$((10#$number))
-                    if [[ "$number" -gt "$highest" ]]; then
-                        highest=$number
-                        latest_feature=$dirname
-                    fi
+        while IFS= read -r dir; do
+            [[ -d "$dir" ]] || continue
+            local dirname=$(basename "$dir")
+            if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
+                local number=${BASH_REMATCH[1]}
+                number=$((10#$number))
+                if [[ "$number" -gt "$highest" ]]; then
+                    highest=$number
+                    latest_feature=$dirname
                 fi
             fi
-        done
+        done < <(find "$specs_dir" -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
 
         if [[ -n "$latest_feature" ]]; then
             echo "$latest_feature"
@@ -99,13 +98,20 @@ find_feature_dir_by_prefix() {
 
     local prefix="${BASH_REMATCH[1]}"
 
-    # Search for directories in specs/ that start with this prefix
     local matches=()
     if [[ -d "$specs_dir" ]]; then
+        if [[ -n "${SPECIFY_SPECS_SUBDIR:-}" ]] && [[ -d "$specs_dir/$SPECIFY_SPECS_SUBDIR" ]]; then
+            for dir in "$specs_dir/$SPECIFY_SPECS_SUBDIR"/"$prefix"-*; do
+                [[ -d "$dir" ]] && matches+=("$dir")
+            done
+        fi
+
         for dir in "$specs_dir"/"$prefix"-*; do
-            if [[ -d "$dir" ]]; then
-                matches+=("$(basename "$dir")")
-            fi
+            [[ -d "$dir" ]] && matches+=("$dir")
+        done
+
+        for dir in "$specs_dir"/*/"$prefix"-*; do
+            [[ -d "$dir" ]] && matches+=("$dir")
         done
     fi
 
@@ -115,7 +121,7 @@ find_feature_dir_by_prefix() {
         echo "$specs_dir/$branch_name"
     elif [[ ${#matches[@]} -eq 1 ]]; then
         # Exactly one match - perfect!
-        echo "$specs_dir/${matches[0]}"
+        echo "${matches[0]}"
     else
         # Multiple matches - this shouldn't happen with proper naming convention
         echo "ERROR: Multiple spec directories found with prefix '$prefix': ${matches[*]}" >&2
