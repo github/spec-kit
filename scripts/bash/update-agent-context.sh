@@ -35,7 +35,7 @@
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|agy|bob|qoder
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|agy|bob|qoder|hoosh
 # Leave empty to update all existing agent files
 
 set -e
@@ -76,6 +76,7 @@ SHAI_FILE="$REPO_ROOT/SHAI.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
 AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 BOB_FILE="$REPO_ROOT/AGENTS.md"
+HOOSH_FILE="$REPO_ROOT/AGENTS.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -637,9 +638,12 @@ update_specific_agent() {
         bob)
             update_agent_file "$BOB_FILE" "IBM Bob"
             ;;
+        hoosh)
+            update_agent_file "$HOOSH_FILE" "Hoosh"
+            ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|agy|bob|qoder"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|agy|bob|qoder|hoosh"
             exit 1
             ;;
     esac
@@ -728,7 +732,12 @@ update_all_existing_agents() {
         update_agent_file "$BOB_FILE" "IBM Bob"
         found_agent=true
     fi
-    
+
+    if [[ -f "$HOOSH_FILE" ]]; then
+        update_agent_file "$HOOSH_FILE" "Hoosh"
+        found_agent=true
+    fi
+
     # If no agent files exist, create a default Claude file
     if [[ "$found_agent" == false ]]; then
         log_info "No existing agent files found, creating default Claude file..."
@@ -753,7 +762,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|agy|bob|qoder]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|agy|bob|qoder|hoosh]"
 }
 
 #==============================================================================
