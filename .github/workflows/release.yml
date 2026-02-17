@@ -6,6 +6,7 @@ on:
     paths:
       - 'memory/**'
       - 'scripts/**'
+      - 'src/**'
       - 'templates/**'
       - '.github/workflows/**'
   workflow_dispatch:
