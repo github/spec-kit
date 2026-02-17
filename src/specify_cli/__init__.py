@@ -640,6 +640,61 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
 
     return merged
 
+def load_template_from_local(ai_assistant: str, local_dir: Path, *, script_type: str = "sh", verbose: bool = True) -> tuple[Path, dict]:
+    """Load template from local .genreleases directory for development testing.
+    
+    Args:
+        ai_assistant: AI assistant name (e.g., 'antigravity', 'claude')
+        local_dir: Path to local directory containing template zip files
+        script_type: Script type ('sh' or 'ps')
+        verbose: Whether to print status messages
+        
+    Returns:
+        Tuple of (zip_path, metadata_dict)
+    
+    Raises:
+        typer.Exit: If local_dir doesn't exist, is not a directory, or no matching template is found.
+    """
+    if not local_dir.exists():
+        console.print(f"[red]Local templates directory not found:[/red] {local_dir}")
+        raise typer.Exit(1)
+    if not local_dir.is_dir():
+        console.print(f"[red]Path is not a directory:[/red] {local_dir}")
+        raise typer.Exit(1)
+    
+    pattern = f"spec-kit-template-{ai_assistant}-{script_type}-*.zip"
+    matches = list(local_dir.glob(pattern))
+    
+    if not matches:
+        console.print(f"[red]No local template found[/red] matching pattern: [bold]{pattern}[/bold]")
+        console.print(f"[dim]Searched in: {local_dir}[/dim]")
+        available_zips = list(local_dir.glob("spec-kit-template-*.zip"))
+        if available_zips:
+            console.print(Panel(
+                "\n".join(z.name for z in sorted(available_zips)[:10]),
+                title="Available local templates",
+                border_style="yellow"
+            ))
+        raise typer.Exit(1)
+    
+    # Use first match - typically only one version exists per agent/script combo
+    zip_path = matches[0]
+    file_stat = zip_path.stat()
+    
+    if verbose:
+        console.print(f"[cyan]Using local template:[/cyan] {zip_path.name}")
+        console.print(f"[cyan]Size:[/cyan] {file_stat.st_size:,} bytes")
+        console.print(f"[yellow][DEV MODE][/yellow] Loading from local directory")
+    
+    metadata = {
+        "filename": zip_path.name,
+        "size": file_stat.st_size,
+        "release": "local-dev",
+        "asset_url": str(zip_path),
+        "is_local": True
+    }
+    return zip_path, metadata
+
 def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
     repo_owner = "github"
     repo_name = "spec-kit"
@@ -754,35 +809,52 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None, local_dir: Path | None = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+    
+    If local_dir is provided, loads template from local directory instead of GitHub.
     """
     current_dir = Path.cwd()
+    is_local = local_dir is not None
 
     if tracker:
-        tracker.start("fetch", "contacting GitHub API")
+        if is_local:
+            tracker.start("fetch", "loading from local directory")
+        else:
+            tracker.start("fetch", "contacting GitHub API")
     try:
-        zip_path, meta = download_template_from_github(
-            ai_assistant,
-            current_dir,
-            script_type=script_type,
-            verbose=verbose and tracker is None,
-            show_progress=(tracker is None),
-            client=client,
-            debug=debug,
-            github_token=github_token
-        )
+        if is_local:
+            # Use local template - no network request needed
+            zip_path, meta = load_template_from_local(
+                ai_assistant,
+                local_dir,
+                script_type=script_type,
+                verbose=verbose and tracker is None
+            )
+        else:
+            # Download from GitHub releases
+            zip_path, meta = download_template_from_github(
+                ai_assistant,
+                current_dir,
+                script_type=script_type,
+                verbose=verbose and tracker is None,
+                show_progress=(tracker is None),
+                client=client,
+                debug=debug,
+                github_token=github_token
+            )
         if tracker:
-            tracker.complete("fetch", f"release {meta['release']} ({meta['size']:,} bytes)")
-            tracker.add("download", "Download template")
+            release_info = f"local-dev" if is_local else f"release {meta['release']}"
+            tracker.complete("fetch", f"{release_info} ({meta['size']:,} bytes)")
+            tracker.add("download", "Download template" if not is_local else "Load template")
             tracker.complete("download", meta['filename'])
     except Exception as e:
         if tracker:
             tracker.error("fetch", str(e))
         else:
             if verbose:
-                console.print(f"[red]Error downloading template:[/red] {e}")
+                console.print(f"[red]Error {'loading' if is_local else 'downloading'} template:[/red] {e}")
         raise
 
     if tracker:
@@ -892,14 +964,18 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             tracker.complete("extract")
     finally:
         if tracker:
-            tracker.add("cleanup", "Remove temporary archive")
+            tracker.add("cleanup", "Remove temporary archive" if not is_local else "Skip cleanup (local)")
 
-        if zip_path.exists():
+        # Only delete downloaded files, not local templates
+        if not is_local and zip_path.exists():
             zip_path.unlink()
             if tracker:
                 tracker.complete("cleanup")
             elif verbose:
                 console.print(f"Cleaned up: {zip_path.name}")
+        elif is_local:
+            if tracker:
+                tracker.complete("cleanup", "local file preserved")
 
     return project_path
 
@@ -995,6 +1071,7 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    local_templates: str = typer.Option(None, "--local-templates", help="Path to local .genreleases directory for development testing (bypasses GitHub download)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -1166,7 +1243,10 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            # Convert local_templates to Path if provided
+            local_dir = Path(local_templates) if local_templates else None
+            
+            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token, local_dir=local_dir)
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
