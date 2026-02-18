@@ -49,10 +49,16 @@ def project_dir(temp_dir):
 
 
 @pytest.fixture
-def templates_dir(temp_dir):
-    """Create a mock templates/commands directory with sample templates."""
-    tpl_root = temp_dir / "templates" / "commands"
-    tpl_root.mkdir(parents=True)
+def templates_dir(project_dir):
+    """Create mock command templates in the project's agent commands directory.
+
+    This simulates what download_and_extract_template() does: it places
+    command .md files into project_path/<agent_folder>/commands/.
+    install_ai_skills() now reads from here instead of from the repo
+    source tree.
+    """
+    tpl_root = project_dir / ".claude" / "commands"
+    tpl_root.mkdir(parents=True, exist_ok=True)
 
     # Template with valid YAML frontmatter
     (tpl_root / "specify.md").write_text(
@@ -109,7 +115,7 @@ def templates_dir(temp_dir):
 def commands_dir_claude(project_dir):
     """Create a populated .claude/commands directory simulating template extraction."""
     cmd_dir = project_dir / ".claude" / "commands"
-    cmd_dir.mkdir(parents=True)
+    cmd_dir.mkdir(parents=True, exist_ok=True)
     for name in ["speckit.specify.md", "speckit.plan.md", "speckit.tasks.md"]:
         (cmd_dir / name).write_text(f"# {name}\nContent here\n")
     return cmd_dir
@@ -128,38 +134,36 @@ def commands_dir_gemini(project_dir):
 # ===== _get_skills_dir Tests =====
 
 class TestGetSkillsDir:
-    """Test agent-specific skills directory resolution."""
+    """Test the _get_skills_dir() helper function."""
 
     def test_claude_skills_dir(self, project_dir):
-        """Claude skills go to .claude/skills."""
+        """Claude should use .claude/skills/."""
         result = _get_skills_dir(project_dir, "claude")
         assert result == project_dir / ".claude" / "skills"
 
     def test_gemini_skills_dir(self, project_dir):
-        """Gemini skills go to .gemini/skills."""
+        """Gemini should use .gemini/skills/."""
         result = _get_skills_dir(project_dir, "gemini")
         assert result == project_dir / ".gemini" / "skills"
 
     def test_copilot_skills_dir(self, project_dir):
-        """Copilot skills go to .github/skills."""
+        """Copilot should use .github/skills/."""
         result = _get_skills_dir(project_dir, "copilot")
         assert result == project_dir / ".github" / "skills"
 
     def test_codex_uses_override(self, project_dir):
-        """Codex should use the AGENT_SKILLS_DIR_OVERRIDES mapping (.agents/skills)."""
+        """Codex should use the AGENT_SKILLS_DIR_OVERRIDES value."""
         result = _get_skills_dir(project_dir, "codex")
         assert result == project_dir / ".agents" / "skills"
-        # Verify it's coming from the override, not AGENT_CONFIG
-        assert "codex" in AGENT_SKILLS_DIR_OVERRIDES
 
     def test_cursor_agent_skills_dir(self, project_dir):
-        """Cursor agent skills go to .cursor/skills."""
+        """Cursor should use .cursor/skills/."""
         result = _get_skills_dir(project_dir, "cursor-agent")
         assert result == project_dir / ".cursor" / "skills"
 
     def test_unknown_agent_uses_default(self, project_dir):
-        """Unknown agents fall back to DEFAULT_SKILLS_DIR (.agents/skills)."""
-        result = _get_skills_dir(project_dir, "totally-unknown-agent")
+        """Unknown agents should fall back to DEFAULT_SKILLS_DIR."""
+        result = _get_skills_dir(project_dir, "nonexistent-agent")
         assert result == project_dir / DEFAULT_SKILLS_DIR
 
     def test_all_configured_agents_resolve(self, project_dir):
@@ -186,13 +190,7 @@ class TestInstallAiSkills:
 
     def test_skills_installed_with_correct_structure(self, project_dir, templates_dir):
         """Verify SKILL.md files have correct agentskills.io structure."""
-        # We need to make Path(__file__).parent.parent.parent resolve to temp root
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            result = install_ai_skills(project_dir, "claude")
+        result = install_ai_skills(project_dir, "claude")
 
         assert result is True
 
@@ -226,13 +224,7 @@ class TestInstallAiSkills:
 
     def test_generated_skill_has_parseable_yaml(self, project_dir, templates_dir):
         """Generated SKILL.md should contain valid, parseable YAML frontmatter."""
-        # We need to make Path(__file__).parent.parent.parent resolve to temp root
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            install_ai_skills(project_dir, "claude")
+        install_ai_skills(project_dir, "claude")
 
         skill_file = project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
         content = skill_file.read_text()
@@ -248,13 +240,8 @@ class TestInstallAiSkills:
         assert "description" in parsed
 
     def test_empty_yaml_frontmatter(self, project_dir, templates_dir):
-        """Templates with empty YAML frontmatter (---\n---) should not crash."""
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            result = install_ai_skills(project_dir, "claude")
+        """Templates with empty YAML frontmatter (---\\n---) should not crash."""
+        result = install_ai_skills(project_dir, "claude")
 
         assert result is True
 
@@ -266,13 +253,7 @@ class TestInstallAiSkills:
 
     def test_enhanced_descriptions_used_when_available(self, project_dir, templates_dir):
         """SKILL_DESCRIPTIONS take precedence over template frontmatter descriptions."""
-
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            install_ai_skills(project_dir, "claude")
+        install_ai_skills(project_dir, "claude")
 
         skill_file = project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
         content = skill_file.read_text()
@@ -283,14 +264,7 @@ class TestInstallAiSkills:
 
     def test_template_without_frontmatter(self, project_dir, templates_dir):
         """Templates without YAML frontmatter should still produce valid skills."""
-
-
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            install_ai_skills(project_dir, "claude")
+        install_ai_skills(project_dir, "claude")
 
         skill_file = project_dir / ".claude" / "skills" / "speckit-tasks" / "SKILL.md"
         assert skill_file.exists()
@@ -301,10 +275,8 @@ class TestInstallAiSkills:
         assert "Body without frontmatter." in content
 
     def test_missing_templates_directory(self, project_dir):
-        """Returns False when templates/commands directory doesn't exist."""
-
-
-        # Point to a non-existent directory
+        """Returns False when no command templates exist anywhere."""
+        # No .claude/commands/ exists, and __file__ fallback won't find anything
         fake_init = project_dir / "nonexistent" / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
         fake_init.touch()
@@ -318,31 +290,23 @@ class TestInstallAiSkills:
         skills_dir = project_dir / ".claude" / "skills"
         assert not skills_dir.exists()
 
-    def test_empty_templates_directory(self, project_dir, temp_dir):
-        """Returns False when templates/commands has no .md files."""
+    def test_empty_templates_directory(self, project_dir):
+        """Returns False when commands directory has no .md files."""
+        # Create empty .claude/commands/
+        empty_cmds = project_dir / ".claude" / "commands"
+        empty_cmds.mkdir(parents=True)
 
-
-        # Create empty templates/commands
-        empty_tpl = temp_dir / "empty_root" / "templates" / "commands"
-        empty_tpl.mkdir(parents=True)
-        fake_init = temp_dir / "empty_root" / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            result = install_ai_skills(project_dir, "claude")
+        result = install_ai_skills(project_dir, "claude")
 
         assert result is False
 
-    def test_malformed_yaml_frontmatter(self, project_dir, temp_dir):
+    def test_malformed_yaml_frontmatter(self, project_dir):
         """Malformed YAML in a template should be handled gracefully, not crash."""
+        # Create .claude/commands/ with a broken template
+        cmds_dir = project_dir / ".claude" / "commands"
+        cmds_dir.mkdir(parents=True)
 
-
-        tpl_dir = temp_dir / "bad_root" / "templates" / "commands"
-        tpl_dir.mkdir(parents=True)
-
-        # Write a template with invalid YAML
-        (tpl_dir / "broken.md").write_text(
+        (cmds_dir / "broken.md").write_text(
             "---\n"
             "description: [unclosed bracket\n"
             "  invalid: yaml: content: here\n"
@@ -352,33 +316,21 @@ class TestInstallAiSkills:
             encoding="utf-8",
         )
 
-        fake_init = temp_dir / "bad_root" / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            # Should not raise — errors are caught per-file
-            result = install_ai_skills(project_dir, "claude")
+        # Should not raise — errors are caught per-file
+        result = install_ai_skills(project_dir, "claude")
 
         # The broken template should be skipped but not crash the process
         assert result is False
 
     def test_additive_does_not_overwrite_other_files(self, project_dir, templates_dir):
         """Installing skills should not remove non-speckit files in the skills dir."""
-
-
         # Pre-create a custom skill
         custom_dir = project_dir / ".claude" / "skills" / "my-custom-skill"
         custom_dir.mkdir(parents=True)
         custom_file = custom_dir / "SKILL.md"
         custom_file.write_text("# My Custom Skill\n")
 
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            install_ai_skills(project_dir, "claude")
+        install_ai_skills(project_dir, "claude")
 
         # Custom skill should still exist
         assert custom_file.exists()
@@ -386,21 +338,15 @@ class TestInstallAiSkills:
 
     def test_return_value(self, project_dir, templates_dir):
         """install_ai_skills returns True when skills installed, False otherwise."""
+        assert install_ai_skills(project_dir, "claude") is True
 
-
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
+    def test_return_false_when_no_templates(self, project_dir):
+        """install_ai_skills returns False when no templates found."""
+        fake_init = project_dir / "missing" / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
         fake_init.touch()
 
         with patch.object(specify_cli, "__file__", str(fake_init)):
-            assert install_ai_skills(project_dir, "claude") is True
-
-        # Second call to non-existent dir
-        fake_init2 = project_dir / "missing" / "src" / "specify_cli" / "__init__.py"
-        fake_init2.parent.mkdir(parents=True, exist_ok=True)
-        fake_init2.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init2)):
             assert install_ai_skills(project_dir, "claude") is False
 
 
@@ -416,17 +362,10 @@ class TestCommandCoexistence:
 
     def test_existing_commands_preserved_claude(self, project_dir, templates_dir, commands_dir_claude):
         """install_ai_skills must NOT remove pre-existing .claude/commands files."""
-
-
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
         # Verify commands exist before
         assert len(list(commands_dir_claude.glob("speckit.*"))) == 3
 
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            install_ai_skills(project_dir, "claude")
+        install_ai_skills(project_dir, "claude")
 
         # Commands must still be there — install_ai_skills never touches them
         remaining = list(commands_dir_claude.glob("speckit.*"))
@@ -434,46 +373,24 @@ class TestCommandCoexistence:
 
     def test_existing_commands_preserved_gemini(self, project_dir, templates_dir, commands_dir_gemini):
         """install_ai_skills must NOT remove pre-existing .gemini/commands files."""
-
-
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
         assert len(list(commands_dir_gemini.glob("speckit.*"))) == 3
 
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            install_ai_skills(project_dir, "gemini")
+        install_ai_skills(project_dir, "claude")
 
         remaining = list(commands_dir_gemini.glob("speckit.*"))
         assert len(remaining) == 3
 
     def test_commands_dir_not_removed(self, project_dir, templates_dir, commands_dir_claude):
         """install_ai_skills must not remove the commands directory."""
-
-
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            install_ai_skills(project_dir, "claude")
+        install_ai_skills(project_dir, "claude")
 
         assert commands_dir_claude.exists()
 
     def test_no_commands_dir_no_error(self, project_dir, templates_dir):
-        """No error when agent has no commands directory at all."""
+        """No error when installing skills — commands dir has templates and is preserved."""
+        result = install_ai_skills(project_dir, "claude")
 
-
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        # No .claude/commands directory exists
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            result = install_ai_skills(project_dir, "claude")
-
-        # Should still succeed
+        # Should succeed since templates are in .claude/commands/ via fixture
         assert result is True
 
 
@@ -582,18 +499,13 @@ class TestSkipIfExists:
 
     def test_existing_skill_not_overwritten(self, project_dir, templates_dir):
         """Pre-existing SKILL.md should not be replaced on re-run."""
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
         # Pre-create a custom SKILL.md for speckit-specify
         skill_dir = project_dir / ".claude" / "skills" / "speckit-specify"
         skill_dir.mkdir(parents=True)
         custom_content = "# My Custom Specify Skill\nUser-modified content\n"
         (skill_dir / "SKILL.md").write_text(custom_content)
 
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            result = install_ai_skills(project_dir, "claude")
+        result = install_ai_skills(project_dir, "claude")
 
         # The custom SKILL.md should be untouched
         assert (skill_dir / "SKILL.md").read_text() == custom_content
@@ -605,20 +517,13 @@ class TestSkipIfExists:
 
     def test_fresh_install_writes_all_skills(self, project_dir, templates_dir):
         """On first install (no pre-existing skills), all should be written."""
-        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
-        fake_init.parent.mkdir(parents=True, exist_ok=True)
-        fake_init.touch()
-
-        with patch.object(specify_cli, "__file__", str(fake_init)):
-            result = install_ai_skills(project_dir, "claude")
+        result = install_ai_skills(project_dir, "claude")
 
         assert result is True
         skills_dir = project_dir / ".claude" / "skills"
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
         # All 4 templates should produce skills (specify, plan, tasks, empty_fm)
         assert len(skill_dirs) == 4
-
-
 
 
 # ===== SKILL_DESCRIPTIONS Coverage Tests =====

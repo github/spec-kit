@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Agent Skills Installation**: New `--ai-skills` CLI option to install Prompt.MD templates as agent skills following [agentskills.io specification](https://agentskills.io/specification)
   - Skills are installed to agent-specific directories (e.g., `.claude/skills/`, `.gemini/skills/`, `.github/skills/`)
-  - Codex uses `.agents/skills/` per [OpenAI Codex docs](https://developers.openai.com/codex/skills)
+  - Codex uses `.agents/skills/` following Codex agent directory conventions
   - Default fallback directory is `.agents/skills/` for agents without a specific mapping
   - Requires `--ai` flag to be specified
   - Converts all 9 spec-kit command templates (specify, plan, tasks, implement, analyze, clarify, constitution, checklist, taskstoissues) to properly formatted SKILL.md files

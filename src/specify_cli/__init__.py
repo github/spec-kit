@@ -987,7 +987,7 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
 # Agent-specific skill directory overrides for agents whose skills directory
 # doesn't follow the standard <agent_folder>/skills/ pattern
 AGENT_SKILLS_DIR_OVERRIDES = {
-    "codex": ".agents/skills",  # per https://developers.openai.com/codex/skills
+    "codex": ".agents/skills",  # Codex agent layout override
 }
 
 # Default skills directory for agents not in AGENT_CONFIG
@@ -1041,15 +1041,25 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     Returns:
         ``True`` if at least one skill was installed, ``False`` otherwise.
     """
-    # Locate the bundled templates directory
-    script_dir = Path(__file__).parent.parent.parent  # up from src/specify_cli/
-    templates_dir = script_dir / "templates" / "commands"
+    # Locate command templates in the agent's extracted commands directory.
+    # download_and_extract_template() already placed the .md files here.
+    agent_config = AGENT_CONFIG.get(selected_ai, {})
+    agent_folder = agent_config.get("folder", "")
+    if agent_folder:
+        templates_dir = project_path / agent_folder.rstrip("/") / "commands"
+    else:
+        templates_dir = project_path / "commands"
+
+    if not templates_dir.exists():
+        # Fallback: try the repo-relative path (for running from source checkout)
+        script_dir = Path(__file__).parent.parent.parent  # up from src/specify_cli/
+        templates_dir = script_dir / "templates" / "commands"
 
     if not templates_dir.exists():
         if tracker:
-            tracker.error("ai-skills", "templates/commands not found")
+            tracker.error("ai-skills", "command templates not found")
         else:
-            console.print("[yellow]Warning: templates/commands directory not found, skipping skills installation[/yellow]")
+            console.print("[yellow]Warning: command templates not found, skipping skills installation[/yellow]")
         return False
 
     command_files = sorted(templates_dir.glob("*.md"))
