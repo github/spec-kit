@@ -13,8 +13,11 @@ Tests cover:
 import pytest
 import tempfile
 import shutil
+import yaml
 from pathlib import Path
 from unittest.mock import patch
+
+import specify_cli
 
 from specify_cli import (
     _get_skills_dir,
@@ -85,6 +88,17 @@ def templates_dir(temp_dir):
         "# Tasks Command\n"
         "\n"
         "Body without frontmatter.\n",
+        encoding="utf-8",
+    )
+
+    # Template with empty YAML frontmatter (yaml.safe_load returns None)
+    (tpl_root / "empty_fm.md").write_text(
+        "---\n"
+        "---\n"
+        "\n"
+        "# Empty Frontmatter Command\n"
+        "\n"
+        "Body with empty frontmatter.\n",
         encoding="utf-8",
     )
 
@@ -172,10 +186,6 @@ class TestInstallAiSkills:
 
     def test_skills_installed_with_correct_structure(self, project_dir, templates_dir):
         """Verify SKILL.md files have correct agentskills.io structure."""
-        # Directly call install_ai_skills with a patched templates dir path
-        import specify_cli
-
-        orig_file = specify_cli.__file__
         # We need to make Path(__file__).parent.parent.parent resolve to temp root
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
@@ -191,7 +201,10 @@ class TestInstallAiSkills:
 
         # Check that skill directories were created
         skill_dirs = sorted([d.name for d in skills_dir.iterdir() if d.is_dir()])
-        assert skill_dirs == ["speckit-plan", "speckit-specify", "speckit-tasks"]
+        assert "speckit-plan" in skill_dirs
+        assert "speckit-specify" in skill_dirs
+        assert "speckit-tasks" in skill_dirs
+        assert "speckit-empty_fm" in skill_dirs
 
         # Verify SKILL.md content for speckit-specify
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
@@ -211,9 +224,48 @@ class TestInstallAiSkills:
         assert "# Speckit Specify Skill" in content
         assert "Run this to create a spec." in content
 
+    def test_generated_skill_has_parseable_yaml(self, project_dir, templates_dir):
+        """Generated SKILL.md should contain valid, parseable YAML frontmatter."""
+        # We need to make Path(__file__).parent.parent.parent resolve to temp root
+        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
+        fake_init.parent.mkdir(parents=True, exist_ok=True)
+        fake_init.touch()
+
+        with patch.object(specify_cli, "__file__", str(fake_init)):
+            install_ai_skills(project_dir, "claude")
+
+        skill_file = project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        content = skill_file.read_text()
+
+        # Extract and parse frontmatter
+        assert content.startswith("---\n")
+        parts = content.split("---", 2)
+        assert len(parts) >= 3
+        parsed = yaml.safe_load(parts[1])
+        assert isinstance(parsed, dict)
+        assert "name" in parsed
+        assert parsed["name"] == "speckit-specify"
+        assert "description" in parsed
+
+    def test_empty_yaml_frontmatter(self, project_dir, templates_dir):
+        """Templates with empty YAML frontmatter (---\n---) should not crash."""
+        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
+        fake_init.parent.mkdir(parents=True, exist_ok=True)
+        fake_init.touch()
+
+        with patch.object(specify_cli, "__file__", str(fake_init)):
+            result = install_ai_skills(project_dir, "claude")
+
+        assert result is True
+
+        skill_file = project_dir / ".claude" / "skills" / "speckit-empty_fm" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        assert "name: speckit-empty_fm" in content
+        assert "Body with empty frontmatter." in content
+
     def test_enhanced_descriptions_used_when_available(self, project_dir, templates_dir):
         """SKILL_DESCRIPTIONS take precedence over template frontmatter descriptions."""
-        import specify_cli
 
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
@@ -231,7 +283,7 @@ class TestInstallAiSkills:
 
     def test_template_without_frontmatter(self, project_dir, templates_dir):
         """Templates without YAML frontmatter should still produce valid skills."""
-        import specify_cli
+
 
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
@@ -250,7 +302,7 @@ class TestInstallAiSkills:
 
     def test_missing_templates_directory(self, project_dir):
         """Returns False when templates/commands directory doesn't exist."""
-        import specify_cli
+
 
         # Point to a non-existent directory
         fake_init = project_dir / "nonexistent" / "src" / "specify_cli" / "__init__.py"
@@ -268,7 +320,7 @@ class TestInstallAiSkills:
 
     def test_empty_templates_directory(self, project_dir, temp_dir):
         """Returns False when templates/commands has no .md files."""
-        import specify_cli
+
 
         # Create empty templates/commands
         empty_tpl = temp_dir / "empty_root" / "templates" / "commands"
@@ -284,7 +336,7 @@ class TestInstallAiSkills:
 
     def test_malformed_yaml_frontmatter(self, project_dir, temp_dir):
         """Malformed YAML in a template should be handled gracefully, not crash."""
-        import specify_cli
+
 
         tpl_dir = temp_dir / "bad_root" / "templates" / "commands"
         tpl_dir.mkdir(parents=True)
@@ -313,7 +365,7 @@ class TestInstallAiSkills:
 
     def test_additive_does_not_overwrite_other_files(self, project_dir, templates_dir):
         """Installing skills should not remove non-speckit files in the skills dir."""
-        import specify_cli
+
 
         # Pre-create a custom skill
         custom_dir = project_dir / ".claude" / "skills" / "my-custom-skill"
@@ -334,7 +386,7 @@ class TestInstallAiSkills:
 
     def test_return_value(self, project_dir, templates_dir):
         """install_ai_skills returns True when skills installed, False otherwise."""
-        import specify_cli
+
 
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
@@ -364,7 +416,7 @@ class TestCommandCoexistence:
 
     def test_existing_commands_preserved_claude(self, project_dir, templates_dir, commands_dir_claude):
         """install_ai_skills must NOT remove pre-existing .claude/commands files."""
-        import specify_cli
+
 
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
@@ -382,7 +434,7 @@ class TestCommandCoexistence:
 
     def test_existing_commands_preserved_gemini(self, project_dir, templates_dir, commands_dir_gemini):
         """install_ai_skills must NOT remove pre-existing .gemini/commands files."""
-        import specify_cli
+
 
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
@@ -398,7 +450,7 @@ class TestCommandCoexistence:
 
     def test_commands_dir_not_removed(self, project_dir, templates_dir, commands_dir_claude):
         """install_ai_skills must not remove the commands directory."""
-        import specify_cli
+
 
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
@@ -411,7 +463,7 @@ class TestCommandCoexistence:
 
     def test_no_commands_dir_no_error(self, project_dir, templates_dir):
         """No error when agent has no commands directory at all."""
-        import specify_cli
+
 
         fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)

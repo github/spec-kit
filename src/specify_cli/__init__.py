@@ -1076,7 +1076,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             if content.startswith("---"):
                 parts = content.split("---", 2)
                 if len(parts) >= 3:
-                    frontmatter = yaml.safe_load(parts[1])
+                    frontmatter = yaml.safe_load(parts[1]) or {}
                     body = parts[2].strip()
                 else:
                     frontmatter = {}
