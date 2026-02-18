@@ -482,58 +482,143 @@ class TestCommandCoexistence:
 class TestNewProjectCommandSkip:
     """Test that init() removes extracted commands for new projects only.
 
-    The init() function removes the freshly-extracted commands directory
-    when --ai-skills is used and the project is NEW (not --here).
-    For --here on existing repos, commands are left untouched.
+    These tests run init() end-to-end via CliRunner with
+    download_and_extract_template patched to create local fixtures.
     """
 
-    def test_new_project_commands_dir_removed(self, project_dir):
-        """For new projects, the extracted commands directory should be removed."""
-        import shutil as _shutil
+    def _fake_extract(self, agent, project_path, **_kwargs):
+        """Simulate template extraction: create agent commands dir."""
+        agent_cfg = AGENT_CONFIG.get(agent, {})
+        agent_folder = agent_cfg.get("folder", "")
+        if agent_folder:
+            cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
+            cmds_dir.mkdir(parents=True, exist_ok=True)
+            (cmds_dir / "speckit.specify.md").write_text("# spec")
 
-        # Simulate what init() does: after extraction, if ai_skills and not here
-        agent_folder = AGENT_CONFIG["claude"]["folder"]
-        cmds_dir = project_dir / agent_folder.rstrip("/") / "commands"
-        cmds_dir.mkdir(parents=True)
-        (cmds_dir / "speckit.specify.md").write_text("# spec")
+    def test_new_project_commands_removed_after_skills_succeed(self, tmp_path):
+        """For new projects, commands should be removed when skills succeed."""
+        from typer.testing import CliRunner
 
-        ai_skills = True
-        here = False
+        runner = CliRunner()
+        target = tmp_path / "new-proj"
 
-        # Replicate the init() logic
-        if ai_skills and not here:
-            agent_cfg = AGENT_CONFIG.get("claude", {})
-            af = agent_cfg.get("folder", "")
-            if af:
-                d = project_dir / af.rstrip("/") / "commands"
-                if d.exists():
-                    _shutil.rmtree(d)
+        def fake_download(project_path, *args, **kwargs):
+            self._fake_extract("claude", project_path)
 
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
+
+        # Skills should have been called
+        mock_skills.assert_called_once()
+
+        # Commands dir should have been removed after skills succeeded
+        cmds_dir = target / ".claude" / "commands"
         assert not cmds_dir.exists()
 
-    def test_here_mode_commands_preserved(self, project_dir):
+    def test_commands_preserved_when_skills_fail(self, tmp_path):
+        """If skills fail, commands should NOT be removed (safety net)."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "fail-proj"
+
+        def fake_download(project_path, *args, **kwargs):
+            self._fake_extract("claude", project_path)
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=False), \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
+
+        # Commands should still exist since skills failed
+        cmds_dir = target / ".claude" / "commands"
+        assert cmds_dir.exists()
+        assert (cmds_dir / "speckit.specify.md").exists()
+
+    def test_here_mode_commands_preserved(self, tmp_path, monkeypatch):
         """For --here on existing repos, commands must NOT be removed."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        # Create a mock existing project with commands already present
+        target = tmp_path / "existing"
+        target.mkdir()
         agent_folder = AGENT_CONFIG["claude"]["folder"]
-        cmds_dir = project_dir / agent_folder.rstrip("/") / "commands"
+        cmds_dir = target / agent_folder.rstrip("/") / "commands"
         cmds_dir.mkdir(parents=True)
         (cmds_dir / "speckit.specify.md").write_text("# spec")
 
-        ai_skills = True
-        here = True
+        # --here uses CWD, so chdir into the target
+        monkeypatch.chdir(target)
 
-        # Replicate the init() logic
-        if ai_skills and not here:
-            import shutil as _shutil
-            agent_cfg = AGENT_CONFIG.get("claude", {})
-            af = agent_cfg.get("folder", "")
-            if af:
-                d = project_dir / af.rstrip("/") / "commands"
-                if d.exists():
-                    _shutil.rmtree(d)
+        def fake_download(project_path, *args, **kwargs):
+            pass  # commands already exist, no need to re-create
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=True), \
+             patch("specify_cli.is_git_repo", return_value=True), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
         # Commands must remain for --here
         assert cmds_dir.exists()
         assert (cmds_dir / "speckit.specify.md").exists()
+
+
+# ===== Skip-If-Exists Tests =====
+
+class TestSkipIfExists:
+    """Test that install_ai_skills does not overwrite existing SKILL.md files."""
+
+    def test_existing_skill_not_overwritten(self, project_dir, templates_dir):
+        """Pre-existing SKILL.md should not be replaced on re-run."""
+        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
+        fake_init.parent.mkdir(parents=True, exist_ok=True)
+        fake_init.touch()
+
+        # Pre-create a custom SKILL.md for speckit-specify
+        skill_dir = project_dir / ".claude" / "skills" / "speckit-specify"
+        skill_dir.mkdir(parents=True)
+        custom_content = "# My Custom Specify Skill\nUser-modified content\n"
+        (skill_dir / "SKILL.md").write_text(custom_content)
+
+        with patch.object(specify_cli, "__file__", str(fake_init)):
+            result = install_ai_skills(project_dir, "claude")
+
+        # The custom SKILL.md should be untouched
+        assert (skill_dir / "SKILL.md").read_text() == custom_content
+
+        # But other skills should still be installed
+        assert result is True
+        assert (project_dir / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert (project_dir / ".claude" / "skills" / "speckit-tasks" / "SKILL.md").exists()
+
+    def test_fresh_install_writes_all_skills(self, project_dir, templates_dir):
+        """On first install (no pre-existing skills), all should be written."""
+        fake_init = templates_dir.parent.parent / "src" / "specify_cli" / "__init__.py"
+        fake_init.parent.mkdir(parents=True, exist_ok=True)
+        fake_init.touch()
+
+        with patch.object(specify_cli, "__file__", str(fake_init)):
+            result = install_ai_skills(project_dir, "claude")
+
+        assert result is True
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        # All 4 templates should produce skills (specify, plan, tasks, empty_fm)
+        assert len(skill_dirs) == 4
+
+
 
 
 # ===== SKILL_DESCRIPTIONS Coverage Tests =====

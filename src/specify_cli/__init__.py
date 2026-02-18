@@ -1112,6 +1112,9 @@ metadata:
 """
 
             skill_file = skill_dir / "SKILL.md"
+            if skill_file.exists():
+                # Do not overwrite user-customized skills on re-runs
+                continue
             skill_file.write_text(skill_content, encoding="utf-8")
             installed_count += 1
 
@@ -1331,25 +1334,27 @@ def init(
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
-            # When --ai-skills is used on a NEW project, remove the command
-            # files that the template archive just created.  Skills replace
-            # commands, so keeping both would be confusing.  For --here on an
-            # existing repo we leave pre-existing commands untouched to avoid
-            # a breaking change.
-            if ai_skills and not here:
-                agent_cfg = AGENT_CONFIG.get(selected_ai, {})
-                agent_folder = agent_cfg.get("folder", "")
-                if agent_folder:
-                    cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
-                    if cmds_dir.exists():
-                        shutil.rmtree(cmds_dir)
-
             ensure_executable_scripts(project_path, tracker=tracker)
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
             if ai_skills:
-                install_ai_skills(project_path, selected_ai, tracker=tracker)
+                skills_ok = install_ai_skills(project_path, selected_ai, tracker=tracker)
+
+                # When --ai-skills is used on a NEW project and skills were
+                # successfully installed, remove the command files that the
+                # template archive just created.  Skills replace commands, so
+                # keeping both would be confusing.  For --here on an existing
+                # repo we leave pre-existing commands untouched to avoid a
+                # breaking change.  We only delete AFTER skills succeed so the
+                # project always has at least one of {commands, skills}.
+                if skills_ok and not here:
+                    agent_cfg = AGENT_CONFIG.get(selected_ai, {})
+                    agent_folder = agent_cfg.get("folder", "")
+                    if agent_folder:
+                        cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
+                        if cmds_dir.exists():
+                            shutil.rmtree(cmds_dir)
 
             if not no_git:
                 tracker.start("git")
