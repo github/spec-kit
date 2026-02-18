@@ -31,7 +31,6 @@
 - [📖 Learn More](#-learn-more)
 - [📋 Detailed Process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
-- [👥 Maintainers](#-maintainers)
 - [💬 Support](#-support)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
@@ -636,11 +635,6 @@ git config --global credential.helper manager
 echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
-
-## 👥 Maintainers
-
-- Den Delimarsky ([@localden](https://github.com/localden))
-- John Lam ([@jflam](https://github.com/jflam))
 
 ## 💬 Support
 

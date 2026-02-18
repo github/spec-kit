@@ -35,7 +35,7 @@
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|agy|bob|qoder
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|qoder
 # Leave empty to update all existing agent files
 
 set -e
@@ -723,7 +723,6 @@ update_all_existing_agents() {
         update_agent_file "$AGY_FILE" "Antigravity"
         found_agent=true
     fi
-    
     if [[ -f "$BOB_FILE" ]]; then
         update_agent_file "$BOB_FILE" "IBM Bob"
         found_agent=true
@@ -753,7 +752,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|agy|bob|qoder]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|qoder]"
 }
 
 #==============================================================================
