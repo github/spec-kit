@@ -53,7 +53,7 @@ Install once and use everywhere:
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 ```
-If missing uv
+If you don't have uv installed:
 
 ```bash
 irm https://astral.sh/uv/install.ps1 | iex
