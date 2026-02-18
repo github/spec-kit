@@ -1039,7 +1039,8 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
         tracker: Optional progress tracker.
 
     Returns:
-        ``True`` if at least one skill was installed, ``False`` otherwise.
+        ``True`` if at least one skill was installed or all skills were
+        already present (idempotent re-run), ``False`` otherwise.
     """
     # Locate command templates in the agent's extracted commands directory.
     # download_and_extract_template() already placed the .md files here.
@@ -1059,7 +1060,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
             templates_dir = fallback_dir
 
-    if not templates_dir.exists():
+    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
         if tracker:
             tracker.error("ai-skills", "command templates not found")
         else:
@@ -1082,6 +1083,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
         tracker.start("ai-skills")
 
     installed_count = 0
+    skipped_count = 0
     for command_file in command_files:
         try:
             content = command_file.read_text(encoding="utf-8")
@@ -1116,20 +1118,26 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             skill_dir.mkdir(parents=True, exist_ok=True)
 
             # Select the best description available
-            original_desc = frontmatter.get("description", "") if frontmatter else ""
+            original_desc = frontmatter.get("description", "")
             enhanced_desc = SKILL_DESCRIPTIONS.get(command_name, original_desc or f"Spec-kit workflow command: {command_name}")
 
             # Build SKILL.md following agentskills.io spec
             # Use yaml.safe_dump to safely serialise the frontmatter and
             # avoid YAML injection from descriptions containing colons,
             # quotes, or newlines.
+            # Normalize source filename for metadata — strip speckit. prefix
+            # so it matches the canonical templates/commands/<cmd>.md path.
+            source_name = command_file.name
+            if source_name.startswith("speckit."):
+                source_name = source_name[len("speckit."):]
+
             frontmatter_data = {
                 "name": skill_name,
                 "description": enhanced_desc,
                 "compatibility": "Requires spec-kit project structure with .specify/ directory",
                 "metadata": {
                     "author": "github-spec-kit",
-                    "source": f"templates/commands/{command_file.name}",
+                    "source": f"templates/commands/{source_name}",
                 },
             }
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
@@ -1144,6 +1152,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             skill_file = skill_dir / "SKILL.md"
             if skill_file.exists():
                 # Do not overwrite user-customized skills on re-runs
+                skipped_count += 1
                 continue
             skill_file.write_text(skill_content, encoding="utf-8")
             installed_count += 1
@@ -1153,17 +1162,23 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             continue
 
     if tracker:
-        if installed_count > 0:
+        if installed_count > 0 and skipped_count > 0:
+            tracker.complete("ai-skills", f"{installed_count} new + {skipped_count} existing skills in {skills_dir.relative_to(project_path)}")
+        elif installed_count > 0:
             tracker.complete("ai-skills", f"{installed_count} skills → {skills_dir.relative_to(project_path)}")
+        elif skipped_count > 0:
+            tracker.complete("ai-skills", f"{skipped_count} skills already present")
         else:
             tracker.error("ai-skills", "no skills installed")
     else:
         if installed_count > 0:
             console.print(f"[green]✓[/green] Installed {installed_count} agent skills to {skills_dir.relative_to(project_path)}/")
+        elif skipped_count > 0:
+            console.print(f"[green]✓[/green] {skipped_count} agent skills already present in {skills_dir.relative_to(project_path)}/")
         else:
             console.print("[yellow]No skills were installed[/yellow]")
 
-    return installed_count > 0
+    return installed_count > 0 or skipped_count > 0
 
 
 @app.command()

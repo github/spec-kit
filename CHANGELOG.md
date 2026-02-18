@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **New projects**: command files are not installed when `--ai-skills` is used (skills replace commands)
   - **Existing repos** (`--here`): pre-existing command files are preserved — no breaking changes
   - `pyyaml` dependency (already present) used for YAML frontmatter parsing
-- **Unit tests** for `install_ai_skills`, `_get_skills_dir`, and `--ai-skills` CLI validation (26 test cases)
+- **Unit tests** for `install_ai_skills`, `_get_skills_dir`, and `--ai-skills` CLI validation (51 test cases covering all 18 supported agents)
 
 ## [0.1.0] - 2026-01-28
 
