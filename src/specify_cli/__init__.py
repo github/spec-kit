@@ -1050,10 +1050,14 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     else:
         templates_dir = project_path / "commands"
 
-    if not templates_dir.exists():
+    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
         # Fallback: try the repo-relative path (for running from source checkout)
+        # This also covers agents whose extracted commands are in a different
+        # format (e.g. gemini uses .toml, not .md).
         script_dir = Path(__file__).parent.parent.parent  # up from src/specify_cli/
-        templates_dir = script_dir / "templates" / "commands"
+        fallback_dir = script_dir / "templates" / "commands"
+        if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
+            templates_dir = fallback_dir
 
     if not templates_dir.exists():
         if tracker:

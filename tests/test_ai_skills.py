@@ -300,7 +300,13 @@ class TestInstallAiSkills:
         empty_cmds = project_dir / ".claude" / "commands"
         empty_cmds.mkdir(parents=True)
 
-        result = install_ai_skills(project_dir, "claude")
+        # Block the __file__ fallback so it can't find real templates
+        fake_init = project_dir / "nowhere" / "src" / "specify_cli" / "__init__.py"
+        fake_init.parent.mkdir(parents=True, exist_ok=True)
+        fake_init.touch()
+
+        with patch.object(specify_cli, "__file__", str(fake_init)):
+            result = install_ai_skills(project_dir, "claude")
 
         assert result is False
 
@@ -353,8 +359,50 @@ class TestInstallAiSkills:
         with patch.object(specify_cli, "__file__", str(fake_init)):
             assert install_ai_skills(project_dir, "claude") is False
 
+    def test_non_md_commands_dir_falls_back(self, project_dir):
+        """When extracted commands are .toml (e.g. gemini), fall back to repo templates."""
+        # Simulate gemini template extraction: .gemini/commands/ with .toml files only
+        cmds_dir = project_dir / ".gemini" / "commands"
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "speckit.specify.toml").write_text('[command]\nname = "specify"\n')
+        (cmds_dir / "speckit.plan.toml").write_text('[command]\nname = "plan"\n')
 
-# ===== Command Coexistence Tests =====
+        # The __file__ fallback should find the real repo templates/commands/*.md
+        result = install_ai_skills(project_dir, "gemini")
+
+        assert result is True
+        skills_dir = project_dir / ".gemini" / "skills"
+        assert skills_dir.exists()
+        # Should have installed skills from the fallback .md templates
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert len(skill_dirs) >= 1
+        # .toml commands should be untouched
+        assert (cmds_dir / "speckit.specify.toml").exists()
+
+    @pytest.mark.parametrize("agent_key", list(AGENT_CONFIG.keys()))
+    def test_skills_install_for_all_agents(self, temp_dir, agent_key):
+        """install_ai_skills should produce skills for every configured agent."""
+        proj = temp_dir / f"proj-{agent_key}"
+        proj.mkdir()
+
+        # Place .md templates in the agent's commands directory
+        agent_folder = AGENT_CONFIG[agent_key]["folder"]
+        cmds_dir = proj / agent_folder.rstrip("/") / "commands"
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "specify.md").write_text(
+            "---\ndescription: Test command\n---\n\n# Test\n\nBody.\n"
+        )
+
+        result = install_ai_skills(proj, agent_key)
+
+        assert result is True
+        skills_dir = _get_skills_dir(proj, agent_key)
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert "speckit-specify" in skill_dirs
+        assert (skills_dir / "speckit-specify" / "SKILL.md").exists()
+
+
 
 class TestCommandCoexistence:
     """Verify install_ai_skills never touches command files.
