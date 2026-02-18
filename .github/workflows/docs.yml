@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0 # Fetch all history for git info
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.x'
 
