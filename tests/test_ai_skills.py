@@ -427,7 +427,7 @@ class TestCommandCoexistence:
         """install_ai_skills must NOT remove pre-existing .gemini/commands files."""
         assert len(list(commands_dir_gemini.glob("speckit.*"))) == 3
 
-        install_ai_skills(project_dir, "claude")
+        install_ai_skills(project_dir, "gemini")
 
         remaining = list(commands_dir_gemini.glob("speckit.*"))
         assert len(remaining) == 3

@@ -1090,7 +1090,9 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             if content.startswith("---"):
                 parts = content.split("---", 2)
                 if len(parts) >= 3:
-                    frontmatter = yaml.safe_load(parts[1]) or {}
+                    frontmatter = yaml.safe_load(parts[1])
+                    if not isinstance(frontmatter, dict):
+                        frontmatter = {}
                     body = parts[2].strip()
                 else:
                     # File starts with --- but has no closing ---
@@ -1102,6 +1104,11 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                 body = content
 
             command_name = command_file.stem
+            # Normalize: extracted commands may be named "speckit.<cmd>.md";
+            # strip the "speckit." prefix so skill names stay clean and
+            # SKILL_DESCRIPTIONS lookups work.
+            if command_name.startswith("speckit."):
+                command_name = command_name[len("speckit."):]
             skill_name = f"speckit-{command_name}"
 
             # Create skill directory (additive — never removes existing content)
