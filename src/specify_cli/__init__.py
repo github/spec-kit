@@ -1089,6 +1089,8 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                     frontmatter = yaml.safe_load(parts[1]) or {}
                     body = parts[2].strip()
                 else:
+                    # File starts with --- but has no closing ---
+                    console.print(f"[yellow]Warning: {command_file.name} has malformed frontmatter (no closing ---), treating as plain content[/yellow]")
                     frontmatter = {}
                     body = content
             else:
@@ -1107,19 +1109,26 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             enhanced_desc = SKILL_DESCRIPTIONS.get(command_name, original_desc or f"Spec-kit workflow command: {command_name}")
 
             # Build SKILL.md following agentskills.io spec
-            skill_content = f"""---
-name: {skill_name}
-description: {enhanced_desc}
-compatibility: Requires spec-kit project structure with .specify/ directory
-metadata:
-  author: github-spec-kit
-  source: templates/commands/{command_file.name}
----
-
-# Speckit {command_name.title()} Skill
-
-{body}
-"""
+            # Use yaml.safe_dump to safely serialise the frontmatter and
+            # avoid YAML injection from descriptions containing colons,
+            # quotes, or newlines.
+            frontmatter_data = {
+                "name": skill_name,
+                "description": enhanced_desc,
+                "compatibility": "Requires spec-kit project structure with .specify/ directory",
+                "metadata": {
+                    "author": "github-spec-kit",
+                    "source": f"templates/commands/{command_file.name}",
+                },
+            }
+            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+            skill_content = (
+                f"---\n"
+                f"{frontmatter_text}\n"
+                f"---\n\n"
+                f"# Speckit {command_name.title()} Skill\n\n"
+                f"{body}\n"
+            )
 
             skill_file = skill_dir / "SKILL.md"
             if skill_file.exists():
@@ -1364,7 +1373,12 @@ def init(
                     if agent_folder:
                         cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
                         if cmds_dir.exists():
-                            shutil.rmtree(cmds_dir)
+                            try:
+                                shutil.rmtree(cmds_dir)
+                            except OSError:
+                                # Best-effort cleanup: skills are already installed,
+                                # so leaving stale commands is non-fatal.
+                                console.print("[yellow]Warning: could not remove extracted commands directory[/yellow]")
 
             if not no_git:
                 tracker.start("git")

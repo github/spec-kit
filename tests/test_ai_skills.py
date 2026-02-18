@@ -258,9 +258,13 @@ class TestInstallAiSkills:
         skill_file = project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
         content = skill_file.read_text()
 
-        # Should use the enhanced description from SKILL_DESCRIPTIONS, not the template one
+        # Parse the generated YAML to compare the description value
+        # (yaml.safe_dump may wrap long strings across multiple lines)
+        parts = content.split("---", 2)
+        parsed = yaml.safe_load(parts[1])
+
         if "specify" in SKILL_DESCRIPTIONS:
-            assert SKILL_DESCRIPTIONS["specify"] in content
+            assert parsed["description"] == SKILL_DESCRIPTIONS["specify"]
 
     def test_template_without_frontmatter(self, project_dir, templates_dir):
         """Templates without YAML frontmatter should still produce valid skills."""
