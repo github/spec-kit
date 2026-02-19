@@ -10,6 +10,7 @@ Tests cover:
 - CLI validation: --ai-skills requires --ai
 """
 
+import re
 import pytest
 import tempfile
 import shutil
@@ -626,5 +627,6 @@ class TestCliValidation:
         runner = CliRunner()
         result = runner.invoke(app, ["init", "--help"])
 
-        assert "--ai-skills" in result.output
-        assert "agent skills" in result.output.lower()
+        plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        assert "--ai-skills" in plain
+        assert "agent skills" in plain.lower()
