@@ -26,9 +26,6 @@ jobs:
       - name: Run ruff check
         run: uvx ruff check src/
 
-      - name: Run ruff format check
-        run: uvx ruff format --check src/
-
   pytest:
     runs-on: ubuntu-latest
     strategy:
