@@ -118,7 +118,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
    - **Core development**: Implement models, services, CLI commands, endpoints
    - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+   - **Polish and validation**: Unit tests (aim for 100% coverage), performance optimization, documentation
 
 8. Progress tracking and error handling:
    - Report progress after each completed task
