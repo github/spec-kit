@@ -33,6 +33,67 @@
 
 [Gates determined based on constitution file]
 
+## Design System Check
+
+*GATE: Verify alignment with design system (if exists). Skip if no design system defined.*
+
+**Reference**: `.specify/memory/design-system.md`
+
+<!--
+  ACTION REQUIRED: If a design system exists at .specify/memory/design-system.md,
+  fill this section to ensure the feature follows established design patterns.
+  If no design system exists, this section can be removed or marked as N/A.
+-->
+
+[DESIGN_SYSTEM_VALIDATION]
+<!-- Example:
+
+- [ ] **Components follow design system patterns**
+  - Using Button component (primary variant for CTAs, secondary for less important actions)
+  - Using Card component for content grouping
+  - Using Form pattern (vertical layout, proper spacing, validation states)
+
+- [ ] **Colors use defined palette**
+  - Primary color for CTAs and important actions
+  - Semantic colors for success/warning/error messages
+  - Neutral colors for text and backgrounds
+  - No custom colors introduced without justification
+
+- [ ] **Typography follows scale**
+  - Headings use defined type scale (2xl for h1, xl for h2, etc.)
+  - Body text uses base size (16px)
+  - Font weights consistent (semibold for headings, regular for body)
+
+- [ ] **Spacing follows system**
+  - Using spacing scale (4, 6, 8 for standard spacing)
+  - Consistent padding/margin throughout feature
+  - Proper component spacing (cards, sections, etc.)
+
+- [ ] **Accessibility standards met**
+  - WCAG AA compliance (4.5:1 contrast minimum)
+  - Keyboard navigation implemented
+  - Screen reader labels for icon-only buttons
+  - Focus indicators visible
+
+- [ ] **Responsive design implemented**
+  - Mobile-first approach (single column on mobile)
+  - Uses defined breakpoints (sm: 640px, md: 768px, lg: 1024px)
+  - Touch-optimized on mobile (44x44px minimum touch targets)
+  - Proper responsive behavior for all components
+
+**Deviations from Design System** (if any):
+- [List any intentional deviations from the design system]
+- [Provide justification for each deviation]
+- [Ensure deviations align with constitution principles]
+- [Consider if deviations should be added back to design system]
+
+**New Patterns Introduced** (if any):
+- [List any new UI patterns not covered by design system]
+- [Justify need for new pattern]
+- [Consider if pattern should be added to design system for reuse]
+
+-->
+
 ## Project Structure
 
 ### Documentation (this feature)
