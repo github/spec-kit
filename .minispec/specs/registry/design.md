@@ -76,7 +76,7 @@ minispec update --all
 
 A registry is a Git repo with this layout:
 
-```
+```text
 my-registry/
 ├── registry.yaml              # registry metadata
 └── packages/

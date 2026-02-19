@@ -9,6 +9,7 @@ $ARGUMENTS
 ```
 
 You are giving a **guided tour** of the codebase to help the engineer build mental models. This is especially valuable when:
+
 - Starting work on an unfamiliar codebase
 - Onboarding to a project
 - Before implementing a feature that touches many areas
@@ -17,6 +18,7 @@ You are giving a **guided tour** of the codebase to help the engineer build ment
 ## Philosophy
 
 The goal is **understanding**, not documentation. The engineer should finish this walkthrough with:
+
 - A mental map of how the codebase is organized
 - Understanding of key patterns and conventions
 - Knowledge of where to find things
@@ -46,13 +48,14 @@ If knowledge base is sparse, that's okay—build understanding from the code its
 Based on constitution preference:
 
 | Depth | Duration | Coverage |
-|-------|----------|----------|
+| --- | --- | --- |
 | Quick | 5-10 min | Architecture overview, key entry points |
 | Standard | 15-20 min | Architecture + patterns + conventions |
 | Deep | 30+ min | Full tour with all modules explained |
 
 If no preference set, ask:
 > "How deep would you like to go?
+>
 > - **Quick** (5-10 min): High-level architecture, where to start
 > - **Standard** (15-20 min): Architecture plus key patterns and conventions
 > - **Deep** (30+ min): Comprehensive tour of all major modules
@@ -80,12 +83,14 @@ Begin with architecture overview:
 > **Project:** [Name] - [one sentence description]
 >
 > **Tech Stack:**
+>
 > - [Language/Framework]
 > - [Database]
 > - [Key libraries]
 >
 > **Structure:**
-> ```
+>
+> ```text
 > [directory tree of key folders]
 > ```
 >
@@ -129,11 +134,13 @@ Explain how things are done in this codebase:
 > [Explanation]
 >
 > **Naming conventions:**
+>
 > - Files: [convention]
 > - Functions: [convention]
 > - Components: [convention]
 >
 > **Code organization:**
+>
 > - [Convention about file placement]
 > - [Convention about imports]"
 
@@ -146,10 +153,12 @@ For each major module:
 > **Purpose:** [What problem it solves]
 >
 > **Key files:**
+>
 > - `file.ts` - [What it does]
 > - `another.ts` - [What it does]
 >
 > **How it connects:**
+>
 > - Used by: [What depends on it]
 > - Depends on: [What it needs]
 >
@@ -169,6 +178,7 @@ If engineer asks about something specific:
 > The key insight is: [main takeaway]"
 
 If engineer wants to see code:
+
 - Show relevant snippets
 - Explain what each part does
 - Point out non-obvious things
@@ -181,6 +191,7 @@ Throughout, encourage questions:
 > "What would you like to explore next?
 >
 > Some options:
+>
 > - How [specific flow] works
 > - The testing setup
 > - How to add a new [component type]
@@ -193,20 +204,24 @@ End with actionable summary:
 > "**Walkthrough complete.** Here's your quick reference:
 >
 > **To add a new [feature type]:**
+>
 > 1. Create [file] in [location]
 > 2. Follow the [pattern] pattern
 > 3. Register in [location]
 >
 > **Key files to know:**
+>
 > - `path/to/main.ts` - Entry point
 > - `path/to/config.ts` - Configuration
 > - `path/to/routes.ts` - API routes
 >
 > **When you're stuck:**
+>
 > - Check `patterns/` for examples
 > - Look at similar features in [location]
 >
 > **Next steps:**
+>
 > - `/minispec.design` to start designing your feature
 > - Ask me anything about the codebase anytime
 >
@@ -221,9 +236,11 @@ If codebase is mostly empty:
 > "This is a fresh project. Not much to walk through yet!
 >
 > **Current state:**
+>
 > - [What exists so far]
 >
 > **Conventions established:**
+>
 > - [Any from constitution]
 >
 > As we build, I'll document patterns in `.minispec/knowledge/`.
@@ -268,6 +285,7 @@ If the project has multiple apps/services:
 After walkthrough, offer to update knowledge base:
 
 > "Based on our walkthrough, I could update `.minispec/knowledge/` with:
+>
 > - [Gap 1 that was filled]
 > - [Gap 2 that was filled]
 >

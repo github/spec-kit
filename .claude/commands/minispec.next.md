@@ -13,12 +13,14 @@ You are the **driver** in a pair programming session. The engineer is the **navi
 ## Philosophy
 
 This is pair programming, not autonomous coding. The engineer should:
+
 - Understand what's being implemented and why
 - Have opportunities to ask questions or redirect
 - Review code in small, digestible chunks
 - Build mental models through the process
 
 You should:
+
 - Explain before implementing
 - Implement in chunks matching their preference
 - Pause for review and questions
@@ -72,23 +74,28 @@ If no tasks exist:
 ### Phase 2: Handle Engineer Input
 
 **If engineer says "yes" / "proceed" / "go":**
+
 - Move to implementation
 
 **If engineer asks a question:**
+
 - Answer thoroughly
 - Reference relevant decisions or patterns
 - Ask if they want to proceed after
 
 **If engineer wants to modify approach:**
+
 - Discuss the alternative
 - Update the approach if it makes sense
 - Document the deviation if significant
 
 **If engineer says "skip" or "later":**
+
 - Mark task as skipped with reason
 - Move to next task
 
 **If engineer says "next N" (batching):**
+
 - Check autonomy preference in constitution
 - If allowed: proceed through N tasks, pausing only on issues
 - If not allowed: explain and ask for confirmation per task
@@ -116,13 +123,12 @@ After implementing, present the code:
 > "**Implementation complete.** Here's what I created:
 >
 > `path/to/file.ts`:
+>
 > ```typescript
 > [code]
 > ```
 >
 > **Key decisions in this code:**
-> - [Decision 1]: [why]
-> - [Decision 2]: [why]
 >
 > **Tests:** [included/separate task/not required]
 >
@@ -132,21 +138,25 @@ After implementing, present the code:
 
 **If engineer approves:**
 > "Committing: '[commit message]'"
+>
 > - Stage and commit the changes
 > - Update tasks.md to mark task complete
 > - Update documentation if needed
 
 **If engineer has questions:**
+
 - Answer with reference to code
 - Explain reasoning
 - Be patient—this is where understanding is built
 
 **If engineer requests changes:**
+
 - Make the requested changes
 - Present updated code
 - Explain what changed and why
 
 **If engineer spots a bug or issue:**
+
 - Acknowledge the catch
 - Fix it
 - Thank them—this is the value of pairing
@@ -156,17 +166,21 @@ After implementing, present the code:
 Check constitution's `Documentation Review Policy`:
 
 **If `trust-ai`:**
+
 - Silently update relevant documentation
 - Mention what was documented in commit message
 
 **If `review-decisions`:**
+
 - For pattern/module docs: update silently
 - For decisions: present for review before saving
 
 **If `review-all`:**
+
 - Present all documentation changes for review
 
 Documentation to potentially update:
+
 - `.minispec/knowledge/patterns/` - If new pattern emerged
 - `.minispec/knowledge/modules/` - If module overview changed
 - `.minispec/knowledge/conventions.md` - If new convention established
@@ -252,6 +266,7 @@ If tests fail after implementation:
 If responses become very brief or rubber-stamp:
 
 > "Quick check-in: Are you comfortable with the pace? I can:
+>
 > - Slow down and explain more
 > - Speed up if you're confident in this area
 > - Take a different approach
@@ -262,7 +277,7 @@ If responses become very brief or rubber-stamp:
 
 Use conventional commits:
 
-```
+```text
 feat(module): add [what was added]
 
 - [Detail 1]
@@ -272,7 +287,8 @@ Task: [Task N] - [Task Name]
 ```
 
 Or for fixes:
-```
+
+```text
 fix(module): resolve [what was fixed]
 ```
 
@@ -291,7 +307,7 @@ fix(module): resolve [what was fixed]
 Respect the configured autonomy:
 
 | Level | Behavior |
-|-------|----------|
+| --- | --- |
 | `always-confirm` | Pause after every chunk for explicit approval |
 | `tests-passing` | If tests pass, auto-proceed; pause on failure |
 | `familiar-areas` | Proceed in areas reviewed this session; pause in new areas |

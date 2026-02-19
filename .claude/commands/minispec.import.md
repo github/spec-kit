@@ -24,6 +24,7 @@ The engineer should finish this process feeling like they understand and own the
 ## Prerequisites
 
 Before starting, verify:
+
 1. Constitution exists at `.minispec.minispec/memory/constitution.md`
    - If not: "Let's set up your MiniSpec preferences first. Run `/minispec.constitution` or I can use defaults (medium chunks, always confirm)."
 2. Knowledge base exists at `.minispec/knowledge/`
@@ -168,6 +169,7 @@ Provide a clear summary:
 
 If the spec is missing key elements:
 > "The specification doesn't include [X]. Before we proceed:
+>
 > - Should we design this part together now? (run `/minispec.design`)
 > - Or do you want to add it to the original spec first?"
 
@@ -175,6 +177,7 @@ If the spec is missing key elements:
 
 For specs with 50+ tasks or multiple features:
 > "This is a large specification covering multiple areas:
+>
 > - User authentication (12 tasks)
 > - Payment processing (18 tasks)
 > - Admin dashboard (15 tasks)

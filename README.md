@@ -112,7 +112,7 @@ Use `/minispec.validate-docs` to check documentation freshness against code chan
 | `/minispec.import`        | Import SpecKit/OpenSpec specs into workflow  |
 | `/minispec.design`        | Interactive design conversation              |
 | `/minispec.tasks`         | Break design into reviewable chunks          |
-| `/minispec.analyze`       | Validate design ↔ tasks alignment           |
+| `/minispec.analyze`       | Validate design ↔ tasks alignment            |
 | `/minispec.next`          | Implement next chunk (pair programming loop) |
 | `/minispec.checklist`     | Generate quality checklists for requirements |
 | `/minispec.validate-docs` | Check documentation freshness                |

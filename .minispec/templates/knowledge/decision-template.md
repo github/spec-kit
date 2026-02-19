@@ -21,18 +21,23 @@ participants: [who was involved in this decision]
 ## Options Considered
 
 ### Option 1: [Name]
+
 [Description]
+
 - ✅ [Pro]
 - ✅ [Pro]
 - ❌ [Con]
 
 ### Option 2: [Name]
+
 [Description]
+
 - ✅ [Pro]
 - ❌ [Con]
 - ❌ [Con]
 
 ### Option 3: [Name] (if applicable)
+
 [Description]
 
 ## Decision
@@ -44,20 +49,22 @@ We chose **[Option Name]** because [primary reasoning].
 ## Consequences
 
 ### Positive
+
 - ✅ [Benefit 1]
 - ✅ [Benefit 2]
 
 ### Negative
+
 - ⚠️ [Trade-off or risk 1]
 - ⚠️ [Trade-off or risk 2]
 
 ### Neutral
+
 - [Side effect that's neither good nor bad]
 
 ## Code References
 
 - [Description]: `path/to/file.ts:functionName()`
-- [Description]: `path/to/another/file.ts`
 
 ## Related Decisions
 

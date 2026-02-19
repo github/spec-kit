@@ -13,6 +13,7 @@ You are helping establish the project constitution through an **interactive conv
 ## Philosophy
 
 MiniSpec constitutions serve two purposes:
+
 1. **Project Principles**: The non-negotiable standards for this codebase
 2. **Pairing Preferences**: How you and the AI will collaborate
 
@@ -61,6 +62,7 @@ Then explore based on their answers:
 **Probe for 3-5 principles**, but don't force it. Quality over quantity.
 
 For each principle they mention:
+
 - Clarify what it means concretely
 - Ask if it's a MUST (non-negotiable) or SHOULD (preferred)
 - Confirm with a summary before moving on
@@ -73,6 +75,7 @@ After principles, transition to pairing preferences:
 
 **Chunk Size:**
 > "When I implement code, how much do you want to review at once?
+>
 > - **Small chunks** (20-40 lines): Maximum engagement, great if you're learning this codebase
 > - **Medium chunks** (40-80 lines): Balanced pace, good default
 > - **Large chunks** (80-150 lines): If you're comfortable with bigger reviews
@@ -82,12 +85,14 @@ After principles, transition to pairing preferences:
 
 **Documentation:**
 > "I'll document decisions and patterns as we work. Should I:
+>
 > - Ask you to review all doc changes
 > - Just ask about architectural decisions, handle the rest myself
 > - Handle all documentation autonomously (you can always review in git)"
 
 **Autonomy:**
 > "When can I proceed without asking for confirmation?
+>
 > - **Always confirm**: I pause after every chunk
 > - **Tests passing**: If tests pass, I continue automatically
 > - **Familiar areas**: I proceed in areas you've already reviewed this session
@@ -95,6 +100,7 @@ After principles, transition to pairing preferences:
 
 **Design Evolution:**
 > "During implementation, I might discover the original design needs adjustment. Should I:
+>
 > - Always stop and discuss any deviation
 > - Flag it and continue if it's minor, stop for major issues
 > - Update specs automatically and tell you after (for experienced teams)"
@@ -119,7 +125,8 @@ Once you have the information:
    > Does this look right, or should we adjust anything?"
 
 2. **Create directory structure** if needed:
-   ```
+
+   ```text
    .minispec/
    ├── .minispec/memory/
    │   └── constitution.md
@@ -154,6 +161,7 @@ End with a clear summary:
 > [List them]
 >
 > **Pairing Setup:**
+>
 > - I'll implement in [chunk size] chunks
 > - [Doc review approach]
 > - [Autonomy level]
@@ -162,6 +170,7 @@ End with a clear summary:
 > The knowledge base is ready at `.minispec/knowledge/`.
 >
 > **Next steps:**
+>
 > - `/minispec.walkthrough` - If you want a tour of the existing codebase
 > - `/minispec.design` - To start designing a feature
 >

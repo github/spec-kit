@@ -13,6 +13,7 @@ You are providing a **quick status update** on where things stand. This is the "
 ## Philosophy
 
 Engineers should be able to:
+
 - Quickly understand where they are in the process
 - See what's done and what's remaining
 - Know the next action to take
@@ -66,7 +67,7 @@ Figure out what to show based on state:
 
 #### Compact Status (Default)
 
-```
+```text
 📍 MiniSpec Status
 
 Project: [Project Name]
@@ -84,7 +85,7 @@ Last activity: [Time ago] - [What was done]
 
 #### Detailed Status (if requested or complex state)
 
-```
+```text
 📍 MiniSpec Status: [Project Name]
 
 ═══════════════════════════════════════════
@@ -176,7 +177,7 @@ If `$ARGUMENTS` contains a feature name:
 
 If `$ARGUMENTS` is "all" or "features":
 
-```
+```text
 All Features
 
 | Feature | Status | Progress | Last Activity |
@@ -190,7 +191,7 @@ All Features
 
 If `$ARGUMENTS` is "docs" or "knowledge":
 
-```
+```text
 Knowledge Base Status
 
 Decisions: 8 total
@@ -224,6 +225,7 @@ If working on multiple features:
 > 2. **notifications** - Designed, not started
 >
 > Which would you like to focus on?
+>
 > - `/minispec.next` continues with auth
 > - `/minispec.status notifications` shows notification details"
 
@@ -236,6 +238,7 @@ If a feature has been inactive:
 > Status: [X]/[Y] tasks complete
 >
 > Options:
+>
 > - Continue: `/minispec.next`
 > - Review state: `/minispec.walkthrough [feature]`
 > - Archive: Mark as paused and start something new"
