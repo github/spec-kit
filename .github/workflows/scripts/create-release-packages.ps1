@@ -360,7 +360,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qodercli', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qodercli', 'shai', 'agy', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {
