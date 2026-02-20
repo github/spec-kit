@@ -161,7 +161,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Roo Code](https://roocode.com/)                                                     | ✅      |                                                                                                                                           |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | ✅      |                                                                                                                                           |
 | [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
-| [Antigravity (agy)](https://agy.ai/)                                                 | ✅      |                                                                                                                                           |
+| [Antigravity (agy)](https://antigravity.google/)                                         | ✅      |                                                                                                                                           |
 
 ## 🔧 Specify CLI Reference
 
@@ -216,6 +216,9 @@ specify init my-project --ai shai
 
 # Initialize with IBM Bob support
 specify init my-project --ai bob
+
+# Initialize with Antigravity support
+specify init my-project --ai agy
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specify init my-project --ai copilot --script ps
