@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Python 3.14 / Homebrew compatibility**: Added explicit `click>=8.1` dependency to prevent environment isolation failures on Python 3.14 (Homebrew) where the system click could bleed into the uv virtual environment, causing `TypeError: ParamType.get_metavar() got an unexpected keyword argument 'ctx'` ([#1631](https://github.com/github/spec-kit/issues/1631))
+- **Python 3.14 / Homebrew compatibility**: Added explicit `click>=8.1` dependency so the resolver always selects a Click version compatible with Python 3.14 and avoids errors such as `TypeError: ParamType.get_metavar() got an unexpected keyword argument 'ctx'` when an older Click would otherwise be used. Note that broader uv/Homebrew environment isolation or `sys.path` bleed issues (see [#1631](https://github.com/github/spec-kit/issues/1631)) may still require environment-level workarounds.
 
 ## [0.1.1] - 2026-02-13
 
