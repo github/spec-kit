@@ -8,8 +8,8 @@
       "id": "v-model",
       "description": "Enforces V-Model paired generation of development specs and test specs with full traceability.",
       "author": "leocamello",
-      "version": "0.1.0",
-      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.1.0.zip",
+      "version": "0.2.0",
+      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.2.0.zip",
       "repository": "https://github.com/leocamello/spec-kit-v-model",
       "homepage": "https://github.com/leocamello/spec-kit-v-model",
       "documentation": "https://github.com/leocamello/spec-kit-v-model/blob/main/README.md",
@@ -19,7 +19,7 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 3,
+        "commands": 5,
         "hooks": 1
       },
       "tags": ["v-model", "traceability", "testing", "compliance", "safety-critical"],
