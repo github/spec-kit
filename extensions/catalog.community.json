@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-02-20T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
+  "extensions": {
+    "v-model": {
+      "name": "V-Model Extension Pack",
+      "id": "v-model",
+      "description": "Enforces V-Model paired generation of development specs and test specs with full traceability.",
+      "author": "leocamello",
+      "version": "0.1.0",
+      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/leocamello/spec-kit-v-model",
+      "homepage": "https://github.com/leocamello/spec-kit-v-model",
+      "documentation": "https://github.com/leocamello/spec-kit-v-model/blob/main/README.md",
+      "changelog": "https://github.com/leocamello/spec-kit-v-model/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": ["v-model", "traceability", "testing", "compliance", "safety-critical"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-02-20T00:00:00Z",
+      "updated_at": "2026-02-20T00:00:00Z"
+    }
+  }
+}
