@@ -380,7 +380,7 @@ class TestInstallAiSkills:
         # .toml commands should be untouched
         assert (cmds_dir / "speckit.specify.toml").exists()
 
-    @pytest.mark.parametrize("agent_key", list(AGENT_CONFIG.keys()))
+    @pytest.mark.parametrize("agent_key", [k for k in AGENT_CONFIG.keys() if k != "generic"])
     def test_skills_install_for_all_agents(self, temp_dir, agent_key):
         """install_ai_skills should produce skills for every configured agent."""
         proj = temp_dir / f"proj-{agent_key}"

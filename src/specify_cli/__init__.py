@@ -233,6 +233,12 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
+    "generic": {
+        "name": "Generic (bring your own agent)",
+        "folder": None,  # Set dynamically via --ai-commands-dir
+        "install_url": None,
+        "requires_cli": False,
+    },
 }
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -1188,7 +1194,8 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, agy, bob, or qoder "),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, agy, bob, qoder, or generic (requires --ai-commands-dir)"),
+    ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -1224,6 +1231,7 @@ def init(
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init my-project --ai claude --ai-skills   # Install agent skills
         specify init --here --ai gemini --ai-skills
+        specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
     """
 
     show_banner()
@@ -1308,6 +1316,16 @@ def init(
             "copilot"
         )
 
+    # Validate --ai-commands-dir usage
+    if selected_ai == "generic":
+        if not ai_commands_dir:
+            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic")
+            console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
+            raise typer.Exit(1)
+    elif ai_commands_dir:
+        console.print(f"[red]Error:[/red] --ai-commands-dir can only be used with --ai generic (not '{selected_ai}')")
+        raise typer.Exit(1)
+
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG.get(selected_ai)
         if agent_config and agent_config["requires_cli"]:
@@ -1382,6 +1400,18 @@ def init(
             local_client = httpx.Client(verify=local_ssl_context)
 
             download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+
+            # For generic agent, rename placeholder directory to user-specified path
+            if selected_ai == "generic" and ai_commands_dir:
+                placeholder_dir = project_path / ".speckit" / "commands"
+                target_dir = project_path / ai_commands_dir
+                if placeholder_dir.is_dir():
+                    target_dir.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(placeholder_dir), str(target_dir))
+                    # Clean up empty .speckit dir if it's now empty
+                    speckit_dir = project_path / ".speckit"
+                    if speckit_dir.is_dir() and not any(speckit_dir.iterdir()):
+                        speckit_dir.rmdir()
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
@@ -1468,16 +1498,17 @@ def init(
     # Agent folder security notice
     agent_config = AGENT_CONFIG.get(selected_ai)
     if agent_config:
-        agent_folder = agent_config["folder"]
-        security_notice = Panel(
-            f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
-            f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
-            title="[yellow]Agent Folder Security[/yellow]",
-            border_style="yellow",
-            padding=(1, 2)
-        )
-        console.print()
-        console.print(security_notice)
+        agent_folder = ai_commands_dir if selected_ai == "generic" else agent_config["folder"]
+        if agent_folder:
+            security_notice = Panel(
+                f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
+                f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
+                title="[yellow]Agent Folder Security[/yellow]",
+                border_style="yellow",
+                padding=(1, 2)
+            )
+            console.print()
+            console.print(security_notice)
 
     steps_lines = []
     if not here:
@@ -1535,6 +1566,8 @@ def check():
 
     agent_results = {}
     for agent_key, agent_config in AGENT_CONFIG.items():
+        if agent_key == "generic":
+            continue  # Generic is not a real agent to check
         agent_name = agent_config["name"]
         requires_cli = agent_config["requires_cli"]
 
