@@ -117,8 +117,8 @@ Every task MUST strictly follow this format:
    - Mark story dependencies (most stories should be independent)
 
 2. **From Contracts**:
-   - Map each contract/interface → to the user story it serves
-   - If tests requested: Each contract → contract test task [P] before implementation in that story's phase
+   - Map each interface contract → to the user story it serves
+   - If tests requested: Each interface contract → contract test task [P] before implementation in that story's phase
 
 3. **From Data Model**:
    - Map each entity to the user story(ies) that need it
