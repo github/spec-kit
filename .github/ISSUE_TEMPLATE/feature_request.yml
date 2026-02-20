@@ -67,12 +67,13 @@ body:
         - Kilo Code
         - Auggie CLI
         - Roo Code
-        - CodeBuddy CLI
+        - CodeBuddy
         - Qoder CLI
         - Amazon Q Developer CLI
         - Amp
         - SHAI
         - IBM Bob
+        - Antigravity
         - Not applicable
 
   - type: textarea
