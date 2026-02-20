@@ -5,6 +5,7 @@ param(
     [switch]$Json,
     [string]$ShortName,
     [int]$Number = 0,
+    [switch]$NoBranch,
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -19,6 +20,7 @@ if ($Help) {
     Write-Host "  -Json               Output in JSON format"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
+     Write-Host "  -NoBranch           Skip branch creation (auto-enabled when SPECIFY_SPECS_DIR is set)"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
@@ -149,8 +151,28 @@ try {
 
 Set-Location $repoRoot
 
-$specsDir = Join-Path $repoRoot 'specs'
+# Auto-enable --no-branch when SPECIFY_SPECS_DIR is set (e.g., worktree scenario
+# where the caller controls the branch lifecycle).
+if (-not $NoBranch -and $env:SPECIFY_SPECS_DIR) {
+    $NoBranch = $true
+}
+
+$specsDir = Get-SpecsDir -RepoRoot $repoRoot
+if (-not $specsDir) {
+    Write-Host "`n[specify] ERROR: Invalid SPECIFY_SPECS_DIR configuration. Aborting." -ForegroundColor Red
+    exit 1
+}
 New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
+
+# Scaffold _shared directory with README if it doesn't exist yet
+$sharedDir = Join-Path $specsDir '_shared'
+if (-not (Test-Path $sharedDir)) {
+    New-Item -ItemType Directory -Path $sharedDir -Force | Out-Null
+    $sharedReadme = Join-Path $repoRoot '.specify/templates/_shared/README.md'
+    if (Test-Path $sharedReadme) {
+        Copy-Item $sharedReadme (Join-Path $sharedDir 'README.md') -Force
+    }
+}
 
 # Function to generate branch name with stop word filtering and length filtering
 function Get-BranchName {
@@ -208,11 +230,12 @@ if ($ShortName) {
 
 # Determine branch number
 if ($Number -eq 0) {
-    if ($hasGit) {
+    if ($hasGit -and -not $NoBranch) {
         # Check existing branches on remotes
         $Number = Get-NextBranchNumber -SpecsDir $specsDir
     } else {
-        # Fall back to local directory check
+        # Fall back to local directory check (also used in --no-branch mode
+        # to avoid running git fetch --all --prune against the parent repo)
         $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
     }
 }
@@ -241,7 +264,9 @@ if ($branchName.Length -gt $maxBranchLength) {
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
 }
 
-if ($hasGit) {
+if ($NoBranch) {
+    Write-Warning "[specify] --no-branch: skipping branch creation"
+} elseif ($hasGit) {
     try {
         git checkout -b $branchName | Out-Null
     } catch {
@@ -271,6 +296,8 @@ if ($Json) {
         SPEC_FILE = $specFile
         FEATURE_NUM = $featureNum
         HAS_GIT = $hasGit
+        SPECS_DIR = $specsDir
+        NO_BRANCH = $NoBranch
     }
     $obj | ConvertTo-Json -Compress
 } else {

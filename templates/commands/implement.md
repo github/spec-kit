@@ -55,6 +55,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **IF EXISTS**: Read contracts/ for API specifications and test requirements
    - **IF EXISTS**: Read research.md for technical decisions and constraints
    - **IF EXISTS**: Read quickstart.md for integration scenarios
+   - **IF `SPECS_DIR/_shared/` exists**: Read all `.md` files for project-wide context (coding standards, API conventions, security requirements). Use this to guide implementation decisions and ensure alignment with established patterns.
 
 4. **Project Setup Verification**:
    - **REQUIRED**: Create/verify ignore files based on actual project setup:

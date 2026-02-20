@@ -15,6 +15,21 @@ function Get-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
 
+# Get specs directory, with support for external location via SPECIFY_SPECS_DIR
+function Get-SpecsDir {
+    param([string]$RepoRoot = (Get-RepoRoot))
+    
+    if ($env:SPECIFY_SPECS_DIR) {
+        $specsDir = $env:SPECIFY_SPECS_DIR
+        # Resolve relative paths against repo root
+        if (-not [System.IO.Path]::IsPathRooted($specsDir)) {
+            $specsDir = Join-Path $RepoRoot $specsDir
+        }
+        return $specsDir
+    }
+    return Join-Path $RepoRoot "specs"
+}
+
 function Get-CurrentBranch {
     # First check if SPECIFY_FEATURE environment variable is set
     if ($env:SPECIFY_FEATURE) {
@@ -33,7 +48,7 @@ function Get-CurrentBranch {
     
     # For non-git repos, try to find the latest feature directory
     $repoRoot = Get-RepoRoot
-    $specsDir = Join-Path $repoRoot "specs"
+    $specsDir = Get-SpecsDir -RepoRoot $repoRoot
     
     if (Test-Path $specsDir) {
         $latestFeature = ""
@@ -73,6 +88,12 @@ function Test-FeatureBranch {
         [bool]$HasGit = $true
     )
     
+    # When SPECIFY_SPECS_DIR is set (e.g., worktree mode), skip branch naming
+    # validation since the branch/worktree may not follow the NNN- convention.
+    if ($env:SPECIFY_SPECS_DIR) {
+        return $true
+    }
+    
     # For non-git repos, we can't enforce branch naming but still provide output
     if (-not $HasGit) {
         Write-Warning "[specify] Warning: Git repository not detected; skipped branch validation"
@@ -89,7 +110,7 @@ function Test-FeatureBranch {
 
 function Get-FeatureDir {
     param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+    Join-Path (Get-SpecsDir -RepoRoot $RepoRoot) $Branch
 }
 
 function Get-FeaturePathsEnv {

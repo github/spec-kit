@@ -67,6 +67,10 @@ Load only the minimal necessary context from each artifact:
 
 - Load `/memory/constitution.md` for principle validation
 
+**From shared context (if available):**
+
+- **IF `SPECS_DIR/_shared/` exists**: Read all `.md` files for project-wide standards (architecture decisions, coding conventions, security requirements). Use these as additional validation criteria alongside the constitution.
+
 ### 3. Build Semantic Models
 
 Create internal representations (do not include raw artifacts in output):
