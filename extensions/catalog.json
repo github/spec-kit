@@ -16,11 +16,8 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": [
-          "speckit.v-model.requirements",
-          "speckit.v-model.acceptance",
-          "speckit.v-model.trace"
-        ]
+        "commands": 3,
+        "hooks": 1
       },
       "tags": [
         "v-model",
@@ -29,7 +26,13 @@
         "compliance",
         "safety-critical"
       ],
-      "verified": false
+      "verified": false,
+      "created_at": "2026-02-20T00:00:00Z",
+      "updated_at": "2026-02-20T00:00:00Z",
+      "statistics": {
+        "downloads": 0,
+        "stars": 0
+      }
     }
   }
 }
