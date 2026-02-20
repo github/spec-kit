@@ -1,17 +1,17 @@
 blank_issues_enabled: false
 contact_links:
   - name: 💬 General Discussion
-    url: https://github.com/manfredseee/spec-kit/discussions
+    url: https://github.com/github/spec-kit/discussions
     about: Ask questions, share ideas, or discuss Spec-Driven Development
   - name: 📖 Documentation
-    url: https://github.com/manfredseee/spec-kit/blob/main/README.md
+    url: https://github.com/github/spec-kit/blob/main/README.md
     about: Read the Spec Kit documentation and guides
   - name: � Extension Development Guide
-    url: https://github.com/manfredseee/spec-kit/blob/main/extensions/EXTENSION-DEVELOPMENT-GUIDE.md
+    url: https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-DEVELOPMENT-GUIDE.md
     about: Learn how to develop and publish Spec Kit extensions
   - name: �🤝 Contributing Guide
-    url: https://github.com/manfredseee/spec-kit/blob/main/CONTRIBUTING.md
+    url: https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md
     about: Learn how to contribute to Spec Kit
   - name: 🔒 Security Issues
-    url: https://github.com/manfredseee/spec-kit/blob/main/SECURITY.md
+    url: https://github.com/github/spec-kit/blob/main/SECURITY.md
     about: Report security vulnerabilities privately
