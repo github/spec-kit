@@ -1,0 +1,280 @@
+name: Extension Submission
+description: Submit your extension to the Spec Kit catalog
+title: "[Extension]: Add "
+labels: ["extension-submission", "enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for contributing an extension! This template helps you submit your extension to the community catalog.
+        
+        **Before submitting:**
+        - Review the [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md)
+        - Ensure your extension has a valid `extension.yml` manifest
+        - Create a GitHub release with a version tag (e.g., v1.0.0)
+        - Test installation: `specify extension add --from <your-release-url>`
+
+  - type: input
+    id: extension-id
+    attributes:
+      label: Extension ID
+      description: Unique extension identifier (lowercase with hyphens only)
+      placeholder: "e.g., jira-integration"
+    validations:
+      required: true
+
+  - type: input
+    id: extension-name
+    attributes:
+      label: Extension Name
+      description: Human-readable extension name
+      placeholder: "e.g., Jira Integration"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Semantic version number
+      placeholder: "e.g., 1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Brief description of what your extension does (under 200 characters)
+      placeholder: Integrates Jira issue tracking with Spec Kit workflows for seamless task management
+    validations:
+      required: true
+
+  - type: input
+    id: author
+    attributes:
+      label: Author
+      description: Your name or organization
+      placeholder: "e.g., John Doe or Acme Corp"
+    validations:
+      required: true
+
+  - type: input
+    id: repository
+    attributes:
+      label: Repository URL
+      description: GitHub repository URL for your extension
+      placeholder: "https://github.com/your-org/spec-kit-your-extension"
+    validations:
+      required: true
+
+  - type: input
+    id: download-url
+    attributes:
+      label: Download URL
+      description: URL to the GitHub release archive (e.g., v1.0.0.zip)
+      placeholder: "https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip"
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: License
+      description: Open source license type
+      placeholder: "e.g., MIT, Apache-2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: homepage
+    attributes:
+      label: Homepage (optional)
+      description: Link to extension homepage or documentation site
+      placeholder: "https://..."
+
+  - type: input
+    id: documentation
+    attributes:
+      label: Documentation URL (optional)
+      description: Link to detailed documentation
+      placeholder: "https://github.com/your-org/spec-kit-your-extension/blob/main/docs/"
+
+  - type: input
+    id: changelog
+    attributes:
+      label: Changelog URL (optional)
+      description: Link to changelog file
+      placeholder: "https://github.com/your-org/spec-kit-your-extension/blob/main/CHANGELOG.md"
+
+  - type: input
+    id: speckit-version
+    attributes:
+      label: Required Spec Kit Version
+      description: Minimum Spec Kit version required
+      placeholder: "e.g., >=0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: required-tools
+    attributes:
+      label: Required Tools (optional)
+      description: List any external tools or dependencies required
+      placeholder: |
+        - jira-cli (>=1.0.0) - required
+        - python (>=3.8) - optional
+      render: markdown
+
+  - type: input
+    id: commands-count
+    attributes:
+      label: Number of Commands
+      description: How many commands does your extension provide?
+      placeholder: "e.g., 3"
+    validations:
+      required: true
+
+  - type: input
+    id: hooks-count
+    attributes:
+      label: Number of Hooks (optional)
+      description: How many hooks does your extension provide?
+      placeholder: "e.g., 0"
+
+  - type: textarea
+    id: tags
+    attributes:
+      label: Tags
+      description: 2-5 relevant tags (lowercase, separated by commas)
+      placeholder: "issue-tracking, jira, atlassian, automation"
+    validations:
+      required: true
+
+  - type: textarea
+    id: features
+    attributes:
+      label: Key Features
+      description: List the main features and capabilities of your extension
+      placeholder: |
+        - Create Jira issues from specs
+        - Sync task status with Jira
+        - Link specs to existing issues
+        - Generate Jira reports
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: testing
+    attributes:
+      label: Testing Checklist
+      description: Confirm that your extension has been tested
+      options:
+        - label: Extension installs successfully via download URL
+          required: true
+        - label: All commands execute without errors
+          required: true
+        - label: Documentation is complete and accurate
+          required: true
+        - label: No security vulnerabilities identified
+          required: true
+        - label: Tested on at least one real project
+          required: true
+
+  - type: checkboxes
+    id: requirements
+    attributes:
+      label: Submission Requirements
+      description: Verify your extension meets all requirements
+      options:
+        - label: Valid `extension.yml` manifest included
+          required: true
+        - label: README.md with installation and usage instructions
+          required: true
+        - label: LICENSE file included
+          required: true
+        - label: GitHub release created with version tag
+          required: true
+        - label: All command files exist and are properly formatted
+          required: true
+        - label: Extension ID follows naming conventions (lowercase-with-hyphens)
+          required: true
+
+  - type: textarea
+    id: testing-details
+    attributes:
+      label: Testing Details
+      description: Describe how you tested your extension
+      placeholder: |
+        **Tested on:**
+        - macOS 14.0 with Spec Kit v0.1.0
+        - Linux Ubuntu 22.04 with Spec Kit v0.1.0
+        
+        **Test project:** [Link or description]
+        
+        **Test scenarios:**
+        1. Installed extension
+        2. Configured settings
+        3. Ran all commands
+        4. Verified outputs
+    validations:
+      required: true
+
+  - type: textarea
+    id: example-usage
+    attributes:
+      label: Example Usage
+      description: Provide a simple example of using your extension
+      render: markdown
+      placeholder: |
+        ```bash
+        # Install extension
+        specify extension add --from https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip
+        
+        # Use a command
+        /speckit.your-extension.command-name arg1 arg2
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: catalog-entry
+    attributes:
+      label: Proposed Catalog Entry
+      description: Provide the JSON entry for catalog.json (helps reviewers)
+      render: json
+      placeholder: |
+        {
+          "your-extension": {
+            "name": "Your Extension",
+            "id": "your-extension",
+            "description": "Brief description",
+            "author": "Your Name",
+            "version": "1.0.0",
+            "download_url": "https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip",
+            "repository": "https://github.com/your-org/spec-kit-your-extension",
+            "homepage": "https://github.com/your-org/spec-kit-your-extension",
+            "license": "MIT",
+            "requires": {
+              "speckit_version": ">=0.1.0"
+            },
+            "provides": {
+              "commands": 3
+            },
+            "tags": ["category", "tool"],
+            "verified": false,
+            "downloads": 0,
+            "stars": 0,
+            "created_at": "2026-02-20T00:00:00Z",
+            "updated_at": "2026-02-20T00:00:00Z"
+          }
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information that would help reviewers
+      placeholder: Screenshots, demo videos, links to related projects, etc.
