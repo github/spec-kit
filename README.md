@@ -54,10 +54,7 @@ Install once and use everywhere:
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 ```
 If you don't have uv installed:
-
-```bash
-irm https://astral.sh/uv/install.ps1 | iex
-```
+[Installing uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 Then use the tool directly:
 
