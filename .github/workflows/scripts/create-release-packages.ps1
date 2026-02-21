@@ -347,6 +347,10 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".qoder/commands"
             Generate-Commands -Agent 'qoder' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'vibe' {
+            $cmdDir = Join-Path $baseDir ".vibe/commands"
+            Generate-Commands -Agent 'vibe' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
     }
     
     # Create zip archive
@@ -356,7 +360,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qoder')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qoder', 'vibe')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {
