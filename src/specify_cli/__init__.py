@@ -123,119 +123,138 @@ def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str)
     
     return "\n".join(lines)
 
-# Agent configuration with name, folder, install URL, and CLI tool requirement
+# Agent configuration with name, folder, install URL, CLI tool requirement, and commands subdirectory
 AGENT_CONFIG = {
     "copilot": {
         "name": "GitHub Copilot",
         "folder": ".github/",
+        "commands_subdir": "agents",  # Special: uses agents/ not commands/
         "install_url": None,  # IDE-based, no CLI check needed
         "requires_cli": False,
     },
     "claude": {
         "name": "Claude Code",
         "folder": ".claude/",
+        "commands_subdir": "commands",
         "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
         "requires_cli": True,
     },
     "gemini": {
         "name": "Gemini CLI",
         "folder": ".gemini/",
+        "commands_subdir": "commands",
         "install_url": "https://github.com/google-gemini/gemini-cli",
         "requires_cli": True,
     },
     "cursor-agent": {
         "name": "Cursor",
         "folder": ".cursor/",
+        "commands_subdir": "commands",
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
     "qwen": {
         "name": "Qwen Code",
         "folder": ".qwen/",
+        "commands_subdir": "commands",
         "install_url": "https://github.com/QwenLM/qwen-code",
         "requires_cli": True,
     },
     "opencode": {
         "name": "opencode",
         "folder": ".opencode/",
+        "commands_subdir": "command",  # Special: singular 'command' not 'commands'
         "install_url": "https://opencode.ai",
         "requires_cli": True,
     },
     "codex": {
         "name": "Codex CLI",
         "folder": ".codex/",
+        "commands_subdir": "prompts",  # Special: uses prompts/ not commands/
         "install_url": "https://github.com/openai/codex",
         "requires_cli": True,
     },
     "windsurf": {
         "name": "Windsurf",
         "folder": ".windsurf/",
+        "commands_subdir": "workflows",  # Special: uses workflows/ not commands/
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
     "kilocode": {
         "name": "Kilo Code",
         "folder": ".kilocode/",
+        "commands_subdir": "workflows",  # Special: uses workflows/ not commands/
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
     "auggie": {
         "name": "Auggie CLI",
         "folder": ".augment/",
+        "commands_subdir": "commands",
         "install_url": "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli",
         "requires_cli": True,
     },
     "codebuddy": {
         "name": "CodeBuddy",
         "folder": ".codebuddy/",
+        "commands_subdir": "commands",
         "install_url": "https://www.codebuddy.ai/cli",
         "requires_cli": True,
     },
     "qodercli": {
         "name": "Qoder CLI",
         "folder": ".qoder/",
+        "commands_subdir": "commands",
         "install_url": "https://qoder.com/cli",
         "requires_cli": True,
     },
     "roo": {
         "name": "Roo Code",
         "folder": ".roo/",
+        "commands_subdir": "commands",
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
     "q": {
         "name": "Amazon Q Developer CLI",
         "folder": ".amazonq/",
+        "commands_subdir": "prompts",  # Special: uses prompts/ not commands/
         "install_url": "https://aws.amazon.com/developer/learning/q-developer-cli/",
         "requires_cli": True,
     },
     "amp": {
         "name": "Amp",
         "folder": ".agents/",
+        "commands_subdir": "commands",
         "install_url": "https://ampcode.com/manual#install",
         "requires_cli": True,
     },
     "shai": {
         "name": "SHAI",
         "folder": ".shai/",
+        "commands_subdir": "commands",
         "install_url": "https://github.com/ovh/shai",
         "requires_cli": True,
     },
     "agy": {
         "name": "Antigravity",
         "folder": ".agent/",
+        "commands_subdir": "workflows",  # Special: uses workflows/ not commands/
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
     "bob": {
         "name": "IBM Bob",
         "folder": ".bob/",
+        "commands_subdir": "commands",
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir
+        "commands_subdir": "commands",
         "install_url": None,
         "requires_cli": False,
     },
@@ -1056,10 +1075,11 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     # download_and_extract_template() already placed the .md files here.
     agent_config = AGENT_CONFIG.get(selected_ai, {})
     agent_folder = agent_config.get("folder", "")
+    commands_subdir = agent_config.get("commands_subdir", "commands")
     if agent_folder:
-        templates_dir = project_path / agent_folder.rstrip("/") / "commands"
+        templates_dir = project_path / agent_folder.rstrip("/") / commands_subdir
     else:
-        templates_dir = project_path / "commands"
+        templates_dir = project_path / commands_subdir
 
     if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
         # Fallback: try the repo-relative path (for running from source checkout)
