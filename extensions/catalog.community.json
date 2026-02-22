@@ -1,8 +1,34 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-02-20T00:00:00Z",
+  "updated_at": "2026-02-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
+    "cleanup": {
+      "name": "Cleanup Extension",
+      "id": "cleanup",
+      "description": "Post-implementation quality gate that reviews changes, fixes small issues (scout rule), creates tasks for medium issues, and generates analysis for large issues.",
+      "author": "dsrednicki",
+      "version": "1.0.0",
+      "download_url": "https://github.com/dsrednicki/spec-kit-cleanup/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/dsrednicki/spec-kit-cleanup",
+      "homepage": "https://github.com/dsrednicki/spec-kit-cleanup",
+      "documentation": "https://github.com/dsrednicki/spec-kit-cleanup/blob/main/README.md",
+      "changelog": "https://github.com/dsrednicki/spec-kit-cleanup/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": ["quality", "tech-debt", "review", "cleanup", "scout-rule"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-02-22T00:00:00Z",
+      "updated_at": "2026-02-22T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
