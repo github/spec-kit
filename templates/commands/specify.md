@@ -29,7 +29,14 @@ Examples:
 - `/speckit.specify libraries: Add firebird client` -> create in `specs/libraries/<NNN-name>/...`
 
 Parsing rules:
-- If the input matches `^<category>:\s+<description>$`, then:
+- A `category` prefix is only recognized when the input contains the delimiter `": "` (colon + single space) and the text before that delimiter is a valid category.
+- Valid category format:
+  - Category must be a single path segment (no spaces, no slashes)
+  - Allowed characters: letters, numbers, hyphen, underscore (`^[A-Za-z0-9_-]+$`)
+- Delimiter behavior:
+  - Only the first occurrence of `": "` is used as the delimiter
+  - Everything after the first `": "` is treated as the description (it may contain additional colons)
+- If a valid category prefix is present:
   - `SPECS_SUBDIR=<category>` (used as `--specs-subdir` when calling create script)
   - `FEATURE_DESCRIPTION=<description>` (used for short-name generation + spec content)
 - Otherwise:
