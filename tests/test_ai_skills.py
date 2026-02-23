@@ -630,3 +630,65 @@ class TestCliValidation:
         plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
         assert "--ai-skills" in plain
         assert "agent skills" in plain.lower()
+
+
+class TestParameterOrderingIssue:
+    """Test fix for GitHub issue #1641: parameter ordering issues."""
+
+    def test_ai_flag_consuming_here_flag(self):
+        """--ai without value should not consume --here flag (issue #1641)."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        # This used to fail with "Must specify project name" because --here was consumed by --ai
+        result = runner.invoke(app, ["init", "--ai-skills", "--ai", "--here"])
+
+        assert result.exit_code == 1
+        assert "Invalid value for --ai" in result.output
+        assert "--here" in result.output  # Should mention the invalid value
+
+    def test_ai_flag_consuming_ai_skills_flag(self):
+        """--ai without value should not consume --ai-skills flag."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        # This should fail with helpful error about missing --ai value
+        result = runner.invoke(app, ["init", "--here", "--ai", "--ai-skills"])
+
+        assert result.exit_code == 1
+        assert "Invalid value for --ai" in result.output
+        assert "--ai-skills" in result.output  # Should mention the invalid value
+
+    def test_error_message_provides_hint(self):
+        """Error message should provide helpful hint about missing value."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "--ai", "--here"])
+
+        assert result.exit_code == 1
+        assert "Hint:" in result.output or "hint" in result.output.lower()
+        assert "forget to provide a value" in result.output.lower()
+
+    def test_error_message_lists_available_agents(self):
+        """Error message should list available agents."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "--ai", "--here"])
+
+        assert result.exit_code == 1
+        # Should mention some known agents
+        output_lower = result.output.lower()
+        assert any(agent in output_lower for agent in ["claude", "copilot", "gemini"])
+
+    def test_ai_commands_dir_consuming_flag(self):
+        """--ai-commands-dir without value should not consume next flag."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "myproject", "--ai", "generic", "--ai-commands-dir", "--here"])
+
+        assert result.exit_code == 1
+        assert "Invalid value for --ai-commands-dir" in result.output
+        assert "--here" in result.output
