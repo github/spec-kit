@@ -2,12 +2,23 @@
 
 <!-- markdownlint-disable MD024 -->
 
-All notable changes to the Specify CLI and templates are documented here.
+Recent changes to the Specify CLI and templates are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.5] - Unreleased
+## [0.1.6] - 2026-02-23
+
+### Fixed
+
+- **Parameter Ordering Issues (#1641)**: Fixed CLI parameter parsing issue where option flags were incorrectly consumed as values for preceding options
+  - Added validation to detect when `--ai` or `--ai-commands-dir` incorrectly consume following flags like `--here` or `--ai-skills`
+  - Now provides clear error messages: "Invalid value for --ai: '--here'"
+  - Includes helpful hints suggesting proper usage and listing available agents
+  - Commands like `specify init --ai-skills --ai --here` now fail with actionable feedback instead of confusing "Must specify project name" errors
+  - Added comprehensive test suite (5 new tests) to prevent regressions
+
+## [0.1.5] - 2026-02-21
 
 ### Fixed
 
@@ -16,13 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Affected agents now work correctly: copilot (`.github/agents/`), opencode (`.opencode/command/`), windsurf (`.windsurf/workflows/`), codex (`.codex/prompts/`), kilocode (`.kilocode/workflows/`), q (`.amazonq/prompts/`), and agy (`.agent/workflows/`)
   - The `install_ai_skills()` function now uses the correct path for all agents instead of assuming `commands/` for everyone
 
-## [0.1.4] - Unreleased
+## [0.1.4] - 2026-02-20
 
 ### Fixed
 
 - **Qoder CLI detection**: Renamed `AGENT_CONFIG` key from `"qoder"` to `"qodercli"` to match the actual executable name, fixing `specify check` and `specify init --ai` detection failures
 
-## [0.1.3] - Unreleased
+## [0.1.3] - 2026-02-20
 
 ### Added
 
@@ -69,7 +80,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.94] - 2026-02-11
 
 - Add stale workflow for 180-day inactive issues and PRs (#1594)
-
-## [0.0.93] - 2026-02-10
-
-- Add modular extension system (#1551)
