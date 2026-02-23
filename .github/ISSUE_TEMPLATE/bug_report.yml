@@ -1,0 +1,118 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Specify CLI or Spec Kit
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below to help us diagnose and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Run command '...'
+        2. Execute script '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe the expected outcome
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: Describe what happened instead
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Specify CLI Version
+      description: "Run `specify --version` or `pip show spec-kit`"
+      placeholder: "e.g., 1.3.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-agent
+    attributes:
+      label: AI Agent
+      description: Which AI agent are you using?
+      options:
+        - Claude Code
+        - Gemini CLI
+        - GitHub Copilot
+        - Cursor
+        - Qwen Code
+        - opencode
+        - Codex CLI
+        - Windsurf
+        - Kilo Code
+        - Auggie CLI
+        - Roo Code
+        - CodeBuddy
+        - Qoder CLI
+        - Amazon Q Developer CLI
+        - Amp
+        - SHAI
+        - IBM Bob
+        - Antigravity
+        - Not applicable
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: Your operating system and version
+      placeholder: "e.g., macOS 14.2, Ubuntu 22.04, Windows 11"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python Version
+      description: "Run `python --version` or `python3 --version`"
+      placeholder: "e.g., Python 3.11.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Please paste any relevant error messages or logs
+      render: shell
+      placeholder: Paste error output here
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem
+      placeholder: Screenshots, related issues, workarounds attempted, etc.

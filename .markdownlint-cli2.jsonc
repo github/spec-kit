@@ -19,7 +19,9 @@
     },
     "MD050": {
       "style": "asterisk"
-    }
+    },
+    "MD036": false,
+    "MD060": false
   },
   "ignores": [
     ".genreleases/"
