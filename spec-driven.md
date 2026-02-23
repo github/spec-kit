@@ -74,6 +74,36 @@ The key is treating specifications as the source of truth, with code as the gene
 
 The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking workflow:
 
+### The `/speckit.constitution` Command
+
+This command creates or updates your project's architectural constitution, establishing the immutable principles that govern all implementations:
+
+**Core Value**: Provides architectural stability and consistency across time and team members, ensuring every feature reinforces rather than undermines your system's design principles.
+
+**Benefits**:
+- Defines non-negotiable rules (like "library-first" or "test-first" imperatives)
+- Automatically propagates constitutional changes to all dependent templates
+- Maintains version history of architectural decisions
+- Prevents over-engineering through explicit simplicity and anti-abstraction gates
+- Ensures AI-generated code follows consistent architectural patterns
+
+**Expected Input:**
+
+- Define your project's core architectural principles
+- Establish non-negotiable rules that govern all implementations
+- Set simplicity thresholds and quality gates specific to your domain
+
+**Minimal usage** (provide your project's principles):
+
+```markdown
+/speckit.constitution
+Library-first: every feature begins as standalone library
+Test-first: no code before tests
+Simplicity gate: max 3 projects per feature
+```
+
+> Encodes principles into `/memory/constitution.md`, propagates to all templates, and validates future implementations automatically.
+
 ### The `/speckit.specify` Command
 
 This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
@@ -83,24 +113,223 @@ This command transforms a simple feature description (the user-prompt) into a co
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
 4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
 
+**Expected Input:**
+
+- Provide natural language feature description
+- System automatically generates branch, spec file, user stories, and acceptance criteria
+
+**Minimal usage** (requires feature description):
+
+```markdown
+/speckit.specify
+Real-time chat system with instant messaging, conversation history, and user presence (online/offline/away). Users create rooms, add members, manage settings.
+```
+
+> Generates a document like `spec.md` with structured requirements, auto-numbered feature, branch created, quality checklist validated.
+
+### The `/speckit.clarify` Command
+
+This command identifies underspecified areas in your feature spec and guides you through targeted clarification questions to resolve ambiguities:
+
+**Core Value**: Eliminates specification uncertainty early, preventing downstream rework and ensuring your requirements are precise enough for consistent implementation.
+
+**Benefits**:
+- Asks only high-impact questions that affect architecture or testing
+- Provides recommended answers based on best practices and project context
+- Updates your spec.md automatically with accepted clarifications
+- Covers functional scope, data models, UX flows, and quality attributes
+- Limits to 5 questions maximum to avoid analysis paralysis
+
+**Expected Input:**
+
+- Direct clarification focus to specific areas (data model, performance, security)
+- System automatically identifies ambiguities and asks targeted questions (max 5)
+
+**Minimal usage** (runs without arguments, scans entire spec):
+
+```markdown
+/speckit.clarify
+```
+
+**With focus** (optionally narrow scope):
+
+```markdown
+/speckit.clarify
+Focus on data model (retention policy, capacity limits) and security (encryption).
+```
+
+> Asks high-impact questions, provides recommended answers, and updates `spec.md` with "Clarifications" section automatically.
+
+### The `/speckit.checklist` Command
+
+This command **automatically generates** custom checklists that serve as "unit tests for your requirements," validating the quality and completeness of your specifications:
+
+**Core Value**: Transforms vague requirements into measurable quality gates, ensuring your specifications are precise enough to generate reliable code.
+
+**Benefits**:
+- **Automatically creates** targeted checklists for different concerns (UX, API, security, performance)
+- Tests requirement clarity, consistency, and measurability rather than implementation behavior
+- Identifies missing edge cases and acceptance criteria gaps
+- Provides traceability between requirements and validation points
+- Enables systematic requirement refinement before planning begins
+
+**Expected Input:**
+
+- Specify quality concern area (security, API, UX, performance)
+- System automatically generates validation checklist testing requirement quality
+
+**Minimal usage** (requires quality focus area):
+
+```markdown
+/speckit.checklist security
+```
+
+**With detail** (optionally add specifics):
+
+```markdown
+/speckit.checklist
+Security: password policies, encryption, data retention, privacy controls
+```
+
+> Generates `checklists/security.md` validating requirement clarity/measurability. Identifies gaps (e.g., "encryption standard not specified").
+
 ### The `/speckit.plan` Command
 
-Once a feature specification exists, this command creates a comprehensive implementation plan:
+Once a feature specification exists, this command automatically creates a comprehensive implementation plan from your spec:
 
-1. **Specification Analysis**: Reads and understands the feature requirements, user stories, and acceptance criteria
-2. **Constitutional Compliance**: Ensures alignment with project constitution and architectural principles
-3. **Technical Translation**: Converts business requirements into technical architecture and implementation details
-4. **Detailed Documentation**: Generates supporting documents for data models, API contracts, and test scenarios
-5. **Quickstart Validation**: Produces a quickstart guide capturing key validation scenarios
+**Core Value**: Translates business requirements into actionable technical architecture, eliminating the gap between "what we need" and "how to build it."
+
+**Benefits**:
+
+- Analyzes all requirements and automatically creates phased implementation strategy
+- Ensures all technical decisions trace back to specific requirements
+- Generates supporting artifacts (data models, API contracts, schemas) automatically
+- Validates alignment with project constitution and architectural principles
+- Produces implementation-ready technical documentation in minutes
+
+**Expected Input:**
+
+- Highlight blocking architectural decisions that need priority
+- System automatically analyzes spec, generates architecture, models, contracts, phases
+
+**Minimal usage** (runs without arguments, analyzes full spec):
+
+```markdown
+/speckit.plan
+```
+
+**With priorities** (optionally specify focus):
+
+```markdown
+/speckit.plan
+Prioritize real-time transport decision (WebSocket vs polling) and auth integration.
+```
+
+> Generates `plan.md` with architecture, data models, API contracts, implementation phases—all traced to spec requirements.
 
 ### The `/speckit.tasks` Command
 
-After a plan is created, this command analyzes the plan and related design documents to generate an executable task list:
+This command analyzes your implementation plan and design documents to automatically generate an executable task list:
 
-1. **Inputs**: Reads `plan.md` (required) and, if present, `data-model.md`, `contracts/`, and `research.md`
-2. **Task Derivation**: Converts contracts, entities, and scenarios into specific tasks
-3. **Parallelization**: Marks independent tasks `[P]` and outlines safe parallel groups
-4. **Output**: Writes `tasks.md` in the feature directory, ready for execution by a Task agent
+**Core Value**: Breaks down complex architecture into specific, ordered, actionable tasks that can be executed systematically with clear dependencies and parallelization opportunities.
+
+**Benefits**:
+
+- Automatically maps technical decisions to concrete implementation tasks
+- Identifies task dependencies and safe parallel execution paths
+- Converts abstract plans into specific file creation and code generation steps
+- Marks non-blocking tasks with `[P]` for parallel execution
+- Generates phase-based execution roadmap ready for implementation
+
+**Expected Input:**
+
+- Constrain scope (MVP only, specific user stories)
+- System automatically generates tasks, dependencies, parallelization markers
+
+**Minimal usage** (runs without arguments, processes full plan):
+
+```markdown
+/speckit.tasks
+```
+
+**With scope constraint** (optionally limit to MVP):
+
+```markdown
+/speckit.tasks
+MVP scope only: P1 stories + shared infrastructure
+```
+
+> Generates `tasks.md` with phases, task IDs, dependencies, `[P]` parallel markers, file paths—immediately executable.
+
+### The `/speckit.analyze` Command
+
+This command performs automated cross-artifact consistency analysis, validating that your specification, plan, and tasks align before expensive implementation begins:
+
+**Core Value**: Catches specification gaps, conflicts, and incomplete coverage *before* they become code bugs—preventing costly rework after implementation starts.
+
+**Benefits**:
+
+- Automatically scans all three artifacts for requirement → task coverage
+- Identifies unassigned requirements that would be missed during implementation
+- Flags vague/unmeasurable terms that lack acceptance criteria
+- Detects conflicting requirements or technical decisions
+- Reports constitutional violations before code generation
+- Surfaces critical issues blocking implementation readiness
+
+**Expected Input:**
+
+- Set severity filter (critical issues only vs. all issues)
+- System automatically scans spec/plan/tasks for gaps, conflicts, violations
+
+**Minimal usage** (runs without arguments, reports all issues):
+
+```markdown
+/speckit.analyze
+```
+
+**With severity filter** (optionally limit to critical):
+
+```markdown
+/speckit.analyze
+CRITICAL issues only: coverage gaps, constitutional violations, P1 story risks
+```
+
+> Scans artifacts, reports gaps (e.g., "Authentication: 0 assigned tasks—security gap detected"). Fix before implementation.
+
+### The `/speckit.implement` Command
+
+This command executes your complete implementation plan by processing all tasks in your tasks.md file, following strict test-first development:
+
+**Core Value**: Transforms your specification documents into working code through systematic, phase-by-phase execution that maintains quality at every step.
+
+**Benefits**:
+
+- Enforces test-driven development (tests written before implementation)
+- Respects task dependencies and parallelization markers
+- Validates checklist completion before allowing implementation to proceed
+- Automatically sets up proper ignore files for your technology stack
+- Provides progress tracking and error handling throughout execution
+
+**Expected Input:**
+
+- Specify scope (which user stories to implement)
+- Set failure behavior (halt on error vs. continue)
+- System automatically executes tasks, enforces test-first, validates dependencies
+
+**Minimal usage** (runs without arguments, executes all tasks):
+
+```markdown
+/speckit.implement
+```
+
+**With scope control** (optionally limit execution):
+
+```markdown
+/speckit.implement
+User Story 1 (authentication) only. Halt on any non-parallel task failure.
+```
+
+> Executes tasks in phase order, writes tests before code, validates dependencies, stops on critical failures.
 
 ### Example: Building a Chat Feature
 
@@ -120,9 +349,14 @@ Total: ~12 hours of documentation work
 **SDD with Commands Approach:**
 
 ```bash
+# Step 0: Establish project constitution (first time only, 10 minutes)
+/speckit.constitution
+Library-first: every feature begins as standalone library
+Test-first: no code before tests
+Simplicity gate: max 3 projects per feature
+
 # Step 1: Create the feature specification (5 minutes)
 /speckit.specify Real-time chat system with message history and user presence
-
 # This automatically:
 # - Creates branch "003-chat-system"
 # - Generates specs/003-chat-system/spec.md
@@ -130,10 +364,26 @@ Total: ~12 hours of documentation work
 
 # Step 2: Generate implementation plan (5 minutes)
 /speckit.plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
+# Creates: specs/003-chat-system/spec.md with structured requirements
 
-# Step 3: Generate executable tasks (5 minutes)
+# Step 2: Clarify ambiguities (5 minutes)
+/speckit.clarify
+# Asks: "What latency defines 'real-time'?", "How long should message history persist?"
+# Updates: spec.md with clarification section
+
+# Step 3: Validate requirement quality (5 minutes)
+/speckit.checklist security
+/speckit.checklist api
+# Generates: checklists/security.md, checklists/api.md
+# Tests: requirement clarity, completeness, measurability
+
+# Step 4: Generate implementation plan (5 minutes)
+/speckit.plan
+# Creates: plan.md with WebSocket architecture, PostgreSQL schema, Redis caching strategy
+
+# Step 5: Generate executable tasks (5 minutes)
 /speckit.tasks
-
+# Creates: tasks.md with phase-by-phase breakdown, task dependencies, [P] parallel markers
 # This automatically creates:
 # - specs/003-chat-system/plan.md
 # - specs/003-chat-system/research.md (WebSocket library comparisons)
@@ -141,12 +391,24 @@ Total: ~12 hours of documentation work
 # - specs/003-chat-system/contracts/ (WebSocket events, REST endpoints)
 # - specs/003-chat-system/quickstart.md (Key validation scenarios)
 # - specs/003-chat-system/tasks.md (Task list derived from the plan)
+
+# Step 6: Analyze for consistency (5 minutes)
+/speckit.analyze
+# Validates: all requirements mapped to tasks, no ambiguous terms remain
+# Reports: coverage %, critical issues before implementation
+
+# Step 7: Execute implementation (ongoing)
+/speckit.implement
+# Executes: tasks in order, enforces test-first, validates checklist completion
 ```
 
-In 15 minutes, you have:
+In under an hour, you get:
 
+- Constitutional principles established and enforced across all templates
 - A complete feature specification with user stories and acceptance criteria
 - A detailed implementation plan with technology choices and rationale
+- Executable tasks with dependencies and parallelization markers
+- Requirement quality validated through checklists (security, API, UX)
 - API contracts and data models ready for code generation
 - Comprehensive test scenarios for both automated and manual testing
 - All documents properly versioned in a feature branch
