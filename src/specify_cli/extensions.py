@@ -647,7 +647,7 @@ class CommandRegistrar:
             "args": "$ARGUMENTS",
             "extension": ".md"
         },
-        "qoder": {
+        "qodercli": {
             "dir": ".qoder/commands",
             "format": "markdown",
             "args": "$ARGUMENTS",

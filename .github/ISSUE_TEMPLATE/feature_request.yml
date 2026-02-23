@@ -1,0 +1,104 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for Specify CLI or Spec Kit
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please provide details below to help us understand and evaluate your request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: "I'm frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: What would you like to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+      placeholder: What other approaches might work?
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component does this feature relate to?
+      options:
+        - Specify CLI (initialization, commands)
+        - Spec templates (BDD, Testing Strategy, etc.)
+        - Agent integrations (command files, workflows)
+        - Scripts (Bash/PowerShell utilities)
+        - Documentation
+        - CI/CD workflows
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-agent
+    attributes:
+      label: AI Agent (if applicable)
+      description: Does this feature relate to a specific AI agent?
+      options:
+        - All agents
+        - Claude Code
+        - Gemini CLI
+        - GitHub Copilot
+        - Cursor
+        - Qwen Code
+        - opencode
+        - Codex CLI
+        - Windsurf
+        - Kilo Code
+        - Auggie CLI
+        - Roo Code
+        - CodeBuddy
+        - Qoder CLI
+        - Amazon Q Developer CLI
+        - Amp
+        - SHAI
+        - IBM Bob
+        - Antigravity
+        - Not applicable
+
+  - type: textarea
+    id: use-cases
+    attributes:
+      label: Use Cases
+      description: Describe specific use cases where this feature would be valuable
+      placeholder: |
+        1. When working on large projects...
+        2. During spec review...
+        3. When integrating with CI/CD...
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How would you know this feature is complete and working?
+      placeholder: |
+        - [ ] Feature does X
+        - [ ] Documentation is updated
+        - [ ] Works with all supported agents
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples
+      placeholder: Links to similar features, mockups, related discussions, etc.
