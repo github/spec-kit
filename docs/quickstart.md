@@ -79,6 +79,10 @@ Then, use the `/speckit.implement` slash command to execute the plan.
 
 ```markdown
 /speckit.implement
+
+Finally, run the `/speckit.deployment` command to choose a deployment path.
+
+/speckit.deployment
 ```
 
 > [!TIP]
@@ -158,6 +162,8 @@ Finally, implement the solution:
 
 ```bash
 /speckit.implement
+
+/speckit.deployment
 ```
 
 > [!TIP]

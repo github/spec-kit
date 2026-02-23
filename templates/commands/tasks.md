@@ -9,6 +9,10 @@ handoffs:
     agent: speckit.implement
     prompt: Start the implementation in phases
     send: true
+  - label: Deployment Guidance
+    agent: speckit.deployment
+    prompt: Guide deployment options after implementation
+    send: true
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
@@ -62,6 +66,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Independent test criteria for each story
    - Suggested MVP scope (typically just User Story 1)
    - Format validation: Confirm ALL tasks follow the checklist format (checkbox, ID, labels, file paths)
+6. After `/speckit.implement`, run `/speckit.deployment` to guide deployment options.
 
 Context for task generation: {ARGS}
 
