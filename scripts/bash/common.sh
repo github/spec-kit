@@ -104,15 +104,15 @@ find_feature_dir_by_prefix() {
             for dir in "$specs_dir/$SPECIFY_SPECS_SUBDIR"/"$prefix"-*; do
                 [[ -d "$dir" ]] && matches+=("$dir")
             done
+        else
+            for dir in "$specs_dir"/"$prefix"-*; do
+                [[ -d "$dir" ]] && matches+=("$dir")
+            done
+
+            for dir in "$specs_dir"/*/"$prefix"-*; do
+                [[ -d "$dir" ]] && matches+=("$dir")
+            done
         fi
-
-        for dir in "$specs_dir"/"$prefix"-*; do
-            [[ -d "$dir" ]] && matches+=("$dir")
-        done
-
-        for dir in "$specs_dir"/*/"$prefix"-*; do
-            [[ -d "$dir" ]] && matches+=("$dir")
-        done
     fi
 
     # Handle results

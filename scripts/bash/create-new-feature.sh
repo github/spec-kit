@@ -97,8 +97,8 @@ find_repo_root() {
     return 1
 }
 
-# Function to get highest number from specs directory
-get_highest_from_specs() {
+# Function to get highest number from specs directory (supports both flat and nested specs directories)
+get_highest_from_specs_recursive() {
     local specs_dir="$1"
     local highest=0
     
@@ -154,7 +154,7 @@ check_existing_branches() {
     local highest_branch=$(get_highest_from_branches)
 
     # Get highest number from ALL specs (not just matching short name)
-    local highest_spec=$(get_highest_from_specs "$specs_dir")
+    local highest_spec=$(get_highest_from_specs_recursive "$specs_dir")
 
     # Take the maximum of both
     local max_num=$highest_branch
@@ -263,7 +263,7 @@ if [ -z "$BRANCH_NUMBER" ]; then
         BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
     else
         # Fall back to local directory check
-        HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+        HIGHEST=$(get_highest_from_specs_recursive "$SPECS_DIR")
         BRANCH_NUMBER=$((HIGHEST + 1))
     fi
 fi
