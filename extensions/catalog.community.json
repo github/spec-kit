@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-02-22T00:00:00Z",
+  "updated_at": "2026-02-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "cleanup": {
@@ -28,6 +28,32 @@
       "stars": 0,
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
+    },
+    "retrospective": {
+      "name": "Retrospective Extension",
+      "id": "retrospective",
+      "description": "Post-implementation retrospective with spec adherence scoring, drift analysis, and human-gated spec updates.",
+      "author": "emi-dm",
+      "version": "1.0.0",
+      "download_url": "https://github.com/emi-dm/spec-kit-retrospective/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/emi-dm/spec-kit-retrospective",
+      "homepage": "https://github.com/emi-dm/spec-kit-retrospective",
+      "documentation": "https://github.com/emi-dm/spec-kit-retrospective/blob/main/README.md",
+      "changelog": "https://github.com/emi-dm/spec-kit-retrospective/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": ["retrospective", "spec-drift", "quality", "analysis", "governance"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-02-24T00:00:00Z",
+      "updated_at": "2026-02-24T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",
