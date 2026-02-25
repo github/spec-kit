@@ -8,18 +8,18 @@ Spec Kit provides two catalog files with different purposes:
 
 ### Your Catalog (`catalog.json`)
 
-- **Purpose**: Your organization's curated catalog of approved extensions
-- **Default State**: Empty by design - you populate it with extensions you trust
-- **Location**: `extensions/catalog.json` in the spec-kit repo
-- **Usage**: The `specify extension` commands use this catalog by default
-- **Override**: Set `SPECKIT_CATALOG_URL` environment variable to use a different catalog
-- **Customization**: Copy extensions from the community catalog or add your own
+- **Purpose**: Default upstream catalog of extensions used by the Spec Kit CLI
+- **Default State**: Empty by design in the upstream project - you or your organization populate a fork/copy with extensions you trust
+- **Location (upstream)**: `extensions/catalog.json` in the GitHub-hosted spec-kit repo
+- **CLI Default**: The `specify extension` commands use the upstream catalog URL by default, unless overridden
+- **Org Catalog**: Point `SPECKIT_CATALOG_URL` at your organization's fork or hosted catalog JSON to use it instead of the upstream default
+- **Customization**: Copy entries from the community catalog into your org catalog, or add your own extensions directly
 
 **Example override:**
 ```bash
-# Point to your organization's catalog
+# Override the default upstream catalog with your organization's catalog
 export SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json"
-specify extension search  # Now uses your custom catalog
+specify extension search  # Now uses your organization's catalog instead of the upstream default
 ```
 
 ### Community Reference Catalog (`catalog.community.json`)
