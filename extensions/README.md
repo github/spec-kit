@@ -100,7 +100,7 @@ Before submitting, ensure:
 - ✅ GitHub release created with semantic version (e.g., v1.0.0)
 - ✅ Extension tested on a real project
 - ✅ All commands working as documented
-- ✅Installing Extensions
+- ✅ Installing extensions
 
 Once extensions are available (either in your catalog or via direct URL), install them:
 
