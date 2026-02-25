@@ -216,11 +216,11 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
-    "q": {
-        "name": "Amazon Q Developer CLI",
-        "folder": ".amazonq/",
+    "kiro-cli": {
+        "name": "Kiro CLI",
+        "folder": ".kiro/",
         "commands_subdir": "prompts",  # Special: uses prompts/ not commands/
-        "install_url": "https://aws.amazon.com/developer/learning/q-developer-cli/",
+        "install_url": "https://kiro.dev/docs/cli/",
         "requires_cli": True,
     },
     "amp": {
@@ -258,6 +258,10 @@ AGENT_CONFIG = {
         "install_url": None,
         "requires_cli": False,
     },
+}
+
+AI_ASSISTANT_ALIASES = {
+    "kiro": "kiro-cli",
 }
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
@@ -534,7 +538,12 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
                 tracker.complete(tool, "available")
             return True
     
-    found = shutil.which(tool) is not None
+    if tool == "kiro-cli":
+        # Kiro currently supports both executable names. Prefer kiro-cli and
+        # accept kiro as a compatibility fallback.
+        found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
+    else:
+        found = shutil.which(tool) is not None
     
     if tracker:
         if found:
@@ -1214,7 +1223,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, agy, bob, qodercli, or generic (requires --ai-commands-dir)"),
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, kiro-cli (alias: kiro), agy, bob, qodercli, or generic (requires --ai-commands-dir)"),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
@@ -1269,6 +1278,9 @@ def init(
         console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai-commands-dir?")
         console.print("[yellow]Example:[/yellow] specify init --ai generic --ai-commands-dir .myagent/commands/")
         raise typer.Exit(1)
+
+    if ai_assistant:
+        ai_assistant = AI_ASSISTANT_ALIASES.get(ai_assistant, ai_assistant)
 
     if project_name == ".":
         here = True
@@ -2350,4 +2362,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
