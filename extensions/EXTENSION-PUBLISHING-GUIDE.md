@@ -129,26 +129,32 @@ specify extension add --from https://github.com/your-org/spec-kit-your-extension
 
 ## Submit to Catalog
 
+### Understanding the Catalogs
+
+Spec Kit uses a dual-catalog system. For details about how catalogs work, see the main [Extensions README](README.md#extension-catalogs).
+
+**For extension publishing**: All community extensions should be added to `catalog.community.json`. Users browse this catalog and copy extensions they trust into their own `catalog.json`.
+
 ### 1. Fork the spec-kit Repository
 
 ```bash
 # Fork on GitHub
-# https://github.com/statsperform/spec-kit/fork
+# https://github.com/github/spec-kit/fork
 
 # Clone your fork
 git clone https://github.com/YOUR-USERNAME/spec-kit.git
 cd spec-kit
 ```
 
-### 2. Add Extension to Catalog
+### 2. Add Extension to Community Catalog
 
-Edit `extensions/catalog.json` and add your extension:
+Edit `extensions/catalog.community.json` and add your extension:
 
 ```json
 {
   "schema_version": "1.0",
   "updated_at": "2026-01-28T15:54:00Z",
-  "catalog_url": "https://raw.githubusercontent.com/statsperform/spec-kit/main/extensions/catalog.json",
+  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "your-extension": {
       "name": "Your Extension Name",
@@ -198,15 +204,25 @@ Edit `extensions/catalog.json` and add your extension:
 - Use current timestamp for `created_at` and `updated_at`
 - Update the top-level `updated_at` to current time
 
-### 3. Submit Pull Request
+### 3. Update Extensions README
+
+Add your extension to the Available Extensions table in `extensions/README.md`:
+
+```markdown
+| Your Extension Name | Brief description of what it does | [repo-name](https://github.com/your-org/spec-kit-your-extension) |
+```
+
+Insert your extension in alphabetical order in the table.
+
+### 4. Submit Pull Request
 
 ```bash
 # Create a branch
 git checkout -b add-your-extension
 
 # Commit your changes
-git add extensions/catalog.json
-git commit -m "Add your-extension to catalog
+git add extensions/catalog.community.json extensions/README.md
+git commit -m "Add your-extension to community catalog
 
 - Extension ID: your-extension
 - Version: 1.0.0
@@ -218,7 +234,7 @@ git commit -m "Add your-extension to catalog
 git push origin add-your-extension
 
 # Create Pull Request on GitHub
-# https://github.com/statsperform/spec-kit/compare
+# https://github.com/github/spec-kit/compare
 ```
 
 **Pull Request Template**:
@@ -243,6 +259,8 @@ Brief description of what your extension does.
 - [x] Extension tested on real project
 - [x] All commands working
 - [x] No security vulnerabilities
+- [x] Added to extensions/catalog.community.json
+- [x] Added to extensions/README.md Available Extensions table
 
 ### Testing
 Tested on:
