@@ -53,8 +53,33 @@ echo "✅ Done"
 
 echo -e "\n🤖 Installing Kiro CLI..."
 # https://kiro.dev/docs/cli/
-run_command "curl -fsSL https://cli.kiro.dev/install | bash"
-run_command "kiro-cli --help > /dev/null"
+KIRO_INSTALLER_URL="https://cli.kiro.dev/install"
+KIRO_INSTALLER_PATH="$(mktemp)"
+
+cleanup_kiro_installer() {
+  rm -f "$KIRO_INSTALLER_PATH"
+}
+trap cleanup_kiro_installer EXIT
+
+run_command "curl -fsSL \"$KIRO_INSTALLER_URL\" -o \"$KIRO_INSTALLER_PATH\""
+
+if [ -n "${KIRO_INSTALLER_SHA256:-}" ]; then
+  run_command "echo \"$KIRO_INSTALLER_SHA256  $KIRO_INSTALLER_PATH\" | sha256sum -c -"
+fi
+
+run_command "bash \"$KIRO_INSTALLER_PATH\""
+
+kiro_binary=""
+if command -v kiro-cli >/dev/null 2>&1; then
+  kiro_binary="kiro-cli"
+elif command -v kiro >/dev/null 2>&1; then
+  kiro_binary="kiro"
+else
+  echo -e "\033[0;31m[ERROR] Kiro CLI installation did not create 'kiro-cli' or 'kiro' in PATH.\033[0m" >&2
+  exit 1
+fi
+
+run_command "$kiro_binary --help > /dev/null"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing CodeBuddy CLI..."

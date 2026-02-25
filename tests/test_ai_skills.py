@@ -545,7 +545,9 @@ class TestNewProjectCommandSkip:
              patch("specify_cli.install_ai_skills", return_value=True), \
              patch("specify_cli.is_git_repo", return_value=True), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
-            runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
+            result = runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--force", "--no-git"])
+
+        assert result.exit_code == 0
         # Commands must remain for --here
         assert cmds_dir.exists()
         assert (cmds_dir / "speckit.specify.md").exists()
