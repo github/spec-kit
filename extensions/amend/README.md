@@ -50,7 +50,8 @@ The amendment micro-cycle:
     ├── Phase 3: Locate affected test and implementation files
     ├── Phase 4: Add failing test (RED)
     ├── Phase 5: Make targeted code change (GREEN)
-    └── Phase 6: Update tasks.md traceability
+    ├── Phase 6: Update tasks.md traceability
+    └── Phase 7: Output completion report
 ```
 
 ## When to Use vs. Alternatives
