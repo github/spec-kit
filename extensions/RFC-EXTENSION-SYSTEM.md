@@ -858,11 +858,41 @@ def should_execute_hook(hook: dict, config: dict) -> bool:
 
 ## Extension Discovery & Catalog
 
-### Central Catalog
+### Dual Catalog System
+
+Spec Kit uses two catalog files with different purposes:
+
+#### User Catalog (`catalog.json`)
 
 **URL**: `https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json`
 
-**Format**:
+- **Purpose**: Organization's curated catalog of approved extensions
+- **Default State**: Empty by design - users populate with extensions they trust
+- **Usage**: Default catalog used by `specify extension` CLI commands
+- **Control**: Organizations maintain their own fork/version for their teams
+
+#### Community Reference Catalog (`catalog.community.json`)
+
+**URL**: `https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json`
+
+- **Purpose**: Reference catalog of available community-contributed extensions
+- **Verification**: Community extensions may have `verified: false` initially
+- **Status**: Active - open for community contributions
+- **Submission**: Via Pull Request following the Extension Publishing Guide
+- **Usage**: Browse to discover extensions, then copy to your `catalog.json`
+
+**How It Works:**
+
+1. **Discover**: Browse `catalog.community.json` to find available extensions
+2. **Review**: Evaluate extensions for security, quality, and organizational fit
+3. **Curate**: Copy approved extension entries from community catalog to your `catalog.json`
+4. **Install**: Use `specify extension add <name>` (pulls from your curated catalog)
+
+This approach gives organizations full control over which extensions are available to their teams while maintaining a shared community resource for discovery.
+
+### Catalog Format
+
+**Format** (same for both catalogs):
 
 ```json
 {
@@ -931,24 +961,51 @@ specify extension info jira
 
 ### Custom Catalogs
 
-Organizations can host private catalogs:
+**⚠️ FUTURE FEATURE - NOT YET IMPLEMENTED**
+
+The following catalog management commands are proposed design concepts but are not yet available in the current implementation:
 
 ```bash
-# Add custom catalog
+# Add custom catalog (FUTURE - NOT AVAILABLE)
 specify extension add-catalog https://internal.company.com/spec-kit/catalog.json
 
-# Set as default
+# Set as default (FUTURE - NOT AVAILABLE)
 specify extension set-catalog --default https://internal.company.com/spec-kit/catalog.json
 
-# List catalogs
+# List catalogs (FUTURE - NOT AVAILABLE)
 specify extension catalogs
 ```
 
-**Catalog priority**:
+**Proposed catalog priority** (future design):
 
-1. Project-specific catalog (`.specify/extension-catalogs.yml`)
-2. User-level catalog (`~/.specify/extension-catalogs.yml`)
+1. Project-specific catalog (`.specify/extension-catalogs.yml`) - *not implemented*
+2. User-level catalog (`~/.specify/extension-catalogs.yml`) - *not implemented*
 3. Default GitHub catalog
+
+#### Current Implementation: SPECKIT_CATALOG_URL
+
+**The currently available method** for using custom catalogs is the `SPECKIT_CATALOG_URL` environment variable:
+
+```bash
+# Point to your organization's catalog
+export SPECKIT_CATALOG_URL="https://internal.company.com/spec-kit/catalog.json"
+
+# All extension commands now use your custom catalog
+specify extension search       # Uses custom catalog
+specify extension add jira     # Installs from custom catalog
+```
+
+**Requirements:**
+- URL must use HTTPS (HTTP only allowed for localhost testing)
+- Catalog must follow the standard catalog.json schema
+- Must be publicly accessible or accessible within your network
+
+**Example for testing:**
+```bash
+# Test with localhost during development
+export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
+specify extension search
+```
 
 ---
 
