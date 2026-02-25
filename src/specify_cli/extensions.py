@@ -653,8 +653,8 @@ class CommandRegistrar:
             "args": "$ARGUMENTS",
             "extension": ".md"
         },
-        "q": {
-            "dir": ".amazonq/prompts",
+        "kiro-cli": {
+            "dir": ".kiro/prompts",
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
@@ -1781,5 +1781,4 @@ class HookExecutor:
                     hook["enabled"] = False
 
         self.save_project_config(config)
-
 

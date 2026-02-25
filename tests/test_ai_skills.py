@@ -162,6 +162,11 @@ class TestGetSkillsDir:
         result = _get_skills_dir(project_dir, "cursor-agent")
         assert result == project_dir / ".cursor" / "skills"
 
+    def test_kiro_cli_skills_dir(self, project_dir):
+        """Kiro CLI should use .kiro/skills/."""
+        result = _get_skills_dir(project_dir, "kiro-cli")
+        assert result == project_dir / ".kiro" / "skills"
+
     def test_unknown_agent_uses_default(self, project_dir):
         """Unknown agents should fall back to DEFAULT_SKILLS_DIR."""
         result = _get_skills_dir(project_dir, "nonexistent-agent")
@@ -483,6 +488,7 @@ class TestNewProjectCommandSkip:
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
             result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
+        assert result.exit_code == 0
         # Skills should have been called
         mock_skills.assert_called_once()
 
@@ -508,6 +514,7 @@ class TestNewProjectCommandSkip:
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
             result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
+        assert result.exit_code == 0
         # Commands should still exist since skills failed
         cmds_dir = target / ".claude" / "commands"
         assert cmds_dir.exists()
@@ -538,8 +545,7 @@ class TestNewProjectCommandSkip:
              patch("specify_cli.install_ai_skills", return_value=True), \
              patch("specify_cli.is_git_repo", return_value=True), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
-            result = runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
-
+            runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
         # Commands must remain for --here
         assert cmds_dir.exists()
         assert (cmds_dir / "speckit.specify.md").exists()
@@ -630,6 +636,42 @@ class TestCliValidation:
         plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
         assert "--ai-skills" in plain
         assert "agent skills" in plain.lower()
+
+    def test_kiro_alias_normalized_to_kiro_cli(self, tmp_path):
+        """--ai kiro should normalize to canonical kiro-cli agent key."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "kiro-alias-proj"
+
+        with patch("specify_cli.download_and_extract_template") as mock_download, \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    str(target),
+                    "--ai",
+                    "kiro",
+                    "--ignore-agent-tools",
+                    "--script",
+                    "sh",
+                    "--no-git",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_download.called
+        # download_and_extract_template(project_path, ai_assistant, script_type, ...)
+        assert mock_download.call_args.args[1] == "kiro-cli"
+
+    def test_q_removed_from_agent_config(self):
+        """Amazon Q legacy key should not remain in AGENT_CONFIG."""
+        assert "q" not in AGENT_CONFIG
+        assert "kiro-cli" in AGENT_CONFIG
 
 
 class TestParameterOrderingIssue:
