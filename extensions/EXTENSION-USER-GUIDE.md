@@ -46,7 +46,7 @@ Extensions are modular packages that add new commands and functionality to Spec 
 ### Check Your Version
 
 ```bash
-specify --version
+specify version
 # Should show 0.1.0 or higher
 ```
 

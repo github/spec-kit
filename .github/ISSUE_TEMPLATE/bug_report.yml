@@ -51,7 +51,7 @@ body:
     id: version
     attributes:
       label: Specify CLI Version
-      description: "Run `specify --version` or `pip show spec-kit`"
+      description: "Run `specify version` or `pip show spec-kit`"
       placeholder: "e.g., 1.3.0"
     validations:
       required: true
