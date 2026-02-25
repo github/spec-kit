@@ -1,0 +1,37 @@
+schema_version: "1.0"
+
+extension:
+  id: "amend"
+  name: "Spec Kit Amend"
+  version: "1.0.0"
+  description: "Targeted post-implementation amendments that cascade a single change through spec, tests, and code without re-running the full pipeline."
+  author: "pankaj-modi18"
+  repository: "https://github.com/github/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.1.0"
+  commands:
+    - "speckit.tasks"
+    - "speckit.implement"
+    - "speckit.analyze"
+
+provides:
+  commands:
+    - name: "speckit.amend.amend"
+      file: "commands/amend.md"
+      description: "Amend a completed feature spec with new edge cases, scenarios, or behavioral corrections, cascading changes through tests and implementation."
+      aliases: ["speckit.amend"]
+
+hooks:
+  after_implement:
+    command: "speckit.amend.amend"
+    optional: true
+    prompt: "Run amendment cycle for any post-implementation corrections?"
+    description: "Optionally amend the spec after implementation completes"
+
+tags:
+  - "spec-driven"
+  - "bdd"
+  - "amendments"
+  - "post-implementation"
