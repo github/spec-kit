@@ -13,6 +13,16 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Language Requirements
+
+**ALL user interaction and reporting MUST be in Korean (한글)**
+- Progress reports must be in Korean
+- Status tables and summaries must be in Korean
+- Questions to the user must be in Korean
+- Error messages and suggestions must be in Korean
+- Code and technical identifiers remain in English
+- Technical terms can be kept in English when appropriate (e.g., API, TDD, CLI)
+
 ## Outline
 
 1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
