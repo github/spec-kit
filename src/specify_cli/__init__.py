@@ -490,12 +490,7 @@ def show_banner():
 def _version_callback(value: bool):
     """Print CLI version and exit."""
     if value:
-        import importlib.metadata
-
-        try:
-            ver = importlib.metadata.version("specify-cli")
-        except Exception:
-            ver = "unknown"
+        ver = get_speckit_version()
         print(f"specify {ver}")
         raise typer.Exit()
 

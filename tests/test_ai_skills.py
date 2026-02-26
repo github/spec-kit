@@ -664,7 +664,7 @@ class TestVersionFlag:
         assert result.output.strip().startswith("specify ")
 
     def test_version_flag_appears_in_help(self):
-        """--version should appear in the help output."""
+        """--version and -V should appear in the help output."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
@@ -672,6 +672,7 @@ class TestVersionFlag:
 
         plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
         assert "--version" in plain
+        assert "-V" in plain
 
 
 class TestParameterOrderingIssue:
