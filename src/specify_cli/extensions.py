@@ -676,6 +676,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "agy": {
+            "dir": ".agent/workflows",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
         }
     }
 
