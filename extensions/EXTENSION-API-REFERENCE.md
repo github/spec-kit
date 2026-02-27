@@ -243,6 +243,32 @@ manager.check_compatibility(
 )  # Raises: CompatibilityError if incompatible
 ```
 
+### CatalogEntry
+
+**Module**: `specify_cli.extensions`
+
+Represents a single catalog in the active catalog stack.
+
+```python
+from specify_cli.extensions import CatalogEntry
+
+entry = CatalogEntry(
+    url="https://example.com/catalog.json",
+    name="org-approved",
+    priority=1,
+    install_allowed=True,
+)
+```
+
+**Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | `str` | Catalog URL (must use HTTPS, or HTTP for localhost) |
+| `name` | `str` | Human-readable catalog name |
+| `priority` | `int` | Sort order (lower = higher priority, wins on conflicts) |
+| `install_allowed` | `bool` | Whether extensions from this catalog can be installed |
+
 ### ExtensionCatalog
 
 **Module**: `specify_cli.extensions`
@@ -253,28 +279,63 @@ from specify_cli.extensions import ExtensionCatalog
 catalog = ExtensionCatalog(project_root)
 ```
 
+**Class attributes**:
+
+```python
+ExtensionCatalog.DEFAULT_CATALOG_URL    # org-approved catalog URL
+ExtensionCatalog.COMMUNITY_CATALOG_URL  # community catalog URL
+```
+
 **Methods**:
 
 ```python
-# Fetch catalog
+# Get the ordered list of active catalogs
+entries = catalog.get_active_catalogs()  # List[CatalogEntry]
+
+# Fetch catalog (primary catalog, backward compat)
 catalog_data = catalog.fetch_catalog(force_refresh: bool = False)  # Dict
 
-# Search extensions
+# Search extensions across all active catalogs
+# Each result includes _catalog_name and _install_allowed
 results = catalog.search(
     query: Optional[str] = None,
     tag: Optional[str] = None,
     author: Optional[str] = None,
     verified_only: bool = False
-)  # Returns: List[Dict]
+)  # Returns: List[Dict]  — each dict includes _catalog_name, _install_allowed
 
-# Get extension info
+# Get extension info (searches all active catalogs)
+# Returns None if not found; includes _catalog_name and _install_allowed
 ext_info = catalog.get_extension_info(extension_id: str)  # Optional[Dict]
 
-# Check cache validity
+# Check cache validity (primary catalog)
 is_valid = catalog.is_cache_valid()  # bool
 
-# Clear cache
+# Clear all catalog caches
 catalog.clear_cache()
+```
+
+**Result annotation fields**:
+
+Each extension dict returned by `search()` and `get_extension_info()` includes:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `_catalog_name` | `str` | Name of the source catalog |
+| `_install_allowed` | `bool` | Whether installation is allowed from this catalog |
+
+**Catalog config file** (`.specify/extension-catalogs.yml`):
+
+```yaml
+catalogs:
+  - name: "org-approved"
+    url: "https://example.com/catalog.json"
+    priority: 1
+    install_allowed: true
+  - name: "community"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
+    priority: 2
+    install_allowed: false
 ```
 
 ### HookExecutor
@@ -543,6 +604,38 @@ EXECUTE_COMMAND: {command}
 
 **Output**: List of installed extensions with metadata
 
+### extension catalogs
+
+**Usage**: `specify extension catalogs`
+
+Lists all active catalogs in the current catalog stack, showing name, URL, priority, and `install_allowed` status.
+
+### extension catalog add
+
+**Usage**: `specify extension catalog add URL [OPTIONS]`
+
+**Options**:
+
+- `--name NAME` - Catalog name (required)
+- `--priority INT` - Priority (lower = higher priority, default: 10)
+- `--install-allowed / --no-install-allowed` - Allow installs from this catalog (default: false)
+
+**Arguments**:
+
+- `URL` - Catalog URL (must use HTTPS)
+
+Adds a catalog entry to `.specify/extension-catalogs.yml`.
+
+### extension catalog remove
+
+**Usage**: `specify extension catalog remove NAME`
+
+**Arguments**:
+
+- `NAME` - Catalog name to remove
+
+Removes a catalog entry from `.specify/extension-catalogs.yml`.
+
 ### extension add
 
 **Usage**: `specify extension add EXTENSION [OPTIONS]`
@@ -551,12 +644,12 @@ EXECUTE_COMMAND: {command}
 
 - `--from URL` - Install from custom URL
 - `--dev PATH` - Install from local directory
-- `--version VERSION` - Install specific version
-- `--no-register` - Skip command registration
 
 **Arguments**:
 
 - `EXTENSION` - Extension name or URL
+
+**Note**: Extensions from catalogs with `install_allowed: false` cannot be installed via this command.
 
 ### extension remove
 
@@ -575,6 +668,8 @@ EXECUTE_COMMAND: {command}
 
 **Usage**: `specify extension search [QUERY] [OPTIONS]`
 
+Searches all active catalogs simultaneously. Results include source catalog name and install_allowed status.
+
 **Options**:
 
 - `--tag TAG` - Filter by tag
@@ -588,6 +683,8 @@ EXECUTE_COMMAND: {command}
 ### extension info
 
 **Usage**: `specify extension info EXTENSION`
+
+Shows source catalog and install_allowed status.
 
 **Arguments**:
 

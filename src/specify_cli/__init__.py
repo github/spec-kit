@@ -1826,8 +1826,10 @@ def extension_catalogs():
         console.print()
 
     config_path = project_root / ".specify" / "extension-catalogs.yml"
-    if config_path.exists():
+    if config_path.exists() and catalog._load_catalog_config(config_path) is not None:
         console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
+    elif os.environ.get("SPECKIT_CATALOG_URL"):
+        console.print("[dim]Catalog configured via SPECKIT_CATALOG_URL environment variable.[/dim]")
     else:
         console.print("[dim]Using built-in default catalog stack.[/dim]")
         console.print(
