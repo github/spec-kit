@@ -76,7 +76,7 @@ vim .specify/extensions/jira/jira-config.yml
 
 ## Finding Extensions
 
-**Note**: By default, `specify extension search` uses your organization's catalog (`catalog.json`). If the catalog is empty, you won't see any results. See [Extension Catalogs](#extension-catalogs) to learn how to populate your catalog from the community reference catalog.
+`specify extension search` searches **all active catalogs** simultaneously, including the community catalog by default. Results are annotated with their source catalog and install status.
 
 ### Browse All Extensions
 
@@ -84,7 +84,7 @@ vim .specify/extensions/jira/jira-config.yml
 specify extension search
 ```
 
-Shows all extensions in your organization's catalog.
+Shows all extensions across all active catalogs (org-approved and community by default).
 
 ### Search by Keyword
 
@@ -402,13 +402,13 @@ In addition to extension-specific environment variables (`SPECKIT_{EXT_ID}_*`), 
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SPECKIT_CATALOG_URL`       | Override the extension catalog URL | GitHub-hosted catalog |
+| `SPECKIT_CATALOG_URL`       | Override the full catalog stack with a single URL (backward compat) | Built-in default stack |
 | `GH_TOKEN` / `GITHUB_TOKEN` | GitHub API token for downloads     | None                  |
 
 #### Example: Using a custom catalog for testing
 
 ```bash
-# Point to a local or alternative catalog
+# Point to a local or alternative catalog (replaces the full stack)
 export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
 
 # Or use a staging catalog
@@ -419,13 +419,73 @@ export SPECKIT_CATALOG_URL="https://example.com/staging/catalog.json"
 
 ## Extension Catalogs
 
-For information about how Spec Kit's dual-catalog system works (`catalog.json` vs `catalog.community.json`), see the main [Extensions README](README.md#extension-catalogs).
+Spec Kit uses a **catalog stack** — an ordered list of catalogs searched simultaneously. By default, two catalogs are active:
+
+| Priority | Catalog | Install Allowed | Purpose |
+|----------|---------|-----------------|---------|
+| 1 | `catalog.json` (org-approved) | ✅ Yes | Extensions your org approves for installation |
+| 2 | `catalog.community.json` (community) | ❌ No (discovery only) | Browse community extensions |
+
+### Listing Active Catalogs
+
+```bash
+specify extension catalogs
+```
+
+### Adding a Catalog (Project-scoped)
+
+```bash
+# Add an internal catalog that allows installs
+specify extension catalog add \
+  --name "internal" \
+  --priority 2 \
+  --install-allowed \
+  https://internal.company.com/spec-kit/catalog.json
+
+# Add a discovery-only catalog
+specify extension catalog add \
+  --name "partner" \
+  --priority 5 \
+  https://partner.example.com/spec-kit/catalog.json
+```
+
+This creates or updates `.specify/extension-catalogs.yml`.
+
+### Removing a Catalog
+
+```bash
+specify extension catalog remove internal
+```
+
+### Manual Config File
+
+You can also edit `.specify/extension-catalogs.yml` directly:
+
+```yaml
+catalogs:
+  - name: "org-approved"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
+    priority: 1
+    install_allowed: true
+
+  - name: "internal"
+    url: "https://internal.company.com/spec-kit/catalog.json"
+    priority: 2
+    install_allowed: true
+
+  - name: "community"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
+    priority: 3
+    install_allowed: false
+```
+
+A user-level equivalent lives at `~/.specify/extension-catalogs.yml`. Project-level config takes full precedence when present.
 
 ## Organization Catalog Customization
 
 ### Why Customize Your Catalog
 
-Organizations customize their `catalog.json` to:
+Organizations customize their catalogs to:
 
 - **Control available extensions** - Curate which extensions your team can install
 - **Host private extensions** - Internal tools that shouldn't be public
@@ -503,24 +563,40 @@ Options for hosting your catalog:
 
 #### 3. Configure Your Environment
 
-##### Option A: Environment variable (recommended for CI/CD)
+##### Option A: Catalog stack config file (recommended)
+
+Add to `.specify/extension-catalogs.yml` in your project:
+
+```yaml
+catalogs:
+  - name: "org-approved"
+    url: "https://your-org.com/spec-kit/catalog.json"
+    priority: 1
+    install_allowed: true
+```
+
+Or use the CLI:
+
+```bash
+specify extension catalog add \
+  --name "org-approved" \
+  --install-allowed \
+  https://your-org.com/spec-kit/catalog.json
+```
+
+##### Option B: Environment variable (recommended for CI/CD, single-catalog)
 
 ```bash
 # In ~/.bashrc, ~/.zshrc, or CI pipeline
 export SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json"
 ```
 
-##### Option B: Per-project configuration
-
-Create `.env` or set in your shell before running spec-kit commands:
-
-```bash
-SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json" specify extension search
-```
-
 #### 4. Verify Configuration
 
 ```bash
+# List active catalogs
+specify extension catalogs
+
 # Search should now show your catalog's extensions
 specify extension search
 
