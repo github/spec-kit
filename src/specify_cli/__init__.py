@@ -1720,6 +1720,13 @@ extension_app = typer.Typer(
 )
 app.add_typer(extension_app, name="extension")
 
+catalog_app = typer.Typer(
+    name="catalog",
+    help="Manage extension catalogs",
+    add_completion=False,
+)
+extension_app.add_typer(catalog_app, name="catalog")
+
 
 def get_speckit_version() -> str:
     """Get current spec-kit version."""
@@ -1783,6 +1790,155 @@ def extension_list(
     if available or all_extensions:
         console.print("\nInstall an extension:")
         console.print("  [cyan]specify extension add <name>[/cyan]")
+
+
+@extension_app.command("catalogs")
+def extension_catalogs():
+    """List all active extension catalogs."""
+    from .extensions import ExtensionCatalog, ValidationError
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    catalog = ExtensionCatalog(project_root)
+
+    try:
+        active_catalogs = catalog.get_active_catalogs()
+    except ValidationError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print("\n[bold cyan]Active Extension Catalogs:[/bold cyan]\n")
+    for entry in active_catalogs:
+        install_str = (
+            "[green]install allowed[/green]"
+            if entry.install_allowed
+            else "[yellow]discovery only[/yellow]"
+        )
+        console.print(f"  [bold]{entry.name}[/bold] (priority {entry.priority})")
+        console.print(f"     URL: {entry.url}")
+        console.print(f"     Install: {install_str}")
+        console.print()
+
+    config_path = project_root / ".specify" / "extension-catalogs.yml"
+    if config_path.exists():
+        console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
+    else:
+        console.print("[dim]Using built-in default catalog stack.[/dim]")
+        console.print(
+            "[dim]Add .specify/extension-catalogs.yml to customize.[/dim]"
+        )
+
+
+@catalog_app.command("add")
+def catalog_add(
+    url: str = typer.Argument(help="Catalog URL (must use HTTPS)"),
+    name: str = typer.Option(..., "--name", help="Catalog name"),
+    priority: int = typer.Option(10, "--priority", help="Priority (lower = higher priority)"),
+    install_allowed: bool = typer.Option(
+        False, "--install-allowed/--no-install-allowed",
+        help="Allow extensions from this catalog to be installed",
+    ),
+):
+    """Add a catalog to .specify/extension-catalogs.yml."""
+    from .extensions import ExtensionCatalog, ValidationError
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate URL
+    tmp_catalog = ExtensionCatalog(project_root)
+    try:
+        tmp_catalog._validate_catalog_url(url)
+    except ValidationError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    config_path = specify_dir / "extension-catalogs.yml"
+
+    # Load existing config
+    if config_path.exists():
+        try:
+            config = yaml.safe_load(config_path.read_text()) or {}
+        except Exception:
+            config = {}
+    else:
+        config = {}
+
+    catalogs = config.get("catalogs", [])
+
+    # Check for duplicate name
+    for existing in catalogs:
+        if existing.get("name") == name:
+            console.print(f"[yellow]Warning:[/yellow] A catalog named '{name}' already exists.")
+            console.print("Use 'specify extension catalog remove' first, or choose a different name.")
+            raise typer.Exit(1)
+
+    catalogs.append({
+        "name": name,
+        "url": url,
+        "priority": priority,
+        "install_allowed": install_allowed,
+    })
+
+    config["catalogs"] = catalogs
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+
+    install_label = "install allowed" if install_allowed else "discovery only"
+    console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
+    console.print(f"  URL: {url}")
+    console.print(f"  Priority: {priority}")
+    console.print(f"\nConfig saved to {config_path.relative_to(project_root)}")
+
+
+@catalog_app.command("remove")
+def catalog_remove(
+    name: str = typer.Argument(help="Catalog name to remove"),
+):
+    """Remove a catalog from .specify/extension-catalogs.yml."""
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    config_path = specify_dir / "extension-catalogs.yml"
+    if not config_path.exists():
+        console.print(f"[red]Error:[/red] No catalog config found. Nothing to remove.")
+        raise typer.Exit(1)
+
+    try:
+        config = yaml.safe_load(config_path.read_text()) or {}
+    except Exception:
+        console.print("[red]Error:[/red] Failed to read catalog config.")
+        raise typer.Exit(1)
+
+    catalogs = config.get("catalogs", [])
+    original_count = len(catalogs)
+    catalogs = [c for c in catalogs if c.get("name") != name]
+
+    if len(catalogs) == original_count:
+        console.print(f"[red]Error:[/red] Catalog '{name}' not found.")
+        raise typer.Exit(1)
+
+    config["catalogs"] = catalogs
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+
+    console.print(f"[green]✓[/green] Removed catalog '{name}'")
+    if not catalogs:
+        console.print("\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]")
 
 
 @extension_app.command("add")
@@ -1871,6 +2027,19 @@ def extension_add(
                     console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
                     console.print("\nSearch available extensions:")
                     console.print("  specify extension search")
+                    raise typer.Exit(1)
+
+                # Enforce install_allowed policy
+                if not ext_info.get("_install_allowed", True):
+                    catalog_name = ext_info.get("_catalog_name", "community")
+                    console.print(
+                        f"[red]Error:[/red] '{extension}' is available in the "
+                        f"'{catalog_name}' catalog but installation is not allowed from that catalog."
+                    )
+                    console.print(
+                        f"\nTo enable installation, add '{extension}' to an approved catalog "
+                        f"(install_allowed: true) in .specify/extension-catalogs.yml."
+                    )
                     raise typer.Exit(1)
 
                 # Download extension ZIP
@@ -2017,6 +2186,15 @@ def extension_search(
                 tags_str = ", ".join(ext['tags'])
                 console.print(f"  [dim]Tags:[/dim] {tags_str}")
 
+            # Source catalog
+            catalog_name = ext.get("_catalog_name", "")
+            install_allowed = ext.get("_install_allowed", True)
+            if catalog_name:
+                if install_allowed:
+                    console.print(f"  [dim]Catalog:[/dim] {catalog_name}")
+                else:
+                    console.print(f"  [dim]Catalog:[/dim] {catalog_name} [yellow](discovery only — not installable)[/yellow]")
+
             # Stats
             stats = []
             if ext.get('downloads') is not None:
@@ -2030,8 +2208,15 @@ def extension_search(
             if ext.get('repository'):
                 console.print(f"  [dim]Repository:[/dim] {ext['repository']}")
 
-            # Install command
-            console.print(f"\n  [cyan]Install:[/cyan] specify extension add {ext['id']}")
+            # Install command (show warning if not installable)
+            if install_allowed:
+                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {ext['id']}")
+            else:
+                console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
+                console.print(
+                    f"  Add to an approved catalog with install_allowed: true, "
+                    f"or use: specify extension add --from <url>"
+                )
             console.print()
 
     except ExtensionError as e:
@@ -2080,6 +2265,12 @@ def extension_info(
         # Author and License
         console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
         console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
+
+        # Source catalog
+        if ext_info.get("_catalog_name"):
+            install_allowed = ext_info.get("_install_allowed", True)
+            install_note = "" if install_allowed else " [yellow](discovery only)[/yellow]"
+            console.print(f"[dim]Source catalog:[/dim] {ext_info['_catalog_name']}{install_note}")
         console.print()
 
         # Requirements
@@ -2136,12 +2327,21 @@ def extension_info(
 
         # Installation status and command
         is_installed = manager.registry.is_installed(ext_info['id'])
+        install_allowed = ext_info.get("_install_allowed", True)
         if is_installed:
             console.print("[green]✓ Installed[/green]")
             console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
-        else:
+        elif install_allowed:
             console.print("[yellow]Not installed[/yellow]")
             console.print(f"\n[cyan]Install:[/cyan] specify extension add {ext_info['id']}")
+        else:
+            catalog_name = ext_info.get("_catalog_name", "community")
+            console.print("[yellow]Not installed[/yellow]")
+            console.print(
+                f"\n[yellow]⚠[/yellow]  '{ext_info['id']}' is available in the '{catalog_name}' catalog "
+                f"but not in your approved catalog. Add it to .specify/extension-catalogs.yml "
+                f"with install_allowed: true to enable installation."
+            )
 
     except ExtensionError as e:
         console.print(f"\n[red]Error:[/red] {e}")
