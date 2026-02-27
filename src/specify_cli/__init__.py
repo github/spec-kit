@@ -1970,7 +1970,7 @@ def catalog_remove(
 
     config_path = specify_dir / "extension-catalogs.yml"
     if not config_path.exists():
-        console.print(f"[red]Error:[/red] No catalog config found. Nothing to remove.")
+        console.print("[red]Error:[/red] No catalog config found. Nothing to remove.")
         raise typer.Exit(1)
 
     try:
@@ -2268,8 +2268,8 @@ def extension_search(
             else:
                 console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
                 console.print(
-                    f"  Add to an approved catalog with install_allowed: true, "
-                    f"or use: specify extension add --from <url>"
+                    "  Add to an approved catalog with install_allowed: true, "
+                    "or use: specify extension add --from <url>"
                 )
             console.print()
 
