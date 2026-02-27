@@ -23,7 +23,7 @@ requires_git = pytest.mark.skipif(
 
 @pytest.fixture
 def git_repo(tmp_path):
-    """Create a temporary git repo with a fake remote that produces stdout on fetch."""
+    """Create a temporary git repo for testing create-new-feature.sh."""
     repo = tmp_path / "repo"
     repo.mkdir()
 
@@ -35,6 +35,7 @@ def git_repo(tmp_path):
     # Create an initial commit so HEAD exists
     (repo / "README.md").write_text("# Test")
     subprocess.run(["git", "-C", str(repo), "add", "."], capture_output=True, check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "commit.gpgsign", "false"], capture_output=True, check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-m", "init"], capture_output=True, check=True)
 
     # Create .specify dir to simulate an initialized project
@@ -42,7 +43,6 @@ def git_repo(tmp_path):
     (repo / ".specify" / "templates").mkdir()
 
     yield repo
-    shutil.rmtree(tmp_path)
 
 
 @requires_git
