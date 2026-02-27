@@ -1122,6 +1122,7 @@ class ExtensionCatalog:
                     age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                     is_valid = age < self.CACHE_DURATION
                 except (json.JSONDecodeError, ValueError, KeyError):
+                    # If metadata is invalid or missing expected fields, treat cache as invalid
                     pass
 
         # Use cache if valid
