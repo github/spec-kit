@@ -487,8 +487,21 @@ def show_banner():
     console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
     console.print()
 
+def _version_callback(value: bool):
+    """Print CLI version and exit."""
+    if value:
+        ver = get_speckit_version()
+        print(f"specify {ver}")
+        raise typer.Exit()
+
+
 @app.callback()
-def callback(ctx: typer.Context):
+def callback(
+    ctx: typer.Context,
+    version: Optional[bool] = typer.Option(
+        None, "--version", "-V", help="Show version and exit.", callback=_version_callback, is_eager=True
+    ),
+):
     """Show banner when no subcommand is provided."""
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()

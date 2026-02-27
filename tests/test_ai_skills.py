@@ -632,6 +632,49 @@ class TestCliValidation:
         assert "agent skills" in plain.lower()
 
 
+class TestVersionFlag:
+    """Test --version flag (GitHub issue #486)."""
+
+    def test_version_flag_exits_zero(self):
+        """--version should exit with code 0."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["--version"])
+
+        assert result.exit_code == 0
+
+    def test_version_flag_prints_version(self):
+        """--version should print 'specify <version>'."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["--version"])
+
+        assert result.output.strip().startswith("specify ")
+
+    def test_short_version_flag(self):
+        """-V should behave the same as --version."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["-V"])
+
+        assert result.exit_code == 0
+        assert result.output.strip().startswith("specify ")
+
+    def test_version_flag_appears_in_help(self):
+        """--version and -V should appear in the help output."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["--help"])
+
+        plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        assert "--version" in plain
+        assert "-V" in plain
+
+
 class TestParameterOrderingIssue:
     """Test fix for GitHub issue #1641: parameter ordering issues."""
 
