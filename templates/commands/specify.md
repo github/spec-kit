@@ -8,9 +8,6 @@ handoffs:
     agent: speckit.clarify
     prompt: Clarify specification requirements
     send: true
-scripts:
-  sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
-  ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
 ---
 
 ## User Input
@@ -23,12 +20,33 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
+The text the user typed after `/speckit.specify` in the triggering message **is** the input. Assume you always have it available in this conversation even if `$ARGUMENTS` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
+
+This workflow supports an optional `category:` prefix to create the feature under `specs/<category>/...`.
+
+Examples:
+- `/speckit.specify Add user authentication` -> create in `specs/<NNN-name>/...` (default behavior)
+- `/speckit.specify libraries: Add firebird client` -> create in `specs/libraries/<NNN-name>/...`
+
+Parsing rules:
+- A `category` prefix is only recognized when the input contains the delimiter `": "` (colon + single space) and the text before that delimiter is a valid category.
+- Valid category format:
+  - Category must be a single path segment (no spaces, no slashes)
+  - Allowed characters: letters, numbers, hyphen, underscore (`^[A-Za-z0-9_-]+$`)
+- Delimiter behavior:
+  - Only the first occurrence of `": "` is used as the delimiter
+  - Everything after the first `": "` is treated as the description (it may contain additional colons)
+- If a valid category prefix is present:
+  - `SPECS_SUBDIR=<category>` (used as `--specs-subdir` when calling create script)
+  - `FEATURE_DESCRIPTION=<description>` (used for short-name generation + spec content)
+- Otherwise:
+  - `SPECS_SUBDIR` is empty
+  - `FEATURE_DESCRIPTION` is the full input
 
 Given that feature description, do this:
 
 1. **Generate a concise short name** (2-4 words) for the branch:
-   - Analyze the feature description and extract the most meaningful keywords
+   - Analyze `FEATURE_DESCRIPTION` (NOT including the optional `category:` prefix) and extract the most meaningful keywords
    - Create a 2-4 word short name that captures the essence of the feature
    - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
    - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
@@ -47,31 +65,28 @@ Given that feature description, do this:
       git fetch --all --prune
       ```
 
-   b. Find the highest feature number across all sources for the short-name:
-      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
-      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
-      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
+   b. Feature numbers are global (shared across all features), not per short-name.
 
-   c. Determine the next available number:
-      - Extract all numbers from all three sources
-      - Find the highest number N
-      - Use N+1 for the new branch number
-
-   d. Run the script `{SCRIPT}` with the calculated number and short-name:
-      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+   c. Run the script `.specify/scripts/bash/create-new-feature.sh` and let it auto-detect the next available number globally (it checks git branches + specs directories, including nested specs):
+      - Always pass:
+        - `--json`
+        - `--short-name "<short-name>"`
+        - `"FEATURE_DESCRIPTION"`
+      - If `SPECS_SUBDIR` is non-empty, also pass:
+        - `--specs-subdir "<category>"`
+      - Bash example (no category):
+        `.specify/scripts/bash/create-new-feature.sh --json --short-name "user-auth" "Add user authentication"`
+      - Bash example (with category):
+        `.specify/scripts/bash/create-new-feature.sh --json --short-name "firebird-client" --specs-subdir "libraries" "Add firebird client"`
 
    **IMPORTANT**:
-   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
-   - Only match branches/directories with the exact short-name pattern
-   - If no existing branches/directories found with this short-name, start with number 1
+   - The script will check all sources to find the highest number and pick the next one
    - You must only ever run this script once per feature
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
-3. Load `templates/spec-template.md` to understand required sections.
+3. Load `.specify/templates/spec-template.md` to understand required sections.
 
 4. Follow this execution flow:
 

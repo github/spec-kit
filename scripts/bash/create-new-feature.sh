@@ -5,6 +5,7 @@ set -e
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+SPECS_SUBDIR=""
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -40,18 +41,34 @@ while [ $i -le $# ]; do
             fi
             BRANCH_NUMBER="$next_arg"
             ;;
+        --specs-subdir)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --specs-subdir requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            # Check if the next argument is another option (starts with --)
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --specs-subdir requires a value' >&2
+                exit 1
+            fi
+            SPECS_SUBDIR="$next_arg"
+            ;;
         --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
+            echo "Usage: $0 [--json] [--short-name <name>] [--number N] [--specs-subdir <path>] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
+            echo "  --specs-subdir <path> Create feature under specs/<path>/ (e.g. 'libraries')"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
+            echo "  $0 'Add firebird client' --specs-subdir 'libraries'"
             exit 0
             ;;
         *) 
@@ -80,13 +97,13 @@ find_repo_root() {
     return 1
 }
 
-# Function to get highest number from specs directory
-get_highest_from_specs() {
+# Function to get highest number from specs directory (supports both flat and nested specs directories)
+get_highest_from_specs_recursive() {
     local specs_dir="$1"
     local highest=0
     
     if [ -d "$specs_dir" ]; then
-        for dir in "$specs_dir"/*; do
+        while IFS= read -r dir; do
             [ -d "$dir" ] || continue
             dirname=$(basename "$dir")
             number=$(echo "$dirname" | grep -o '^[0-9]\+' || echo "0")
@@ -94,7 +111,7 @@ get_highest_from_specs() {
             if [ "$number" -gt "$highest" ]; then
                 highest=$number
             fi
-        done
+        done < <(find "$specs_dir" -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
     fi
     
     echo "$highest"
@@ -137,7 +154,7 @@ check_existing_branches() {
     local highest_branch=$(get_highest_from_branches)
 
     # Get highest number from ALL specs (not just matching short name)
-    local highest_spec=$(get_highest_from_specs "$specs_dir")
+    local highest_spec=$(get_highest_from_specs_recursive "$specs_dir")
 
     # Take the maximum of both
     local max_num=$highest_branch
@@ -176,6 +193,11 @@ cd "$REPO_ROOT"
 
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
+
+# Normalize specs subdir to avoid accidental paths like "libraries:" or trailing slashes
+if [ -n "$SPECS_SUBDIR" ]; then
+    SPECS_SUBDIR="$(echo "$SPECS_SUBDIR" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/:$//; s#^/*##; s#/*$##')"
+fi
 
 # Function to generate branch name with stop word filtering and length filtering
 generate_branch_name() {
@@ -241,7 +263,7 @@ if [ -z "$BRANCH_NUMBER" ]; then
         BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
     else
         # Fall back to local directory check
-        HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+        HIGHEST=$(get_highest_from_specs_recursive "$SPECS_DIR")
         BRANCH_NUMBER=$((HIGHEST + 1))
     fi
 fi
@@ -249,6 +271,11 @@ fi
 # Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
 FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
 BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+
+if [ -z "$BRANCH_NAME" ] || ! echo "$BRANCH_NAME" | grep -qE '^[0-9]{3}-'; then
+    echo "Error: Failed to compute valid BRANCH_NAME (got '$BRANCH_NAME')" >&2
+    exit 1
+fi
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
@@ -277,7 +304,11 @@ else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
 
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+if [ -n "$SPECS_SUBDIR" ]; then
+    FEATURE_DIR="$SPECS_DIR/$SPECS_SUBDIR/$BRANCH_NAME"
+else
+    FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+fi
 mkdir -p "$FEATURE_DIR"
 
 TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
@@ -286,12 +317,14 @@ if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"
 
 # Set the SPECIFY_FEATURE environment variable for the current session
 export SPECIFY_FEATURE="$BRANCH_NAME"
+export SPECIFY_SPECS_SUBDIR="$SPECS_SUBDIR"
 
 if $JSON_MODE; then
-    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","SPECS_SUBDIR":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM" "$SPECS_SUBDIR"
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
+    echo "SPECS_SUBDIR: $SPECS_SUBDIR"
     echo "SPECIFY_FEATURE environment variable set to: $BRANCH_NAME"
 fi

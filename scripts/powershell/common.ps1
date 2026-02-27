@@ -38,8 +38,14 @@ function Get-CurrentBranch {
     if (Test-Path $specsDir) {
         $latestFeature = ""
         $highest = 0
-        
-        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
+
+        $featureDirs = @()
+        $featureDirs += Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue
+        $featureDirs += Get-ChildItem -Path (Join-Path $specsDir '*') -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -Path $_.FullName -Directory -ErrorAction SilentlyContinue
+        }
+
+        $featureDirs | ForEach-Object {
             if ($_.Name -match '^(\d{3})-') {
                 $num = [int]$matches[1]
                 if ($num -gt $highest) {
@@ -92,11 +98,49 @@ function Get-FeatureDir {
     Join-Path $RepoRoot "specs/$Branch"
 }
 
+function Get-FeatureDirByPrefix {
+    param(
+        [string]$RepoRoot,
+        [string]$BranchName
+    )
+
+    $specsDir = Join-Path $RepoRoot 'specs'
+
+    if ($BranchName -notmatch '^(\d{3})-') {
+        return (Join-Path $specsDir $BranchName)
+    }
+
+    $prefix = $matches[1]
+    $matchesDirs = @()
+
+    if (Test-Path $specsDir) {
+        if ($env:SPECIFY_SPECS_SUBDIR -and (Test-Path (Join-Path $specsDir $env:SPECIFY_SPECS_SUBDIR))) {
+            $matchesDirs += Get-ChildItem -Path (Join-Path $specsDir $env:SPECIFY_SPECS_SUBDIR "$prefix-*") -Directory -ErrorAction SilentlyContinue
+        } else {
+            $matchesDirs += Get-ChildItem -Path (Join-Path $specsDir "$prefix-*") -Directory -ErrorAction SilentlyContinue
+            $matchesDirs += Get-ChildItem -Path (Join-Path $specsDir '*') -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                Get-ChildItem -Path (Join-Path $_.FullName "$prefix-*") -Directory -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    if ($matchesDirs.Count -eq 0) {
+        return (Join-Path $specsDir $BranchName)
+    }
+
+    if ($matchesDirs.Count -eq 1) {
+        return $matchesDirs[0].FullName
+    }
+
+    Write-Error "ERROR: Multiple spec directories found with prefix '$prefix': $($matchesDirs.FullName -join ', ')"
+    return (Join-Path $specsDir $BranchName)
+}
+
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
     $hasGit = Test-HasGit
-    $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+    $featureDir = Get-FeatureDirByPrefix -RepoRoot $repoRoot -BranchName $currentBranch
     
     [PSCustomObject]@{
         REPO_ROOT     = $repoRoot
