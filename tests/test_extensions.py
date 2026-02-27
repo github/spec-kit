@@ -6,6 +6,7 @@ Tests cover:
 - Extension registry operations
 - Extension manager installation/removal
 - Command registration
+- Catalog stack (multi-catalog support)
 """
 
 import pytest
@@ -16,6 +17,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from specify_cli.extensions import (
+    CatalogEntry,
     ExtensionManifest,
     ExtensionRegistry,
     ExtensionManager,
@@ -734,9 +736,28 @@ class TestExtensionCatalog:
 
     def test_search_all_extensions(self, temp_dir):
         """Test searching all extensions without filters."""
+        import yaml as yaml_module
+
         project_dir = temp_dir / "project"
         project_dir.mkdir()
         (project_dir / ".specify").mkdir()
+
+        # Use a single-catalog config so community extensions don't interfere
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
 
         catalog = ExtensionCatalog(project_dir)
 
@@ -987,3 +1008,373 @@ class TestExtensionCatalog:
 
         assert not catalog.cache_file.exists()
         assert not catalog.cache_metadata_file.exists()
+
+
+# ===== CatalogEntry Tests =====
+
+class TestCatalogEntry:
+    """Test CatalogEntry dataclass."""
+
+    def test_catalog_entry_creation(self):
+        """Test creating a CatalogEntry."""
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+        assert entry.url == "https://example.com/catalog.json"
+        assert entry.name == "test"
+        assert entry.priority == 1
+        assert entry.install_allowed is True
+
+
+# ===== Catalog Stack Tests =====
+
+class TestCatalogStack:
+    """Test multi-catalog stack support."""
+
+    def _make_project(self, temp_dir: Path) -> Path:
+        """Create a minimal spec-kit project directory."""
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        return project_dir
+
+    def _write_catalog_config(self, project_dir: Path, catalogs: list) -> None:
+        """Write extension-catalogs.yml to project .specify dir."""
+        import yaml as yaml_module
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump({"catalogs": catalogs}, f)
+
+    def _write_valid_cache(
+        self, catalog: ExtensionCatalog, extensions: dict, url: str = "http://test.com"
+    ) -> None:
+        """Populate the primary cache file with mock extension data."""
+        catalog_data = {"schema_version": "1.0", "extensions": extensions}
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": url,
+                }
+            )
+        )
+
+    # --- get_active_catalogs ---
+
+    def test_default_stack(self, temp_dir):
+        """Default stack includes org-approved and community catalogs."""
+        project_dir = self._make_project(temp_dir)
+        catalog = ExtensionCatalog(project_dir)
+
+        entries = catalog.get_active_catalogs()
+
+        assert len(entries) == 2
+        assert entries[0].url == ExtensionCatalog.DEFAULT_CATALOG_URL
+        assert entries[0].name == "org-approved"
+        assert entries[0].priority == 1
+        assert entries[0].install_allowed is True
+        assert entries[1].url == ExtensionCatalog.COMMUNITY_CATALOG_URL
+        assert entries[1].name == "community"
+        assert entries[1].priority == 2
+        assert entries[1].install_allowed is False
+
+    def test_env_var_overrides_default_stack(self, temp_dir, monkeypatch):
+        """SPECKIT_CATALOG_URL replaces the entire default stack."""
+        project_dir = self._make_project(temp_dir)
+        custom_url = "https://example.com/catalog.json"
+        monkeypatch.setenv("SPECKIT_CATALOG_URL", custom_url)
+
+        catalog = ExtensionCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+
+        assert len(entries) == 1
+        assert entries[0].url == custom_url
+        assert entries[0].install_allowed is True
+
+    def test_env_var_invalid_url_raises(self, temp_dir, monkeypatch):
+        """SPECKIT_CATALOG_URL with http:// (non-localhost) raises ValidationError."""
+        project_dir = self._make_project(temp_dir)
+        monkeypatch.setenv("SPECKIT_CATALOG_URL", "http://example.com/catalog.json")
+
+        catalog = ExtensionCatalog(project_dir)
+        with pytest.raises(ValidationError, match="HTTPS"):
+            catalog.get_active_catalogs()
+
+    def test_project_config_overrides_defaults(self, temp_dir):
+        """Project-level extension-catalogs.yml overrides default stack."""
+        project_dir = self._make_project(temp_dir)
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "custom",
+                    "url": "https://example.com/catalog.json",
+                    "priority": 1,
+                    "install_allowed": True,
+                }
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+
+        assert len(entries) == 1
+        assert entries[0].url == "https://example.com/catalog.json"
+        assert entries[0].name == "custom"
+
+    def test_project_config_sorted_by_priority(self, temp_dir):
+        """Catalog entries are sorted by priority (ascending)."""
+        project_dir = self._make_project(temp_dir)
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "secondary",
+                    "url": "https://example.com/secondary.json",
+                    "priority": 5,
+                    "install_allowed": False,
+                },
+                {
+                    "name": "primary",
+                    "url": "https://example.com/primary.json",
+                    "priority": 1,
+                    "install_allowed": True,
+                },
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+
+        assert len(entries) == 2
+        assert entries[0].name == "primary"
+        assert entries[1].name == "secondary"
+
+    def test_project_config_invalid_url_raises(self, temp_dir):
+        """Project config with HTTP (non-localhost) URL raises ValidationError."""
+        project_dir = self._make_project(temp_dir)
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "bad",
+                    "url": "http://example.com/catalog.json",
+                    "priority": 1,
+                    "install_allowed": True,
+                }
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+        with pytest.raises(ValidationError, match="HTTPS"):
+            catalog.get_active_catalogs()
+
+    def test_empty_project_config_falls_back_to_defaults(self, temp_dir):
+        """Empty catalogs list in config falls back to default stack."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump({"catalogs": []}, f)
+
+        catalog = ExtensionCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+
+        # Falls back to default stack
+        assert len(entries) == 2
+        assert entries[0].url == ExtensionCatalog.DEFAULT_CATALOG_URL
+
+    # --- _load_catalog_config ---
+
+    def test_load_catalog_config_missing_file(self, temp_dir):
+        """Returns None when config file doesn't exist."""
+        project_dir = self._make_project(temp_dir)
+        catalog = ExtensionCatalog(project_dir)
+
+        result = catalog._load_catalog_config(project_dir / ".specify" / "nonexistent.yml")
+        assert result is None
+
+    def test_load_catalog_config_localhost_allowed(self, temp_dir):
+        """Localhost HTTP URLs are allowed in config."""
+        project_dir = self._make_project(temp_dir)
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "local",
+                    "url": "http://localhost:8000/catalog.json",
+                    "priority": 1,
+                    "install_allowed": True,
+                }
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+
+        assert len(entries) == 1
+        assert entries[0].url == "http://localhost:8000/catalog.json"
+
+    # --- Merge conflict resolution ---
+
+    def test_merge_conflict_higher_priority_wins(self, temp_dir):
+        """When same extension id is in two catalogs, higher priority wins."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+
+        # Write project config with two catalogs
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "primary",
+                    "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                    "priority": 1,
+                    "install_allowed": True,
+                },
+                {
+                    "name": "secondary",
+                    "url": ExtensionCatalog.COMMUNITY_CATALOG_URL,
+                    "priority": 2,
+                    "install_allowed": False,
+                },
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        # Write primary cache with jira v2.0.0
+        primary_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "jira": {
+                    "name": "Jira Integration",
+                    "id": "jira",
+                    "version": "2.0.0",
+                    "description": "Primary Jira",
+                }
+            },
+        }
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(primary_data))
+        catalog.cache_metadata_file.write_text(
+            json.dumps({"cached_at": datetime.now(timezone.utc).isoformat(), "catalog_url": "http://test.com"})
+        )
+
+        # Write secondary cache (URL-hash-based) with jira v1.0.0 (should lose)
+        import hashlib
+
+        url_hash = hashlib.sha256(ExtensionCatalog.COMMUNITY_CATALOG_URL.encode()).hexdigest()[:16]
+        secondary_cache = catalog.cache_dir / f"catalog-{url_hash}.json"
+        secondary_meta = catalog.cache_dir / f"catalog-{url_hash}-metadata.json"
+        secondary_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "jira": {
+                    "name": "Jira Integration Community",
+                    "id": "jira",
+                    "version": "1.0.0",
+                    "description": "Community Jira",
+                },
+                "linear": {
+                    "name": "Linear",
+                    "id": "linear",
+                    "version": "0.9.0",
+                    "description": "Linear from secondary",
+                },
+            },
+        }
+        secondary_cache.write_text(json.dumps(secondary_data))
+        secondary_meta.write_text(
+            json.dumps({"cached_at": datetime.now(timezone.utc).isoformat(), "catalog_url": ExtensionCatalog.COMMUNITY_CATALOG_URL})
+        )
+
+        results = catalog.search()
+        jira_results = [r for r in results if r["id"] == "jira"]
+        assert len(jira_results) == 1
+        # Primary catalog wins
+        assert jira_results[0]["version"] == "2.0.0"
+        assert jira_results[0]["_catalog_name"] == "primary"
+        assert jira_results[0]["_install_allowed"] is True
+
+        # linear comes from secondary
+        linear_results = [r for r in results if r["id"] == "linear"]
+        assert len(linear_results) == 1
+        assert linear_results[0]["_catalog_name"] == "secondary"
+        assert linear_results[0]["_install_allowed"] is False
+
+    def test_install_allowed_false_from_get_extension_info(self, temp_dir):
+        """get_extension_info includes _install_allowed from source catalog."""
+        project_dir = self._make_project(temp_dir)
+
+        # Single catalog that is install_allowed=False
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "discovery",
+                    "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                    "priority": 1,
+                    "install_allowed": False,
+                }
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+        self._write_valid_cache(
+            catalog,
+            {
+                "jira": {
+                    "name": "Jira Integration",
+                    "id": "jira",
+                    "version": "1.0.0",
+                    "description": "Jira integration",
+                }
+            },
+        )
+
+        info = catalog.get_extension_info("jira")
+        assert info is not None
+        assert info["_install_allowed"] is False
+        assert info["_catalog_name"] == "discovery"
+
+    def test_search_results_include_catalog_metadata(self, temp_dir):
+        """Search results include _catalog_name and _install_allowed."""
+        project_dir = self._make_project(temp_dir)
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "org",
+                    "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                    "priority": 1,
+                    "install_allowed": True,
+                }
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+        self._write_valid_cache(
+            catalog,
+            {
+                "jira": {
+                    "name": "Jira Integration",
+                    "id": "jira",
+                    "version": "1.0.0",
+                    "description": "Jira integration",
+                }
+            },
+        )
+
+        results = catalog.search()
+        assert len(results) == 1
+        assert results[0]["_catalog_name"] == "org"
+        assert results[0]["_install_allowed"] is True
