@@ -20,6 +20,7 @@
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
+- [🛠️ What is `uv`?](#️-what-is-uv)
 - [⚡ Get Started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
@@ -38,6 +39,68 @@
 ## 🤔 What is Spec-Driven Development?
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+
+## 🛠️ What is `uv`?
+
+**[`uv`](https://docs.astral.sh/uv/)** is an extremely fast Python package and project manager, written in Rust. It's a modern replacement for tools like `pip`, `pip-tools`, `pipx`, `poetry`, `pyenv`, and `virtualenv` — all in a single, blazingly fast tool.
+
+### Why Spec Kit Uses `uv`
+
+Spec Kit uses `uv` because it:
+
+- **Installs and manages Python versions** automatically
+- **Installs Python packages 10-100x faster** than pip
+- **Provides a built-in tool manager** (replacing `pipx`) for CLI tools like `specify`
+- **Works consistently** across macOS, Linux, and Windows
+- **Requires zero configuration** to get started
+
+### Installing `uv`
+
+Choose the installation method for your operating system:
+
+#### macOS and Linux
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+#### Windows
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+#### Alternative Installation Methods
+
+**macOS (Homebrew):**
+
+```bash
+brew install uv
+```
+
+**Linux (snap):**
+
+```bash
+sudo snap install astral-uv --classic
+```
+
+**With pip:**
+
+```bash
+pip install uv
+```
+
+For more installation options and troubleshooting, see the [official uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+### Verifying Installation
+
+After installation, verify that `uv` is available:
+
+```bash
+uv --version
+```
+
+You should see output like: `uv 0.7.8 (...)` (version number may vary).
 
 ## ⚡ Get Started
 
@@ -333,8 +396,8 @@ Our research and experimentation focus on:
 
 - **Linux/macOS/Windows**
 - [Supported](#-supported-ai-agents) AI coding agent.
-- [uv](https://docs.astral.sh/uv/) for package management
-- [Python 3.11+](https://www.python.org/downloads/)
+- [uv](#️-what-is-uv) - Python package and project manager ([installation guide](#installing-uv))
+- [Python 3.11+](https://www.python.org/downloads/) (automatically managed by `uv`)
 - [Git](https://git-scm.com/downloads)
 
 If you encounter issues with an agent, please open an issue so we can refine the integration.
