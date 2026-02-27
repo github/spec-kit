@@ -261,7 +261,7 @@ function New-AgentFile {
     # Prepend Cursor frontmatter for .mdc files so rules are auto-included
     if ($TargetFile -match '\.mdc$') {
         $frontmatter = @('---','description: Project Development Guidelines','globs: ["**/*"]','alwaysApply: true','---','') -join [Environment]::NewLine
-        $content = $frontmatter + [Environment]::NewLine + $content
+        $content = $frontmatter + $content
     }
 
     $parent = Split-Path -Parent $TargetFile

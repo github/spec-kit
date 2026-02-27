@@ -503,7 +503,7 @@ update_existing_agent_file() {
     
     # Ensure Cursor .mdc files have YAML frontmatter for auto-inclusion
     if [[ "$target_file" == *.mdc ]]; then
-        if ! head -1 "$temp_file" | grep -q '^---$'; then
+        if ! head -1 "$temp_file" | grep -q '^---'; then
             local frontmatter_file
             frontmatter_file=$(mktemp) || { rm -f "$temp_file"; return 1; }
             printf '%s\n' "---" "description: Project Development Guidelines" "globs: [\"**/*\"]" "alwaysApply: true" "---" "" > "$frontmatter_file"

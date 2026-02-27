@@ -8,7 +8,6 @@ to .mdc files so that Cursor IDE auto-includes the rules.
 import os
 import shutil
 import subprocess
-import tempfile
 import textwrap
 
 import pytest
@@ -40,14 +39,14 @@ class TestScriptFrontmatterPattern:
 
     def test_create_new_has_mdc_frontmatter_logic(self):
         """create_new_agent_file() must contain .mdc frontmatter logic."""
-        with open(SCRIPT_PATH) as f:
+        with open(SCRIPT_PATH, encoding="utf-8") as f:
             content = f.read()
         assert 'if [[ "$target_file" == *.mdc ]]' in content
         assert "alwaysApply: true" in content
 
     def test_update_existing_has_mdc_frontmatter_logic(self):
         """update_existing_agent_file() must also handle .mdc frontmatter."""
-        with open(SCRIPT_PATH) as f:
+        with open(SCRIPT_PATH, encoding="utf-8") as f:
             content = f.read()
         # There should be two occurrences of the .mdc check — one per function
         occurrences = content.count('if [[ "$target_file" == *.mdc ]]')
@@ -64,7 +63,7 @@ class TestScriptFrontmatterPattern:
             "powershell",
             "update-agent-context.ps1",
         )
-        with open(ps_path) as f:
+        with open(ps_path, encoding="utf-8") as f:
             content = f.read()
         assert "alwaysApply: true" in content
         occurrences = content.count(r"\.mdc$")
