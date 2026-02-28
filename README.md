@@ -219,8 +219,13 @@ specify init my-project --ai shai
 # Initialize with IBM Bob support
 specify init my-project --ai bob
 
-# Initialize with an unsupported agent (generic / bring your own agent)
-specify init my-project --ai generic --ai-commands-dir .myagent/commands/
+# First run: initializes project and creates .specify/
+# Subsequent runs in the same directory: add new agents while preserving .specify/ (constitution, specs, plans)
+specify init . --ai copilot              # Adds copilot, preserves your work
+specify init . --ai gemini               # Adds gemini, preserves your work
+
+# Force reinitialize (overwrites everything including your work)
+specify init . --ai copilot --force      # Use with caution!
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specify init my-project --ai copilot --script ps
