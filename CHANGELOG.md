@@ -7,6 +7,24 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-02-28
+
+### Fixed
+
+- **`init --ai-skills` cleanup for non-standard command paths**: Updated post-skills cleanup to remove the configured `commands_subdir` from `AGENT_CONFIG` rather than assuming `commands/`, so agents like `kiro-cli` now correctly remove extracted `.kiro/prompts` after successful skills installation on new projects.
+- **Kiro devcontainer installer integrity**: Enforced always-on installer verification using a repo-pinned `KIRO_INSTALLER_SHA256` checksum before executing the downloaded script.
+
+## [0.1.7] - 2026-02-25
+
+### Changed
+
+- **Kiro CLI migration**: Replaced Amazon Q (`q`) integration with Kiro CLI (`kiro-cli`) across runtime config, release packaging, extension command registration, and documentation.
+  - Added canonical `kiro-cli` agent support with prompt directory `.kiro/prompts`
+  - Added `kiro` alias support for `specify init --ai`
+  - Updated context update scripts and release packaging scripts to emit Kiro artifacts
+  - Updated devcontainer setup to install Kiro CLI using the official installer command
+- **Amazon Q retirement**: Removed Amazon Q (`q`) support from active agent configuration and release artifacts.
+
 ## [0.1.6] - 2026-02-23
 
 ### Fixed

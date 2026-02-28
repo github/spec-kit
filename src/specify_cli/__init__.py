@@ -216,11 +216,11 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
-    "q": {
-        "name": "Amazon Q Developer CLI",
-        "folder": ".amazonq/",
+    "kiro-cli": {
+        "name": "Kiro CLI",
+        "folder": ".kiro/",
         "commands_subdir": "prompts",  # Special: uses prompts/ not commands/
-        "install_url": "https://aws.amazon.com/developer/learning/q-developer-cli/",
+        "install_url": "https://kiro.dev/docs/cli/",
         "requires_cli": True,
     },
     "amp": {
@@ -259,6 +259,23 @@ AGENT_CONFIG = {
         "requires_cli": False,
     },
 }
+
+AI_ASSISTANT_ALIASES = {
+    "kiro": "kiro-cli",
+}
+
+def _build_ai_assistant_help() -> str:
+    """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
+
+    non_generic_agents = [agent for agent in AGENT_CONFIG if agent != "generic"]
+    return (
+        f"AI assistant to use: {', '.join(non_generic_agents)}, "
+        "or generic (requires --ai-commands-dir). "
+        "Use 'kiro' as an alias for 'kiro-cli'."
+    )
+
+
+AI_ASSISTANT_HELP = _build_ai_assistant_help()
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
@@ -534,7 +551,12 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
                 tracker.complete(tool, "available")
             return True
     
-    found = shutil.which(tool) is not None
+    if tool == "kiro-cli":
+        # Kiro currently supports both executable names. Prefer kiro-cli and
+        # accept kiro as a compatibility fallback.
+        found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
+    else:
+        found = shutil.which(tool) is not None
     
     if tracker:
         if found:
@@ -1214,7 +1236,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, agy, bob, qodercli, or generic (requires --ai-commands-dir)"),
+    ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
@@ -1269,6 +1291,9 @@ def init(
         console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai-commands-dir?")
         console.print("[yellow]Example:[/yellow] specify init --ai generic --ai-commands-dir .myagent/commands/")
         raise typer.Exit(1)
+
+    if ai_assistant:
+        ai_assistant = AI_ASSISTANT_ALIASES.get(ai_assistant, ai_assistant)
 
     if project_name == ".":
         here = True
@@ -1464,8 +1489,9 @@ def init(
                 if skills_ok and not here:
                     agent_cfg = AGENT_CONFIG.get(selected_ai, {})
                     agent_folder = agent_cfg.get("folder", "")
+                    commands_subdir = agent_cfg.get("commands_subdir", "commands")
                     if agent_folder:
-                        cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
+                        cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
                         if cmds_dir.exists():
                             try:
                                 shutil.rmtree(cmds_dir)
@@ -2350,4 +2376,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

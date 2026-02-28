@@ -50,8 +50,6 @@
 		"kilocode.Kilo-Code",
 		// Roo Code
 		"RooVeterinaryInc.roo-cline",
-		// Amazon Developer Q
-		"AmazonWebServices.amazon-q-vscode",
 		// Claude Code
 		"anthropic.claude-code"
 	],

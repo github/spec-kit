@@ -399,6 +399,12 @@ class TestExtensionManager:
 class TestCommandRegistrar:
     """Test CommandRegistrar command registration."""
 
+    def test_kiro_cli_agent_config_present(self):
+        """Kiro CLI should be mapped to .kiro/prompts and legacy q removed."""
+        assert "kiro-cli" in CommandRegistrar.AGENT_CONFIGS
+        assert CommandRegistrar.AGENT_CONFIGS["kiro-cli"]["dir"] == ".kiro/prompts"
+        assert "q" not in CommandRegistrar.AGENT_CONFIGS
+
     def test_parse_frontmatter_valid(self):
         """Test parsing valid YAML frontmatter."""
         content = """---
