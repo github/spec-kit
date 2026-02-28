@@ -1103,15 +1103,12 @@ def init(
 
     # Smart detection: Check if .specify/ exists with content
     specify_dir = project_path / ".specify"
-    has_existing_project = False
     preserve_specify = False
 
     if specify_dir.exists() and specify_dir.is_dir():
         # Check if .specify/ has actual content (not just empty directory)
         specify_contents = list(specify_dir.rglob('*'))
         if specify_contents:
-            has_existing_project = True
-
             if force:
                 # User explicitly wants to reinitialize (overwrite)
                 console.print()
