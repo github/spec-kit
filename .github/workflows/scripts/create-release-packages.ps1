@@ -347,9 +347,20 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".qoder/commands"
             Generate-Commands -Agent 'qodercli' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'shai' {
+            $cmdDir = Join-Path $baseDir ".shai/commands"
+            Generate-Commands -Agent 'shai' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
+        'agy' {
+            $cmdDir = Join-Path $baseDir ".agent/workflows"
+            Generate-Commands -Agent 'agy' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         'generic' {
             $cmdDir = Join-Path $baseDir ".speckit/commands"
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
+        default {
+            throw "Unsupported agent '$Agent'."
         }
     }
     

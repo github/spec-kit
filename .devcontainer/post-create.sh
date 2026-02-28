@@ -65,6 +65,13 @@ run_command "curl -fsSL \"$KIRO_INSTALLER_URL\" -o \"$KIRO_INSTALLER_PATH\""
 
 if [ -n "${KIRO_INSTALLER_SHA256:-}" ]; then
   run_command "echo \"$KIRO_INSTALLER_SHA256  $KIRO_INSTALLER_PATH\" | sha256sum -c -"
+elif [ "${KIRO_SKIP_KIRO_INSTALLER_VERIFY:-0}" = "1" ]; then
+  echo -e "\033[0;33m[WARN] KIRO_INSTALLER_SHA256 is not set; proceeding without installer checksum verification.\033[0m" >&2
+  echo -e "\033[0;33m[WARN] Set KIRO_INSTALLER_SHA256 to enforce verification, or intentionally override with KIRO_SKIP_KIRO_INSTALLER_VERIFY=1.\033[0m" >&2
+else
+  echo -e "\033[0;31m[ERROR] Refusing to run unverified Kiro installer.\033[0m" >&2
+  echo -e "\033[0;31mSet KIRO_INSTALLER_SHA256 (recommended) or explicitly set KIRO_SKIP_KIRO_INSTALLER_VERIFY=1 to proceed.\033[0m" >&2
+  exit 1
 fi
 
 run_command "bash \"$KIRO_INSTALLER_PATH\""

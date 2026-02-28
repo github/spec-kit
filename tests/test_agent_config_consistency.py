@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from specify_cli import AGENT_CONFIG
+from specify_cli import AGENT_CONFIG, AI_ASSISTANT_HELP
 from specify_cli.extensions import CommandRegistrar
 
 
@@ -43,8 +43,24 @@ class TestAgentConfigConsistency:
 
         assert "kiro-cli" in sh_agents
         assert "kiro-cli" in ps_agents
+        assert "shai" in sh_agents
+        assert "shai" in ps_agents
+        assert "agy" in sh_agents
+        assert "agy" in ps_agents
         assert "q" not in sh_agents
         assert "q" not in ps_agents
+
+    def test_release_ps_switch_has_shai_and_agy_generation(self):
+        """PowerShell release builder must generate files for shai and agy agents."""
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert re.search(r"'shai'\s*\{.*?\.shai/commands", ps_text, re.S) is not None
+        assert re.search(r"'agy'\s*\{.*?\.agent/workflows", ps_text, re.S) is not None
+
+    def test_init_ai_help_includes_roo_and_kiro_alias(self):
+        """CLI help text for --ai should stay in sync with agent config and alias guidance."""
+        assert "roo" in AI_ASSISTANT_HELP
+        assert "Use 'kiro' as an alias for 'kiro-cli'." in AI_ASSISTANT_HELP
 
     def test_release_output_targets_kiro_prompt_dir(self):
         """Packaging and release scripts should no longer emit amazonq artifacts."""
