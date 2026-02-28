@@ -1139,6 +1139,14 @@ def download_and_extract_multi_agent_templates(
                         shutil.copytree(item, dest_path)
                 else:
                     # Copy files (will be overwritten if multiple agents have same file)
+                    if dest_path.exists():
+                        # Warn when overwriting an existing file from another agent template
+                        if verbose:
+                            console = Console()
+                            console.print(
+                                f"[yellow]Warning:[/] Overwriting existing file '{dest_path}' "
+                                f"with version from agent '{agent}'."
+                            )
                     shutil.copy2(item, dest_path)
 
             if tracker:
