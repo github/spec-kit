@@ -54,6 +54,8 @@ import ssl
 import truststore
 from datetime import datetime, timezone
 
+from .agent_config import AGENT_CONFIG
+
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
 
@@ -122,8 +124,6 @@ def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str)
     lines.append("  • Authenticated requests have a limit of 5,000/hour vs 60/hour for unauthenticated.")
     
     return "\n".join(lines)
-
-from .agent_config import AGENT_CONFIG
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
