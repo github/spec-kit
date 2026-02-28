@@ -83,6 +83,10 @@ echo -e "\n🤖 Installing CodeBuddy CLI..."
 run_command "npm install -g @tencent-ai/codebuddy-code@latest"
 echo "✅ Done"
 
+echo -e "\n🤖 Installing PI coding agent CLI..."
+run_command "npm install -g @mariozechner/pi-coding-agent@latest"
+echo "✅ Done"
+
 # Installing UV (Python package manager)
 echo -e "\n🐍 Installing UV - Python Package Manager..."
 run_command "pipx install uv"
