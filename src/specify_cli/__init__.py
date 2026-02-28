@@ -1119,9 +1119,8 @@ def init(
                     "[yellow]Warning: --force flag detected[/yellow]\n\n"
                     "Your existing .specify/ directory will be OVERWRITTEN, including:\n"
                     "  • Constitution and project principles\n"
-                    "  • Specifications and requirements\n"
-                    "  • Implementation plans\n"
-                    "  • Task lists\n\n"
+                    "  • Command templates and workflows\n"
+                    "  • Utility scripts and automation\n\n"
                     "All your work in .specify/ will be lost!",
                     title="[red]Reinitializing Project[/red]",
                     border_style="red",
@@ -1135,9 +1134,8 @@ def init(
                     "[green]Existing project detected[/green]\n\n"
                     "Your .specify/ directory will be preserved, including:\n"
                     "  • Constitution and project principles\n"
-                    "  • Specifications and requirements\n"
-                    "  • Implementation plans\n"
-                    "  • Task lists\n\n"
+                    "  • Command templates and workflows\n"
+                    "  • Utility scripts and automation\n\n"
                     "Only new agent-specific directories will be added.\n\n"
                     "[dim]Use --force to reinitialize and overwrite everything[/dim]",
                     title="[cyan]Adding Agent to Existing Project[/cyan]",
