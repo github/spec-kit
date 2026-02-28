@@ -14,7 +14,7 @@
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, q, bob, qodercli, shai, agy, generic
+    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, q, bob, pi, qodercli, shai, agy, generic
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -343,6 +343,10 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".bob/commands"
             Generate-Commands -Agent 'bob' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'pi' {
+            $cmdDir = Join-Path $baseDir ".pi/skills"
+            Generate-Commands -Agent 'pi' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         'qodercli' {
             $cmdDir = Join-Path $baseDir ".qoder/commands"
             Generate-Commands -Agent 'qodercli' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
@@ -360,7 +364,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qodercli', 'shai', 'agy', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'pi', 'qodercli', 'shai', 'agy', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {
