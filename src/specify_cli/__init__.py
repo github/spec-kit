@@ -1103,26 +1103,24 @@ def init(
 
     # Smart detection: Check if .specify/ exists with content
     specify_dir = project_path / ".specify"
-    has_existing_project = False
     preserve_specify = False
 
     if specify_dir.exists() and specify_dir.is_dir():
         # Check if .specify/ has actual content (not just empty directory)
         specify_contents = list(specify_dir.rglob('*'))
         if specify_contents:
-            has_existing_project = True
-
             if force:
                 # User explicitly wants to reinitialize (overwrite)
                 console.print()
                 console.print(Panel(
-                    "[yellow]Warning: --force flag detected[/yellow]\n\n"
-                    "Your existing .specify/ directory will be OVERWRITTEN, including:\n"
+                    "[yellow]--force supplied: existing .specify/ will be reinitialized[/yellow]\n\n"
+                    "Because you explicitly used the [bold]--force[/bold] flag, your existing .specify/ "
+                    "directory will be OVERWRITTEN without any further confirmation, including:\n"
                     "  • Constitution and project principles\n"
                     "  • Command templates and workflows\n"
                     "  • Utility scripts and automation\n\n"
-                    "All your work in .specify/ will be lost!",
-                    title="[red]Reinitializing Project[/red]",
+                    "[red]All your work in .specify/ will be lost.[/red]",
+                    title="[red]Reinitializing Project (forced)[/red]",
                     border_style="red",
                     padding=(1, 2)
                 ))
