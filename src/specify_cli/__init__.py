@@ -241,8 +241,8 @@ AGENT_CONFIG = {
         "name": "Antigravity",
         "folder": ".agent/",
         "commands_subdir": "workflows",  # Special: uses workflows/ not commands/
-        "install_url": None,  # IDE-based
-        "requires_cli": False,
+        "install_url": "https://agy.ai/",
+        "requires_cli": True,
     },
     "bob": {
         "name": "IBM Bob",
@@ -1017,6 +1017,7 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
 # doesn't follow the standard <agent_folder>/skills/ pattern
 AGENT_SKILLS_DIR_OVERRIDES = {
     "codex": ".agents/skills",  # Codex agent layout override
+    "agy": ".agent/skills",  # Antigravity skills directory override
 }
 
 # Default skills directory for agents not in AGENT_CONFIG
