@@ -1320,7 +1320,7 @@ def init(
         # Universal mode - all agents
         is_multi_agent = True
         selected_agents = list(AGENT_CONFIG.keys())
-        console.print(f"[cyan]Initializing with all {len(selected_agents)} agents[/cyan]")
+        console.print(f"[cyan]Initializing with all {len(AGENT_CONFIG)} agents[/cyan]")
     elif agents:
         # Specific subset of agents
         is_multi_agent = True
