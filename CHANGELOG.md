@@ -7,6 +7,25 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - Unreleased
+
+### Added
+
+- **Ralph Loop Command**: New `specify ralph` command for autonomous implementation using GitHub Copilot CLI
+  - Executes tasks from tasks.md in controlled iterations
+  - Spawns fresh agent context per iteration to prevent context rot
+  - Terminates on `<promise>COMPLETE</promise>` signal or max iterations
+  - Cross-platform support with PowerShell and Bash orchestrators
+  - Supports `--max-iterations` (default: 10) and `--model` (default: claude-sonnet-4.5) options
+  - Verbose mode with `-v` flag for detailed output
+  - Warns about uncommitted changes before starting
+  - Creates progress.txt log with iteration history and codebase patterns
+  - Respects task checkboxes in tasks.md for resumable sessions
+- **Ralph Iteration Prompt Template**: New `templates/ralph-prompt.md` for scoped iteration prompts
+  - Limits agent to one user story per iteration
+  - Includes commit instructions after user story completion
+  - References progress file for cross-iteration learning
+
 ## [0.1.6] - 2026-02-23
 
 ### Fixed
