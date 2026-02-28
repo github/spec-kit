@@ -216,8 +216,8 @@ specify init my-project --ai shai
 # Initialize with IBM Bob support
 specify init my-project --ai bob
 
-# Add new agents to existing project (automatic - just run init again!)
-# Your constitution, specs, and plans are automatically preserved
+# First run: initializes project and creates .specify/
+# Subsequent runs in the same directory: add new agents while preserving .specify/ (constitution, specs, plans)
 specify init . --ai copilot              # Adds copilot, preserves your work
 specify init . --ai gemini               # Adds gemini, preserves your work
 
