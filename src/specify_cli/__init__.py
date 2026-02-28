@@ -1591,7 +1591,7 @@ def init(
         step_num = 2
 
     # Add Codex-specific setup step if needed (only in single-agent mode or if codex is in multi-agent list)
-    if not is_multi_agent and selected_agents[0] == "codex":
+    if "codex" in selected_agents:
         codex_path = project_path / ".codex"
         quoted_path = shlex.quote(str(codex_path))
         if os.name == "nt":  # Windows
@@ -1599,17 +1599,11 @@ def init(
         else:  # Unix-like systems
             cmd = f"export CODEX_HOME={quoted_path}"
 
-        steps_lines.append(f"{step_num}. Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]")
-        step_num += 1
-    elif is_multi_agent and "codex" in selected_agents:
-        codex_path = project_path / ".codex"
-        quoted_path = shlex.quote(str(codex_path))
-        if os.name == "nt":  # Windows
-            cmd = f"setx CODEX_HOME {quoted_path}"
-        else:  # Unix-like systems
-            cmd = f"export CODEX_HOME={quoted_path}"
-
-        steps_lines.append(f"{step_num}. For Codex: Set [cyan]CODEX_HOME[/cyan] environment variable: [cyan]{cmd}[/cyan]")
+        if is_multi_agent:
+            message = f"For Codex: Set [cyan]CODEX_HOME[/cyan] environment variable: [cyan]{cmd}[/cyan]"
+        else:
+            message = f"Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]"
+        steps_lines.append(f"{step_num}. {message}")
         step_num += 1
 
     if is_multi_agent:
