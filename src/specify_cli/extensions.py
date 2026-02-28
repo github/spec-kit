@@ -20,6 +20,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
+from .agent_config import AGENT_CONFIG
 
 class ExtensionError(Exception):
     """Base exception for extension-related errors."""
@@ -451,7 +452,7 @@ class ExtensionManager:
                 commands_dir = self.project_root / agent_config["dir"]
 
                 for cmd_name in cmd_names:
-                    cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+                    cmd_file = commands_dir / f"{cmd_name}{agent_config['command_extension']}"
                     if cmd_file.exists():
                         cmd_file.unlink()
 
@@ -581,102 +582,14 @@ class CommandRegistrar:
 
     # Agent configurations with directory, format, and argument placeholder
     AGENT_CONFIGS = {
-        "claude": {
-            "dir": ".claude/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "gemini": {
-            "dir": ".gemini/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "copilot": {
-            "dir": ".github/agents",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "cursor": {
-            "dir": ".cursor/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qwen": {
-            "dir": ".qwen/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "opencode": {
-            "dir": ".opencode/command",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "windsurf": {
-            "dir": ".windsurf/workflows",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kilocode": {
-            "dir": ".kilocode/rules",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "auggie": {
-            "dir": ".augment/rules",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "roo": {
-            "dir": ".roo/rules",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "codebuddy": {
-            "dir": ".codebuddy/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qodercli": {
-            "dir": ".qoder/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "q": {
-            "dir": ".amazonq/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "amp": {
-            "dir": ".agents/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "shai": {
-            "dir": ".shai/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "bob": {
-            "dir": ".bob/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
+        agent_id: {
+            "dir": f"{cfg['folder']}{cfg['commands_subdir']}",
+            "command_format": cfg["command_format"],
+            "command_args": cfg["command_args"],
+            "command_extension": cfg["command_extension"]
         }
+        for agent_id, cfg in AGENT_CONFIG.items()
+        if cfg.get("folder")
     }
 
     @staticmethod
@@ -856,26 +769,26 @@ class CommandRegistrar:
 
             # Convert argument placeholders
             body = self._convert_argument_placeholder(
-                body, "$ARGUMENTS", agent_config["args"]
+                body, "$ARGUMENTS", agent_config["command_args"]
             )
 
             # Render in agent-specific format
-            if agent_config["format"] == "markdown":
+            if agent_config["command_format"] == "markdown":
                 output = self._render_markdown_command(frontmatter, body, manifest.id)
-            elif agent_config["format"] == "toml":
+            elif agent_config["command_format"] == "toml":
                 output = self._render_toml_command(frontmatter, body, manifest.id)
             else:
-                raise ExtensionError(f"Unsupported format: {agent_config['format']}")
+                raise ExtensionError(f"Unsupported format: {agent_config['command_format']}")
 
             # Write command file
-            dest_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+            dest_file = commands_dir / f"{cmd_name}{agent_config['command_extension']}"
             dest_file.write_text(output)
 
             registered.append(cmd_name)
 
             # Register aliases
             for alias in cmd_info.get("aliases", []):
-                alias_file = commands_dir / f"{alias}{agent_config['extension']}"
+                alias_file = commands_dir / f"{alias}{agent_config['command_extension']}"
                 alias_file.write_text(output)
                 registered.append(alias)
 
