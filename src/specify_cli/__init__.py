@@ -264,6 +264,19 @@ AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
 }
 
+def _build_ai_assistant_help() -> str:
+    """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
+
+    non_generic_agents = [agent for agent in AGENT_CONFIG if agent != "generic"]
+    return (
+        f"AI assistant to use: {', '.join(non_generic_agents)}, "
+        "or generic (requires --ai-commands-dir). "
+        "Use 'kiro' as an alias for 'kiro-cli'."
+    )
+
+
+AI_ASSISTANT_HELP = _build_ai_assistant_help()
+
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
@@ -1223,7 +1236,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, kiro-cli (alias: kiro), agy, bob, qodercli, or generic (requires --ai-commands-dir)"),
+    ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
