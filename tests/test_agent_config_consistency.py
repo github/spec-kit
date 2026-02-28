@@ -62,6 +62,14 @@ class TestAgentConfigConsistency:
         assert "roo" in AI_ASSISTANT_HELP
         assert "Use 'kiro' as an alias for 'kiro-cli'." in AI_ASSISTANT_HELP
 
+    def test_devcontainer_kiro_installer_uses_pinned_checksum(self):
+        """Devcontainer installer should always verify Kiro installer via pinned SHA256."""
+        post_create_text = (REPO_ROOT / ".devcontainer" / "post-create.sh").read_text(encoding="utf-8")
+
+        assert 'KIRO_INSTALLER_SHA256="7487a65cf310b7fb59b357c4b5e6e3f3259d383f4394ecedb39acf70f307cffb"' in post_create_text
+        assert "sha256sum -c -" in post_create_text
+        assert "KIRO_SKIP_KIRO_INSTALLER_VERIFY" not in post_create_text
+
     def test_release_output_targets_kiro_prompt_dir(self):
         """Packaging and release scripts should no longer emit amazonq artifacts."""
         sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
