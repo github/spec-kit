@@ -1,0 +1,141 @@
+name: Agent Request
+description: Request support for a new AI agent/assistant in Spec Kit
+title: "[Agent]: Add support for "
+labels: ["agent-request", "enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for requesting a new agent! Before submitting, please check if the agent is already supported.
+        
+        **Currently supported agents**: Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy, Qoder CLI, Amazon Q Developer CLI, Amp, SHAI, IBM Bob, Antigravity
+
+  - type: input
+    id: agent-name
+    attributes:
+      label: Agent Name
+      description: What is the name of the AI agent/assistant?
+      placeholder: "e.g., SuperCoder AI"
+    validations:
+      required: true
+
+  - type: input
+    id: website
+    attributes:
+      label: Official Website
+      description: Link to the agent's official website or documentation
+      placeholder: "https://..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent-type
+    attributes:
+      label: Agent Type
+      description: How is the agent accessed?
+      options:
+        - CLI tool (command-line interface)
+        - IDE extension/plugin
+        - Both CLI and IDE
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: cli-command
+    attributes:
+      label: CLI Command (if applicable)
+      description: What command is used to invoke the agent from terminal?
+      placeholder: "e.g., supercode, ai-assistant"
+
+  - type: input
+    id: install-method
+    attributes:
+      label: Installation Method
+      description: How is the agent installed?
+      placeholder: "e.g., npm install -g supercode, pip install supercode, IDE marketplace"
+    validations:
+      required: true
+
+  - type: textarea
+    id: command-structure
+    attributes:
+      label: Command/Workflow Structure
+      description: How does the agent define custom commands or workflows?
+      placeholder: |
+        - Command file format (Markdown, YAML, TOML, etc.)
+        - Directory location (e.g., .supercode/commands/)
+        - Example command file structure
+    validations:
+      required: true
+
+  - type: textarea
+    id: argument-pattern
+    attributes:
+      label: Argument Passing Pattern
+      description: How does the agent handle arguments in commands?
+      placeholder: |
+        e.g., Uses {{args}}, $ARGUMENTS, %ARGS%, or other placeholder format
+        Example: "Run test suite with {{args}}"
+
+  - type: dropdown
+    id: popularity
+    attributes:
+      label: Popularity/Usage
+      description: How widely is this agent used?
+      options:
+        - Widely used (thousands+ of users)
+        - Growing adoption (hundreds of users)
+        - New/emerging (less than 100 users)
+        - Unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation Links
+      description: Links to relevant documentation for custom commands/workflows
+      placeholder: |
+        - Command documentation: https://...
+        - API/CLI reference: https://...
+        - Examples: https://...
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Why do you want this agent supported in Spec Kit?
+      placeholder: Explain your workflow and how this agent fits into your development process
+    validations:
+      required: true
+
+  - type: textarea
+    id: example-command
+    attributes:
+      label: Example Command File
+      description: If possible, provide an example of a command file for this agent
+      render: markdown
+      placeholder: |
+        ```toml
+        description = "Example command"
+        prompt = "Do something with {{args}}"
+        ```
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Are you willing to help implement support for this agent?
+      options:
+        - label: I can help test the integration
+        - label: I can provide example command files
+        - label: I can help with documentation
+        - label: I can submit a pull request for the integration
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other relevant information about this agent
+      placeholder: Screenshots, community links, comparison to existing agents, etc.

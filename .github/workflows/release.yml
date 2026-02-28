@@ -6,6 +6,7 @@ on:
     paths:
       - 'memory/**'
       - 'scripts/**'
+      - 'src/**'
       - 'templates/**'
       - '.github/workflows/**'
   workflow_dispatch:
@@ -18,7 +19,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,4 +58,12 @@ jobs:
         run: |
           chmod +x .github/workflows/scripts/update-version.sh
           .github/workflows/scripts/update-version.sh ${{ steps.get_tag.outputs.new_version }}
+      - name: Commit version bump to main
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.get_tag.outputs.new_version }} [skip ci]"
+          git push
 
