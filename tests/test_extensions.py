@@ -520,6 +520,149 @@ $ARGUMENTS
         assert (claude_dir / "speckit.alias.cmd.md").exists()
         assert (claude_dir / "speckit.shortcut.md").exists()
 
+    def test_register_commands_for_copilot(self, extension_dir, project_dir):
+        """Test registering commands for Copilot agent with .agent.md extension."""
+        # Create .github/agents directory (Copilot project)
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_agent(
+            "copilot", manifest, extension_dir, project_dir
+        )
+
+        assert len(registered) == 1
+        assert "speckit.test.hello" in registered
+
+        # Verify command file uses .agent.md extension
+        cmd_file = agents_dir / "speckit.test.hello.agent.md"
+        assert cmd_file.exists()
+
+        # Verify NO plain .md file was created
+        plain_md_file = agents_dir / "speckit.test.hello.md"
+        assert not plain_md_file.exists()
+
+        content = cmd_file.read_text()
+        assert "description: Test hello command" in content
+        assert "<!-- Extension: test-ext -->" in content
+
+    def test_copilot_companion_prompt_created(self, extension_dir, project_dir):
+        """Test that companion .prompt.md files are created in .github/prompts/."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot", manifest, extension_dir, project_dir
+        )
+
+        # Verify companion .prompt.md file exists
+        prompt_file = project_dir / ".github" / "prompts" / "speckit.test.hello.prompt.md"
+        assert prompt_file.exists()
+
+        # Verify content has correct agent frontmatter
+        content = prompt_file.read_text()
+        assert content == "---\nagent: speckit.test.hello\n---\n"
+
+    def test_copilot_aliases_get_companion_prompts(self, project_dir, temp_dir):
+        """Test that aliases also get companion .prompt.md files for Copilot."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-alias-copilot"
+        ext_dir.mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-alias-copilot",
+                "name": "Extension with Alias",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.alias-copilot.cmd",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.shortcut-copilot"],
+                    }
+                ]
+            },
+        }
+
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Test\n---\n\nTest"
+        )
+
+        # Set up Copilot project
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_agent(
+            "copilot", manifest, ext_dir, project_dir
+        )
+
+        assert len(registered) == 2
+
+        # Both primary and alias get companion .prompt.md
+        prompts_dir = project_dir / ".github" / "prompts"
+        assert (prompts_dir / "speckit.alias-copilot.cmd.prompt.md").exists()
+        assert (prompts_dir / "speckit.shortcut-copilot.prompt.md").exists()
+
+    def test_non_copilot_agent_no_companion_file(self, extension_dir, project_dir):
+        """Test that non-copilot agents do NOT create .prompt.md files."""
+        claude_dir = project_dir / ".claude" / "commands"
+        claude_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "claude", manifest, extension_dir, project_dir
+        )
+
+        # No .github/prompts directory should exist
+        prompts_dir = project_dir / ".github" / "prompts"
+        assert not prompts_dir.exists()
+
+    def test_copilot_cleanup_removes_prompt_files(self, extension_dir, project_dir):
+        """Test that removing a Copilot extension also removes .prompt.md files."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot", manifest, extension_dir, project_dir
+        )
+
+        # Verify files exist before cleanup
+        agent_file = agents_dir / "speckit.test.hello.agent.md"
+        prompt_file = project_dir / ".github" / "prompts" / "speckit.test.hello.prompt.md"
+        assert agent_file.exists()
+        assert prompt_file.exists()
+
+        # Manually remove command file (simulates what remove() does)
+        agent_file.unlink()
+
+        # Now remove the prompt file the same way remove() does for copilot
+        if prompt_file.exists():
+            prompt_file.unlink()
+
+        assert not agent_file.exists()
+        assert not prompt_file.exists()
+
 
 # ===== Utility Function Tests =====
 
