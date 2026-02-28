@@ -276,9 +276,11 @@ Additional commands for enhanced quality and validation:
 
 | Command              | Description                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/speckit.clarify`         | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
+| `/speckit.wireframe`       | Generate dark-theme SVG wireframes for visual validation (recommended after `/speckit.clarify`)                                      |
+| `/speckit.wireframe-light` | Generate light-theme SVG wireframes for visual validation                                                                            |
+| `/speckit.analyze`         | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
+| `/speckit.checklist`       | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
 ### Environment Variables
 
