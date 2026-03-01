@@ -263,7 +263,7 @@ AGENT_CONFIG = {
         "commands_subdir": "commands",
         "install_url": None,
         "requires_cli": False,
-    },  
+    },
 }
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
