@@ -46,7 +46,7 @@ Extensions are modular packages that add new commands and functionality to Spec 
 ### Check Your Version
 
 ```bash
-specify --version
+specify version
 # Should show 0.1.0 or higher
 ```
 
@@ -76,13 +76,15 @@ vim .specify/extensions/jira/jira-config.yml
 
 ## Finding Extensions
 
+**Note**: By default, `specify extension search` uses your organization's catalog (`catalog.json`). If the catalog is empty, you won't see any results. See [Extension Catalogs](#extension-catalogs) to learn how to populate your catalog from the community reference catalog.
+
 ### Browse All Extensions
 
 ```bash
 specify extension search
 ```
 
-Shows all available extensions in the catalog.
+Shows all extensions in your organization's catalog.
 
 ### Search by Keyword
 
@@ -415,11 +417,15 @@ export SPECKIT_CATALOG_URL="https://example.com/staging/catalog.json"
 
 ---
 
+## Extension Catalogs
+
+For information about how Spec Kit's dual-catalog system works (`catalog.json` vs `catalog.community.json`), see the main [Extensions README](README.md#extension-catalogs).
+
 ## Organization Catalog Customization
 
-### Why the Default Catalog is Empty
+### Why Customize Your Catalog
 
-The default spec-kit catalog ships empty by design. This allows organizations to:
+Organizations customize their `catalog.json` to:
 
 - **Control available extensions** - Curate which extensions your team can install
 - **Host private extensions** - Internal tools that shouldn't be public
