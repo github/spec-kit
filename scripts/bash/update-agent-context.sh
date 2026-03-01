@@ -663,9 +663,10 @@ update_specific_agent() {
             ;;
         generic)
             log_info "Generic agent: no predefined context file. Use the agent-specific update script for your agent."
+            ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|agy|bob|vibe|qodercli|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|vibe|qodercli|generic"
             exit 1
             ;;
     esac
