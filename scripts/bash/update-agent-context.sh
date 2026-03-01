@@ -30,7 +30,7 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Amazon Q Developer CLI, or Mistral Vibe
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Amazon Q Developer CLI, Mistral Vibe or Antigravity
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
@@ -661,9 +661,11 @@ update_specific_agent() {
         vibe)
             update_agent_file "$VIBE_FILE" "Mistral Vibe"
             ;;
+        generic)
+            log_info "Generic agent: no predefined context file. Use the agent-specific update script for your agent."
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder|vibe"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|agy|bob|vibe|qodercli|generic"
             exit 1
             ;;
     esac
@@ -781,7 +783,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder|vibe]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|qodercli|vibe]"
 }
 
 #==============================================================================
