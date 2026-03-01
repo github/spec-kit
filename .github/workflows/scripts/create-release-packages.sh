@@ -227,13 +227,16 @@ build_variant() {
     vibe)
       mkdir -p "$base_dir/.vibe/agents"
       generate_commands vibe toml "{{args}}" "$base_dir/.vibe/agents" "$script" ;;
+    generic)
+      mkdir -p "$base_dir/.speckit/commands"
+      generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
   esac
   ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
   echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder vibe)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q agy bob vibe qodercli generic)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
