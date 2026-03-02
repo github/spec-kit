@@ -635,34 +635,6 @@ $ARGUMENTS
         prompts_dir = project_dir / ".github" / "prompts"
         assert not prompts_dir.exists()
 
-    def test_copilot_cleanup_removes_prompt_files(self, extension_dir, project_dir):
-        """Test that removing a Copilot extension also removes .prompt.md files."""
-        agents_dir = project_dir / ".github" / "agents"
-        agents_dir.mkdir(parents=True)
-
-        manifest = ExtensionManifest(extension_dir / "extension.yml")
-
-        registrar = CommandRegistrar()
-        registrar.register_commands_for_agent(
-            "copilot", manifest, extension_dir, project_dir
-        )
-
-        # Verify files exist before cleanup
-        agent_file = agents_dir / "speckit.test.hello.agent.md"
-        prompt_file = project_dir / ".github" / "prompts" / "speckit.test.hello.prompt.md"
-        assert agent_file.exists()
-        assert prompt_file.exists()
-
-        # Manually remove command file (simulates what remove() does)
-        agent_file.unlink()
-
-        # Now remove the prompt file the same way remove() does for copilot
-        if prompt_file.exists():
-            prompt_file.unlink()
-
-        assert not agent_file.exists()
-        assert not prompt_file.exists()
-
 
 # ===== Utility Function Tests =====
 
@@ -738,6 +710,31 @@ class TestIntegration:
         assert not manager.registry.is_installed("test-ext")
         assert not cmd_file.exists()
         assert len(manager.list_installed()) == 0
+
+    def test_copilot_cleanup_removes_prompt_files(self, extension_dir, project_dir):
+        """Test that removing a Copilot extension also removes .prompt.md files."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=True)
+
+        # Verify copilot was detected and registered
+        metadata = manager.registry.get("test-ext")
+        assert "copilot" in metadata["registered_commands"]
+
+        # Verify files exist before cleanup
+        agent_file = agents_dir / "speckit.test.hello.agent.md"
+        prompt_file = project_dir / ".github" / "prompts" / "speckit.test.hello.prompt.md"
+        assert agent_file.exists()
+        assert prompt_file.exists()
+
+        # Use the extension manager to remove — exercises the copilot prompt cleanup code
+        result = manager.remove("test-ext")
+        assert result is True
+
+        assert not agent_file.exists()
+        assert not prompt_file.exists()
 
     def test_multiple_extensions(self, temp_dir, project_dir):
         """Test installing multiple extensions."""
