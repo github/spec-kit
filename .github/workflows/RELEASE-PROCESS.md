@@ -74,8 +74,7 @@ The workflow will:
 The workflow will:
 - Use your specified version
 - Update `pyproject.toml`
-- Convert `[Unreleased]` section in CHANGELOG.md to the new version
-- Add a new empty `[Unreleased]` section
+- Update `CHANGELOG.md` by adding a new section for the release based on commits since the last tag
 - Commit changes
 - Create and push git tag
 - Trigger the release workflow automatically

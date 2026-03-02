@@ -27,12 +27,17 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [[ -n "${{ github.event.inputs.version }}" ]]; then
-            # Manual version specified
-            VERSION="${{ github.event.inputs.version }}"
-            # Remove 'v' prefix if present
-            VERSION=${VERSION#v}
+          if [[ -n "$INPUT_VERSION" ]]; then
+            # Manual version specified - strip optional v prefix
+            VERSION="${INPUT_VERSION#v}"
+            # Validate strict semver format to prevent injection
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: Invalid version format '$VERSION'. Must be X.Y.Z (e.g. 1.2.3 or v1.2.3)"
+              exit 1
+            fi
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=v$VERSION" >> $GITHUB_OUTPUT
             echo "Using manual version: $VERSION"
