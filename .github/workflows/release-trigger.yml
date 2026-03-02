@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -45,18 +46,18 @@ jobs:
             # Auto-increment patch version
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             echo "Latest tag: $LATEST_TAG"
-            
+
             # Extract version number and increment
             VERSION=$(echo $LATEST_TAG | sed 's/v//')
             IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
             MAJOR=${VERSION_PARTS[0]:-0}
             MINOR=${VERSION_PARTS[1]:-0}
             PATCH=${VERSION_PARTS[2]:-0}
-            
+
             # Increment patch version
             PATCH=$((PATCH + 1))
             NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-            
+
             echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
             echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
             echo "Auto-incremented version: $NEW_VERSION"
@@ -69,6 +70,12 @@ jobs:
             exit 1
           fi
 
+      - name: Create release branch
+        run: |
+          BRANCH="chore/release-${{ steps.version.outputs.tag }}"
+          git checkout -b "$BRANCH"
+          echo "branch=$BRANCH" >> $GITHUB_ENV
+
       - name: Update pyproject.toml
         run: |
           sed -i "s/version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
@@ -78,22 +85,19 @@ jobs:
         run: |
           if [ -f "CHANGELOG.md" ]; then
             DATE=$(date +%Y-%m-%d)
-            
+
             # Get the previous tag to compare commits
             PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-            
+
             echo "Generating changelog from commits..."
             if [[ -n "$PREVIOUS_TAG" ]]; then
               echo "Changes since $PREVIOUS_TAG"
-              
-              # Get commits since last tag, format as bullet points
-              # Extract PR numbers and format nicely
               COMMITS=$(git log --oneline "$PREVIOUS_TAG"..HEAD --no-merges --pretty=format:"- %s" 2>/dev/null || echo "- Initial release")
             else
               echo "No previous tag found - this is the first release"
               COMMITS="- Initial release"
             fi
-            
+
             # Create new changelog entry
             {
               head -n 8 CHANGELOG.md
@@ -107,7 +111,7 @@ jobs:
               tail -n +9 CHANGELOG.md
             } > CHANGELOG.md.tmp
             mv CHANGELOG.md.tmp CHANGELOG.md
-            
+
             echo "✅ Updated CHANGELOG.md with commits since $PREVIOUS_TAG"
           else
             echo "No CHANGELOG.md found"
@@ -127,15 +131,32 @@ jobs:
             git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
             echo "Changes committed"
           fi
+
       - name: Create and push tag
         run: |
           git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
-          git push origin main
+          git push origin "${{ env.branch }}"
           git push origin "${{ steps.version.outputs.tag }}"
-          echo "Tag ${{ steps.version.outputs.tag }} created and pushed"
+          echo "Branch ${{ env.branch }} and tag ${{ steps.version.outputs.tag }} pushed"
+
+      - name: Open pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "${{ env.branch }}" \
+            --title "chore: bump version to ${{ steps.version.outputs.version }}" \
+            --body "Automated version bump to ${{ steps.version.outputs.version }}.
+
+          This PR was created by the Release Trigger workflow. The git tag \`${{ steps.version.outputs.tag }}\` has already been pushed and the release artifacts are being built.
+
+          Merge this PR to record the version bump and changelog update on \`main\`." \
+            --label "automated"
 
       - name: Summary
         run: |
           echo "✅ Version bumped to ${{ steps.version.outputs.version }}"
           echo "✅ Tag ${{ steps.version.outputs.tag }} created and pushed"
-          echo "🚀 Release workflow will now build artifacts automatically"
+          echo "✅ PR opened to merge version bump into main"
+          echo "🚀 Release workflow is building artifacts from the tag"

@@ -60,9 +60,10 @@ The workflow will:
 - Auto-increment the patch version (e.g., `0.1.10` → `0.1.11`)
 - Update `pyproject.toml`
 - Update `CHANGELOG.md` by adding a new section for the release based on commits since the last tag
-- Commit changes
-- Create and push git tag
-- Trigger the release workflow automatically
+- Commit changes to a `chore/release-vX.Y.Z` branch
+- Create and push the git tag from that branch
+- Open a PR to merge the version bump into `main`
+- Trigger the release workflow automatically via the tag push
 
 ### Option 2: Manual Version (For major/minor bumps)
 
@@ -75,19 +76,23 @@ The workflow will:
 - Use your specified version
 - Update `pyproject.toml`
 - Update `CHANGELOG.md` by adding a new section for the release based on commits since the last tag
-- Commit changes
-- Create and push git tag
-- Trigger the release workflow automatically
+- Commit changes to a `chore/release-vX.Y.Z` branch
+- Create and push the git tag from that branch
+- Open a PR to merge the version bump into `main`
+- Trigger the release workflow automatically via the tag push
 
 ## What Happens Next
 
 Once the release trigger workflow completes:
 
-1. The git tag is pushed to GitHub
-2. The **Release Workflow** is automatically triggered
-3. Release artifacts are built for all supported agents
-4. A GitHub Release is created with all assets
-5. Release notes are generated from PR titles
+1. A `chore/release-vX.Y.Z` branch is pushed with the version bump commit
+2. The git tag is pushed, pointing to that commit
+3. The **Release Workflow** is automatically triggered by the tag push
+4. Release artifacts are built for all supported agents
+5. A GitHub Release is created with all assets
+6. A PR is opened to merge the version bump branch into `main`
+
+> **Note**: Merge the auto-opened PR after the release is published to keep `main` in sync.
 
 ## Workflow Details
 
@@ -103,10 +108,12 @@ Once the release trigger workflow completes:
 1. Checkout repository
 2. Determine version (manual or auto-increment)
 3. Check if tag already exists (prevents duplicates)
-4. Update `pyproject.toml`
-5. Update `CHANGELOG.md`
-6. Commit changes
-7. Create and push tag
+4. Create `chore/release-vX.Y.Z` branch
+5. Update `pyproject.toml`
+6. Update `CHANGELOG.md` from git commits
+7. Commit changes
+8. Push branch and tag
+9. Open PR to merge version bump into `main`
 
 ### Release Workflow
 
