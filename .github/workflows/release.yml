@@ -45,6 +45,10 @@ jobs:
           chmod +x .github/workflows/scripts/generate-release-notes.sh
           # Get the previous tag for changelog generation
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ steps.version.outputs.tag }}^ 2>/dev/null || echo "")
+          # Default to v0.0.0 if no previous tag is found (e.g., first release)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG="v0.0.0"
+          fi
           .github/workflows/scripts/generate-release-notes.sh ${{ steps.version.outputs.tag }} "$PREVIOUS_TAG"
 
       - name: Create GitHub Release
