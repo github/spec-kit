@@ -83,6 +83,24 @@ This command transforms a simple feature description (the user-prompt) into a co
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
 4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
 
+### The `/speckit.wireframe` Command (Optional)
+
+After clarifying the specification with `/speckit.clarify`, this optional command generates visual wireframes for stakeholder review:
+
+1. **Spec Analysis**: Reads the feature specification to identify UI components and user flows
+2. **Layout Planning**: Determines desktop (900px) and mobile (360px) layouts side-by-side
+3. **SVG Generation**: Creates annotated wireframes with realistic placeholder content
+4. **Visual Checkpoint**: Enables stakeholder review before investing in technical planning
+
+This command is recommended for features with user-facing UI components. For backend-only features, skip directly to `/speckit.plan`.
+
+**Workflow integration:**
+```
+/speckit.specify → /speckit.clarify → /speckit.wireframe → [STAKEHOLDER REVIEW] → /speckit.plan
+```
+
+Use `/speckit.wireframe` for dark theme or `/speckit.wireframe-light` for light theme wireframes.
+
 ### The `/speckit.plan` Command
 
 Once a feature specification exists, this command creates a comprehensive implementation plan:
