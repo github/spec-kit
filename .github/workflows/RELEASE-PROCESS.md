@@ -59,8 +59,7 @@ docs: document dual-catalog system for extensions (#1689)
 The workflow will:
 - Auto-increment the patch version (e.g., `0.1.10` → `0.1.11`)
 - Update `pyproject.toml`
-- Convert `[Unreleased]` section in CHANGELOG.md to the new version
-- Add a new empty `[Unreleased]` section
+- Update `CHANGELOG.md` by adding a new section for the release based on commits since the last tag
 - Commit changes
 - Create and push git tag
 - Trigger the release workflow automatically
