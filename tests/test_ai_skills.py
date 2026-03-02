@@ -132,6 +132,16 @@ def commands_dir_gemini(project_dir):
     return cmd_dir
 
 
+@pytest.fixture
+def commands_dir_qwen(project_dir):
+    """Create a populated .qwen/commands directory (Markdown format)."""
+    cmd_dir = project_dir / ".qwen" / "commands"
+    cmd_dir.mkdir(parents=True, exist_ok=True)
+    for name in ["speckit.specify.md", "speckit.plan.md", "speckit.tasks.md"]:
+        (cmd_dir / name).write_text(f"# {name}\nContent here\n")
+    return cmd_dir
+
+
 # ===== _get_skills_dir Tests =====
 
 class TestGetSkillsDir:
@@ -380,6 +390,28 @@ class TestInstallAiSkills:
         # .toml commands should be untouched
         assert (cmds_dir / "speckit.specify.toml").exists()
 
+    def test_qwen_md_commands_dir_installs_skills(self, project_dir):
+        """Qwen now uses Markdown format; skills should install directly from .qwen/commands/."""
+        cmds_dir = project_dir / ".qwen" / "commands"
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Create or update the feature specification.\n---\n\n# Specify\n\nBody.\n"
+        )
+        (cmds_dir / "speckit.plan.md").write_text(
+            "---\ndescription: Generate implementation plan.\n---\n\n# Plan\n\nBody.\n"
+        )
+
+        result = install_ai_skills(project_dir, "qwen")
+
+        assert result is True
+        skills_dir = project_dir / ".qwen" / "skills"
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert len(skill_dirs) >= 1
+        # .md commands should be untouched
+        assert (cmds_dir / "speckit.specify.md").exists()
+        assert (cmds_dir / "speckit.plan.md").exists()
+
     @pytest.mark.parametrize("agent_key", [k for k in AGENT_CONFIG.keys() if k != "generic"])
     def test_skills_install_for_all_agents(self, temp_dir, agent_key):
         """install_ai_skills should produce skills for every configured agent."""
@@ -431,6 +463,15 @@ class TestCommandCoexistence:
         install_ai_skills(project_dir, "gemini")
 
         remaining = list(commands_dir_gemini.glob("speckit.*"))
+        assert len(remaining) == 3
+
+    def test_existing_commands_preserved_qwen(self, project_dir, templates_dir, commands_dir_qwen):
+        """install_ai_skills must NOT remove pre-existing .qwen/commands files."""
+        assert len(list(commands_dir_qwen.glob("speckit.*"))) == 3
+
+        install_ai_skills(project_dir, "qwen")
+
+        remaining = list(commands_dir_qwen.glob("speckit.*"))
         assert len(remaining) == 3
 
     def test_commands_dir_not_removed(self, project_dir, templates_dir, commands_dir_claude):
