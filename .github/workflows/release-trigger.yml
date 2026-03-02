@@ -110,10 +110,18 @@ jobs:
 
       - name: Commit version bump
         run: |
-          git add pyproject.toml CHANGELOG.md
-          git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
-          echo "Changes committed"
+          if [ -f "CHANGELOG.md" ]; then
+            git add pyproject.toml CHANGELOG.md
+          else
+            git add pyproject.toml
+          fi
 
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+            echo "Changes committed"
+          fi
       - name: Create and push tag
         run: |
           git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
