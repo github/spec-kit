@@ -109,23 +109,17 @@ echo -e "${GREEN}✓ Tag $TAG created locally${NC}"
 # Step 8: Simulate release artifact creation
 echo ""
 echo -e "${YELLOW}📦 Simulating release package creation...${NC}"
-echo "   (Running create-release-packages.sh in dry-run mode)"
+echo "   (High-level simulation only; packaging script is not executed)"
 echo ""
 
 # Check if script exists and is executable
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -x "$SCRIPT_DIR/create-release-packages.sh" ]]; then
-  # Just show what would be created, don't actually create
-  echo -e "${BLUE}Packages that would be created:${NC}"
-  echo "  - spec-kit-template-copilot-sh-$TAG.zip"
-  echo "  - spec-kit-template-copilot-ps-$TAG.zip"
-  echo "  - spec-kit-template-claude-sh-$TAG.zip"
-  echo "  - spec-kit-template-claude-ps-$TAG.zip"
-  echo "  - spec-kit-template-gemini-sh-$TAG.zip"
-  echo "  - spec-kit-template-gemini-ps-$TAG.zip"
-  echo "  - spec-kit-template-cursor-agent-sh-$TAG.zip"
-  echo "  - spec-kit-template-cursor-agent-ps-$TAG.zip"
-  echo "  ... (40 total packages)"
+  echo -e "${BLUE}In a real release, the following command would be run to create packages:${NC}"
+  echo "  $SCRIPT_DIR/create-release-packages.sh \"$TAG\""
+  echo ""
+  echo "This simulation does not enumerate individual package files to avoid"
+  echo "drifting from the actual behavior of create-release-packages.sh."
 else
   echo -e "${RED}⚠️  create-release-packages.sh not found or not executable${NC}"
 fi
