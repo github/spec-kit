@@ -64,8 +64,8 @@
       "download_url": "https://github.com/bgervin/spec-kit-sync/archive/refs/tags/v0.1.0.zip",
       "repository": "https://github.com/bgervin/spec-kit-sync",
       "homepage": "https://github.com/bgervin/spec-kit-sync",
-      "documentation": "https://github.com/bgervin/spec-kit-sync/blob/master/README.md",
-      "changelog": "https://github.com/bgervin/spec-kit-sync/blob/master/CHANGELOG.md",
+      "documentation": "https://github.com/bgervin/spec-kit-sync/blob/main/README.md",
+      "changelog": "https://github.com/bgervin/spec-kit-sync/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.1.0"
