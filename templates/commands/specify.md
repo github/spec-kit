@@ -1,6 +1,18 @@
 ---
 description: Create or update the feature specification from a natural language feature description.
 handoffs: 
+  - label: Sync to Azure DevOps
+    agent: speckit.adosync
+    prompt: |
+      Sync user stories from the spec.md we just created to Azure DevOps.
+      
+      The spec file path is: {spec_file_path}
+      
+      Please:
+      1. Show me the list of user stories found
+      2. Ask which ones I want to sync (or suggest 'all')
+      3. Create the work items in Azure DevOps
+    send: true
   - label: Build Technical Plan
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
@@ -193,7 +205,7 @@ Given that feature description, do this:
 
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
-7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
+7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.adosync` or `/speckit.plan`).
 
 **NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
 
