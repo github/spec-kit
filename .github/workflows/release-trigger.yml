@@ -151,8 +151,7 @@ jobs:
 
           This PR was created by the Release Trigger workflow. The git tag \`${{ steps.version.outputs.tag }}\` has already been pushed and the release artifacts are being built.
 
-          Merge this PR to record the version bump and changelog update on \`main\`." \
-            --label "automated"
+          Merge this PR to record the version bump and changelog update on \`main\`."
 
       - name: Summary
         run: |
