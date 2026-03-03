@@ -82,7 +82,7 @@ Write-Host ""
 az devops configure --defaults organization="https://dev.azure.com/$Organization" project="$Project"
 
 # Parse user stories from spec.md
-function Parse-UserStories {
+function Get-UserStories {
     param([string]$FilePath)
     
     if (-not (Test-Path $FilePath)) {
@@ -95,9 +95,9 @@ function Parse-UserStories {
     
     # Match: ### User Story X - Title (Priority: PX)
     $pattern = '###\s+User\s+Story\s+(\d+)\s*-\s*([^\(]+)\s*\(Priority:\s*P(\d+)\)'
-    $matches = [regex]::Matches($content, $pattern)
+    $regexMatches = [regex]::Matches($content, $pattern)
     
-    foreach ($match in $matches) {
+    foreach ($match in $regexMatches) {
         $storyNum = $match.Groups[1].Value
         $title = $match.Groups[2].Value.Trim()
         $priority = $match.Groups[3].Value
@@ -156,75 +156,7 @@ function Parse-UserStories {
 }
 
 # Parse tasks from tasks.md file
-function Parse-Tasks {
-    param([string]$FilePath)
-    
-    if (-not (Test-Path $FilePath)) {
-        Write-Error "Tasks file not found: $FilePath"
-        exit 1
-    }
-    
-    $content = Get-Content -Path $FilePath -Raw
-    $parsedTasks = [System.Collections.ArrayList]::new()
-    
-    # Match: - [ ] TXXX [P] [Story] Description
-    # Format: - [ ] T001 [P] [US1] Description or - [ ] T001 Description
-    $pattern = '-\s*\[\s*\]\s+T(\d+)\s+(?:\[P\]\s+)?(?:\[([^\]]+)\]\s+)?(.+)'
-    $matches = [regex]::Matches($content, $pattern)
-    
-    Write-Verbose "Found $($matches.Count) task matches in tasks file"
-    
-    foreach ($match in $matches) {
-        $taskNum = $match.Groups[1].Value
-        $story = $match.Groups[2].Value.Trim()
-        $description = $match.Groups[3].Value.Trim()
-        
-        # Default priority to 2 (medium) for tasks
-        $priority = 2
-        
-        # If story tag exists, extract priority from it (US1=P1, US2=P2, etc.)
-        if ($story -match 'US(\d+)') {
-            $priority = [int]$Matches[1]
-            if ($priority -gt 3) { $priority = 3 }
-        }
-        
-        # Set title as task number + description (truncate if too long)
-        $title = "T$taskNum - $description"
-        if ($title.Length -gt 100) {
-            $title = $title.Substring(0, 97) + "..."
-        }
-        
-        $whyPriority = ""
-        if ($storyContent -match '\*\*Why this priority\*\*:\s*(.+?)(?=\n\n|\*\*Independent Test|###|$)') {
-            $whyPriority = $Matches[1].Trim()
-        }
-        
-        $independentTest = ""
-        if ($storyContent -match '\*\*Independent Test\*\*:\s*(.+?)(?=\n\n|\*\*Acceptance|###|$)') {
-            $independentTest = $Matches[1].Trim()
-        }
-        
-        $acceptanceCriteria = ""
-        if ($storyContent -match '(?s)\*\*Acceptance Scenarios\*\*:\s*\n\s*\n(.+?)(?=###|##\s+Edge Cases|##\s+Requirements|$)') {
-            $acceptanceCriteria = $Matches[1].Trim()
-        }
-        
-        [void]$parsedStories.Add([PSCustomObject]@{
-            Number = $storyNum
-            Title = $title
-            Priority = $priority
-            Description = $description
-            Why = $whyPriority
-            Test = $independentTest
-            Acceptance = $acceptanceCriteria
-        })
-    }
-    
-    return ,$parsedStories  # Force return as array
-}
-
-# Parse tasks from tasks.md file
-function Parse-Tasks {
+function Get-Tasks {
     param([string]$FilePath)
     
     if (-not (Test-Path $FilePath)) {
@@ -237,11 +169,11 @@ function Parse-Tasks {
     
     # Match: - [ ] TXXX [P] [Story] Description
     $pattern = '-\s*\[\s*\]\s+T(\d+)\s+(?:\[P\]\s+)?(?:\[([^\]]+)\]\s+)?(.+)'
-    $matches = [regex]::Matches($content, $pattern)
+    $regexMatches = [regex]::Matches($content, $pattern)
     
-    Write-Verbose "Found $($matches.Count) task matches in tasks file"
+    Write-Verbose "Found $($regexMatches.Count) task matches in tasks file"
     
-    foreach ($match in $matches) {
+    foreach ($match in $regexMatches) {
         $taskNum = $match.Groups[1].Value
         $story = $match.Groups[2].Value.Trim()
         $description = $match.Groups[3].Value.Trim()
@@ -322,11 +254,11 @@ $featureName = Split-Path (Split-Path $SpecFile -Parent) -Leaf
 
 # Parse and filter items (tasks or stories)
 if ($FromTasks) {
-    $allStories = Parse-Tasks -FilePath $SpecFile
+    $allStories = Get-Tasks -FilePath $SpecFile
     $itemType = "Task"
     $itemLabel = "tasks"
 } else {
-    $allStories = Parse-UserStories -FilePath $SpecFile
+    $allStories = Get-UserStories -FilePath $SpecFile
     $itemType = "User Story"
     $itemLabel = "user stories"
 }
@@ -347,7 +279,7 @@ foreach ($story in $selectedStories) {
         if ($story.Description.Length -gt 80) { $desc += "..." }
         Write-Host "      $desc" -ForegroundColor Gray
     } else {
-        Write-Host "      Story: $($story.StoryNumber)" -ForegroundColor Gray
+        Write-Host "      Story: $($story.Story)" -ForegroundColor Gray
     }
 }
 Write-Host ""
@@ -494,7 +426,9 @@ if ($createdItems.Count -gt 0) {
     Write-Host "Organization: $Organization"
     Write-Host "Project: $Project"
     Write-Host "Feature: $featureName"
-    Write-Host "Created: $($createdItems.Count) of $($stories.Count) user stories"
+    $selectionLabel = if ($FromTasks) { "tasks" } else { "user stories" }
+    $selectedCount = if ($null -ne $selectedStories) { $selectedStories.Count } else { 0 }
+    Write-Host "Created: $($createdItems.Count) of $selectedCount $selectionLabel"
     Write-Host ""
     Write-Host "Created Work Items:"
     Write-Host ""

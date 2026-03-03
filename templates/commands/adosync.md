@@ -207,16 +207,13 @@ Is this correct? (yes/no)
 Now run the PowerShell script with all the parameters collected from chat:
 
 ```powershell
-.\scripts\powershell\create-ado-workitems-oauth.ps1 `
+.\scripts\powershell\create-ado-workitems.ps1 `
   -SpecFile "<path-to-spec.md>" `
   -Organization "$orgName" `
   -Project "$projectName" `
   -AreaPath "$areaPath" `
-  -Stories "<selection>" `
-  -NoConfirm
+  -Stories "<selection>"
 ```
-
-**Note**: Use `-NoConfirm` flag since we already confirmed with the user in chat.
 
 The script will:
 
@@ -277,7 +274,7 @@ Now run the PowerShell/Bash script with all the parameters collected from chat:
 **PowerShell**:
 
 ```powershell
-.\scripts\powershell\create-ado-workitems-oauth.ps1 `
+.\scripts\powershell\create-ado-workitems.ps1 `
   -SpecFile "<path-to-spec.md or tasks.md>" `
   -Organization "$orgName" `
   -Project "$projectName" `
@@ -289,7 +286,7 @@ Now run the PowerShell/Bash script with all the parameters collected from chat:
 **Bash**:
 
 ```bash
-./scripts/bash/create-ado-workitems-oauth.sh \
+./scripts/bash/create-ado-workitems.sh \
   --spec-file "<path-to-spec.md or tasks.md>" \
   --organization "$orgName" \
   --project "$projectName" \

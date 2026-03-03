@@ -3,7 +3,7 @@ description: Generate an actionable, dependency-ordered tasks.md for the feature
 handoffs: 
   - label: Sync to Azure DevOps
     agent: speckit.adosync
-    prompt: Sync user stories to Azure DevOps
+    prompt: Sync generated tasks (tasks.md) to Azure DevOps
     send: false
   - label: Analyze For Consistency
     agent: speckit.analyze

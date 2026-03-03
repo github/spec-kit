@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Create Azure DevOps work items using Azure CLI with OAuth (no PAT required)
 # Requires: Azure CLI with devops extension
 
@@ -54,6 +54,16 @@ fi
 # Check if Azure CLI is installed
 if ! command -v az &> /dev/null; then
     echo "Error: Azure CLI not found. Install from: https://docs.microsoft.com/cli/azure/install-azure-cli"
+    exit 1
+fi
+
+# Check if jq is installed
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq not found. This script requires jq for JSON parsing."
+    echo "Install jq:"
+    echo "  - Ubuntu/Debian: sudo apt-get install jq"
+    echo "  - macOS: brew install jq"
+    echo "  - More info: https://stedolan.github.io/jq/download/"
     exit 1
 fi
 
@@ -236,6 +246,8 @@ echo ""
 declare -a CREATED_IDS
 declare -a CREATED_URLS
 declare -a CREATED_STORY_REFS
+declare -a CREATED_TITLES
+declare -a CREATED_PRIORITIES
 
 # Load parent story mappings if in FROM_TASKS mode
 declare -A PARENT_MAPPING
@@ -244,8 +256,8 @@ if [[ "$FROM_TASKS" == true ]]; then
     if [[ -f "$MAPPING_FILE" ]]; then
         echo "Loading parent user story mappings..."
         while IFS= read -r line; do
-            story_num=$(echo "$line" | jq -r '.StoryNumber')
-            work_item_id=$(echo "$line" | jq -r '.WorkItemId')
+            story_num=$(echo "$line" | jq -r '.storyNumber')
+            work_item_id=$(echo "$line" | jq -r '.workItemId')
             PARENT_MAPPING[$story_num]=$work_item_id
         done < <(jq -c '.workItems[]' "$MAPPING_FILE")
         echo "Loaded ${#PARENT_MAPPING[@]} parent stories"
@@ -268,7 +280,7 @@ for selected in "${SELECTED_STORIES[@]}"; do
                 desc="${TASK_DESCRIPTIONS[$i]}"
                 story_ref="${TASK_STORY[$i]}"
                 
-                work_item_title="$desc"
+                work_item_title="T${num} - $desc"
                 item_type="Task"
                 
                 # Clean field values
@@ -282,7 +294,8 @@ for selected in "${SELECTED_STORIES[@]}"; do
                 
                 echo "Creating Task $num: ${desc:0:60}..."
                 
-                # Build az command
+                # Build az command (temporarily disable set -e for error handling)
+                set +e
                 result=$(az boards work-item create \
                     --type "Task" \
                     --title "$clean_title" \
@@ -295,8 +308,10 @@ for selected in "${SELECTED_STORIES[@]}"; do
                         "Microsoft.VSTS.Scheduling.OriginalEstimate=0" \
                         ${AREA_PATH:+"System.AreaPath=$AREA_PATH"} \
                     --output json 2>&1)
+                exit_code=$?
+                set -e
                 
-                if [[ $? -eq 0 ]] && [[ ! "$result" =~ ERROR ]]; then
+                if [[ $exit_code -eq 0 ]] && [[ ! "$result" =~ ERROR ]]; then
                     work_item_id=$(echo "$result" | jq -r '.id')
                     work_item_url="https://dev.azure.com/$ORGANIZATION/$PROJECT/_workitems/edit/$work_item_id"
                     
@@ -307,6 +322,8 @@ for selected in "${SELECTED_STORIES[@]}"; do
                     CREATED_IDS+=("$work_item_id")
                     CREATED_URLS+=("$work_item_url")
                     CREATED_STORY_REFS+=("$story_ref")
+                    CREATED_TITLES+=("$desc")
+                    CREATED_PRIORITIES+=("N/A")
                 else
                     echo "  [FAIL] Failed to create work item"
                     echo "  Error: $result"
@@ -339,7 +356,8 @@ for selected in "${SELECTED_STORIES[@]}"; do
                 
                 echo "Creating User Story $num: $title..."
                 
-                # Build az command
+                # Build az command (temporarily disable set -e for error handling)
+                set +e
                 result=$(az boards work-item create \
                     --type "User Story" \
                     --title "$clean_title" \
@@ -353,8 +371,10 @@ for selected in "${SELECTED_STORIES[@]}"; do
                     "System.AssignedTo=" \
                     ${AREA_PATH:+"System.AreaPath=$AREA_PATH"} \
                 --output json 2>&1)
+            exit_code=$?
+            set -e
             
-            if [[ $? -eq 0 ]] && [[ ! "$result" =~ ERROR ]]; then
+            if [[ $exit_code -eq 0 ]] && [[ ! "$result" =~ ERROR ]]; then
                 work_item_id=$(echo "$result" | jq -r '.id')
                 work_item_url="https://dev.azure.com/$ORGANIZATION/$PROJECT/_workitems/edit/$work_item_id"
                 
@@ -364,6 +384,8 @@ for selected in "${SELECTED_STORIES[@]}"; do
                 
                 CREATED_IDS+=("$work_item_id")
                 CREATED_URLS+=("$work_item_url")
+                CREATED_TITLES+=("$title")
+                CREATED_PRIORITIES+=("$priority")
             else
                 echo "  [FAIL] Failed to create work item"
                 echo "  Error: $result"
@@ -428,8 +450,14 @@ if [[ ${#CREATED_IDS[@]} -gt 0 ]]; then
     echo ""
     
     for i in "${!CREATED_IDS[@]}"; do
-        idx=$((i))
-        echo "  [${SELECTED_STORIES[$idx]}] ${STORY_TITLES[$idx]} (P${STORY_PRIORITIES[$idx]})"
+        if [[ "$FROM_TASKS" == true ]]; then
+            echo "  Task [${SELECTED_STORIES[$i]}]: ${CREATED_TITLES[$i]}"
+            if [[ -n "${CREATED_STORY_REFS[$i]}" ]]; then
+                echo "      Parent: US${CREATED_STORY_REFS[$i]}"
+            fi
+        else
+            echo "  [${SELECTED_STORIES[$i]}] ${CREATED_TITLES[$i]} (P${CREATED_PRIORITIES[$i]})"
+        fi
         echo "      Work Item: #${CREATED_IDS[$i]}"
         echo "      Link: ${CREATED_URLS[$i]}"
         echo ""
