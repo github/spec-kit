@@ -38,22 +38,23 @@
     "vscode": {
       "extensions": [
 		"mhutchie.git-graph",
-		"eamodio.gitlens",
-		"anweber.reveal-button",
-		"chrisdias.promptboost",
-		// Github Copilot
-		"GitHub.copilot",
-		"GitHub.copilot-chat",
-		// Codex
-		"openai.chatgpt",
-		// Kilo Code
-		"kilocode.Kilo-Code",
-		// Roo Code
-		"RooVeterinaryInc.roo-cline",
-		// Amazon Developer Q
-		"AmazonWebServices.amazon-q-vscode",
-		// Claude Code
-		"anthropic.claude-code"
+		// "eamodio.gitlens",
+		// "anweber.reveal-button",
+		// "chrisdias.promptboost",
+		// // Github Copilot
+		// "GitHub.copilot",
+		// "GitHub.copilot-chat",
+		// // Codex
+		// "openai.chatgpt",
+		// // Kilo Code
+		// "kilocode.Kilo-Code",
+		// // Roo Code
+		// "RooVeterinaryInc.roo-cline",
+		// // Amazon Developer Q
+		// "AmazonWebServices.amazon-q-vscode",
+		// // Claude Code
+		// "anthropic.claude-code",
+		"lee2py.aider-composer"
 	],
       "settings": {
 		"debug.javascript.autoAttachFilter": "disabled", // fix running commands in integrated terminal

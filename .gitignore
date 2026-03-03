@@ -50,3 +50,11 @@ docs/dev
 .specify/extensions/.cache/
 .specify/extensions/.backup/
 .specify/extensions/*/local-config.yml
+
+# Custom
+.python-version
+.aider.*
+
+.mypy_cache/
+.pytest_cache/
+.coverage
