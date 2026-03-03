@@ -267,14 +267,25 @@ AI_ASSISTANT_ALIASES = {
 def _build_ai_assistant_help() -> str:
     """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
 
-    non_generic_agents = [agent for agent in AGENT_CONFIG if agent != "generic"]
-    return (
+    non_generic_agents = sorted(agent for agent in AGENT_CONFIG if agent != "generic")
+    base_help = (
         f"AI assistant to use: {', '.join(non_generic_agents)}, "
-        "or generic (requires --ai-commands-dir). "
-        "Use 'kiro' as an alias for 'kiro-cli'."
+        "or generic (requires --ai-commands-dir)."
     )
 
+    if not AI_ASSISTANT_ALIASES:
+        return base_help
 
+    alias_phrases = []
+    for alias, target in sorted(AI_ASSISTANT_ALIASES.items()):
+        alias_phrases.append(f\"'{alias}' as an alias for '{target}'\")
+
+    if len(alias_phrases) == 1:
+        aliases_text = alias_phrases[0]
+    else:
+        aliases_text = ', '.join(alias_phrases[:-1]) + ' and ' + alias_phrases[-1]
+
+    return base_help + " Use " + aliases_text + "."
 AI_ASSISTANT_HELP = _build_ai_assistant_help()
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
