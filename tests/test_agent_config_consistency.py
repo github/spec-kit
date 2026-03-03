@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from specify_cli import AGENT_CONFIG, AI_ASSISTANT_HELP
+from specify_cli import AGENT_CONFIG, AI_ASSISTANT_ALIASES, AI_ASSISTANT_HELP
 from specify_cli.extensions import CommandRegistrar
 
 
@@ -60,7 +60,9 @@ class TestAgentConfigConsistency:
     def test_init_ai_help_includes_roo_and_kiro_alias(self):
         """CLI help text for --ai should stay in sync with agent config and alias guidance."""
         assert "roo" in AI_ASSISTANT_HELP
-        assert "Use 'kiro' as an alias for 'kiro-cli'." in AI_ASSISTANT_HELP
+        for alias, target in AI_ASSISTANT_ALIASES.items():
+            assert alias in AI_ASSISTANT_HELP
+            assert target in AI_ASSISTANT_HELP
 
     def test_devcontainer_kiro_installer_uses_pinned_checksum(self):
         """Devcontainer installer should always verify Kiro installer via pinned SHA256."""
