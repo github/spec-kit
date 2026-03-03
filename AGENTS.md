@@ -58,7 +58,7 @@ Follow these steps to add a new agent (using a hypothetical new agent as an exam
 
 **IMPORTANT**: Use the actual CLI tool name as the key, not a shortened version.
 
-Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/__init__.py`. This is the **single source of truth** for all agent metadata:
+Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/agent_config.py`. This is the **single source of truth** for all agent metadata:
 
 ```python
 AGENT_CONFIG = {
@@ -69,6 +69,9 @@ AGENT_CONFIG = {
         "commands_subdir": "commands",  # Subdirectory name for command files (default: "commands")
         "install_url": "https://example.com/install",  # URL for installation docs (or None if IDE-based)
         "requires_cli": True,  # True if CLI tool required, False for IDE-based agents
+        "command_format": "markdown",  # File format for commands (markdown/toml)
+        "command_args": "$ARGUMENTS",  # Placeholder for arguments
+        "command_extension": ".md",  # File extension for commands
     },
 }
 ```
@@ -90,6 +93,9 @@ This eliminates the need for special-case mappings throughout the codebase.
   - This field enables `--ai-skills` to locate command templates correctly for skill generation
 - `install_url`: Installation documentation URL (set to `None` for IDE-based agents)
 - `requires_cli`: Whether the agent requires a CLI tool check during initialization
+- `command_format`: The format used for generating command files (`"markdown"` or `"toml"`)
+- `command_args`: The placeholder string used for arguments (`"$ARGUMENTS"` or `"{{args}}"`)
+- `command_extension`: The file extension for generated commands (`".md"` or `".toml"`)
 
 #### 2. Update CLI Help Text
 

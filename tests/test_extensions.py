@@ -443,17 +443,19 @@ $ARGUMENTS
         assert output.endswith("---\n")
         assert "description: Test command" in output
 
-    def test_register_commands_for_claude(self, extension_dir, project_dir):
-        """Test registering commands for Claude agent."""
-        # Create .claude directory
-        claude_dir = project_dir / ".claude" / "commands"
-        claude_dir.mkdir(parents=True)
+    @pytest.mark.parametrize("agent_id, config", CommandRegistrar.AGENT_CONFIGS.items())
+    def test_register_commands_for_each_agent(self, agent_id, config, extension_dir, project_dir):
+        """Test registering commands for all agents."""
+        # Create agent directory
+        agent_dir = project_dir / config["dir"]
+        agent_dir.mkdir(parents=True)
 
         ExtensionManager(project_dir)  # Initialize manager (side effects only)
         manifest = ExtensionManifest(extension_dir / "extension.yml")
 
         registrar = CommandRegistrar()
-        registered = registrar.register_commands_for_claude(
+        registered = registrar.register_commands_for_agent(
+            agent_id,
             manifest,
             extension_dir,
             project_dir
@@ -463,16 +465,22 @@ $ARGUMENTS
         assert "speckit.test.hello" in registered
 
         # Check command file was created
-        cmd_file = claude_dir / "speckit.test.hello.md"
+        cmd_file = agent_dir / f"speckit.test.hello{config['command_extension']}"
         assert cmd_file.exists()
 
         content = cmd_file.read_text()
-        assert "description: Test hello command" in content
-        assert "<!-- Extension: test-ext -->" in content
-        assert "<!-- Config: .specify/extensions/test-ext/ -->" in content
+        if config["command_format"] == "toml":
+            assert 'description = "Test hello command"' in content
+            assert "# Extension: test-ext" in content
+            assert "# Config: .specify/extensions/test-ext/" in content
+        else:
+            assert "description: Test hello command" in content
+            assert "<!-- Extension: test-ext -->" in content
+            assert "<!-- Config: .specify/extensions/test-ext/ -->" in content
 
-    def test_command_with_aliases(self, project_dir, temp_dir):
-        """Test registering a command with aliases."""
+    @pytest.mark.parametrize("agent_id, config", CommandRegistrar.AGENT_CONFIGS.items())
+    def test_command_with_aliases(self, agent_id, config, project_dir, temp_dir):
+        """Test registering a command with aliases for all agents."""
         import yaml
 
         # Create extension with command alias
@@ -507,18 +515,18 @@ $ARGUMENTS
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nTest")
 
-        claude_dir = project_dir / ".claude" / "commands"
-        claude_dir.mkdir(parents=True)
+        agent_dir = project_dir / config["dir"]
+        agent_dir.mkdir(parents=True)
 
         manifest = ExtensionManifest(ext_dir / "extension.yml")
         registrar = CommandRegistrar()
-        registered = registrar.register_commands_for_claude(manifest, ext_dir, project_dir)
+        registered = registrar.register_commands_for_agent(agent_id, manifest, ext_dir, project_dir)
 
         assert len(registered) == 2
         assert "speckit.alias.cmd" in registered
         assert "speckit.shortcut" in registered
-        assert (claude_dir / "speckit.alias.cmd.md").exists()
-        assert (claude_dir / "speckit.shortcut.md").exists()
+        assert (agent_dir / f"speckit.alias.cmd{config['command_extension']}").exists()
+        assert (agent_dir / f"speckit.shortcut{config['command_extension']}").exists()
 
 
 # ===== Utility Function Tests =====
