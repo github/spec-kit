@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-02-24T00:00:00Z",
+  "updated_at": "2026-03-03T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "cleanup": {
@@ -28,6 +28,32 @@
       "stars": 0,
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
+    },
+    "owl": {
+      "name": "Spec Kit Owl",
+      "id": "owl",
+      "description": "Spec-to-code metrics: line counts, character counts, and percentages",
+      "author": "Health Kowshik",
+      "version": "1.0.0",
+      "download_url": "https://github.com/healthkowshik/spec-kit-owl/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/healthkowshik/spec-kit-owl",
+      "homepage": "https://github.com/healthkowshik/spec-kit-owl",
+      "documentation": "https://github.com/healthkowshik/spec-kit-owl/blob/main/README.md",
+      "changelog": "https://github.com/healthkowshik/spec-kit-owl/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": ["metrics", "spec-code", "analysis", "lines-of-code"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-03T00:00:00Z",
+      "updated_at": "2026-03-03T00:00:00Z"
     },
     "retrospective": {
       "name": "Retrospective Extension",
