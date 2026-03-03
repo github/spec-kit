@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-02-24T00:00:00Z",
+  "updated_at": "2026-03-02T05:42:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "cleanup": {
@@ -54,6 +54,32 @@
       "stars": 0,
       "created_at": "2026-02-24T00:00:00Z",
       "updated_at": "2026-02-24T00:00:00Z"
+    },
+    "sync": {
+      "name": "Spec Sync",
+      "id": "sync",
+      "description": "Detect and resolve drift between specs and implementation. AI-assisted resolution with human approval.",
+      "author": "bgervin",
+      "version": "0.1.0",
+      "download_url": "https://github.com/bgervin/spec-kit-sync/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/bgervin/spec-kit-sync",
+      "homepage": "https://github.com/bgervin/spec-kit-sync",
+      "documentation": "https://github.com/bgervin/spec-kit-sync/blob/main/README.md",
+      "changelog": "https://github.com/bgervin/spec-kit-sync/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": ["sync", "drift", "validation", "bidirectional", "backfill"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-02T00:00:00Z",
+      "updated_at": "2026-03-02T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",
