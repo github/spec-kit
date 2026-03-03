@@ -221,9 +221,6 @@ build_variant() {
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
-    vibe)
-      mkdir -p "$base_dir/.vibe/agents"
-      generate_commands vibe toml "{{args}}" "$base_dir/.vibe/agents" "$script" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
