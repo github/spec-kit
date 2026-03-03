@@ -7,6 +7,54 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-03-02
+
+### Changed
+
+- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
+- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
+- fix: Split release process to sync pyproject.toml version with git tags (#1732)
+
+
+## [0.1.10] - 2026-03-02
+
+### Fixed
+
+- **Version Sync Issue (#1721)**: Fixed version mismatch between `pyproject.toml` and git release tags
+  - Split release process into two workflows: `release-trigger.yml` for version management and `release.yml` for artifact building
+  - Version bump now happens BEFORE tag creation, ensuring tags point to commits with correct version
+  - Supports both manual version specification and auto-increment (patch version)
+  - Git tags now accurately reflect the version in `pyproject.toml` at that commit
+  - Prevents confusion when installing from source
+
+## [0.1.9] - 2026-02-28
+
+### Changed
+
+- Updated dependency: bumped astral-sh/setup-uv from 6 to 7
+
+## [0.1.8] - 2026-02-28
+
+### Changed
+
+- Updated dependency: bumped actions/setup-python from 5 to 6
+
+## [0.1.7] - 2026-02-27
+
+### Changed
+
+- Updated outdated GitHub Actions versions
+- Documented dual-catalog system for extensions
+
+### Fixed
+
+- Fixed version command in documentation
+
+### Added
+
+- Added Cleanup Extension to README
+- Added retrospective extension to community catalog
+
 ## [0.1.6] - 2026-02-23
 
 ### Fixed
