@@ -255,6 +255,7 @@ AGENT_CONFIG = {
         "name": "Mistral Vibe",
         "folder": ".vibe/",
         "commands_subdir": "commands",
+        "commands_subdir": "commands",
         "install_url": "https://github.com/mistralai/mistral-vibe",
         "requires_cli": True,
     },
