@@ -352,7 +352,7 @@ function Build-Variant {
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
         'vibe' {
-            $cmdDir = Join-Path $baseDir ".vibe/commands"
+            $cmdDir = Join-Path $baseDir ".vibe/prompts"
             Generate-Commands -Agent 'vibe' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
     }
