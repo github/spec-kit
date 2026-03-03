@@ -676,6 +676,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "pi": {
+            "dir": ".pi/skills",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
         }
     }
 
