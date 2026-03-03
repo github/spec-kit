@@ -278,7 +278,7 @@ def _build_ai_assistant_help() -> str:
 
     alias_phrases = []
     for alias, target in sorted(AI_ASSISTANT_ALIASES.items()):
-        alias_phrases.append(f\"'{alias}' as an alias for '{target}'\")
+        alias_phrases.append(f"'{alias}' as an alias for '{target}'")
 
     if len(alias_phrases) == 1:
         aliases_text = alias_phrases[0]
