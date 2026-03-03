@@ -61,7 +61,7 @@ $SHAI_FILE     = Join-Path $REPO_ROOT 'SHAI.md'
 $Q_FILE        = Join-Path $REPO_ROOT 'AGENTS.md'
 $AGY_FILE      = Join-Path $REPO_ROOT '.agent/rules/specify-rules.md'
 $BOB_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
-$VIBE_FILE     = Join-Path $REPO_ROOT '.vibe/agents/specify-agents.toml'
+$VIBE_FILE     = Join-Path $REPO_ROOT '.vibe/agents/specify-agents.md'
 
 $TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
 
