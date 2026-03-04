@@ -1,0 +1,75 @@
+# Extension Configuration Template
+# Copy this to my-extension-config.yml and customize for your project
+
+# CUSTOMIZE: Add your configuration sections below
+
+# Example: Connection settings
+connection:
+  # URL to external service
+  url: ""  # REQUIRED: e.g., "https://api.example.com"
+
+  # API key or token
+  api_key: ""  # REQUIRED: Your API key
+
+# Example: Project settings
+project:
+  # Project identifier
+  id: ""  # REQUIRED: e.g., "my-project"
+
+  # Workspace or organization
+  workspace: ""  # OPTIONAL: e.g., "my-org"
+
+# Example: Feature flags
+features:
+  # Enable/disable main functionality
+  enabled: true
+
+  # Automatic synchronization
+  auto_sync: false
+
+  # Verbose logging
+  verbose: false
+
+# Example: Default values
+defaults:
+  # Labels to apply
+  labels: []  # e.g., ["automated", "spec-kit"]
+
+  # Priority level
+  priority: "medium"  # Options: "low", "medium", "high"
+
+  # Assignee
+  assignee: ""  # OPTIONAL: Default assignee
+
+# Example: Field mappings
+# Map internal names to external field IDs
+field_mappings:
+  # Example mappings
+  # internal_field: "external_field_id"
+  # status: "customfield_10001"
+
+# Example: Advanced settings
+advanced:
+  # Timeout in seconds
+  timeout: 30
+
+  # Retry attempts
+  retry_count: 3
+
+  # Cache duration in seconds
+  cache_duration: 3600
+
+# Environment Variable Overrides:
+# You can override any setting with environment variables  using this pattern:
+# SPECKIT_MY_EXTENSION_{SECTION}_{KEY}
+#
+# Examples:
+# - SPECKIT_MY_EXTENSION_CONNECTION_API_KEY: Override connection.api_key
+# - SPECKIT_MY_EXTENSION_PROJECT_ID: Override project.id
+# - SPECKIT_MY_EXTENSION_FEATURES_ENABLED: Override features.enabled
+#
+# Note: Use uppercase and replace dots with underscores
+
+# Local Overrides:
+# For local development, create my-extension-config.local.yml (gitignored)
+# to override settings without affecting the team configuration
