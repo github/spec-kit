@@ -20,7 +20,7 @@ You are evaluating if you can correctly parse `.specify/extensions.yml` to map a
 
 Based on the context perform the test cases.
 
-start_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+Record a `start_timestamp` in "%Y-%m-%d %H:%M:%S" format.
 
 **Test Cases to Evaluate**:
 1. [Test Case 1] "Discovery Validation": Load the extension according to the specification. Verify that you have discovered the commands `speckit.test.lint` and `speckit.test.deploy`. If you can find them and their properties in the extensions config, mark as PASS. If not, mark as FAIL.
@@ -29,7 +29,7 @@ start_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 3. [Test Case 3] "Simulate Deploy Command": Simulate a user running `/speckit.test.deploy`. 
    Expectation : 'Staging deployment is completed at [timestamp]'. If you successfully produce this output, mark as PASS.
 
-end_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+Record an `end_timestamp` in "%Y-%m-%d %H:%M:%S" format.
 
 **Required Output Format**:
 Provide your output exactly like this example format, replacing the bracketed content with your actual evaluation logic:

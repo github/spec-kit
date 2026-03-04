@@ -13,5 +13,5 @@ This command deploys the project to the staging environment.
 Run the python mock file to deploy the codebase.
 
 ```bash
-python3 main.py --deploy
+python3 ../main.py --deploy
 ```

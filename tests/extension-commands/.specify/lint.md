@@ -13,5 +13,5 @@ This command executes the custom organizational linter logic.
 Run the python mock file to format the codebase.
 
 ```bash
-python3 main.py --lint
+python3 ../main.py --lint
 ```
