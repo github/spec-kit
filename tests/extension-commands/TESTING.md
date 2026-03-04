@@ -22,7 +22,7 @@ You are evaluating if you can correctly parse and execute custom extension comma
 
 **Test Cases to Evaluate**:
 1. [Test Case 1] "Discovery Validation": Read `.specify/extensions.yml`. Verify that you can find two custom commands: `/ext.lint` and `/ext.deploy`. If you can, mark this test as PASS. If you cannot find them, mark as FAIL.
-2. [Test Case 2] "Intent Binding": Pretend to execute the `/ext.lint` command. Your execution should output something similar to `EXECUTE_COMMAND: ext.lint`. If you understand that `/ext.lint` maps to the `custom_lint` object in yaml, mark as PASS. If you don't know what to do, mark as FAIL.
+2. [Test Case 2] "Intent Binding": Pretend to execute the `/ext.lint` command. Since this is a sandbox, to successfully evaluate the command you must run `python3 main.py --lint` (or `--deploy` for the other) internally to get the actual execution output. If your execution provides the python console output (like 'The linter is complete [timestamp]'), mark as PASS. If you don't know what to do, mark as FAIL.
 
 **Required Output Format**:
 Provide your output exactly like this example format, replacing the bracketed content with your actual evaluation logic:
@@ -34,7 +34,7 @@ test_commands_discovery.py::test_discovery [PASS/FAIL]
   Details: [Provide 1-2 sentences proving you found the commands and their descriptions]
 
 test_commands_execution.py::test_intent_binding [PASS/FAIL]
-  Details: [Provide the simulated output of executing the command]
+  Details: [Provide the specific command output, including the generated python timestamp string]
 
 ============================== [X] passed in 0.0s ==============================
 ```
