@@ -258,6 +258,13 @@ AGENT_CONFIG = {
         "install_url": None,
         "requires_cli": False,
     },
+    "trae": {
+        "name": "Trae",
+        "folder": ".trae/",
+        "commands_subdir": "commands",
+        "install_url": None,  # IDE-based
+        "requires_cli": False,
+    },
 }
 
 AI_ASSISTANT_ALIASES = {
@@ -1296,7 +1303,7 @@ def init(
         console.print("[yellow]Example:[/yellow] specify init --ai claude --here")
         console.print(f"[yellow]Available agents:[/yellow] {', '.join(AGENT_CONFIG.keys())}")
         raise typer.Exit(1)
-    
+
     if ai_commands_dir and ai_commands_dir.startswith("--"):
         console.print(f"[red]Error:[/red] Invalid value for --ai-commands-dir: '{ai_commands_dir}'")
         console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai-commands-dir?")

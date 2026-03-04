@@ -161,6 +161,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 | [Roo Code](https://roocode.com/)                                                     | ✅      |                                                                                                                                           |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | ✅      |                                                                                                                                           |
 | [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
+| [Trae](https://trae.ai/)                                                         | ✅      |                                                                                                |
 | [Antigravity (agy)](https://agy.ai/)                                                 | ✅      |                                                                                                                                           |
 | Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                 |
 
@@ -177,20 +178,20 @@ The `specify` command supports the following options:
 
 ### `specify init` Arguments & Options
 
-| Argument/Option        | Type     | Description                                                                                                                                                                                  |
-| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                           |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `qodercli`, or `generic` (requires `--ai-commands-dir`) |
-| `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                  |
-| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                  |
-| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                              |
-| `--no-git`             | Flag     | Skip git repository initialization                                                                                                                                                           |
-| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                                                                    |
-| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                                                                             |
-| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                  |
-| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                             |
-| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                    |
-| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`)                                                                                          |
+| Argument/Option        | Type     | Description                                                                                                                                                                                                                                                                    |
+| ---------------------- | -------- |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                                                                                                             |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `trae`, `qodercli`, or `generic` (requires `--ai-commands-dir`) |
+| `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                                                                                                    |
+| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                                                                                                    |
+| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                                                                                                                |
+| `--no-git`             | Flag     | Skip git repository initialization                                                                                                                                                                                                                                             |
+| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                                                                                                                                                      |
+| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                                                                                                                                                               |
+| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                                                                                                    |
+| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                                                                                                               |
+| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                                                                                                      |
+| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`)                                                                                                                                                                            |
 
 ### Examples
 
@@ -224,6 +225,9 @@ specify init my-project --ai bob
 
 # Initialize with an unsupported agent (generic / bring your own agent)
 specify init my-project --ai generic --ai-commands-dir .myagent/commands/
+
+# Initialize with Trae support
+specify init my-project --ai trae
 
 # Initialize with PowerShell scripts (Windows/cross-platform)
 specify init my-project --ai copilot --script ps
