@@ -11,16 +11,15 @@ def deploy():
 
 def main():
     parser = argparse.ArgumentParser(description="Extension Commands Mock python Script")
-    parser.add_argument("--lint", action="store_true", help="Run the mock linter")
-    parser.add_argument("--deploy", action="store_true", help="Run the mock deployer")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--lint", action="store_true", help="Run the mock linter")
+    group.add_argument("--deploy", action="store_true", help="Run the mock deployer")
     args = parser.parse_args()
 
     if args.lint:
         lint()
     elif args.deploy:
         deploy()
-    else:
-        print("This is a script to test extension commands. Run with --lint or --deploy.")
 
 if __name__ == "__main__":
     main()
