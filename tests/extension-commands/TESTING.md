@@ -18,10 +18,18 @@ Before you begin, read `../../extensions/EXTENSION-API-REFERENCE.md` to understa
 
 You are evaluating if you can correctly parse `.specify/extensions.yml` to map a command name to a markdown file, and then execute the script described in that markdown file.
 
+Based on the context perform the test cases.
+
+start_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 **Test Cases to Evaluate**:
 1. [Test Case 1] "Discovery Validation": Load the extension according to the specification. Verify that you have discovered the commands `speckit.test.lint` and `speckit.test.deploy`. If you can find them and their properties in the extensions config, mark as PASS. If not, mark as FAIL.
-2. [Test Case 2] "Simulate Lint Command": Simulate a user running `/speckit.test.lint`. Look up its execution configuration in `.specify/extensions.yml` and find its matching script file (`lint.md`). Since this is a testing sandbox, actually execute the required python command to get the execution output. Validate the output of the python program (it should be 'The linter is complete [timestamp]'). If you successfully produce this output, mark as PASS.
-3. [Test Case 3] "Simulate Deploy Command": Simulate a user running `/speckit.test.deploy`. Find its matching script file (`deploy.md`). Actually execute the required python command to get the execution output. Validate the output of the python program (it should be 'Staging deployment is completed at [timestamp]'). If you successfully produce this output, mark as PASS.
+2. [Test Case 2] "Simulate Lint Command": Simulate a user running `/speckit.test.lint`. 
+   Expectation : 'The linter is complete [timestamp]'. If you successfully produce this output, mark as PASS.
+3. [Test Case 3] "Simulate Deploy Command": Simulate a user running `/speckit.test.deploy`. 
+   Expectation : 'Staging deployment is completed at [timestamp]'. If you successfully produce this output, mark as PASS.
+
+end_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 **Required Output Format**:
 Provide your output exactly like this example format, replacing the bracketed content with your actual evaluation logic:
@@ -38,7 +46,7 @@ test_commands_execution.py::test_lint_command [PASS/FAIL]
 test_commands_execution.py::test_deploy_command [PASS/FAIL]
   Details: [Provide the specific command output for deploy, including the generated python timestamp string]
 
-============================== [X] passed in 0.0s ==============================
+============================== [X] passed in (end_timestamp - start_timestamp) ==============================
 ```
 
 ---
