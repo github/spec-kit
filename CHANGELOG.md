@@ -7,14 +7,81 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.7] - 2026-02-26
+## [0.1.13] - 2026-03-03
+
+### Changed
+
+- feat: add kiro-cli and AGENT_CONFIG consistency coverage (#1690)
+- feat: add verify extension to community catalog (#1726)
+- Add Retrospective Extension to community catalog README table (#1741)
+- fix(scripts): add empty description validation and branch checkout error handling (#1559)
+- fix: correct Copilot extension command registration (#1724)
+- fix(implement): remove Makefile from C ignore patterns (#1558)
+- Add sync extension to community catalog (#1728)
+- fix(checklist): clarify file handling behavior for append vs create (#1556)
+- fix(clarify): correct conflicting question limit from 10 to 5 (#1557)
+- chore: bump version to 0.1.12 (#1737)
+- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
+- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
+- fix: Split release process to sync pyproject.toml version with git tags (#1732)
+
+
+## [0.1.13] - 2026-03-03
 
 ### Fixed
 
-- **Extension hooks never triggered (#1701)**: Wired `after_tasks` and `after_implement` hook events into their respective command templates
-  - `templates/commands/tasks.md` now includes a final step that reads `.specify/extensions.yml`, evaluates registered `after_tasks` hooks (respecting `enabled` flag and `condition`), and outputs the correct hook message format — including `EXECUTE_COMMAND:` markers for mandatory hooks
-  - `templates/commands/implement.md` does the same for `after_implement` hooks
-  - The `HookExecutor` backend in `extensions.py` was already complete; only the template wiring was missing
+- **Copilot Extension Commands Not Visible**: Fixed extension commands not appearing in GitHub Copilot when installed via `specify extension add --dev`
+  - Changed Copilot file extension from `.md` to `.agent.md` in `CommandRegistrar.AGENT_CONFIGS` so Copilot recognizes agent files
+  - Added generation of companion `.prompt.md` files in `.github/prompts/` during extension command registration, matching the release packaging behavior
+  - Added cleanup of `.prompt.md` companion files when removing extensions via `specify extension remove`
+- Fixed a syntax regression in `src/specify_cli/__init__.py` in `_build_ai_assistant_help()` that broke `ruff` and `pytest` collection in CI.
+## [0.1.12] - 2026-03-02
+
+### Changed
+
+- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
+- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
+- fix: Split release process to sync pyproject.toml version with git tags (#1732)
+
+
+## [0.1.10] - 2026-03-02
+
+### Fixed
+
+- **Version Sync Issue (#1721)**: Fixed version mismatch between `pyproject.toml` and git release tags
+  - Split release process into two workflows: `release-trigger.yml` for version management and `release.yml` for artifact building
+  - Version bump now happens BEFORE tag creation, ensuring tags point to commits with correct version
+  - Supports both manual version specification and auto-increment (patch version)
+  - Git tags now accurately reflect the version in `pyproject.toml` at that commit
+  - Prevents confusion when installing from source
+
+## [0.1.9] - 2026-02-28
+
+### Changed
+
+- Updated dependency: bumped astral-sh/setup-uv from 6 to 7
+
+## [0.1.8] - 2026-02-28
+
+### Changed
+
+- Updated dependency: bumped actions/setup-python from 5 to 6
+
+## [0.1.7] - 2026-02-27
+
+### Changed
+
+- Updated outdated GitHub Actions versions
+- Documented dual-catalog system for extensions
+
+### Fixed
+
+- Fixed version command in documentation
+
+### Added
+
+- Added Cleanup Extension to README
+- Added retrospective extension to community catalog
 
 ## [0.1.6] - 2026-02-23
 

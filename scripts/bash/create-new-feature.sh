@@ -67,6 +67,13 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
+# Trim whitespace and validate description is not empty (e.g., user passed only whitespace)
+FEATURE_DESCRIPTION=$(echo "$FEATURE_DESCRIPTION" | xargs)
+if [ -z "$FEATURE_DESCRIPTION" ]; then
+    echo "Error: Feature description cannot be empty or contain only whitespace" >&2
+    exit 1
+fi
+
 # Function to find the repository root by searching for existing project markers
 find_repo_root() {
     local dir="$1"
@@ -272,7 +279,16 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
 fi
 
 if [ "$HAS_GIT" = true ]; then
-    git checkout -b "$BRANCH_NAME"
+    if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
+        # Check if branch already exists
+        if git branch --list "$BRANCH_NAME" | grep -q .; then
+            >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
+            exit 1
+        else
+            >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."
+            exit 1
+        fi
+    fi
 else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
