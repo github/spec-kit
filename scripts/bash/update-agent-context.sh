@@ -35,7 +35,7 @@
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|trae|kiro-cli|agy|bob|qodercli
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|trae|kiro-cli|agy|bob|generic|qodercli
 # Leave empty to update all existing agent files
 
 set -e
