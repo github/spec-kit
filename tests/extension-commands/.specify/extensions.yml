@@ -1,16 +1,4 @@
-commands:
-  - id: custom_lint
-    name: Custom Linter
-    extension: test-extension
-    command: speckit.test.lint
-    description: Run the organization's custom linter on the codebase.
-    prompt: Would you like to run the custom linter now?
-    file: lint.md
-
-  - id: mock_deploy
-    name: Mock Deploy
-    extension: test-extension
-    command: speckit.test.deploy
-    description: Deploy this directory to the staging environment.
-    prompt: Ready to deploy to staging?
-    file: deploy.md
+extensions:
+  test-extension:
+    version: 1.0.0
+    enabled: true
