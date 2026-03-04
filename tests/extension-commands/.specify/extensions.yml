@@ -1,0 +1,14 @@
+commands:
+  - id: custom_lint
+    name: Custom Linter
+    extension: test-extension
+    command: ext.lint
+    description: Run the organization's custom linter on the codebase.
+    prompt: Would you like to run the custom linter now?
+
+  - id: mock_deploy
+    name: Mock Deploy
+    extension: test-extension
+    command: ext.deploy
+    description: Deploy this directory to the staging environment.
+    prompt: Ready to deploy to staging?
