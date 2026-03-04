@@ -18,11 +18,13 @@ To execute this test, copy the following block and paste it into GitHub Copilot 
 Act as an automated test runner (like Ginkgo or pytest) evaluating your own comprehension of the current workspace. I want you to run the following test suite on the `.specify/extensions.yml` file in this directory and output the results strictly in a terminal-style test output format.
 
 **Test Suite Context**:
-You are evaluating if you can correctly parse and execute custom extension commands defined by Spec Kit extensions.
+Before you begin, read `../../extensions/EXTENSION-API-REFERENCE.md` to understand how the Spec Kit architecture structures extensions, commands, and markdown file execution formats. 
+
+You are evaluating if you can correctly parse `.specify/extensions.yml` to map a command name to a markdown file, and then execute the script described in that markdown file.
 
 **Test Cases to Evaluate**:
-1. [Test Case 1] "Discovery Validation": Read `.specify/extensions.yml`. Verify that you can find two custom commands: `/ext.lint` and `/ext.deploy`. If you can, mark this test as PASS. If you cannot find them, mark as FAIL.
-2. [Test Case 2] "Intent Binding": Pretend to execute the `/ext.lint` command. Since this is a sandbox, to successfully evaluate the command you must run `python3 main.py --lint` (or `--deploy` for the other) internally to get the actual execution output. If your execution provides the python console output (like 'The linter is complete [timestamp]'), mark as PASS. If you don't know what to do, mark as FAIL.
+1. [Test Case 1] "Discovery Validation": Read `.specify/extensions.yml`. Verify that you can find the commands `speckit.test.lint` mapping to `lint.md`, and `speckit.test.deploy` mapping to `deploy.md`. If you can, mark this test as PASS. If you cannot find them, mark as FAIL.
+2. [Test Case 2] "Intent Binding": Pretend to execute the `speckit.test.lint` command. First, look at `.specify/extensions.yml` to find its matching file (`lint.md`). Open `lint.md` to find the exact python command required for the linter. Since this is a sandbox, to successfully evaluate the command you must actually run that python command here to get the execution output. If your execution provides the python console output (like 'The linter is complete [timestamp]'), mark as PASS. If you don't know what to do, mark as FAIL.
 
 **Required Output Format**:
 Provide your output exactly like this example format, replacing the bracketed content with your actual evaluation logic:
