@@ -35,7 +35,7 @@ $ARGUMENTS
 
 Load extension configuration from the project:
 
-``bash
+```bash
 config_file=".specify/extensions/my-extension/my-extension-config.yml"
 
 if [ ! -f "$config_file" ]; then
@@ -61,7 +61,7 @@ if [ -z "$setting_value" ]; then
 fi
 
 echo "📋 Configuration loaded: $setting_value"
-``
+```
 
 ### Step 2: Perform Main Action
 
@@ -69,14 +69,14 @@ echo "📋 Configuration loaded: $setting_value"
 
 Describe what this step does:
 
-``markdown
+```markdown
 Use MCP tools to perform the main action:
 
 - Tool: example-mcp-server example_tool
 - Parameters: { "key": "$setting_value" }
 
 This calls the MCP server tool to execute the operation.
-``
+```
 
 ### Step 3: Process Results
 
@@ -84,7 +84,7 @@ This calls the MCP server tool to execute the operation.
 
 Process the results and provide output:
 
-`` bash
+```bash
 echo ""
 echo "✅ Command completed successfully!"
 echo ""
@@ -92,13 +92,13 @@ echo "Results:"
 echo "  • Item 1: Value"
 echo "  • Item 2: Value"
 echo ""
-``
+```
 
 ### Step 4: Save Output (Optional)
 
 Save results to a file if needed:
 
-``bash
+```bash
 output_file=".specify/my-extension-output.json"
 
 cat > "$output_file" <<EOF
@@ -110,7 +110,7 @@ cat > "$output_file" <<EOF
 EOF
 
 echo "💾 Output saved to $output_file"
-``
+```
 
 ## Configuration Reference
 
@@ -139,9 +139,9 @@ Configuration can be overridden with environment variables:
 - `SPECKIT_MY_EXTENSION_ANOTHER_KEY` - Overrides `settings.another_key`
 
 Example:
-``bash
+```bash
 export SPECKIT_MY_EXTENSION_KEY="override-value"
-``
+```
 
 ## Troubleshooting
 
@@ -150,11 +150,11 @@ export SPECKIT_MY_EXTENSION_KEY="override-value"
 ### "Configuration not found"
 
 **Solution**: Install the extension and create configuration:
-``bash
+```bash
 specify extension add my-extension
 cp .specify/extensions/my-extension/config-template.yml \
    .specify/extensions/my-extension/my-extension-config.yml
-``
+```
 
 ### "MCP tool not available"
 
@@ -178,32 +178,32 @@ cp .specify/extensions/my-extension/config-template.yml \
 
 ### Example 1: Basic Usage
 
-``bash
+```bash
 
 # Run with default configuration
 >
 > /speckit.my-extension.example
-``
+```
 
 ### Example 2: With Environment Override
 
-``bash
+```bash
 
 # Override configuration with environment variable
 
 export SPECKIT_MY_EXTENSION_KEY="custom-value"
 > /speckit.my-extension.example
-``
+```
 
 ### Example 3: After Core Command
 
-``bash
+```bash
 
 # Use as part of a workflow
 >
 > /speckit.tasks
 > /speckit.my-extension.example
-``
+```
 
 ---
 

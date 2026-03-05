@@ -1490,12 +1490,14 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
 
 
 def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker | None = None) -> bool:
-    """Install Prompt.MD files from templates/commands/ as agent skills.
+    """Generate agent skills from prompt ``.md`` command templates.
 
-    Skills are written to the agent-specific skills directory following the
+    Prompt command ``.md`` files are converted into ``SKILL.md`` files in the
+    agent-specific skills directory, following the
     `agentskills.io <https://agentskills.io/specification>`_ specification.
-    Installation is additive — existing files are never removed and prompt
-    command files in the agent's commands directory are left untouched.
+    Installation is additive — existing ``SKILL.md`` files are never removed
+    or overwritten, and prompt command files in the agent's commands directory
+    are left untouched.
 
     Args:
         project_path: Target project directory.
@@ -2325,8 +2327,8 @@ def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
 ):
-    """List installed extensions."""
-    from .extensions import ExtensionManager
+    """List installed and/or available extensions."""
+    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError
 
     project_root = Path.cwd()
 
@@ -2339,14 +2341,17 @@ def extension_list(
 
     manager = ExtensionManager(project_root)
     installed = manager.list_installed()
+    installed_ids = {ext["id"] for ext in installed}
+    show_available = available or all_extensions
+    show_installed = all_extensions or not available
 
-    if not installed and not (available or all_extensions):
+    if not installed and not show_available:
         console.print("[yellow]No extensions installed.[/yellow]")
         console.print("\nInstall an extension with:")
         console.print("  specify extension add <extension-name>")
         return
 
-    if installed:
+    if show_installed and installed:
         console.print("\n[bold cyan]Installed Extensions:[/bold cyan]\n")
 
         for ext in installed:
@@ -2358,14 +2363,38 @@ def extension_list(
             console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
 
-    if available or all_extensions:
-        console.print("\nInstall an extension:")
-        console.print("  [cyan]specify extension add <name>[/cyan]")
+    if show_available:
+        catalog = ExtensionCatalog(project_root)
+        try:
+            available_extensions = catalog.search()
+        except ExtensionError as e:
+            console.print(f"\n[red]Error:[/red] {e}")
+            if available and not all_extensions:
+                raise typer.Exit(1)
+            return
+
+        if not all_extensions:
+            available_extensions = [ext for ext in available_extensions if ext["id"] not in installed_ids]
+
+        if available_extensions:
+            console.print("\n[bold cyan]Available Extensions:[/bold cyan]\n")
+            for ext in available_extensions:
+                verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
+                installed_badge = " [dim](installed)[/dim]" if ext["id"] in installed_ids else ""
+                console.print(f"  [bold]{ext['name']}[/bold] (v{ext.get('version', 'unknown')}){verified_badge}{installed_badge}")
+                console.print(f"     {ext.get('description', 'No description')}")
+                console.print(f"     ID: {ext['id']}")
+                if ext["id"] not in installed_ids:
+                    console.print(f"     Install: [cyan]specify extension add {ext['id']}[/cyan]")
+                console.print()
+        else:
+            message = "No additional available extensions found." if all_extensions else "No available extensions found."
+            console.print(f"\n[yellow]{message}[/yellow]")
 
 
 @extension_app.command("add")
 def extension_add(
-    extension: str = typer.Argument(help="Extension name or path"),
+    extension: Optional[str] = typer.Argument(None, help="Extension name or path (optional with --from)"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
 ):
@@ -2384,10 +2413,26 @@ def extension_add(
     manager = ExtensionManager(project_root)
     speckit_version = get_speckit_version()
 
+    if dev and from_url:
+        console.print("[red]Error:[/red] --dev and --from cannot be used together")
+        raise typer.Exit(1)
+
+    if dev and not extension:
+        console.print("[red]Error:[/red] Extension path is required when using --dev")
+        console.print("Usage: specify extension add <path> --dev")
+        raise typer.Exit(1)
+
+    if not dev and not from_url and not extension:
+        console.print("[red]Error:[/red] Extension name is required")
+        console.print("Usage: specify extension add <name>")
+        raise typer.Exit(1)
+
     try:
-        with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
+        target = extension or from_url or "(unknown)"
+        with console.status(f"[cyan]Installing extension: {target}[/cyan]"):
             if dev:
                 # Install from local directory
+                assert extension is not None
                 source_path = Path(extension).expanduser().resolve()
                 if not source_path.exists():
                     console.print(f"[red]Error:[/red] Directory not found: {source_path}")
@@ -2422,7 +2467,8 @@ def extension_add(
                 # Download ZIP to temp location
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
-                zip_path = download_dir / f"{extension}-url-download.zip"
+                zip_stem = extension if extension else "url-download"
+                zip_path = download_dir / f"{zip_stem}.zip"
 
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
@@ -2442,6 +2488,9 @@ def extension_add(
             else:
                 # Install from catalog
                 catalog = ExtensionCatalog(project_root)
+                if extension is None:
+                    console.print("[red]Error:[/red] Extension name is required for catalog installs")
+                    raise typer.Exit(1)
 
                 # Check if extension exists in catalog
                 ext_info = catalog.get_extension_info(extension)

@@ -7,6 +7,17 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-03-04
+
+### Fixed
+
+- **Extension CLI polish (Copilot review follow-ups)**
+  - `specify extension add` now allows omitting the positional extension name when using `--from <url>`
+  - `specify extension list --available/--all` now fetches and displays catalog extensions instead of only showing an install hint
+  - Updated `install_ai_skills()` docstring to match actual `SKILL.md` generation behavior
+  - Corrected extension docs/templates for local override filename (`local-config.yml`) and fixed malformed fenced code blocks in the example command template
+  - Fixed issue template link to point at the canonical `github/spec-kit` extension development guide
+
 ## [0.1.6] - 2026-02-23
 
 ### Fixed
@@ -31,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Qoder CLI detection**: Renamed `AGENT_CONFIG` key from `"qoder"` to `"qodercli"` to match the actual executable name, fixing `specify check` and `specify init --ai` detection failures
+- **Qoder CLI detection**: Standardized detection to use the executable-aligned `"qoder"` key in `AGENT_CONFIG`, fixing `specify check` and `specify init --ai` tool checks
 
 ## [0.1.3] - 2026-02-20
 
