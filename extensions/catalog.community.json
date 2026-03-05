@@ -6,7 +6,7 @@
     "azure-devops": {
       "name": "Azure DevOps Integration",
       "id": "azure-devops",
-      "description": "Sync user stories and tasks to Azure DevOps work items using OAuth authentication",
+      "description": "Sync user stories and tasks to Azure DevOps work items using OAuth authentication.",
       "author": "pragya247",
       "version": "1.0.0",
       "download_url": "https://github.com/pragya247/spec-kit-azure-devops/archive/refs/tags/v1.0.0.zip",
