@@ -374,7 +374,7 @@ function Build-Variant {
     Write-Host "Created $zipFile"
 }
 
-# Define all agents and script
+# Define all agents and scripts
 $AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'agy', 'vibe', 'generic')
 $AllScripts = @('sh', 'ps')
 
