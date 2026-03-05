@@ -11,6 +11,6 @@ requires:
   speckit_version: ">=0.1.0"
 provides:
   commands:
-    - name: speckit.selftest
+    - name: speckit.selftest.run
       file: commands/selftest.md
       description: Validate the lifecycle of an extension from the catalog.
