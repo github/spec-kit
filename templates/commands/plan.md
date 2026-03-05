@@ -5,15 +5,6 @@ handoffs:
     agent: speckit.tasks
     prompt: Break the plan into tasks
     send: true
-  - label: Sync Tasks to Azure DevOps
-    agent: speckit.adosync
-    prompt: |
-      Read the tasks.md file and show me all the tasks that will be created in Azure DevOps.
-      Ask me which tasks I want to sync (I can say "all", specific numbers like "1,2,3", or ranges like "1-10").
-      Then use the scripts/powershell/create-ado-workitems.ps1 script with the -FromTasks flag to create Task work items in Azure DevOps.
-      The script will automatically link tasks to their parent User Stories based on the [US#] references in the task descriptions.
-      Make sure to show me a preview before creating the work items.
-    send: true
   - label: Create Checklist
     agent: speckit.checklist
     prompt: Create a checklist for the following domain...
