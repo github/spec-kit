@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for requesting a new agent! Before submitting, please check if the agent is already supported.
         
-        **Currently supported agents**: Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy, Qoder CLI, Amazon Q Developer CLI, Amp, SHAI, IBM Bob, Antigravity
+        **Currently supported agents**: Claude Code, Gemini CLI, GitHub Copilot, Cursor, Qwen Code, opencode, Codex CLI, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy, Qoder CLI, Kiro CLI, Amp, SHAI, IBM Bob, Antigravity
 
   - type: input
     id: agent-name

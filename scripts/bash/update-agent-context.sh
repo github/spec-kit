@@ -35,7 +35,7 @@
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|qodercli
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|qodercli
 # Leave empty to update all existing agent files
 
 set -e
@@ -73,7 +73,7 @@ CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 QODER_FILE="$REPO_ROOT/QODER.md"
 AMP_FILE="$REPO_ROOT/AGENTS.md"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
-Q_FILE="$REPO_ROOT/AGENTS.md"
+KIRO_FILE="$REPO_ROOT/AGENTS.md"
 AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 BOB_FILE="$REPO_ROOT/AGENTS.md"
 VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
@@ -649,8 +649,8 @@ update_specific_agent() {
         shai)
             update_agent_file "$SHAI_FILE" "SHAI"
             ;;
-        q)
-            update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
+        kiro-cli)
+            update_agent_file "$KIRO_FILE" "Kiro CLI"
             ;;
         agy)
             update_agent_file "$AGY_FILE" "Antigravity"
@@ -666,7 +666,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|vibe|qodercli|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|vibe|qodercli|generic"
             exit 1
             ;;
     esac
@@ -741,8 +741,8 @@ update_all_existing_agents() {
         found_agent=true
     fi
 
-    if [[ -f "$Q_FILE" ]]; then
-        update_agent_file "$Q_FILE" "Amazon Q Developer CLI"
+    if [[ -f "$KIRO_FILE" ]]; then
+        update_agent_file "$KIRO_FILE" "Kiro CLI"
         found_agent=true
     fi
 
@@ -783,8 +783,7 @@ print_summary() {
     fi
     
     echo
-
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|q|agy|bob|qodercli|vibe]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|qodercli|vibe]"
 }
 
 #==============================================================================
@@ -836,4 +835,3 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
-

@@ -1,0 +1,34 @@
+hooks:
+  before_implement:
+    - id: pre_test
+      enabled: true
+      optional: false
+      extension: "test-extension"
+      command: "pre_implement_test"
+      description: "Test before implement hook execution"
+      
+  after_implement:
+    - id: post_test
+      enabled: true
+      optional: true
+      extension: "test-extension"
+      command: "post_implement_test"
+      description: "Test after implement hook execution"
+      prompt: "Would you like to run the post-implement test?"
+
+  before_tasks:
+    - id: pre_tasks_test
+      enabled: true
+      optional: false
+      extension: "test-extension"
+      command: "pre_tasks_test"
+      description: "Test before tasks hook execution"
+
+  after_tasks:
+    - id: post_tasks_test
+      enabled: true
+      optional: true
+      extension: "test-extension"
+      command: "post_tasks_test"
+      description: "Test after tasks hook execution"
+      prompt: "Would you like to run the post-tasks test?"
