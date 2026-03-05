@@ -1,1 +1,1 @@
-"""Unit tests for Spec Kit."""
+# Tests package for Domain Analysis Tool

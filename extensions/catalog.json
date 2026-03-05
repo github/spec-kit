@@ -1,6 +1,29 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-02-03T00:00:00Z",
-  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
-  "extensions": {}
+  "updated_at": "2025-02-12T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/jlwainwright/spec-kit/main/extensions/catalog.json",
+  "extensions": {
+    "specify-mcp": {
+      "name": "Specify MCP Integration",
+      "id": "specify-mcp",
+      "description": "Integrate specify-mcp server tools with spec-kit workflow for enhanced domain analysis and specification-driven development",
+      "author": "Jacques Wainwright",
+      "version": "1.0.0",
+      "download_url": "https://github.com/jlwainwright/spec-kit/archive/refs/heads/main.zip",
+      "repository": "https://github.com/jlwainwright/spec-kit",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {"name": "specify-mcp", "version": ">=0.0.52", "required": true}
+        ]
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 1
+      },
+      "tags": ["specification", "domain-analysis", "mcp", "workflow", "enterprise"],
+      "verified": true
+    }
+  }
 }

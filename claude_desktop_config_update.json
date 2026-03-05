@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "spec-kit-mcp-server": {
+      "command": "python3",
+      "args": ["/Users/jacques/DevFolder/spec-kit/spec-kit-mcp-server.py"],
+      "env": {
+        "SPEC_KIT_LOG_LEVEL": "INFO",
+        "SPEC_KIT_HOME": "/Users/jacques/DevFolder/spec-kit"
+      }
+    }
+  }
+}

@@ -1,0 +1,112 @@
+[
+  {
+    "invoice_id": "INV-2024-001",
+    "supplier_id": "SUP-ACME-123",
+    "invoice_number": "ACME-20240115-001",
+    "invoice_date": "2024-01-15",
+    "due_date": "2024-02-14",
+    "total_amount": 2750.00,
+    "tax_amount": 250.00,
+    "net_amount": 2500.00,
+    "currency": "USD",
+    "status": "pending",
+    "purchase_order": "PO-2024-045",
+    "department": "IT",
+    "payment_terms": "Net 30",
+    "line_items": [
+      {
+        "item_id": "ITEM-001",
+        "description": "Professional Software Development Services",
+        "quantity": 40,
+        "unit_price": 50.00,
+        "line_total": 2000.00,
+        "account_code": "6200"
+      },
+      {
+        "item_id": "ITEM-002",
+        "description": "Project Management Services",
+        "quantity": 10,
+        "unit_price": 50.00,
+        "line_total": 500.00,
+        "account_code": "6200"
+      }
+    ],
+    "approval_status": "approved",
+    "approved_by": "john.manager@company.com",
+    "approval_date": "2024-01-16"
+  },
+  {
+    "invoice_id": "INV-2024-002",
+    "supplier_id": "SUP-TECHCORP-456",
+    "invoice_number": "TC-20240120-002",
+    "invoice_date": "2024-01-20",
+    "due_date": "2024-02-19",
+    "total_amount": 1575.00,
+    "tax_amount": 75.00,
+    "net_amount": 1500.00,
+    "currency": "USD",
+    "status": "paid",
+    "purchase_order": "PO-2024-052",
+    "department": "Marketing",
+    "payment_terms": "Net 30",
+    "line_items": [
+      {
+        "item_id": "ITEM-003",
+        "description": "Digital Marketing Campaign Setup",
+        "quantity": 1,
+        "unit_price": 800.00,
+        "line_total": 800.00,
+        "account_code": "6300"
+      },
+      {
+        "item_id": "ITEM-004",
+        "description": "Social Media Management (Monthly)",
+        "quantity": 1,
+        "unit_price": 700.00,
+        "line_total": 700.00,
+        "account_code": "6300"
+      }
+    ],
+    "approval_status": "approved",
+    "approved_by": "sarah.director@company.com",
+    "approval_date": "2024-01-21",
+    "payment_date": "2024-02-15",
+    "payment_reference": "PAY-2024-008"
+  },
+  {
+    "invoice_id": "INV-2024-003",
+    "supplier_id": "SUP-OFFICEPRO-789",
+    "invoice_number": "OP-20240125-003",
+    "invoice_date": "2024-01-25",
+    "due_date": "2024-02-24",
+    "total_amount": 425.50,
+    "tax_amount": 25.50,
+    "net_amount": 400.00,
+    "currency": "USD",
+    "status": "pending",
+    "purchase_order": "PO-2024-061",
+    "department": "Operations",
+    "payment_terms": "Net 30",
+    "line_items": [
+      {
+        "item_id": "ITEM-005",
+        "description": "Office Supplies - Stationery",
+        "quantity": 20,
+        "unit_price": 15.00,
+        "line_total": 300.00,
+        "account_code": "6400"
+      },
+      {
+        "item_id": "ITEM-006",
+        "description": "Printer Toner Cartridges",
+        "quantity": 2,
+        "unit_price": 50.00,
+        "line_total": 100.00,
+        "account_code": "6400"
+      }
+    ],
+    "approval_status": "pending",
+    "approved_by": null,
+    "approval_date": null
+  }
+]

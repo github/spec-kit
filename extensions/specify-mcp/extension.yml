@@ -1,0 +1,83 @@
+schema_version: "1.0"
+
+extension:
+  id: "specify-mcp"
+  name: "Specify MCP Integration"
+  version: "1.0.0"
+  description: "Integrate specify-mcp server tools with spec-kit workflow for enhanced domain analysis and specification-driven development"
+  author: "Jacques Wainwright"
+  repository: "https://github.com/jlwainwright/specify-mcp"
+  license: "MIT"
+  homepage: "https://github.com/jlwainwright/specify-mcp"
+
+requires:
+  speckit_version: ">=0.1.0"
+  tools:
+    - name: "specify-mcp"
+      version: ">=0.0.52"
+      required: true
+
+provides:
+  commands:
+    - name: "speckit.specify-mcp.analyze-domain"
+      file: "commands/analyze-domain.md"
+      description: "Extract business entities and rules from JSON/CSV data files"
+      aliases: ["speckit.analyze-domain"]
+
+    - name: "speckit.specify-mcp.specify"
+      file: "commands/specify.md"
+      description: "Create feature specifications from natural language descriptions"
+      aliases: ["speckit.specify"]
+
+    - name: "speckit.specify-mcp.plan"
+      file: "commands/plan.md"
+      description: "Generate detailed implementation plans from specifications"
+      aliases: ["speckit.plan"]
+
+    - name: "speckit.specify-mcp.tasks"
+      file: "commands/tasks.md"
+      description: "Break down implementation plans into structured tasks"
+      aliases: ["speckit.tasks"]
+
+    - name: "speckit.specify-mcp.initialize"
+      file: "commands/initialize.md"
+      description: "Initialize projects with spec-kit configuration"
+      aliases: ["speckit.initialize"]
+
+    - name: "speckit.specify-mcp.constitution"
+      file: "commands/constitution.md"
+      description: "Manage project constitution and governance"
+      aliases: ["speckit.constitution"]
+
+    - name: "speckit.specify-mcp.validate"
+      file: "commands/validate.md"
+      description: "Validate MCP compliance and cross-artifact consistency"
+      aliases: ["speckit.validate"]
+
+  config:
+    - name: "specify-mcp-config.yml"
+      template: "config-template.yml"
+      description: "Specify MCP server configuration"
+      required: false
+
+hooks:
+  after_tasks:
+    command: "speckit.specify-mcp.validate"
+    optional: true
+    prompt: "Validate cross-artifact consistency?"
+    description: "Run consistency validation after task generation"
+
+tags:
+  - "specification"
+  - "domain-analysis"
+  - "mcp"
+  - "workflow"
+  - "enterprise"
+
+defaults:
+  analysis:
+    domain_templates: ["financial", "ecommerce", "crm"]
+    validation_strict: false
+  workflow:
+    auto_validate: false
+    track_progress: true

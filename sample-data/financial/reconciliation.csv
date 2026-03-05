@@ -1,0 +1,5 @@
+reconciliation_id,invoice_id,payment_id,match_date,match_type,confidence_score,amount_variance,date_variance_days,status,matched_by,notes
+REC-2024-001,INV-2024-002,PAY-2024-008,2024-02-16,exact_match,0.98,0.00,0,confirmed,auto-match,Perfect match on amount and reference
+REC-2024-002,INV-2024-001,PAY-2024-009,2024-02-10,manual_match,0.85,0.00,4,confirmed,jane.accountant@company.com,Manual match - check not yet cleared
+REC-2024-003,,PAY-2024-010,,unmatched,0.00,,,pending,,Unidentified payment requires investigation
+REC-2024-004,INV-2024-003,,2024-02-25,pending_payment,0.95,,,pending,,Invoice awaiting payment - due date approaching

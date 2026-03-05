@@ -1,0 +1,143 @@
+[
+  {
+    "customer_id": "CUST-789123",
+    "email": "sarah.johnson@email.com",
+    "first_name": "Sarah",
+    "last_name": "Johnson",
+    "phone": "+1-503-555-0123",
+    "date_of_birth": "1988-05-15",
+    "registration_date": "2023-08-12T10:30:00Z",
+    "customer_status": "active",
+    "customer_tier": "gold",
+    "total_orders": 15,
+    "total_spent": 2847.56,
+    "average_order_value": 189.84,
+    "last_order_date": "2024-02-15T14:30:00Z",
+    "preferred_payment_method": "credit_card",
+    "marketing_consent": true,
+    "email_verified": true,
+    "phone_verified": false,
+    "addresses": [
+      {
+        "address_id": "ADDR-001",
+        "address_type": "shipping",
+        "is_default": true,
+        "name": "Sarah Johnson",
+        "address_line1": "123 Oak Street",
+        "address_line2": "Apt 4B",
+        "city": "Portland",
+        "state": "OR",
+        "postal_code": "97201",
+        "country": "USA"
+      },
+      {
+        "address_id": "ADDR-002",
+        "address_type": "billing",
+        "is_default": true,
+        "name": "Sarah Johnson",
+        "address_line1": "123 Oak Street",
+        "address_line2": "Apt 4B",
+        "city": "Portland",
+        "state": "OR",
+        "postal_code": "97201",
+        "country": "USA"
+      }
+    ],
+    "preferences": {
+      "newsletter_subscription": true,
+      "sms_notifications": false,
+      "preferred_language": "en",
+      "preferred_currency": "USD"
+    }
+  },
+  {
+    "customer_id": "CUST-456789",
+    "email": "michael.chen@techcompany.com",
+    "first_name": "Michael",
+    "last_name": "Chen",
+    "phone": "+1-408-555-0456",
+    "date_of_birth": "1985-11-22",
+    "registration_date": "2023-06-05T14:15:00Z",
+    "customer_status": "active",
+    "customer_tier": "platinum",
+    "total_orders": 28,
+    "total_spent": 5694.32,
+    "average_order_value": 203.37,
+    "last_order_date": "2024-02-16T09:15:00Z",
+    "preferred_payment_method": "paypal",
+    "marketing_consent": true,
+    "email_verified": true,
+    "phone_verified": true,
+    "addresses": [
+      {
+        "address_id": "ADDR-003",
+        "address_type": "shipping",
+        "is_default": true,
+        "name": "Michael Chen",
+        "address_line1": "456 Pine Avenue",
+        "address_line2": "",
+        "city": "San Jose",
+        "state": "CA",
+        "postal_code": "95110",
+        "country": "USA"
+      },
+      {
+        "address_id": "ADDR-004",
+        "address_type": "work",
+        "is_default": false,
+        "name": "Michael Chen",
+        "address_line1": "789 Corporate Blvd",
+        "address_line2": "Suite 300",
+        "city": "San Jose",
+        "state": "CA",
+        "postal_code": "95112",
+        "country": "USA"
+      }
+    ],
+    "preferences": {
+      "newsletter_subscription": true,
+      "sms_notifications": true,
+      "preferred_language": "en",
+      "preferred_currency": "USD"
+    }
+  },
+  {
+    "customer_id": "CUST-654321",
+    "email": "jennifer.martinez@design.studio",
+    "first_name": "Jennifer",
+    "last_name": "Martinez",
+    "phone": "+1-512-555-0789",
+    "date_of_birth": "1992-03-08",
+    "registration_date": "2024-01-20T16:45:00Z",
+    "customer_status": "active",
+    "customer_tier": "silver",
+    "total_orders": 3,
+    "total_spent": 287.45,
+    "average_order_value": 95.82,
+    "last_order_date": "2024-02-17T16:45:00Z",
+    "preferred_payment_method": "credit_card",
+    "marketing_consent": false,
+    "email_verified": true,
+    "phone_verified": false,
+    "addresses": [
+      {
+        "address_id": "ADDR-005",
+        "address_type": "shipping",
+        "is_default": true,
+        "name": "Jennifer Martinez",
+        "address_line1": "789 Elm Street",
+        "address_line2": "Unit 12",
+        "city": "Austin",
+        "state": "TX",
+        "postal_code": "78701",
+        "country": "USA"
+      }
+    ],
+    "preferences": {
+      "newsletter_subscription": false,
+      "sms_notifications": false,
+      "preferred_language": "en",
+      "preferred_currency": "USD"
+    }
+  }
+]

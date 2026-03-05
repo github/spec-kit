@@ -1,0 +1,17 @@
+# MCPB Bundle Requirements for Spec-Kit MCP Server
+# Core MCP framework
+fastmcp>=1.0.0
+
+# Configuration and data handling
+pyyaml>=6.0
+pydantic>=2.0.0
+
+# Git operations for specification workflow
+gitpython>=3.1.0
+
+# Domain analysis dependencies (existing)
+# No additional requirements - uses standard library for CSV/JSON processing
+
+# Development and testing (optional)
+pytest>=7.0.0
+pytest-cov>=4.0.0

@@ -1,0 +1,11 @@
+product_id,sku,product_name,category,subcategory,brand,price,cost,weight_oz,dimensions_in,color,material,stock_quantity,reorder_level,supplier_id,status,created_date,last_updated
+PROD-WIRELESS-HEADPHONES,WH-001,Premium Wireless Headphones,Electronics,Audio,AudioTech,199.99,89.99,12.5,"8x7x3",Black,Plastic/Metal,45,10,SUP-AUDIOTECH,active,2023-11-15,2024-02-10
+PROD-PHONE-CASE,PC-002,Protective Phone Case,Electronics,Accessories,CasePro,24.99,8.50,2.1,"6x3x0.5",Clear,Silicone,250,50,SUP-CASEPRO,active,2023-12-01,2024-02-15
+PROD-CHARGING-CABLE,CC-003,USB-C Charging Cable,Electronics,Cables,CableTech,14.99,4.25,1.8,"48x1x1",White,PVC,180,25,SUP-CABLETECH,active,2024-01-05,2024-02-12
+PROD-LAPTOP-STAND,LS-004,Adjustable Laptop Stand,Office,Ergonomics,DeskMaster,89.99,35.00,28.7,"12x10x8",Silver,Aluminum,35,8,SUP-DESKMASTER,active,2023-10-20,2024-02-16
+PROD-WIRELESS-MOUSE,WM-005,Ergonomic Wireless Mouse,Electronics,Accessories,MouseTech,39.99,18.50,4.2,"4x2.5x1.5",Black,Plastic,120,20,SUP-MOUSETECH,active,2023-11-30,2024-02-14
+PROD-MONITOR-ARM,MA-006,Dual Monitor Arm Mount,Office,Ergonomics,MonitorPro,199.99,89.50,156.8,"25x12x15",Black,Steel,15,5,SUP-MONITORPRO,active,2023-09-15,2024-02-11
+PROD-DESK-PAD,DP-007,Large Desk Pad,Office,Accessories,DeskMaster,34.99,12.75,8.9,"36x18x0.125",Gray,Microfiber,85,15,SUP-DESKMASTER,active,2024-01-10,2024-02-13
+PROD-BLUETOOTH-SPEAKER,BS-008,Portable Bluetooth Speaker,Electronics,Audio,SoundWave,89.99,42.00,18.3,"7x4x4",Blue,Fabric/Plastic,60,12,SUP-SOUNDWAVE,active,2023-12-15,2024-02-17
+PROD-PHONE-HOLDER,PH-009,Car Phone Holder,Automotive,Accessories,AutoGrip,19.99,7.25,3.5,"5x4x6",Black,Plastic/Metal,95,20,SUP-AUTOGRIP,active,2024-01-20,2024-02-16
+PROD-TABLET-KEYBOARD,TK-010,Wireless Tablet Keyboard,Electronics,Accessories,KeyMaster,79.99,32.50,14.8,"11x7x0.5",White,Plastic,40,8,SUP-KEYMASTER,active,2023-11-10,2024-02-18

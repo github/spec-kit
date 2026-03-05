@@ -1,0 +1,34 @@
+[
+  {
+    "invoice_id": "INV-2024-001",
+    "supplier_id": "SUP-ABC123",
+    "invoice_date": "2024-01-15",
+    "due_date": "2024-02-14",
+    "total_amount": 1250.00,
+    "currency": "USD",
+    "status": "pending",
+    "line_items": [
+      {
+        "description": "Professional Services",
+        "quantity": 10,
+        "unit_price": 125.00
+      }
+    ]
+  },
+  {
+    "invoice_id": "INV-2024-002",
+    "supplier_id": "SUP-XYZ789",
+    "invoice_date": "2024-01-20",
+    "due_date": "2024-02-19",
+    "total_amount": 750.50,
+    "currency": "USD",
+    "status": "paid",
+    "line_items": [
+      {
+        "description": "Software License",
+        "quantity": 1,
+        "unit_price": 750.50
+      }
+    ]
+  }
+]

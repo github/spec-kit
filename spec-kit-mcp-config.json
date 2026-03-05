@@ -1,0 +1,247 @@
+{
+  "server_name": "spec-kit-mcp-server",
+  "description": "Comprehensive MCP server for spec-driven development workflow automation, covering all Specify CLI functionality",
+  "version": "1.0.0",
+  "security_level": "enterprise",
+  "author": "SpecKit Enhanced",
+
+  "tools": [
+    {
+      "name": "spec_init",
+      "description": "Initialize new projects with spec-driven templates and structure",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_name": {"type": "string", "description": "Name of the project"},
+          "project_type": {"type": "string", "enum": ["web", "api", "mobile", "cli", "library"], "description": "Type of project"},
+          "working_directory": {"type": "string", "description": "Directory to initialize project in"},
+          "template_source": {"type": "string", "description": "Template source or type"},
+          "ai_assistant": {"type": "string", "enum": ["claude", "gemini", "copilot", "cursor"], "description": "AI assistant to configure for"},
+          "script_type": {"type": "string", "enum": ["sh", "ps"], "description": "Script type for generated scripts"}
+        },
+        "required": ["project_name"]
+      }
+    },
+    {
+      "name": "spec_check",
+      "description": "Check available tools and development environment",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "check_type": {"type": "string", "enum": ["tools", "environment", "dependencies", "all"], "default": "all"}
+        }
+      }
+    },
+    {
+      "name": "constitution_create",
+      "description": "Establish project principles and development constitution",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_path": {"type": "string", "description": "Path to project directory"},
+          "principles": {"type": "array", "items": {"type": "string"}, "description": "Core principles for the project"},
+          "development_standards": {"type": "object", "description": "Development standards and practices"},
+          "quality_gates": {"type": "array", "items": {"type": "string"}, "description": "Quality gate requirements"}
+        },
+        "required": ["project_path"]
+      }
+    },
+    {
+      "name": "specification_create",
+      "description": "Create comprehensive baseline specifications for features",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feature_description": {"type": "string", "description": "Natural language description of the feature"},
+          "project_path": {"type": "string", "description": "Path to project"},
+          "spec_type": {"type": "string", "enum": ["feature", "api", "ui", "infrastructure"], "default": "feature"},
+          "output_format": {"type": "string", "enum": ["markdown", "json", "yaml"], "default": "markdown"}
+        },
+        "required": ["feature_description", "project_path"]
+      }
+    },
+    {
+      "name": "clarify_requirements",
+      "description": "Ask structured questions to de-risk ambiguous requirements",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specification": {"type": "string", "description": "Current specification text"},
+          "clarification_areas": {"type": "array", "items": {"type": "string"}, "description": "Specific areas needing clarification"},
+          "question_type": {"type": "string", "enum": ["technical", "business", "user-experience", "all"], "default": "all"}
+        },
+        "required": ["specification"]
+      }
+    },
+    {
+      "name": "domain_analysis",
+      "description": "Perform comprehensive domain analysis for context and requirements",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_path": {"type": "string", "description": "Path to project"},
+          "domain_context": {"type": "string", "description": "Domain description or keywords"},
+          "analysis_depth": {"type": "string", "enum": ["basic", "comprehensive", "deep"], "default": "comprehensive"},
+          "stakeholder_roles": {"type": "array", "items": {"type": "string"}, "description": "List of stakeholder roles"}
+        },
+        "required": ["project_path", "domain_context"]
+      }
+    },
+    {
+      "name": "plan_create",
+      "description": "Generate detailed implementation plans from specifications",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specification_path": {"type": "string", "description": "Path to specification file"},
+          "planning_approach": {"type": "string", "enum": ["agile", "waterfall", "iterative"], "default": "agile"},
+          "include_risk_analysis": {"type": "boolean", "default": true},
+          "include_dependencies": {"type": "boolean", "default": true}
+        },
+        "required": ["specification_path"]
+      }
+    },
+    {
+      "name": "tasks_generate",
+      "description": "Generate actionable tasks from implementation plans",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_path": {"type": "string", "description": "Path to implementation plan"},
+          "task_detail_level": {"type": "string", "enum": ["high", "medium", "detailed"], "default": "detailed"},
+          "assign_roles": {"type": "boolean", "default": false},
+          "estimate_effort": {"type": "boolean", "default": true}
+        },
+        "required": ["plan_path"]
+      }
+    },
+    {
+      "name": "checklist_generate",
+      "description": "Generate quality checklists for requirements validation",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target_type": {"type": "string", "enum": ["requirements", "code", "testing", "deployment"], "description": "What the checklist is for"},
+          "specification_area": {"type": "string", "description": "Specific area or feature"},
+          "checklist_standard": {"type": "string", "enum": ["basic", "comprehensive", "enterprise"], "default": "comprehensive"}
+        },
+        "required": ["target_type"]
+      }
+    },
+    {
+      "name": "consistency_analyze",
+      "description": "Perform cross-artifact consistency analysis",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "artifacts": {"type": "array", "items": {"type": "string"}, "description": "List of artifact paths to analyze"},
+          "analysis_type": {"type": "string", "enum": ["consistency", "completeness", "alignment"], "default": "consistency"},
+          "report_format": {"type": "string", "enum": ["text", "json", "html"], "default": "text"}
+        },
+        "required": ["artifacts"]
+      }
+    },
+    {
+      "name": "implement_execute",
+      "description": "Execute implementation based on specifications and plans",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specification_path": {"type": "string", "description": "Path to specification"},
+          "plan_path": {"type": "string", "description": "Path to implementation plan"},
+          "implementation_mode": {"type": "string", "enum": ["guided", "autonomous", "review"], "default": "guided"},
+          "quality_checks": {"type": "boolean", "default": true}
+        },
+        "required": ["specification_path"]
+      }
+    },
+    {
+      "name": "project_validate",
+      "description": "Validate project structure and compliance with spec-kit standards",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_path": {"type": "string", "description": "Path to project directory"},
+          "validation_level": {"type": "string", "enum": ["basic", "strict", "enterprise"], "default": "strict"},
+          "auto_fix": {"type": "boolean", "default": false}
+        },
+        "required": ["project_path"]
+      }
+    }
+  ],
+
+  "resources": [
+    {
+      "uri": "spec://templates/constitution",
+      "name": "Project Constitution Templates",
+      "description": "Templates for establishing project principles and governance"
+    },
+    {
+      "uri": "spec://templates/specification",
+      "name": "Specification Templates",
+      "description": "Templates for different types of specifications"
+    },
+    {
+      "uri": "spec://checklists/quality",
+      "name": "Quality Checklists",
+      "description": "Pre-defined quality assurance checklists"
+    },
+    {
+      "uri": "spec://patterns/best-practices",
+      "name": "Best Practices Patterns",
+      "description": "Collection of development best practices"
+    }
+  ],
+
+  "prompts": [
+    {
+      "name": "feature-specification",
+      "description": "Generate comprehensive feature specifications"
+    },
+    {
+      "name": "risk-analysis",
+      "description": "Perform risk analysis on implementation plans"
+    },
+    {
+      "name": "quality-review",
+      "description": "Review code and artifacts for quality standards"
+    }
+  ],
+
+  "integration": {
+    "spec_kit": {
+      "enabled": true,
+      "version_compatibility": ">=0.0.79",
+      "auto_sync": true,
+      "template_sources": [".specify/templates", ".amazonq/prompts"]
+    },
+    "git": {
+      "enabled": true,
+      "auto_commit": false,
+      "branch_management": true
+    },
+    "ai_assistants": {
+      "claude": {"enabled": true, "priority": 1},
+      "gemini": {"enabled": true, "priority": 2},
+      "copilot": {"enabled": true, "priority": 3},
+      "cursor": {"enabled": true, "priority": 4}
+    }
+  },
+
+  "security": {
+    "authentication_required": false,
+    "credential_storage": "secure",
+    "audit_logging": true,
+    "input_validation": "strict",
+    "output_sanitization": true
+  },
+
+  "configuration": {
+    "default_script_type": "sh",
+    "default_ai_assistant": "claude",
+    "template_cache_duration": 3600,
+    "max_file_size": 10485760,
+    "parallel_processing": true,
+    "error_recovery": "automatic"
+  }
+}

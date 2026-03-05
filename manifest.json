@@ -1,0 +1,109 @@
+{
+  "manifest_version": "1.0",
+  "name": "spec-kit",
+  "display_name": "Spec-Kit MCP Server",
+  "version": "1.0.0",
+  "description": "Specification-driven development with domain analysis and MCP compliance validation",
+  "long_description": "Complete MCP server for specification-driven development workflow. Includes feature specification creation, implementation planning, task breakdown, domain analysis, and MCP compliance validation tools. Automatically extracts business entities and rules from data files to populate templates with real, data-driven content.",
+  "author": {
+    "name": "Spec-Kit Team"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/spec-kit"
+  },
+  "server": {
+    "type": "python",
+    "script": "src/speckit_mcp/server.py",
+    "python": {
+      "requirements": "requirements.txt"
+    }
+  },
+  "tools": [
+    {
+      "name": "specify",
+      "description": "Create feature specifications from natural language descriptions"
+    },
+    {
+      "name": "plan",
+      "description": "Generate detailed implementation plans from specifications"
+    },
+    {
+      "name": "tasks",
+      "description": "Break down implementation plans into structured tasks"
+    },
+    {
+      "name": "initialize",
+      "description": "Initialize project with spec-kit configuration and templates"
+    },
+    {
+      "name": "get_context",
+      "description": "Get phase-specific guidance and documentation"
+    },
+    {
+      "name": "analyze_domain",
+      "description": "Extract business entities and rules from data files"
+    },
+    {
+      "name": "clarify",
+      "description": "Clarify and refine specification details"
+    },
+    {
+      "name": "constitution",
+      "description": "Manage project constitution and configuration"
+    },
+    {
+      "name": "task_progress",
+      "description": "Track and monitor task progress"
+    },
+    {
+      "name": "validate_compliance",
+      "description": "Validate MCP server compliance with specifications"
+    },
+    {
+      "name": "analyze_mcp_tools",
+      "description": "Analyze and inspect MCP tool implementations"
+    },
+    {
+      "name": "get_mcp_spec_version",
+      "description": "Retrieve MCP specification version information"
+    }
+  ],
+  "resources": [
+    {
+      "name": "templates",
+      "description": "Specification and domain templates for various project types"
+    },
+    {
+      "name": "schemas",
+      "description": "Configuration schemas and validation rules"
+    },
+    {
+      "name": "sample_data",
+      "description": "Sample datasets for domain analysis testing"
+    }
+  ],
+  "user_config": [
+    {
+      "name": "default_domain_type",
+      "type": "string",
+      "description": "Default domain type for analysis (financial, ecommerce, crm)",
+      "default": "financial"
+    },
+    {
+      "name": "confidence_threshold",
+      "type": "number",
+      "description": "Confidence threshold for domain analysis (0.0-1.0)",
+      "default": 0.75
+    },
+    {
+      "name": "interactive_mode",
+      "type": "boolean",
+      "description": "Enable interactive mode by default",
+      "default": true
+    }
+  ],
+  "compatibility": {
+    "python": ">=3.11"
+  }
+}

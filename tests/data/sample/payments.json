@@ -1,0 +1,18 @@
+[
+  {
+    "payment_id": "PAY-2024-001",
+    "reference": "INV-2024-002",
+    "payment_date": "2024-01-25",
+    "amount": 750.50,
+    "payment_method": "bank_transfer",
+    "status": "completed"
+  },
+  {
+    "payment_id": "PAY-2024-002",
+    "reference": "INV-2024-001",
+    "payment_date": "2024-02-10",
+    "amount": 1250.00,
+    "payment_method": "check",
+    "status": "pending"
+  }
+]

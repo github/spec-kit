@@ -1,0 +1,15 @@
+# Local config overrides
+*-config.local.yml
+
+# Backup files
+*.backup
+*.bak
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

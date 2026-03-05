@@ -1,150 +1,455 @@
-# Contributing to Spec Kit
+# Contributing to Domain Analysis Tool
 
-Hi there! We're thrilled that you'd like to contribute to Spec Kit. Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](LICENSE).
+We welcome contributions to the Domain Analysis Tool! This guide will help you get started with contributing to the project.
 
-Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+## Table of Contents
 
-## Prerequisites for running and testing code
+- [Code of Conduct](#code-of-conduct)
+- [Getting Started](#getting-started)
+- [Development Setup](#development-setup)
+- [Contributing Guidelines](#contributing-guidelines)
+- [Testing Requirements](#testing-requirements)
+- [Code Style](#code-style)
+- [Submitting Changes](#submitting-changes)
+- [Issue Reporting](#issue-reporting)
 
-These are one time installations required to be able to test your changes locally as part of the pull request (PR) submission process.
+## Code of Conduct
 
-1. Install [Python 3.11+](https://www.python.org/downloads/)
-1. Install [uv](https://docs.astral.sh/uv/) for package management
-1. Install [Git](https://git-scm.com/downloads)
-1. Have an [AI coding agent available](README.md#-supported-ai-agents)
+This project adheres to a Code of Conduct to ensure a welcoming environment for all contributors:
 
-<details>
-<summary><b>💡 Hint if you are using <code>VSCode</code> or <code>GitHub Codespaces</code> as your IDE</b></summary>
+- **Be respectful**: Treat all contributors and users with respect and kindness
+- **Be inclusive**: Welcome contributors of all backgrounds and experience levels
+- **Be constructive**: Provide helpful feedback and focus on improving the project
+- **Be collaborative**: Work together to solve problems and share knowledge
 
-<br>
+## Getting Started
 
-Provided you have [Docker](https://docker.com) installed on your machine, you can leverage [Dev Containers](https://containers.dev) through this [VSCode extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), to easily set up your development environment, with aforementioned tools already installed and configured, thanks to the `.devcontainer/devcontainer.json` file (located at the root of the project).
+### Prerequisites
 
-To do so, simply:
+Before contributing, ensure you have:
 
-- Checkout the repo
-- Open it with VSCode
-- Open the [Command Palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette) and select "Dev Containers: Open Folder in Container..."
+- Python 3.11 or higher
+- Git for version control
+- bash shell (Linux/macOS) or PowerShell (Windows)
+- Basic understanding of domain analysis concepts
 
-On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler, as it leverages the `.devcontainer/devcontainer.json` automatically upon opening the codespace.
+### Fork and Clone
 
-</details>
-
-## Submitting a pull request
-
-> [!NOTE]
-> If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
-
-1. Fork and clone the repository
-1. Configure and install the dependencies: `uv sync`
-1. Make sure the CLI works on your machine: `uv run specify --help`
-1. Create a new branch: `git checkout -b my-branch-name`
-1. Make your change, add tests, and make sure everything still works
-1. Test the CLI functionality with a sample project if relevant
-1. Push to your fork and submit a pull request
-1. Wait for your pull request to be reviewed and merged.
-
-Here are a few things you can do that will increase the likelihood of your pull request being accepted:
-
-- Follow the project's coding conventions.
-- Write tests for new functionality.
-- Update documentation (`README.md`, `spec-driven.md`) if your changes affect user-facing features.
-- Keep your change as focused as possible. If there are multiple changes you would like to make that are not dependent upon each other, consider submitting them as separate pull requests.
-- Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
-- Test your changes with the Spec-Driven Development workflow to ensure compatibility.
-
-## Development workflow
-
-When working on spec-kit:
-
-1. Test changes with the `specify` CLI commands (`/speckit.specify`, `/speckit.plan`, `/speckit.tasks`) in your coding agent of choice
-2. Verify templates are working correctly in `templates/` directory
-3. Test script functionality in the `scripts/` directory
-4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
-
-### Testing template and command changes locally
-
-Running `uv run specify init` pulls released packages, which won’t include your local changes.  
-To test your templates, commands, and other changes locally, follow these steps:
-
-1. **Create release packages**
-
-   Run the following command to generate the local packages:
-
+1. Fork the repository on GitHub
+2. Clone your fork locally:
    ```bash
-   ./.github/workflows/scripts/create-release-packages.sh v1.0.0
+   git clone https://github.com/your-username/domain-analysis-tool.git
+   cd domain-analysis-tool
    ```
 
-2. **Copy the relevant package to your test project**
-
+3. Add the upstream repository:
    ```bash
-   cp -r .genreleases/sdd-copilot-package-sh/. <path-to-test-project>/
+   git remote add upstream https://github.com/original-owner/domain-analysis-tool.git
    ```
 
-3. **Open and test the agent**
+## Development Setup
 
-   Navigate to your test project folder and open the agent to verify your implementation.
+### 1. Install Dependencies
 
-## AI contributions in Spec Kit
+```bash
+# Install required Python packages
+pip install pyyaml
 
-> [!IMPORTANT]
->
-> If you are using **any kind of AI assistance** to contribute to Spec Kit,
-> it must be disclosed in the pull request or issue.
+# For development and testing (when available)
+pip install pytest pytest-cov black flake8
+```
 
-We welcome and encourage the use of AI tools to help improve Spec Kit! Many valuable contributions have been enhanced with AI assistance for code generation, issue detection, and feature definition.
+### 2. Verify Installation
 
-That being said, if you are using any kind of AI assistance (e.g., agents, ChatGPT) while contributing to Spec Kit,
-**this must be disclosed in the pull request or issue**, along with the extent to which AI assistance was used (e.g., documentation comments vs. code generation).
+```bash
+# Test the domain analysis functionality
+python src/specify_cli/domain_analysis.py --help
 
-If your PR responses or comments are being generated by an AI, disclose that as well.
+# Test shell scripts (Linux/macOS)
+chmod +x scripts/bash/analyze-domain.sh
+./scripts/bash/analyze-domain.sh --help
 
-As an exception, trivial spacing or typo fixes don't need to be disclosed, so long as the changes are limited to small parts of the code or short phrases.
+# Test PowerShell scripts (Windows)
+scripts/powershell/analyze-domain.ps1 -Help
+```
 
-An example disclosure:
+### 3. Run Tests (when available)
 
-> This PR was written primarily by GitHub Copilot.
+```bash
+# Run all tests
+pytest tests/
 
-Or a more detailed disclosure:
+# Run with coverage
+pytest tests/ --cov=src/specify_cli/
+```
 
-> I consulted ChatGPT to understand the codebase but the solution
-> was fully authored manually by myself.
+## Contributing Guidelines
 
-Failure to disclose this is first and foremost rude to the human operators on the other end of the pull request, but it also makes it difficult to
-determine how much scrutiny to apply to the contribution.
+### Types of Contributions
 
-In a perfect world, AI assistance would produce equal or higher quality work than any human. That isn't the world we live in today, and in most cases
-where human supervision or expertise is not in the loop, it's generating code that cannot be reasonably maintained or evolved.
+We welcome several types of contributions:
 
-### What we're looking for
+1. **Bug Fixes**: Fix issues in the existing codebase
+2. **Feature Enhancements**: Improve existing functionality
+3. **New Features**: Add new domain analysis capabilities
+4. **Documentation**: Improve README, USAGE, or code documentation
+5. **Tests**: Add or improve test coverage
+6. **Domain Templates**: Add new domain-specific templates
 
-When submitting AI-assisted contributions, please ensure they include:
+### Contribution Process
 
-- **Clear disclosure of AI use** - You are transparent about AI use and degree to which you're using it for the contribution
-- **Human understanding and testing** - You've personally tested the changes and understand what they do
-- **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals
-- **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement
-- **Your own analysis** - Share your thoughts on the end-to-end developer experience
+1. **Check Existing Issues**: Look for existing issues or discussions
+2. **Create an Issue**: For significant changes, create an issue first
+3. **Branch Strategy**: Create a feature branch from main
+4. **Make Changes**: Implement your changes following our guidelines
+5. **Test Thoroughly**: Ensure all tests pass and add new tests
+6. **Submit PR**: Open a pull request with clear description
 
-### What we'll close
+### Branch Naming
 
-We reserve the right to close contributions that appear to be:
+Use descriptive branch names:
 
-- Untested changes submitted without verification
-- Generic suggestions that don't address specific Spec Kit needs
-- Bulk submissions that show no human review or understanding
+```bash
+# Feature branches
+git checkout -b feature/add-healthcare-domain-template
+git checkout -b feature/improve-csv-parsing
 
-### Guidelines for success
+# Bug fix branches
+git checkout -b fix/handle-empty-json-files
+git checkout -b fix/windows-path-separator-issue
 
-The key is demonstrating that you understand and have validated your proposed changes. If a maintainer can easily tell that a contribution was generated entirely by AI without human input or testing, it likely needs more work before submission.
+# Documentation branches
+git checkout -b docs/update-installation-guide
+git checkout -b docs/add-api-reference
+```
 
-Contributors who consistently submit low-effort AI-generated changes may be restricted from further contributions at the maintainers' discretion.
+## Testing Requirements
 
-Please be respectful to maintainers and disclose AI assistance.
+### Test Categories
 
-## Resources
+1. **Unit Tests**: Test individual functions and classes
+2. **Integration Tests**: Test component interactions
+3. **Script Tests**: Test shell script functionality
+4. **Data Tests**: Test with sample datasets
 
-- [Spec-Driven Development Methodology](./spec-driven.md)
-- [How to Contribute to Open Source](https://opensource.guide/how-to-contribute/)
-- [Using Pull Requests](https://help.github.com/articles/about-pull-requests/)
-- [GitHub Help](https://help.github.com)
+### Testing Guidelines
+
+```python
+# Example unit test structure
+import pytest
+from specify_cli.domain_analysis import DomainAnalyzer
+
+def test_entity_extraction():
+    """Test entity extraction from JSON data."""
+    analyzer = DomainAnalyzer("./test-data")
+    entities = analyzer.extract_entities()
+
+    assert len(entities) > 0
+    assert entities[0].name is not None
+    assert entities[0].confidence >= 0.0
+
+def test_business_rule_inference():
+    """Test business rule generation."""
+    analyzer = DomainAnalyzer("./test-data")
+    rules = analyzer.infer_business_rules()
+
+    for rule in rules:
+        assert rule.rule_id is not None
+        assert rule.description is not None
+        assert 0.0 <= rule.confidence <= 1.0
+```
+
+### Test Data
+
+Create test datasets in `tests/data/`:
+
+```
+tests/
+├── data/
+│   ├── financial/
+│   │   ├── invoices.json
+│   │   ├── payments.json
+│   │   └── suppliers.csv
+│   ├── ecommerce/
+│   │   ├── orders.json
+│   │   ├── products.json
+│   │   └── customers.csv
+│   └── invalid/
+│       ├── empty.json
+│       ├── malformed.json
+│       └── unsupported.txt
+└── test_domain_analysis.py
+```
+
+## Code Style
+
+### Python Code Style
+
+Follow PEP 8 with these specific guidelines:
+
+```python
+# Good: Clear function names and type hints
+def extract_business_entities(data_files: List[Path]) -> List[BusinessEntity]:
+    """Extract business entities from data files.
+
+    Args:
+        data_files: List of JSON/CSV files to analyze
+
+    Returns:
+        List of discovered business entities with confidence scores
+    """
+    entities = []
+    # Implementation here
+    return entities
+
+# Good: Descriptive variable names
+invoice_confidence_threshold = 0.75
+payment_matching_rules = []
+
+# Good: Error handling
+try:
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError) as e:
+    logger.warning(f"Failed to process {file_path}: {e}")
+    return None
+```
+
+### Shell Script Style
+
+```bash
+#!/bin/bash
+# Good: Clear variable names and error checking
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+readonly DATA_DIR="${1:-./data}"
+readonly OUTPUT_FILE="${2:-analysis.json}"
+
+# Function definitions
+analyze_directory() {
+    local data_dir="$1"
+    local output_file="$2"
+
+    if [[ ! -d "$data_dir" ]]; then
+        echo "Error: Directory '$data_dir' does not exist" >&2
+        return 1
+    fi
+
+    # Implementation here
+}
+
+# Main execution
+main() {
+    analyze_directory "$DATA_DIR" "$OUTPUT_FILE"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+```
+
+### Documentation Style
+
+```python
+class DomainAnalyzer:
+    """Analyzes business domains from data files.
+
+    This class provides functionality to extract business entities,
+    infer business rules, and identify integration points from
+    structured data files (JSON/CSV).
+
+    Attributes:
+        data_directory: Path to directory containing data files
+        confidence_threshold: Minimum confidence for entity acceptance
+
+    Example:
+        >>> analyzer = DomainAnalyzer("./financial-data")
+        >>> domain_model = analyzer.analyze()
+        >>> print(f"Found {len(domain_model.entities)} entities")
+    """
+```
+
+## Submitting Changes
+
+### Pull Request Process
+
+1. **Update Your Branch**:
+   ```bash
+   git fetch upstream
+   git rebase upstream/main
+   ```
+
+2. **Commit Guidelines**:
+   ```bash
+   # Good commit messages
+   git commit -m "feat: add healthcare domain template with medical entities"
+   git commit -m "fix: handle empty CSV files gracefully"
+   git commit -m "docs: update installation instructions for Windows"
+   git commit -m "test: add unit tests for entity extraction"
+   ```
+
+3. **Push Changes**:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+4. **Create Pull Request**:
+   - Use the GitHub interface to create a pull request
+   - Fill out the pull request template
+   - Link to any related issues
+   - Request review from maintainers
+
+### Pull Request Template
+
+```markdown
+## Description
+Brief description of the changes made.
+
+## Type of Change
+- [ ] Bug fix (non-breaking change that fixes an issue)
+- [ ] New feature (non-breaking change that adds functionality)
+- [ ] Breaking change (fix or feature that causes existing functionality to change)
+- [ ] Documentation update
+
+## Testing
+- [ ] Unit tests pass
+- [ ] Integration tests pass
+- [ ] Manual testing completed
+- [ ] New tests added for new functionality
+
+## Checklist
+- [ ] Code follows project style guidelines
+- [ ] Self-review of code completed
+- [ ] Documentation updated as needed
+- [ ] Changes work on both Linux/macOS and Windows
+```
+
+## Issue Reporting
+
+### Bug Reports
+
+When reporting bugs, include:
+
+1. **Environment Information**:
+   - Operating system (Linux/macOS/Windows)
+   - Python version
+   - Shell version (bash/PowerShell)
+
+2. **Steps to Reproduce**:
+   ```
+   1. Run command: ./scripts/bash/analyze-domain.sh --data-dir=./test-data
+   2. Observe error message: "FileNotFoundError: No JSON files found"
+   3. Expected: Should process CSV files in directory
+   ```
+
+3. **Sample Data**: Provide minimal sample data that reproduces the issue
+
+4. **Error Output**: Include complete error messages and stack traces
+
+### Feature Requests
+
+For feature requests, include:
+
+1. **Use Case**: Describe the business problem you're trying to solve
+2. **Proposed Solution**: Suggest how the feature might work
+3. **Alternatives**: Mention any workarounds you've considered
+4. **Domain Context**: Specify which business domains would benefit
+
+### Security Issues
+
+For security-related issues:
+- Do NOT create public issues
+- Email maintainers directly
+- Provide detailed information about the vulnerability
+- Allow time for responsible disclosure
+
+## Development Best Practices
+
+### 1. Domain Analysis Principles
+
+- **Data-Driven**: Base entity extraction on actual data patterns
+- **Confidence Scoring**: Always provide confidence metrics
+- **User Validation**: Support interactive review and customization
+- **Cross-Platform**: Ensure functionality works on all supported platforms
+
+### 2. Error Handling
+
+```python
+# Good: Comprehensive error handling
+def parse_json_file(file_path: Path) -> Optional[Dict]:
+    """Parse JSON file with robust error handling."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.error(f"File not found: {file_path}")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in {file_path}: {e}")
+        return None
+    except PermissionError:
+        logger.error(f"Permission denied reading {file_path}")
+        return None
+```
+
+### 3. Configuration Management
+
+- Use YAML for configuration files
+- Provide sensible defaults
+- Validate configuration on load
+- Support environment variable overrides
+
+### 4. Cross-Platform Compatibility
+
+```python
+# Good: Platform-independent path handling
+from pathlib import Path
+import os
+
+data_dir = Path(os.environ.get('DATA_DIR', './data'))
+config_file = data_dir / 'config.yaml'
+```
+
+## Release Process
+
+### Version Numbering
+
+We follow semantic versioning (SemVer):
+
+- **Major** (1.0.0): Breaking changes
+- **Minor** (1.1.0): New features, backwards compatible
+- **Patch** (1.1.1): Bug fixes, backwards compatible
+
+### Release Checklist
+
+1. Update version numbers
+2. Update CHANGELOG.md
+3. Run full test suite
+4. Update documentation
+5. Create release branch
+6. Tag release
+7. Create GitHub release with notes
+
+## Getting Help
+
+### Communication Channels
+
+- **GitHub Issues**: Bug reports and feature requests
+- **GitHub Discussions**: General questions and ideas
+- **Pull Request Reviews**: Code-specific feedback
+
+### Maintainer Contact
+
+For urgent issues or questions:
+- Create a GitHub issue with `@maintainer` mention
+- Email project maintainers (listed in README)
+
+## Recognition
+
+Contributors are recognized in:
+- CONTRIBUTORS.md file
+- Release notes
+- Project documentation
+
+Thank you for contributing to the Domain Analysis Tool!

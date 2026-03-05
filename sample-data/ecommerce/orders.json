@@ -1,0 +1,197 @@
+[
+  {
+    "order_id": "ORD-2024-001457",
+    "customer_id": "CUST-789123",
+    "order_date": "2024-02-15T14:30:00Z",
+    "order_status": "shipped",
+    "total_amount": 299.97,
+    "tax_amount": 24.00,
+    "shipping_amount": 9.99,
+    "discount_amount": 15.00,
+    "currency": "USD",
+    "payment_method": "credit_card",
+    "payment_status": "paid",
+    "payment_gateway_id": "PAY-CC-789456123",
+    "shipping_address": {
+      "name": "Sarah Johnson",
+      "address_line1": "123 Oak Street",
+      "address_line2": "Apt 4B",
+      "city": "Portland",
+      "state": "OR",
+      "postal_code": "97201",
+      "country": "USA"
+    },
+    "billing_address": {
+      "name": "Sarah Johnson",
+      "address_line1": "123 Oak Street",
+      "address_line2": "Apt 4B",
+      "city": "Portland",
+      "state": "OR",
+      "postal_code": "97201",
+      "country": "USA"
+    },
+    "order_items": [
+      {
+        "item_id": "ITEM-SKU-001",
+        "product_id": "PROD-WIRELESS-HEADPHONES",
+        "product_name": "Premium Wireless Headphones",
+        "quantity": 1,
+        "unit_price": 199.99,
+        "line_total": 199.99,
+        "discount_applied": 10.00
+      },
+      {
+        "item_id": "ITEM-SKU-002",
+        "product_id": "PROD-PHONE-CASE",
+        "product_name": "Protective Phone Case",
+        "quantity": 2,
+        "unit_price": 24.99,
+        "line_total": 49.98,
+        "discount_applied": 5.00
+      },
+      {
+        "item_id": "ITEM-SKU-003",
+        "product_id": "PROD-CHARGING-CABLE",
+        "product_name": "USB-C Charging Cable",
+        "quantity": 1,
+        "unit_price": 14.99,
+        "line_total": 14.99,
+        "discount_applied": 0.00
+      }
+    ],
+    "shipping_method": "standard",
+    "estimated_delivery": "2024-02-20",
+    "tracking_number": "1Z999AA1234567890",
+    "carrier": "UPS",
+    "source_channel": "website",
+    "promotional_code": "SAVE15",
+    "customer_notes": "Please leave at front door if not home"
+  },
+  {
+    "order_id": "ORD-2024-001458",
+    "customer_id": "CUST-456789",
+    "order_date": "2024-02-16T09:15:00Z",
+    "order_status": "processing",
+    "total_amount": 567.89,
+    "tax_amount": 45.43,
+    "shipping_amount": 0.00,
+    "discount_amount": 0.00,
+    "currency": "USD",
+    "payment_method": "paypal",
+    "payment_status": "paid",
+    "payment_gateway_id": "PAY-PP-123789456",
+    "shipping_address": {
+      "name": "Michael Chen",
+      "address_line1": "456 Pine Avenue",
+      "address_line2": "",
+      "city": "San Jose",
+      "state": "CA",
+      "postal_code": "95110",
+      "country": "USA"
+    },
+    "billing_address": {
+      "name": "Michael Chen",
+      "address_line1": "456 Pine Avenue",
+      "address_line2": "",
+      "city": "San Jose",
+      "state": "CA",
+      "postal_code": "95110",
+      "country": "USA"
+    },
+    "order_items": [
+      {
+        "item_id": "ITEM-SKU-004",
+        "product_id": "PROD-LAPTOP-STAND",
+        "product_name": "Adjustable Laptop Stand",
+        "quantity": 1,
+        "unit_price": 89.99,
+        "line_total": 89.99,
+        "discount_applied": 0.00
+      },
+      {
+        "item_id": "ITEM-SKU-005",
+        "product_id": "PROD-WIRELESS-MOUSE",
+        "product_name": "Ergonomic Wireless Mouse",
+        "quantity": 2,
+        "unit_price": 39.99,
+        "line_total": 79.98,
+        "discount_applied": 0.00
+      },
+      {
+        "item_id": "ITEM-SKU-006",
+        "product_id": "PROD-MONITOR-ARM",
+        "product_name": "Dual Monitor Arm Mount",
+        "quantity": 1,
+        "unit_price": 199.99,
+        "line_total": 199.99,
+        "discount_applied": 0.00
+      },
+      {
+        "item_id": "ITEM-SKU-007",
+        "product_id": "PROD-DESK-PAD",
+        "product_name": "Large Desk Pad",
+        "quantity": 1,
+        "unit_price": 34.99,
+        "line_total": 34.99,
+        "discount_applied": 0.00
+      }
+    ],
+    "shipping_method": "free_shipping",
+    "estimated_delivery": "2024-02-22",
+    "tracking_number": null,
+    "carrier": "FedEx",
+    "source_channel": "mobile_app",
+    "promotional_code": null,
+    "customer_notes": "Business address - will be available for delivery 9am-5pm"
+  },
+  {
+    "order_id": "ORD-2024-001459",
+    "customer_id": "CUST-654321",
+    "order_date": "2024-02-17T16:45:00Z",
+    "order_status": "cancelled",
+    "total_amount": 149.99,
+    "tax_amount": 12.00,
+    "shipping_amount": 7.99,
+    "discount_amount": 20.00,
+    "currency": "USD",
+    "payment_method": "credit_card",
+    "payment_status": "refunded",
+    "payment_gateway_id": "PAY-CC-987654321",
+    "cancellation_reason": "customer_request",
+    "cancellation_date": "2024-02-17T18:30:00Z",
+    "refund_amount": 149.99,
+    "refund_date": "2024-02-18T10:00:00Z",
+    "shipping_address": {
+      "name": "Jennifer Martinez",
+      "address_line1": "789 Elm Street",
+      "address_line2": "Unit 12",
+      "city": "Austin",
+      "state": "TX",
+      "postal_code": "78701",
+      "country": "USA"
+    },
+    "order_items": [
+      {
+        "item_id": "ITEM-SKU-008",
+        "product_id": "PROD-BLUETOOTH-SPEAKER",
+        "product_name": "Portable Bluetooth Speaker",
+        "quantity": 1,
+        "unit_price": 89.99,
+        "line_total": 89.99,
+        "discount_applied": 15.00
+      },
+      {
+        "item_id": "ITEM-SKU-009",
+        "product_id": "PROD-PHONE-HOLDER",
+        "product_name": "Car Phone Holder",
+        "quantity": 2,
+        "unit_price": 19.99,
+        "line_total": 39.98,
+        "discount_applied": 5.00
+      }
+    ],
+    "source_channel": "website",
+    "promotional_code": "WELCOME20",
+    "customer_notes": "Changed mind about purchase"
+  }
+]

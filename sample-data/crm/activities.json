@@ -1,0 +1,118 @@
+[
+  {
+    "activity_id": "ACT-2024-001",
+    "contact_id": "CONT-2024-001",
+    "account_id": "ACC-TECHCORP-456",
+    "opportunity_id": "OPP-2024-001",
+    "activity_type": "meeting",
+    "subject": "Technical Requirements Discussion",
+    "description": "Detailed discussion about integration requirements and technical specifications for the platform implementation.",
+    "activity_date": "2024-02-18T14:00:00Z",
+    "duration_minutes": 60,
+    "location": "Virtual - Zoom",
+    "outcome": "positive",
+    "follow_up_required": true,
+    "follow_up_date": "2024-02-25T10:00:00Z",
+    "attendees": [
+      "emily.rodriguez@techcorp.com",
+      "sales.rep1@ourcompany.com",
+      "tech.lead@ourcompany.com"
+    ],
+    "created_by": "sales.rep1@ourcompany.com",
+    "created_date": "2024-02-18T15:30:00Z",
+    "status": "completed",
+    "next_steps": "Prepare detailed technical proposal with architecture diagrams"
+  },
+  {
+    "activity_id": "ACT-2024-002",
+    "contact_id": "CONT-2024-002",
+    "account_id": "ACC-STARTUP-789",
+    "opportunity_id": "OPP-2024-002",
+    "activity_type": "email",
+    "subject": "Pricing Options Follow-up",
+    "description": "Sent detailed pricing breakdown for different package options including startup discounts.",
+    "activity_date": "2024-02-17T16:30:00Z",
+    "duration_minutes": 15,
+    "location": "Email",
+    "outcome": "neutral",
+    "follow_up_required": true,
+    "follow_up_date": "2024-02-22T15:00:00Z",
+    "attendees": [
+      "james@startup-innovations.com"
+    ],
+    "created_by": "sales.rep2@ourcompany.com",
+    "created_date": "2024-02-17T16:45:00Z",
+    "status": "completed",
+    "next_steps": "Schedule call to discuss pricing questions"
+  },
+  {
+    "activity_id": "ACT-2024-003",
+    "contact_id": "CONT-2024-003",
+    "account_id": "ACC-ENTERPRISE-123",
+    "opportunity_id": "OPP-2024-003",
+    "activity_type": "demo",
+    "subject": "Operations Suite Product Demo",
+    "description": "Comprehensive product demonstration focusing on operational efficiency features and reporting capabilities.",
+    "activity_date": "2024-02-16T10:00:00Z",
+    "duration_minutes": 90,
+    "location": "Customer Office - Chicago",
+    "outcome": "very_positive",
+    "follow_up_required": true,
+    "follow_up_date": "2024-02-23T14:00:00Z",
+    "attendees": [
+      "maria.thompson@enterprise-corp.com",
+      "it.director@enterprise-corp.com",
+      "sales.rep1@ourcompany.com",
+      "sales.engineer@ourcompany.com"
+    ],
+    "created_by": "sales.rep1@ourcompany.com",
+    "created_date": "2024-02-16T13:00:00Z",
+    "status": "completed",
+    "next_steps": "Prepare ROI analysis and implementation timeline"
+  },
+  {
+    "activity_id": "ACT-2024-004",
+    "contact_id": "CONT-2024-004",
+    "account_id": "ACC-CONSULTING-456",
+    "opportunity_id": "OPP-2024-004",
+    "activity_type": "content_engagement",
+    "subject": "Downloaded Partner Program Guide",
+    "description": "Contact downloaded the comprehensive partner program guide and pricing sheet.",
+    "activity_date": "2024-02-15T12:30:00Z",
+    "duration_minutes": 5,
+    "location": "Website",
+    "outcome": "positive",
+    "follow_up_required": true,
+    "follow_up_date": "2024-03-01T09:00:00Z",
+    "attendees": [
+      "david.kim@consulting-firm.com"
+    ],
+    "created_by": "marketing.automation@ourcompany.com",
+    "created_date": "2024-02-15T12:35:00Z",
+    "status": "completed",
+    "next_steps": "Send personalized follow-up email about partner benefits"
+  },
+  {
+    "activity_id": "ACT-2024-005",
+    "contact_id": "CONT-2024-001",
+    "account_id": "ACC-TECHCORP-456",
+    "opportunity_id": "OPP-2024-005",
+    "activity_type": "phone_call",
+    "subject": "License Expansion Discussion",
+    "description": "Quick call to discuss additional license requirements for Q2 growth plans.",
+    "activity_date": "2024-02-08T11:00:00Z",
+    "duration_minutes": 20,
+    "location": "Phone",
+    "outcome": "very_positive",
+    "follow_up_required": false,
+    "follow_up_date": null,
+    "attendees": [
+      "emily.rodriguez@techcorp.com",
+      "sales.rep1@ourcompany.com"
+    ],
+    "created_by": "sales.rep1@ourcompany.com",
+    "created_date": "2024-02-08T11:25:00Z",
+    "status": "completed",
+    "next_steps": "Process license expansion order"
+  }
+]

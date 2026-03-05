@@ -1,0 +1,46 @@
+# Specify MCP Extension Configuration
+# Copy this file to specify-mcp-config.yml and customize
+
+# Domain Analysis Settings
+analysis:
+  # Available domain templates for analyze_domain tool
+  domain_templates:
+    - financial
+    - ecommerce
+    - crm
+
+  # Enable strict validation during analysis
+  validation_strict: false
+
+  # Maximum file size to analyze (in MB)
+  max_file_size: 50
+
+# Workflow Settings
+workflow:
+  # Automatically run validation after task generation
+  auto_validate: false
+
+  # Track task progress automatically
+  track_progress: true
+
+  # Default granularity for task breakdown
+  default_granularity: fine  # fine or coarse
+
+# Specification Settings
+specification:
+  # Include research documentation in plans
+  include_research: true
+
+  # Include data model documentation in plans
+  include_data_model: true
+
+  # Default template for new specifications
+  default_template: default
+
+# Constitution Settings
+constitution:
+  # Require constitution before creating specifications
+  required: false
+
+  # Default constitution template
+  default_template: default
