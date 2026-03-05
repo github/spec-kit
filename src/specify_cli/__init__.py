@@ -251,6 +251,13 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
+    "vibe": {
+        "name": "Mistral Vibe",
+        "folder": ".vibe/",
+        "commands_subdir": "prompts",
+        "install_url": "https://github.com/mistralai/mistral-vibe",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir
@@ -1280,6 +1287,7 @@ def init(
         specify init --here --ai claude    # Alternative syntax for current directory
         specify init --here --ai codex
         specify init --here --ai codebuddy
+        specify init --here --ai vibe      # Initialize with Mistral Vibe support
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init my-project --ai claude --ai-skills   # Install agent skills

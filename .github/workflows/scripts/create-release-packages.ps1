@@ -359,6 +359,10 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".speckit/commands"
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'vibe' {
+            $cmdDir = Join-Path $baseDir ".vibe/prompts"
+            Generate-Commands -Agent 'vibe' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         default {
             throw "Unsupported agent '$Agent'."
         }
@@ -371,7 +375,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'agy', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'agy', 'vibe', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {

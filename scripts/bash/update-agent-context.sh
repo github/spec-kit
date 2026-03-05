@@ -30,7 +30,7 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Kiro CLI, or Antigravity
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Kiro CLI, Mistral Vibe or Antigravity
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
@@ -76,6 +76,7 @@ SHAI_FILE="$REPO_ROOT/SHAI.md"
 KIRO_FILE="$REPO_ROOT/AGENTS.md"
 AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 BOB_FILE="$REPO_ROOT/AGENTS.md"
+VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -657,12 +658,15 @@ update_specific_agent() {
         bob)
             update_agent_file "$BOB_FILE" "IBM Bob"
             ;;
+        vibe)
+            update_agent_file "$VIBE_FILE" "Mistral Vibe"
+            ;;
         generic)
             log_info "Generic agent: no predefined context file. Use the agent-specific update script for your agent."
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|qodercli|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|vibe|qodercli|generic"
             exit 1
             ;;
     esac
@@ -750,6 +754,11 @@ update_all_existing_agents() {
         update_agent_file "$BOB_FILE" "IBM Bob"
         found_agent=true
     fi
+
+    if [[ -f "$VIBE_FILE" ]]; then
+        update_agent_file "$VIBE_FILE" "Mistral Vibe"
+        found_agent=true
+    fi
     
     # If no agent files exist, create a default Claude file
     if [[ "$found_agent" == false ]]; then
@@ -774,8 +783,7 @@ print_summary() {
     fi
     
     echo
-
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|qodercli]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|qodercli|vibe]"
 }
 
 #==============================================================================
