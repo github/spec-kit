@@ -1,6 +1,10 @@
 ---
 description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
 handoffs: 
+  - label: Sync to Azure DevOps
+    agent: speckit.adosync
+    prompt: Sync generated tasks (tasks.md) to Azure DevOps
+    send: false
   - label: Analyze For Consistency
     agent: speckit.analyze
     prompt: Run a project analysis for consistency
