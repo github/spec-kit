@@ -1,0 +1,97 @@
+schema_version: "1.0"
+
+extension:
+  # CUSTOMIZE: Change 'my-extension' to your extension ID (lowercase, hyphen-separated)
+  id: "my-extension"
+
+  # CUSTOMIZE: Human-readable name for your extension
+  name: "My Extension"
+
+  # CUSTOMIZE: Update version when releasing (semantic versioning: X.Y.Z)
+  version: "1.0.0"
+
+  # CUSTOMIZE: Brief description (under 200 characters)
+  description: "Brief description of what your extension does"
+
+  # CUSTOMIZE: Your name or organization name
+  author: "Your Name"
+
+  # CUSTOMIZE: GitHub repository URL (create before publishing)
+  repository: "https://github.com/your-org/spec-kit-my-extension"
+
+  # REVIEW: License (MIT is recommended for open source)
+  license: "MIT"
+
+  # CUSTOMIZE: Extension homepage (can be same as repository)
+  homepage: "https://github.com/your-org/spec-kit-my-extension"
+
+# Requirements for this extension
+requires:
+  # CUSTOMIZE: Minimum spec-kit version required
+  # Use >=X.Y.Z for minimum version
+  # Use >=X.Y.Z,<Y.0.0 for version range
+  speckit_version: ">=0.1.0"
+
+  # CUSTOMIZE: Add MCP tools or other dependencies
+  # Remove if no external tools required
+  tools:
+    - name: "example-mcp-server"
+      version: ">=1.0.0"
+      required: true
+
+# Commands provided by this extension
+provides:
+  commands:
+    # CUSTOMIZE: Define your commands
+    # Pattern: speckit.{extension-id}.{command-name}
+    - name: "speckit.my-extension.example"
+      file: "commands/example.md"
+      description: "Example command that demonstrates functionality"
+      # Optional: Add aliases for shorter command names
+      aliases: ["speckit.example"]
+
+    # ADD MORE COMMANDS: Copy this block for each command
+    # - name: "speckit.my-extension.another-command"
+    #   file: "commands/another-command.md"
+    #   description: "Another command"
+
+  # CUSTOMIZE: Define configuration files
+  config:
+    - name: "my-extension-config.yml"
+      template: "config-template.yml"
+      description: "Extension configuration"
+      required: true # Set to false if config is optional
+
+# CUSTOMIZE: Define hooks (optional)
+# Remove if no hooks needed
+hooks:
+  # Hook that runs after /speckit.tasks
+  after_tasks:
+    command: "speckit.my-extension.example"
+    optional: true # User will be prompted
+    prompt: "Run example command?"
+    description: "Demonstrates hook functionality"
+    condition: null # Future: conditional execution
+
+  # ADD MORE HOOKS: Copy this block for other events
+  # after_implement:
+  #   command: "speckit.my-extension.another"
+  #   optional: false  # Auto-execute without prompting
+  #   description: "Runs automatically after implementation"
+
+# CUSTOMIZE: Add relevant tags (2-5 recommended)
+# Used for discovery in catalog
+tags:
+  - "example"
+  - "template"
+  # ADD MORE: "category", "tool-name", etc.
+
+# CUSTOMIZE: Default configuration values (optional)
+# These are merged with user config
+defaults:
+  # Example default values
+  feature:
+    enabled: true
+    auto_sync: false
+
+  # ADD MORE: Any default settings for your extension

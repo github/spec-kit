@@ -65,6 +65,7 @@ AGENT_CONFIG = {
     "new-agent-cli": {  # Use the ACTUAL CLI tool name (what users type in terminal)
         "name": "New Agent Display Name",
         "folder": ".newagent/",  # Directory for agent files
+        "commands_subdir": "commands",  # Subdirectory name for command files (default: "commands")
         "install_url": "https://example.com/install",  # URL for installation docs (or None if IDE-based)
         "requires_cli": True,  # True if CLI tool required, False for IDE-based agents
     },
@@ -82,6 +83,10 @@ This eliminates the need for special-case mappings throughout the codebase.
 
 - `name`: Human-readable display name shown to users
 - `folder`: Directory where agent-specific files are stored (relative to project root)
+- `commands_subdir`: Subdirectory name within the agent folder where command/prompt files are stored (default: `"commands"`)
+  - Most agents use `"commands"` (e.g., `.claude/commands/`)
+  - Some agents use alternative names: `"agents"` (copilot), `"workflows"` (windsurf, kilocode, agy), `"prompts"` (codex, q), `"command"` (opencode - singular)
+  - This field enables `--ai-skills` to locate command templates correctly for skill generation
 - `install_url`: Installation documentation URL (set to `None` for IDE-based agents)
 - `requires_cli`: Whether the agent requires a CLI tool check during initialization
 

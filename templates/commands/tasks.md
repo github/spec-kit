@@ -43,7 +43,7 @@ You **MUST** consider the user input before proceeding (if not empty).
      - PRD: Check if the `PRD` path from the script exists; if not, try `FEATURE_DIR/prd.md`, then check `AVAILABLE_DOCS` for `prd.md`, then try `docs/PRD/<feature-prefix>-*.md`
      - AR: Check if the `ARD` path from the script exists; if not, try `FEATURE_DIR/ar.md`, then check `AVAILABLE_DOCS` for `ar.md`, then try `docs/AR/<feature-prefix>-*.md`
      - SEC: Check if the `SEC` path from the script exists; if not, try `FEATURE_DIR/sec.md`, then check `AVAILABLE_DOCS` for `sec.md`, then try `docs/SEC/<feature-prefix>-*.md`
-     - data-model.md (entities), contracts/ (API endpoints), research.md (decisions), quickstart.md (test scenarios)
+     - data-model.md (entities), contracts/ (interface contracts), research.md (decisions), quickstart.md (test scenarios)
    - Note: Not all projects have all documents. Generate tasks based on what's available.
 
 5. **Execute task generation workflow**:
@@ -53,7 +53,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If ar.md exists: Extract component architecture, implementation guardrails, and selected option constraints
    - If sec.md exists: Extract security requirements (SEC-*) and generate security-specific tasks (e.g., input validation, auth checks, data encryption)
    - If data-model.md exists: Extract entities and map to user stories
-   - If contracts/ exists: Map endpoints to user stories
+   - If contracts/ exists: Map interface contracts to user stories
    - If research.md exists: Extract decisions for setup tasks
    - Generate tasks organized by user story (see Task Generation Rules below)
    - Generate dependency graph showing user story completion order
@@ -130,13 +130,13 @@ Every task MUST strictly follow this format:
    - Map all related components to their story:
      - Models needed for that story
      - Services needed for that story
-     - Endpoints/UI needed for that story
+     - Interfaces/UI needed for that story
      - If tests requested: Tests specific to that story
    - Mark story dependencies (most stories should be independent)
 
 2. **From Contracts**:
-   - Map each contract/endpoint → to the user story it serves
-   - If tests requested: Each contract → contract test task [P] before implementation in that story's phase
+   - Map each interface contract → to the user story it serves
+   - If tests requested: Each interface contract → contract test task [P] before implementation in that story's phase
 
 3. **From Data Model**:
    - Map each entity to the user story(ies) that need it

@@ -2,10 +2,163 @@
 
 <!-- markdownlint-disable MD024 -->
 
-All notable changes to the Specify CLI and templates are documented here.
+Recent changes to the Specify CLI and templates are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.7] - 2026-03-04
+
+### Fixed
+
+- **Extension CLI polish (Copilot review follow-ups)**
+  - `specify extension add` now allows omitting the positional extension name when using `--from <url>`
+  - `specify extension list --available/--all` now fetches and displays catalog extensions instead of only showing an install hint
+  - Updated `install_ai_skills()` docstring to match actual `SKILL.md` generation behavior
+  - Corrected extension docs/templates for local override filename (`local-config.yml`) and fixed malformed fenced code blocks in the example command template
+  - Fixed issue template link to point at the canonical `github/spec-kit` extension development guide
+
+## [0.1.6] - 2026-02-23
+
+### Fixed
+
+- **Parameter Ordering Issues (#1641)**: Fixed CLI parameter parsing issue where option flags were incorrectly consumed as values for preceding options
+  - Added validation to detect when `--ai` or `--ai-commands-dir` incorrectly consume following flags like `--here` or `--ai-skills`
+  - Now provides clear error messages: "Invalid value for --ai: '--here'"
+  - Includes helpful hints suggesting proper usage and listing available agents
+  - Commands like `specify init --ai-skills --ai --here` now fail with actionable feedback instead of confusing "Must specify project name" errors
+  - Added comprehensive test suite (5 new tests) to prevent regressions
+
+## [0.1.5] - 2026-02-21
+
+### Fixed
+
+- **AI Skills Installation Bug (#1658)**: Fixed `--ai-skills` flag not generating skill files for GitHub Copilot and other agents with non-standard command directory structures
+  - Added `commands_subdir` field to `AGENT_CONFIG` to explicitly specify the subdirectory name for each agent
+  - Affected agents now work correctly: copilot (`.github/agents/`), opencode (`.opencode/command/`), windsurf (`.windsurf/workflows/`), codex (`.codex/prompts/`), kilocode (`.kilocode/workflows/`), q (`.amazonq/prompts/`), and agy (`.agent/workflows/`)
+  - The `install_ai_skills()` function now uses the correct path for all agents instead of assuming `commands/` for everyone
+
+## [0.1.4] - 2026-02-20
+
+### Fixed
+
+- **Qoder CLI detection**: Standardized detection to use the executable-aligned `"qoder"` key in `AGENT_CONFIG`, fixing `specify check` and `specify init --ai` tool checks
+
+## [0.1.3] - 2026-02-20
+
+## [0.1.0] - 2026-01-28
+
+### Added
+
+- **Extension System**: Introduced modular extension architecture for Spec Kit
+  - Extensions are self-contained packages that add commands and functionality without bloating core
+  - Extension manifest schema (`extension.yml`) with validation
+  - Extension registry (`.specify/extensions/.registry`) for tracking installed extensions
+  - Extension manager module (`src/specify_cli/extensions.py`) for installation/removal
+  - New CLI commands:
+    - `specify extension list` - List installed extensions
+    - `specify extension add` - Install extension from local directory or URL
+    - `specify extension remove` - Uninstall extension
+    - `specify extension search` - Search extension catalog
+    - `specify extension info` - Show detailed extension information
+  - Semantic versioning compatibility checks
+  - Support for extension configuration files
+  - Command registration system for AI agents (Claude support initially)
+  - Added dependencies: `pyyaml>=6.0`, `packaging>=23.0`
+
+- **Extension Catalog**: Extension discovery and distribution system
+  - Central catalog (`extensions/catalog.json`) for published extensions
+  - Extension catalog manager (`ExtensionCatalog` class) with:
+    - Catalog fetching from GitHub
+    - 1-hour local caching for performance
+    - Search by query, tag, author, or verification status
+    - Extension info retrieval
+  - Catalog cache stored in `.specify/extensions/.cache/`
+  - Search and info commands with rich console output
+  - Added 9 catalog-specific unit tests (100% pass rate)
+
+- **Jira Extension**: First official extension for Jira integration
+  - Extension ID: `jira`
+  - Version: 1.0.0
+  - Commands:
+    - `/speckit.jira.specstoissues` - Create Jira hierarchy from spec and tasks
+    - `/speckit.jira.discover-fields` - Discover Jira custom fields
+    - `/speckit.jira.sync-status` - Sync task completion status
+  - Comprehensive documentation (README, usage guide, examples)
+  - MIT licensed
+
+- **Hook System**: Extension lifecycle hooks for automation
+  - `HookExecutor` class for managing extension hooks
+  - Hooks registered in `.specify/extensions.yml`
+  - Hook registration during extension installation
+  - Hook unregistration during extension removal
+  - Support for optional and mandatory hooks
+  - Hook execution messages for AI agent integration
+  - Condition support for conditional hook execution (placeholder)
+
+- **Extension Management**: Advanced extension management commands
+  - `specify extension update` - Check and update extensions to latest version
+  - `specify extension enable` - Enable a disabled extension
+  - `specify extension disable` - Disable extension without removing it
+  - Version comparison with catalog
+  - Update notifications
+  - Preserve configuration during updates
+
+- **Multi-Agent Support**: Extensions now work with all supported AI agents (Phase 6)
+  - Automatic detection and registration for all agents in project
+  - Support for 16+ AI agents (Claude, Gemini, Copilot, Cursor, Qwen, and more)
+  - Agent-specific command formats (Markdown and TOML)
+  - Automatic argument placeholder conversion ($ARGUMENTS → {{args}})
+  - Commands registered for all detected agents during installation
+  - Multi-agent command unregistration on extension removal
+  - `CommandRegistrar.register_commands_for_agent()` method
+  - `CommandRegistrar.register_commands_for_all_agents()` method
+
+- **Configuration Layers**: Full configuration cascade system (Phase 6)
+  - **Layer 1**: Defaults from extension manifest (`extension.yml`)
+  - **Layer 2**: Project config (`.specify/extensions/{ext-id}/{ext-id}-config.yml`)
+  - **Layer 3**: Local config (`.specify/extensions/{ext-id}/local-config.yml`, gitignored)
+  - **Layer 4**: Environment variables (`SPECKIT_{EXT_ID}_{KEY}` pattern)
+  - Recursive config merging with proper precedence
+  - `ConfigManager` class for programmatic config access
+  - `get_config()`, `get_value()`, `has_value()` methods
+  - Support for nested configuration paths with dot-notation
+
+- **Hook Condition Evaluation**: Smart hook execution based on runtime conditions (Phase 6)
+  - Config conditions: `config.key.path is set`, `config.key == 'value'`, `config.key != 'value'`
+  - Environment conditions: `env.VAR is set`, `env.VAR == 'value'`, `env.VAR != 'value'`
+  - Automatic filtering of hooks based on condition evaluation
+  - Safe fallback behavior on evaluation errors
+  - Case-insensitive pattern matching
+
+- **Hook Integration**: Agent-level hook checking and execution (Phase 6)
+  - `check_hooks_for_event()` method for AI agents to query hooks after core commands
+  - Condition-aware hook filtering before execution
+  - `enable_hooks()` and `disable_hooks()` methods per extension
+  - Formatted hook messages for agent display
+  - `execute_hook()` method for hook execution information
+
+- **Documentation Suite**: Comprehensive documentation for users and developers
+  - **EXTENSION-USER-GUIDE.md**: Complete user guide with installation, usage, configuration, and troubleshooting
+  - **EXTENSION-API-REFERENCE.md**: Technical API reference with manifest schema, Python API, and CLI commands
+  - **EXTENSION-PUBLISHING-GUIDE.md**: Publishing guide for extension authors
+  - **RFC-EXTENSION-SYSTEM.md**: Extension architecture design document
+
+- **Extension Template**: Starter template in `extensions/template/` for creating new extensions
+  - Fully commented `extension.yml` manifest template
+  - Example command file with detailed explanations
+  - Configuration template with all options
+  - Complete project structure (README, LICENSE, CHANGELOG, .gitignore)
+  - EXAMPLE-README.md showing final documentation format
+
+- **Unit Tests**: Comprehensive test suite with 39 tests covering all extension system components
+  - Test coverage: 83% of extension module code
+  - Test dependencies: `pytest>=7.0`, `pytest-cov>=4.0`
+  - Configured pytest in `pyproject.toml`
+
+### Changed
+
+- Version bumped to 0.1.0 (minor release for new feature)
 
 ## [0.0.23] - 2026-02-05
 
@@ -26,6 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed jq injection vulnerability in `configure-worktree.sh` by using `--arg` for user input
 - Fixed PowerShell temp file leak in writability checks with proper `try/finally` cleanup
 - Moved `WORKTREE_DESIGN.md` into `specs/001-git-worktrees/` to keep design docs with their spec
+- Add stale workflow for 180-day inactive issues and PRs (#1594)
 
 ## [0.0.22] - 2025-11-07
 
@@ -53,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Filters out common stop words (I, want, to, the, for, etc.)
   - Removes words shorter than 3 characters (unless they're uppercase acronyms)
   - Takes 3-4 most meaningful words from the description
-  - **Enforces GitHub's 244-byte branch name limit** with automatic truncation and warnings
+  - **Enforces GitHub's 244-byte limit** with automatic truncation and warnings
   - Examples:
     - "I want to create user authentication" → `001-create-user-authentication`
     - "Implement OAuth2 integration for API" → `001-implement-oauth2-integration-api`

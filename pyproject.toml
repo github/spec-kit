@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.0.23"
+version = "0.1.7"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [
@@ -10,6 +10,8 @@ dependencies = [
     "platformdirs",
     "readchar",
     "truststore>=0.10.4",
+    "pyyaml>=6.0",
+    "packaging>=23.0",
 ]
 
 [project.scripts]
@@ -27,3 +29,28 @@ packages = ["src/specify_cli"]
 "scripts" = "specify_cli/data/scripts"
 "memory" = "specify_cli/data/memory"
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
