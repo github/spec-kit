@@ -2,5 +2,18 @@
   "schema_version": "1.0",
   "updated_at": "2026-02-03T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
-  "extensions": {}
+  "extensions": {
+    "selftest": {
+      "name": "Spec Kit Self-Test Utility",
+      "version": "1.0.0",
+      "description": "Verifies catalog extensions by programmatically walking through the discovery, installation, and registration lifecycle.",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": [
+        "testing",
+        "core",
+        "utility"
+      ]
+    }
+  }
 }
