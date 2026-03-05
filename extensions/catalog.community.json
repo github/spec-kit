@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-03T00:00:00Z",
+  "updated_at": "2026-03-05T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "cleanup": {
@@ -28,6 +28,32 @@
       "stars": 0,
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
+    },
+    "jira": {
+      "name": "Jira Integration",
+      "id": "jira",
+      "description": "Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support.",
+      "author": "mbachorik",
+      "version": "2.1.0",
+      "download_url": "https://github.com/mbachorik/spec-kit-jira/archive/refs/tags/v2.1.0.zip",
+      "repository": "https://github.com/mbachorik/spec-kit-jira",
+      "homepage": "https://github.com/mbachorik/spec-kit-jira",
+      "documentation": "https://github.com/mbachorik/spec-kit-jira/blob/main/README.md",
+      "changelog": "https://github.com/mbachorik/spec-kit-jira/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": ["issue-tracking", "jira", "atlassian", "project-management"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-01-28T00:00:00Z",
+      "updated_at": "2026-03-05T00:00:00Z"
     },
     "retrospective": {
       "name": "Retrospective Extension",
