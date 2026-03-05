@@ -19,7 +19,7 @@ Check if the extension exists in the Spec Kit catalog.
 Execute this command and verify that `$ARGUMENTS` appears in the results. If the command fails or returns no results, fail the test.
 
 ```bash
-specify extension search $ARGUMENTS
+specify extension search "$ARGUMENTS"
 ```
 
 ### Step 2: Simulate Installation
@@ -27,7 +27,7 @@ specify extension search $ARGUMENTS
 Simulate adding the extension to the current workspace configuration.
 
 ```bash
-specify extension add $ARGUMENTS
+specify extension add "$ARGUMENTS"
 ```
 
 ### Step 3: Registration Verification
