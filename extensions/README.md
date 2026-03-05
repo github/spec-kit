@@ -74,6 +74,7 @@ The following community-contributed extensions are available in [`catalog.commun
 |-----------|---------|-----|
 | V-Model Extension Pack | Enforces V-Model paired generation of development specs and test specs with full traceability | [spec-kit-v-model](https://github.com/leocamello/spec-kit-v-model) |
 | Cleanup Extension | Post-implementation quality gate that reviews changes, fixes small issues (scout rule), creates tasks for medium issues, and generates analysis for large issues | [spec-kit-cleanup](https://github.com/dsrednicki/spec-kit-cleanup) |
+| Azure DevOps Integration | Sync user stories and tasks to Azure DevOps work items using OAuth authentication | [spec-kit-azure-devops](https://github.com/pragya247/spec-kit-azure-devops) |
 
 ## Adding Your Extension
 
