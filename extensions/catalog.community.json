@@ -114,6 +114,32 @@
       "created_at": "2026-02-24T00:00:00Z",
       "updated_at": "2026-02-24T00:00:00Z"
     },
+    "review": {
+      "name": "Review Extension",
+      "id": "review",
+      "description": "Post-implementation comprehensive code review with specialized agents for code quality, comments, tests, error handling, type design, and simplification.",
+      "author": "ismaelJimenez",
+      "version": "1.0.0",
+      "download_url": "https://github.com/ismaelJimenez/spec-kit-review/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/ismaelJimenez/spec-kit-review",
+      "homepage": "https://github.com/ismaelJimenez/spec-kit-review",
+      "documentation": "https://github.com/ismaelJimenez/spec-kit-review/blob/main/README.md",
+      "changelog": "https://github.com/ismaelJimenez/spec-kit-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 1
+      },
+      "tags": ["code-review", "quality", "review", "testing", "error-handling", "type-design", "simplification"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-06T00:00:00Z",
+      "updated_at": "2026-03-06T00:00:00Z"
+    },
     "sync": {
       "name": "Spec Sync",
       "id": "sync",
