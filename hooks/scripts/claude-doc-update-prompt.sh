@@ -15,29 +15,32 @@ FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"
 
 # If no file path found, exit silently
 if [[ -z "$FILE_PATH" ]]; then
+    echo '{}'
     exit 0
 fi
 
 # Skip patterns - files that should NOT trigger documentation reminders
 # Config/meta directories
 case "$FILE_PATH" in
-    *.minispec/*|*.claude/*|*.cursor/*|*.github/*|*.git/*|*.vscode/*) exit 0 ;;
+    *.minispec/*|*.claude/*|*.cursor/*|*.github/*|*.git/*|*.vscode/*) echo '{}'; exit 0 ;;
 esac
 
 # Test files
 case "$FILE_PATH" in
-    *_test.go|*_test.py|*.test.js|*.test.ts|*.test.jsx|*.test.tsx|*.spec.js|*.spec.ts|*.spec.jsx|*.spec.tsx) exit 0 ;;
-    */test/*|*/tests/*|*/__tests__/*|*/test_*) exit 0 ;;
+    *_test.go|*_test.py|*.test.js|*.test.ts|*.test.jsx|*.test.tsx|*.spec.js|*.spec.ts|*.spec.jsx|*.spec.tsx) echo '{}'; exit 0 ;;
+    */test/*|*/tests/*|*/__tests__/*|*/test_*) echo '{}'; exit 0 ;;
 esac
 
 # Config and non-source files
 case "$FILE_PATH" in
-    *.md|*.txt|*.json|*.yaml|*.yml|*.toml|*.ini|*.cfg|*.conf|*.lock|*.sum) exit 0 ;;
-    *.env*|*.gitignore|*.dockerignore|*.editorconfig) exit 0 ;;
-    Makefile|Dockerfile*|docker-compose*) exit 0 ;;
+    *.md|*.txt|*.json|*.yaml|*.yml|*.toml|*.ini|*.cfg|*.conf|*.lock|*.sum) echo '{}'; exit 0 ;;
+    *.env*|*.gitignore|*.dockerignore|*.editorconfig) echo '{}'; exit 0 ;;
+    Makefile|Dockerfile*|docker-compose*) echo '{}'; exit 0 ;;
 esac
 
-# Source code file - output reminder
-echo "[MiniSpec] Source file modified: $FILE_PATH. If this change affects architecture, patterns, or module behavior, update the relevant docs in .minispec/knowledge/. Run /minispec.validate-docs to check freshness."
+# Source code file - output JSON reminder
+jq -n --arg path "$FILE_PATH" '{
+    systemMessage: ("[MiniSpec] Source file modified: " + $path + ". If this change affects architecture, patterns, or module behavior, update the relevant docs in .minispec/knowledge/. Run /minispec.validate-docs to check freshness.")
+}'
 
 exit 0

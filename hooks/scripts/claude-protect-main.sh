@@ -9,6 +9,7 @@ set -euo pipefail
 
 # Require jq; fail open (allow) if unavailable rather than breaking the hook chain
 if ! command -v jq &>/dev/null; then
+    echo '{}'
     exit 0
 fi
 
@@ -20,6 +21,7 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 # Only check commands that contain git commit (handles chained commands like "git add && git commit")
 if [[ ! "$COMMAND" =~ git[[:space:]]+commit ]]; then
+    echo '{}'
     exit 0  # Allow non-commit commands
 fi
 
@@ -45,4 +47,5 @@ for branch in "${PROTECTED_BRANCHES[@]}"; do
 done
 
 # Allow the command
+echo '{}'
 exit 0

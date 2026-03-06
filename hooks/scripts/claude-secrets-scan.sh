@@ -9,6 +9,7 @@ set -euo pipefail
 
 # Require jq; fail open (allow) if unavailable rather than breaking the hook chain
 if ! command -v jq &>/dev/null; then
+    echo '{}'
     exit 0
 fi
 
@@ -20,6 +21,7 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 # Only check commands that contain git add or git commit (handles chained commands)
 if [[ ! "$COMMAND" =~ git[[:space:]]+(add|commit) ]]; then
+    echo '{}'
     exit 0  # Allow non-git commands
 fi
 
@@ -37,6 +39,7 @@ else
 fi
 
 if [[ -z "$FILES" ]]; then
+    echo '{}'
     exit 0
 fi
 
@@ -83,4 +86,5 @@ if [[ -n "$FOUND_SECRETS" ]]; then
 fi
 
 # Allow the command
+echo '{}'
 exit 0
