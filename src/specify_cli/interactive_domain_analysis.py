@@ -236,7 +236,7 @@ class InteractiveDomainAnalyzer(DomainAnalyzer):
         for i, rule in enumerate(self.domain_model.business_rules, 1):
             confidence_indicator = "HIGH" if rule.confidence >= 0.9 else "MED" if rule.confidence >= 0.8 else "LOW"
             print(f"  {i}. {rule.rule_id}: {rule.description}")
-            print(f"     Confidence: {rule.confidence:.1%} {confidence_emoji}")
+            print(f"     Confidence: {rule.confidence:.1%} {confidence_indicator}")
             print(f"     Applies to: {', '.join(rule.entities_involved)}")
 
         while True:

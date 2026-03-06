@@ -46,13 +46,21 @@ def specify_tool(mcp: FastMCP):
             if not feature_name:
                 # Simple feature name generation from description
                 words = description.lower().split()[:3]
-                feature_name = "-".join(word.strip(".,!?") for word in words if word.isalnum())
+                feature_name = "-".join(word.strip(".,!?") for word in words)
+
+            # Sanitize feature name to prevent path traversal
+            import re
+            feature_name = re.sub(r"[^a-z0-9-]+", "-", feature_name.lower()).strip("-")
+            if not feature_name:
+                return {"success": False, "error": "Unable to derive a valid feature name from input"}
 
             # Create feature directory
             features_dir = repo_path / "features"
             features_dir.mkdir(exist_ok=True)
 
-            feature_dir = features_dir / feature_name
+            feature_dir = (features_dir / feature_name).resolve()
+            if not feature_dir.is_relative_to(features_dir.resolve()):
+                return {"success": False, "error": "Invalid feature_name path"}
             feature_dir.mkdir(exist_ok=True)
 
             # Create basic specification template

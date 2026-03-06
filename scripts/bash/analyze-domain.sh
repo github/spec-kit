@@ -132,19 +132,19 @@ for file in "${JSON_FILES[@]}"; do
     # Extract potential entity names from filenames
     if [[ "$basename_file" =~ invoice ]] && [[ ! "$ENTITIES_LIST" =~ "Invoice" ]]; then
         ENTITIES_LIST="$ENTITIES_LIST Invoice"
-        ((ENTITIES_DISCOVERED++))
+        ((++ENTITIES_DISCOVERED))
     fi
     if [[ "$basename_file" =~ (payment|unallocated) ]] && [[ ! "$ENTITIES_LIST" =~ "Payment" ]]; then
         ENTITIES_LIST="$ENTITIES_LIST Payment"
-        ((ENTITIES_DISCOVERED++))
+        ((++ENTITIES_DISCOVERED))
     fi
     if [[ "$basename_file" =~ supplier ]] && [[ ! "$ENTITIES_LIST" =~ "Supplier" ]]; then
         ENTITIES_LIST="$ENTITIES_LIST Supplier"
-        ((ENTITIES_DISCOVERED++))
+        ((++ENTITIES_DISCOVERED))
     fi
     if [[ "$basename_file" =~ reconcil ]] && [[ ! "$ENTITIES_LIST" =~ "ReconciliationRun" ]]; then
         ENTITIES_LIST="$ENTITIES_LIST ReconciliationRun"
-        ((ENTITIES_DISCOVERED++))
+        ((++ENTITIES_DISCOVERED))
     fi
 done
 
@@ -157,7 +157,7 @@ BUSINESS_RULES_COUNT=$((ENTITIES_DISCOVERED * 2 + 3))  # Basic heuristic
 # Count integration points from directory structure
 for dir in "${DATA_DIRS[@]}"; do
     if [[ "$dir" =~ (processed|reports|sage|mcp) ]]; then
-        ((INTEGRATION_POINTS++))
+        ((++INTEGRATION_POINTS))
     fi
 done
 

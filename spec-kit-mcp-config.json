@@ -7,165 +7,165 @@
 
   "tools": [
     {
-      "name": "spec_init",
-      "description": "Initialize new projects with spec-driven templates and structure",
+      "name": "specify_init",
+      "description": "Initialize a new Spec-Kit project with templates and configuration",
       "parameters": {
         "type": "object",
         "properties": {
-          "project_name": {"type": "string", "description": "Name of the project"},
-          "project_type": {"type": "string", "enum": ["web", "api", "mobile", "cli", "library"], "description": "Type of project"},
-          "working_directory": {"type": "string", "description": "Directory to initialize project in"},
-          "template_source": {"type": "string", "description": "Template source or type"},
-          "ai_assistant": {"type": "string", "enum": ["claude", "gemini", "copilot", "cursor"], "description": "AI assistant to configure for"},
-          "script_type": {"type": "string", "enum": ["sh", "ps"], "description": "Script type for generated scripts"}
+          "project_name": {"type": "string", "description": "Name of the project to initialize"},
+          "project_type": {"type": "string", "enum": ["web", "api", "cli", "mobile", "library"], "description": "Type of project to initialize", "default": "web"},
+          "ai_assistant": {"type": "string", "enum": ["claude", "copilot", "cursor", "gemini", "codex"], "description": "Primary AI assistant to use", "default": "claude"}
         },
         "required": ["project_name"]
       }
     },
     {
-      "name": "spec_check",
-      "description": "Check available tools and development environment",
+      "name": "specify_check",
+      "description": "Check available tools and environment for Spec-Kit development",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "speckit_constitution",
+      "description": "Establish project constitution with principles and standards",
       "parameters": {
         "type": "object",
         "properties": {
-          "check_type": {"type": "string", "enum": ["tools", "environment", "dependencies", "all"], "default": "all"}
+          "project_values": {"type": "array", "items": {"type": "string"}, "description": "Core values for the project"},
+          "quality_standards": {"type": "array", "items": {"type": "string"}, "description": "Quality standards to uphold"},
+          "development_principles": {"type": "array", "items": {"type": "string"}, "description": "Development principles to follow"}
         }
       }
     },
     {
-      "name": "constitution_create",
-      "description": "Establish project principles and development constitution",
+      "name": "speckit_specify",
+      "description": "Create baseline specifications for features or requirements",
       "parameters": {
         "type": "object",
         "properties": {
-          "project_path": {"type": "string", "description": "Path to project directory"},
-          "principles": {"type": "array", "items": {"type": "string"}, "description": "Core principles for the project"},
-          "development_standards": {"type": "object", "description": "Development standards and practices"},
-          "quality_gates": {"type": "array", "items": {"type": "string"}, "description": "Quality gate requirements"}
+          "feature_description": {"type": "string", "description": "Natural language description of the feature to specify"},
+          "requirements": {"type": "array", "items": {"type": "string"}, "description": "List of specific requirements"},
+          "acceptance_criteria": {"type": "array", "items": {"type": "string"}, "description": "Acceptance criteria for the feature"},
+          "technical_constraints": {"type": "array", "items": {"type": "string"}, "description": "Technical constraints and considerations"}
         },
-        "required": ["project_path"]
+        "required": ["feature_description"]
       }
     },
     {
-      "name": "specification_create",
-      "description": "Create comprehensive baseline specifications for features",
+      "name": "speckit_clarify",
+      "description": "Ask structured questions to clarify ambiguous requirements",
       "parameters": {
         "type": "object",
         "properties": {
-          "feature_description": {"type": "string", "description": "Natural language description of the feature"},
-          "project_path": {"type": "string", "description": "Path to project"},
-          "spec_type": {"type": "string", "enum": ["feature", "api", "ui", "infrastructure"], "default": "feature"},
-          "output_format": {"type": "string", "enum": ["markdown", "json", "yaml"], "default": "markdown"}
+          "requirement_text": {"type": "string", "description": "The requirement text that needs clarification"},
+          "clarification_areas": {"type": "array", "items": {"type": "string"}, "description": "Specific areas that need clarification"}
         },
-        "required": ["feature_description", "project_path"]
+        "required": ["requirement_text"]
       }
     },
     {
-      "name": "clarify_requirements",
-      "description": "Ask structured questions to de-risk ambiguous requirements",
+      "name": "speckit_analyze_domain",
+      "description": "Analyze domain context and provide domain-specific insights",
       "parameters": {
         "type": "object",
         "properties": {
-          "specification": {"type": "string", "description": "Current specification text"},
-          "clarification_areas": {"type": "array", "items": {"type": "string"}, "description": "Specific areas needing clarification"},
-          "question_type": {"type": "string", "enum": ["technical", "business", "user-experience", "all"], "default": "all"}
+          "domain_description": {"type": "string", "description": "Description of the domain to analyze"},
+          "project_context": {"type": "string", "description": "Project context within the domain"},
+          "analysis_depth": {"type": "string", "enum": ["basic", "comprehensive", "expert"], "description": "Depth of domain analysis", "default": "comprehensive"}
         },
-        "required": ["specification"]
+        "required": ["domain_description", "project_context"]
       }
     },
     {
-      "name": "domain_analysis",
-      "description": "Perform comprehensive domain analysis for context and requirements",
+      "name": "speckit_plan",
+      "description": "Create detailed implementation plans from specifications",
       "parameters": {
         "type": "object",
         "properties": {
-          "project_path": {"type": "string", "description": "Path to project"},
-          "domain_context": {"type": "string", "description": "Domain description or keywords"},
-          "analysis_depth": {"type": "string", "enum": ["basic", "comprehensive", "deep"], "default": "comprehensive"},
-          "stakeholder_roles": {"type": "array", "items": {"type": "string"}, "description": "List of stakeholder roles"}
+          "specification_id": {"type": "string", "description": "ID of the specification to create plan for"},
+          "implementation_approach": {"type": "string", "enum": ["incremental", "big-bang", "parallel"], "description": "Implementation approach", "default": "incremental"},
+          "timeline_estimate": {"type": "string", "description": "Timeline estimate for implementation"}
         },
-        "required": ["project_path", "domain_context"]
+        "required": ["specification_id"]
       }
     },
     {
-      "name": "plan_create",
-      "description": "Generate detailed implementation plans from specifications",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "specification_path": {"type": "string", "description": "Path to specification file"},
-          "planning_approach": {"type": "string", "enum": ["agile", "waterfall", "iterative"], "default": "agile"},
-          "include_risk_analysis": {"type": "boolean", "default": true},
-          "include_dependencies": {"type": "boolean", "default": true}
-        },
-        "required": ["specification_path"]
-      }
-    },
-    {
-      "name": "tasks_generate",
+      "name": "speckit_tasks",
       "description": "Generate actionable tasks from implementation plans",
       "parameters": {
         "type": "object",
         "properties": {
-          "plan_path": {"type": "string", "description": "Path to implementation plan"},
-          "task_detail_level": {"type": "string", "enum": ["high", "medium", "detailed"], "default": "detailed"},
-          "assign_roles": {"type": "boolean", "default": false},
-          "estimate_effort": {"type": "boolean", "default": true}
+          "plan_id": {"type": "string", "description": "ID of the plan to generate tasks for"},
+          "task_granularity": {"type": "string", "enum": ["epic", "story", "sub-task"], "description": "Level of task granularity", "default": "story"},
+          "assign_roles": {"type": "boolean", "description": "Whether to assign suggested roles", "default": true}
         },
-        "required": ["plan_path"]
+        "required": ["plan_id"]
       }
     },
     {
-      "name": "checklist_generate",
+      "name": "speckit_checklist",
       "description": "Generate quality checklists for requirements validation",
       "parameters": {
         "type": "object",
         "properties": {
-          "target_type": {"type": "string", "enum": ["requirements", "code", "testing", "deployment"], "description": "What the checklist is for"},
-          "specification_area": {"type": "string", "description": "Specific area or feature"},
-          "checklist_standard": {"type": "string", "enum": ["basic", "comprehensive", "enterprise"], "default": "comprehensive"}
+          "checklist_type": {"type": "string", "enum": ["requirements", "design", "implementation", "testing", "deployment"], "description": "Type of checklist to generate"},
+          "specification_id": {"type": "string", "description": "Specification ID to base checklist on"},
+          "quality_level": {"type": "string", "enum": ["basic", "standard", "comprehensive"], "description": "Quality level for checklist", "default": "standard"}
         },
-        "required": ["target_type"]
+        "required": ["checklist_type"]
       }
     },
     {
-      "name": "consistency_analyze",
-      "description": "Perform cross-artifact consistency analysis",
+      "name": "speckit_analyze",
+      "description": "Perform cross-artifact consistency and alignment analysis",
       "parameters": {
         "type": "object",
         "properties": {
-          "artifacts": {"type": "array", "items": {"type": "string"}, "description": "List of artifact paths to analyze"},
-          "analysis_type": {"type": "string", "enum": ["consistency", "completeness", "alignment"], "default": "consistency"},
-          "report_format": {"type": "string", "enum": ["text", "json", "html"], "default": "text"}
+          "artifacts": {"type": "array", "items": {"type": "string"}, "description": "List of artifact IDs to analyze"},
+          "analysis_type": {"type": "string", "enum": ["consistency", "completeness", "traceability"], "description": "Type of analysis to perform", "default": "consistency"},
+          "report_format": {"type": "string", "enum": ["summary", "detailed", "executive"], "description": "Format of the analysis report", "default": "detailed"}
         },
         "required": ["artifacts"]
       }
     },
     {
-      "name": "implement_execute",
+      "name": "speckit_implement",
       "description": "Execute implementation based on specifications and plans",
       "parameters": {
         "type": "object",
         "properties": {
-          "specification_path": {"type": "string", "description": "Path to specification"},
-          "plan_path": {"type": "string", "description": "Path to implementation plan"},
-          "implementation_mode": {"type": "string", "enum": ["guided", "autonomous", "review"], "default": "guided"},
-          "quality_checks": {"type": "boolean", "default": true}
+          "plan_id": {"type": "string", "description": "ID of the implementation plan to execute"},
+          "implementation_mode": {"type": "string", "enum": ["guided", "automated", "semi-automated"], "description": "Implementation execution mode", "default": "guided"},
+          "validation_level": {"type": "string", "enum": ["basic", "comprehensive", "production-ready"], "description": "Level of validation to perform", "default": "comprehensive"}
         },
-        "required": ["specification_path"]
+        "required": ["plan_id"]
       }
     },
     {
-      "name": "project_validate",
-      "description": "Validate project structure and compliance with spec-kit standards",
+      "name": "speckit_memory_store",
+      "description": "Store project knowledge and decisions in memory",
       "parameters": {
         "type": "object",
         "properties": {
-          "project_path": {"type": "string", "description": "Path to project directory"},
-          "validation_level": {"type": "string", "enum": ["basic", "strict", "enterprise"], "default": "strict"},
-          "auto_fix": {"type": "boolean", "default": false}
+          "key": {"type": "string", "description": "Key to identify the stored information"},
+          "content": {"type": "string", "description": "Content to store in memory"},
+          "category": {"type": "string", "enum": ["decision", "requirement", "design", "implementation", "learning"], "description": "Category of the stored information"}
         },
-        "required": ["project_path"]
+        "required": ["key", "content", "category"]
+      }
+    },
+    {
+      "name": "speckit_memory_retrieve",
+      "description": "Retrieve stored project knowledge and decisions",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {"type": "string", "description": "Key to retrieve stored information"},
+          "category": {"type": "string", "description": "Filter by category (optional)"}
+        },
+        "required": ["key"]
       }
     }
   ],

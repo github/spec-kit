@@ -363,10 +363,10 @@ class TestDataProcessingIntegration:
             from domain_analysis import DomainAnalyzer
 
             analyzer = DomainAnalyzer(temp_dir)
-            files = analyzer._discover_data_files()
+            analyzer._scan_data_files()
 
-            assert len(files) == 1
-            assert files[0].name == "test_data.json"
+            assert len(analyzer.json_files) == 1
+            assert analyzer.json_files[0].name == "test_data.json"
 
     def test_csv_file_processing(self):
         """Test CSV file processing through the pipeline."""
@@ -386,10 +386,10 @@ class TestDataProcessingIntegration:
             from domain_analysis import DomainAnalyzer
 
             analyzer = DomainAnalyzer(temp_dir)
-            files = analyzer._discover_data_files()
+            analyzer._scan_data_files()
 
-            assert len(files) == 1
-            assert files[0].name == "test_data.csv"
+            assert len(analyzer.csv_files) == 1
+            assert analyzer.csv_files[0].name == "test_data.csv"
 
 
 class TestErrorHandlingIntegration:
@@ -424,11 +424,15 @@ class TestErrorHandlingIntegration:
 
                 try:
                     sys.path.append(str(Path(__file__).parent.parent / "src" / "specify_cli"))
-                    from domain_analysis import DomainAnalyzer
+                    from error_handling import safe_data_parsing
+                    import json
 
-                    analyzer = DomainAnalyzer(temp_dir)
+                    def parse_json():
+                        with open(test_file, 'r') as f:
+                            return json.load(f)
+
                     # Should handle permission errors gracefully
-                    data = analyzer._load_json_file(test_file)
+                    data = safe_data_parsing(test_file, "JSON", parse_json)
                     # Should return None for unreadable files
                     assert data is None
 
@@ -448,16 +452,24 @@ class TestErrorHandlingIntegration:
             corrupted_csv.write_text('invalid,csv\ndata,with,inconsistent,columns\n')
 
             sys.path.append(str(Path(__file__).parent.parent / "src" / "specify_cli"))
-            from domain_analysis import DomainAnalyzer
+            from error_handling import safe_data_parsing
+            import json as json_mod
+            import csv as csv_mod
 
-            analyzer = DomainAnalyzer(temp_dir)
+            # Should handle corrupted JSON gracefully
+            def parse_json():
+                with open(corrupted_json, 'r') as f:
+                    return json_mod.load(f)
 
-            # Should handle corrupted files gracefully
-            json_data = analyzer._load_json_file(corrupted_json)
-            csv_data = analyzer._load_csv_file(corrupted_csv)
-
-            # Should return None for corrupted files
+            json_data = safe_data_parsing(corrupted_json, "JSON", parse_json)
             assert json_data is None
+
+            # CSV with inconsistent columns may still parse partially
+            def parse_csv():
+                with open(corrupted_csv, 'r') as f:
+                    return list(csv_mod.DictReader(f))
+
+            csv_data = safe_data_parsing(corrupted_csv, "CSV", parse_csv)
             # CSV might still parse partially, so we don't assert None
 
 

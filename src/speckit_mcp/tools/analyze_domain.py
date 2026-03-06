@@ -193,7 +193,7 @@ def run_python_domain_analysis(script_output: Dict[str, Any]) -> Dict[str, Any]:
 
         # Step 2: Populate template with extracted domain content
         populator = TemplatePopulator(spec_file, domain_model)
-        populated_spec = populator.populate_template()
+        populated_spec = populator.populate_specification()
 
         return {
             "success": True,

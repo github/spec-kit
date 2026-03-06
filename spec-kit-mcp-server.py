@@ -46,21 +46,32 @@ class SpecKitMCPServer:
         self.templates_dir.mkdir(exist_ok=True)
         self.memory_dir.mkdir(exist_ok=True)
 
+    def _sanitize_name(self, name: str) -> str:
+        """Sanitize a name to prevent path traversal."""
+        import re
+        sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', name)
+        if not sanitized:
+            raise ValueError(f"Invalid name after sanitization: {name!r}")
+        return sanitized
+
     def load_template(self, template_name: str) -> Optional[str]:
         """Load a template from the templates directory"""
-        template_file = self.templates_dir / f"{template_name}.md"
+        safe_name = self._sanitize_name(template_name)
+        template_file = self.templates_dir / f"{safe_name}.md"
         if template_file.exists():
             return template_file.read_text()
         return None
 
     def save_to_memory(self, key: str, content: str) -> None:
         """Save content to memory directory"""
-        memory_file = self.memory_dir / f"{key}.md"
+        safe_key = self._sanitize_name(key)
+        memory_file = self.memory_dir / f"{safe_key}.md"
         memory_file.write_text(content)
 
     def load_from_memory(self, key: str) -> Optional[str]:
         """Load content from memory directory"""
-        memory_file = self.memory_dir / f"{key}.md"
+        safe_key = self._sanitize_name(key)
+        memory_file = self.memory_dir / f"{safe_key}.md"
         if memory_file.exists():
             return memory_file.read_text()
         return None
@@ -392,7 +403,10 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResu
         elif name == "speckit_clarify":
             return await handle_speckit_clarify(arguments)
         elif name == "speckit_analyze_domain":
-            result = analyze_domain(arguments["data_directory"])
+            domain_description = arguments.get("domain_description", "")
+            project_context = arguments.get("project_context", "")
+            analysis_depth = arguments.get("analysis_depth", "comprehensive")
+            result = f"Domain Analysis: {domain_description}\nContext: {project_context}\nDepth: {analysis_depth}"
             return CallToolResult(content=[TextContent(type="text", text=result)])
         elif name == "speckit_plan":
             return await handle_speckit_plan(arguments)
@@ -504,7 +518,7 @@ async def handle_specify_check(arguments: Dict[str, Any]) -> CallToolResult:
     content += f"""
 ## Project Status
 - **Working Directory**: {spec_kit.working_dir}
-- **Spec-Kit Directory**: {spec_kit.specify_dir.exists()}
+- **Spec-Kit Directory**: {spec_kit.spec_kit_dir.exists()}
 - **Templates Available**: {len(list(spec_kit.templates_dir.glob("*.md")))}
 - **Memory Items**: {len(list(spec_kit.memory_dir.glob("*.md")))}
 
@@ -578,7 +592,7 @@ async def handle_speckit_specify(arguments: Dict[str, Any]) -> CallToolResult:
     acceptance_criteria = arguments.get("acceptance_criteria", [])
     technical_constraints = arguments.get("technical_constraints", [])
 
-    spec_id = f"spec_{len(list(spec_kit.memory_dir.glob("spec_*.md"))) + 1}"
+    spec_id = f"spec_{len(list(spec_kit.memory_dir.glob('spec_*.md'))) + 1}"
 
     specification_content = f"""# Specification: {spec_id}
 
@@ -711,7 +725,7 @@ async def handle_speckit_plan(arguments: Dict[str, Any]) -> CallToolResult:
     # Load specification
     spec_content = spec_kit.load_from_memory(specification_id)
 
-    plan_id = f"plan_{len(list(spec_kit.memory_dir.glob("plan_*.md"))) + 1}"
+    plan_id = f"plan_{len(list(spec_kit.memory_dir.glob('plan_*.md'))) + 1}"
 
     plan_content = f"""# Implementation Plan: {plan_id}
 
@@ -779,7 +793,7 @@ async def handle_speckit_tasks(arguments: Dict[str, Any]) -> CallToolResult:
     # Load plan
     plan_content = spec_kit.load_from_memory(plan_id)
 
-    tasks_id = f"tasks_{len(list(spec_kit.memory_dir.glob("tasks_*.md"))) + 1}"
+    tasks_id = f"tasks_{len(list(spec_kit.memory_dir.glob('tasks_*.md'))) + 1}"
 
     task_content = f"""# Task Breakdown: {tasks_id}
 

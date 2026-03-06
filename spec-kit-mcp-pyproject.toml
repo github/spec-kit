@@ -46,7 +46,7 @@ dev = [
 ]
 
 [project.scripts]
-spec-kit-mcp-server = "spec_kit_mcp_server:main"
+spec-kit-mcp-server = "speckit_mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/spec-kit/spec-kit-mcp-server"

@@ -86,6 +86,7 @@ class TemplatePopulator:
         def write_file():
             with open(self.spec_file_path, 'w', encoding='utf-8') as f:
                 f.write(self.populated_content)
+            return True
 
         result = safe_file_operation("write", self.spec_file_path, write_file)
         if result is None:
