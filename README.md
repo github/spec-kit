@@ -80,7 +80,11 @@ uv tool install specify-cli --force --from git+https://github.com/github/spec-ki
 Run directly without installing:
 
 ```bash
+# Create new project
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+
+# Or initialize in existing project
+uvx --from git+https://github.com/github/spec-kit.git specify init .
 ```
 
 **Benefits of persistent installation:**
