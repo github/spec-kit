@@ -24,6 +24,7 @@ Or install globally:
     minispec init --here
 """
 
+import difflib
 import os
 import subprocess
 import sys
@@ -264,6 +265,175 @@ BANNER = """
 """
 
 TAGLINE = "Pair programming with AI that actually works"
+
+
+def _detect_project_config(project_path: Path) -> tuple[str, str]:
+    """Detect which agent and script type are installed in a MiniSpec project.
+
+    Returns (agent_key, script_type) or exits with error if ambiguous/missing.
+    """
+    if not (project_path / ".minispec").is_dir():
+        console.print("[red]Error:[/red] No .minispec directory found. Is this a MiniSpec project?")
+        raise typer.Exit(1)
+
+    # Detect agent by checking AGENT_COMMAND_CONFIG paths
+    detected_agents = []
+    for agent_key, cmd_config in AGENT_COMMAND_CONFIG.items():
+        cmd_path = project_path / cmd_config["path"]
+        if cmd_path.is_dir() and any(cmd_path.iterdir()):
+            detected_agents.append(agent_key)
+
+    if not detected_agents:
+        console.print("[red]Error:[/red] Could not detect AI agent. Use --ai to specify.")
+        raise typer.Exit(1)
+    if len(detected_agents) > 1:
+        agents_str = ", ".join(detected_agents)
+        console.print(f"[red]Error:[/red] Multiple agents detected ({agents_str}). Use --ai to specify which one.")
+        raise typer.Exit(1)
+
+    # Detect script type
+    scripts_dir = project_path / ".minispec" / "scripts"
+    detected_script = None
+    if (scripts_dir / "bash").is_dir():
+        detected_script = "sh"
+    elif (scripts_dir / "powershell").is_dir():
+        detected_script = "ps"
+
+    if not detected_script:
+        console.print("[red]Error:[/red] Could not detect script type. Use --script to specify.")
+        raise typer.Exit(1)
+
+    return detected_agents[0], detected_script
+
+
+def _classify_upgrade_file(rel_path: str) -> str:
+    """Classify a file for upgrade handling.
+
+    Returns one of: 'overwrite', 'merge', 'prompt', 'skip'.
+    """
+    parts = Path(rel_path).parts
+
+    # Never touch user content
+    if rel_path.startswith(".minispec/memory/") or rel_path.startswith(".minispec/specs/") or rel_path.startswith(".minispec/knowledge/"):
+        return "skip"
+
+    # Deep merge JSON config files
+    if rel_path.endswith("settings.json") and parts[0] in (".claude", ".vscode"):
+        return "merge"
+
+    # Prompt for agent command files (minispec.* pattern)
+    for agent_key, cmd_config in AGENT_COMMAND_CONFIG.items():
+        cmd_prefix = cmd_config["path"]
+        if rel_path.startswith(cmd_prefix + "/") and "minispec." in rel_path:
+            return "prompt"
+
+    # Everything else: silent overwrite
+    return "overwrite"
+
+
+def _diff_files(existing: Path, new: Path) -> str | None:
+    """Generate a unified diff between existing and new file.
+
+    Returns the diff string, or None if files are identical.
+    If existing doesn't exist, diffs against empty.
+    """
+    old_lines = []
+    if existing.exists():
+        old_lines = existing.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    new_lines = new.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    diff = list(difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=str(existing.name) + " (current)",
+        tofile=str(existing.name) + " (new)",
+        lineterm="",
+    ))
+
+    if not diff:
+        return None
+
+    return "\n".join(diff)
+
+
+def _apply_upgrade(project_path: Path, template_path: Path, force: bool = False) -> list[tuple[str, str]]:
+    """Apply upgrade from extracted template to project.
+
+    Walks template files, classifies each, and applies the appropriate action.
+    For 'prompt' files, shows diff and asks unless force=True.
+
+    Returns list of (relative_path, action) tuples.
+    """
+    results: list[tuple[str, str]] = []
+
+    for source_file in sorted(template_path.rglob("*")):
+        if not source_file.is_file():
+            continue
+
+        rel_path = str(source_file.relative_to(template_path))
+        dest_file = project_path / rel_path
+        tier = _classify_upgrade_file(rel_path)
+
+        if tier == "skip":
+            results.append((rel_path, "skipped (user content)"))
+            continue
+
+        if tier == "merge":
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            if dest_file.exists():
+                try:
+                    with open(source_file, "r", encoding="utf-8") as f:
+                        new_content = json.load(f)
+                    merged = merge_json_files(dest_file, new_content)
+                    with open(dest_file, "w", encoding="utf-8") as f:
+                        json.dump(merged, f, indent=4)
+                        f.write("\n")
+                    results.append((rel_path, "merged"))
+                except Exception:
+                    shutil.copy2(source_file, dest_file)
+                    results.append((rel_path, "overwritten (merge failed)"))
+            else:
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "created"))
+            continue
+
+        if tier == "prompt":
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            if not dest_file.exists():
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "created (new)"))
+                continue
+
+            diff = _diff_files(dest_file, source_file)
+            if diff is None:
+                results.append((rel_path, "skipped (unchanged)"))
+                continue
+
+            if force:
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "overwritten (auto)"))
+                continue
+
+            # Interactive prompt
+            console.print(f"\n[cyan]--- {rel_path} ---[/cyan]")
+            console.print(diff)
+            accept = typer.confirm("Apply this change?", default=False)
+            if accept:
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "overwritten (accepted)"))
+            else:
+                results.append((rel_path, "skipped (user declined)"))
+            continue
+
+        # tier == "overwrite"
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        is_new = not dest_file.exists()
+        shutil.copy2(source_file, dest_file)
+        results.append((rel_path, "created" if is_new else "overwritten"))
+
+    return results
+
+
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -1278,6 +1448,132 @@ def init(
     enhancements_panel = Panel("\n".join(enhancement_lines), title="Additional Commands", border_style="cyan", padding=(1,2))
     console.print()
     console.print(enhancements_panel)
+
+@app.command()
+def upgrade(
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant (auto-detected if omitted)"),
+    script_type: str = typer.Option(None, "--script", help="Script type: sh or ps (auto-detected if omitted)"),
+    force: bool = typer.Option(False, "--force", help="Accept all command changes without prompting"),
+    skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification"),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output"),
+    github_token: str = typer.Option(None, "--github-token", help="GitHub token for API requests"),
+):
+    """Upgrade MiniSpec scaffolding to the latest version.
+
+    Updates scripts, templates, hooks, and commands from the latest release
+    while preserving your specs, knowledge, constitution, and other user content.
+
+    Agent and script type are auto-detected from your project. Use --ai and
+    --script to override if detection fails or you want to switch.
+
+    Command files (minispec.*.md) are diffed and you're prompted before
+    overwriting. Use --force to accept all changes automatically.
+    """
+    project_path = Path.cwd()
+
+    show_banner()
+
+    # Get current version
+    current_version = _get_version()
+    console.print(f"[dim]Current CLI version: {current_version}[/dim]")
+    console.print()
+
+    # Detect or use provided config
+    if ai_assistant and ai_assistant not in AGENT_CONFIG:
+        console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+        raise typer.Exit(1)
+    if script_type and script_type not in SCRIPT_TYPE_CHOICES:
+        console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
+        raise typer.Exit(1)
+
+    detected_ai, detected_script = _detect_project_config(project_path)
+
+    selected_ai = ai_assistant or detected_ai
+    selected_script = script_type or detected_script
+
+    console.print(f"[cyan]Agent:[/cyan]  {AGENT_CONFIG[selected_ai]['name']}" + (" [dim](detected)[/dim]" if not ai_assistant else ""))
+    console.print(f"[cyan]Script:[/cyan] {SCRIPT_TYPE_CHOICES[selected_script]}" + (" [dim](detected)[/dim]" if not script_type else ""))
+    console.print()
+
+    # Download template to temp directory
+    console.print("[cyan]Downloading latest template...[/cyan]")
+    verify = not skip_tls
+    local_ssl_context = ssl_context if verify else False
+    local_client = httpx.Client(verify=local_ssl_context)
+
+    try:
+        with tempfile.TemporaryDirectory() as download_dir:
+            zip_path, meta = download_template_from_github(
+                selected_ai,
+                Path(download_dir),
+                script_type=selected_script,
+                verbose=False,
+                show_progress=False,
+                client=local_client,
+                debug=debug,
+                github_token=github_token,
+            )
+            console.print(f"[green]Downloaded release {meta['release']}[/green]")
+
+            # Extract to temp location
+            with tempfile.TemporaryDirectory() as extract_dir:
+                extract_path = Path(extract_dir)
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    zip_ref.extractall(extract_path)
+
+                # Flatten if single nested directory
+                extracted_items = list(extract_path.iterdir())
+                template_root = extract_path
+                if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                    template_root = extracted_items[0]
+
+                # Apply upgrade
+                console.print("[cyan]Applying upgrade...[/cyan]")
+                console.print()
+                results = _apply_upgrade(project_path, template_root, force=force)
+
+                # Ensure scripts are executable
+                ensure_executable_scripts(project_path)
+
+    except Exception as e:
+        console.print(f"[red]Upgrade failed:[/red] {e}")
+        if debug:
+            import traceback
+            console.print(traceback.format_exc())
+        raise typer.Exit(1)
+
+    # Print summary
+    console.print()
+    table = Table(title="Upgrade Summary")
+    table.add_column("File", style="cyan")
+    table.add_column("Action")
+
+    action_styles = {
+        "created": "[green]created[/green]",
+        "created (new)": "[green]created (new)[/green]",
+        "overwritten": "[yellow]overwritten[/yellow]",
+        "overwritten (auto)": "[yellow]overwritten (auto)[/yellow]",
+        "overwritten (accepted)": "[yellow]overwritten (accepted)[/yellow]",
+        "overwritten (merge failed)": "[red]overwritten (merge failed)[/red]",
+        "merged": "[green]merged[/green]",
+        "skipped (unchanged)": "[dim]skipped (unchanged)[/dim]",
+        "skipped (user content)": "[dim]skipped (user content)[/dim]",
+        "skipped (user declined)": "[blue]skipped (user declined)[/blue]",
+    }
+
+    for rel_path, action in results:
+        styled_action = action_styles.get(action, action)
+        table.add_row(rel_path, styled_action)
+
+    console.print(table)
+
+    counts = {}
+    for _, action in results:
+        bucket = action.split(" (")[0]  # group by base action
+        counts[bucket] = counts.get(bucket, 0) + 1
+
+    parts = [f"{v} {k}" for k, v in sorted(counts.items())]
+    console.print(f"\n[green]Upgrade complete.[/green] {', '.join(parts)}.")
 
 @app.command()
 def check():
