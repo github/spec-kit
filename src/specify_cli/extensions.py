@@ -988,11 +988,11 @@ class ExtensionCatalog:
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
     def get_catalog_urls(self) -> List[str]:
-        """Get catalog URLs from config or use default.
+        """Get catalog URLs from config or use defaults.
 
         Checks in order:
         1. SPECKIT_CATALOG_URL environment variable
-        2. Default catalog URL
+        2. Built-in default catalog URLs
 
         Returns:
             List of URLs to fetch catalogs from
@@ -1151,16 +1151,20 @@ class ExtensionCatalog:
         if success_count == 0:
             raise ExtensionError(f"Failed to fetch any extension catalogs. Errors:\n" + "\n".join(errors))
 
-        # Save to cache
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.cache_file.write_text(json.dumps(merged_catalog, indent=2))
+        # Only save to cache if all configured catalogs were fetched successfully.
+        # This avoids persisting an incomplete catalog that could be treated as valid
+        # for the full cache duration.
+        if success_count == len(catalog_urls):
+            # Save to cache
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.cache_file.write_text(json.dumps(merged_catalog, indent=2))
 
-        # Save cache metadata
-        metadata = {
-            "cached_at": datetime.now(timezone.utc).isoformat(),
-            "catalog_urls": catalog_urls,
-        }
-        self.cache_metadata_file.write_text(json.dumps(metadata, indent=2))
+            # Save cache metadata
+            metadata = {
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "catalog_urls": catalog_urls,
+            }
+            self.cache_metadata_file.write_text(json.dumps(metadata, indent=2))
 
         return merged_catalog
 
