@@ -405,6 +405,11 @@ class TestCommandRegistrar:
         assert CommandRegistrar.AGENT_CONFIGS["kiro-cli"]["dir"] == ".kiro/prompts"
         assert "q" not in CommandRegistrar.AGENT_CONFIGS
 
+    def test_codex_agent_config_present(self):
+        """Codex should be mapped to .codex/prompts."""
+        assert "codex" in CommandRegistrar.AGENT_CONFIGS
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".codex/prompts"
+
     def test_parse_frontmatter_valid(self):
         """Test parsing valid YAML frontmatter."""
         content = """---
