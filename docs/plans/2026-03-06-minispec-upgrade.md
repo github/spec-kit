@@ -10,11 +10,14 @@
 
 ---
 
+## Tasks
+
 ### Task 1: Add `_detect_project_config()` helper
 
 Detects which agent and script type are installed in the current project by scanning for known directory patterns.
 
 **Files:**
+
 - Modify: `src/minispec_cli/__init__.py` (add function after `AGENT_COMMAND_CONFIG` block, around line 260)
 - Test: `tests/test_upgrade.py`
 
@@ -135,6 +138,7 @@ git commit -m "feat(upgrade): add _detect_project_config helper"
 Classifies each file from the template into one of three tiers: `overwrite`, `merge`, or `prompt`.
 
 **Files:**
+
 - Modify: `src/minispec_cli/__init__.py` (add function after `_detect_project_config`)
 - Test: `tests/test_upgrade.py`
 
@@ -226,6 +230,7 @@ git commit -m "feat(upgrade): add _classify_upgrade_file helper"
 Generates a colored unified diff between two files for the prompt UX.
 
 **Files:**
+
 - Modify: `src/minispec_cli/__init__.py` (add after `_classify_upgrade_file`)
 - Test: `tests/test_upgrade.py`
 
@@ -316,6 +321,7 @@ git commit -m "feat(upgrade): add _diff_files helper"
 Walks the extracted template, classifies each file, and applies the appropriate action. Returns a list of `(rel_path, action)` tuples for the summary.
 
 **Files:**
+
 - Modify: `src/minispec_cli/__init__.py`
 - Test: `tests/test_upgrade.py`
 
@@ -491,6 +497,7 @@ git commit -m "feat(upgrade): add _apply_upgrade core logic"
 The main `upgrade` command that ties detection, download, extraction, apply, and summary together.
 
 **Files:**
+
 - Modify: `src/minispec_cli/__init__.py` (add `upgrade` command after `init` function, around line 1280)
 
 **Step 1: Write the implementation**
@@ -640,6 +647,7 @@ git commit -m "feat(upgrade): wire up upgrade CLI command"
 ### Task 6: Add `difflib` import
 
 **Files:**
+
 - Modify: `src/minispec_cli/__init__.py` (add `import difflib` to existing imports around line 27)
 
 **Step 1: Add the import**
@@ -660,6 +668,7 @@ This is a dependency of Task 3. If implementing sequentially, add the import whe
 ### Task 7: Update docs
 
 **Files:**
+
 - Modify: `README.md` (add `upgrade` to commands table)
 - Modify: `CLAUDE.md` (add `upgrade` to development commands)
 
@@ -694,6 +703,7 @@ git commit -m "docs: add upgrade command to README and CLAUDE.md"
 ### Task 8: Bump version and final commit
 
 **Files:**
+
 - Modify: `pyproject.toml` (bump version)
 
 **Step 1: Bump version**
