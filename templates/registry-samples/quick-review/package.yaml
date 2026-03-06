@@ -6,11 +6,11 @@ agents:
   - claude
   - cursor-agent
   - copilot
-minispec_version: ">=0.1.0"
+minispec: ">=0.1.0"
 review:
   status: approved
-  reviewed_by: MiniSpec team
-  reviewed_at: "2025-01-01"
+  reviewed-by: MiniSpec team
+  reviewed-at: "2025-01-01"
 files:
   - source: command.md
     target: .claude/commands/quick-review.md

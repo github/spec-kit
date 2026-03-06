@@ -1,6 +1,6 @@
 [project]
 name = "minispec-cli"
-version = "0.1.0"
+version = "0.3.0"
 description = "MiniSpec CLI - Pair programming workflow for AI-assisted development. Small chunks, continuous review, mental models that stick."
 requires-python = ">=3.11"
 dependencies = [

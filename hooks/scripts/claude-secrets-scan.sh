@@ -7,6 +7,11 @@
 
 set -euo pipefail
 
+# Require jq; fail open (allow) if unavailable rather than breaking the hook chain
+if ! command -v jq &>/dev/null; then
+    exit 0
+fi
+
 # Read JSON input from stdin
 INPUT=$(cat)
 

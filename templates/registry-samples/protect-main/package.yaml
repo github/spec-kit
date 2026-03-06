@@ -5,11 +5,11 @@ description: Prevents direct commits to main/master branches
 agents:
   - claude
   - cursor-agent
-minispec_version: ">=0.1.0"
+minispec: ">=0.1.0"
 review:
   status: approved
-  reviewed_by: MiniSpec team
-  reviewed_at: "2025-01-01"
+  reviewed-by: MiniSpec team
+  reviewed-at: "2025-01-01"
 files:
   - source: hook.sh
     target: .minispec/hooks/scripts/protect-main.sh

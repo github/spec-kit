@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .minispec/hooks/scripts/protect-main.sh \"$TOOL_INPUT\""
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.minispec/hooks/scripts/protect-main.sh"
           }
         ]
       }
