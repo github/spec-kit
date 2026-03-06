@@ -124,6 +124,7 @@ Use `/minispec.validate-docs` to check documentation freshness against code chan
 | `minispec list`           | List installed packages                      |
 | `minispec uninstall`      | Uninstall a package                          |
 | `minispec update`         | Update packages to latest versions           |
+| `minispec upgrade`        | Upgrade scaffolding to latest release         |
 
 ## How It's Different
 
