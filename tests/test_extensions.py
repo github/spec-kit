@@ -841,7 +841,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com/catalog.json",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -870,7 +870,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": expired_datetime.isoformat(),
-                    "catalog_url": "http://test.com/catalog.json",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -918,7 +918,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -962,7 +962,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -1014,7 +1014,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -1059,7 +1059,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -1097,7 +1097,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -1133,3 +1133,193 @@ class TestExtensionCatalog:
 
         assert not catalog.cache_file.exists()
         assert not catalog.cache_metadata_file.exists()
+
+    def test_fetch_catalog_merge_and_precedence(self, temp_dir, monkeypatch):
+        """Test that multiple catalogs are fetched, merged, and earlier URLs have precedence."""
+        import json
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        
+        catalog = ExtensionCatalog(project_dir)
+        catalog.DEFAULT_CATALOG_URLS = ["http://catalog1.test", "http://catalog2.test"]
+        
+        # Mock responses
+        responses = {
+            "http://catalog1.test": {
+                "schema_version": "1.0",
+                "extensions": {
+                    "ext-a": {"id": "ext-a", "version": "1.0.0", "source": "cat1"},
+                    "ext-b": {"id": "ext-b", "version": "1.0.0", "source": "cat1"}
+                }
+            },
+            "http://catalog2.test": {
+                "schema_version": "1.0",
+                "extensions": {
+                    "ext-a": {"id": "ext-a", "version": "2.0.0", "source": "cat2"}, # Duplicate
+                    "ext-c": {"id": "ext-c", "version": "1.0.0", "source": "cat2"}  # New
+                }
+            }
+        }
+        
+        class MockResponse:
+            def __init__(self, url):
+                self.data = json.dumps(responses[url]).encode('utf-8')
+            def read(self):
+                return self.data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+                
+        def mock_urlopen(url, *args, **kwargs):
+            return MockResponse(url)
+            
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        
+        # Force refresh to hit the network
+        merged = catalog.fetch_catalog(force_refresh=True)
+        
+        assert "ext-a" in merged["extensions"]
+        assert "ext-b" in merged["extensions"]
+        assert "ext-c" in merged["extensions"]
+        
+        # Precedence check: ext-a should come from catalog1 (version 1.0.0, source cat1)
+        assert merged["extensions"]["ext-a"]["source"] == "cat1"
+        assert merged["extensions"]["ext-a"]["version"] == "1.0.0"
+        
+        # Cache correctly saved
+        assert catalog.cache_file.exists()
+        assert catalog.cache_metadata_file.exists()
+        metadata = json.loads(catalog.cache_metadata_file.read_text())
+        assert metadata["catalog_urls"] == catalog.DEFAULT_CATALOG_URLS
+
+    def test_cache_backward_compatibility(self, temp_dir):
+        """Test that is_cache_valid handles the legacy 'catalog_url' string gracefully."""
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+        catalog.DEFAULT_CATALOG_URLS = ["http://legacy-url.test"]
+        
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text("{}")
+        
+        # Write legacy metadata with single string "catalog_url"
+        catalog.cache_metadata_file.write_text(
+            json.dumps({
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "catalog_url": "http://legacy-url.test"
+            })
+        )
+        
+        # Cache should be valid because legacy URL matches DEFAULT_CATALOG_URLS exactly
+        # which evaluates to a normalized single-element list.
+        assert catalog.is_cache_valid()
+        
+        # If url doesn't match, it should be invalid
+        catalog.DEFAULT_CATALOG_URLS = ["http://different.test"]
+        assert not catalog.is_cache_valid()
+
+    def test_fetch_catalog_partial_failure(self, temp_dir, monkeypatch, capsys):
+        """Test that fetching continues if one catalog fails, and errors only if all fail."""
+        import json
+        import urllib.error
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        
+        catalog = ExtensionCatalog(project_dir)
+        catalog.DEFAULT_CATALOG_URLS = ["http://fail1.test", "http://success.test", "http://fail2.test"]
+        
+        success_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "ext-success": {"id": "ext-success", "version": "1.0.0"}
+            }
+        }
+        
+        class MockResponse:
+            def __init__(self, data):
+                self.data = data
+            def read(self):
+                return self.data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+                
+        def mock_urlopen(url, *args, **kwargs):
+            if url == "http://success.test":
+                return MockResponse(json.dumps(success_data).encode('utf-8'))
+            elif url == "http://fail1.test":
+                raise urllib.error.URLError("Connection refused")
+            else:
+                return MockResponse(b"invalid json")
+            
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        
+        # Should succeed with the single successful catalog's data
+        merged = catalog.fetch_catalog(force_refresh=True)
+        assert "ext-success" in merged["extensions"]
+        
+        # Verify stderr captured warnings
+        captured = capsys.readouterr()
+        assert "Warning: Failed to fetch catalog from network at http://fail1.test" in captured.err
+        assert "Warning: Invalid JSON in catalog payload from http://fail2.test" in captured.err
+
+        # Test complete failure
+        catalog.DEFAULT_CATALOG_URLS = ["http://fail1.test"]
+        with pytest.raises(ExtensionError) as exc_info:
+            catalog.fetch_catalog(force_refresh=True)
+        assert "Failed to fetch any extension catalogs" in str(exc_info.value)
+
+    def test_schema_version_mismatch(self, temp_dir, monkeypatch, capsys):
+        """Test that schema version applies from the first catalog and mismatches are skipped."""
+        import json
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        
+        catalog = ExtensionCatalog(project_dir)
+        catalog.DEFAULT_CATALOG_URLS = ["http://cat1.test", "http://cat2.test"]
+        
+        responses = {
+            "http://cat1.test": {
+                "schema_version": "1.0",
+                "extensions": {"ext1": {"id": "ext1"}}
+            },
+            "http://cat2.test": {
+                "schema_version": "2.0",  # Mismatch!
+                "extensions": {"ext2": {"id": "ext2"}}
+            }
+        }
+        
+        class MockResponse:
+            def __init__(self, url):
+                self.data = json.dumps(responses[url]).encode('utf-8')
+            def read(self):
+                return self.data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+                
+        def mock_urlopen(url, *args, **kwargs):
+            return MockResponse(url)
+            
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        
+        merged = catalog.fetch_catalog(force_refresh=True)
+        
+        # Only ext1 should be loaded, ext2 was skipped due to schema
+        assert "ext1" in merged["extensions"]
+        assert "ext2" not in merged["extensions"]
+        assert merged["schema_version"] == "1.0"
+        
+        captured = capsys.readouterr()
+        assert "Schema version mismatch from http://cat2.test" in captured.err
