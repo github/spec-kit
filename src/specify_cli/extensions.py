@@ -1098,31 +1098,58 @@ class ExtensionCatalog:
         catalog_urls = self.get_catalog_urls()
         
         merged_catalog = {
-            "schema_version": "1.0",
+            "schema_version": None,
             "extensions": {}
         }
 
         import urllib.request
         import urllib.error
+        import sys
         
+        success_count = 0
+        errors = []
+
         for catalog_url in catalog_urls:
             try:
                 with urllib.request.urlopen(catalog_url, timeout=10) as response:
                     catalog_data = json.loads(response.read())
             except urllib.error.URLError as e:
-                raise ExtensionError(f"Failed to fetch catalog from network at {catalog_url}: {e}")
+                msg = f"Failed to fetch catalog from network at {catalog_url}: {e}"
+                print(f"Warning: {msg}", file=sys.stderr)
+                errors.append(msg)
+                continue
             except json.JSONDecodeError as e:
-                raise ExtensionError(f"Invalid JSON in catalog payload from {catalog_url}: {e}")
+                msg = f"Invalid JSON in catalog payload from {catalog_url}: {e}"
+                print(f"Warning: {msg}", file=sys.stderr)
+                errors.append(msg)
+                continue
 
             # Validate catalog structure
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-                raise ExtensionError(f"Invalid catalog format from {catalog_url}")
+                msg = f"Invalid catalog format from {catalog_url}"
+                print(f"Warning: {msg}", file=sys.stderr)
+                errors.append(msg)
+                continue
+            
+            # Match schema versions across catalogs
+            if merged_catalog["schema_version"] is None:
+                merged_catalog["schema_version"] = catalog_data["schema_version"]
+            elif merged_catalog["schema_version"] != catalog_data["schema_version"]:
+                msg = f"Schema version mismatch from {catalog_url}: expected {merged_catalog['schema_version']}, got {catalog_data['schema_version']}"
+                print(f"Warning: {msg}", file=sys.stderr)
+                errors.append(msg)
+                continue
+
+            success_count += 1
             
             # Merge extensions into the aggregated catalog, preserving precedence for the first catalog URL
             # that defines a given extension ID.
             for ext_id, ext_data in catalog_data.get("extensions", {}).items():
                 if ext_id not in merged_catalog["extensions"]:
                     merged_catalog["extensions"][ext_id] = ext_data
+
+        if success_count == 0:
+            raise ExtensionError(f"Failed to fetch any extension catalogs. Errors:\n" + "\n".join(errors))
 
         # Save to cache
         self.cache_dir.mkdir(parents=True, exist_ok=True)

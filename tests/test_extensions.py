@@ -1222,3 +1222,104 @@ class TestExtensionCatalog:
         # If url doesn't match, it should be invalid
         catalog.DEFAULT_CATALOG_URLS = ["http://different.test"]
         assert not catalog.is_cache_valid()
+
+    def test_fetch_catalog_partial_failure(self, temp_dir, monkeypatch, capsys):
+        """Test that fetching continues if one catalog fails, and errors only if all fail."""
+        import json
+        import urllib.error
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        
+        catalog = ExtensionCatalog(project_dir)
+        catalog.DEFAULT_CATALOG_URLS = ["http://fail1.test", "http://success.test", "http://fail2.test"]
+        
+        success_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "ext-success": {"id": "ext-success", "version": "1.0.0"}
+            }
+        }
+        
+        class MockResponse:
+            def __init__(self, data):
+                self.data = data
+            def read(self):
+                return self.data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+                
+        def mock_urlopen(url, *args, **kwargs):
+            if url == "http://success.test":
+                return MockResponse(json.dumps(success_data).encode('utf-8'))
+            elif url == "http://fail1.test":
+                raise urllib.error.URLError("Connection refused")
+            else:
+                return MockResponse(b"invalid json")
+            
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        
+        # Should succeed with the single successful catalog's data
+        merged = catalog.fetch_catalog(force_refresh=True)
+        assert "ext-success" in merged["extensions"]
+        
+        # Verify stderr captured warnings
+        captured = capsys.readouterr()
+        assert "Warning: Failed to fetch catalog from network at http://fail1.test" in captured.err
+        assert "Warning: Invalid JSON in catalog payload from http://fail2.test" in captured.err
+
+        # Test complete failure
+        catalog.DEFAULT_CATALOG_URLS = ["http://fail1.test"]
+        with pytest.raises(ExtensionError) as exc_info:
+            catalog.fetch_catalog(force_refresh=True)
+        assert "Failed to fetch any extension catalogs" in str(exc_info.value)
+
+    def test_schema_version_mismatch(self, temp_dir, monkeypatch, capsys):
+        """Test that schema version applies from the first catalog and mismatches are skipped."""
+        import json
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        
+        catalog = ExtensionCatalog(project_dir)
+        catalog.DEFAULT_CATALOG_URLS = ["http://cat1.test", "http://cat2.test"]
+        
+        responses = {
+            "http://cat1.test": {
+                "schema_version": "1.0",
+                "extensions": {"ext1": {"id": "ext1"}}
+            },
+            "http://cat2.test": {
+                "schema_version": "2.0",  # Mismatch!
+                "extensions": {"ext2": {"id": "ext2"}}
+            }
+        }
+        
+        class MockResponse:
+            def __init__(self, url):
+                self.data = json.dumps(responses[url]).encode('utf-8')
+            def read(self):
+                return self.data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+                
+        def mock_urlopen(url, *args, **kwargs):
+            return MockResponse(url)
+            
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        
+        merged = catalog.fetch_catalog(force_refresh=True)
+        
+        # Only ext1 should be loaded, ext2 was skipped due to schema
+        assert "ext1" in merged["extensions"]
+        assert "ext2" not in merged["extensions"]
+        assert merged["schema_version"] == "1.0"
+        
+        captured = capsys.readouterr()
+        assert "Schema version mismatch from http://cat2.test" in captured.err
