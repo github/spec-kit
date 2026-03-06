@@ -74,6 +74,7 @@ The following community-contributed extensions are available in [`catalog.commun
 |-----------|---------|-----|
 | Azure DevOps Integration | Sync user stories and tasks to Azure DevOps work items using OAuth authentication | [spec-kit-azure-devops](https://github.com/pragya247/spec-kit-azure-devops) |
 | Cleanup Extension | Post-implementation quality gate that reviews changes, fixes small issues (scout rule), creates tasks for medium issues, and generates analysis for large issues | [spec-kit-cleanup](https://github.com/dsrednicki/spec-kit-cleanup) |
+| Fleet Orchestrator | Orchestrate a full feature lifecycle with human-in-the-loop gates across all SpecKit phases | [spec-kit-fleet](https://github.com/sharathsatish/spec-kit-fleet) |
 | Jira Integration | Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support | [spec-kit-jira](https://github.com/mbachorik/spec-kit-jira) |
 | Retrospective Extension | Post-implementation retrospective with spec adherence scoring, drift analysis, and human-gated spec updates | [spec-kit-retrospective](https://github.com/emi-dm/spec-kit-retrospective) |
 | Spec Sync | Detect and resolve drift between specs and implementation. AI-assisted resolution with human approval | [spec-kit-sync](https://github.com/bgervin/spec-kit-sync) |

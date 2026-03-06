@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-05T00:00:00Z",
+  "updated_at": "2026-03-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "azure-devops": {
@@ -61,6 +61,32 @@
       "stars": 0,
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
+    },
+    "fleet": {
+      "name": "Fleet Orchestrator",
+      "id": "fleet",
+      "description": "Orchestrate a full feature lifecycle with human-in-the-loop gates across all SpecKit phases.",
+      "author": "sharathsatish",
+      "version": "1.0.0",
+      "download_url": "https://github.com/sharathsatish/spec-kit-fleet/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/sharathsatish/spec-kit-fleet",
+      "homepage": "https://github.com/sharathsatish/spec-kit-fleet",
+      "documentation": "https://github.com/sharathsatish/spec-kit-fleet/blob/main/README.md",
+      "changelog": "https://github.com/sharathsatish/spec-kit-fleet/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": ["orchestration", "workflow", "human-in-the-loop", "parallel"],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-06T00:00:00Z",
+      "updated_at": "2026-03-06T00:00:00Z"
     },
     "jira": {
       "name": "Jira Integration",
