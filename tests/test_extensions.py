@@ -841,7 +841,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com/catalog.json",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -870,7 +870,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": expired_datetime.isoformat(),
-                    "catalog_url": "http://test.com/catalog.json",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -918,7 +918,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -962,7 +962,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -1014,7 +1014,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -1059,7 +1059,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )
@@ -1097,7 +1097,7 @@ class TestExtensionCatalog:
             json.dumps(
                 {
                     "cached_at": datetime.now(timezone.utc).isoformat(),
-                    "catalog_url": "http://test.com",
+                    "catalog_urls": catalog.get_catalog_urls(),
                 }
             )
         )

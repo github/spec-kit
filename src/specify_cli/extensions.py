@@ -969,7 +969,10 @@ class CommandRegistrar:
 class ExtensionCatalog:
     """Manages extension catalog fetching, caching, and searching."""
 
-    DEFAULT_CATALOG_URL = "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
+    DEFAULT_CATALOG_URLS = [
+        "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
+        "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
+    ]
     CACHE_DURATION = 3600  # 1 hour in seconds
 
     def __init__(self, project_root: Path):
@@ -984,15 +987,15 @@ class ExtensionCatalog:
         self.cache_file = self.cache_dir / "catalog.json"
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
-    def get_catalog_url(self) -> str:
-        """Get catalog URL from config or use default.
+    def get_catalog_urls(self) -> List[str]:
+        """Get catalog URLs from config or use default.
 
         Checks in order:
-        1. SPECKIT_CATALOG_URL environment variable
-        2. Default catalog URL
+        1. SPECKIT_CATALOG_URL environment variable (comma-separated for multiple)
+        2. Default catalog URLs
 
         Returns:
-            URL to fetch catalog from
+            List of URLs to fetch catalogs from
 
         Raises:
             ValidationError: If custom URL is invalid (non-HTTPS)
@@ -1021,7 +1024,7 @@ class ExtensionCatalog:
                 )
 
             # Warn users when using a non-default catalog (once per instance)
-            if catalog_url != self.DEFAULT_CATALOG_URL:
+            if catalog_url not in self.DEFAULT_CATALOG_URLS:
                 if not getattr(self, "_non_default_catalog_warning_shown", False):
                     print(
                         "Warning: Using non-default extension catalog. "
@@ -1030,22 +1033,33 @@ class ExtensionCatalog:
                     )
                     self._non_default_catalog_warning_shown = True
 
-            return catalog_url
+            return [catalog_url]
 
         # TODO: Support custom catalogs from .specify/extension-catalogs.yml
-        return self.DEFAULT_CATALOG_URL
+        return self.DEFAULT_CATALOG_URLS
 
     def is_cache_valid(self) -> bool:
-        """Check if cached catalog is still valid.
+        """Check if cached catalog is still valid and matches current URL settings.
 
         Returns:
-            True if cache exists and is within cache duration
+            True if cache exists, is within cache duration, and matches current URLs
         """
         if not self.cache_file.exists() or not self.cache_metadata_file.exists():
             return False
 
         try:
             metadata = json.loads(self.cache_metadata_file.read_text())
+            
+            # Check for schema mismatch (older caches used 'catalog_url' string instead of 'catalog_urls' list)
+            cached_urls = metadata.get("catalog_urls")
+            if not cached_urls or not isinstance(cached_urls, list):
+                return False
+
+            # Check if the currently requested URLs match the cached configuration
+            current_urls = self.get_catalog_urls()
+            if cached_urls != current_urls:
+                return False
+
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
             age_seconds = (datetime.now(timezone.utc) - cached_at).total_seconds()
             return age_seconds < self.CACHE_DURATION
@@ -1053,16 +1067,16 @@ class ExtensionCatalog:
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
-        """Fetch extension catalog from URL or cache.
+        """Fetch extension catalogs from URLs or cache and merge them.
 
         Args:
             force_refresh: If True, bypass cache and fetch from network
 
         Returns:
-            Catalog data dictionary
+            Merged catalog data dictionary
 
         Raises:
-            ExtensionError: If catalog cannot be fetched
+            ExtensionError: If catalogs cannot be fetched
         """
         # Check cache first unless force refresh
         if not force_refresh and self.is_cache_valid():
@@ -1072,36 +1086,48 @@ class ExtensionCatalog:
                 pass  # Fall through to network fetch
 
         # Fetch from network
-        catalog_url = self.get_catalog_url()
+        catalog_urls = self.get_catalog_urls()
+        
+        merged_catalog = {
+            "schema_version": "1.0",
+            "extensions": {}
+        }
 
         try:
             import urllib.request
             import urllib.error
+            
+            for catalog_url in catalog_urls:
+                with urllib.request.urlopen(catalog_url, timeout=10) as response:
+                    catalog_data = json.loads(response.read())
 
-            with urllib.request.urlopen(catalog_url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
-
-            # Validate catalog structure
-            if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-                raise ExtensionError("Invalid catalog format")
+                # Validate catalog structure
+                if "schema_version" not in catalog_data or "extensions" not in catalog_data:
+                    raise ExtensionError(f"Invalid catalog format from {catalog_url}")
+                
+                # Merge extensions into the aggregated catalog, preserving precedence for the first catalog URL
+                # that defines a given extension ID.
+                for ext_id, ext_data in catalog_data.get("extensions", {}).items():
+                    if ext_id not in merged_catalog["extensions"]:
+                        merged_catalog["extensions"][ext_id] = ext_data
 
             # Save to cache
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            self.cache_file.write_text(json.dumps(catalog_data, indent=2))
+            self.cache_file.write_text(json.dumps(merged_catalog, indent=2))
 
             # Save cache metadata
             metadata = {
                 "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": catalog_url,
+                "catalog_urls": catalog_urls,
             }
             self.cache_metadata_file.write_text(json.dumps(metadata, indent=2))
 
-            return catalog_data
+            return merged_catalog
 
         except urllib.error.URLError as e:
-            raise ExtensionError(f"Failed to fetch catalog from {catalog_url}: {e}")
+            raise ExtensionError(f"Failed to fetch catalog from network: {e}")
         except json.JSONDecodeError as e:
-            raise ExtensionError(f"Invalid JSON in catalog: {e}")
+            raise ExtensionError(f"Invalid JSON in catalog payload: {e}")
 
     def search(
         self,
