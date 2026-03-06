@@ -38,9 +38,13 @@ case "$FILE_PATH" in
     Makefile|Dockerfile*|docker-compose*) echo '{}'; exit 0 ;;
 esac
 
-# Source code file - output JSON reminder
-jq -n --arg path "$FILE_PATH" '{
-    systemMessage: ("[MiniSpec] Source file modified: " + $path + ". If this change affects architecture, patterns, or module behavior, update the relevant docs in .minispec/knowledge/. Run /minispec.validate-docs to check freshness.")
-}'
+# Source code file - output JSON reminder (fail open if jq unavailable)
+if command -v jq &>/dev/null; then
+    jq -n --arg path "$FILE_PATH" '{
+        systemMessage: ("[MiniSpec] Source file modified: " + $path + ". If this change affects architecture, patterns, or module behavior, update the relevant docs in .minispec/knowledge/. Run /minispec.validate-docs to check freshness.")
+    }'
+else
+    echo '{"systemMessage":"[MiniSpec] Source file modified: '"$FILE_PATH"'. If this change affects architecture, patterns, or module behavior, update the relevant docs in .minispec/knowledge/."}'
+fi
 
 exit 0
