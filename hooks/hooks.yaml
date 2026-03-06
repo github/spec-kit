@@ -1,0 +1,61 @@
+# MiniSpec Hooks Configuration
+# These hooks run automatically via Claude Code's hook system.
+# They are wired in adapters/claude-code.json (copied to .claude/settings.json at build time).
+
+version: "1.0"
+
+hooks:
+  # ============================================================================
+  # SAFETY GATES (PreToolUse → Bash) - Block dangerous operations
+  # ============================================================================
+
+  protect-main:
+    id: minispec.protect-main
+    description: Prevent direct commits to protected branches
+    trigger: PreToolUse Bash - before git commit on main/master/develop
+    script: scripts/claude-protect-main.sh
+    enabled: true
+    severity: blocking
+    protected_branches:
+      - main
+      - master
+      - develop
+
+  block-force:
+    id: minispec.block-force
+    description: Block destructive git operations
+    trigger: PreToolUse Bash - before reset --hard, push --force, clean -f, etc.
+    script: scripts/claude-block-force.sh
+    enabled: true
+    severity: blocking
+    patterns:
+      - "git reset --hard"
+      - "git push --force"
+      - "git push -f"
+      - "git clean -f"
+      - "git checkout ."
+      - "git restore ."
+
+  secrets-scan:
+    id: minispec.secrets-scan
+    description: Scan for hardcoded secrets before git add/commit
+    trigger: PreToolUse Bash - before git add or git commit
+    script: scripts/claude-secrets-scan.sh
+    enabled: true
+    severity: blocking
+
+  # ============================================================================
+  # DOCUMENTATION (PostToolUse → Write|Edit) - Keep knowledge base fresh
+  # ============================================================================
+
+  doc-update-prompt:
+    id: minispec.doc-update-prompt
+    description: Remind AI to update documentation after source code changes
+    trigger: PostToolUse Write|Edit - after modifying source files
+    script: scripts/claude-doc-update-prompt.sh
+    enabled: true
+    severity: prompting
+
+# Severity levels:
+# - blocking: Operation is denied (script outputs JSON permissionDecision)
+# - prompting: Reminder injected into AI context (script outputs plain text)

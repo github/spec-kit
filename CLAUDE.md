@@ -70,6 +70,11 @@ minispec --help
 
 # Build
 uv build
+
+# Upgrade existing project
+minispec upgrade              # auto-detect agent and script type
+minispec upgrade --ai claude  # explicit agent
+minispec upgrade --force      # accept all command changes
 ```
 
 ## Source Structure

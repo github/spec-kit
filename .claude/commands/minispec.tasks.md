@@ -1,8 +1,5 @@
 ---
 description: Interactively break down a design into reviewable implementation chunks sized for pair programming.
-scripts:
-  sh: scripts/bash/setup-plan.sh --json
-  ps: scripts/powershell/setup-plan.ps1 -Json
 ---
 
 ## User Input
@@ -16,6 +13,7 @@ You are helping break down a design into **implementable tasks** through convers
 ## Philosophy
 
 Task breakdown is not just about creating a list—it's about:
+
 - Understanding the implementation sequence
 - Identifying dependencies and parallelization opportunities
 - Sizing chunks for comfortable review
@@ -25,7 +23,7 @@ Task breakdown is not just about creating a list—it's about:
 
 Before starting, verify:
 
-1. **Constitution exists** at `.minispec/memory/constitution.md`
+1. **Constitution exists** at `.minispec.minispec/memory/constitution.md`
    - Read the `Review Chunk Size` preference (small/medium/large/adaptive)
    - This determines target lines per task
 
@@ -42,29 +40,13 @@ If no design exists:
 Based on constitution preference:
 
 | Preference | Target Lines | Typical Scope |
-|------------|--------------|---------------|
+| --- | --- | --- |
 | Small | 20-40 lines | Single function, one test |
 | Medium | 40-80 lines | Related functions, model + migration |
 | Large | 80-150 lines | Full component, endpoint + tests |
 | Adaptive | Varies | AI suggests based on complexity |
 
 ## Execution Flow
-
-### Phase 0: Set Up Tasks File
-
-**IMPORTANT: Before doing anything else, run the setup script to prepare the tasks file.**
-
-Run this command:
-```
-{SCRIPT}
-```
-
-This will:
-- Ensure the feature spec directory exists
-- Copy the tasks template to `tasks.md`
-- Output paths for `DESIGN`, `TASKS`, `FEATURE_DIR`, and `BRANCH`
-
-Parse the JSON output to locate the design and tasks files. If the script fails, create the tasks file manually at `.minispec/specs/[feature-name]/tasks.md`.
 
 ### Phase 1: Load Context
 
@@ -92,7 +74,7 @@ Parse the JSON output to locate the design and tasks files. If the script fails,
 
 Present an initial breakdown organized by implementation phase:
 
-```
+```text
 ## Proposed Task Breakdown
 
 ### Foundation (do first)
@@ -145,6 +127,7 @@ Invite feedback and adjust:
 
 **If they want to split tasks:**
 > "Good idea. I'll split [Task] into:
+>
 > - [Task A]: [scope] (~[N] lines)
 > - [Task B]: [scope] (~[N] lines)"
 
@@ -156,6 +139,7 @@ Invite feedback and adjust:
 
 **If a task seems too vague:**
 > "Let me be more specific about [Task]. It would involve:
+>
 > 1. [Step 1]
 > 2. [Step 2]
 > 3. [Step 3]
@@ -169,10 +153,12 @@ Make dependencies explicit:
 > "Looking at the tasks:
 >
 > **Parallel groups:**
+>
 > - Tasks 3, 4 can run simultaneously (no shared dependencies)
 > - Tasks 6, 7 can run simultaneously
 >
 > **Sequential requirements:**
+>
 > - Task 5 needs Tasks 3, 4 complete first
 > - Task 8 needs everything else done
 >
@@ -183,6 +169,7 @@ Make dependencies explicit:
 Discuss how testing fits in:
 
 > "For testing, I suggest:
+>
 > - Tasks 1-2 (foundation): Include unit tests in the same task
 > - Tasks 3-5 (core): Tests bundled with implementation
 > - Task 6: Dedicated integration test task
@@ -262,7 +249,7 @@ estimated_lines: [N]
 [... checklist for tracking ...]
 ```
 
-3. **Update design status**:
+1. **Update design status**:
    - Change design.md status from `designed` to `planned`
 
 ### Phase 7: Handoff
@@ -270,11 +257,13 @@ estimated_lines: [N]
 > "Tasks saved to `.minispec/specs/[feature-name]/tasks.md`
 >
 > **Summary:**
+>
 > - [N] tasks total
 > - ~[N] estimated lines
 > - [N] parallel opportunities
 >
 > **Next steps:**
+>
 > - `/minispec.analyze` - Validate design-task alignment
 > - `/minispec.next` - Start implementing
 >
@@ -299,6 +288,7 @@ estimated_lines: [N]
 
 **Feature is too large:**
 > "This feature might be [N]+ tasks. Consider splitting into phases:
+>
 > - Phase 1: [Core functionality]
 > - Phase 2: [Enhanced features]
 > - Phase 3: [Polish and edge cases]

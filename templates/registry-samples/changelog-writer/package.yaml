@@ -1,0 +1,16 @@
+name: changelog-writer
+version: 1.0.0
+type: skill
+description: Generates changelogs from git history using a customizable template
+agents:
+  - claude
+minispec: ">=0.1.0"
+review:
+  status: approved
+  reviewed-by: MiniSpec team
+  reviewed-at: "2025-01-01"
+files:
+  - source: SKILL.md
+    target: .claude/skills/changelog-writer/SKILL.md
+  - source: template.md
+    target: .claude/skills/changelog-writer/template.md

@@ -24,6 +24,7 @@ Or install globally:
     minispec init --here
 """
 
+import difflib
 import os
 import subprocess
 import sys
@@ -230,6 +231,28 @@ AGENT_CONFIG = {
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
+# Agent command installation paths (where slash commands go per agent)
+# Differs from AGENT_CONFIG["folder"] for some agents (e.g., copilot, windsurf)
+AGENT_COMMAND_CONFIG = {
+    "claude":       {"path": ".claude/commands",     "ext": "md",       "fmt": "md"},
+    "gemini":       {"path": ".gemini/commands",     "ext": "toml",     "fmt": "toml"},
+    "copilot":      {"path": ".github/agents",       "ext": "agent.md", "fmt": "md"},
+    "cursor-agent": {"path": ".cursor/commands",     "ext": "md",       "fmt": "md"},
+    "qwen":         {"path": ".qwen/commands",       "ext": "toml",     "fmt": "toml"},
+    "opencode":     {"path": ".opencode/command",    "ext": "md",       "fmt": "md"},
+    "windsurf":     {"path": ".windsurf/workflows",  "ext": "md",       "fmt": "md"},
+    "codex":        {"path": ".codex/prompts",       "ext": "md",       "fmt": "md"},
+    "kilocode":     {"path": ".kilocode/workflows",  "ext": "md",       "fmt": "md"},
+    "auggie":       {"path": ".augment/commands",    "ext": "md",       "fmt": "md"},
+    "roo":          {"path": ".roo/commands",        "ext": "md",       "fmt": "md"},
+    "codebuddy":    {"path": ".codebuddy/commands",  "ext": "md",       "fmt": "md"},
+    "qoder":        {"path": ".qoder/commands",      "ext": "md",       "fmt": "md"},
+    "amp":          {"path": ".agents/commands",     "ext": "md",       "fmt": "md"},
+    "shai":         {"path": ".shai/commands",       "ext": "md",       "fmt": "md"},
+    "q":            {"path": ".amazonq/prompts",     "ext": "md",       "fmt": "md"},
+    "bob":          {"path": ".bob/commands",        "ext": "md",       "fmt": "md"},
+}
+
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 
 BANNER = """
@@ -242,6 +265,175 @@ BANNER = """
 """
 
 TAGLINE = "Pair programming with AI that actually works"
+
+
+def _detect_project_config(project_path: Path) -> tuple[str, str]:
+    """Detect which agent and script type are installed in a MiniSpec project.
+
+    Returns (agent_key, script_type) or exits with error if ambiguous/missing.
+    """
+    if not (project_path / ".minispec").is_dir():
+        console.print("[red]Error:[/red] No .minispec directory found. Is this a MiniSpec project?")
+        raise typer.Exit(1)
+
+    # Detect agent by checking AGENT_COMMAND_CONFIG paths
+    detected_agents = []
+    for agent_key, cmd_config in AGENT_COMMAND_CONFIG.items():
+        cmd_path = project_path / cmd_config["path"]
+        if cmd_path.is_dir() and any(cmd_path.iterdir()):
+            detected_agents.append(agent_key)
+
+    if not detected_agents:
+        console.print("[red]Error:[/red] Could not detect AI agent. Use --ai to specify.")
+        raise typer.Exit(1)
+    if len(detected_agents) > 1:
+        agents_str = ", ".join(detected_agents)
+        console.print(f"[red]Error:[/red] Multiple agents detected ({agents_str}). Use --ai to specify which one.")
+        raise typer.Exit(1)
+
+    # Detect script type
+    scripts_dir = project_path / ".minispec" / "scripts"
+    detected_script = None
+    if (scripts_dir / "bash").is_dir():
+        detected_script = "sh"
+    elif (scripts_dir / "powershell").is_dir():
+        detected_script = "ps"
+
+    if not detected_script:
+        console.print("[red]Error:[/red] Could not detect script type. Use --script to specify.")
+        raise typer.Exit(1)
+
+    return detected_agents[0], detected_script
+
+
+def _classify_upgrade_file(rel_path: str) -> str:
+    """Classify a file for upgrade handling.
+
+    Returns one of: 'overwrite', 'merge', 'prompt', 'skip'.
+    """
+    parts = Path(rel_path).parts
+
+    # Never touch user content
+    if rel_path.startswith(".minispec/memory/") or rel_path.startswith(".minispec/specs/") or rel_path.startswith(".minispec/knowledge/"):
+        return "skip"
+
+    # Deep merge JSON config files
+    if rel_path.endswith("settings.json") and parts[0] in (".claude", ".vscode"):
+        return "merge"
+
+    # Prompt for agent command files (minispec.* pattern)
+    for agent_key, cmd_config in AGENT_COMMAND_CONFIG.items():
+        cmd_prefix = cmd_config["path"]
+        if rel_path.startswith(cmd_prefix + "/") and "minispec." in rel_path:
+            return "prompt"
+
+    # Everything else: silent overwrite
+    return "overwrite"
+
+
+def _diff_files(existing: Path, new: Path) -> str | None:
+    """Generate a unified diff between existing and new file.
+
+    Returns the diff string, or None if files are identical.
+    If existing doesn't exist, diffs against empty.
+    """
+    old_lines = []
+    if existing.exists():
+        old_lines = existing.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    new_lines = new.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    diff = list(difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=str(existing.name) + " (current)",
+        tofile=str(existing.name) + " (new)",
+        lineterm="",
+    ))
+
+    if not diff:
+        return None
+
+    return "\n".join(diff)
+
+
+def _apply_upgrade(project_path: Path, template_path: Path, force: bool = False) -> list[tuple[str, str]]:
+    """Apply upgrade from extracted template to project.
+
+    Walks template files, classifies each, and applies the appropriate action.
+    For 'prompt' files, shows diff and asks unless force=True.
+
+    Returns list of (relative_path, action) tuples.
+    """
+    results: list[tuple[str, str]] = []
+
+    for source_file in sorted(template_path.rglob("*")):
+        if not source_file.is_file():
+            continue
+
+        rel_path = str(source_file.relative_to(template_path))
+        dest_file = project_path / rel_path
+        tier = _classify_upgrade_file(rel_path)
+
+        if tier == "skip":
+            results.append((rel_path, "skipped (user content)"))
+            continue
+
+        if tier == "merge":
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            if dest_file.exists():
+                try:
+                    with open(source_file, "r", encoding="utf-8") as f:
+                        new_content = json.load(f)
+                    merged = merge_json_files(dest_file, new_content)
+                    with open(dest_file, "w", encoding="utf-8") as f:
+                        json.dump(merged, f, indent=4)
+                        f.write("\n")
+                    results.append((rel_path, "merged"))
+                except Exception:
+                    shutil.copy2(source_file, dest_file)
+                    results.append((rel_path, "overwritten (merge failed)"))
+            else:
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "created"))
+            continue
+
+        if tier == "prompt":
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            if not dest_file.exists():
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "created (new)"))
+                continue
+
+            diff = _diff_files(dest_file, source_file)
+            if diff is None:
+                results.append((rel_path, "skipped (unchanged)"))
+                continue
+
+            if force:
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "overwritten (auto)"))
+                continue
+
+            # Interactive prompt
+            console.print(f"\n[cyan]--- {rel_path} ---[/cyan]")
+            console.print(diff)
+            accept = typer.confirm("Apply this change?", default=False)
+            if accept:
+                shutil.copy2(source_file, dest_file)
+                results.append((rel_path, "overwritten (accepted)"))
+            else:
+                results.append((rel_path, "skipped (user declined)"))
+            continue
+
+        # tier == "overwrite"
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        is_new = not dest_file.exists()
+        shutil.copy2(source_file, dest_file)
+        results.append((rel_path, "created" if is_new else "overwritten"))
+
+    return results
+
+
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
     Supports live auto-refresh via an attached refresh callback.
@@ -455,8 +647,25 @@ def show_banner():
     console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
     console.print()
 
+def _get_version() -> str:
+    import importlib.metadata
+    try:
+        return importlib.metadata.version("minispec-cli")
+    except Exception:
+        return "dev"
+
+
+def _version_callback(value: bool):
+    if value:
+        typer.echo(f"minispec {_get_version()}")
+        raise typer.Exit()
+
+
 @app.callback()
-def callback(ctx: typer.Context):
+def callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(None, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."),
+):
     """Show banner when no subcommand is provided."""
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
@@ -1241,6 +1450,132 @@ def init(
     console.print(enhancements_panel)
 
 @app.command()
+def upgrade(
+    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant (auto-detected if omitted)"),
+    script_type: str = typer.Option(None, "--script", help="Script type: sh or ps (auto-detected if omitted)"),
+    force: bool = typer.Option(False, "--force", help="Accept all command changes without prompting"),
+    skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification"),
+    debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output"),
+    github_token: str = typer.Option(None, "--github-token", help="GitHub token for API requests"),
+):
+    """Upgrade MiniSpec scaffolding to the latest version.
+
+    Updates scripts, templates, hooks, and commands from the latest release
+    while preserving your specs, knowledge, constitution, and other user content.
+
+    Agent and script type are auto-detected from your project. Use --ai and
+    --script to override if detection fails or you want to switch.
+
+    Command files (minispec.*.md) are diffed and you're prompted before
+    overwriting. Use --force to accept all changes automatically.
+    """
+    project_path = Path.cwd()
+
+    show_banner()
+
+    # Get current version
+    current_version = _get_version()
+    console.print(f"[dim]Current CLI version: {current_version}[/dim]")
+    console.print()
+
+    # Detect or use provided config
+    if ai_assistant and ai_assistant not in AGENT_CONFIG:
+        console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+        raise typer.Exit(1)
+    if script_type and script_type not in SCRIPT_TYPE_CHOICES:
+        console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
+        raise typer.Exit(1)
+
+    detected_ai, detected_script = _detect_project_config(project_path)
+
+    selected_ai = ai_assistant or detected_ai
+    selected_script = script_type or detected_script
+
+    console.print(f"[cyan]Agent:[/cyan]  {AGENT_CONFIG[selected_ai]['name']}" + (" [dim](detected)[/dim]" if not ai_assistant else ""))
+    console.print(f"[cyan]Script:[/cyan] {SCRIPT_TYPE_CHOICES[selected_script]}" + (" [dim](detected)[/dim]" if not script_type else ""))
+    console.print()
+
+    # Download template to temp directory
+    console.print("[cyan]Downloading latest template...[/cyan]")
+    verify = not skip_tls
+    local_ssl_context = ssl_context if verify else False
+    local_client = httpx.Client(verify=local_ssl_context)
+
+    try:
+        with tempfile.TemporaryDirectory() as download_dir:
+            zip_path, meta = download_template_from_github(
+                selected_ai,
+                Path(download_dir),
+                script_type=selected_script,
+                verbose=False,
+                show_progress=False,
+                client=local_client,
+                debug=debug,
+                github_token=github_token,
+            )
+            console.print(f"[green]Downloaded release {meta['release']}[/green]")
+
+            # Extract to temp location
+            with tempfile.TemporaryDirectory() as extract_dir:
+                extract_path = Path(extract_dir)
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    zip_ref.extractall(extract_path)
+
+                # Flatten if single nested directory
+                extracted_items = list(extract_path.iterdir())
+                template_root = extract_path
+                if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                    template_root = extracted_items[0]
+
+                # Apply upgrade
+                console.print("[cyan]Applying upgrade...[/cyan]")
+                console.print()
+                results = _apply_upgrade(project_path, template_root, force=force)
+
+                # Ensure scripts are executable
+                ensure_executable_scripts(project_path)
+
+    except Exception as e:
+        console.print(f"[red]Upgrade failed:[/red] {e}")
+        if debug:
+            import traceback
+            console.print(traceback.format_exc())
+        raise typer.Exit(1)
+
+    # Print summary
+    console.print()
+    table = Table(title="Upgrade Summary")
+    table.add_column("File", style="cyan")
+    table.add_column("Action")
+
+    action_styles = {
+        "created": "[green]created[/green]",
+        "created (new)": "[green]created (new)[/green]",
+        "overwritten": "[yellow]overwritten[/yellow]",
+        "overwritten (auto)": "[yellow]overwritten (auto)[/yellow]",
+        "overwritten (accepted)": "[yellow]overwritten (accepted)[/yellow]",
+        "overwritten (merge failed)": "[red]overwritten (merge failed)[/red]",
+        "merged": "[green]merged[/green]",
+        "skipped (unchanged)": "[dim]skipped (unchanged)[/dim]",
+        "skipped (user content)": "[dim]skipped (user content)[/dim]",
+        "skipped (user declined)": "[blue]skipped (user declined)[/blue]",
+    }
+
+    for rel_path, action in results:
+        styled_action = action_styles.get(action, action)
+        table.add_row(rel_path, styled_action)
+
+    console.print(table)
+
+    counts = {}
+    for _, action in results:
+        bucket = action.split(" (")[0]  # group by base action
+        counts[bucket] = counts.get(bucket, 0) + 1
+
+    parts = [f"{v} {k}" for k, v in sorted(counts.items())]
+    console.print(f"\n[green]Upgrade complete.[/green] {', '.join(parts)}.")
+
+@app.command()
 def check():
     """Check that all required tools are installed."""
     show_banner()
@@ -1360,6 +1695,648 @@ def version():
 
     console.print(panel)
     console.print()
+
+# --- Registry Commands ---
+
+registry_app = typer.Typer(
+    name="registry",
+    help="Manage package registries (add, remove, list, update)",
+    add_completion=False,
+)
+app.add_typer(registry_app, name="registry")
+
+
+def _derive_registry_name(url: str) -> str:
+    """Derive a short registry name from a Git URL."""
+    # git@host:org/repo.git -> repo
+    # https://host/org/repo.git -> repo
+    name = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name
+
+
+@registry_app.command("add")
+def registry_add(
+    url: str = typer.Argument(help="Git URL of the registry repository"),
+    name: str = typer.Option(None, "--name", "-n", help="Short name for this registry (auto-derived from URL if omitted)"),
+):
+    """Add a package registry."""
+    from minispec_cli.registry import (
+        RegistryConfig, RegistryError, load_registries, save_registries, ensure_cached,
+    )
+
+    registry_name = name or _derive_registry_name(url)
+    state = load_registries()
+
+    # Check for duplicate
+    for r in state.registries:
+        if r.name == registry_name:
+            console.print(f"[red]Registry '{registry_name}' already exists. Remove it first or use a different --name.[/red]")
+            raise typer.Exit(1)
+
+    reg = RegistryConfig(name=registry_name, url=url)
+
+    # Verify we can clone it
+    console.print(f"Adding registry [cyan]{registry_name}[/cyan] from {url}...")
+    try:
+        ensure_cached(reg)
+    except RegistryError as e:
+        console.print(f"[red]Failed to fetch registry: {e}[/red]")
+        raise typer.Exit(1)
+
+    state.registries.append(reg)
+    save_registries(state)
+    console.print(f"[green]Registry '{registry_name}' added successfully.[/green]")
+
+
+@registry_app.command("list")
+def registry_list():
+    """List configured registries."""
+    from minispec_cli.registry import load_registries
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured. Use 'minispec registry add <url>' to add one.[/dim]")
+        return
+
+    table = Table(title="Configured Registries")
+    table.add_column("Name", style="cyan")
+    table.add_column("URL")
+    table.add_column("Added", style="dim")
+
+    for r in state.registries:
+        table.add_row(r.name, r.url, r.added_at)
+
+    console.print(table)
+
+
+@registry_app.command("remove")
+def registry_remove(
+    name: str = typer.Argument(help="Name of the registry to remove"),
+):
+    """Remove a registry and its local cache."""
+    from minispec_cli.registry import load_registries, save_registries, remove_cache
+
+    state = load_registries()
+    found = [r for r in state.registries if r.name == name]
+    if not found:
+        console.print(f"[red]Registry '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    state.registries = [r for r in state.registries if r.name != name]
+    save_registries(state)
+    remove_cache(name)
+    console.print(f"[green]Registry '{name}' removed.[/green]")
+
+
+@registry_app.command("update")
+def registry_update(
+    name: str = typer.Argument(None, help="Registry to update (all if omitted)"),
+):
+    """Refresh registry cache from remote."""
+    from minispec_cli.registry import RegistryError, load_registries, ensure_cached
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured.[/dim]")
+        return
+
+    targets = state.registries
+    if name:
+        targets = [r for r in state.registries if r.name == name]
+        if not targets:
+            console.print(f"[red]Registry '{name}' not found.[/red]")
+            raise typer.Exit(1)
+
+    for reg in targets:
+        console.print(f"Updating [cyan]{reg.name}[/cyan]...")
+        try:
+            ensure_cached(reg, refresh=True)
+            console.print(f"  [green]Updated.[/green]")
+        except RegistryError as e:
+            console.print(f"  [red]Failed: {e}[/red]")
+
+
+@app.command()
+def search(
+    query: str = typer.Argument("", help="Package name to search for (substring match)"),
+    type_filter: str = typer.Option(None, "--type", "-t", help="Filter by type: command, skill, hook"),
+    agent_filter: str = typer.Option(None, "--agent", "-a", help="Filter by agent compatibility"),
+    refresh: bool = typer.Option(False, "--refresh", help="Refresh registry cache before searching"),
+):
+    """Search for packages across all registries."""
+    from minispec_cli.registry import RegistryError, load_registries, discover_packages
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured. Use 'minispec registry add <url>' to add one.[/dim]")
+        return
+
+    all_packages = []
+    warnings = []
+    for reg in state.registries:
+        try:
+            packages = discover_packages(reg, refresh=refresh, warnings=warnings)
+            all_packages.extend(packages)
+        except RegistryError as e:
+            console.print(f"[yellow]Warning: could not fetch {reg.name}: {e}[/yellow]")
+
+    for w in warnings:
+        console.print(f"[yellow]{w}[/yellow]")
+
+    # Apply filters
+    results = all_packages
+    if query:
+        results = [p for p in results if query.lower() in p.name.lower()]
+    if type_filter:
+        results = [p for p in results if p.type == type_filter]
+    if agent_filter:
+        results = [p for p in results if agent_filter in p.agents]
+
+    if not results:
+        if query:
+            console.print(f"[dim]No packages matching '{query}'.[/dim]")
+        else:
+            console.print("[dim]No packages found.[/dim]")
+        return
+
+    table = Table(title="Available Packages")
+    table.add_column("Name", style="cyan")
+    table.add_column("Version")
+    table.add_column("Type")
+    table.add_column("Description")
+    table.add_column("Agents", style="dim")
+    table.add_column("Registry", style="dim")
+    table.add_column("Review", style="dim")
+
+    for p in results:
+        review_style = {"approved": "[green]approved[/green]", "rejected": "[red]rejected[/red]"}.get(
+            p.review.status, p.review.status
+        )
+        table.add_row(
+            p.name,
+            p.version,
+            p.type,
+            p.description,
+            ", ".join(p.agents) if p.agents else "-",
+            p.registry_name,
+            review_style,
+        )
+
+    console.print(table)
+
+
+@app.command()
+def install(
+    package_name: str = typer.Argument(help="Package name to install (use name@version for specific version)"),
+    registry_name: str = typer.Option(None, "--registry", "-r", help="Install from specific registry (required if package exists in multiple)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Refresh registry cache before installing"),
+):
+    """Install a package from a registry."""
+    from minispec_cli.registry import (
+        InstalledPackage, RegistryError, load_registries, save_registries,
+        resolve_package, install_package_files,
+    )
+
+    state = load_registries()
+    if not state.registries:
+        console.print("[dim]No registries configured. Use 'minispec registry add <url>' to add one.[/dim]")
+        raise typer.Exit(1)
+
+    # Parse name@version
+    version = None
+    if "@" in package_name:
+        package_name, version = package_name.rsplit("@", 1)
+
+    # Check if already installed
+    for p in state.installed:
+        if p.name == package_name:
+            console.print(f"[yellow]Package '{package_name}' is already installed (v{p.version}). Use 'minispec uninstall {package_name}' first.[/yellow]")
+            raise typer.Exit(1)
+
+    # Resolve package
+    try:
+        spec, warnings = resolve_package(package_name, state, registry_filter=registry_name, refresh=refresh)
+    except RegistryError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    for w in warnings:
+        console.print(f"[yellow]{w}[/yellow]")
+
+    # Version check
+    if version and spec.version != version:
+        console.print(f"[red]Requested version {version} but registry has {spec.version}.[/red]")
+        raise typer.Exit(1)
+
+    # Find the registry config for file installation
+    reg = next(r for r in state.registries if r.name == spec.registry_name)
+
+    console.print(f"Installing [cyan]{spec.name}[/cyan] v{spec.version} from {spec.registry_name}...")
+
+    try:
+        installed_files = install_package_files(spec, reg)
+    except RegistryError as e:
+        console.print(f"[red]Installation failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Track installation
+    state.installed.append(InstalledPackage(
+        name=spec.name,
+        version=spec.version,
+        type=spec.type,
+        registry=spec.registry_name,
+        files=installed_files,
+    ))
+    save_registries(state)
+
+    console.print(f"[green]Installed {spec.name} v{spec.version}[/green]")
+    for f in installed_files:
+        console.print(f"  [dim]{f}[/dim]")
+
+
+@app.command("list")
+def list_installed():
+    """List installed packages."""
+    from minispec_cli.registry import load_registries
+
+    state = load_registries()
+    if not state.installed:
+        console.print("[dim]No packages installed. Use 'minispec search' to find packages.[/dim]")
+        return
+
+    table = Table(title="Installed Packages")
+    table.add_column("Name", style="cyan")
+    table.add_column("Version")
+    table.add_column("Type")
+    table.add_column("Registry", style="dim")
+    table.add_column("Installed", style="dim")
+    table.add_column("Files", style="dim")
+
+    for p in state.installed:
+        table.add_row(
+            p.name,
+            p.version,
+            p.type,
+            p.registry,
+            p.installed_at,
+            str(len(p.files)),
+        )
+
+    console.print(table)
+
+
+@app.command()
+def uninstall(
+    package_name: str = typer.Argument(help="Package name to uninstall"),
+):
+    """Uninstall a package and remove its files."""
+    from minispec_cli.registry import load_registries, save_registries
+
+    state = load_registries()
+
+    pkg = next((p for p in state.installed if p.name == package_name), None)
+    if not pkg:
+        console.print(f"[red]Package '{package_name}' is not installed.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Uninstalling [cyan]{pkg.name}[/cyan] v{pkg.version}...")
+
+    # Remove tracked files
+    removed = 0
+    for file_path in pkg.files:
+        target = Path.cwd() / file_path
+        if target.exists():
+            target.unlink()
+            removed += 1
+            console.print(f"  [dim]Removed {file_path}[/dim]")
+        else:
+            console.print(f"  [yellow]Already missing: {file_path}[/yellow]")
+
+    # Update state
+    state.installed = [p for p in state.installed if p.name != package_name]
+    save_registries(state)
+
+    console.print(f"[green]Uninstalled {pkg.name} ({removed} file{'s' if removed != 1 else ''} removed).[/green]")
+
+
+@app.command()
+def update(
+    package_name: str = typer.Argument(None, help="Package to update (all installed if omitted)"),
+    all_packages: bool = typer.Option(False, "--all", help="Update all installed packages"),
+):
+    """Update installed packages to latest registry versions."""
+    from minispec_cli.registry import (
+        RegistryError, load_registries, save_registries,
+        discover_packages, install_package_files,
+    )
+
+    state = load_registries()
+    if not state.installed:
+        console.print("[dim]No packages installed.[/dim]")
+        return
+
+    if not package_name and not all_packages:
+        console.print("[dim]Specify a package name or use --all to update everything.[/dim]")
+        return
+
+    targets = state.installed
+    if package_name:
+        targets = [p for p in state.installed if p.name == package_name]
+        if not targets:
+            console.print(f"[red]Package '{package_name}' is not installed.[/red]")
+            raise typer.Exit(1)
+
+    updated = 0
+    for installed in targets:
+        # Always update from the registry the package was installed from
+        source_reg = next((r for r in state.registries if r.name == installed.registry), None)
+        if not source_reg:
+            console.print(f"  [yellow]{installed.name}: source registry '{installed.registry}' not configured, skipping[/yellow]")
+            continue
+
+        try:
+            packages = discover_packages(source_reg, refresh=True)
+        except RegistryError as e:
+            console.print(f"  [red]{installed.name}: failed to fetch {installed.registry}: {e}[/red]")
+            continue
+
+        spec = next((p for p in packages if p.name == installed.name), None)
+        if not spec:
+            console.print(f"  [yellow]{installed.name}: not found in {installed.registry}, skipping[/yellow]")
+            continue
+
+        if spec.version == installed.version:
+            console.print(f"  [dim]{installed.name} v{installed.version} is up to date[/dim]")
+            continue
+
+        console.print(f"  Updating [cyan]{installed.name}[/cyan] v{installed.version} -> v{spec.version}...")
+        try:
+            new_files = install_package_files(spec, source_reg)
+            installed.version = spec.version
+            installed.files = new_files
+            updated += 1
+            console.print(f"  [green]Updated to v{spec.version}[/green]")
+        except RegistryError as e:
+            console.print(f"  [red]Failed to update {installed.name}: {e}[/red]")
+
+    if updated:
+        save_registries(state)
+        console.print(f"\n[green]{updated} package{'s' if updated != 1 else ''} updated.[/green]")
+    else:
+        console.print("\n[dim]Everything is up to date.[/dim]")
+
+
+def _format_skill_for_agent(description: str, body: str, agent: str) -> str:
+    """Format a skill template for the target agent's expected format."""
+    config = AGENT_COMMAND_CONFIG.get(agent)
+    if not config or config["fmt"] == "md":
+        return f"---\ndescription: {description}\n---\n\n{body}"
+    # TOML format (gemini, qwen)
+    escaped_body = body.replace("\\", "\\\\")
+    return f'description = "{description}"\n\nprompt = """\n{escaped_body}\n"""'
+
+
+def _read_registry_skill(agent: str) -> tuple[str, str]:
+    """Read the registry skill template and format it for the target agent.
+
+    Returns (filename, content) tuple.
+    """
+    config = AGENT_COMMAND_CONFIG[agent]
+    filename = f"minispec.registry.{config['ext']}"
+
+    # Read template from source tree
+    template_path = Path(__file__).parent.parent.parent / "templates" / "commands" / "registry.md"
+    if not template_path.exists():
+        raise FileNotFoundError(f"Registry skill template not found at {template_path}")
+
+    raw = template_path.read_text(encoding="utf-8")
+
+    # Parse frontmatter
+    if raw.startswith("---"):
+        parts = raw.split("---", 2)
+        if len(parts) >= 3:
+            frontmatter = parts[1].strip()
+            body = parts[2].strip()
+            description = ""
+            for line in frontmatter.splitlines():
+                if line.startswith("description:"):
+                    description = line.split(":", 1)[1].strip()
+                    break
+            content = _format_skill_for_agent(description, body, agent)
+            return filename, content
+
+    # Fallback: use raw content
+    return filename, raw
+
+
+@app.command("init-registry")
+def init_registry(
+    name: str = typer.Argument(None, help="Registry directory name (optional with --here)"),
+    ai: str = typer.Option(None, "--ai", help="AI agent to install skill for"),
+    here: bool = typer.Option(False, "--here", help="Initialize in current directory"),
+    no_git: bool = typer.Option(False, "--no-git", help="Skip git init"),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation when directory not empty"),
+):
+    """Scaffold a new MiniSpec package registry.
+
+    Creates a registry repo structure with registry.yaml, packages/ directory,
+    README, and the /minispec.registry skill for your AI agent.
+
+    Examples:
+        minispec init-registry my-registry --ai claude
+        minispec init-registry --here --ai claude
+        minispec init-registry my-registry  # interactive AI picker
+    """
+    show_banner()
+
+    if name == ".":
+        here = True
+        name = None
+
+    if here and name:
+        console.print("[red]Error:[/red] Cannot specify both a name and --here")
+        raise typer.Exit(1)
+
+    if not here and not name:
+        console.print("[red]Error:[/red] Specify a registry name or use --here")
+        raise typer.Exit(1)
+
+    # Resolve target directory
+    if here:
+        target = Path.cwd()
+        name = target.name
+        existing = list(target.iterdir())
+        if existing and not force:
+            console.print(f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing)} items)")
+            if not typer.confirm("Continue? Registry files will be merged with existing content"):
+                raise typer.Exit(0)
+    else:
+        target = Path(name).resolve()
+        if target.exists():
+            console.print(f"[red]Error:[/red] Directory '{name}' already exists")
+            raise typer.Exit(1)
+        target.mkdir(parents=True)
+
+    # Select AI agent
+    if ai:
+        if ai not in AGENT_CONFIG:
+            console.print(f"[red]Error:[/red] Unknown agent '{ai}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+            raise typer.Exit(1)
+        selected_ai = ai
+    else:
+        ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
+        selected_ai = select_with_arrows(ai_choices, "Choose your AI assistant:", "claude")
+
+    # Read skill template
+    try:
+        skill_filename, skill_content = _read_registry_skill(selected_ai)
+    except FileNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    tracker = StepTracker("Initialize Registry")
+    tracker.add("dirs", "Create directory structure")
+    tracker.add("samples", "Install example packages")
+    tracker.add("registry-yaml", "Generate registry.yaml")
+    tracker.add("readme", "Generate README.md")
+    tracker.add("skill", "Install registry skill")
+    tracker.add("git", "Initialize git repository")
+
+    with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
+        tracker.attach_refresh(lambda: live.update(tracker.render()))
+
+        # Create directories
+        tracker.start("dirs")
+        packages_dir = target / "packages"
+        packages_dir.mkdir(parents=True, exist_ok=True)
+        (packages_dir / ".gitkeep").touch()
+        tracker.complete("dirs")
+
+        # Copy sample packages
+        tracker.start("samples")
+        samples_src = Path(__file__).parent.parent.parent / "templates" / "registry-samples"
+        sample_names = []
+        if samples_src.is_dir():
+            for sample_dir in sorted(samples_src.iterdir()):
+                if sample_dir.is_dir():
+                    dest = packages_dir / sample_dir.name
+                    if not dest.exists():
+                        shutil.copytree(sample_dir, dest)
+                        sample_names.append(sample_dir.name)
+        if sample_names:
+            tracker.complete("samples", ", ".join(sample_names))
+        else:
+            tracker.skip("samples", "no samples found")
+
+        # Generate registry.yaml
+        tracker.start("registry-yaml")
+        registry_yaml = target / "registry.yaml"
+        if not registry_yaml.exists():
+            registry_yaml.write_text(
+                f"name: {name}\ndescription: \"\"\nmaintainers: []\n",
+                encoding="utf-8",
+            )
+            tracker.complete("registry-yaml", "created")
+        else:
+            tracker.skip("registry-yaml", "already exists")
+
+        # Generate README.md
+        tracker.start("readme")
+        readme_path = target / "README.md"
+        if not readme_path.exists():
+            readme_path.write_text(
+                f"# {name}\n\n"
+                "A MiniSpec package registry.\n\n"
+                "## Structure\n\n"
+                "```\n"
+                "registry.yaml          # Registry metadata\n"
+                "packages/              # Package directories\n"
+                "  my-package/\n"
+                "    package.yaml       # Package metadata and file mappings\n"
+                "    command.md         # Package content\n"
+                "    README.md          # Package documentation\n"
+                "```\n\n"
+                "## Getting Started\n\n"
+                "Use the registry builder skill to create packages:\n\n"
+                "```\n/minispec.registry\n```\n\n"
+                "This skill guides you through creating well-structured packages, "
+                "writing actual content, and validating registry integrity.\n\n"
+                "## Using This Registry\n\n"
+                "Consumers can add this registry to their MiniSpec projects:\n\n"
+                "```bash\n"
+                "minispec registry add <git-url-of-this-repo>\n"
+                "minispec search\n"
+                "minispec install <package-name>\n"
+                "```\n",
+                encoding="utf-8",
+            )
+            tracker.complete("readme", "created")
+        else:
+            tracker.skip("readme", "already exists")
+
+        # Install skill template
+        tracker.start("skill")
+        cmd_config = AGENT_COMMAND_CONFIG[selected_ai]
+        skill_dir = target / cmd_config["path"]
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_path = skill_dir / skill_filename
+        skill_path.write_text(skill_content, encoding="utf-8")
+        tracker.complete("skill", f"{cmd_config['path']}/{skill_filename}")
+
+        # Git init
+        if no_git:
+            tracker.skip("git", "--no-git flag")
+        elif is_git_repo(target):
+            tracker.complete("git", "existing repo detected")
+        elif check_tool("git"):
+            tracker.start("git")
+            success, error_msg = init_git_repo(target, quiet=True)
+            if success:
+                tracker.complete("git", "initialized")
+            else:
+                tracker.error("git", error_msg or "init failed")
+        else:
+            tracker.skip("git", "git not available")
+
+    console.print(tracker.render())
+
+    # Success panel
+    cmd_path = f"{cmd_config['path']}/{skill_filename}"
+    tree_lines = [
+        f"[green]{name}/[/green]",
+        f"  registry.yaml",
+        f"  packages/",
+    ]
+    # List installed sample packages
+    installed_samples = sorted(
+        d.name for d in (target / "packages").iterdir()
+        if d.is_dir() and d.name != ".gitkeep"
+    )
+    for sample in installed_samples:
+        tree_lines.append(f"    {sample}/")
+    tree_lines.append(f"  README.md")
+    tree_lines.append(f"  {cmd_path}")
+    console.print(Panel(
+        "\n".join(tree_lines),
+        title="[bold green]Registry created[/bold green]",
+        border_style="green",
+        padding=(1, 2),
+    ))
+
+    agent_display = AGENT_CONFIG[selected_ai]["name"]
+    steps = [
+        f"1. {'Open' if here else f'cd {name} && open'} your AI agent ({agent_display})",
+        "2. Run [cyan]/minispec.registry[/cyan] to start creating packages",
+    ]
+    console.print(Panel(
+        "\n".join(steps),
+        title="Next Steps",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+
 
 def main():
     app()

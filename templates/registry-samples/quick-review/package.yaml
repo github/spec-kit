@@ -1,0 +1,20 @@
+name: quick-review
+version: 1.0.0
+type: command
+description: Quick code review with structured feedback
+agents:
+  - claude
+  - cursor-agent
+  - copilot
+minispec: ">=0.1.0"
+review:
+  status: approved
+  reviewed-by: MiniSpec team
+  reviewed-at: "2025-01-01"
+files:
+  - source: command.md
+    target: .claude/commands/quick-review.md
+  - source: command.md
+    target: .cursor/commands/quick-review.md
+  - source: command.md
+    target: .github/agents/quick-review.agent.md
