@@ -303,12 +303,14 @@ Output includes additional fields such as:
 # By ID
 specify extension info jira
 
-# By display name
+# By display name (works for both installed and catalog extensions)
 specify extension info "Jira Integration"
 
 # Rich output
 specify extension info jira --verbose
 ```
+
+**Note:** If multiple extensions share the same display name, you'll need to use the extension ID instead.
 
 `--verbose` adds extra metadata including provides, tags, and links.
 

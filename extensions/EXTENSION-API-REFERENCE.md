@@ -596,7 +596,7 @@ EXECUTE_COMMAND: {command}
 
 **Arguments**:
 
-- `EXTENSION` - Extension ID or name
+- `EXTENSION` - Extension ID or display name (supports both installed and catalog extensions; if multiple extensions share the same display name, use ID instead)
 
 ### extension update
 
@@ -604,7 +604,7 @@ EXECUTE_COMMAND: {command}
 
 **Arguments**:
 
-- `EXTENSION` - Optional, extension ID or name (default: all)
+- `EXTENSION` - Optional, extension ID or display name for installed extensions (default: all)
 
 ### extension enable
 
@@ -612,7 +612,7 @@ EXECUTE_COMMAND: {command}
 
 **Arguments**:
 
-- `EXTENSION` - Extension ID or name
+- `EXTENSION` - Extension ID or display name (must be installed)
 
 ### extension disable
 

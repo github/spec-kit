@@ -915,6 +915,58 @@ class TestExtensionCliCommands:
         assert "dup-one" in result.stdout
         assert "dup-two" in result.stdout
 
+    def test_extension_info_uses_catalog_display_name_for_uninstalled(self, project_dir, monkeypatch):
+        """`extension info` should resolve catalog-only extensions by display name."""
+        _write_catalog_cache(
+            project_dir,
+            {
+                "catalog-ext": {
+                    "id": "catalog-ext",
+                    "name": "Catalog Only Extension",
+                    "version": "2.0.0",
+                    "description": "Extension present only in the catalog",
+                }
+            },
+        )
+
+        # Do NOT install the extension locally; it should be resolved purely from the catalog.
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["extension", "info", "Catalog Only Extension"])
+
+        assert result.exit_code == 0
+        # The output should reflect that we looked up the extension by its display name in the catalog.
+        assert "Catalog Only Extension" in result.stdout
+        assert "catalog-ext" in result.stdout
+
+    def test_extension_info_ambiguous_catalog_display_name_errors(self, project_dir, monkeypatch):
+        """`extension info` should error when a catalog display name is ambiguous."""
+        _write_catalog_cache(
+            project_dir,
+            {
+                "dup-cat-one": {
+                    "id": "dup-cat-one",
+                    "name": "Duplicate Catalog Extension",
+                    "version": "1.0.0",
+                    "description": "First catalog entry with duplicate name",
+                },
+                "dup-cat-two": {
+                    "id": "dup-cat-two",
+                    "name": "Duplicate Catalog Extension",
+                    "version": "1.1.0",
+                    "description": "Second catalog entry with duplicate name",
+                },
+            },
+        )
+
+        # Nothing is installed; ambiguity arises purely from the cached catalog.
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["extension", "info", "Duplicate Catalog Extension"])
+
+        assert result.exit_code == 1
+        assert "ambiguous" in result.stdout.lower()
+        assert "dup-cat-one" in result.stdout
+        assert "dup-cat-two" in result.stdout
+
 
 # ===== Extension Catalog Tests =====
 

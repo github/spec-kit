@@ -34,7 +34,7 @@ import shlex
 import json
 import yaml
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import typer
 import httpx
@@ -1779,6 +1779,104 @@ def get_speckit_version() -> str:
     return "unknown"
 
 
+def _resolve_installed_extension_id(extension: str, manager) -> str:
+    """
+    Resolve an extension argument (ID or display name) to a canonical extension ID.
+    
+    This helper function provides consistent name resolution across all extension commands:
+    - If the argument matches an installed extension ID, return it directly
+    - Otherwise, search for exact display-name matches (case-insensitive)
+    - If ambiguous (multiple matches), list all matches and exit with error
+    - If not found, report error and exit
+    
+    Args:
+        extension: The extension ID or display name from user input
+        manager: The ExtensionManager instance for the current project
+        
+    Returns:
+        str: The resolved extension ID
+        
+    Raises:
+        typer.Exit: If the extension is not found or the name is ambiguous
+    """
+    # First, check if the argument is already a valid installed extension ID
+    if manager.registry.is_installed(extension):
+        return extension
+    
+    # Otherwise, try to resolve by exact display name (case-insensitive)
+    installed = manager.list_installed()
+    name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
+    
+    if len(name_matches) == 1:
+        # Unique display-name match: return the matched extension ID
+        return name_matches[0]["id"]
+    elif len(name_matches) > 1:
+        # Ambiguous display-name match: list all candidates and exit
+        console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous")
+        console.print("Matches:")
+        for ext in name_matches:
+            console.print(f"  - {ext['name']} (id: {ext['id']})")
+        raise typer.Exit(1)
+    else:
+        # No match by ID or display name
+        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
+        raise typer.Exit(1)
+
+
+def _resolve_catalog_extension(extension: str, catalog) -> Optional[Dict[str, Any]]:
+    """
+    Resolve an extension argument (ID or display name) in the catalog.
+    
+    This helper searches the catalog by ID first, then by exact display name if not found.
+    Unlike installed extension resolution, this function can return None (extension not in catalog)
+    and handles ambiguous catalog names by listing matches and exiting.
+    
+    Args:
+        extension: The extension ID or display name from user input
+        catalog: The ExtensionCatalog instance for the current project
+        
+    Returns:
+        Dict: The extension info if found uniquely, or None if not in catalog
+        
+    Raises:
+        typer.Exit: If the extension name is ambiguous in the catalog
+    """
+    from .extensions import ExtensionError
+    
+    # First, try direct ID lookup
+    try:
+        ext_info = catalog.get_extension_info(extension)
+        if ext_info:
+            return ext_info
+    except ExtensionError:
+        # Catalog fetch failed - caller should handle this
+        raise
+    
+    # If not found by ID, search catalog by exact display name (case-insensitive)
+    try:
+        all_extensions = catalog.search()  # Get all catalog extensions
+        name_matches = [ext for ext in all_extensions if ext.get("name", "").lower() == extension.lower()]
+        
+        if len(name_matches) == 1:
+            # Unique display-name match
+            return name_matches[0]
+        elif len(name_matches) > 1:
+            # Ambiguous display-name match: list all candidates
+            console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous in catalog")
+            console.print("Matches:")
+            for ext in name_matches:
+                console.print(f"  - {ext.get('name', '')} (id: {ext.get('id', '')})")
+            console.print("\nPlease use the extension ID instead of the display name")
+            raise typer.Exit(1)
+        
+        # Not found by ID or display name
+        return None
+        
+    except ExtensionError:
+        # Catalog fetch failed during search
+        raise
+
+
 @extension_app.command("list")
 def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
@@ -1803,20 +1901,26 @@ def extension_list(
     installed = manager.list_installed()
     installed_ids = {ext["id"] for ext in installed}
 
-    # In verbose mode, prefetch catalog once to avoid repeated per-extension I/O.
+    # Prefetch catalog if needed for verbose mode or available/all listing
+    # This avoids duplicate catalog I/O when both conditions are true
+    catalog_extensions = None
     catalog_versions_by_id = {}
-    if verbose:
+    if verbose or available or all_extensions:
         try:
-            for catalog_ext in catalog.search():
-                ext_id = catalog_ext.get("id")
-                ext_version = catalog_ext.get("version")
-                if ext_id and ext_version:
-                    try:
-                        catalog_versions_by_id[ext_id] = pkg_version.Version(ext_version)
-                    except Exception:
-                        continue
+            catalog_extensions = catalog.search()
+            # In verbose mode, build a version lookup map for update indicators
+            if verbose:
+                for catalog_ext in catalog_extensions:
+                    ext_id = catalog_ext.get("id")
+                    ext_version = catalog_ext.get("version")
+                    if ext_id and ext_version:
+                        try:
+                            catalog_versions_by_id[ext_id] = pkg_version.Version(ext_version)
+                        except Exception:
+                            continue
         except Exception:
-            # Keep output usable if catalog is temporarily unavailable.
+            # Keep output usable if catalog is temporarily unavailable
+            catalog_extensions = None
             catalog_versions_by_id = {}
 
     # Show installed extensions (default or with --all)
@@ -1857,7 +1961,10 @@ def extension_list(
     # Show available extensions (with --available or --all)
     if available or all_extensions:
         try:
-            catalog_extensions = catalog.search()
+            # Reuse prefetched catalog_extensions if available, otherwise fetch now
+            if catalog_extensions is None:
+                catalog_extensions = catalog.search()
+            
             uninstalled = [ext for ext in catalog_extensions if ext["id"] not in installed_ids]
             
             if uninstalled:
@@ -2043,23 +2150,8 @@ def extension_remove(
 
     manager = ExtensionManager(project_root)
 
-    extension_id = extension
-
-    # Resolve by display name if ID lookup fails
-    if not manager.registry.is_installed(extension_id):
-        installed = manager.list_installed()
-        name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
-        if len(name_matches) == 1:
-            extension_id = name_matches[0]["id"]
-        elif len(name_matches) > 1:
-            console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous")
-            console.print("Matches:")
-            for ext in name_matches:
-                console.print(f"  - {ext['name']} (id: {ext['id']})")
-            raise typer.Exit(1)
-        else:
-            console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-            raise typer.Exit(1)
+    # Resolve extension ID or display name to canonical ID
+    extension_id = _resolve_installed_extension_id(extension, manager)
 
     # Get extension info
     ext_manifest = manager.get_extension(extension_id)
@@ -2209,10 +2301,17 @@ def extension_info(
                     console.print(f"  - {ext['name']} (id: {ext['id']})")
                 raise typer.Exit(1)
 
-        lookup_key = resolved_installed_id or extension
+        # Try to get extension info from catalog (supports ID and display name)
         catalog_error = None
+        ext_info = None
         try:
-            ext_info = catalog.get_extension_info(lookup_key)
+            if resolved_installed_id:
+                # For installed extensions, prefer lookup by resolved ID first
+                ext_info = catalog.get_extension_info(resolved_installed_id)
+            
+            # If not found by installed ID, or not installed at all, try resolving by input (ID or name)
+            if not ext_info:
+                ext_info = _resolve_catalog_extension(extension, catalog)
         except ExtensionError as e:
             # Allow local installed-extension fallback when catalog lookup fails.
             catalog_error = e
@@ -2389,22 +2488,8 @@ def extension_update(
     try:
         # Get list of extensions to update
         if extension:
-            # Resolve by display name if ID lookup fails
-            extension_id = extension
-            if not manager.registry.is_installed(extension_id):
-                installed = manager.list_installed()
-                name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
-                if len(name_matches) == 1:
-                    extension_id = name_matches[0]["id"]
-                elif len(name_matches) > 1:
-                    console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous")
-                    console.print("Matches:")
-                    for ext in name_matches:
-                        console.print(f"  - {ext['name']} (id: {ext['id']})")
-                    raise typer.Exit(1)
-                else:
-                    console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-                    raise typer.Exit(1)
+            # Resolve extension ID or display name to canonical ID
+            extension_id = _resolve_installed_extension_id(extension, manager)
             extensions_to_update = [extension_id]
         else:
             # Update all extensions
@@ -2504,22 +2589,8 @@ def extension_enable(
     manager = ExtensionManager(project_root)
     hook_executor = HookExecutor(project_root)
 
-    # Resolve by display name if ID lookup fails
-    extension_id = extension
-    if not manager.registry.is_installed(extension_id):
-        installed = manager.list_installed()
-        name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
-        if len(name_matches) == 1:
-            extension_id = name_matches[0]["id"]
-        elif len(name_matches) > 1:
-            console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous")
-            console.print("Matches:")
-            for ext in name_matches:
-                console.print(f"  - {ext['name']} (id: {ext['id']})")
-            raise typer.Exit(1)
-        else:
-            console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-            raise typer.Exit(1)
+    # Resolve extension ID or display name to canonical ID
+    extension_id = _resolve_installed_extension_id(extension, manager)
 
     # Update registry
     metadata = manager.registry.get(extension_id)
@@ -2561,22 +2632,8 @@ def extension_disable(
     manager = ExtensionManager(project_root)
     hook_executor = HookExecutor(project_root)
 
-    # Resolve by display name if ID lookup fails
-    extension_id = extension
-    if not manager.registry.is_installed(extension_id):
-        installed = manager.list_installed()
-        name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
-        if len(name_matches) == 1:
-            extension_id = name_matches[0]["id"]
-        elif len(name_matches) > 1:
-            console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous")
-            console.print("Matches:")
-            for ext in name_matches:
-                console.print(f"  - {ext['name']} (id: {ext['id']})")
-            raise typer.Exit(1)
-        else:
-            console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-            raise typer.Exit(1)
+    # Resolve extension ID or display name to canonical ID
+    extension_id = _resolve_installed_extension_id(extension, manager)
 
     # Update registry
     metadata = manager.registry.get(extension_id)
