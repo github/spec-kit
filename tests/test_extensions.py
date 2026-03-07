@@ -14,6 +14,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone
+from typer.testing import CliRunner
 
 from specify_cli.extensions import (
     ExtensionManifest,
@@ -26,6 +27,7 @@ from specify_cli.extensions import (
     CompatibilityError,
     version_satisfies,
 )
+from specify_cli import app
 
 
 # ===== Fixtures =====
@@ -794,6 +796,124 @@ class TestIntegration:
         installed = manager.list_installed()
         assert len(installed) == 1
         assert installed[0]["id"] == "ext2"
+
+
+def _create_installed_extension(project_dir: Path, ext_id: str, name: str, version: str = "1.0.0", enabled: bool = True):
+    """Create a minimal installed extension with manifest and registry metadata."""
+    import yaml
+
+    extensions_dir = project_dir / ".specify" / "extensions"
+    ext_dir = extensions_dir / ext_id
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": name,
+            "version": version,
+            "description": f"{name} description",
+            "author": "Test",
+            "license": "MIT",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {
+                    "name": f"speckit.{ext_id}.cmd",
+                    "file": "commands/cmd.md",
+                }
+            ]
+        },
+    }
+
+    with open(ext_dir / "extension.yml", "w") as f:
+        yaml.dump(manifest, f)
+    (commands_dir / "cmd.md").write_text("---\ndescription: Test\n---\n\nTest")
+
+    registry = ExtensionRegistry(extensions_dir)
+    registry.add(
+        ext_id,
+        {
+            "version": version,
+            "source": "local",
+            "enabled": enabled,
+            "registered_commands": {},
+        },
+    )
+
+
+def _write_catalog_cache(project_dir: Path, catalog_extensions: dict):
+    """Write a valid cached extension catalog for deterministic CLI tests."""
+    cache_dir = project_dir / ".specify" / "extensions" / ".cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "catalog.json").write_text(
+        json.dumps({"schema_version": "1.0", "extensions": catalog_extensions})
+    )
+    (cache_dir / "catalog-metadata.json").write_text(
+        json.dumps(
+            {
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "catalog_url": "https://example.com/catalog.json",
+            }
+        )
+    )
+
+
+class TestExtensionCliCommands:
+    """CLI-level tests for extension command behavior."""
+
+    def test_extension_list_verbose_shows_id_and_update(self, project_dir, monkeypatch):
+        _create_installed_extension(project_dir, "test-ext", "Test Extension", version="1.0.0")
+        _write_catalog_cache(
+            project_dir,
+            {
+                "test-ext": {
+                    "id": "test-ext",
+                    "name": "Test Extension",
+                    "version": "1.2.0",
+                    "description": "Catalog test extension",
+                }
+            },
+        )
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["extension", "list", "--verbose"])
+
+        assert result.exit_code == 0
+        assert "Installed Extensions:" in result.stdout
+        assert "id: test-ext" in result.stdout
+        assert "v1.2.0 available" in result.stdout
+
+    def test_extension_info_falls_back_to_local_when_catalog_fails(self, project_dir, monkeypatch):
+        _create_installed_extension(project_dir, "test-ext", "Test Extension", version="1.0.0")
+
+        def _raise_catalog_error(self, extension_id):
+            raise ExtensionError("catalog offline")
+
+        monkeypatch.setattr(ExtensionCatalog, "get_extension_info", _raise_catalog_error)
+        monkeypatch.chdir(project_dir)
+
+        result = CliRunner().invoke(app, ["extension", "info", "test-ext"])
+
+        assert result.exit_code == 0
+        assert "Test Extension" in result.stdout
+        assert "Not found in catalog (custom/local extension)" in result.stdout
+        assert "Catalog unavailable:" in result.stdout
+
+    @pytest.mark.parametrize("command", ["update", "enable", "disable"])
+    def test_ambiguous_extension_name_errors_for_cli_commands(self, project_dir, monkeypatch, command):
+        _create_installed_extension(project_dir, "dup-one", "Duplicate Extension", version="1.0.0")
+        _create_installed_extension(project_dir, "dup-two", "Duplicate Extension", version="1.1.0")
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["extension", command, "Duplicate Extension"])
+
+        assert result.exit_code == 1
+        assert "ambiguous" in result.stdout.lower()
+        assert "dup-one" in result.stdout
+        assert "dup-two" in result.stdout
 
 
 # ===== Extension Catalog Tests =====
