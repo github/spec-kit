@@ -47,7 +47,7 @@ Given that feature description, do this:
       {SCRIPT} --short-name "your-short-name" "{ARGS}"
       ```
 
-   b. Do **not** precompute or force `--number` unless the user explicitly asks for a specific number and you have verified it will not collide.
+   b. Do **not** pass `--number` unless the user explicitly asks for a specific feature number. Run the script once; if the script reports that the requested number collides with an existing feature, explain this to the user and ask them for a different number or permission to proceed without forcing one.
 
    c. Read the JSON output from the script and use it as the source of truth for:
       - `BRANCH_NAME`
