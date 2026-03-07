@@ -79,6 +79,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Spec Sync | Detect and resolve drift between specs and implementation. AI-assisted resolution with human approval | [spec-kit-sync](https://github.com/bgervin/spec-kit-sync) |
 | V-Model Extension Pack | Enforces V-Model paired generation of development specs and test specs with full traceability | [spec-kit-v-model](https://github.com/leocamello/spec-kit-v-model) |
 | Verify Extension | Post-implementation quality gate that validates implemented code against specification artifacts | [spec-kit-verify](https://github.com/ismaelJimenez/spec-kit-verify) |
+| Understanding | Automated requirements quality analysis — 31 deterministic metrics against IEEE/ISO standards with experimental energy-based ambiguity detection | [understanding](https://github.com/Testimonial/understanding) |
 
 
 ## Adding Your Extension
