@@ -7,6 +7,13 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-03-07
+
+### Fixed
+
+- **Clarify Question Ordering**: The `/speckit.clarify` command now always prints the question text before presenting recommendations or answer options, so users see what is being asked before being shown choices.
+- **Specify Feature Numbering**: The `/speckit.specify` command no longer precomputes feature numbers manually. It delegates this entirely to the `create-new-feature` script, which already checks all branches and spec directories globally to assign the next unique number. This prevents redundant logic and eliminates collision errors caused by stale branch caches.
+
 ## [0.1.13] - 2026-03-03
 
 ### Changed

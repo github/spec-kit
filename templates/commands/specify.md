@@ -39,33 +39,24 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Check for existing branches before creating new one**:
+2. **Create the feature branch and spec scaffold exactly once**:
 
-   a. First, fetch all remote branches to ensure we have the latest information:
+   a. Run the script and let it assign the next globally unique feature number:
 
       ```bash
-      git fetch --all --prune
+      {SCRIPT} --short-name "your-short-name" "{ARGS}"
       ```
 
-   b. Find the highest feature number across all sources for the short-name:
-      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
-      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
-      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
+   b. Do **not** pass `--number` unless the user explicitly asks for a specific feature number. Run the script once; if the script reports that the requested number collides with an existing feature, explain this to the user and ask them for a different number or permission to proceed without forcing one.
 
-   c. Determine the next available number:
-      - Extract all numbers from all three sources
-      - Find the highest number N
-      - Use N+1 for the new branch number
-
-   d. Run the script `{SCRIPT}` with the calculated number and short-name:
-      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+   c. Read the JSON output from the script and use it as the source of truth for:
+      - `BRANCH_NAME`
+      - `SPEC_FILE`
+      - `FEATURE_NUM`
 
    **IMPORTANT**:
-   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
-   - Only match branches/directories with the exact short-name pattern
-   - If no existing branches/directories found with this short-name, start with number 1
+   - Feature numbers are globally unique across all feature branches and spec directories, not unique per short name
+   - Do not infer that a new short name should start at `001`; the script already checks existing branches and spec folders globally
    - You must only ever run this script once per feature
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
