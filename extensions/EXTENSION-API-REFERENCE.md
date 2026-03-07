@@ -540,6 +540,7 @@ EXECUTE_COMMAND: {command}
 
 - `--available` - Show available extensions from catalog
 - `--all` - Show both installed and available
+- `--verbose` - Show extension IDs and richer metadata (tags, compatibility, links)
 
 **Output**: List of installed extensions with metadata
 
@@ -569,7 +570,7 @@ EXECUTE_COMMAND: {command}
 
 **Arguments**:
 
-- `EXTENSION` - Extension ID
+- `EXTENSION` - Extension ID or name
 
 ### extension search
 
@@ -587,11 +588,15 @@ EXECUTE_COMMAND: {command}
 
 ### extension info
 
-**Usage**: `specify extension info EXTENSION`
+**Usage**: `specify extension info EXTENSION [OPTIONS]`
+
+**Options**:
+
+- `--verbose` - Show additional metadata and links
 
 **Arguments**:
 
-- `EXTENSION` - Extension ID
+- `EXTENSION` - Extension ID or name
 
 ### extension update
 
@@ -599,7 +604,7 @@ EXECUTE_COMMAND: {command}
 
 **Arguments**:
 
-- `EXTENSION` - Optional, extension ID (default: all)
+- `EXTENSION` - Optional, extension ID or name (default: all)
 
 ### extension enable
 
@@ -607,7 +612,7 @@ EXECUTE_COMMAND: {command}
 
 **Arguments**:
 
-- `EXTENSION` - Extension ID
+- `EXTENSION` - Extension ID or name
 
 ### extension disable
 
@@ -615,7 +620,7 @@ EXECUTE_COMMAND: {command}
 
 **Arguments**:
 
-- `EXTENSION` - Extension ID
+- `EXTENSION` - Extension ID or name
 
 ---
 

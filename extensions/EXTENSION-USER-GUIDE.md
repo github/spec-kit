@@ -265,6 +265,53 @@ Installed Extensions:
      Commands: 3 | Hooks: 1 | Status: Enabled
 ```
 
+To show extension IDs:
+
+```bash
+specify extension list --verbose
+```
+
+Output:
+
+```text
+Installed Extensions:
+
+  ✓ Jira Integration (v1.0.0)
+     id: jira
+     Create Jira Epics, Stories, and Issues from spec-kit artifacts
+     Commands: 3 | Hooks: 1 | Status: Enabled
+```
+
+For catalog listings, verbose mode also shows richer metadata:
+
+```bash
+specify extension list --available --verbose
+```
+
+Output includes additional fields such as:
+
+- extension ID
+- verification status
+- required spec-kit version
+- provided commands/hooks
+- tags
+- repository/docs links (when available)
+
+### Show Extension Info
+
+```bash
+# By ID
+specify extension info jira
+
+# By display name
+specify extension info "Jira Integration"
+
+# Rich output
+specify extension info jira --verbose
+```
+
+`--verbose` adds extra metadata including provides, tags, and links.
+
 ### Update Extensions
 
 ```bash
@@ -310,8 +357,11 @@ specify extension enable jira
 ### Remove Extension
 
 ```bash
-# Remove extension (with confirmation)
+# Remove extension by ID or name (with confirmation)
 specify extension remove jira
+
+# Remove extension by display name
+specify extension remove "Jira Integration"
 
 # Keep configuration when removing
 specify extension remove jira --keep-config
