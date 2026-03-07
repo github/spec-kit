@@ -441,8 +441,8 @@ tools:
   - 'jira-mcp-server/epic_create'
   - 'jira-mcp-server/story_create'
 scripts:
-  sh: ../../scripts/bash/check-prerequisites.sh --json
-  ps: ../../scripts/powershell/check-prerequisites.ps1 -Json
+  sh: ../../scripts/check-prerequisites --json
+  ps: ../../scripts/check-prerequisites -Json
 ---
 
 # Command implementation
@@ -466,8 +466,8 @@ tools:
   - 'jira-mcp-server/epic_create'
   - 'jira-mcp-server/story_create'
 scripts:
-  sh: .specify/scripts/bash/check-prerequisites.sh --json
-  ps: .specify/scripts/powershell/check-prerequisites.ps1 -Json
+  sh: .specify/scripts/check-prerequisites --json
+  ps: .specify/scripts/check-prerequisites -Json
 ---
 
 # Command implementation (copied from extension)
@@ -502,8 +502,8 @@ tools = [
 ]
 
 [command.script]
-sh = ".specify/scripts/bash/check-prerequisites.sh --json"
-ps = ".specify/scripts/powershell/check-prerequisites.ps1 -Json"
+sh = ".specify/scripts/check-prerequisites --json"
+ps = ".specify/scripts/check-prerequisites -Json"
 
 [command.template]
 content = """

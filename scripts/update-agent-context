@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# 2>nul & @echo off & goto :batch
+
+# ===== UNIX SECTION =====
+bash "$(dirname "$0")/bash/update-agent-context.sh" "$@"
+exit $?
+
+:batch
+@REM ===== WINDOWS SECTION =====
+@REM Convert kebab-case arguments to PowerShell PascalCase
+@REM This script takes an optional agent type as a positional argument
+@REM No flag conversion needed for positional args, just pass through
+@powershell -ExecutionPolicy Bypass -File "%~dp0powershell\update-agent-context.ps1" %*

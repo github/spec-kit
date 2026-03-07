@@ -5,8 +5,8 @@ handoffs:
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
 scripts:
-   sh: scripts/bash/check-prerequisites.sh --json --paths-only
-   ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
+   sh: scripts/check-prerequisites --json --paths-only
+   ps: scripts/check-prerequisites --json --paths-only
 ---
 
 ## User Input

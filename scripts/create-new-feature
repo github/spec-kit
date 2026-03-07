@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# 2>nul & @echo off & goto :batch
+
+# ===== UNIX SECTION =====
+bash "$(dirname "$0")/bash/create-new-feature.sh" "$@"
+exit $?
+
+:batch
+@REM ===== WINDOWS SECTION =====
+@REM Convert kebab-case arguments to PowerShell PascalCase using helper script
+@REM Set DEBUG_WRAPPER=1 to see argument conversion details
+@powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0powershell\Convert-KebabToPascal.ps1" "%~dp0powershell\create-new-feature.ps1" %*

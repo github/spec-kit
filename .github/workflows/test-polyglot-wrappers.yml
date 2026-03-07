@@ -1,0 +1,157 @@
+name: Test Polyglot Wrappers
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'scripts/**'
+      - 'templates/commands/**'
+      - '.gitattributes'
+      - 'tests/test-polyglot-wrappers.sh'
+      - '.github/workflows/test-polyglot-wrappers.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'templates/commands/**'
+      - '.gitattributes'
+      - 'tests/test-polyglot-wrappers.sh'
+      - '.github/workflows/test-polyglot-wrappers.yml'
+
+jobs:
+  test-unix:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set execute permissions
+        run: |
+          chmod +x scripts/check-prerequisites
+          chmod +x scripts/setup-plan
+          chmod +x scripts/create-new-feature
+          chmod +x scripts/update-agent-context
+          chmod +x scripts/bash/*.sh
+          chmod +x tests/test-polyglot-wrappers.sh
+      
+      - name: Run polyglot wrapper tests
+        run: tests/test-polyglot-wrappers.sh
+      
+      - name: Test wrapper execution (check-prerequisites)
+        run: |
+          echo "Testing check-prerequisites wrapper..."
+          scripts/check-prerequisites --help
+      
+      - name: Test wrapper execution (setup-plan)
+        run: |
+          echo "Testing setup-plan wrapper..."
+          scripts/setup-plan --help
+      
+      - name: Test wrapper execution (create-new-feature)
+        run: |
+          echo "Testing create-new-feature wrapper..."
+          scripts/create-new-feature --help
+      
+      - name: Verify line endings (LF)
+        run: |
+          echo "Verifying polyglot wrappers have LF line endings..."
+          for wrapper in check-prerequisites setup-plan create-new-feature update-agent-context; do
+            if file "scripts/$wrapper" | grep -q "CRLF"; then
+              echo "ERROR: scripts/$wrapper has CRLF line endings (should be LF)"
+              exit 1
+            fi
+            echo "✓ scripts/$wrapper has correct LF line endings"
+          done
+
+  test-windows:
+    name: Test on Windows
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Test wrapper execution via Git Bash (check-prerequisites)
+        shell: bash
+        run: |
+          echo "Testing check-prerequisites wrapper via Git Bash..."
+          chmod +x scripts/check-prerequisites
+          chmod +x scripts/bash/*.sh
+          scripts/check-prerequisites --help
+      
+      - name: Test wrapper execution via Git Bash (setup-plan)
+        shell: bash
+        run: |
+          echo "Testing setup-plan wrapper via Git Bash..."
+          chmod +x scripts/setup-plan
+          scripts/setup-plan --help
+      
+      - name: Test wrapper execution via cmd.exe (check-prerequisites)
+        shell: cmd
+        run: |
+          echo Testing check-prerequisites wrapper via cmd.exe...
+          scripts\check-prerequisites --help
+      
+      - name: Test wrapper execution via PowerShell (check-prerequisites)
+        shell: pwsh
+        run: |
+          Write-Host "Testing check-prerequisites wrapper via PowerShell..."
+          & "scripts/check-prerequisites" --help
+      
+      - name: Verify line endings (LF) on Windows
+        shell: bash
+        run: |
+          echo "Verifying polyglot wrappers have LF line endings on Windows..."
+          for wrapper in check-prerequisites setup-plan create-new-feature update-agent-context; do
+            # Check if file has CRLF (should not)
+            if file "scripts/$wrapper" 2>/dev/null | grep -q "CRLF"; then
+              echo "ERROR: scripts/$wrapper has CRLF line endings (should be LF even on Windows)"
+              exit 1
+            fi
+            echo "✓ scripts/$wrapper has correct LF line endings"
+          done
+
+  test-command-templates:
+    name: Verify Command Templates
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Check for platform-specific script references
+        run: |
+          echo "Checking command templates for old platform-specific references..."
+          
+          # These should NOT exist in templates anymore
+          if grep -r "scripts/bash/" templates/commands/ 2>/dev/null; then
+            echo "ERROR: Found old bash-specific script references in templates"
+            exit 1
+          fi
+          
+          if grep -r "scripts/powershell/" templates/commands/ 2>/dev/null; then
+            echo "ERROR: Found old PowerShell-specific script references in templates"
+            exit 1
+          fi
+          
+          echo "✓ No platform-specific script references found in templates"
+      
+      - name: Verify polyglot wrapper references
+        run: |
+          echo "Verifying command templates use polyglot wrappers..."
+          
+          # Check that templates reference the polyglot wrappers
+          if ! grep -q "scripts/check-prerequisites" templates/commands/*.md; then
+            echo "ERROR: No references to polyglot wrapper 'scripts/check-prerequisites' found"
+            exit 1
+          fi
+          
+          echo "✓ Command templates correctly reference polyglot wrappers"

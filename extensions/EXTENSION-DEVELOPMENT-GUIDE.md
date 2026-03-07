@@ -76,8 +76,8 @@ description: "Say hello command"
 tools:                              # Optional: AI tools this command uses
   - 'some-tool/function'
 scripts:                            # Optional: Helper scripts
-  sh: ../../scripts/bash/helper.sh
-  ps: ../../scripts/powershell/helper.ps1
+  sh: ../../scripts/helper
+  ps: ../../scripts/helper
 ---
 
 # Hello Command
@@ -231,8 +231,8 @@ description: "Command description"          # Required
 tools:                                      # Optional
   - 'tool-name/function'
 scripts:                                    # Optional
-  sh: ../../scripts/bash/helper.sh
-  ps: ../../scripts/powershell/helper.ps1
+  sh: ../../scripts/helper
+  ps: ../../scripts/helper
 ---
 ```
 
@@ -265,14 +265,14 @@ Extension commands use relative paths that get rewritten during registration:
 
 ```yaml
 scripts:
-  sh: ../../scripts/bash/helper.sh
+  sh: ../../scripts/helper
 ```
 
 **After registration**:
 
 ```yaml
 scripts:
-  sh: .specify/scripts/bash/helper.sh
+  sh: .specify/scripts/helper
 ```
 
 This allows scripts to reference core spec-kit scripts.
