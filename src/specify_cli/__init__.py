@@ -34,7 +34,7 @@ import shlex
 import json
 import yaml
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import typer
 import httpx
@@ -1779,13 +1779,113 @@ def get_speckit_version() -> str:
     return "unknown"
 
 
+def _resolve_installed_extension_id(extension: str, manager) -> str:
+    """
+    Resolve an extension argument (ID or display name) to a canonical extension ID.
+    
+    This helper function provides consistent name resolution across all extension commands:
+    - If the argument matches an installed extension ID, return it directly
+    - Otherwise, search for exact display-name matches (case-insensitive)
+    - If ambiguous (multiple matches), list all matches and exit with error
+    - If not found, report error and exit
+    
+    Args:
+        extension: The extension ID or display name from user input
+        manager: The ExtensionManager instance for the current project
+        
+    Returns:
+        str: The resolved extension ID
+        
+    Raises:
+        typer.Exit: If the extension is not found or the name is ambiguous
+    """
+    # First, check if the argument is already a valid installed extension ID
+    if manager.registry.is_installed(extension):
+        return extension
+    
+    # Otherwise, try to resolve by exact display name (case-insensitive)
+    installed = manager.list_installed()
+    name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
+    
+    if len(name_matches) == 1:
+        # Unique display-name match: return the matched extension ID
+        return name_matches[0]["id"]
+    elif len(name_matches) > 1:
+        # Ambiguous display-name match: list all candidates and exit
+        console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous")
+        console.print("Matches:")
+        for ext in name_matches:
+            console.print(f"  - {ext['name']} (id: {ext['id']})")
+        raise typer.Exit(1)
+    else:
+        # No match by ID or display name
+        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
+        raise typer.Exit(1)
+
+
+def _resolve_catalog_extension(extension: str, catalog) -> Optional[Dict[str, Any]]:
+    """
+    Resolve an extension argument (ID or display name) in the catalog.
+    
+    This helper searches the catalog by ID first, then by exact display name if not found.
+    Unlike installed extension resolution, this function can return None (extension not in catalog)
+    and handles ambiguous catalog names by listing matches and exiting.
+    
+    Args:
+        extension: The extension ID or display name from user input
+        catalog: The ExtensionCatalog instance for the current project
+        
+    Returns:
+        Dict: The extension info if found uniquely, or None if not in catalog
+        
+    Raises:
+        typer.Exit: If the extension name is ambiguous in the catalog
+    """
+    from .extensions import ExtensionError
+    
+    # First, try direct ID lookup
+    try:
+        ext_info = catalog.get_extension_info(extension)
+        if ext_info:
+            return ext_info
+    except ExtensionError:
+        # Catalog fetch failed - caller should handle this
+        raise
+    
+    # If not found by ID, search catalog by exact display name (case-insensitive)
+    try:
+        all_extensions = catalog.search()  # Get all catalog extensions
+        name_matches = [ext for ext in all_extensions if ext.get("name", "").lower() == extension.lower()]
+        
+        if len(name_matches) == 1:
+            # Unique display-name match
+            return name_matches[0]
+        elif len(name_matches) > 1:
+            # Ambiguous display-name match: list all candidates
+            console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous in catalog")
+            console.print("Matches:")
+            for ext in name_matches:
+                console.print(f"  - {ext.get('name', '')} (id: {ext.get('id', '')})")
+            console.print("\nPlease use the extension ID instead of the display name")
+            raise typer.Exit(1)
+        
+        # Not found by ID or display name
+        return None
+        
+    except ExtensionError:
+        # Catalog fetch failed during search
+        raise
+
+
 @extension_app.command("list")
 def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show extension IDs and extra details"),
 ):
     """List installed extensions."""
-    from .extensions import ExtensionManager
+    from .extensions import ExtensionManager, ExtensionCatalog
+    from packaging import version as pkg_version
 
     project_root = Path.cwd()
 
@@ -1797,29 +1897,116 @@ def extension_list(
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
+    catalog = ExtensionCatalog(project_root)
     installed = manager.list_installed()
+    installed_ids = {ext["id"] for ext in installed}
 
-    if not installed and not (available or all_extensions):
-        console.print("[yellow]No extensions installed.[/yellow]")
-        console.print("\nInstall an extension with:")
-        console.print("  specify extension add <extension-name>")
-        return
+    # Prefetch catalog if needed for verbose mode or available/all listing
+    # This avoids duplicate catalog I/O when both conditions are true
+    catalog_extensions = None
+    catalog_versions_by_id = {}
+    if verbose or available or all_extensions:
+        try:
+            catalog_extensions = catalog.search()
+            # In verbose mode, build a version lookup map for update indicators
+            if verbose:
+                for catalog_ext in catalog_extensions:
+                    ext_id = catalog_ext.get("id")
+                    ext_version = catalog_ext.get("version")
+                    if ext_id and ext_version:
+                        try:
+                            catalog_versions_by_id[ext_id] = pkg_version.Version(ext_version)
+                        except Exception:
+                            continue
+        except Exception:
+            # Keep output usable if catalog is temporarily unavailable
+            catalog_extensions = None
+            catalog_versions_by_id = {}
 
-    if installed:
-        console.print("\n[bold cyan]Installed Extensions:[/bold cyan]\n")
+    # Show installed extensions (default or with --all)
+    if not available or all_extensions:
+        if not installed:
+            console.print("[yellow]No extensions installed.[/yellow]")
+            if not (available or all_extensions):
+                console.print("\nInstall an extension with:")
+                console.print("  specify extension add <extension-name>")
+                return
+        else:
+            console.print("\n[bold cyan]Installed Extensions:[/bold cyan]\n")
 
-        for ext in installed:
-            status_icon = "✓" if ext["enabled"] else "✗"
-            status_color = "green" if ext["enabled"] else "red"
+            for ext in installed:
+                status_icon = "✓" if ext["enabled"] else "✗"
+                status_color = "green" if ext["enabled"] else "red"
 
-            console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']})")
-            console.print(f"     {ext['description']}")
-            console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
-            console.print()
+                # Check if update available from catalog
+                update_indicator = ""
+                if verbose:
+                    try:
+                        installed_ver = pkg_version.Version(ext["version"])
+                        catalog_ver = catalog_versions_by_id.get(ext["id"])
+                        if catalog_ver and catalog_ver > installed_ver:
+                            update_indicator = f" [yellow]→ v{catalog_ver} available[/yellow]"
+                    except Exception:
+                        pass
 
+                console.print(
+                    f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']}){update_indicator}"
+                )
+                if verbose:
+                    console.print(f"     [dim]id: {ext['id']}[/dim]")
+                console.print(f"     {ext['description']}")
+                console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
+                console.print()
+
+    # Show available extensions (with --available or --all)
     if available or all_extensions:
-        console.print("\nInstall an extension:")
-        console.print("  [cyan]specify extension add <name>[/cyan]")
+        try:
+            # Reuse prefetched catalog_extensions if available, otherwise fetch now
+            if catalog_extensions is None:
+                catalog_extensions = catalog.search()
+            
+            uninstalled = [ext for ext in catalog_extensions if ext["id"] not in installed_ids]
+            
+            if uninstalled:
+                console.print("\n[bold cyan]Available Extensions:[/bold cyan]\n")
+                for ext in uninstalled:
+                    verified_badge = " [green]✓[/green]" if ext.get("verified") else ""
+                    console.print(f"  [bold]{ext['name']}[/bold] (v{ext['version']}){verified_badge}")
+                    if verbose:
+                        console.print(f"     [dim]id: {ext['id']}[/dim]")
+                    console.print(f"     {ext['description']}")
+                    if ext.get('author'):
+                        console.print(f"     [dim]Author: {ext['author']}[/dim]")
+                    if verbose:
+                        if ext.get("verified") is not None:
+                            console.print(f"     [dim]Verified: {'yes' if ext.get('verified') else 'no'}[/dim]")
+                        requires = ext.get("requires", {})
+                        if requires.get("speckit_version"):
+                            console.print(f"     [dim]Requires spec-kit: {requires['speckit_version']}[/dim]")
+                        provides = ext.get("provides", {})
+                        provides_items = []
+                        if provides.get("commands") is not None:
+                            provides_items.append(f"commands={provides['commands']}")
+                        if provides.get("hooks") is not None:
+                            provides_items.append(f"hooks={provides['hooks']}")
+                        if provides_items:
+                            console.print(f"     [dim]Provides: {', '.join(provides_items)}[/dim]")
+                        if ext.get("tags"):
+                            console.print(f"     [dim]Tags: {', '.join(ext['tags'])}[/dim]")
+                        if ext.get("repository"):
+                            console.print(f"     [dim]Repository: {ext['repository']}[/dim]")
+                        if ext.get("documentation"):
+                            console.print(f"     [dim]Docs: {ext['documentation']}[/dim]")
+                    console.print(f"\n     [cyan]Install:[/cyan] specify extension add {ext['id']}")
+                    console.print()
+            elif available and not all_extensions:
+                console.print("\n[yellow]No uninstalled extensions in catalog[/yellow]")
+                console.print("\nAll catalog extensions are already installed.")
+        except Exception as e:
+            console.print(f"\n[yellow]Warning:[/yellow] Could not fetch catalog: {e}")
+            if available and not installed:
+                console.print("\nInstall an extension with:")
+                console.print("  specify extension add <name>")
 
 
 @extension_app.command("add")
@@ -1945,7 +2132,7 @@ def extension_add(
 
 @extension_app.command("remove")
 def extension_remove(
-    extension: str = typer.Argument(help="Extension ID to remove"),
+    extension: str = typer.Argument(help="Extension ID or name to remove"),
     keep_config: bool = typer.Option(False, "--keep-config", help="Don't remove config files"),
     force: bool = typer.Option(False, "--force", help="Skip confirmation"),
 ):
@@ -1963,25 +2150,23 @@ def extension_remove(
 
     manager = ExtensionManager(project_root)
 
-    # Check if extension is installed
-    if not manager.registry.is_installed(extension):
-        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-        raise typer.Exit(1)
+    # Resolve extension ID or display name to canonical ID
+    extension_id = _resolve_installed_extension_id(extension, manager)
 
     # Get extension info
-    ext_manifest = manager.get_extension(extension)
+    ext_manifest = manager.get_extension(extension_id)
     if ext_manifest:
         ext_name = ext_manifest.name
         cmd_count = len(ext_manifest.commands)
     else:
-        ext_name = extension
+        ext_name = extension_id
         cmd_count = 0
 
     # Confirm removal
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
         console.print(f"   • {cmd_count} commands from AI agent")
-        console.print(f"   • Extension directory: .specify/extensions/{extension}/")
+        console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")
         if not keep_config:
             console.print("   • Config files (will be backed up)")
         console.print()
@@ -1992,15 +2177,15 @@ def extension_remove(
             raise typer.Exit(0)
 
     # Remove extension
-    success = manager.remove(extension, keep_config=keep_config)
+    success = manager.remove(extension_id, keep_config=keep_config)
 
     if success:
         console.print(f"\n[green]✓[/green] Extension '{ext_name}' removed successfully")
         if keep_config:
-            console.print(f"\nConfig files preserved in .specify/extensions/{extension}/")
+            console.print(f"\nConfig files preserved in .specify/extensions/{extension_id}/")
         else:
-            console.print(f"\nConfig files backed up to .specify/extensions/.backup/{extension}/")
-        console.print(f"\nTo reinstall: specify extension add {extension}")
+            console.print(f"\nConfig files backed up to .specify/extensions/.backup/{extension_id}/")
+        console.print(f"\nTo reinstall: specify extension add {extension_id}")
     else:
         console.print("[red]Error:[/red] Failed to remove extension")
         raise typer.Exit(1)
@@ -2080,6 +2265,7 @@ def extension_search(
 @extension_app.command("info")
 def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show additional metadata and links"),
 ):
     """Show detailed information about an extension."""
     from .extensions import ExtensionCatalog, ExtensionManager, ExtensionError
@@ -2097,88 +2283,182 @@ def extension_info(
     manager = ExtensionManager(project_root)
 
     try:
-        ext_info = catalog.get_extension_info(extension)
+        from packaging import version as pkg_version
 
-        if not ext_info:
-            console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
-            console.print("\nTry: specify extension search")
-            raise typer.Exit(1)
-
-        # Header
-        verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
-        console.print(f"\n[bold]{ext_info['name']}[/bold] (v{ext_info['version']}){verified_badge}")
-        console.print(f"ID: {ext_info['id']}")
-        console.print()
-
-        # Description
-        console.print(f"{ext_info['description']}")
-        console.print()
-
-        # Author and License
-        console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
-        console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
-        console.print()
-
-        # Requirements
-        if ext_info.get('requires'):
-            console.print("[bold]Requirements:[/bold]")
-            reqs = ext_info['requires']
-            if reqs.get('speckit_version'):
-                console.print(f"  • Spec Kit: {reqs['speckit_version']}")
-            if reqs.get('tools'):
-                for tool in reqs['tools']:
-                    tool_name = tool['name']
-                    tool_version = tool.get('version', 'any')
-                    required = " (required)" if tool.get('required') else " (optional)"
-                    console.print(f"  • {tool_name}: {tool_version}{required}")
-            console.print()
-
-        # Provides
-        if ext_info.get('provides'):
-            console.print("[bold]Provides:[/bold]")
-            provides = ext_info['provides']
-            if provides.get('commands'):
-                console.print(f"  • Commands: {provides['commands']}")
-            if provides.get('hooks'):
-                console.print(f"  • Hooks: {provides['hooks']}")
-            console.print()
-
-        # Tags
-        if ext_info.get('tags'):
-            tags_str = ", ".join(ext_info['tags'])
-            console.print(f"[bold]Tags:[/bold] {tags_str}")
-            console.print()
-
-        # Statistics
-        stats = []
-        if ext_info.get('downloads') is not None:
-            stats.append(f"Downloads: {ext_info['downloads']:,}")
-        if ext_info.get('stars') is not None:
-            stats.append(f"Stars: {ext_info['stars']}")
-        if stats:
-            console.print(f"[bold]Statistics:[/bold] {' | '.join(stats)}")
-            console.print()
-
-        # Links
-        console.print("[bold]Links:[/bold]")
-        if ext_info.get('repository'):
-            console.print(f"  • Repository: {ext_info['repository']}")
-        if ext_info.get('homepage'):
-            console.print(f"  • Homepage: {ext_info['homepage']}")
-        if ext_info.get('documentation'):
-            console.print(f"  • Documentation: {ext_info['documentation']}")
-        if ext_info.get('changelog'):
-            console.print(f"  • Changelog: {ext_info['changelog']}")
-        console.print()
-
-        # Installation status and command
-        is_installed = manager.registry.is_installed(ext_info['id'])
-        if is_installed:
-            console.print("[green]✓ Installed[/green]")
-            console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
+        # Resolve installed extension by ID or exact display name first.
+        resolved_installed_id = None
+        if manager.registry.is_installed(extension):
+            resolved_installed_id = extension
         else:
-            console.print("[yellow]Not installed[/yellow]")
-            console.print(f"\n[cyan]Install:[/cyan] specify extension add {ext_info['id']}")
+            installed = manager.list_installed()
+            name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
+            if len(name_matches) == 1:
+                resolved_installed_id = name_matches[0]["id"]
+            elif len(name_matches) > 1:
+                console.print(f"[red]Error:[/red] Extension name '{extension}' is ambiguous")
+                console.print("Matches:")
+                for ext in name_matches:
+                    console.print(f"  - {ext['name']} (id: {ext['id']})")
+                raise typer.Exit(1)
+
+        # Try to get extension info from catalog (supports ID and display name)
+        catalog_error = None
+        ext_info = None
+        try:
+            if resolved_installed_id:
+                # For installed extensions, prefer lookup by resolved ID first
+                ext_info = catalog.get_extension_info(resolved_installed_id)
+            
+            # If not found by installed ID, or not installed at all, try resolving by input (ID or name)
+            if not ext_info:
+                ext_info = _resolve_catalog_extension(extension, catalog)
+        except ExtensionError as e:
+            # Allow local installed-extension fallback when catalog lookup fails.
+            catalog_error = e
+            ext_info = None
+        
+        # Get installed metadata if available
+        installed_manifest = None
+        installed_metadata = None
+        if resolved_installed_id:
+            installed_manifest = manager.get_extension(resolved_installed_id)
+            installed_metadata = manager.registry.get(resolved_installed_id) or {}
+
+        # Case 1: Extension in catalog (may or may not be installed)
+        if ext_info:
+            verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
+            console.print(f"\n[bold]{ext_info['name']}[/bold] (v{ext_info['version']}){verified_badge}")
+            if verbose:
+                console.print(f"ID: {ext_info['id']}")
+            console.print()
+            console.print(f"{ext_info['description']}")
+            console.print()
+            console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
+            console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
+            console.print()
+
+            # Show version comparison if installed
+            if installed_metadata:
+                installed_version = installed_metadata.get('version', '?')
+                catalog_version = ext_info['version']
+                try:
+                    installed_ver = pkg_version.Version(installed_version)
+                    catalog_ver = pkg_version.Version(catalog_version)
+                    if catalog_ver > installed_ver:
+                        console.print(f"[bold]Installed Version:[/bold] v{installed_version} [yellow](update available)[/yellow]")
+                        console.print(f"[bold]Latest Version:[/bold] v{catalog_version}")
+                        console.print()
+                    elif catalog_ver < installed_ver:
+                        console.print(f"[bold]Installed Version:[/bold] v{installed_version} [dim](newer than catalog)[/dim]")
+                        console.print(f"[bold]Catalog Version:[/bold] v{catalog_version}")
+                        console.print()
+                    else:
+                        console.print(f"[bold]Version:[/bold] v{installed_version} [green](up to date)[/green]")
+                        console.print()
+                except Exception:
+                    console.print(f"[bold]Installed Version:[/bold] v{installed_version}")
+                    console.print(f"[bold]Catalog Version:[/bold] v{catalog_version}")
+                    console.print()
+
+            # Requirements
+            if ext_info.get('requires'):
+                console.print("[bold]Requirements:[/bold]")
+                reqs = ext_info['requires']
+                if reqs.get('speckit_version'):
+                    console.print(f"  • Spec Kit: {reqs['speckit_version']}")
+                if reqs.get('tools'):
+                    for tool in reqs['tools']:
+                        tool_name = tool['name']
+                        tool_version = tool.get('version', 'any')
+                        required = " (required)" if tool.get('required') else " (optional)"
+                        console.print(f"  • {tool_name}: {tool_version}{required}")
+                console.print()
+
+            if verbose:
+                if ext_info.get('provides'):
+                    console.print("[bold]Provides:[/bold]")
+                    provides = ext_info['provides']
+                    if provides.get('commands') is not None:
+                        console.print(f"  • Commands: {provides['commands']}")
+                    if provides.get('hooks') is not None:
+                        console.print(f"  • Hooks: {provides['hooks']}")
+                    console.print()
+
+                if ext_info.get('tags'):
+                    console.print(f"[bold]Tags:[/bold] {', '.join(ext_info['tags'])}")
+                    console.print()
+
+                links = []
+                if ext_info.get('repository'):
+                    links.append(f"Repository: {ext_info['repository']}")
+                if ext_info.get('homepage'):
+                    links.append(f"Homepage: {ext_info['homepage']}")
+                if ext_info.get('documentation'):
+                    links.append(f"Documentation: {ext_info['documentation']}")
+                if ext_info.get('changelog'):
+                    links.append(f"Changelog: {ext_info['changelog']}")
+                if links:
+                    console.print("[bold]Links:[/bold]")
+                    for link in links:
+                        console.print(f"  • {link}")
+                    console.print()
+
+            # Installation status
+            if resolved_installed_id:
+                status = "Enabled" if installed_metadata.get("enabled", True) else "Disabled"
+                console.print(f"[green]✓ Installed ({status})[/green]")
+                console.print(f"\nTo update: specify extension update {ext_info['id']}")
+                console.print(f"To remove: specify extension remove {ext_info['id']}")
+            else:
+                console.print("[yellow]Not installed[/yellow]")
+                console.print(f"\n[cyan]Install:[/cyan] specify extension add {ext_info['id']}")
+            return
+
+        # Case 2: Extension installed locally but not in catalog
+        if resolved_installed_id and installed_manifest:
+            console.print(f"\n[bold]{installed_manifest.name}[/bold] (v{installed_metadata.get('version', installed_manifest.version)})")
+            if verbose:
+                console.print(f"ID: {resolved_installed_id}")
+            console.print()
+            console.print(installed_manifest.description)
+            console.print()
+            console.print(f"[dim]Author:[/dim] {installed_manifest.data.get('extension', {}).get('author', 'Unknown')}")
+            console.print(f"[dim]License:[/dim] {installed_manifest.data.get('extension', {}).get('license', 'Unknown')}")
+            console.print(f"[dim]Source:[/dim] {installed_metadata.get('source', 'unknown')}")
+            if installed_metadata.get("installed_at"):
+                console.print(f"[dim]Installed:[/dim] {installed_metadata['installed_at']}")
+            console.print()
+            console.print("[bold]Requirements:[/bold]")
+            console.print(f"  • Spec Kit: {installed_manifest.requires_speckit_version}")
+            console.print()
+            console.print("[bold]Provides:[/bold]")
+            console.print(f"  • Commands: {len(installed_manifest.commands)}")
+            console.print(f"  • Hooks: {len(installed_manifest.hooks)}")
+            console.print()
+            if verbose:
+                registered_commands = installed_metadata.get("registered_commands", {})
+                if registered_commands:
+                    console.print("[bold]Registered Commands:[/bold]")
+                    for provider, commands in registered_commands.items():
+                        console.print(f"  • {provider}: {len(commands)}")
+                    console.print()
+            status = "Enabled" if installed_metadata.get("enabled", True) else "Disabled"
+            console.print(f"[green]✓ Installed ({status})[/green]")
+            console.print(f"[yellow]Note:[/yellow] Not found in catalog (custom/local extension)")
+            if catalog_error:
+                console.print(f"[yellow]Catalog unavailable:[/yellow] {catalog_error}")
+            console.print(f"\nTo remove: specify extension remove {resolved_installed_id}")
+            return
+
+        # Case 3: Extension not found anywhere
+        if catalog_error:
+            console.print(f"[red]Error:[/red] Could not query extension catalog: {catalog_error}")
+            if resolved_installed_id:
+                console.print("\nTry again when online, or use the extension ID directly.")
+            raise typer.Exit(1)
+        console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog or installed locally")
+        console.print("\nTry: specify extension search")
+        raise typer.Exit(1)
 
     except ExtensionError as e:
         console.print(f"\n[red]Error:[/red] {e}")
@@ -2187,7 +2467,7 @@ def extension_info(
 
 @extension_app.command("update")
 def extension_update(
-    extension: str = typer.Argument(None, help="Extension ID to update (or all)"),
+    extension: str = typer.Argument(None, help="Extension ID or name to update (or all)"),
 ):
     """Update extension(s) to latest version."""
     from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError
@@ -2208,11 +2488,9 @@ def extension_update(
     try:
         # Get list of extensions to update
         if extension:
-            # Update specific extension
-            if not manager.registry.is_installed(extension):
-                console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-                raise typer.Exit(1)
-            extensions_to_update = [extension]
+            # Resolve extension ID or display name to canonical ID
+            extension_id = _resolve_installed_extension_id(extension, manager)
+            extensions_to_update = [extension_id]
         else:
             # Update all extensions
             installed = manager.list_installed()
@@ -2294,7 +2572,7 @@ def extension_update(
 
 @extension_app.command("enable")
 def extension_enable(
-    extension: str = typer.Argument(help="Extension ID to enable"),
+    extension: str = typer.Argument(help="Extension ID or name to enable"),
 ):
     """Enable a disabled extension."""
     from .extensions import ExtensionManager, HookExecutor
@@ -2311,25 +2589,24 @@ def extension_enable(
     manager = ExtensionManager(project_root)
     hook_executor = HookExecutor(project_root)
 
-    if not manager.registry.is_installed(extension):
-        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-        raise typer.Exit(1)
+    # Resolve extension ID or display name to canonical ID
+    extension_id = _resolve_installed_extension_id(extension, manager)
 
     # Update registry
-    metadata = manager.registry.get(extension)
+    metadata = manager.registry.get(extension_id)
     if metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{extension}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
     metadata["enabled"] = True
-    manager.registry.add(extension, metadata)
+    manager.registry.add(extension_id, metadata)
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
     if "hooks" in config:
         for hook_name in config["hooks"]:
             for hook in config["hooks"][hook_name]:
-                if hook.get("extension") == extension:
+                if hook.get("extension") == extension_id:
                     hook["enabled"] = True
         hook_executor.save_project_config(config)
 
@@ -2338,7 +2615,7 @@ def extension_enable(
 
 @extension_app.command("disable")
 def extension_disable(
-    extension: str = typer.Argument(help="Extension ID to disable"),
+    extension: str = typer.Argument(help="Extension ID or name to disable"),
 ):
     """Disable an extension without removing it."""
     from .extensions import ExtensionManager, HookExecutor
@@ -2355,31 +2632,30 @@ def extension_disable(
     manager = ExtensionManager(project_root)
     hook_executor = HookExecutor(project_root)
 
-    if not manager.registry.is_installed(extension):
-        console.print(f"[red]Error:[/red] Extension '{extension}' is not installed")
-        raise typer.Exit(1)
+    # Resolve extension ID or display name to canonical ID
+    extension_id = _resolve_installed_extension_id(extension, manager)
 
     # Update registry
-    metadata = manager.registry.get(extension)
+    metadata = manager.registry.get(extension_id)
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{extension}' is already disabled[/yellow]")
         raise typer.Exit(0)
 
     metadata["enabled"] = False
-    manager.registry.add(extension, metadata)
+    manager.registry.add(extension_id, metadata)
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()
     if "hooks" in config:
         for hook_name in config["hooks"]:
             for hook in config["hooks"][hook_name]:
-                if hook.get("extension") == extension:
+                if hook.get("extension") == extension_id:
                     hook["enabled"] = False
         hook_executor.save_project_config(config)
 
     console.print(f"[green]✓[/green] Extension '{extension}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")
-    console.print(f"To re-enable: specify extension enable {extension}")
+    console.print(f"To re-enable: specify extension enable {extension_id}")
 
 
 def main():
