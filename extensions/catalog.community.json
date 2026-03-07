@@ -29,7 +29,13 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["azure", "devops", "project-management", "work-items", "issue-tracking"],
+      "tags": [
+        "azure",
+        "devops",
+        "project-management",
+        "work-items",
+        "issue-tracking"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -55,7 +61,13 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["quality", "tech-debt", "review", "cleanup", "scout-rule"],
+      "tags": [
+        "quality",
+        "tech-debt",
+        "review",
+        "cleanup",
+        "scout-rule"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -81,7 +93,12 @@
         "commands": 3,
         "hooks": 1
       },
-      "tags": ["issue-tracking", "jira", "atlassian", "project-management"],
+      "tags": [
+        "issue-tracking",
+        "jira",
+        "atlassian",
+        "project-management"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -107,7 +124,13 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["retrospective", "spec-drift", "quality", "analysis", "governance"],
+      "tags": [
+        "retrospective",
+        "spec-drift",
+        "quality",
+        "analysis",
+        "governance"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -133,7 +156,13 @@
         "commands": 5,
         "hooks": 1
       },
-      "tags": ["sync", "drift", "validation", "bidirectional", "backfill"],
+      "tags": [
+        "sync",
+        "drift",
+        "validation",
+        "bidirectional",
+        "backfill"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -159,7 +188,13 @@
         "commands": 9,
         "hooks": 1
       },
-      "tags": ["v-model", "traceability", "testing", "compliance", "safety-critical"],
+      "tags": [
+        "v-model",
+        "traceability",
+        "testing",
+        "compliance",
+        "safety-critical"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -185,12 +220,59 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["verification", "quality-gate", "implementation", "spec-adherence", "compliance"],
+      "tags": [
+        "verification",
+        "quality-gate",
+        "implementation",
+        "spec-adherence",
+        "compliance"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
+    },
+    "understanding": {
+      "name": "Understanding",
+      "id": "understanding",
+      "description": "Automated requirements quality analysis \u2014 validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
+      "author": "Ladislav Bihari",
+      "version": "3.4.0",
+      "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
+      "repository": "https://github.com/Testimonial/understanding",
+      "homepage": "https://github.com/Testimonial/understanding",
+      "documentation": "https://github.com/Testimonial/understanding/blob/main/extension/README.md",
+      "changelog": "https://github.com/Testimonial/understanding/blob/main/extension/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "understanding",
+            "version": ">=3.4.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "quality",
+        "metrics",
+        "requirements",
+        "validation",
+        "readability",
+        "IEEE-830",
+        "ISO-29148"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-07T00:00:00Z",
+      "updated_at": "2026-03-07T00:00:00Z"
     }
   }
 }
