@@ -1881,17 +1881,27 @@ def catalog_list():
 
     config_path = project_root / ".specify" / "extension-catalogs.yml"
     user_config_path = Path.home() / ".specify" / "extension-catalogs.yml"
-    if config_path.exists() and catalog._load_catalog_config(config_path) is not None:
-        console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
-    elif os.environ.get("SPECKIT_CATALOG_URL"):
+    if os.environ.get("SPECKIT_CATALOG_URL"):
         console.print("[dim]Catalog configured via SPECKIT_CATALOG_URL environment variable.[/dim]")
-    elif user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None:
-        console.print("[dim]Config: ~/.specify/extension-catalogs.yml[/dim]")
     else:
-        console.print("[dim]Using built-in default catalog stack.[/dim]")
-        console.print(
-            "[dim]Add .specify/extension-catalogs.yml to customize.[/dim]"
-        )
+        try:
+            proj_loaded = config_path.exists() and catalog._load_catalog_config(config_path) is not None
+        except ValidationError:
+            proj_loaded = False
+        if proj_loaded:
+            console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
+        else:
+            try:
+                user_loaded = user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None
+            except ValidationError:
+                user_loaded = False
+            if user_loaded:
+                console.print("[dim]Config: ~/.specify/extension-catalogs.yml[/dim]")
+            else:
+                console.print("[dim]Using built-in default catalog stack.[/dim]")
+                console.print(
+                    "[dim]Add .specify/extension-catalogs.yml to customize.[/dim]"
+                )
 
 
 @catalog_app.command("add")
