@@ -47,6 +47,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Kiro CLI**               | `.kiro/prompts/`       | Markdown | `kiro-cli`      | Kiro CLI                    |
 | **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
+| **Tabnine CLI**            | `.tabnine/agent/commands/` | TOML | `tabnine`       | Tabnine CLI                 |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
@@ -322,6 +323,7 @@ Require a command-line tool to be installed:
 - **Qoder CLI**: `qodercli` CLI
 - **Amp**: `amp` CLI
 - **SHAI**: `shai` CLI
+- **Tabnine CLI**: `tabnine` CLI
 
 ### IDE-Based Agents
 
@@ -360,7 +362,7 @@ Command content with {SCRIPT} and $ARGUMENTS placeholders.
 
 ### TOML Format
 
-Used by: Gemini, Qwen
+Used by: Gemini, Qwen, Tabnine
 
 ```toml
 description = "Command description"

@@ -46,6 +46,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-amp-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-shai-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-shai-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-tabnine-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-tabnine-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-kiro-cli-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-kiro-cli-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-agy-sh-"$VERSION".zip \

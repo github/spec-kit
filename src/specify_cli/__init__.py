@@ -237,6 +237,13 @@ AGENT_CONFIG = {
         "install_url": "https://github.com/ovh/shai",
         "requires_cli": True,
     },
+    "tabnine": {
+        "name": "Tabnine CLI",
+        "folder": ".tabnine/agent/",
+        "commands_subdir": "commands",
+        "install_url": "https://docs.tabnine.com/main/getting-started/tabnine-cli",
+        "requires_cli": True,
+    },
     "agy": {
         "name": "Antigravity",
         "folder": ".agent/",
@@ -1124,7 +1131,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
         # Fallback: try the repo-relative path (for running from source checkout)
         # This also covers agents whose extracted commands are in a different
-        # format (e.g. gemini uses .toml, not .md).
+        # format (e.g. gemini/tabnine use .toml, not .md).
         script_dir = Path(__file__).parent.parent.parent  # up from src/specify_cli/
         fallback_dir = script_dir / "templates" / "commands"
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):

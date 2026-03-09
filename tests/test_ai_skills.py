@@ -147,6 +147,11 @@ class TestGetSkillsDir:
         result = _get_skills_dir(project_dir, "gemini")
         assert result == project_dir / ".gemini" / "skills"
 
+    def test_tabnine_skills_dir(self, project_dir):
+        """Tabnine should use .tabnine/agent/skills/."""
+        result = _get_skills_dir(project_dir, "tabnine")
+        assert result == project_dir / ".tabnine" / "agent" / "skills"
+
     def test_copilot_skills_dir(self, project_dir):
         """Copilot should use .github/skills/."""
         result = _get_skills_dir(project_dir, "copilot")

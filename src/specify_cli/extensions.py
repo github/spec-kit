@@ -677,6 +677,12 @@ class CommandRegistrar:
             "args": "$ARGUMENTS",
             "extension": ".md"
         },
+        "tabnine": {
+            "dir": ".tabnine/agent/commands",
+            "format": "toml",
+            "args": "{{args}}",
+            "extension": ".toml"
+        },
         "bob": {
             "dir": ".bob/commands",
             "format": "markdown",
