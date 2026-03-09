@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - feat: add Tabnine CLI agent support
+- **Multi-Catalog Support (#1707)**: Extension catalog system now supports multiple active catalogs simultaneously via a catalog stack
+  - New `specify extension catalog list` command lists all active catalogs with name, URL, priority, and `install_allowed` status
+  - New `specify extension catalog add` and `specify extension catalog remove` commands for project-scoped catalog management
+  - Default built-in stack includes `catalog.json` (default, installable) and `catalog.community.json` (community, discovery only) — community extensions are now surfaced in search results out of the box
+  - `specify extension search` aggregates results across all active catalogs, annotating each result with source catalog
+  - `specify extension add` enforces `install_allowed` policy — extensions from discovery-only catalogs cannot be installed directly
+  - Project-level `.specify/extension-catalogs.yml` and user-level `~/.specify/extension-catalogs.yml` config files supported, with project-level taking precedence
+  - `SPECKIT_CATALOG_URL` environment variable still works for backward compatibility (replaces full stack with single catalog)
+  - All catalog URLs require HTTPS (HTTP allowed for localhost development)
+  - New `CatalogEntry` dataclass in `extensions.py` for catalog stack representation
+  - Per-URL hash-based caching for non-default catalogs; legacy cache preserved for default catalog
+  - Higher-priority catalogs win on merge conflicts (same extension id in multiple catalogs)
+  - 13 new tests covering catalog stack resolution, merge conflicts, URL validation, and `install_allowed` enforcement
+  - Updated RFC, Extension User Guide, and Extension API Reference documentation
 
 ## [0.1.13] - 2026-03-03
 

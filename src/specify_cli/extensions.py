@@ -45,6 +45,7 @@ class CatalogEntry:
     name: str
     priority: int
     install_allowed: bool
+    description: str = ""
 
 
 class ExtensionManifest:
@@ -1032,30 +1033,57 @@ class ExtensionCatalog:
         Returns:
             Ordered list of CatalogEntry objects, or None if file doesn't exist
             or contains no valid catalog entries.
+
+        Raises:
+            ValidationError: If any catalog entry has an invalid URL,
+                the file cannot be parsed, or a priority value is invalid.
         """
         if not config_path.exists():
             return None
         try:
             data = yaml.safe_load(config_path.read_text()) or {}
-            catalogs_data = data.get("catalogs", [])
-            if not catalogs_data:
-                return None
-            entries: List[CatalogEntry] = []
-            for idx, item in enumerate(catalogs_data):
-                url = str(item.get("url", "")).strip()
-                if not url:
-                    continue
-                self._validate_catalog_url(url)
-                entries.append(CatalogEntry(
-                    url=url,
-                    name=str(item.get("name", f"catalog-{idx + 1}")),
-                    priority=int(item.get("priority", idx + 1)),
-                    install_allowed=bool(item.get("install_allowed", True)),
-                ))
-            entries.sort(key=lambda e: e.priority)
-            return entries if entries else None
-        except (yaml.YAMLError, OSError):
+        except (yaml.YAMLError, OSError) as e:
+            raise ValidationError(
+                f"Failed to read catalog config {config_path}: {e}"
+            )
+        catalogs_data = data.get("catalogs", [])
+        if not catalogs_data:
             return None
+        if not isinstance(catalogs_data, list):
+            raise ValidationError(
+                f"Invalid catalog config: 'catalogs' must be a list, got {type(catalogs_data).__name__}"
+            )
+        entries: List[CatalogEntry] = []
+        for idx, item in enumerate(catalogs_data):
+            if not isinstance(item, dict):
+                raise ValidationError(
+                    f"Invalid catalog entry at index {idx}: expected a mapping, got {type(item).__name__}"
+                )
+            url = str(item.get("url", "")).strip()
+            if not url:
+                continue
+            self._validate_catalog_url(url)
+            try:
+                priority = int(item.get("priority", idx + 1))
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
+                    f"expected integer, got {item.get('priority')!r}"
+                )
+            raw_install = item.get("install_allowed", False)
+            if isinstance(raw_install, str):
+                install_allowed = raw_install.strip().lower() in ("true", "yes", "1")
+            else:
+                install_allowed = bool(raw_install)
+            entries.append(CatalogEntry(
+                url=url,
+                name=str(item.get("name", f"catalog-{idx + 1}")),
+                priority=priority,
+                install_allowed=install_allowed,
+                description=str(item.get("description", "")),
+            ))
+        entries.sort(key=lambda e: e.priority)
+        return entries if entries else None
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
@@ -1064,7 +1092,7 @@ class ExtensionCatalog:
         1. SPECKIT_CATALOG_URL env var — single catalog replacing all defaults
         2. Project-level .specify/extension-catalogs.yml
         3. User-level ~/.specify/extension-catalogs.yml
-        4. Built-in default stack (org-approved + community)
+        4. Built-in default stack (default + community)
 
         Returns:
             List of CatalogEntry objects sorted by priority (ascending)
@@ -1086,7 +1114,7 @@ class ExtensionCatalog:
                         file=sys.stderr,
                     )
                     self._non_default_catalog_warning_shown = True
-            return [CatalogEntry(url=catalog_url, name="custom", priority=1, install_allowed=True)]
+            return [CatalogEntry(url=catalog_url, name="custom", priority=1, install_allowed=True, description="Custom catalog via SPECKIT_CATALOG_URL")]
 
         # 2. Project-level config overrides all defaults
         project_config_path = self.project_root / ".specify" / "extension-catalogs.yml"
@@ -1102,8 +1130,8 @@ class ExtensionCatalog:
 
         # 4. Built-in default stack
         return [
-            CatalogEntry(url=self.DEFAULT_CATALOG_URL, name="org-approved", priority=1, install_allowed=True),
-            CatalogEntry(url=self.COMMUNITY_CATALOG_URL, name="community", priority=2, install_allowed=False),
+            CatalogEntry(url=self.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True, description="Built-in catalog of installable extensions"),
+            CatalogEntry(url=self.COMMUNITY_CATALOG_URL, name="community", priority=2, install_allowed=False, description="Community-contributed extensions (discovery only)"),
         ]
 
     def get_catalog_url(self) -> str:
@@ -1155,9 +1183,11 @@ class ExtensionCatalog:
                 try:
                     metadata = json.loads(cache_meta_file.read_text())
                     cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
+                    if cached_at.tzinfo is None:
+                        cached_at = cached_at.replace(tzinfo=timezone.utc)
                     age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                     is_valid = age < self.CACHE_DURATION
-                except (json.JSONDecodeError, ValueError, KeyError):
+                except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                     # If metadata is invalid or missing expected fields, treat cache as invalid
                     pass
 
@@ -1231,8 +1261,8 @@ class ExtensionCatalog:
             for ext_id, ext_data in catalog_data.get("extensions", {}).items():
                 if ext_id not in merged:  # Higher-priority catalog wins
                     merged[ext_id] = {
-                        "id": ext_id,
                         **ext_data,
+                        "id": ext_id,
                         "_catalog_name": catalog_entry.name,
                         "_install_allowed": catalog_entry.install_allowed,
                     }
@@ -1254,9 +1284,11 @@ class ExtensionCatalog:
         try:
             metadata = json.loads(self.cache_metadata_file.read_text())
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
+            if cached_at.tzinfo is None:
+                cached_at = cached_at.replace(tzinfo=timezone.utc)
             age_seconds = (datetime.now(timezone.utc) - cached_at).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError):
+        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:

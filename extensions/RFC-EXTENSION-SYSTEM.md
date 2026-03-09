@@ -961,7 +961,7 @@ specify extension info jira
 
 ### Custom Catalogs
 
-Spec Kit supports a **catalog stack** — an ordered list of catalogs that the CLI merges and searches across. This allows organizations to benefit from org-approved extensions, an internal catalog, and community discovery all at once.
+Spec Kit supports a **catalog stack** — an ordered list of catalogs that the CLI merges and searches across. This allows organizations to maintain their own org-approved extensions alongside an internal catalog and community discovery, all at once.
 
 #### Catalog Stack Resolution
 
@@ -978,38 +978,41 @@ When no config file exists, the CLI uses:
 
 | Priority | Catalog | install_allowed | Purpose |
 |----------|---------|-----------------|---------|
-| 1 | `catalog.json` (org-approved) | `true` | Extensions your org approves for installation |
+| 1 | `catalog.json` (default) | `true` | Curated extensions available for installation |
 | 2 | `catalog.community.json` (community) | `false` | Discovery only — browse but not install |
 
-This means `specify extension search` surfaces community extensions out of the box, while `specify extension add` is still restricted to org-approved entries.
+This means `specify extension search` surfaces community extensions out of the box, while `specify extension add` is still restricted to entries from catalogs with `install_allowed: true`.
 
 #### `.specify/extension-catalogs.yml` Config File
 
 ```yaml
 catalogs:
-  - name: "org-approved"
+  - name: "default"
     url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
     priority: 1          # Highest — only approved entries can be installed
     install_allowed: true
+    description: "Built-in catalog of installable extensions"
 
   - name: "internal"
     url: "https://internal.company.com/spec-kit/catalog.json"
     priority: 2
     install_allowed: true
+    description: "Internal company extensions"
 
   - name: "community"
     url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
     priority: 3          # Lowest — discovery only, not installable
     install_allowed: false
+    description: "Community-contributed extensions (discovery only)"
 ```
 
-A user-level equivalent lives at `~/.specify/extension-catalogs.yml`. When a project-level config is present, it takes full control and the built-in defaults are not applied.
+A user-level equivalent lives at `~/.specify/extension-catalogs.yml`. When a project-level config is present with one or more catalog entries, it takes full control and the built-in defaults are not applied. An empty `catalogs: []` list is treated the same as no config file, falling back to defaults.
 
 #### Catalog CLI Commands
 
 ```bash
 # List active catalogs with name, URL, priority, and install_allowed
-specify extension catalogs
+specify extension catalog list
 
 # Add a catalog (project-scoped)
 specify extension catalog add --name "internal" --install-allowed \
@@ -1024,7 +1027,7 @@ specify extension catalog remove internal
 
 # Show which catalog an extension came from
 specify extension info jira
-# → Source catalog: org-approved
+# → Source catalog: default
 ```
 
 #### Merge Conflict Resolution

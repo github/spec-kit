@@ -84,7 +84,7 @@ vim .specify/extensions/jira/jira-config.yml
 specify extension search
 ```
 
-Shows all extensions across all active catalogs (org-approved and community by default).
+Shows all extensions across all active catalogs (default and community by default).
 
 ### Search by Keyword
 
@@ -423,13 +423,13 @@ Spec Kit uses a **catalog stack** — an ordered list of catalogs searched simul
 
 | Priority | Catalog | Install Allowed | Purpose |
 |----------|---------|-----------------|---------|
-| 1 | `catalog.json` (org-approved) | ✅ Yes | Extensions your org approves for installation |
+| 1 | `catalog.json` (default) | ✅ Yes | Curated extensions available for installation |
 | 2 | `catalog.community.json` (community) | ❌ No (discovery only) | Browse community extensions |
 
 ### Listing Active Catalogs
 
 ```bash
-specify extension catalogs
+specify extension catalog list
 ```
 
 ### Adding a Catalog (Project-scoped)
@@ -463,23 +463,26 @@ You can also edit `.specify/extension-catalogs.yml` directly:
 
 ```yaml
 catalogs:
-  - name: "org-approved"
+  - name: "default"
     url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
     priority: 1
     install_allowed: true
+    description: "Built-in catalog of installable extensions"
 
   - name: "internal"
     url: "https://internal.company.com/spec-kit/catalog.json"
     priority: 2
     install_allowed: true
+    description: "Internal company extensions"
 
   - name: "community"
     url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
     priority: 3
     install_allowed: false
+    description: "Community-contributed extensions (discovery only)"
 ```
 
-A user-level equivalent lives at `~/.specify/extension-catalogs.yml`. Project-level config takes full precedence when present.
+A user-level equivalent lives at `~/.specify/extension-catalogs.yml`. Project-level config takes full precedence when it contains one or more catalog entries. An empty `catalogs: []` list falls back to built-in defaults.
 
 ## Organization Catalog Customization
 
@@ -569,7 +572,7 @@ Add to `.specify/extension-catalogs.yml` in your project:
 
 ```yaml
 catalogs:
-  - name: "org-approved"
+  - name: "my-org"
     url: "https://your-org.com/spec-kit/catalog.json"
     priority: 1
     install_allowed: true
@@ -579,7 +582,7 @@ Or use the CLI:
 
 ```bash
 specify extension catalog add \
-  --name "org-approved" \
+  --name "my-org" \
   --install-allowed \
   https://your-org.com/spec-kit/catalog.json
 ```
@@ -595,7 +598,7 @@ export SPECKIT_CATALOG_URL="https://your-org.com/spec-kit/catalog.json"
 
 ```bash
 # List active catalogs
-specify extension catalogs
+specify extension catalog list
 
 # Search should now show your catalog's extensions
 specify extension search

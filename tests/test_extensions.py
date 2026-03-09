@@ -950,9 +950,28 @@ class TestExtensionCatalog:
 
     def test_search_by_query(self, temp_dir):
         """Test searching by query text."""
+        import yaml as yaml_module
+
         project_dir = temp_dir / "project"
         project_dir.mkdir()
         (project_dir / ".specify").mkdir()
+
+        # Use a single-catalog config so community extensions don't interfere
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
 
         catalog = ExtensionCatalog(project_dir)
 
@@ -995,9 +1014,28 @@ class TestExtensionCatalog:
 
     def test_search_by_tag(self, temp_dir):
         """Test searching by tag."""
+        import yaml as yaml_module
+
         project_dir = temp_dir / "project"
         project_dir.mkdir()
         (project_dir / ".specify").mkdir()
+
+        # Use a single-catalog config so community extensions don't interfere
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
 
         catalog = ExtensionCatalog(project_dir)
 
@@ -1047,9 +1085,28 @@ class TestExtensionCatalog:
 
     def test_search_verified_only(self, temp_dir):
         """Test searching verified extensions only."""
+        import yaml as yaml_module
+
         project_dir = temp_dir / "project"
         project_dir.mkdir()
         (project_dir / ".specify").mkdir()
+
+        # Use a single-catalog config so community extensions don't interfere
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
 
         catalog = ExtensionCatalog(project_dir)
 
@@ -1092,9 +1149,28 @@ class TestExtensionCatalog:
 
     def test_get_extension_info(self, temp_dir):
         """Test getting specific extension info."""
+        import yaml as yaml_module
+
         project_dir = temp_dir / "project"
         project_dir.mkdir()
         (project_dir / ".specify").mkdir()
+
+        # Use a single-catalog config so community extensions don't interfere
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
 
         catalog = ExtensionCatalog(project_dir)
 
@@ -1214,7 +1290,7 @@ class TestCatalogStack:
     # --- get_active_catalogs ---
 
     def test_default_stack(self, temp_dir):
-        """Default stack includes org-approved and community catalogs."""
+        """Default stack includes default and community catalogs."""
         project_dir = self._make_project(temp_dir)
         catalog = ExtensionCatalog(project_dir)
 
@@ -1222,7 +1298,7 @@ class TestCatalogStack:
 
         assert len(entries) == 2
         assert entries[0].url == ExtensionCatalog.DEFAULT_CATALOG_URL
-        assert entries[0].name == "org-approved"
+        assert entries[0].name == "default"
         assert entries[0].priority == 1
         assert entries[0].install_allowed is True
         assert entries[1].url == ExtensionCatalog.COMMUNITY_CATALOG_URL
@@ -1372,8 +1448,6 @@ class TestCatalogStack:
 
     def test_merge_conflict_higher_priority_wins(self, temp_dir):
         """When same extension id is in two catalogs, higher priority wins."""
-        import yaml as yaml_module
-
         project_dir = self._make_project(temp_dir)
 
         # Write project config with two catalogs

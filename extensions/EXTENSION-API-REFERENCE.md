@@ -254,9 +254,10 @@ from specify_cli.extensions import CatalogEntry
 
 entry = CatalogEntry(
     url="https://example.com/catalog.json",
-    name="org-approved",
+    name="default",
     priority=1,
     install_allowed=True,
+    description="Built-in catalog of installable extensions",
 )
 ```
 
@@ -268,6 +269,7 @@ entry = CatalogEntry(
 | `name` | `str` | Human-readable catalog name |
 | `priority` | `int` | Sort order (lower = higher priority, wins on conflicts) |
 | `install_allowed` | `bool` | Whether extensions from this catalog can be installed |
+| `description` | `str` | Optional human-readable description of the catalog (default: empty) |
 
 ### ExtensionCatalog
 
@@ -282,7 +284,7 @@ catalog = ExtensionCatalog(project_root)
 **Class attributes**:
 
 ```python
-ExtensionCatalog.DEFAULT_CATALOG_URL    # org-approved catalog URL
+ExtensionCatalog.DEFAULT_CATALOG_URL    # default catalog URL
 ExtensionCatalog.COMMUNITY_CATALOG_URL  # community catalog URL
 ```
 
@@ -328,14 +330,16 @@ Each extension dict returned by `search()` and `get_extension_info()` includes:
 
 ```yaml
 catalogs:
-  - name: "org-approved"
-    url: "https://example.com/catalog.json"
+  - name: "default"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
     priority: 1
     install_allowed: true
+    description: "Built-in catalog of installable extensions"
   - name: "community"
     url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
     priority: 2
     install_allowed: false
+    description: "Community-contributed extensions (discovery only)"
 ```
 
 ### HookExecutor
@@ -604,11 +608,11 @@ EXECUTE_COMMAND: {command}
 
 **Output**: List of installed extensions with metadata
 
-### extension catalogs
+### extension catalog list
 
-**Usage**: `specify extension catalogs`
+**Usage**: `specify extension catalog list`
 
-Lists all active catalogs in the current catalog stack, showing name, URL, priority, and `install_allowed` status.
+Lists all active catalogs in the current catalog stack, showing name, description, URL, priority, and `install_allowed` status.
 
 ### extension catalog add
 
@@ -619,6 +623,7 @@ Lists all active catalogs in the current catalog stack, showing name, URL, prior
 - `--name NAME` - Catalog name (required)
 - `--priority INT` - Priority (lower = higher priority, default: 10)
 - `--install-allowed / --no-install-allowed` - Allow installs from this catalog (default: false)
+- `--description TEXT` - Optional description of the catalog
 
 **Arguments**:
 

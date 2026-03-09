@@ -1844,8 +1844,8 @@ def extension_list(
         console.print("  [cyan]specify extension add <name>[/cyan]")
 
 
-@extension_app.command("catalogs")
-def extension_catalogs():
+@catalog_app.command("list")
+def catalog_list():
     """List all active extension catalogs."""
     from .extensions import ExtensionCatalog, ValidationError
 
@@ -1873,15 +1873,20 @@ def extension_catalogs():
             else "[yellow]discovery only[/yellow]"
         )
         console.print(f"  [bold]{entry.name}[/bold] (priority {entry.priority})")
+        if entry.description:
+            console.print(f"     {entry.description}")
         console.print(f"     URL: {entry.url}")
         console.print(f"     Install: {install_str}")
         console.print()
 
     config_path = project_root / ".specify" / "extension-catalogs.yml"
+    user_config_path = Path.home() / ".specify" / "extension-catalogs.yml"
     if config_path.exists() and catalog._load_catalog_config(config_path) is not None:
         console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
     elif os.environ.get("SPECKIT_CATALOG_URL"):
         console.print("[dim]Catalog configured via SPECKIT_CATALOG_URL environment variable.[/dim]")
+    elif user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None:
+        console.print("[dim]Config: ~/.specify/extension-catalogs.yml[/dim]")
     else:
         console.print("[dim]Using built-in default catalog stack.[/dim]")
         console.print(
@@ -1898,6 +1903,7 @@ def catalog_add(
         False, "--install-allowed/--no-install-allowed",
         help="Allow extensions from this catalog to be installed",
     ),
+    description: str = typer.Option("", "--description", help="Description of the catalog"),
 ):
     """Add a catalog to .specify/extension-catalogs.yml."""
     from .extensions import ExtensionCatalog, ValidationError
@@ -1924,16 +1930,20 @@ def catalog_add(
     if config_path.exists():
         try:
             config = yaml.safe_load(config_path.read_text()) or {}
-        except Exception:
-            config = {}
+        except Exception as e:
+            console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
+            raise typer.Exit(1)
     else:
         config = {}
 
     catalogs = config.get("catalogs", [])
+    if not isinstance(catalogs, list):
+        console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
+        raise typer.Exit(1)
 
     # Check for duplicate name
     for existing in catalogs:
-        if existing.get("name") == name:
+        if isinstance(existing, dict) and existing.get("name") == name:
             console.print(f"[yellow]Warning:[/yellow] A catalog named '{name}' already exists.")
             console.print("Use 'specify extension catalog remove' first, or choose a different name.")
             raise typer.Exit(1)
@@ -1943,6 +1953,7 @@ def catalog_add(
         "url": url,
         "priority": priority,
         "install_allowed": install_allowed,
+        "description": description,
     })
 
     config["catalogs"] = catalogs
@@ -1980,8 +1991,11 @@ def catalog_remove(
         raise typer.Exit(1)
 
     catalogs = config.get("catalogs", [])
+    if not isinstance(catalogs, list):
+        console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
+        raise typer.Exit(1)
     original_count = len(catalogs)
-    catalogs = [c for c in catalogs if c.get("name") != name]
+    catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
 
     if len(catalogs) == original_count:
         console.print(f"[red]Error:[/red] Catalog '{name}' not found.")
@@ -2268,8 +2282,8 @@ def extension_search(
             else:
                 console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
                 console.print(
-                    "  Add to an approved catalog with install_allowed: true, "
-                    "or use: specify extension add --from <url>"
+                    f"  Add to an approved catalog with install_allowed: true, "
+                    f"or install from a ZIP URL: specify extension add {ext['id']} --from <zip-url>"
                 )
             console.print()
 
