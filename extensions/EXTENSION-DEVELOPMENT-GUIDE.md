@@ -332,6 +332,50 @@ echo "$config"
 
 ---
 
+## Excluding Files with `.extensionignore`
+
+Extension authors can create a `.extensionignore` file in the extension root to exclude files and folders from being copied when a user installs the extension with `specify extension add`. This is useful for keeping development-only files (tests, CI configs, docs source, etc.) out of the installed copy.
+
+### Format
+
+The file uses glob-style patterns, one per line:
+
+- Blank lines are ignored
+- Lines starting with `#` are comments
+- Patterns are matched against both the file/folder name and its path relative to the extension root
+- The `.extensionignore` file itself is always excluded automatically
+
+### Example
+
+```gitignore
+# .extensionignore
+
+# Development files
+tests/
+.github/
+.gitignore
+
+# Build artifacts
+__pycache__/
+*.pyc
+dist/
+
+# Documentation source (keep only the built README)
+docs/
+CONTRIBUTING.md
+```
+
+### Pattern Matching
+
+| Pattern | Matches |
+|---------|---------|
+| `*.pyc` | Any `.pyc` file in any directory |
+| `tests/` | The `tests` directory (and all its contents) |
+| `docs/*.draft.md` | Draft markdown files inside `docs/` |
+| `.github` | The `.github` directory at any level |
+
+---
+
 ## Validation Rules
 
 ### Extension ID

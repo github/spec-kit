@@ -6,6 +6,7 @@ Extensions are modular packages that add commands and functionality to spec-kit
 without bloating the core framework.
 """
 
+import fnmatch
 import json
 import hashlib
 import os
@@ -14,7 +15,7 @@ import zipfile
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Callable, Set
 from datetime import datetime, timezone
 import re
 
@@ -280,6 +281,56 @@ class ExtensionManager:
         self.extensions_dir = project_root / ".specify" / "extensions"
         self.registry = ExtensionRegistry(self.extensions_dir)
 
+    @staticmethod
+    def _load_extensionignore(source_dir: Path) -> Optional[Callable[[str, List[str]], Set[str]]]:
+        """Load .extensionignore and return an ignore function for shutil.copytree.
+
+        The .extensionignore file uses glob-style patterns (one per line).
+        Lines starting with '#' are comments. Blank lines are ignored.
+        The .extensionignore file itself is always excluded.
+
+        Args:
+            source_dir: Path to the extension source directory
+
+        Returns:
+            An ignore function compatible with shutil.copytree, or None
+            if no .extensionignore file exists.
+        """
+        ignore_file = source_dir / ".extensionignore"
+        if not ignore_file.exists():
+            return None
+
+        patterns: List[str] = []
+        for line in ignore_file.read_text().splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                patterns.append(stripped)
+
+        # Always ignore the .extensionignore file itself
+        patterns.append(".extensionignore")
+
+        def _ignore(directory: str, entries: List[str]) -> Set[str]:
+            ignored: Set[str] = set()
+            rel_dir = Path(directory).relative_to(source_dir)
+            for entry in entries:
+                rel_path = str(rel_dir / entry) if str(rel_dir) != "." else entry
+                # Normalise to forward slashes for consistent matching
+                rel_path_fwd = rel_path.replace("\\", "/")
+                for pattern in patterns:
+                    # Strip trailing slash so "tests/" matches directory name "tests"
+                    pat = pattern.rstrip("/")
+                    # Match against the entry name itself
+                    if fnmatch.fnmatch(entry, pat):
+                        ignored.add(entry)
+                        break
+                    # Match against the relative path from the source root
+                    if fnmatch.fnmatch(rel_path_fwd, pat):
+                        ignored.add(entry)
+                        break
+            return ignored
+
+        return _ignore
+
     def check_compatibility(
         self,
         manifest: ExtensionManifest,
@@ -353,7 +404,8 @@ class ExtensionManager:
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
-        shutil.copytree(source_dir, dest_dir)
+        ignore_fn = self._load_extensionignore(source_dir)
+        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
         # Register commands with AI agents
         registered_commands = {}

@@ -43,7 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
 - fix: Split release process to sync pyproject.toml version with git tags (#1732)
 
-
 ## [0.1.14] - 2026-03-09
 
 ### Added
@@ -63,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Higher-priority catalogs win on merge conflicts (same extension id in multiple catalogs)
   - 13 new tests covering catalog stack resolution, merge conflicts, URL validation, and `install_allowed` enforcement
   - Updated RFC, Extension User Guide, and Extension API Reference documentation
+- feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
 ## [0.1.13] - 2026-03-03
 
