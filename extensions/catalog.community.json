@@ -169,6 +169,47 @@
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
     },
+    "understanding": {
+      "name": "Understanding",
+      "id": "understanding",
+      "description": "Automated requirements quality analysis — validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
+      "author": "Ladislav Bihari",
+      "version": "3.4.0",
+      "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
+      "repository": "https://github.com/Testimonial/understanding",
+      "homepage": "https://github.com/Testimonial/understanding",
+      "documentation": "https://github.com/Testimonial/understanding/blob/main/extension/README.md",
+      "changelog": "https://github.com/Testimonial/understanding/blob/main/extension/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "understanding",
+            "version": ">=3.4.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "quality",
+        "metrics",
+        "requirements",
+        "validation",
+        "readability",
+        "IEEE-830",
+        "ISO-29148"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-07T00:00:00Z",
+      "updated_at": "2026-03-07T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
@@ -232,47 +273,6 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
-    },
-    "understanding": {
-      "name": "Understanding",
-      "id": "understanding",
-      "description": "Automated requirements quality analysis \u2014 validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
-      "author": "Ladislav Bihari",
-      "version": "3.4.0",
-      "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
-      "repository": "https://github.com/Testimonial/understanding",
-      "homepage": "https://github.com/Testimonial/understanding",
-      "documentation": "https://github.com/Testimonial/understanding/blob/main/extension/README.md",
-      "changelog": "https://github.com/Testimonial/understanding/blob/main/extension/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0",
-        "tools": [
-          {
-            "name": "understanding",
-            "version": ">=3.4.0",
-            "required": true
-          }
-        ]
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "quality",
-        "metrics",
-        "requirements",
-        "validation",
-        "readability",
-        "IEEE-830",
-        "ISO-29148"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-07T00:00:00Z",
-      "updated_at": "2026-03-07T00:00:00Z"
     }
   }
 }
