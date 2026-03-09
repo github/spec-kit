@@ -171,3 +171,41 @@ class TestAgentConfigConsistency:
     def test_ai_help_includes_tabnine(self):
         """CLI help text for --ai should include tabnine."""
         assert "tabnine" in AI_ASSISTANT_HELP
+
+    # --- Kimi Code CLI consistency checks ---
+
+    def test_kimi_in_agent_config(self):
+        """AGENT_CONFIG should include kimi with correct folder and commands_subdir."""
+        assert "kimi" in AGENT_CONFIG
+        assert AGENT_CONFIG["kimi"]["folder"] == ".kimi/"
+        assert AGENT_CONFIG["kimi"]["commands_subdir"] == "commands"
+        assert AGENT_CONFIG["kimi"]["requires_cli"] is True
+
+    def test_kimi_in_release_agent_lists(self):
+        """Bash and PowerShell release scripts should include kimi in agent lists."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        sh_match = re.search(r"ALL_AGENTS=\(([^)]*)\)", sh_text)
+        assert sh_match is not None
+        sh_agents = sh_match.group(1).split()
+
+        ps_match = re.search(r"\$AllAgents = @\(([^)]*)\)", ps_text)
+        assert ps_match is not None
+        ps_agents = re.findall(r"'([^']+)'", ps_match.group(1))
+
+        assert "kimi" in sh_agents
+        assert "kimi" in ps_agents
+
+    def test_kimi_in_powershell_validate_set(self):
+        """PowerShell update-agent-context script should include 'kimi' in ValidateSet."""
+        ps_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        assert "'kimi'" in ps_text
+
+    def test_kimi_in_github_release_output(self):
+        """GitHub release script should include kimi template packages."""
+        gh_release_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-github-release.sh").read_text(encoding="utf-8")
+
+        assert "spec-kit-template-kimi-sh-" in gh_release_text
+        assert "spec-kit-template-kimi-ps-" in gh_release_text

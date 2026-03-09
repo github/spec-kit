@@ -265,6 +265,13 @@ AGENT_CONFIG = {
         "install_url": "https://github.com/mistralai/mistral-vibe",
         "requires_cli": True,
     },
+    "kimi": {
+        "name": "Kimi Code",
+        "folder": ".kimi/",
+        "commands_subdir": "commands",
+        "install_url": "https://code.kimi.com/",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir

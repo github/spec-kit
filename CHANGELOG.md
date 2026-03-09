@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- feat: add Kimi Code CLI agent support
 - fix: sync agent list comments with actual supported agents (#1785)
 - feat(extensions): support multiple active catalogs simultaneously (#1720)
 - Pavel/add tabnine cli support (#1503)
