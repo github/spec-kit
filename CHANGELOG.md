@@ -7,6 +7,21 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-09
+
+### Added
+
+- feat(templates): Pluggable template system with template packs, catalog, and resolver
+- Template pack manifest (`template-pack.yml`) with validation for artifact, command, and script types
+- `TemplatePackManifest`, `TemplatePackRegistry`, `TemplatePackManager`, `TemplateCatalog`, `TemplateResolver` classes in `src/specify_cli/templates.py`
+- CLI commands: `specify template search`, `specify template add`, `specify template list`, `specify template remove`, `specify template resolve`
+- `--template` option for `specify init` to install template packs during initialization
+- `resolve_template()` / `Resolve-Template` helpers in bash and PowerShell common scripts
+- Template resolution priority stack: overrides → packs → extensions → core
+- Template catalog files (`templates/catalog.json`, `templates/catalog.community.json`)
+- Template pack scaffold directory (`templates/template/`)
+- Scripts updated to use template resolution instead of hardcoded paths
+
 ## [0.2.0] - 2026-03-09
 
 ### Changed

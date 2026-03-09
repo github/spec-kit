@@ -1,0 +1,66 @@
+schema_version: "1.0"
+
+template_pack:
+  # CUSTOMIZE: Change 'my-template-pack' to your template pack ID (lowercase, hyphen-separated)
+  id: "my-template-pack"
+
+  # CUSTOMIZE: Human-readable name for your template pack
+  name: "My Template Pack"
+
+  # CUSTOMIZE: Update version when releasing (semantic versioning: X.Y.Z)
+  version: "1.0.0"
+
+  # CUSTOMIZE: Brief description (under 200 characters)
+  description: "Brief description of what your template pack provides"
+
+  # CUSTOMIZE: Your name or organization name
+  author: "Your Name"
+
+  # CUSTOMIZE: GitHub repository URL (create before publishing)
+  repository: "https://github.com/your-org/spec-kit-templates-my-pack"
+
+  # REVIEW: License (MIT is recommended for open source)
+  license: "MIT"
+
+# Requirements for this template pack
+requires:
+  # CUSTOMIZE: Minimum spec-kit version required
+  speckit_version: ">=0.1.0"
+
+# Templates provided by this pack
+provides:
+  templates:
+    # CUSTOMIZE: Define your artifact templates
+    # Artifact templates are document scaffolds (spec.md, plan.md, etc.)
+    - type: "artifact"
+      name: "spec-template"
+      file: "templates/spec-template.md"
+      description: "Custom feature specification template"
+      replaces: "spec-template"  # Which core template this overrides (optional)
+
+    # ADD MORE TEMPLATES: Copy this block for each template
+    # - type: "artifact"
+    #   name: "plan-template"
+    #   file: "templates/plan-template.md"
+    #   description: "Custom plan template"
+    #   replaces: "plan-template"
+
+    # Command templates (AI agent prompts)
+    # - type: "command"
+    #   name: "specify"
+    #   file: "commands/specify.md"
+    #   description: "Custom specification command"
+    #   replaces: "specify"
+
+    # Script templates
+    # - type: "script"
+    #   name: "create-new-feature"
+    #   file: "scripts/bash/create-new-feature.sh"
+    #   description: "Custom feature creation script"
+    #   replaces: "create-new-feature"
+
+# CUSTOMIZE: Add relevant tags (2-5 recommended)
+# Used for discovery in catalog
+tags:
+  - "example"
+  - "template"

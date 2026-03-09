@@ -135,3 +135,45 @@ function Test-DirHasFiles {
     }
 }
 
+# Resolve a template name to a file path using the priority stack:
+#   1. .specify/templates/overrides/
+#   2. .specify/templates/packs/<pack-id>/templates/
+#   3. .specify/extensions/<ext-id>/templates/
+#   4. .specify/templates/ (core)
+function Resolve-Template {
+    param(
+        [Parameter(Mandatory=$true)][string]$TemplateName,
+        [Parameter(Mandatory=$true)][string]$RepoRoot
+    )
+
+    $base = Join-Path $RepoRoot '.specify/templates'
+
+    # Priority 1: Project overrides
+    $override = Join-Path $base "overrides/$TemplateName.md"
+    if (Test-Path $override) { return $override }
+
+    # Priority 2: Installed packs (by directory order)
+    $packsDir = Join-Path $base 'packs'
+    if (Test-Path $packsDir) {
+        foreach ($pack in Get-ChildItem -Path $packsDir -Directory -ErrorAction SilentlyContinue) {
+            $candidate = Join-Path $pack.FullName "templates/$TemplateName.md"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+
+    # Priority 3: Extension-provided templates
+    $extDir = Join-Path $RepoRoot '.specify/extensions'
+    if (Test-Path $extDir) {
+        foreach ($ext in Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue) {
+            $candidate = Join-Path $ext.FullName "templates/$TemplateName.md"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+
+    # Priority 4: Core templates
+    $core = Join-Path $base "$TemplateName.md"
+    if (Test-Path $core) { return $core }
+
+    return $null
+}
+

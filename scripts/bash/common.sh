@@ -154,3 +154,44 @@ EOF
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+# Resolve a template name to a file path using the priority stack:
+#   1. .specify/templates/overrides/
+#   2. .specify/templates/packs/<pack-id>/templates/
+#   3. .specify/extensions/<ext-id>/templates/
+#   4. .specify/templates/ (core)
+resolve_template() {
+    local template_name="$1"
+    local repo_root="$2"
+    local base="$repo_root/.specify/templates"
+
+    # Priority 1: Project overrides
+    local override="$base/overrides/${template_name}.md"
+    [ -f "$override" ] && echo "$override" && return 0
+
+    # Priority 2: Installed packs (by directory order)
+    local packs_dir="$base/packs"
+    if [ -d "$packs_dir" ]; then
+        for pack in "$packs_dir"/*/; do
+            [ -d "$pack" ] || continue
+            local candidate="$pack/templates/${template_name}.md"
+            [ -f "$candidate" ] && echo "$candidate" && return 0
+        done
+    fi
+
+    # Priority 3: Extension-provided templates
+    local ext_dir="$repo_root/.specify/extensions"
+    if [ -d "$ext_dir" ]; then
+        for ext in "$ext_dir"/*/; do
+            [ -d "$ext" ] || continue
+            local candidate="$ext/templates/${template_name}.md"
+            [ -f "$candidate" ] && echo "$candidate" && return 0
+        done
+    fi
+
+    # Priority 4: Core templates
+    local core="$base/${template_name}.md"
+    [ -f "$core" ] && echo "$core" && return 0
+
+    return 1
+}
+

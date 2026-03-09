@@ -1272,6 +1272,7 @@ def init(
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
     ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
+    template: str = typer.Option(None, "--template", help="Install a template pack during initialization (by pack ID)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -1300,6 +1301,7 @@ def init(
         specify init my-project --ai claude --ai-skills   # Install agent skills
         specify init --here --ai gemini --ai-skills
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
+        specify init my-project --ai claude --template healthcare-compliance  # With template pack
     """
 
     show_banner()
@@ -1542,6 +1544,27 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
+            # Install template pack if specified
+            if template:
+                try:
+                    from .templates import TemplatePackManager, TemplateCatalog, TemplateError
+                    tmpl_manager = TemplatePackManager(project_path)
+                    speckit_ver = get_speckit_version()
+
+                    # Try local directory first, then catalog
+                    local_path = Path(template).resolve()
+                    if local_path.is_dir() and (local_path / "template-pack.yml").exists():
+                        tmpl_manager.install_from_directory(local_path, speckit_ver)
+                    else:
+                        tmpl_catalog = TemplateCatalog(project_path)
+                        try:
+                            zip_path = tmpl_catalog.download_pack(template)
+                            tmpl_manager.install_from_zip(zip_path, speckit_ver)
+                        except TemplateError:
+                            console.print(f"[yellow]Warning:[/yellow] Template pack '{template}' not found in catalog. Skipping.")
+                except Exception as tmpl_err:
+                    console.print(f"[yellow]Warning:[/yellow] Failed to install template pack: {tmpl_err}")
+
             tracker.complete("final", "project ready")
         except Exception as e:
             tracker.error("final", str(e))
@@ -1779,6 +1802,13 @@ catalog_app = typer.Typer(
 )
 extension_app.add_typer(catalog_app, name="catalog")
 
+template_app = typer.Typer(
+    name="template",
+    help="Manage spec-kit template packs",
+    add_completion=False,
+)
+app.add_typer(template_app, name="template")
+
 
 def get_speckit_version() -> str:
     """Get current spec-kit version."""
@@ -1799,6 +1829,227 @@ def get_speckit_version() -> str:
             # If this lookup fails for any reason, we fall back to returning "unknown" below.
             pass
     return "unknown"
+
+
+# ===== Template Pack Commands =====
+
+
+@template_app.command("list")
+def template_list():
+    """List installed template packs."""
+    from .templates import TemplatePackManager
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = TemplatePackManager(project_root)
+    installed = manager.list_installed()
+
+    if not installed:
+        console.print("[yellow]No template packs installed.[/yellow]")
+        console.print("\nInstall a template pack with:")
+        console.print("  [cyan]specify template add <pack-name>[/cyan]")
+        return
+
+    console.print("\n[bold cyan]Installed Template Packs:[/bold cyan]\n")
+    for pack in installed:
+        status = "[green]enabled[/green]" if pack.get("enabled", True) else "[red]disabled[/red]"
+        console.print(f"  [bold]{pack['name']}[/bold] ({pack['id']}) v{pack['version']} — {status}")
+        console.print(f"    {pack['description']}")
+        if pack.get("tags"):
+            tags_str = ", ".join(pack["tags"])
+            console.print(f"    [dim]Tags: {tags_str}[/dim]")
+        console.print(f"    [dim]Templates: {pack['template_count']}[/dim]")
+        console.print()
+
+
+@template_app.command("add")
+def template_add(
+    pack_id: str = typer.Argument(None, help="Template pack ID to install from catalog"),
+    from_url: str = typer.Option(None, "--from", help="Install from a URL (ZIP file)"),
+    dev: str = typer.Option(None, "--dev", help="Install from local directory (development mode)"),
+):
+    """Install a template pack."""
+    from .templates import (
+        TemplatePackManager,
+        TemplateCatalog,
+        TemplateError,
+        TemplateValidationError,
+        TemplateCompatibilityError,
+    )
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = TemplatePackManager(project_root)
+    speckit_version = get_speckit_version()
+
+    try:
+        if dev:
+            dev_path = Path(dev).resolve()
+            if not dev_path.exists():
+                console.print(f"[red]Error:[/red] Directory not found: {dev}")
+                raise typer.Exit(1)
+
+            console.print(f"Installing template pack from [cyan]{dev_path}[/cyan]...")
+            manifest = manager.install_from_directory(dev_path, speckit_version)
+            console.print(f"[green]✓[/green] Template pack '{manifest.name}' v{manifest.version} installed successfully")
+
+        elif from_url:
+            console.print(f"Installing template pack from [cyan]{from_url}[/cyan]...")
+            import urllib.request
+            import urllib.error
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                zip_path = Path(tmpdir) / "template-pack.zip"
+                try:
+                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                        zip_path.write_bytes(response.read())
+                except urllib.error.URLError as e:
+                    console.print(f"[red]Error:[/red] Failed to download: {e}")
+                    raise typer.Exit(1)
+
+                manifest = manager.install_from_zip(zip_path, speckit_version)
+
+            console.print(f"[green]✓[/green] Template pack '{manifest.name}' v{manifest.version} installed successfully")
+
+        elif pack_id:
+            catalog = TemplateCatalog(project_root)
+            pack_info = catalog.get_pack_info(pack_id)
+
+            if not pack_info:
+                console.print(f"[red]Error:[/red] Template pack '{pack_id}' not found in catalog")
+                raise typer.Exit(1)
+
+            console.print(f"Installing template pack [cyan]{pack_info.get('name', pack_id)}[/cyan]...")
+
+            try:
+                zip_path = catalog.download_pack(pack_id)
+                manifest = manager.install_from_zip(zip_path, speckit_version)
+                console.print(f"[green]✓[/green] Template pack '{manifest.name}' v{manifest.version} installed successfully")
+            finally:
+                if 'zip_path' in locals() and zip_path.exists():
+                    zip_path.unlink(missing_ok=True)
+        else:
+            console.print("[red]Error:[/red] Specify a template pack ID, --from URL, or --dev path")
+            raise typer.Exit(1)
+
+    except TemplateCompatibilityError as e:
+        console.print(f"[red]Compatibility Error:[/red] {e}")
+        raise typer.Exit(1)
+    except TemplateValidationError as e:
+        console.print(f"[red]Validation Error:[/red] {e}")
+        raise typer.Exit(1)
+    except TemplateError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@template_app.command("remove")
+def template_remove(
+    pack_id: str = typer.Argument(..., help="Template pack ID to remove"),
+):
+    """Remove an installed template pack."""
+    from .templates import TemplatePackManager
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = TemplatePackManager(project_root)
+
+    if not manager.registry.is_installed(pack_id):
+        console.print(f"[red]Error:[/red] Template pack '{pack_id}' is not installed")
+        raise typer.Exit(1)
+
+    if manager.remove(pack_id):
+        console.print(f"[green]✓[/green] Template pack '{pack_id}' removed successfully")
+    else:
+        console.print(f"[red]Error:[/red] Failed to remove template pack '{pack_id}'")
+        raise typer.Exit(1)
+
+
+@template_app.command("search")
+def template_search(
+    query: str = typer.Argument(None, help="Search query"),
+    tag: str = typer.Option(None, "--tag", help="Filter by tag"),
+    author: str = typer.Option(None, "--author", help="Filter by author"),
+):
+    """Search for template packs in the catalog."""
+    from .templates import TemplateCatalog, TemplateError
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    catalog = TemplateCatalog(project_root)
+
+    try:
+        results = catalog.search(query=query, tag=tag, author=author)
+    except TemplateError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not results:
+        console.print("[yellow]No template packs found matching your criteria.[/yellow]")
+        return
+
+    console.print(f"\n[bold cyan]Template Packs ({len(results)} found):[/bold cyan]\n")
+    for pack in results:
+        console.print(f"  [bold]{pack.get('name', pack['id'])}[/bold] ({pack['id']}) v{pack.get('version', '?')}")
+        console.print(f"    {pack.get('description', '')}")
+        if pack.get("tags"):
+            tags_str = ", ".join(pack["tags"])
+            console.print(f"    [dim]Tags: {tags_str}[/dim]")
+        console.print()
+
+
+@template_app.command("resolve")
+def template_resolve(
+    template_name: str = typer.Argument(..., help="Template name to resolve (e.g., spec-template)"),
+):
+    """Show which template will be resolved for a given name."""
+    from .templates import TemplateResolver
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    resolver = TemplateResolver(project_root)
+    result = resolver.resolve_with_source(template_name)
+
+    if result:
+        console.print(f"  [bold]{template_name}[/bold]: {result['path']}")
+        console.print(f"    [dim](from: {result['source']})[/dim]")
+    else:
+        console.print(f"  [yellow]{template_name}[/yellow]: not found")
+        console.print("    [dim]No template with this name exists in the resolution stack[/dim]")
+
+
+# ===== Extension Commands =====
 
 
 @extension_app.command("list")
