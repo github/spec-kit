@@ -24,10 +24,17 @@ specify extension search "$ARGUMENTS"
 
 ### Step 2: Simulate Installation
 
-Simulate adding the extension to the current workspace configuration.
+First, try to add the extension to the current workspace configuration directly. If the catalog provides the extension as `install_allowed: false` (discovery-only), this step is *expected* to fail.
 
 ```bash
 specify extension add "$ARGUMENTS"
+```
+
+Then, simulate adding the extension by installing it from its catalog download URL, which should bypass the restriction.
+Obtain the extension's `download_url` from the catalog metadata (for example, via a catalog info command or UI), then run:
+
+```bash
+specify extension add --from "<download_url>"
 ```
 
 ### Step 3: Registration Verification
