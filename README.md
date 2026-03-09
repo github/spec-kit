@@ -85,6 +85,8 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 # Or initialize in existing project
 uvx --from git+https://github.com/github/spec-kit.git specify init .
+# or
+uvx --from git+https://github.com/github/spec-kit.git specify init --here
 ```
 
 **Benefits of persistent installation:**
