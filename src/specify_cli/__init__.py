@@ -268,7 +268,7 @@ AGENT_CONFIG = {
     "kimi": {
         "name": "Kimi Code",
         "folder": ".kimi/",
-        "commands_subdir": "commands",
+        "commands_subdir": "skills",  # Kimi uses /skill:<name> with .kimi/skills/<name>/SKILL.md
         "install_url": "https://code.kimi.com/",
         "requires_cli": True,
     },

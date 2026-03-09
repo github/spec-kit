@@ -68,6 +68,52 @@ Execute the add-dir workflow with arguments: $ARGUMENTS
 EOF
 }
 
+# Create Kimi Code skills in .kimi/skills/<name>/SKILL.md format.
+# Kimi CLI discovers skills as directories containing a SKILL.md file,
+# invoked with /skill:<name> (e.g. /skill:speckit.specify).
+create_kimi_skills() {
+    local skills_dir="$1"
+
+    local commands=(constitution specify clarify plan tasks analyze checklist implement taskstoissues)
+    for cmd in "${commands[@]}"; do
+        local skill_name="speckit.${cmd}"
+        local skill_dir="${skills_dir}/${skill_name}"
+        mkdir -p "$skill_dir"
+
+        # Extract description from template frontmatter if available, else use a default
+        local src="$COMMANDS_TEMPLATES_DIR/${cmd}.md"
+        local description="Spec Kit: ${cmd} workflow"
+        if [[ -f "$src" ]]; then
+            local fm_desc
+            fm_desc=$(grep -m1 '^description:' "$src" | sed 's/^description:[[:space:]]*//' | tr -d '"' || true)
+            [[ -n "$fm_desc" ]] && description="$fm_desc"
+        fi
+
+        # Write SKILL.md with Kimi frontmatter + template content
+        {
+            printf -- '---\n'
+            printf 'name: "%s"\n' "$skill_name"
+            printf 'description: "%s"\n' "$description"
+            printf -- '---\n\n'
+            if [[ -f "$src" ]]; then
+                # Strip existing frontmatter from template and append the body
+                awk '/^---/{p++; if(p==2){found=1; next}} found' "$src"
+            fi
+        } > "$skill_dir/SKILL.md"
+    done
+
+    # add-dir skill
+    mkdir -p "${skills_dir}/add-dir"
+    cat > "${skills_dir}/add-dir/SKILL.md" << 'EOF'
+---
+name: "add-dir"
+description: "Add a directory to the Spec Kit project structure"
+---
+
+Execute the add-dir workflow with arguments: $ARGUMENTS
+EOF
+}
+
 # Generate toml command files for agents that use that format (gemini, qwen).
 generate_toml_commands() {
     local agent="$1"
@@ -219,8 +265,8 @@ create_package() {
             generate_commands vibe md "$ARGUMENTS" "$base_dir/.vibe/prompts" "$script"
             ;;
         kimi)
-            mkdir -p "$base_dir/.kimi/commands"
-            copy_real_md_commands "$base_dir/.kimi/commands"
+            mkdir -p "$base_dir/.kimi/skills"
+            create_kimi_skills "$base_dir/.kimi/skills"
             ;;
         generic)
             mkdir -p "$base_dir/.speckit/commands"
