@@ -1137,13 +1137,15 @@ class PresetCatalog:
         Raises:
             PresetError: If catalog cannot be fetched
         """
+        catalog_url = self.get_catalog_url()
+
         if not force_refresh and self.is_cache_valid():
             try:
-                return json.loads(self.cache_file.read_text())
-            except json.JSONDecodeError:
+                metadata = json.loads(self.cache_metadata_file.read_text())
+                if metadata.get("catalog_url") == catalog_url:
+                    return json.loads(self.cache_file.read_text())
+            except (json.JSONDecodeError, OSError):
                 pass
-
-        catalog_url = self.get_catalog_url()
 
         try:
             import urllib.request
@@ -1186,6 +1188,9 @@ class PresetCatalog:
     ) -> List[Dict[str, Any]]:
         """Search catalog for presets.
 
+        Searches across all active catalogs (merged by priority) so that
+        community and custom catalogs are included in results.
+
         Args:
             query: Search query (searches name, description, tags)
             tag: Filter by specific tag
@@ -1195,12 +1200,11 @@ class PresetCatalog:
             List of matching preset metadata
         """
         try:
-            catalog_data = self.fetch_catalog()
+            packs = self._get_merged_packs()
         except PresetError:
             return []
 
         results = []
-        packs = catalog_data.get("presets", {})
 
         for pack_id, pack_data in packs.items():
             if author and pack_data.get("author", "").lower() != author.lower():
@@ -1234,6 +1238,8 @@ class PresetCatalog:
     ) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific preset.
 
+        Searches across all active catalogs (merged by priority).
+
         Args:
             pack_id: ID of the preset
 
@@ -1241,11 +1247,10 @@ class PresetCatalog:
             Pack metadata or None if not found
         """
         try:
-            catalog_data = self.fetch_catalog()
+            packs = self._get_merged_packs()
         except PresetError:
             return None
 
-        packs = catalog_data.get("presets", {})
         if pack_id in packs:
             return {**packs[pack_id], "id": pack_id}
         return None
@@ -1369,16 +1374,18 @@ class PresetResolver:
         else:
             subdirs = [""]
 
+        # Determine file extension based on template type
+        ext = ".md"
+        if template_type == "script":
+            ext = ".sh"  # scripts use .sh; callers can also check .ps1
+
         # Priority 1: Project-local overrides
-        for subdir in subdirs:
-            if template_type == "script":
-                override = self.overrides_dir / "scripts" / f"{template_name}.sh"
-            elif subdir:
-                override = self.overrides_dir / f"{template_name}.md"
-            else:
-                override = self.overrides_dir / f"{template_name}.md"
-            if override.exists():
-                return override
+        if template_type == "script":
+            override = self.overrides_dir / "scripts" / f"{template_name}{ext}"
+        else:
+            override = self.overrides_dir / f"{template_name}{ext}"
+        if override.exists():
+            return override
 
         # Priority 2: Installed presets (sorted by priority — lower number wins)
         if self.presets_dir.exists():
@@ -1387,11 +1394,9 @@ class PresetResolver:
                 pack_dir = self.presets_dir / pack_id
                 for subdir in subdirs:
                     if subdir:
-                        candidate = (
-                            pack_dir / subdir / f"{template_name}.md"
-                        )
+                        candidate = pack_dir / subdir / f"{template_name}{ext}"
                     else:
-                        candidate = pack_dir / f"{template_name}.md"
+                        candidate = pack_dir / f"{template_name}{ext}"
                     if candidate.exists():
                         return candidate
 
@@ -1402,13 +1407,9 @@ class PresetResolver:
                     continue
                 for subdir in subdirs:
                     if subdir:
-                        candidate = (
-                            ext_dir / "templates" / f"{template_name}.md"
-                        )
+                        candidate = ext_dir / subdir / f"{template_name}{ext}"
                     else:
-                        candidate = (
-                            ext_dir / "templates" / f"{template_name}.md"
-                        )
+                        candidate = ext_dir / "templates" / f"{template_name}{ext}"
                     if candidate.exists():
                         return candidate
 
@@ -1419,6 +1420,10 @@ class PresetResolver:
                 return core
         elif template_type == "command":
             core = self.templates_dir / "commands" / f"{template_name}.md"
+            if core.exists():
+                return core
+        elif template_type == "script":
+            core = self.templates_dir / "scripts" / f"{template_name}{ext}"
             if core.exists():
                 return core
 
@@ -1438,52 +1443,34 @@ class PresetResolver:
         Returns:
             Dictionary with 'path' and 'source' keys, or None if not found
         """
-        # Priority 1: Project-local overrides
-        override = self.overrides_dir / f"{template_name}.md"
-        if override.exists():
-            return {"path": str(override), "source": "project override"}
+        # Delegate to resolve() for the actual lookup, then determine source
+        resolved = self.resolve(template_name, template_type)
+        if resolved is None:
+            return None
 
-        # Priority 2: Installed presets (sorted by priority — lower number wins)
-        if self.presets_dir.exists():
+        resolved_str = str(resolved)
+
+        # Determine source attribution
+        if str(self.overrides_dir) in resolved_str:
+            return {"path": resolved_str, "source": "project override"}
+
+        if str(self.presets_dir) in resolved_str and self.presets_dir.exists():
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
-                pack_dir = self.presets_dir / pack_id
-                # Check templates/ subdirectory first, then root
-                for subdir in ["templates", "commands", "scripts", ""]:
-                    if subdir:
-                        candidate = (
-                            pack_dir / subdir / f"{template_name}.md"
-                        )
-                    else:
-                        candidate = pack_dir / f"{template_name}.md"
-                    if candidate.exists():
-                        meta = registry.get(pack_id)
-                        version = meta.get("version", "?") if meta else "?"
-                        return {
-                            "path": str(candidate),
-                            "source": f"{pack_id} v{version}",
-                        }
-
-        # Priority 3: Extension-provided templates
-        if self.extensions_dir.exists():
-            for ext_dir in sorted(self.extensions_dir.iterdir()):
-                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
-                    continue
-                candidate = ext_dir / "templates" / f"{template_name}.md"
-                if candidate.exists():
+                if f"/{pack_id}/" in resolved_str:
+                    meta = registry.get(pack_id)
+                    version = meta.get("version", "?") if meta else "?"
                     return {
-                        "path": str(candidate),
+                        "path": resolved_str,
+                        "source": f"{pack_id} v{version}",
+                    }
+
+        if str(self.extensions_dir) in resolved_str and self.extensions_dir.exists():
+            for ext_dir in sorted(self.extensions_dir.iterdir()):
+                if ext_dir.is_dir() and f"/{ext_dir.name}/" in resolved_str:
+                    return {
+                        "path": resolved_str,
                         "source": f"extension:{ext_dir.name}",
                     }
 
-        # Priority 4: Core templates
-        core = self.templates_dir / f"{template_name}.md"
-        if core.exists():
-            return {"path": str(core), "source": "core"}
-
-        # Also check commands subdirectory for core
-        core_cmd = self.templates_dir / "commands" / f"{template_name}.md"
-        if core_cmd.exists():
-            return {"path": str(core_cmd), "source": "core"}
-
-        return None
+        return {"path": resolved_str, "source": "core"}

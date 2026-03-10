@@ -1574,6 +1574,19 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
+            # Persist the CLI options so later operations (e.g. preset add)
+            # can adapt their behaviour without re-scanning the filesystem.
+            # Must be saved BEFORE preset install so _get_skills_dir() works.
+            save_init_options(project_path, {
+                "ai": selected_ai,
+                "ai_skills": ai_skills,
+                "ai_commands_dir": ai_commands_dir,
+                "here": here,
+                "preset": preset,
+                "script": selected_script,
+                "speckit_version": get_speckit_version(),
+            })
+
             # Install preset if specified
             if preset:
                 try:
@@ -1590,22 +1603,15 @@ def init(
                         try:
                             zip_path = preset_catalog.download_pack(preset)
                             preset_manager.install_from_zip(zip_path, speckit_ver)
+                            # Clean up downloaded ZIP to avoid cache accumulation
+                            try:
+                                zip_path.unlink(missing_ok=True)
+                            except Exception:
+                                pass
                         except PresetError:
                             console.print(f"[yellow]Warning:[/yellow] Preset '{preset}' not found in catalog. Skipping.")
                 except Exception as preset_err:
                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
-
-            # Persist the CLI options so later operations (e.g. preset add)
-            # can adapt their behaviour without re-scanning the filesystem.
-            save_init_options(project_path, {
-                "ai": selected_ai,
-                "ai_skills": ai_skills,
-                "ai_commands_dir": ai_commands_dir,
-                "here": here,
-                "preset": preset,
-                "script": selected_script,
-                "speckit_version": get_speckit_version(),
-            })
 
             tracker.complete("final", "project ready")
         except Exception as e:
@@ -1957,6 +1963,14 @@ def preset_add(
             console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
 
         elif from_url:
+            # Validate URL scheme before downloading
+            from urllib.parse import urlparse as _urlparse
+            _parsed = _urlparse(from_url)
+            _is_localhost = _parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            if _parsed.scheme != "https" and not (_parsed.scheme == "http" and _is_localhost):
+                console.print(f"[red]Error:[/red] URL must use HTTPS (got {_parsed.scheme}://). HTTP is only allowed for localhost.")
+                raise typer.Exit(1)
+
             console.print(f"Installing preset from [cyan]{from_url}[/cyan]...")
             import urllib.request
             import urllib.error

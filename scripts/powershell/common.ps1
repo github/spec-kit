@@ -189,7 +189,7 @@ function Resolve-Template {
     # Priority 3: Extension-provided templates
     $extDir = Join-Path $RepoRoot '.specify/extensions'
     if (Test-Path $extDir) {
-        foreach ($ext in Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue) {
+        foreach ($ext in Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
             $candidate = Join-Path $ext.FullName "templates/$TemplateName.md"
             if (Test-Path $candidate) { return $candidate }
         }

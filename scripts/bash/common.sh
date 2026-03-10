@@ -190,9 +190,16 @@ except Exception:
                     local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
                     [ -f "$candidate" ] && echo "$candidate" && return 0
                 done <<< "$sorted_presets"
+            else
+                # python3 returned empty list — fall through to directory scan
+                for preset in "$presets_dir"/*/; do
+                    [ -d "$preset" ] || continue
+                    local candidate="$preset/templates/${template_name}.md"
+                    [ -f "$candidate" ] && echo "$candidate" && return 0
+                done
             fi
         else
-            # Fallback: alphabetical directory order
+            # Fallback: alphabetical directory order (no python3 available)
             for preset in "$presets_dir"/*/; do
                 [ -d "$preset" ] || continue
                 local candidate="$preset/templates/${template_name}.md"

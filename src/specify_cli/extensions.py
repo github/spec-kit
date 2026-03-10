@@ -522,7 +522,7 @@ class ExtensionManager:
         # Unregister commands from all AI agents
         if registered_commands:
             registrar = CommandRegistrar()
-            registrar._registrar.unregister_commands(registered_commands, self.project_root)
+            registrar.unregister_commands(registered_commands, self.project_root)
 
         if keep_config:
             # Preserve config files, only remove non-config files
@@ -713,6 +713,14 @@ class CommandRegistrar:
             manifest.commands, manifest.id, extension_dir, project_root,
             context_note=context_note
         )
+
+    def unregister_commands(
+        self,
+        registered_commands: Dict[str, List[str]],
+        project_root: Path
+    ) -> None:
+        """Remove previously registered command files from agent directories."""
+        self._registrar.unregister_commands(registered_commands, project_root)
 
     def register_commands_for_claude(
         self,
