@@ -178,7 +178,7 @@ class TestAgentConfigConsistency:
         """AGENT_CONFIG should include kimi with correct folder and commands_subdir."""
         assert "kimi" in AGENT_CONFIG
         assert AGENT_CONFIG["kimi"]["folder"] == ".kimi/"
-        assert AGENT_CONFIG["kimi"]["commands_subdir"] == "commands"
+        assert AGENT_CONFIG["kimi"]["commands_subdir"] == "skills"
         assert AGENT_CONFIG["kimi"]["requires_cli"] is True
 
     def test_kimi_in_release_agent_lists(self):
