@@ -5,11 +5,12 @@
   "extensions": {
     "selftest": {
       "name": "Spec Kit Self-Test Utility",
+      "id": "selftest",
       "version": "1.0.0",
       "description": "Verifies catalog extensions by programmatically walking through the discovery, installation, and registration lifecycle.",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
-      "download_url": "https://github.com/github/spec-kit/tree/main/extensions/selftest",
+      "download_url": "https://github.com/github/spec-kit/releases/download/selftest-v1.0.0/selftest.zip",
       "tags": [
         "testing",
         "core",
