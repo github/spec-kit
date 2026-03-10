@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from collections import OrderedDict
 
-from ..logging import get_logger
+from .logging import get_logger
 
 
 class HeadersFirstReader:
@@ -306,6 +306,24 @@ class HeadersFirstReader:
 
         return filenames.get(file_type, f"{file_type}.md")
 
+
+
+    def read_all_headers(self, project_id: str, limit: int = 5) -> Dict[str, List[str]]:
+        """Read headers from all memory files.
+
+        Args:
+            project_id: Project identifier
+            limit: Max headers per file
+
+        Returns:
+            Dict mapping file types to header lists
+        """
+        headers = {}
+        for file_type in ['lessons', 'patterns', 'architecture', 'projects-log']:
+            result = self.read_headers(project_id, [file_type], limit)
+            if result and file_type in result:
+                headers[file_type] = [h.get('title', '') for h in result.get(file_type, [])]
+        return headers
 
 class ContextOptimizer:
     """Optimizes context usage using headers-first reading."""
