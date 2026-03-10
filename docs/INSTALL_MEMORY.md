@@ -322,6 +322,87 @@ agent-memory-mcp --help
 **After installation**: Re-check and validate.
 
 **If user chooses skip**: Continue without agent-memory-mcp (Ollama-only mode).
+## STEP 7.6: Setup SkillsMP Search (Optional)
+
+**Condition**: Ask user if they want SkillsMP skill search
+
+**Actions**:
+1. Ask if user wants SkillsMP integration
+2. If yes, request API key
+3. Store API key securely
+4. Verify API access
+
+**Ask user**:
+
+```
+SkillsMP provides access to 425K+ agent skills and MCP servers.
+This helps find existing solutions before creating new agents.
+
+Options:
+1. Enable SkillsMP search (requires API key)
+2. Skip (use GitHub fallback only)
+3. Decide later
+
+Choose:
+```
+
+**If user chooses Enable**:
+
+**Request API key**:
+
+```
+SkillsMP API Key Required
+
+To get your API key:
+1. Visit: https://skillsmp.com/docs/api
+2. Sign up / Login
+3. Navigate to API Keys section
+4. Generate new API key
+
+Enter your SkillsMP API key (or press Enter to skip):
+```
+
+**Store and validate API key**:
+```bash
+# Store and validate API key
+python -c "
+import sys
+sys.path.insert(0, 'src')
+
+from specify_cli.memory.skillsmp.api_key_storage import APIKeyStorage
+from specify_cli.memory.skillsmp.integration import SkillsMPIntegration
+
+print('Enter SkillsMP API key (or press Enter to skip):')
+api_key = input().strip()
+
+if api_key and len(api_key) > 10:
+    storage = APIKeyStorage()
+    if storage.store_api_key(api_key):
+        print('[OK] API key stored securely')
+
+        # Validate
+        integration = SkillsMPIntegration(api_key=api_key)
+        results = integration.search_skills('agent', limit=1)
+
+        if results:
+            print('[OK] SkillsMP API working')
+        else:
+            print('[WARNING] API key stored but search failed (may be rate limited)')
+    else:
+        print('[ERROR] Failed to store API key')
+        sys.exit(1)
+else:
+    print('[SKIP] No API key provided - SkillsMP disabled')
+"
+```
+
+**If user chooses Skip**:
+- Continue without SkillsMP API
+- GitHub fallback will be used for skill search
+- Note: Limited search capabilities without API
+
+---
+
 
 ---
 
