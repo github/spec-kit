@@ -1195,7 +1195,12 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             # SKILL_DESCRIPTIONS lookups work.
             if command_name.startswith("speckit."):
                 command_name = command_name[len("speckit."):]
-            skill_name = f"speckit-{command_name}"
+            # Kimi CLI discovers skills by directory name and invokes them as
+            # /skill:<name> — use dot separator to match packaging convention.
+            if selected_ai == "kimi":
+                skill_name = f"speckit.{command_name}"
+            else:
+                skill_name = f"speckit-{command_name}"
 
             # Create skill directory (additive — never removes existing content)
             skill_dir = skills_dir / skill_name

@@ -181,6 +181,15 @@ class TestAgentConfigConsistency:
         assert AGENT_CONFIG["kimi"]["commands_subdir"] == "skills"
         assert AGENT_CONFIG["kimi"]["requires_cli"] is True
 
+    def test_kimi_in_extension_registrar(self):
+        """Extension command registrar should include kimi using .kimi/skills and SKILL.md."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "kimi" in cfg
+        kimi_cfg = cfg["kimi"]
+        assert kimi_cfg["dir"] == ".kimi/skills"
+        assert kimi_cfg["extension"] == "/SKILL.md"
+
     def test_kimi_in_release_agent_lists(self):
         """Bash and PowerShell release scripts should include kimi in agent lists."""
         sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
