@@ -14,6 +14,10 @@ dependencies = [
     "pyyaml>=6.0",
     "packaging>=23.0",
     "pathspec>=0.12.0",
+    # Memory system dependencies
+    "watchdog>=4.0",
+    "python-frontmatter>=4.0",
+    "requests>=2.31",
 ]
 
 [project.scripts]

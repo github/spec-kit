@@ -1,0 +1,20 @@
+{
+  "project_id": "{{project_id|example: my-project}}",
+  "project_name": "{{project_name|example: My Project}}",
+  "memory_enabled": {{memory_enabled|true}},
+  "created_at": "{{created_at|now}}",
+  "memory_config": {
+    "auto_save": true,
+    "vector_memory": false,
+    "skillsmp_search": true,
+    "context_optimization": true
+  },
+  "paths": {
+    "memory": ".claude/memory/",
+    "lessons": "lessons.md",
+    "patterns": "patterns.md",
+    "architecture": "architecture.md",
+    "projects_log": "projects-log.md",
+    "handoff": "handoff.md"
+  }
+}
