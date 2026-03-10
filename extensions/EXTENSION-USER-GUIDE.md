@@ -432,6 +432,27 @@ Spec Kit uses a **catalog stack** — an ordered list of catalogs searched simul
 specify extension catalog list
 ```
 
+### Managing Catalogs via CLI
+
+You can view the main catalog management commands using `--help`:
+
+```bash
+specify extension catalog --help
+
+ Usage: specify extension catalog [OPTIONS] COMMAND [ARGS]...                       
+                                                                                    
+ Manage extension catalogs                                                          
+                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                      │
+╰──────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────╮
+│ list     List all active extension catalogs.                                     │
+│ add      Add a catalog to .specify/extension-catalogs.yml.                       │
+│ remove   Remove a catalog from .specify/extension-catalogs.yml.                  │
+╰──────────────────────────────────────────────────────────────────────────────────╯
+```
+
 ### Adding a Catalog (Project-scoped)
 
 ```bash
