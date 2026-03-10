@@ -2,25 +2,5 @@
   "schema_version": "1.0",
   "updated_at": "2026-03-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
-  "presets": {
-    "self-test": {
-      "name": "Self-Test Preset",
-      "description": "A preset that overrides all core templates for testing purposes. Install with --dev from the repo.",
-      "author": "github",
-      "version": "1.0.0",
-      "repository": "https://github.com/github/spec-kit",
-      "license": "MIT",
-      "note": "This preset is bundled with the repo and intended for local testing only. Install via: specify preset add --dev presets/self-test",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "templates": 6,
-        "commands": 1
-      },
-      "tags": ["testing", "self-test"],
-      "created_at": "2026-03-10T00:00:00Z",
-      "updated_at": "2026-03-10T00:00:00Z"
-    }
-  }
+  "presets": {}
 }

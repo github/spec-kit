@@ -1407,14 +1407,11 @@ class TestSelfTestPreset:
             assert result is not None
             assert result["source"] == "core"
 
-    def test_self_test_in_catalog(self):
-        """Verify the self-test preset is listed in the catalog."""
+    def test_self_test_not_in_catalog(self):
+        """Verify the self-test preset is NOT in the catalog (it's local-only)."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
         catalog_data = json.loads(catalog_path.read_text())
-        assert "self-test" in catalog_data["presets"]
-        entry = catalog_data["presets"]["self-test"]
-        assert entry["name"] == "Self-Test Preset"
-        assert "created_at" in entry
+        assert "self-test" not in catalog_data["presets"]
 
     def test_self_test_has_command(self):
         """Verify the self-test preset includes a command override."""
