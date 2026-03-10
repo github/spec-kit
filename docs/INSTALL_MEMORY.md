@@ -267,6 +267,64 @@ ollama pull mxbai-embed-large
 
 **If user chooses skip**: Set vector_memory=false in config, continue.
 
+
+## STEP 7.5: Setup agent-memory-mcp (Optional)
+
+**Condition**: Only if user chose to enable advanced vector memory
+
+**Actions**:
+1. Check if agent-memory-mcp is installed
+2. Offer installation instructions if missing
+3. Verify CLI commands work
+
+**Execute**:
+```bash
+# Check agent-memory-mcp
+agent-memory-mcp --help 2>/dev/null || echo "agent-memory-mcp not found"
+```
+
+**If agent-memory-mcp not installed**:
+
+**Ask user**:
+
+```
+agent-memory-mcp provides advanced vector memory with built-in
+fallback to Jina AI/OpenAI embeddings. It's optional but recommended.
+
+Options:
+1. Install agent-memory-mcp now (I'll provide instructions)
+2. Skip (use Ollama embeddings only)
+3. Install later
+
+Choose:
+```
+
+**If user chooses install**:
+
+**Instructions**:
+```bash
+# Download from GitHub releases
+# https://github.com/ipiton/agent-memory-mcp/releases
+
+# Windows (PowerShell):
+# 1. Download agent-memory-mcp-windows-amd64.exe
+# 2. Rename to agent-memory-mcp.exe
+# 3. Add to PATH or place in: C:\Users\<user>\.local\bin
+
+# Linux/macOS:
+curl -L https://github.com/ipiton/agent-memory-mcp/releases/latest/download/agent-memory-mcp-$(uname -s)-amd64 -o ~/.local/bin/agent-memory-mcp
+chmod +x ~/.local/bin/agent-memory-mcp
+
+# Verify
+agent-memory-mcp --help
+```
+
+**After installation**: Re-check and validate.
+
+**If user chooses skip**: Continue without agent-memory-mcp (Ollama-only mode).
+
+---
+
 ---
 
 ## STEP 8: Setup Configuration Files
@@ -289,7 +347,19 @@ cat > ~/.claude/spec-kit/config/degradation.json << 'EOF'
   },
   "agent_memory_mcp": {
     "required": false,
-    "fallback": "grep_search",
+    "fallback": "ollama_only",
+    "warning_once": true,
+    "warning_message": "agent-memory-mcp unavailable. Using Ollama embeddings only."
+  },
+  "vector_memory": {
+    "required": false,
+    "fallback": "file_based",
+    "warning_once": true,
+    "warning_message": "Vector memory unavailable. Using file-based search only."
+  },
+  "skillsmp": {
+    "required": false,
+    "fallback": "skip",
     "warning_once": true
   }
 }
@@ -388,19 +458,27 @@ echo "[OK] Version: $VERSION"
 ## STEP 11: Test Basic Functionality
 
 **Actions**:
-1. Test importing memory modules
+1. Test importing memory modules (including vector memory)
 2. Test project detection
 3. Test writing to memory
+4. Test vector memory components (if enabled)
 
 **Execute**:
 ```bash
-# Test imports
+# Test core imports
 python -c "
 from specify_cli.memory.config import MemoryConfigManager
 from specify_cli.memory.file_manager import FileMemoryManager
 from specify_cli.memory.project_detector import ProjectDetector
-print('[OK] All modules imported successfully')
+print('[OK] Core modules imported successfully')
 "
+
+# Test vector memory imports (optional, may fail if dependencies missing)
+python -c "
+from specify_cli.memory.vector import OllamaClient, AgentMemoryClient
+from specify_cli.memory.vector import FourLevelMemory, VectorSearchAPI
+print('[OK] Vector memory modules imported')
+" 2>/dev/null || echo "[NOTE] Vector memory modules require optional dependencies"
 
 # Test project detection
 python -c "
@@ -420,7 +498,9 @@ print('[OK] Memory write successful')
 ```
 
 **Validation**:
-- All tests pass?
+- Core imports pass?
+- Project detection works?
+- Memory write works?
 
 **If any fail**: Show error and suggest solution.
 

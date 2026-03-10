@@ -23,9 +23,15 @@ class DegradationConfig:
         },
         "agent_memory_mcp": {
             "required": False,
-            "fallback": "grep_search",
+            "fallback": "ollama_only",
             "warning_once": True,
-            "warning_message": "agent-memory-mcp unavailable. Using grep search fallback."
+            "warning_message": "agent-memory-mcp unavailable. Using Ollama embeddings only."
+        },
+        "vector_memory": {
+            "required": False,
+            "fallback": "file_based",
+            "warning_once": True,
+            "warning_message": "Vector memory unavailable. Using file-based search only."
         },
         "skillsmp": {
             "required": False,
