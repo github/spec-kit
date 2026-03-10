@@ -34,16 +34,16 @@ Then, simulate adding the extension by installing it from its catalog download U
 Obtain the extension's `download_url` from the catalog metadata (for example, via a catalog info command or UI), then run:
 
 ```bash
-specify extension add --from "<download_url>"
+specify extension add "$ARGUMENTS" --from "<download_url>"
 ```
 
 ### Step 3: Registration Verification
 
 Once the `add` command completes, verify the installation by checking the project configuration.
-Use terminal tools (like `cat`) to verify that the following file contains an enabled record for `$ARGUMENTS`.
+Use terminal tools (like `cat`) to verify that the following file contains a record for `$ARGUMENTS`.
 
 ```bash
-cat .specify/extensions.yml
+cat .specify/extensions/.registry/$ARGUMENTS.json
 ```
 
 ### Step 4: Verification Report
@@ -63,7 +63,7 @@ test_selftest_installation.py::test_extension_add [PASS/FAIL]
   Details: [Provide execution result of specify extension add]
 
 test_selftest_registration.py::test_config_verification [PASS/FAIL]
-  Details: [Provide execution result of reading .specify/extensions.yml]
+  Details: [Provide execution result of registry record verification]
 
 ============================== [X] passed in ... ==============================
 ```

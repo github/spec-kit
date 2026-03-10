@@ -9,6 +9,7 @@
       "description": "Verifies catalog extensions by programmatically walking through the discovery, installation, and registration lifecycle.",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
+      "download_url": "https://github.com/github/spec-kit/tree/main/extensions/selftest",
       "tags": [
         "testing",
         "core",
