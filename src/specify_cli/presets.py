@@ -565,9 +565,8 @@ class PresetManager:
 
         from . import SKILL_DESCRIPTIONS
 
-        # Locate core command templates
-        script_dir = Path(__file__).parent.parent.parent  # up from src/specify_cli/
-        core_templates_dir = script_dir / "templates" / "commands"
+        # Locate core command templates from the project's installed templates
+        core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
 
         for skill_name in skill_names:
             # Derive command name from skill name (speckit-specify -> specify)
@@ -1458,20 +1457,29 @@ class PresetResolver:
         if str(self.presets_dir) in resolved_str and self.presets_dir.exists():
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
-                if f"/{pack_id}/" in resolved_str:
+                pack_dir = self.presets_dir / pack_id
+                try:
+                    resolved.relative_to(pack_dir)
                     meta = registry.get(pack_id)
                     version = meta.get("version", "?") if meta else "?"
                     return {
                         "path": resolved_str,
                         "source": f"{pack_id} v{version}",
                     }
+                except ValueError:
+                    continue
 
-        if str(self.extensions_dir) in resolved_str and self.extensions_dir.exists():
+        if self.extensions_dir.exists():
             for ext_dir in sorted(self.extensions_dir.iterdir()):
-                if ext_dir.is_dir() and f"/{ext_dir.name}/" in resolved_str:
+                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+                    continue
+                try:
+                    resolved.relative_to(ext_dir)
                     return {
                         "path": resolved_str,
                         "source": f"extension:{ext_dir.name}",
                     }
+                except ValueError:
+                    continue
 
         return {"path": resolved_str, "source": "core"}

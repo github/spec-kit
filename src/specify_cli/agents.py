@@ -301,7 +301,7 @@ class CommandRegistrar:
             if not source_file.exists():
                 continue
 
-            content = source_file.read_text()
+            content = source_file.read_text(encoding="utf-8")
             frontmatter, body = self.parse_frontmatter(content)
 
             frontmatter = self._adjust_script_paths(frontmatter)
@@ -318,7 +318,7 @@ class CommandRegistrar:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
             dest_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
-            dest_file.write_text(output)
+            dest_file.write_text(output, encoding="utf-8")
 
             if agent_name == "copilot":
                 self.write_copilot_prompt(project_root, cmd_name)
@@ -327,7 +327,7 @@ class CommandRegistrar:
 
             for alias in cmd_info.get("aliases", []):
                 alias_file = commands_dir / f"{alias}{agent_config['extension']}"
-                alias_file.write_text(output)
+                alias_file.write_text(output, encoding="utf-8")
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
                 registered.append(alias)
@@ -345,7 +345,7 @@ class CommandRegistrar:
         prompts_dir = project_root / ".github" / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
-        prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n")
+        prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
 
     def register_commands_for_all_agents(
         self,

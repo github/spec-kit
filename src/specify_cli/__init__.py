@@ -1600,17 +1600,21 @@ def init(
                         preset_manager.install_from_directory(local_path, speckit_ver)
                     else:
                         preset_catalog = PresetCatalog(project_path)
-                        try:
-                            zip_path = preset_catalog.download_pack(preset)
-                            preset_manager.install_from_zip(zip_path, speckit_ver)
-                            # Clean up downloaded ZIP to avoid cache accumulation
-                            try:
-                                zip_path.unlink(missing_ok=True)
-                            except OSError:
-                                # Best-effort cleanup; failure to delete is non-fatal
-                                pass
-                        except PresetError:
+                        pack_info = preset_catalog.get_pack_info(preset)
+                        if not pack_info:
                             console.print(f"[yellow]Warning:[/yellow] Preset '{preset}' not found in catalog. Skipping.")
+                        else:
+                            try:
+                                zip_path = preset_catalog.download_pack(preset)
+                                preset_manager.install_from_zip(zip_path, speckit_ver)
+                                # Clean up downloaded ZIP to avoid cache accumulation
+                                try:
+                                    zip_path.unlink(missing_ok=True)
+                                except OSError:
+                                    # Best-effort cleanup; failure to delete is non-fatal
+                                    pass
+                            except PresetError as preset_err:
+                                console.print(f"[yellow]Warning:[/yellow] Failed to install preset '{preset}': {preset_err}")
                 except Exception as preset_err:
                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
 

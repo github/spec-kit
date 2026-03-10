@@ -499,15 +499,15 @@ class TestPresetManager:
         manager = PresetManager(project_dir)
         assert manager.get_pack("nonexistent") is None
 
-    def test_check_compatibility_valid(self, pack_dir):
+    def test_check_compatibility_valid(self, pack_dir, temp_dir):
         """Test compatibility check with valid version."""
-        manager = PresetManager(Path(tempfile.mkdtemp()))
+        manager = PresetManager(temp_dir)
         manifest = PresetManifest(pack_dir / "preset.yml")
         assert manager.check_compatibility(manifest, "0.1.5") is True
 
-    def test_check_compatibility_invalid(self, pack_dir):
+    def test_check_compatibility_invalid(self, pack_dir, temp_dir):
         """Test compatibility check with invalid specifier."""
-        manager = PresetManager(Path(tempfile.mkdtemp()))
+        manager = PresetManager(temp_dir)
         manifest = PresetManifest(pack_dir / "preset.yml")
         manifest.data["requires"]["speckit_version"] = "not-a-specifier"
         with pytest.raises(PresetCompatibilityError, match="Invalid version specifier"):
@@ -1677,6 +1677,11 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify")
 
         (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        # Set up core command template in the project so restoration works
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text("---\ndescription: Core specify command\n---\n\nCore specify body\n")
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"

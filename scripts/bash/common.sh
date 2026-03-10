@@ -213,6 +213,8 @@ except Exception:
     if [ -d "$ext_dir" ]; then
         for ext in "$ext_dir"/*/; do
             [ -d "$ext" ] || continue
+            # Skip hidden directories (e.g. .backup, .cache)
+            case "$(basename "$ext")" in .*) continue;; esac
             local candidate="$ext/templates/${template_name}.md"
             [ -f "$candidate" ] && echo "$candidate" && return 0
         done

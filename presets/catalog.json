@@ -5,11 +5,12 @@
   "presets": {
     "self-test": {
       "name": "Self-Test Preset",
-      "description": "A preset that overrides all core templates for testing purposes",
+      "description": "A preset that overrides all core templates for testing purposes. Install with --dev from the repo.",
       "author": "github",
       "version": "1.0.0",
       "repository": "https://github.com/github/spec-kit",
       "license": "MIT",
+      "note": "This preset is bundled with the repo and intended for local testing only. Install via: specify preset add --dev presets/self-test",
       "requires": {
         "speckit_version": ">=0.1.0"
       },
