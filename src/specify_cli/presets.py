@@ -35,7 +35,7 @@ class PresetCatalogEntry:
 
 
 class PresetError(Exception):
-    """Base exception for template-related errors."""
+    """Base exception for preset-related errors."""
     pass
 
 
