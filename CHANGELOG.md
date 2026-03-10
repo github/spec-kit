@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preset catalog files (`presets/catalog.json`, `presets/catalog.community.json`)
 - Preset scaffold directory (`presets/scaffold/`)
 - Scripts updated to use template resolution instead of hardcoded paths
+- feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
 ## [0.2.0] - 2026-03-09
 
@@ -60,7 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
 - fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
 - fix: Split release process to sync pyproject.toml version with git tags (#1732)
-
 
 ## [0.1.14] - 2026-03-09
 

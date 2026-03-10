@@ -407,6 +407,11 @@ class TestCommandRegistrar:
         assert CommandRegistrar.AGENT_CONFIGS["kiro-cli"]["dir"] == ".kiro/prompts"
         assert "q" not in CommandRegistrar.AGENT_CONFIGS
 
+    def test_codex_agent_config_present(self):
+        """Codex should be mapped to .codex/prompts."""
+        assert "codex" in CommandRegistrar.AGENT_CONFIGS
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".codex/prompts"
+
     def test_parse_frontmatter_valid(self):
         """Test parsing valid YAML frontmatter."""
         content = """---
@@ -1598,3 +1603,343 @@ class TestCatalogStack:
         assert len(results) == 1
         assert results[0]["_catalog_name"] == "org"
         assert results[0]["_install_allowed"] is True
+
+
+class TestExtensionIgnore:
+    """Test .extensionignore support during extension installation."""
+
+    def _make_extension(self, temp_dir, valid_manifest_data, extra_files=None, ignore_content=None):
+        """Helper to create an extension directory with optional extra files and .extensionignore."""
+        import yaml
+
+        ext_dir = temp_dir / "ignored-ext"
+        ext_dir.mkdir()
+
+        # Write manifest
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        # Create commands directory with a command file
+        commands_dir = ext_dir / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "hello.md").write_text(
+            "---\ndescription: \"Test hello command\"\n---\n\n# Hello\n\n$ARGUMENTS\n"
+        )
+
+        # Create any extra files/dirs
+        if extra_files:
+            for rel_path, content in extra_files.items():
+                p = ext_dir / rel_path
+                p.parent.mkdir(parents=True, exist_ok=True)
+                if content is None:
+                    # Create directory
+                    p.mkdir(parents=True, exist_ok=True)
+                else:
+                    p.write_text(content)
+
+        # Write .extensionignore
+        if ignore_content is not None:
+            (ext_dir / ".extensionignore").write_text(ignore_content)
+
+        return ext_dir
+
+    def test_no_extensionignore(self, temp_dir, valid_manifest_data):
+        """Without .extensionignore, all files are copied."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={"README.md": "# Hello", "tests/test_foo.py": "pass"},
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert (dest / "README.md").exists()
+        assert (dest / "tests" / "test_foo.py").exists()
+
+    def test_extensionignore_excludes_files(self, temp_dir, valid_manifest_data):
+        """Files matching .extensionignore patterns are excluded."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "README.md": "# Hello",
+                "tests/test_foo.py": "pass",
+                "tests/test_bar.py": "pass",
+                ".github/workflows/ci.yml": "on: push",
+            },
+            ignore_content="tests/\n.github/\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # Included
+        assert (dest / "README.md").exists()
+        assert (dest / "extension.yml").exists()
+        assert (dest / "commands" / "hello.md").exists()
+        # Excluded
+        assert not (dest / "tests").exists()
+        assert not (dest / ".github").exists()
+
+    def test_extensionignore_glob_patterns(self, temp_dir, valid_manifest_data):
+        """Glob patterns like *.pyc are respected."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "README.md": "# Hello",
+                "helpers.pyc": b"\x00".decode("latin-1"),
+                "commands/cache.pyc": b"\x00".decode("latin-1"),
+            },
+            ignore_content="*.pyc\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert (dest / "README.md").exists()
+        assert not (dest / "helpers.pyc").exists()
+        assert not (dest / "commands" / "cache.pyc").exists()
+
+    def test_extensionignore_comments_and_blanks(self, temp_dir, valid_manifest_data):
+        """Comments and blank lines in .extensionignore are ignored."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={"README.md": "# Hello", "notes.txt": "some notes"},
+            ignore_content="# This is a comment\n\nnotes.txt\n\n# Another comment\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert (dest / "README.md").exists()
+        assert not (dest / "notes.txt").exists()
+
+    def test_extensionignore_itself_excluded(self, temp_dir, valid_manifest_data):
+        """.extensionignore is never copied to the destination."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            ignore_content="# nothing special here\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert (dest / "extension.yml").exists()
+        assert not (dest / ".extensionignore").exists()
+
+    def test_extensionignore_relative_path_match(self, temp_dir, valid_manifest_data):
+        """Patterns matching relative paths work correctly."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "docs/guide.md": "# Guide",
+                "docs/internal/draft.md": "draft",
+                "README.md": "# Hello",
+            },
+            ignore_content="docs/internal/draft.md\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert (dest / "docs" / "guide.md").exists()
+        assert not (dest / "docs" / "internal" / "draft.md").exists()
+
+    def test_extensionignore_dotdot_pattern_is_noop(self, temp_dir, valid_manifest_data):
+        """Patterns with '..' should not escape the extension root."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={"README.md": "# Hello"},
+            ignore_content="../sibling/\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # Everything should still be copied — the '..' pattern matches nothing inside
+        assert (dest / "README.md").exists()
+        assert (dest / "extension.yml").exists()
+        assert (dest / "commands" / "hello.md").exists()
+
+    def test_extensionignore_absolute_path_pattern_is_noop(self, temp_dir, valid_manifest_data):
+        """Absolute path patterns should not match anything."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={"README.md": "# Hello", "passwd": "sensitive"},
+            ignore_content="/etc/passwd\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # Nothing matches — /etc/passwd is anchored to root and there's no 'etc' dir
+        assert (dest / "README.md").exists()
+        assert (dest / "passwd").exists()
+
+    def test_extensionignore_empty_file(self, temp_dir, valid_manifest_data):
+        """An empty .extensionignore should exclude only itself."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={"README.md": "# Hello", "notes.txt": "notes"},
+            ignore_content="",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert (dest / "README.md").exists()
+        assert (dest / "notes.txt").exists()
+        assert (dest / "extension.yml").exists()
+        # .extensionignore itself is still excluded
+        assert not (dest / ".extensionignore").exists()
+
+    def test_extensionignore_windows_backslash_patterns(self, temp_dir, valid_manifest_data):
+        """Backslash patterns (Windows-style) are normalised to forward slashes."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "docs/internal/draft.md": "draft",
+                "docs/guide.md": "# Guide",
+            },
+            ignore_content="docs\\internal\\draft.md\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert (dest / "docs" / "guide.md").exists()
+        assert not (dest / "docs" / "internal" / "draft.md").exists()
+
+    def test_extensionignore_star_does_not_cross_directories(self, temp_dir, valid_manifest_data):
+        """'*' should NOT match across directory boundaries (gitignore semantics)."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "docs/api.draft.md": "draft",
+                "docs/sub/api.draft.md": "nested draft",
+            },
+            ignore_content="docs/*.draft.md\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # docs/*.draft.md should only match directly inside docs/, NOT subdirs
+        assert not (dest / "docs" / "api.draft.md").exists()
+        assert (dest / "docs" / "sub" / "api.draft.md").exists()
+
+    def test_extensionignore_doublestar_crosses_directories(self, temp_dir, valid_manifest_data):
+        """'**' should match across directory boundaries."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "docs/api.draft.md": "draft",
+                "docs/sub/api.draft.md": "nested draft",
+                "docs/guide.md": "guide",
+            },
+            ignore_content="docs/**/*.draft.md\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        assert not (dest / "docs" / "api.draft.md").exists()
+        assert not (dest / "docs" / "sub" / "api.draft.md").exists()
+        assert (dest / "docs" / "guide.md").exists()
+
+    def test_extensionignore_negation_pattern(self, temp_dir, valid_manifest_data):
+        """'!' negation re-includes a previously excluded file."""
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "docs/guide.md": "# Guide",
+                "docs/internal.md": "internal",
+                "docs/api.md": "api",
+            },
+            ignore_content="docs/*.md\n!docs/api.md\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # docs/*.md excludes all .md in docs, but !docs/api.md re-includes it
+        assert not (dest / "docs" / "guide.md").exists()
+        assert not (dest / "docs" / "internal.md").exists()
+        assert (dest / "docs" / "api.md").exists()

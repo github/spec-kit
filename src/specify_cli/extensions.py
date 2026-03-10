@@ -14,9 +14,11 @@ import zipfile
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Callable, Set
 from datetime import datetime, timezone
 import re
+
+import pathspec
 
 import yaml
 from packaging import version as pkg_version
@@ -280,6 +282,70 @@ class ExtensionManager:
         self.extensions_dir = project_root / ".specify" / "extensions"
         self.registry = ExtensionRegistry(self.extensions_dir)
 
+    @staticmethod
+    def _load_extensionignore(source_dir: Path) -> Optional[Callable[[str, List[str]], Set[str]]]:
+        """Load .extensionignore and return an ignore function for shutil.copytree.
+
+        The .extensionignore file uses .gitignore-compatible patterns (one per line).
+        Lines starting with '#' are comments. Blank lines are ignored.
+        The .extensionignore file itself is always excluded.
+
+        Pattern semantics mirror .gitignore:
+        - '*' matches anything except '/'
+        - '**' matches zero or more directories
+        - '?' matches any single character except '/'
+        - Trailing '/' restricts a pattern to directories only
+        - Patterns with '/' (other than trailing) are anchored to the root
+        - '!' negates a previously excluded pattern
+
+        Args:
+            source_dir: Path to the extension source directory
+
+        Returns:
+            An ignore function compatible with shutil.copytree, or None
+            if no .extensionignore file exists.
+        """
+        ignore_file = source_dir / ".extensionignore"
+        if not ignore_file.exists():
+            return None
+
+        lines: List[str] = ignore_file.read_text().splitlines()
+
+        # Normalise backslashes in patterns so Windows-authored files work
+        normalised: List[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                normalised.append(stripped.replace("\\", "/"))
+            else:
+                # Preserve blanks/comments so pathspec line numbers stay stable
+                normalised.append(line)
+
+        # Always ignore the .extensionignore file itself
+        normalised.append(".extensionignore")
+
+        spec = pathspec.GitIgnoreSpec.from_lines(normalised)
+
+        def _ignore(directory: str, entries: List[str]) -> Set[str]:
+            ignored: Set[str] = set()
+            rel_dir = Path(directory).relative_to(source_dir)
+            for entry in entries:
+                rel_path = str(rel_dir / entry) if str(rel_dir) != "." else entry
+                # Normalise to forward slashes for consistent matching
+                rel_path_fwd = rel_path.replace("\\", "/")
+
+                entry_full = Path(directory) / entry
+                if entry_full.is_dir():
+                    # Append '/' so directory-only patterns (e.g. tests/) match
+                    if spec.match_file(rel_path_fwd + "/"):
+                        ignored.add(entry)
+                else:
+                    if spec.match_file(rel_path_fwd):
+                        ignored.add(entry)
+            return ignored
+
+        return _ignore
+
     def check_compatibility(
         self,
         manifest: ExtensionManifest,
@@ -353,7 +419,8 @@ class ExtensionManager:
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
-        shutil.copytree(source_dir, dest_dir)
+        ignore_fn = self._load_extensionignore(source_dir)
+        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
         # Register commands with AI agents
         registered_commands = {}

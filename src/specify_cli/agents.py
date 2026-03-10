@@ -58,6 +58,12 @@ class CommandRegistrar:
             "args": "$ARGUMENTS",
             "extension": ".md"
         },
+        "codex": {
+            "dir": ".codex/prompts",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
+        },
         "windsurf": {
             "dir": ".windsurf/workflows",
             "format": "markdown",

@@ -28,6 +28,13 @@ class TestAgentConfigConsistency:
         assert cfg["kiro-cli"]["dir"] == ".kiro/prompts"
         assert "q" not in cfg
 
+    def test_extension_registrar_includes_codex(self):
+        """Extension command registrar should include codex targeting .codex/prompts."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "codex" in cfg
+        assert cfg["codex"]["dir"] == ".codex/prompts"
+
     def test_release_agent_lists_include_kiro_cli_and_exclude_q(self):
         """Bash and PowerShell release scripts should agree on agent key set for Kiro."""
         sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
