@@ -11,7 +11,7 @@ from typing import Optional, Callable, Any
 from datetime import datetime
 from collections import deque
 
-from ..logging import get_logger
+from .logging import get_logger
 from .file_manager import FileMemoryManager
 from .classifier import AIImportanceClassifier
 

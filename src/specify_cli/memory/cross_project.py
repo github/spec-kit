@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from difflib import SequenceMatcher
 
-from ..logging import get_logger
+from .logging import get_logger
 from .project_detector import ProjectDetector
 from .file_manager import FileMemoryManager
 from .classifier import AIImportanceClassifier

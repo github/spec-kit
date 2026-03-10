@@ -1,0 +1,9 @@
+{
+  "project_id": "F--IdeaProjects-spec-kit",
+  "project_name": "SpecKit - Specification Development Kit",
+  "memory_enabled": true,
+  "created_at": "2025-03-11",
+  "memory_type": "hierarchical",
+  "vector_search": true,
+  "embedding_model": "mxbai-embed-large"
+}

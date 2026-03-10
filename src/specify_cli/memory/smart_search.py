@@ -8,7 +8,7 @@ import re
 from typing import Dict, List, Any, Optional
 from enum import Enum
 
-from ..logging import get_logger
+from .logging import get_logger
 from .project_detector import ProjectDetector
 from .file_manager import FileMemoryManager
 from .cross_project import CrossProjectLearning

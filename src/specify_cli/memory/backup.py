@@ -12,7 +12,7 @@ from typing import Optional, List
 from datetime import datetime
 from collections import OrderedDict
 
-from ..logging import get_logger
+from .logging import get_logger
 
 
 class MemoryBackup:
