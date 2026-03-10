@@ -439,10 +439,9 @@ You can view the main catalog management commands using `--help`:
 ```text
 specify extension catalog --help
 
- Usage: specify extension catalog [OPTIONS] COMMAND [ARGS]...                       
-                                                                                    
- Manage extension catalogs                                                          
-                                                                                    
+ Usage: specify extension catalog [OPTIONS] COMMAND [ARGS]...
+
+ Manage extension catalogs
 ╭─ Options ────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────╯
