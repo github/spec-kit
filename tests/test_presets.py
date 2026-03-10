@@ -774,8 +774,8 @@ class TestPresetCatalog:
     def test_default_catalog_url(self, project_dir):
         """Test default catalog URL."""
         catalog = PresetCatalog(project_dir)
-        assert "githubusercontent.com" in catalog.DEFAULT_CATALOG_URL
-        assert "presets/catalog.json" in catalog.DEFAULT_CATALOG_URL
+        assert catalog.DEFAULT_CATALOG_URL.startswith("https://")
+        assert catalog.DEFAULT_CATALOG_URL.endswith("/presets/catalog.json")
 
     def test_community_catalog_url(self, project_dir):
         """Test community catalog URL."""

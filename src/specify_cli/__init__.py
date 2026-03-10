@@ -2137,7 +2137,7 @@ def preset_info(
         license_val = local_pack.data.get("preset", {}).get("license")
         if license_val:
             console.print(f"  License:     {license_val}")
-        console.print(f"\n  [green]Status: installed[/green]")
+        console.print("\n  [green]Status: installed[/green]")
         console.print()
         return
 
@@ -2164,7 +2164,7 @@ def preset_info(
         console.print(f"  Repository:  {pack_info['repository']}")
     if pack_info.get("license"):
         console.print(f"  License:     {pack_info['license']}")
-    console.print(f"\n  [yellow]Status: not installed[/yellow]")
+    console.print("\n  [yellow]Status: not installed[/yellow]")
     console.print(f"  Install with: [cyan]specify preset add {pack_id}[/cyan]")
     console.print()
 
