@@ -83,16 +83,16 @@
 
 ## Phase 4: US1/US6 - Global Installation
 
-- [ ] T027 [P] [US1] Global installation script
-- [ ] T028 [P] [US1] Config backup+merge
-- [ ] T029 [P] [US6] Ollama detection
-- [ ] T030 [P] [US6] AI-executable INSTALL.md
-- [ ] T031 [P] [US1] README with key differences
-- [ ] T032 [US1] Update mechanism
-- [ ] T033 [P] [US6] Verification script
-- [ ] T034 [P] [US1] Migration tool
-- [ ] T035 [US6] Graceful degradation config
-- [ ] T036 [P] [US1] Cross-platform symlink
+- [X] T027 [P] [US1] Global installation script -> Artifacts: [scripts/memory/install_all.py](F:/IdeaProjects/spec-kit/scripts/memory/install_all.py), [install.bat](F:/IdeaProjects/spec-kit/scripts/memory/install.bat), [install.sh](F:/IdeaProjects/spec-kit/scripts/memory/install.sh)
+- [X] T028 [P] [US1] Config backup+merge -> Artifacts: [src/specify_cli/memory/install/config_merger.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/install/config_merger.py)
+- [X] T029 [P] [US6] Ollama detection -> Artifacts: [src/specify_cli/memory/install/ollama_checker.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/install/ollama_checker.py)
+- [X] T030 [P] [US6] AI-executable INSTALL.md -> Artifacts: [docs/INSTALL_MEMORY.md](F:/IdeaProjects/spec-kit/docs/INSTALL_MEMORY.md)
+- [X] T031 [P] [US1] README with key differences -> Artifacts: [extensions/global-memory/README.md](F:/IdeaProjects/spec-kit/extensions/global-memory/README.md)
+- [X] T032 [US1] Update mechanism -> Artifacts: [src/specify_cli/memory/install/updater.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/install/updater.py)
+- [X] T033 [P] [US6] Verification script -> Artifacts: [scripts/memory/verify_install.py](F:/IdeaProjects/spec-kit/scripts/memory/verify_install.py), [verify_install.sh](F:/IdeaProjects/spec-kit/scripts/memory/verify_install.sh)
+- [X] T034 [P] [US1] Migration tool -> Artifacts: [src/specify_cli/memory/install/migrator.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/install/migrator.py)
+- [X] T035 [US6] Graceful degradation config -> Artifacts: [src/specify_cli/memory/install/degradation.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/install/degradation.py)
+- [X] T036 [P] [US1] Cross-platform symlink -> Artifacts: [scripts/memory/create_link.py](F:/IdeaProjects/spec-kit/scripts/memory/create_link.py)
 - [X] T037 [US1] Test: fresh install -> Artifacts: [tests/memory/test_installation_scenarios.py](F:/IdeaProjects/spec-kit/tests/memory/test_installation_scenarios.py)
 - [X] T038 [US6] Test: existing configs -> Artifacts: [tests/memory/test_installation_scenarios.py](F:/IdeaProjects/spec-kit/tests/memory/test_installation_scenarios.py)
 - [X] T039 [US6] Test: without Ollama -> Artifacts: [tests/memory/test_installation_scenarios.py](F:/IdeaProjects/spec-kit/tests/memory/test_installation_scenarios.py)
@@ -182,9 +182,10 @@
 
 **Progress**:
 - Phase 3: 12/12 complete (100%) - Memory Accumulation
-- Phase 4: 4/14 complete (29%) - Global Installation (tests done, scripts pending)
+- Phase 4: 14/14 complete (100%) - Global Installation
+- **MVP COMPLETE**: Phases 0-4 fully implemented!
 
 ---
 
 *Generated: 2026-03-10*
-*Updated: 2026-03-10 - Phase 3 complete, Phase 4 tests complete*
+*Updated: 2026-03-10 - Phase 3 & 4 complete, MVP ready!*
