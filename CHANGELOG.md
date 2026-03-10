@@ -7,6 +7,12 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
+
 ## [0.2.0] - 2026-03-09
 
 ### Changed
@@ -62,7 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Higher-priority catalogs win on merge conflicts (same extension id in multiple catalogs)
   - 13 new tests covering catalog stack resolution, merge conflicts, URL validation, and `install_allowed` enforcement
   - Updated RFC, Extension User Guide, and Extension API Reference documentation
-- feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
 ## [0.1.13] - 2026-03-03
 

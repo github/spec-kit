@@ -338,11 +338,18 @@ Extension authors can create a `.extensionignore` file in the extension root to 
 
 ### Format
 
-The file uses glob-style patterns, one per line:
+The file uses `.gitignore`-compatible patterns (one per line), powered by the [`pathspec`](https://pypi.org/project/pathspec/) library:
 
 - Blank lines are ignored
 - Lines starting with `#` are comments
-- Patterns are matched against both the file/folder name and its path relative to the extension root
+- `*` matches anything **except** `/` (does not cross directory boundaries)
+- `**` matches zero or more directories (e.g., `docs/**/*.draft.md`)
+- `?` matches any single character except `/`
+- A trailing `/` restricts a pattern to directories only
+- Patterns containing `/` (other than a trailing slash) are anchored to the extension root
+- Patterns without `/` match at any depth in the tree
+- `!` negates a previously excluded pattern (re-includes a file)
+- Backslashes in patterns are normalised to forward slashes for cross-platform compatibility
 - The `.extensionignore` file itself is always excluded automatically
 
 ### Example
@@ -367,12 +374,22 @@ CONTRIBUTING.md
 
 ### Pattern Matching
 
-| Pattern | Matches |
-|---------|---------|
-| `*.pyc` | Any `.pyc` file in any directory |
-| `tests/` | The `tests` directory (and all its contents) |
-| `docs/*.draft.md` | Draft markdown files inside `docs/` |
-| `.github` | The `.github` directory at any level |
+| Pattern | Matches | Does NOT match |
+|---------|---------|----------------|
+| `*.pyc` | Any `.pyc` file in any directory | — |
+| `tests/` | The `tests` directory (and all its contents) | A file named `tests` |
+| `docs/*.draft.md` | `docs/api.draft.md` (directly inside `docs/`) | `docs/sub/api.draft.md` (nested) |
+| `.env` | The `.env` file at any level | — |
+| `!README.md` | Re-includes `README.md` even if matched by an earlier pattern | — |
+| `docs/**/*.draft.md` | `docs/api.draft.md`, `docs/sub/api.draft.md` | — |
+
+### Unsupported Features
+
+The following `.gitignore` features are **not applicable** in this context:
+
+- **Multiple `.extensionignore` files**: Only a single file at the extension root is supported (`.gitignore` supports files in subdirectories)
+- **`$GIT_DIR/info/exclude` and `core.excludesFile`**: These are Git-specific and have no equivalent here
+- **Negation inside excluded directories**: Because file copying uses `shutil.copytree`, excluding a directory prevents recursion into it entirely. A negation pattern cannot re-include a file inside a directory that was itself excluded. For example, the combination `tests/` followed by `!tests/important.py` will **not** preserve `tests/important.py` — the `tests/` directory is skipped at the root level and its contents are never evaluated. To work around this, exclude the directory's contents individually instead of the directory itself (e.g., `tests/*.pyc` and `tests/.cache/` rather than `tests/`).
 
 ---
 
