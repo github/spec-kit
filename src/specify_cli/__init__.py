@@ -2002,6 +2002,12 @@ def preset_add(
                 console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in catalog")
                 raise typer.Exit(1)
 
+            if not pack_info.get("_install_allowed", True):
+                catalog_name = pack_info.get("_catalog_name", "unknown")
+                console.print(f"[red]Error:[/red] Preset '{pack_id}' is from the '{catalog_name}' catalog which is discovery-only (install not allowed).")
+                console.print("Add the catalog with --install-allowed or install from the preset's repository directly with --from.")
+                raise typer.Exit(1)
+
             console.print(f"Installing preset [cyan]{pack_info.get('name', pack_id)}[/cyan]...")
 
             try:

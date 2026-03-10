@@ -179,7 +179,7 @@ function Resolve-Template {
             }
         } else {
             # Fallback: alphabetical directory order
-            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue) {
+            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' }) {
                 $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
                 if (Test-Path $candidate) { return $candidate }
             }

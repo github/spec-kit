@@ -1096,7 +1096,7 @@ class PresetCatalog:
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
                 for pack_id, pack_data in data.get("presets", {}).items():
-                    pack_data_with_catalog = {**pack_data, "_catalog": entry.name, "_install_allowed": entry.install_allowed}
+                    pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
                     merged[pack_id] = pack_data_with_catalog
             except PresetError:
                 continue
@@ -1277,6 +1277,13 @@ class PresetCatalog:
         if not pack_info:
             raise PresetError(
                 f"Preset '{pack_id}' not found in catalog"
+            )
+
+        if not pack_info.get("_install_allowed", True):
+            catalog_name = pack_info.get("_catalog_name", "unknown")
+            raise PresetError(
+                f"Preset '{pack_id}' is from the '{catalog_name}' catalog which does not allow installation. "
+                f"Use --from with the preset's repository URL instead."
             )
 
         download_url = pack_info.get("download_url")

@@ -175,10 +175,11 @@ resolve_template() {
         if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
             # Read preset IDs sorted by priority (lower number = higher precedence)
             local sorted_presets
-            sorted_presets=$(python3 -c "
-import json, sys
+            sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
+import json, sys, os
 try:
-    data = json.load(open('$registry_file'))
+    with open(os.environ['SPECKIT_REGISTRY']) as f:
+        data = json.load(f)
     presets = data.get('presets', {})
     for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10)):
         print(pid)
