@@ -126,27 +126,28 @@ class SkillsMPIntegration:
 
     def get_skill_details(
         self,
-        skill_id: str,
+        skill_data: Dict[str, Any],
         source: str = "skillsmp"
-    ) -> Optional[Dict[str, Any]]:
-        """Get detailed skill information.
+    ) -> Dict[str, Any]:
+        """Get detailed skill information from search result data.
 
         Args:
-            skill_id: Skill identifier
+            skill_data: Skill data from search results
             source: Source system
 
         Returns:
             Skill details
         """
         if source == "skillsmp" and self.skillsmp_client:
-            return self.skillsmp_client.get_skill(skill_id)
+            return self.skillsmp_client.get_skill_details(skill_data)
         elif source == "github" and self.github_searcher:
             # Parse skill_id as "owner/repo"
-            if "/" in skill_id:
+            skill_id = skill_data.get("github_repo", "")
+            if skill_id and "/" in skill_id:
                 owner, repo = skill_id.split("/", 1)
                 return self.github_searcher.get_repo_details(owner, repo)
 
-        return None
+        return skill_data
 
     def compare_skills(
         self,
@@ -233,10 +234,10 @@ class SkillsMPIntegration:
     def list_categories(self) -> List[Dict[str, Any]]:
         """List available skill categories.
 
-        Returns:
-            List of categories
-        """
-        if self.skillsmp_client:
-            return self.skillsmp_client.list_categories()
+        Note: Categories endpoint not documented in SkillsMP API docs yet.
 
+        Returns:
+            Empty list (feature not yet available)
+        """
+        # TODO: Implement when categories endpoint is available
         return []

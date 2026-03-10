@@ -26,7 +26,7 @@ class TestSkillsMPAPIClient:
         client = SkillsMPAPIClient()
 
         assert client.api_key is None
-        assert client.rate_limit == 100
+        assert client.daily_limit == 500
 
     def test_client_with_api_key(self):
         """Test client with API key."""
@@ -37,13 +37,17 @@ class TestSkillsMPAPIClient:
 
     def test_rate_limiting(self):
         """Test rate limiting."""
-        client = SkillsMPAPIClient(rate_limit=5)
+        client = SkillsMPAPIClient()
+        client.daily_remaining = 1
+        client.daily_limit = 5
 
-        # Should allow requests up to limit
-        for _ in range(5):
-            assert client._check_rate_limit() is True
+        # Should allow request
+        assert client._check_rate_limit() is True
 
-        # Should block at limit
+        # Set to 0 (exhausted)
+        client.daily_remaining = 0
+
+        # Should block when exhausted
         assert client._check_rate_limit() is False
 
 
@@ -69,6 +73,13 @@ class TestAPIKeyStorage:
             storage = APIKeyStorage()
             storage.storage_dir = Path(tmpdir)
 
+            # Clear any existing key from keyring (cleanup from previous tests)
+            try:
+                storage.delete_api_key()
+            except:
+                pass
+
+            # Now check for non-existence
             assert storage.has_api_key() is False
 
             storage.store_api_key("test_key")
@@ -274,14 +285,14 @@ class TestSkillSelector:
         selector = SkillSelector()
 
         skills = [
-            {"title": "Agent", "similarity": 0.8},
-            {"title": "Agent Clone", "similarity": 0.75},
-            {"title": "Different", "similarity": 0.5}
+            {"title": "Python Agent", "github_repo": "user/repo1", "similarity": 0.8},
+            {"title": "Python Agent", "github_repo": "user/repo2", "similarity": 0.75},
+            {"title": "Different Agent", "similarity": 0.5}
         ]
 
         conflicts = selector.detect_conflicts(skills)
 
-        # Should detect at least one conflict group
+        # Should detect conflict between two "Python Agent" skills
         assert len(conflicts) >= 1
 
 

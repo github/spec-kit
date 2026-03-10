@@ -62,6 +62,46 @@ class MemoryLogger:
             self.logger.warning(message)
             shown_warnings.add(warning_key)
 
+    def debug(self, message: str) -> None:
+        """Log debug message.
+
+        Args:
+            message: Debug message
+        """
+        self.logger.debug(message)
+
+    def info(self, message: str) -> None:
+        """Log info message.
+
+        Args:
+            message: Info message
+        """
+        self.logger.info(message)
+
+    def warning(self, message: str) -> None:
+        """Log warning message.
+
+        Args:
+            message: Warning message
+        """
+        self.logger.warning(message)
+
+    def error(self, message: str) -> None:
+        """Log error message.
+
+        Args:
+            message: Error message
+        """
+        self.logger.error(message)
+
+    def critical(self, message: str) -> None:
+        """Log critical message.
+
+        Args:
+            message: Critical message
+        """
+        self.logger.critical(message)
+
 
 # Global logger instance
 _logger: Optional[MemoryLogger] = None

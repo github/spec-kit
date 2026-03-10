@@ -16,8 +16,8 @@ dependencies = [
     "pathspec>=0.12.0",
     # Memory system dependencies
     "watchdog>=4.0",
-    "python-frontmatter>=4.0",
     "requests>=2.31",
+    "keyring>=25.0",
 ]
 
 [project.scripts]

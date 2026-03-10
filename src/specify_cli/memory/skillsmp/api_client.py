@@ -19,39 +19,28 @@ class SkillsMPAPIClient:
     """Client for SkillsMP API."""
 
     # API endpoints (based on https://skillsmp.com/docs/api)
-    BASE_URL = "https://api.skillsmp.com/v1"
+    BASE_URL = "https://skillsmp.com/api/v1"
     SEARCH_ENDPOINT = "/skills/search"
-    GET_SKILL_ENDPOINT = "/skills/{skill_id}"
-    LIST_ENDPOINT = "/skills"
-    CATEGORIES_ENDPOINT = "/categories"
+    AI_SEARCH_ENDPOINT = "/skills/ai-search"
 
     # Rate limiting
-    DEFAULT_RATE_LIMIT = 100  # requests per minute
-    RATE_LIMIT_WINDOW = 60  # seconds
+    DAILY_RATE_LIMIT = 500  # requests per day
+    MAX_ITEMS_PER_PAGE = 100
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        cache_dir: Optional[Path] = None,
-        rate_limit: int = DEFAULT_RATE_LIMIT
+        cache_dir: Optional[Path] = None
     ):
         """Initialize SkillsMP API client.
 
         Args:
-            api_key: SkillsMP API key (optional, for higher rate limits)
+            api_key: SkillsMP API key (format: sk_live_*)
             cache_dir: Directory for cache storage
-            rate_limit: Requests per minute
         """
         self.logger = get_logger()
         self.api_key = api_key
         self.cache_dir = cache_dir or Path.home() / ".claude" / "memory" / "cache" / "skillsmp"
-
-        # Rate limiting
-        self.rate_limit = rate_limit
-        self.request_times: List[float] = []
-
-        # Setup cache
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Session for connection pooling
         self.session = requests.Session()
@@ -62,81 +51,101 @@ class SkillsMPAPIClient:
                 "User-Agent": "SpecKit-Memory-System/1.0"
             })
 
+        # Setup cache
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Track rate limit from headers
+        self.daily_limit = self.DAILY_RATE_LIMIT
+        self.daily_remaining = None
+        self.limit_reset_time = None
+
     def _check_rate_limit(self) -> bool:
-        """Check if request is allowed under rate limit.
+        """Check if we can make a request based on rate limit info.
 
         Returns:
             True if request allowed
         """
-        now = time.time()
+        if self.daily_remaining is not None and self.daily_remaining <= 0:
+            # Check if reset time passed
+            if self.limit_reset_time and datetime.now() >= self.limit_reset_time:
+                self.daily_remaining = self.daily_limit
+                self.limit_reset_time = None
+            else:
+                return False
 
-        # Remove old request times outside window
-        self.request_times = [
-            t for t in self.request_times
-            if now - t < self.RATE_LIMIT_WINDOW
-        ]
+        return True
 
-        return len(self.request_times) < self.rate_limit
+    def _update_rate_limit_from_headers(self, headers: Dict[str, str]) -> None:
+        """Update rate limit info from response headers.
 
-    def _wait_for_rate_limit(self) -> None:
-        """Wait if rate limit would be exceeded."""
-        while not self._check_rate_limit():
-            wait_time = self.RATE_LIMIT_WINDOW / self.rate_limit
-            self.logger.debug(f"Rate limit reached, waiting {wait_time:.2f}s")
-            time.sleep(wait_time)
+        Args:
+            headers: Response headers
+        """
+        try:
+            daily_limit = headers.get("X-RateLimit-Daily-Limit")
+            daily_remaining = headers.get("X-RateLimit-Daily-Remaining")
+
+            if daily_limit:
+                self.daily_limit = int(daily_limit)
+
+            if daily_remaining:
+                self.daily_remaining = int(daily_remaining)
+        except (ValueError, TypeError):
+            pass
 
     def _make_request(
         self,
         endpoint: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """Make authenticated API request.
 
         Args:
-            endpoint: API endpoint
-            method: HTTP method
+            endpoint: API endpoint (without /api/v1 prefix)
             params: Query parameters
-            data: Request body
 
         Returns:
             Response data or None
         """
-        # Rate limiting
-        self._wait_for_rate_limit()
+        # Check rate limit
+        if not self._check_rate_limit():
+            self.logger.warning("Daily rate limit exceeded")
+            return None
+
+        if not self.api_key:
+            self.logger.error("No API key configured")
+            return None
 
         url = f"{self.BASE_URL}{endpoint}"
 
         try:
-            if method == "GET":
-                response = self.session.get(
-                    url,
-                    params=params,
-                    timeout=30
-                )
-            elif method == "POST":
-                response = self.session.post(
-                    url,
-                    json=data,
-                    timeout=30
-                )
-            else:
-                self.logger.error(f"Unsupported method: {method}")
-                return None
+            response = self.session.get(
+                url,
+                params=params,
+                timeout=30
+            )
 
-            # Record request time
-            self.request_times.append(time.time())
+            # Update rate limit from headers
+            self._update_rate_limit_from_headers(response.headers)
 
             # Check response
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
-                self.logger.error("Invalid API key")
+                error_data = response.json().get("error", {})
+                error_code = error_data.get("code", "")
+
+                if error_code == "MISSING_API_KEY":
+                    self.logger.error("API key not provided")
+                elif error_code == "INVALID_API_KEY":
+                    self.logger.error("Invalid API key format")
                 return None
             elif response.status_code == 429:
-                self.logger.warning("Rate limit exceeded, backing off")
-                time.sleep(5)
+                self.logger.error("Daily quota exceeded")
+                return None
+            elif response.status_code == 400:
+                error_data = response.json().get("error", {})
+                self.logger.error(f"Bad request: {error_data.get('message', 'Unknown error')}")
                 return None
             else:
                 self.logger.warning(f"API error: {response.status_code}")
@@ -153,36 +162,37 @@ class SkillsMPAPIClient:
         self,
         query: str,
         limit: int = 10,
-        category: Optional[str] = None,
-        min_stars: int = 2
+        page: int = 1,
+        sort_by: str = "stars"
     ) -> List[Dict[str, Any]]:
-        """Search for skills.
+        """Keyword search for skills.
 
         Args:
             query: Search query
-            limit: Max results
-            category: Filter by category
-            min_stars: Minimum GitHub stars
+            limit: Max results (max 100)
+            page: Page number (default: 1)
+            sort_by: Sort by "stars" or "recent"
 
         Returns:
             List of skill entries
         """
         # Check cache first
-        cache_key = self._get_cache_key("search", query, category, min_stars)
+        cache_key = self._get_cache_key("search", query, page, sort_by)
         cached = self._get_cache(cache_key)
         if cached:
             self.logger.debug(f"Cache hit for search: {query}")
             return cached[:limit]
 
+        # Validate parameters
+        limit = min(limit, self.MAX_ITEMS_PER_PAGE)
+
         # Make API request
         params = {
             "q": query,
-            "limit": limit * 2,  # Fetch more for filtering
-            "min_stars": min_stars
+            "limit": limit,
+            "page": page,
+            "sortBy": sort_by
         }
-
-        if category:
-            params["category"] = category
 
         response = self._make_request(self.SEARCH_ENDPOINT, params=params)
 
@@ -191,17 +201,47 @@ class SkillsMPAPIClient:
 
         skills = response.get("skills", [])
 
-        # Filter by min_stars (API might not support it)
-        if min_stars > 0:
-            skills = [
-                s for s in skills
-                if s.get("github_stars", 0) >= min_stars
-            ]
+        # Cache results (shorter TTL for keyword search)
+        self._set_cache(cache_key, skills, ttl=1800)  # 30 min
 
-        # Cache results
-        self._set_cache(cache_key, skills, ttl=3600)  # 1 hour
+        return skills
 
-        return skills[:limit]
+    def ai_search_skills(
+        self,
+        query: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """AI semantic search for skills.
+
+        Args:
+            query: Natural language search query
+            limit: Max results
+
+        Returns:
+            List of relevant skills
+        """
+        # AI search results usually more relevant, cache longer
+        cache_key = f"ai_search:{hashlib.md5(query.encode()).hexdigest()}"
+        cached = self._get_cache(cache_key)
+        if cached:
+            return cached[:limit]
+
+        params = {
+            "q": query,
+            "limit": limit
+        }
+
+        response = self._make_request(self.AI_SEARCH_ENDPOINT, params=params)
+
+        if not response:
+            return []
+
+        skills = response.get("skills", [])
+
+        # Cache AI search results longer (more expensive)
+        self._set_cache(cache_key, skills, ttl=7200)  # 2 hours
+
+        return skills
 
     def get_skill(self, skill_id: str) -> Optional[Dict[str, Any]]:
         """Get skill details by ID.
@@ -218,35 +258,17 @@ class SkillsMPAPIClient:
         if cached:
             return cached
 
-        endpoint = self.GET_SKILL_ENDPOINT.format(skill_id=skill_id)
-        response = self._make_request(endpoint)
+        # Note: API doesn't specify a get-by-id endpoint in the docs
+        # Would need to search and filter by ID
+        self.logger.warning(f"Get by ID not supported, searching for: {skill_id}")
 
-        if response:
-            skill = response.get("skill")
-            self._set_cache(cache_key, skill, ttl=86400)  # 24 hours
-            return skill
+        # As fallback, try searching
+        results = self.search_skills(skill_id, limit=1)
+
+        if results and len(results) > 0:
+            return results[0]
 
         return None
-
-    def list_categories(self) -> List[Dict[str, Any]]:
-        """List available skill categories.
-
-        Returns:
-            List of categories
-        """
-        cache_key = "categories"
-        cached = self._get_cache(cache_key)
-        if cached:
-            return cached
-
-        response = self._make_request(self.CATEGORIES_ENDPOINT)
-
-        if response:
-            categories = response.get("categories", [])
-            self._set_cache(cache_key, categories, ttl=86400)  # 24 hours
-            return categories
-
-        return []
 
     def _get_cache_key(self, *args) -> str:
         """Generate cache key from arguments.
@@ -330,9 +352,11 @@ class SkillsMPAPIClient:
         """
         return {
             "api_key_configured": bool(self.api_key),
+            "api_key_format": "sk_live_*" if self.api_key and self.api_key.startswith("sk_live_") else "invalid",
             "cache_dir": str(self.cache_dir),
-            "rate_limit": self.rate_limit,
-            "recent_requests": len(self.request_times)
+            "daily_limit": self.daily_limit,
+            "daily_remaining": self.daily_remaining,
+            "limit_reset_time": self.limit_reset_time.isoformat() if self.limit_reset_time else None
         }
 
 
@@ -344,7 +368,7 @@ class SkillsMPError(Exception):
 
         Args:
             message: Error message
-            code: Error code
+            code: Error code from API
         """
         super().__init__(message)
         self.code = code

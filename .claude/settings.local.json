@@ -3,7 +3,8 @@
     "allow": [
       "mcp__zread__get_repo_structure",
       "mcp__web-reader__webReader",
-      "mcp__web-search-prime__web_search_prime"
+      "mcp__web-search-prime__web_search_prime",
+      "WebFetch(domain:skillsmp.com)"
     ]
   }
 }
