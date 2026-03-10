@@ -436,7 +436,7 @@ specify extension catalog list
 
 You can view the main catalog management commands using `--help`:
 
-```bash
+```text
 specify extension catalog --help
 
  Usage: specify extension catalog [OPTIONS] COMMAND [ARGS]...                       
