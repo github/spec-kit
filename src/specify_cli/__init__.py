@@ -2431,8 +2431,15 @@ def extension_update(
     extension: str = typer.Argument(None, help="Extension ID to update (or all)"),
 ):
     """Update extension(s) to latest version."""
-    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError
+    from .extensions import (
+        ExtensionManager,
+        ExtensionCatalog,
+        ExtensionError,
+        CommandRegistrar,
+        HookExecutor,
+    )
     from packaging import version as pkg_version
+    import shutil
 
     project_root = Path.cwd()
 
@@ -2445,6 +2452,7 @@ def extension_update(
 
     manager = ExtensionManager(project_root)
     catalog = ExtensionCatalog(project_root)
+    speckit_version = get_speckit_version()
 
     try:
         # Get list of extensions to update
@@ -2509,24 +2517,163 @@ def extension_update(
             console.print("Cancelled")
             raise typer.Exit(0)
 
-        # Perform updates
+        # Perform updates with atomic backup/restore
         console.print()
+        updated_extensions = []
+        failed_updates = []
+        registrar = CommandRegistrar()
+        hook_executor = HookExecutor(project_root)
+
         for update in updates_available:
-            ext_id = update["id"]
-            console.print(f"📦 Updating {ext_id}...")
+            extension_id = update["id"]
+            ext_name = update["id"]
+            console.print(f"📦 Updating {ext_name}...")
 
-            # TODO: Implement download and reinstall from URL
-            # For now, just show  message
-            console.print(
-                "[yellow]Note:[/yellow] Automatic update not yet implemented. "
-                "Please update manually:"
-            )
-            console.print(f"  specify extension remove {ext_id} --keep-config")
-            console.print(f"  specify extension add {ext_id}")
+            # Backup paths
+            backup_base = manager.extensions_dir / ".backup" / f"{extension_id}-update"
+            backup_ext_dir = backup_base / "extension"
+            backup_commands_dir = backup_base / "commands"
 
-        console.print(
-            "\n[cyan]Tip:[/cyan] Automatic updates will be available in a future version"
-        )
+            # Store backup state
+            backup_registry_entry = None
+            backup_hooks = None
+            backed_up_command_files = {}
+
+            try:
+                # 1. Backup registry entry (always, even if extension dir doesn't exist)
+                backup_registry_entry = manager.registry.get(extension_id)
+
+                # 2. Backup extension directory
+                extension_dir = manager.extensions_dir / extension_id
+                if extension_dir.exists():
+                    backup_base.mkdir(parents=True, exist_ok=True)
+                    if backup_ext_dir.exists():
+                        shutil.rmtree(backup_ext_dir)
+                    shutil.copytree(extension_dir, backup_ext_dir)
+
+                # 3. Backup command files for all agents
+                registered_commands = backup_registry_entry.get("registered_commands", {})
+                for agent_name, cmd_names in registered_commands.items():
+                    if agent_name not in registrar.AGENT_CONFIGS:
+                        continue
+                    agent_config = registrar.AGENT_CONFIGS[agent_name]
+                    commands_dir = project_root / agent_config["dir"]
+
+                    for cmd_name in cmd_names:
+                        cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+                        if cmd_file.exists():
+                            backup_cmd_path = backup_commands_dir / agent_name / cmd_file.name
+                            backup_cmd_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(cmd_file, backup_cmd_path)
+                            backed_up_command_files[str(cmd_file)] = str(backup_cmd_path)
+
+                        # Also backup copilot prompt files
+                        if agent_name == "copilot":
+                            prompt_file = project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
+                            if prompt_file.exists():
+                                backup_prompt_path = backup_commands_dir / "copilot-prompts" / prompt_file.name
+                                backup_prompt_path.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(prompt_file, backup_prompt_path)
+                                backed_up_command_files[str(prompt_file)] = str(backup_prompt_path)
+
+                # 4. Backup hooks from extensions.yml
+                config = hook_executor.get_project_config()
+                if "hooks" in config:
+                    backup_hooks = {}
+                    for hook_name, hook_list in config["hooks"].items():
+                        ext_hooks = [h for h in hook_list if h.get("extension") == extension_id]
+                        if ext_hooks:
+                            backup_hooks[hook_name] = ext_hooks
+
+                # 5. Remove old extension (handles command file cleanup and registry removal)
+                manager.remove(extension_id, keep_config=True)
+
+                # 6. Download and install new version
+                zip_path = catalog.download_extension(extension_id)
+                try:
+                    installed_manifest = manager.install_from_zip(zip_path, speckit_version)
+
+                    # 7. Verify extension ID matches
+                    if installed_manifest.id != extension_id:
+                        raise ValueError(
+                            f"Extension ID mismatch: expected '{extension_id}', got '{installed_manifest.id}'"
+                        )
+                finally:
+                    # Clean up downloaded ZIP
+                    if zip_path.exists():
+                        zip_path.unlink()
+
+                # 8. Clean up backup on success
+                if backup_base.exists():
+                    shutil.rmtree(backup_base)
+
+                console.print(f"   [green]✓[/green] Updated to v{update['available']}")
+                updated_extensions.append(ext_name)
+
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                console.print(f"   [red]✗[/red] Failed: {e}")
+                failed_updates.append((ext_name, str(e)))
+
+                # Rollback on failure
+                console.print(f"   [yellow]↩[/yellow] Rolling back {ext_name}...")
+
+                try:
+                    # Restore extension directory
+                    if backup_ext_dir.exists():
+                        extension_dir = manager.extensions_dir / extension_id
+                        if extension_dir.exists():
+                            shutil.rmtree(extension_dir)
+                        shutil.copytree(backup_ext_dir, extension_dir)
+
+                    # Restore command files
+                    for original_path, backup_path in backed_up_command_files.items():
+                        backup_file = Path(backup_path)
+                        if backup_file.exists():
+                            original_file = Path(original_path)
+                            original_file.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(backup_file, original_file)
+
+                    # Restore hooks in extensions.yml
+                    if backup_hooks:
+                        config = hook_executor.get_project_config()
+                        if "hooks" not in config:
+                            config["hooks"] = {}
+                        for hook_name, hooks in backup_hooks.items():
+                            if hook_name not in config["hooks"]:
+                                config["hooks"][hook_name] = []
+                            # Remove any existing hooks for this extension first
+                            config["hooks"][hook_name] = [
+                                h for h in config["hooks"][hook_name]
+                                if h.get("extension") != extension_id
+                            ]
+                            # Add back the backed up hooks
+                            config["hooks"][hook_name].extend(hooks)
+                        hook_executor.save_project_config(config)
+
+                    # Restore registry entry
+                    if backup_registry_entry:
+                        manager.registry.data["extensions"][extension_id] = backup_registry_entry
+                        manager.registry._save()
+
+                    console.print(f"   [green]✓[/green] Rollback successful")
+                except Exception as rollback_error:
+                    console.print(f"   [red]✗[/red] Rollback failed: {rollback_error}")
+
+                # Clean up backup directory after rollback attempt
+                if backup_base.exists():
+                    shutil.rmtree(backup_base)
+
+        # Summary
+        console.print()
+        if updated_extensions:
+            console.print(f"[green]✓[/green] Successfully updated {len(updated_extensions)} extension(s)")
+        if failed_updates:
+            console.print(f"[red]✗[/red] Failed to update {len(failed_updates)} extension(s):")
+            for ext_name, error in failed_updates:
+                console.print(f"   • {ext_name}: {error}")
+            raise typer.Exit(1)
 
     except ExtensionError as e:
         console.print(f"\n[red]Error:[/red] {e}")
@@ -2563,7 +2710,9 @@ def extension_enable(
         raise typer.Exit(0)
 
     metadata["enabled"] = True
-    manager.registry.add(extension, metadata)
+    # Update registry directly to preserve installed_at (add() would overwrite it)
+    manager.registry.data["extensions"][extension] = metadata
+    manager.registry._save()
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
@@ -2607,7 +2756,9 @@ def extension_disable(
         raise typer.Exit(0)
 
     metadata["enabled"] = False
-    manager.registry.add(extension, metadata)
+    # Update registry directly to preserve installed_at (add() would overwrite it)
+    manager.registry.data["extensions"][extension] = metadata
+    manager.registry._save()
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()
