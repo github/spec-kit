@@ -708,7 +708,7 @@ class CommandRegistrar:
             "extension": ".md"
         },
         "kimi": {
-            "dir": ".kimi/commands",
+            "dir": ".kimi/skills",
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"

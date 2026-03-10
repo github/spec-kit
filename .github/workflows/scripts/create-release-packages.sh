@@ -32,6 +32,9 @@ VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo 'dev')}"
 # Output directory
 OUTPUT_DIR=".genreleases"
 
+# Placeholder string used in generated command files (can be overridden via env)
+ARGUMENTS="${ARGUMENTS:-\$ARGUMENTS}"
+
 # Repository root (3 levels up from this script's location)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -308,13 +311,11 @@ echo ""
 
 for agent in "${ALL_AGENTS[@]}"; do
     echo "Processing agent: $agent"
-    
+
     # Create bash/zsh package
-    ARGUMENTS="$ARGUMENTS"
     create_package "$agent" "sh"
-    
+
     # Create PowerShell package
-    ARGUMENTS="$ARGUMENTS"
     create_package "$agent" "ps"
 done
 

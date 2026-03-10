@@ -83,6 +83,39 @@ Execute the ${Cmd} workflow with arguments: ${Args}
     }
 }
 
+# Create Kimi Code skills in .kimi/skills/<name>/SKILL.md format.
+# Kimi CLI discovers skills as directories containing a SKILL.md file.
+function New-KimiSkills {
+    param([string]$SkillsDir)
+
+    $skills = @('constitution', 'specify', 'clarify', 'plan', 'tasks', 'analyze', 'checklist', 'implement', 'taskstoissues')
+    foreach ($skill in $skills) {
+        $skillName = "speckit.$skill"
+        $skillDir = Join-Path $SkillsDir $skillName
+        New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+        @"
+---
+name: "$skillName"
+description: "Spec Kit: $skill workflow"
+---
+
+Execute the $skillName workflow.
+"@ | Set-Content -Path (Join-Path $skillDir "SKILL.md") -Encoding UTF8
+    }
+
+    # add-dir skill
+    $addDirDir = Join-Path $SkillsDir "add-dir"
+    New-Item -ItemType Directory -Force -Path $addDirDir | Out-Null
+    @'
+---
+name: "add-dir"
+description: "Add a directory to the Spec Kit project structure"
+---
+
+Execute the add-dir workflow with arguments: $ARGUMENTS
+'@ | Set-Content -Path (Join-Path $addDirDir "SKILL.md") -Encoding UTF8
+}
+
 # Create release package for an agent
 function Create-Package {
     param(
@@ -179,8 +212,8 @@ function Create-Package {
             Generate-Commands -Agent $Agent -Format 'md' -Args '$ARGUMENTS' -DestDir "$BaseDir/.speckit\commands" -Script $Script
         }
         'kimi' {
-            New-Item -ItemType Directory -Force -Path "$BaseDir/.kimi\commands" | Out-Null
-            Generate-Commands -Agent $Agent -Format 'md' -Args '$ARGUMENTS' -DestDir "$BaseDir/.kimi\commands" -Script $Script
+            New-Item -ItemType Directory -Force -Path "$BaseDir/.kimi/skills" | Out-Null
+            New-KimiSkills -SkillsDir "$BaseDir/.kimi/skills"
         }
     }
     
