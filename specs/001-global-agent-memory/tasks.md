@@ -4,7 +4,7 @@
 > **Spec**: [spec.md](spec.md)
 > **Plan**: [plan.md](plan.md)
 > **Generated**: 2026-03-10
-> **Status**: Ready for Execution
+> **Status**: In Progress
 
 ---
 
@@ -66,18 +66,18 @@
 
 ## Phase 3: US2 - Memory Accumulation
 
-- [ ] T015 [P] [US2] Project auto-detection
-- [ ] T016 [P] [US2] Auto-save trigger
-- [ ] T017 [P] [US2] AI routing
-- [ ] T018 [P] [US2] Headers-First reading
-- [ ] T019 [P] [US2] Cross-project learning
-- [ ] T020 [US2] Smart search scope
-- [ ] T021 [P] [US2] Backup system
-- [ ] T022 [US2] Memory init script
-- [ ] T023 [US2] Test: auto-save
-- [ ] T024 [US2] Test: cross-project
-- [ ] T025 [US2] Test: isolation
-- [ ] T026 [US2] Test: context optimization
+- [X] T015 [P] [US2] Project auto-detection -> Artifacts: [src/specify_cli/memory/project_detector.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/project_detector.py)
+- [X] T016 [P] [US2] Auto-save trigger -> Artifacts: [src/specify_cli/memory/auto_save.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/auto_save.py)
+- [X] T017 [P] [US2] AI routing -> Artifacts: [src/specify_cli/memory/smart_search.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/smart_search.py)
+- [X] T018 [P] [US2] Headers-First reading -> Artifacts: [src/specify_cli/memory/headers_reader.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/headers_reader.py)
+- [X] T019 [P] [US2] Cross-project learning -> Artifacts: [src/specify_cli/memory/cross_project.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/cross_project.py)
+- [X] T020 [US2] Smart search scope -> Artifacts: [src/specify_cli/memory/smart_search.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/smart_search.py)
+- [X] T021 [P] [US2] Backup system -> Artifacts: [src/specify_cli/memory/backup.py](F:/IdeaProjects/spec-kit/src/specify_cli/memory/backup.py)
+- [X] T022 [US2] Memory init script -> Artifacts: [scripts/memory/init_memory.py](F:/IdeaProjects/spec-kit/scripts/memory/init_memory.py)
+- [X] T023 [US2] Test: auto-save -> Artifacts: [tests/memory/test_phase3_accumulation.py](F:/IdeaProjects/spec-kit/tests/memory/test_phase3_accumulation.py)
+- [X] T024 [US2] Test: cross-project -> Artifacts: [tests/memory/test_phase3_accumulation.py](F:/IdeaProjects/spec-kit/tests/memory/test_phase3_accumulation.py)
+- [X] T025 [US2] Test: isolation -> Artifacts: [tests/memory/test_phase3_accumulation.py](F:/IdeaProjects/spec-kit/tests/memory/test_phase3_accumulation.py)
+- [X] T026 [US2] Test: context optimization -> Artifacts: [tests/memory/test_phase3_accumulation.py](F:/IdeaProjects/spec-kit/tests/memory/test_phase3_accumulation.py)
 
 ---
 
@@ -93,10 +93,10 @@
 - [ ] T034 [P] [US1] Migration tool
 - [ ] T035 [US6] Graceful degradation config
 - [ ] T036 [P] [US1] Cross-platform symlink
-- [ ] T037 [US1] Test: fresh install
-- [ ] T038 [US6] Test: existing configs
-- [ ] T039 [US6] Test: without Ollama
-- [ ] T040 [US1] Test: update mechanism
+- [X] T037 [US1] Test: fresh install -> Artifacts: [tests/memory/test_installation_scenarios.py](F:/IdeaProjects/spec-kit/tests/memory/test_installation_scenarios.py)
+- [X] T038 [US6] Test: existing configs -> Artifacts: [tests/memory/test_installation_scenarios.py](F:/IdeaProjects/spec-kit/tests/memory/test_installation_scenarios.py)
+- [X] T039 [US6] Test: without Ollama -> Artifacts: [tests/memory/test_installation_scenarios.py](F:/IdeaProjects/spec-kit/tests/memory/test_installation_scenarios.py)
+- [X] T040 [US1] Test: update mechanism -> Artifacts: [tests/memory/test_installation_scenarios.py](F:/IdeaProjects/spec-kit/tests/memory/test_installation_scenarios.py)
 
 **MVP COMPLETE**
 
@@ -180,6 +180,11 @@
 
 **MVP**: Phases 0-4 (33 tasks) - Global installation + basic memory
 
+**Progress**:
+- Phase 3: 12/12 complete (100%) - Memory Accumulation
+- Phase 4: 4/14 complete (29%) - Global Installation (tests done, scripts pending)
+
 ---
 
 *Generated: 2026-03-10*
+*Updated: 2026-03-10 - Phase 3 complete, Phase 4 tests complete*
