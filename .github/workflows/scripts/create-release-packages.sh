@@ -26,8 +26,12 @@ set -euo pipefail
 # All supported agents
 ALL_AGENTS=(copilot claude gemini cursor-agent qwen opencode codex windsurf kilocode auggie codebuddy qodercli roo kiro-cli amp shai tabnine agy bob vibe kimi generic)
 
-# Version from git tag or default
-VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo 'dev')}"
+# Version from argument, env, or git tag (in that order)
+if [[ $# -ge 1 && -n "${1:-}" ]]; then
+    VERSION="$1"
+else
+    VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo 'dev')}"
+fi
 
 # Output directory
 OUTPUT_DIR=".genreleases"
@@ -236,8 +240,8 @@ create_package() {
             copy_real_md_commands "$base_dir/.qoder/commands"
             ;;
         roo)
-            mkdir -p "$base_dir/.roo/rules"
-            copy_real_md_commands "$base_dir/.roo/rules"
+            mkdir -p "$base_dir/.roo/commands"
+            copy_real_md_commands "$base_dir/.roo/commands"
             ;;
         kiro-cli)
             mkdir -p "$base_dir/.kiro/prompts"
@@ -261,11 +265,11 @@ create_package() {
             ;;
         tabnine)
             mkdir -p "$base_dir/.tabnine/agent/commands"
-            generate_commands tabnine toml "{{args}}" "$base_dir/.tabnine/agent/commands" "$script"
+            generate_toml_commands tabnine "{{args}}" "$base_dir/.tabnine/agent/commands"
             ;;
         vibe)
             mkdir -p "$base_dir/.vibe/prompts"
-            generate_commands vibe md "$ARGUMENTS" "$base_dir/.vibe/prompts" "$script"
+            copy_real_md_commands "$base_dir/.vibe/prompts"
             ;;
         kimi)
             mkdir -p "$base_dir/.kimi/skills"
@@ -273,7 +277,7 @@ create_package() {
             ;;
         generic)
             mkdir -p "$base_dir/.speckit/commands"
-            generate_commands generic md "$ARGUMENTS" "$base_dir/.speckit/commands" "$script"
+            copy_real_md_commands "$base_dir/.speckit/commands"
             ;;
     esac
 

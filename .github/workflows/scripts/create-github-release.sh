@@ -13,6 +13,7 @@ set -euo pipefail
 
 # Version from git tag or environment
 VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo 'dev')}"
+VERSION_NO_V="${VERSION#v}"
 
 # Release directory
 RELEASE_DIR=".genreleases"

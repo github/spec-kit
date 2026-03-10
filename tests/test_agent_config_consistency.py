@@ -201,7 +201,11 @@ class TestAgentConfigConsistency:
         """PowerShell update-agent-context script should include 'kimi' in ValidateSet."""
         ps_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
 
-        assert "'kimi'" in ps_text
+        validate_set_match = re.search(r"\[ValidateSet\(([^)]*)\)\]", ps_text)
+        assert validate_set_match is not None
+        validate_set_values = re.findall(r"'([^']+)'", validate_set_match.group(1))
+
+        assert "kimi" in validate_set_values
 
     def test_kimi_in_github_release_output(self):
         """GitHub release script should include kimi template packages."""

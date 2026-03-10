@@ -660,7 +660,7 @@ class CommandRegistrar:
             "extension": ".md"
         },
         "roo": {
-            "dir": ".roo/rules",
+            "dir": ".roo/commands",
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
@@ -711,7 +711,7 @@ class CommandRegistrar:
             "dir": ".kimi/skills",
             "format": "markdown",
             "args": "$ARGUMENTS",
-            "extension": ".md"
+            "extension": "/SKILL.md"
         }
     }
 
@@ -905,6 +905,7 @@ class CommandRegistrar:
 
             # Write command file
             dest_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(output)
 
             # Generate companion .prompt.md for Copilot agents
@@ -916,6 +917,7 @@ class CommandRegistrar:
             # Register aliases
             for alias in cmd_info.get("aliases", []):
                 alias_file = commands_dir / f"{alias}{agent_config['extension']}"
+                alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(output)
                 # Generate companion .prompt.md for alias too
                 if agent_name == "copilot":

@@ -176,8 +176,8 @@ function Create-Package {
             Generate-Commands -Agent $Agent -Format 'md' -Args '$ARGUMENTS' -DestDir "$BaseDir/.qoder\commands" -Script $Script
         }
         'roo' {
-            New-Item -ItemType Directory -Force -Path "$BaseDir/.roo\rules" | Out-Null
-            Generate-Commands -Agent $Agent -Format 'md' -Args '$ARGUMENTS' -DestDir "$BaseDir/.roo\rules" -Script $Script
+            New-Item -ItemType Directory -Force -Path "$BaseDir/.roo\commands" | Out-Null
+            Generate-Commands -Agent $Agent -Format 'md' -Args '$ARGUMENTS' -DestDir "$BaseDir/.roo\commands" -Script $Script
         }
         'kiro-cli' {
             New-Item -ItemType Directory -Force -Path "$BaseDir/.kiro/prompts" | Out-Null
