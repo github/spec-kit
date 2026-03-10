@@ -149,9 +149,24 @@ create_kimi_skills() {
     script_command=$(printf '%s\n' "$file_content" | awk -v sv="$script_variant" '/^[[:space:]]*'"$script_variant"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, ""); print; exit}')
     [[ -z "$script_command" ]] && script_command="(Missing script command for $script_variant)"
 
+    # Extract agent_script command from frontmatter if present
+    local agent_script_command
+    agent_script_command=$(printf '%s\n' "$file_content" | awk '
+      /^agent_scripts:$/ { in_agent_scripts=1; next }
+      in_agent_scripts && /^[[:space:]]*'"$script_variant"':[[:space:]]*/ {
+        sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, "")
+        print
+        exit
+      }
+      in_agent_scripts && /^[a-zA-Z]/ { in_agent_scripts=0 }
+    ')
+
     # Build body: replace placeholders, strip scripts sections, rewrite paths
     local body
     body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
+    if [[ -n $agent_script_command ]]; then
+      body=$(printf '%s\n' "$body" | sed "s|{AGENT_SCRIPT}|${agent_script_command}|g")
+    fi
     body=$(printf '%s\n' "$body" | awk '
       /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
       in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
@@ -160,7 +175,7 @@ create_kimi_skills() {
       in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
       { print }
     ')
-    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | rewrite_paths)
+    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | sed 's/__AGENT__/kimi/g' | rewrite_paths)
 
     # Strip existing frontmatter and prepend Kimi frontmatter
     local template_body

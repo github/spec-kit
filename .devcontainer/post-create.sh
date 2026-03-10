@@ -82,9 +82,7 @@ echo "✅ Done"
 
 echo -e "\n🤖 Installing Kimi CLI..."
 # https://code.kimi.com
-# Note: Kimi does not yet publish a pinned installer checksum.
-# The checksum will be added here once officially available.
-run_command "curl -LsSf https://code.kimi.com/install.sh | bash"
+run_command "pipx install kimi-cli"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing CodeBuddy CLI..."

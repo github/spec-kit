@@ -232,8 +232,17 @@ function New-KimiSkills {
             $scriptCommand = $matches[1]
         }
 
+        # Extract agent_script command from frontmatter if present
+        $agentScriptCommand = ""
+        if ($fileContent -match "(?ms)agent_scripts:.*?^\s*${ScriptVariant}:\s*(.+?)$") {
+            $agentScriptCommand = $matches[1].Trim()
+        }
+
         # Replace {SCRIPT}, strip scripts sections, rewrite paths
         $body = $fileContent -replace '\{SCRIPT\}', $scriptCommand
+        if (-not [string]::IsNullOrEmpty($agentScriptCommand)) {
+            $body = $body -replace '\{AGENT_SCRIPT\}', $agentScriptCommand
+        }
 
         $lines = $body -split "`n"
         $outputLines = @()
@@ -258,6 +267,7 @@ function New-KimiSkills {
 
         $body = $outputLines -join "`n"
         $body = $body -replace '\{ARGS\}', '$ARGUMENTS'
+        $body = $body -replace '__AGENT__', 'kimi'
         $body = Rewrite-Paths -Content $body
 
         # Strip existing frontmatter, keep only body
