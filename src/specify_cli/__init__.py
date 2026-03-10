@@ -216,11 +216,11 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
-    "q": {
-        "name": "Amazon Q Developer CLI",
-        "folder": ".amazonq/",
+    "kiro-cli": {
+        "name": "Kiro CLI",
+        "folder": ".kiro/",
         "commands_subdir": "prompts",  # Special: uses prompts/ not commands/
-        "install_url": "https://aws.amazon.com/developer/learning/q-developer-cli/",
+        "install_url": "https://kiro.dev/docs/cli/",
         "requires_cli": True,
     },
     "amp": {
@@ -237,6 +237,13 @@ AGENT_CONFIG = {
         "install_url": "https://github.com/ovh/shai",
         "requires_cli": True,
     },
+    "tabnine": {
+        "name": "Tabnine CLI",
+        "folder": ".tabnine/agent/",
+        "commands_subdir": "commands",
+        "install_url": "https://docs.tabnine.com/main/getting-started/tabnine-cli",
+        "requires_cli": True,
+    },
     "agy": {
         "name": "Antigravity",
         "folder": ".agent/",
@@ -251,6 +258,13 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
+    "vibe": {
+        "name": "Mistral Vibe",
+        "folder": ".vibe/",
+        "commands_subdir": "prompts",
+        "install_url": "https://github.com/mistralai/mistral-vibe",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir
@@ -259,6 +273,34 @@ AGENT_CONFIG = {
         "requires_cli": False,
     },
 }
+
+AI_ASSISTANT_ALIASES = {
+    "kiro": "kiro-cli",
+}
+
+def _build_ai_assistant_help() -> str:
+    """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
+
+    non_generic_agents = sorted(agent for agent in AGENT_CONFIG if agent != "generic")
+    base_help = (
+        f"AI assistant to use: {', '.join(non_generic_agents)}, "
+        "or generic (requires --ai-commands-dir)."
+    )
+
+    if not AI_ASSISTANT_ALIASES:
+        return base_help
+
+    alias_phrases = []
+    for alias, target in sorted(AI_ASSISTANT_ALIASES.items()):
+        alias_phrases.append(f"'{alias}' as an alias for '{target}'")
+
+    if len(alias_phrases) == 1:
+        aliases_text = alias_phrases[0]
+    else:
+        aliases_text = ', '.join(alias_phrases[:-1]) + ' and ' + alias_phrases[-1]
+
+    return base_help + " Use " + aliases_text + "."
+AI_ASSISTANT_HELP = _build_ai_assistant_help()
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
@@ -534,7 +576,12 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
                 tracker.complete(tool, "available")
             return True
     
-    found = shutil.which(tool) is not None
+    if tool == "kiro-cli":
+        # Kiro currently supports both executable names. Prefer kiro-cli and
+        # accept kiro as a compatibility fallback.
+        found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
+    else:
+        found = shutil.which(tool) is not None
     
     if tracker:
         if found:
@@ -1084,7 +1131,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
         # Fallback: try the repo-relative path (for running from source checkout)
         # This also covers agents whose extracted commands are in a different
-        # format (e.g. gemini uses .toml, not .md).
+        # format (e.g. gemini/tabnine use .toml, not .md).
         script_dir = Path(__file__).parent.parent.parent  # up from src/specify_cli/
         fallback_dir = script_dir / "templates" / "commands"
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
@@ -1214,7 +1261,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, agy, bob, qodercli, or generic (requires --ai-commands-dir)"),
+    ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
@@ -1247,6 +1294,7 @@ def init(
         specify init --here --ai claude    # Alternative syntax for current directory
         specify init --here --ai codex
         specify init --here --ai codebuddy
+        specify init --here --ai vibe      # Initialize with Mistral Vibe support
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init my-project --ai claude --ai-skills   # Install agent skills
@@ -1255,6 +1303,23 @@ def init(
     """
 
     show_banner()
+
+    # Detect when option values are likely misinterpreted flags (parameter ordering issue)
+    if ai_assistant and ai_assistant.startswith("--"):
+        console.print(f"[red]Error:[/red] Invalid value for --ai: '{ai_assistant}'")
+        console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai?")
+        console.print("[yellow]Example:[/yellow] specify init --ai claude --here")
+        console.print(f"[yellow]Available agents:[/yellow] {', '.join(AGENT_CONFIG.keys())}")
+        raise typer.Exit(1)
+    
+    if ai_commands_dir and ai_commands_dir.startswith("--"):
+        console.print(f"[red]Error:[/red] Invalid value for --ai-commands-dir: '{ai_commands_dir}'")
+        console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai-commands-dir?")
+        console.print("[yellow]Example:[/yellow] specify init --ai generic --ai-commands-dir .myagent/commands/")
+        raise typer.Exit(1)
+
+    if ai_assistant:
+        ai_assistant = AI_ASSISTANT_ALIASES.get(ai_assistant, ai_assistant)
 
     if project_name == ".":
         here = True
@@ -1450,8 +1515,9 @@ def init(
                 if skills_ok and not here:
                     agent_cfg = AGENT_CONFIG.get(selected_ai, {})
                     agent_folder = agent_cfg.get("folder", "")
+                    commands_subdir = agent_cfg.get("commands_subdir", "commands")
                     if agent_folder:
-                        cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
+                        cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
                         if cmds_dir.exists():
                             try:
                                 shutil.rmtree(cmds_dir)
@@ -1706,6 +1772,13 @@ extension_app = typer.Typer(
 )
 app.add_typer(extension_app, name="extension")
 
+catalog_app = typer.Typer(
+    name="catalog",
+    help="Manage extension catalogs",
+    add_completion=False,
+)
+extension_app.add_typer(catalog_app, name="catalog")
+
 
 def get_speckit_version() -> str:
     """Get current spec-kit version."""
@@ -1769,6 +1842,181 @@ def extension_list(
     if available or all_extensions:
         console.print("\nInstall an extension:")
         console.print("  [cyan]specify extension add <name>[/cyan]")
+
+
+@catalog_app.command("list")
+def catalog_list():
+    """List all active extension catalogs."""
+    from .extensions import ExtensionCatalog, ValidationError
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    catalog = ExtensionCatalog(project_root)
+
+    try:
+        active_catalogs = catalog.get_active_catalogs()
+    except ValidationError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print("\n[bold cyan]Active Extension Catalogs:[/bold cyan]\n")
+    for entry in active_catalogs:
+        install_str = (
+            "[green]install allowed[/green]"
+            if entry.install_allowed
+            else "[yellow]discovery only[/yellow]"
+        )
+        console.print(f"  [bold]{entry.name}[/bold] (priority {entry.priority})")
+        if entry.description:
+            console.print(f"     {entry.description}")
+        console.print(f"     URL: {entry.url}")
+        console.print(f"     Install: {install_str}")
+        console.print()
+
+    config_path = project_root / ".specify" / "extension-catalogs.yml"
+    user_config_path = Path.home() / ".specify" / "extension-catalogs.yml"
+    if os.environ.get("SPECKIT_CATALOG_URL"):
+        console.print("[dim]Catalog configured via SPECKIT_CATALOG_URL environment variable.[/dim]")
+    else:
+        try:
+            proj_loaded = config_path.exists() and catalog._load_catalog_config(config_path) is not None
+        except ValidationError:
+            proj_loaded = False
+        if proj_loaded:
+            console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
+        else:
+            try:
+                user_loaded = user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None
+            except ValidationError:
+                user_loaded = False
+            if user_loaded:
+                console.print("[dim]Config: ~/.specify/extension-catalogs.yml[/dim]")
+            else:
+                console.print("[dim]Using built-in default catalog stack.[/dim]")
+                console.print(
+                    "[dim]Add .specify/extension-catalogs.yml to customize.[/dim]"
+                )
+
+
+@catalog_app.command("add")
+def catalog_add(
+    url: str = typer.Argument(help="Catalog URL (must use HTTPS)"),
+    name: str = typer.Option(..., "--name", help="Catalog name"),
+    priority: int = typer.Option(10, "--priority", help="Priority (lower = higher priority)"),
+    install_allowed: bool = typer.Option(
+        False, "--install-allowed/--no-install-allowed",
+        help="Allow extensions from this catalog to be installed",
+    ),
+    description: str = typer.Option("", "--description", help="Description of the catalog"),
+):
+    """Add a catalog to .specify/extension-catalogs.yml."""
+    from .extensions import ExtensionCatalog, ValidationError
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate URL
+    tmp_catalog = ExtensionCatalog(project_root)
+    try:
+        tmp_catalog._validate_catalog_url(url)
+    except ValidationError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    config_path = specify_dir / "extension-catalogs.yml"
+
+    # Load existing config
+    if config_path.exists():
+        try:
+            config = yaml.safe_load(config_path.read_text()) or {}
+        except Exception as e:
+            console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
+            raise typer.Exit(1)
+    else:
+        config = {}
+
+    catalogs = config.get("catalogs", [])
+    if not isinstance(catalogs, list):
+        console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
+        raise typer.Exit(1)
+
+    # Check for duplicate name
+    for existing in catalogs:
+        if isinstance(existing, dict) and existing.get("name") == name:
+            console.print(f"[yellow]Warning:[/yellow] A catalog named '{name}' already exists.")
+            console.print("Use 'specify extension catalog remove' first, or choose a different name.")
+            raise typer.Exit(1)
+
+    catalogs.append({
+        "name": name,
+        "url": url,
+        "priority": priority,
+        "install_allowed": install_allowed,
+        "description": description,
+    })
+
+    config["catalogs"] = catalogs
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+
+    install_label = "install allowed" if install_allowed else "discovery only"
+    console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
+    console.print(f"  URL: {url}")
+    console.print(f"  Priority: {priority}")
+    console.print(f"\nConfig saved to {config_path.relative_to(project_root)}")
+
+
+@catalog_app.command("remove")
+def catalog_remove(
+    name: str = typer.Argument(help="Catalog name to remove"),
+):
+    """Remove a catalog from .specify/extension-catalogs.yml."""
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    config_path = specify_dir / "extension-catalogs.yml"
+    if not config_path.exists():
+        console.print("[red]Error:[/red] No catalog config found. Nothing to remove.")
+        raise typer.Exit(1)
+
+    try:
+        config = yaml.safe_load(config_path.read_text()) or {}
+    except Exception:
+        console.print("[red]Error:[/red] Failed to read catalog config.")
+        raise typer.Exit(1)
+
+    catalogs = config.get("catalogs", [])
+    if not isinstance(catalogs, list):
+        console.print("[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list.")
+        raise typer.Exit(1)
+    original_count = len(catalogs)
+    catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
+
+    if len(catalogs) == original_count:
+        console.print(f"[red]Error:[/red] Catalog '{name}' not found.")
+        raise typer.Exit(1)
+
+    config["catalogs"] = catalogs
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+
+    console.print(f"[green]✓[/green] Removed catalog '{name}'")
+    if not catalogs:
+        console.print("\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]")
 
 
 @extension_app.command("add")
@@ -1857,6 +2105,19 @@ def extension_add(
                     console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
                     console.print("\nSearch available extensions:")
                     console.print("  specify extension search")
+                    raise typer.Exit(1)
+
+                # Enforce install_allowed policy
+                if not ext_info.get("_install_allowed", True):
+                    catalog_name = ext_info.get("_catalog_name", "community")
+                    console.print(
+                        f"[red]Error:[/red] '{extension}' is available in the "
+                        f"'{catalog_name}' catalog but installation is not allowed from that catalog."
+                    )
+                    console.print(
+                        f"\nTo enable installation, add '{extension}' to an approved catalog "
+                        f"(install_allowed: true) in .specify/extension-catalogs.yml."
+                    )
                     raise typer.Exit(1)
 
                 # Download extension ZIP
@@ -2003,6 +2264,15 @@ def extension_search(
                 tags_str = ", ".join(ext['tags'])
                 console.print(f"  [dim]Tags:[/dim] {tags_str}")
 
+            # Source catalog
+            catalog_name = ext.get("_catalog_name", "")
+            install_allowed = ext.get("_install_allowed", True)
+            if catalog_name:
+                if install_allowed:
+                    console.print(f"  [dim]Catalog:[/dim] {catalog_name}")
+                else:
+                    console.print(f"  [dim]Catalog:[/dim] {catalog_name} [yellow](discovery only — not installable)[/yellow]")
+
             # Stats
             stats = []
             if ext.get('downloads') is not None:
@@ -2016,8 +2286,15 @@ def extension_search(
             if ext.get('repository'):
                 console.print(f"  [dim]Repository:[/dim] {ext['repository']}")
 
-            # Install command
-            console.print(f"\n  [cyan]Install:[/cyan] specify extension add {ext['id']}")
+            # Install command (show warning if not installable)
+            if install_allowed:
+                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {ext['id']}")
+            else:
+                console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
+                console.print(
+                    f"  Add to an approved catalog with install_allowed: true, "
+                    f"or install from a ZIP URL: specify extension add {ext['id']} --from <zip-url>"
+                )
             console.print()
 
     except ExtensionError as e:
@@ -2066,6 +2343,12 @@ def extension_info(
         # Author and License
         console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
         console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
+
+        # Source catalog
+        if ext_info.get("_catalog_name"):
+            install_allowed = ext_info.get("_install_allowed", True)
+            install_note = "" if install_allowed else " [yellow](discovery only)[/yellow]"
+            console.print(f"[dim]Source catalog:[/dim] {ext_info['_catalog_name']}{install_note}")
         console.print()
 
         # Requirements
@@ -2122,12 +2405,21 @@ def extension_info(
 
         # Installation status and command
         is_installed = manager.registry.is_installed(ext_info['id'])
+        install_allowed = ext_info.get("_install_allowed", True)
         if is_installed:
             console.print("[green]✓ Installed[/green]")
             console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
-        else:
+        elif install_allowed:
             console.print("[yellow]Not installed[/yellow]")
             console.print(f"\n[cyan]Install:[/cyan] specify extension add {ext_info['id']}")
+        else:
+            catalog_name = ext_info.get("_catalog_name", "community")
+            console.print("[yellow]Not installed[/yellow]")
+            console.print(
+                f"\n[yellow]⚠[/yellow]  '{ext_info['id']}' is available in the '{catalog_name}' catalog "
+                f"but not in your approved catalog. Add it to .specify/extension-catalogs.yml "
+                f"with install_allowed: true to enable installation."
+            )
 
     except ExtensionError as e:
         console.print(f"\n[red]Error:[/red] {e}")
@@ -2336,4 +2628,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

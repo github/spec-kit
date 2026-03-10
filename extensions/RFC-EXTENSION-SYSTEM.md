@@ -858,11 +858,41 @@ def should_execute_hook(hook: dict, config: dict) -> bool:
 
 ## Extension Discovery & Catalog
 
-### Central Catalog
+### Dual Catalog System
+
+Spec Kit uses two catalog files with different purposes:
+
+#### User Catalog (`catalog.json`)
 
 **URL**: `https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json`
 
-**Format**:
+- **Purpose**: Organization's curated catalog of approved extensions
+- **Default State**: Empty by design - users populate with extensions they trust
+- **Usage**: Primary catalog (priority 1, `install_allowed: true`) in the default stack
+- **Control**: Organizations maintain their own fork/version for their teams
+
+#### Community Reference Catalog (`catalog.community.json`)
+
+**URL**: `https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json`
+
+- **Purpose**: Reference catalog of available community-contributed extensions
+- **Verification**: Community extensions may have `verified: false` initially
+- **Status**: Active - open for community contributions
+- **Submission**: Via Pull Request following the Extension Publishing Guide
+- **Usage**: Secondary catalog (priority 2, `install_allowed: false`) in the default stack — discovery only
+
+**How It Works (default stack):**
+
+1. **Discover**: `specify extension search` searches both catalogs — community extensions appear automatically
+2. **Review**: Evaluate community extensions for security, quality, and organizational fit
+3. **Curate**: Copy approved entries from community catalog to your `catalog.json`, or add to `.specify/extension-catalogs.yml` with `install_allowed: true`
+4. **Install**: Use `specify extension add <name>` — only allowed from `install_allowed: true` catalogs
+
+This approach gives organizations full control over which extensions can be installed while still providing community discoverability out of the box.
+
+### Catalog Format
+
+**Format** (same for both catalogs):
 
 ```json
 {
@@ -931,24 +961,113 @@ specify extension info jira
 
 ### Custom Catalogs
 
-Organizations can host private catalogs:
+Spec Kit supports a **catalog stack** — an ordered list of catalogs that the CLI merges and searches across. This allows organizations to maintain their own org-approved extensions alongside an internal catalog and community discovery, all at once.
 
-```bash
-# Add custom catalog
-specify extension add-catalog https://internal.company.com/spec-kit/catalog.json
+#### Catalog Stack Resolution
 
-# Set as default
-specify extension set-catalog --default https://internal.company.com/spec-kit/catalog.json
+The active catalog stack is resolved in this order (first match wins):
 
-# List catalogs
-specify extension catalogs
+1. **`SPECKIT_CATALOG_URL` environment variable** — single catalog replacing all defaults (backward compat)
+2. **Project-level `.specify/extension-catalogs.yml`** — full control for the project
+3. **User-level `~/.specify/extension-catalogs.yml`** — personal defaults
+4. **Built-in default stack** — `catalog.json` (install_allowed: true) + `catalog.community.json` (install_allowed: false)
+
+#### Default Built-in Stack
+
+When no config file exists, the CLI uses:
+
+| Priority | Catalog | install_allowed | Purpose |
+|----------|---------|-----------------|---------|
+| 1 | `catalog.json` (default) | `true` | Curated extensions available for installation |
+| 2 | `catalog.community.json` (community) | `false` | Discovery only — browse but not install |
+
+This means `specify extension search` surfaces community extensions out of the box, while `specify extension add` is still restricted to entries from catalogs with `install_allowed: true`.
+
+#### `.specify/extension-catalogs.yml` Config File
+
+```yaml
+catalogs:
+  - name: "default"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
+    priority: 1          # Highest — only approved entries can be installed
+    install_allowed: true
+    description: "Built-in catalog of installable extensions"
+
+  - name: "internal"
+    url: "https://internal.company.com/spec-kit/catalog.json"
+    priority: 2
+    install_allowed: true
+    description: "Internal company extensions"
+
+  - name: "community"
+    url: "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
+    priority: 3          # Lowest — discovery only, not installable
+    install_allowed: false
+    description: "Community-contributed extensions (discovery only)"
 ```
 
-**Catalog priority**:
+A user-level equivalent lives at `~/.specify/extension-catalogs.yml`. When a project-level config is present with one or more catalog entries, it takes full control and the built-in defaults are not applied. An empty `catalogs: []` list is treated the same as no config file, falling back to defaults.
 
-1. Project-specific catalog (`.specify/extension-catalogs.yml`)
-2. User-level catalog (`~/.specify/extension-catalogs.yml`)
-3. Default GitHub catalog
+#### Catalog CLI Commands
+
+```bash
+# List active catalogs with name, URL, priority, and install_allowed
+specify extension catalog list
+
+# Add a catalog (project-scoped)
+specify extension catalog add --name "internal" --install-allowed \
+  https://internal.company.com/spec-kit/catalog.json
+
+# Add a discovery-only catalog
+specify extension catalog add --name "community" \
+  https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json
+
+# Remove a catalog
+specify extension catalog remove internal
+
+# Show which catalog an extension came from
+specify extension info jira
+# → Source catalog: default
+```
+
+#### Merge Conflict Resolution
+
+When the same extension `id` appears in multiple catalogs, the higher-priority (lower priority number) catalog wins. Extensions from lower-priority catalogs with the same `id` are ignored.
+
+#### `install_allowed: false` Behavior
+
+Extensions from discovery-only catalogs are shown in `specify extension search` results but cannot be installed directly:
+
+```
+⚠  'linear' is available in the 'community' catalog but installation is not allowed from that catalog.
+
+To enable installation, add 'linear' to an approved catalog (install_allowed: true) in .specify/extension-catalogs.yml.
+```
+
+#### `SPECKIT_CATALOG_URL` (Backward Compatibility)
+
+The `SPECKIT_CATALOG_URL` environment variable still works — it is treated as a single `install_allowed: true` catalog, **replacing both defaults** for full backward compatibility:
+
+```bash
+# Point to your organization's catalog
+export SPECKIT_CATALOG_URL="https://internal.company.com/spec-kit/catalog.json"
+
+# All extension commands now use your custom catalog
+specify extension search       # Uses custom catalog
+specify extension add jira     # Installs from custom catalog
+```
+
+**Requirements:**
+- URL must use HTTPS (HTTP only allowed for localhost testing)
+- Catalog must follow the standard catalog.json schema
+- Must be publicly accessible or accessible within your network
+
+**Example for testing:**
+```bash
+# Test with localhost during development
+export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
+specify extension search
+```
 
 ---
 

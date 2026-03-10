@@ -9,8 +9,8 @@ handoffs:
     prompt: Clarify specification requirements
     send: true
 scripts:
-  sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
-  ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
+  sh: scripts/bash/create-new-feature.sh "{ARGS}"
+  ps: scripts/powershell/create-new-feature.ps1 "{ARGS}"
 ---
 
 ## User Input
@@ -197,62 +197,28 @@ Given that feature description, do this:
         - "Create a dashboard for analytics" → "analytics-dashboard"
         - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Check current branch before creating new one**:
+2. **Create or reuse branch context**:
 
    a. First, check the current branch:
 
-      - If the current branch is **not** `main` **and** the user did **not** specify a branch: **reuse the current branch** for this spec and **skip all branch-creation steps** in this section. Use the existing branch name as `BRANCH_NAME`.
-      - Otherwise, continue with the steps below to create a new branch.
+      - If the current branch is **not** `main` **and** the user did **not** specify a branch/number/prefix override: **reuse the current branch** for this spec and **skip script execution** in this step. Use the existing branch name as `BRANCH_NAME`.
+      - Otherwise, continue and run `{SCRIPT}` exactly once.
 
-   b. Fetch all remote branches to ensure we have the latest information:
+   b. Run `{SCRIPT}` with `--short-name` (and `--json`). Let the script auto-detect the next global number unless a spec number was explicitly extracted in Step 1a.
 
-      ```bash
-      git fetch --all --prune
-      ```
+   c. If Step 1a extracted explicit overrides, pass them through:
+      - If spec number extracted: include `--number <number>` (Bash) or `-Number <number>` (PowerShell)
+      - If branch prefix extracted: include `--branch-prefix "prefix/"` (Bash) or `-BranchPrefix "prefix/"` (PowerShell)
 
-   c. Find the highest feature number across all sources for the short-name:
-      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
-      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
-      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
-
-   d. Determine the next available number:
-      - Extract all numbers from all three sources
-      - Find the highest number N
-      - Use N+1 for the new branch number
-
-   e. Run the script `{SCRIPT}` with the calculated number and short-name:
-      - **CRITICAL**: Use the spec number and branch prefix **extracted in Step 1a** if available.
-      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - If branch prefix was extracted, also pass `--branch-prefix "prefix/"`
-      - Bash example without prefix: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - Bash example with prefix: `{SCRIPT} --json --number 5 --branch-prefix "feature/" --short-name "user-auth" "Add user authentication"`
-      - PowerShell example without prefix: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
-      - PowerShell example with prefix: `{SCRIPT} -Json -Number 5 -BranchPrefix "feature/" -ShortName "user-auth" "Add user authentication"`   
+   - Bash example (auto-number): `{SCRIPT} --json --short-name "user-auth" "Add user authentication"`
+   - Bash example (explicit number + prefix): `{SCRIPT} --json --number 303 --branch-prefix "feature/" --short-name "shopping-cart" "Add shopping cart"`
+   - PowerShell example (auto-number): `{SCRIPT} -Json -ShortName "user-auth" "Add user authentication"`
+   - PowerShell example (explicit number + prefix): `{SCRIPT} -Json -Number 303 -BranchPrefix "feature/" -ShortName "shopping-cart" "Add shopping cart"`
 
    **IMPORTANT**:
-
-   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
-   - Only match branches/directories with the exact short-name pattern
-   - If no existing branches/directories found with this short-name, start with number 1
-   - Append the short-name argument to the `{SCRIPT}` command with the 2-4 word short name you created in step 1. Keep the feature description as the final argument.
-   - **CRITICAL**: If a spec number was extracted in Step 1a, include `--number <number>` parameter (Bash) or `-SpecNumber <number>` (PowerShell)
-   - **CRITICAL**: If a branch prefix was extracted in Step 1a, include `--branch-prefix "prefix/"` parameter (Bash) or `-BranchPrefix "prefix/"` (PowerShell)
-   - **Note:** Natural language patterns like "feature 303" or "bugfix 666" provide BOTH prefix and number - you MUST extract and pass BOTH parameters to the script
-
-   - Bash examples: 
-     - `--short-name "your-generated-short-name" "Feature description here"`
-     - `--short-name "user-auth" "Add user authentication"`
-     - `--number 42 --short-name "payment-api" "Add payment processing"`
-     - `--number 1234 --short-name "user-auth" --branch-prefix "feature/" "Add user authentication"`
-     - `--number 303 --branch-prefix "feature/" --short-name "shopping-cart" "Add shopping cart"` (from "feature 303 add shopping cart")
-     - `--number 666 --branch-prefix "bugfix/" --short-name "payment-timeout" "Fix payment timeout"` (from "bugfix 666 fix payment timeout")
-   - PowerShell examples:
-     - `-ShortName "your-generated-short-name" "Feature description here"`
-     - `-ShortName "user-auth" "Add user authentication"`
-     - `-SpecNumber 42 -ShortName "payment-api" "Add payment processing"`
-     - `-SpecNumber 1234 -ShortName "user-auth" -BranchPrefix "feature/" "Add user authentication"`
-     - `-SpecNumber 303 -BranchPrefix "feature/" -ShortName "shopping-cart" "Add shopping cart"` (from "feature 303 add shopping cart")
-     - `-SpecNumber 666 -BranchPrefix "bugfix/" -ShortName "payment-timeout" "Fix payment timeout"` (from "bugfix 666 fix payment timeout")
+   - Always include the JSON flag (`--json` for Bash, `-Json` for PowerShell) so the output can be parsed reliably
+   - Do not do manual branch-number scanning in this template; rely on script auto-detection unless the user explicitly provided a number
+   - You must only ever run this script once per feature
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")

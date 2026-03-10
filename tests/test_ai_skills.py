@@ -147,6 +147,11 @@ class TestGetSkillsDir:
         result = _get_skills_dir(project_dir, "gemini")
         assert result == project_dir / ".gemini" / "skills"
 
+    def test_tabnine_skills_dir(self, project_dir):
+        """Tabnine should use .tabnine/agent/skills/."""
+        result = _get_skills_dir(project_dir, "tabnine")
+        assert result == project_dir / ".tabnine" / "agent" / "skills"
+
     def test_copilot_skills_dir(self, project_dir):
         """Copilot should use .github/skills/."""
         result = _get_skills_dir(project_dir, "copilot")
@@ -161,6 +166,11 @@ class TestGetSkillsDir:
         """Cursor should use .cursor/skills/."""
         result = _get_skills_dir(project_dir, "cursor-agent")
         assert result == project_dir / ".cursor" / "skills"
+
+    def test_kiro_cli_skills_dir(self, project_dir):
+        """Kiro CLI should use .kiro/skills/."""
+        result = _get_skills_dir(project_dir, "kiro-cli")
+        assert result == project_dir / ".kiro" / "skills"
 
     def test_unknown_agent_uses_default(self, project_dir):
         """Unknown agents should fall back to DEFAULT_SKILLS_DIR."""
@@ -460,8 +470,9 @@ class TestNewProjectCommandSkip:
         """Simulate template extraction: create agent commands dir."""
         agent_cfg = AGENT_CONFIG.get(agent, {})
         agent_folder = agent_cfg.get("folder", "")
+        commands_subdir = agent_cfg.get("commands_subdir", "commands")
         if agent_folder:
-            cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
+            cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
             cmds_dir.mkdir(parents=True, exist_ok=True)
             (cmds_dir / "speckit.specify.md").write_text("# spec")
 
@@ -483,12 +494,37 @@ class TestNewProjectCommandSkip:
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
             result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
+        assert result.exit_code == 0
         # Skills should have been called
         mock_skills.assert_called_once()
 
         # Commands dir should have been removed after skills succeeded
         cmds_dir = target / ".claude" / "commands"
         assert not cmds_dir.exists()
+
+    def test_new_project_nonstandard_commands_subdir_removed_after_skills_succeed(self, tmp_path):
+        """For non-standard agents, configured commands_subdir should be removed on success."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "new-kiro-proj"
+
+        def fake_download(project_path, *args, **kwargs):
+            self._fake_extract("kiro-cli", project_path)
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(app, ["init", str(target), "--ai", "kiro-cli", "--ai-skills", "--script", "sh", "--no-git"])
+
+        assert result.exit_code == 0
+        mock_skills.assert_called_once()
+
+        prompts_dir = target / ".kiro" / "prompts"
+        assert not prompts_dir.exists()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
@@ -508,6 +544,7 @@ class TestNewProjectCommandSkip:
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
             result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
+        assert result.exit_code == 0
         # Commands should still exist since skills failed
         cmds_dir = target / ".claude" / "commands"
         assert cmds_dir.exists()
@@ -538,8 +575,9 @@ class TestNewProjectCommandSkip:
              patch("specify_cli.install_ai_skills", return_value=True), \
              patch("specify_cli.is_git_repo", return_value=True), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
-            result = runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
+            result = runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"], input="y\n")
 
+        assert result.exit_code == 0
         # Commands must remain for --here
         assert cmds_dir.exists()
         assert (cmds_dir / "speckit.specify.md").exists()
@@ -630,3 +668,101 @@ class TestCliValidation:
         plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
         assert "--ai-skills" in plain
         assert "agent skills" in plain.lower()
+
+    def test_kiro_alias_normalized_to_kiro_cli(self, tmp_path):
+        """--ai kiro should normalize to canonical kiro-cli agent key."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "kiro-alias-proj"
+
+        with patch("specify_cli.download_and_extract_template") as mock_download, \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    str(target),
+                    "--ai",
+                    "kiro",
+                    "--ignore-agent-tools",
+                    "--script",
+                    "sh",
+                    "--no-git",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_download.called
+        # download_and_extract_template(project_path, ai_assistant, script_type, ...)
+        assert mock_download.call_args.args[1] == "kiro-cli"
+
+    def test_q_removed_from_agent_config(self):
+        """Amazon Q legacy key should not remain in AGENT_CONFIG."""
+        assert "q" not in AGENT_CONFIG
+        assert "kiro-cli" in AGENT_CONFIG
+
+
+class TestParameterOrderingIssue:
+    """Test fix for GitHub issue #1641: parameter ordering issues."""
+
+    def test_ai_flag_consuming_here_flag(self):
+        """--ai without value should not consume --here flag (issue #1641)."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        # This used to fail with "Must specify project name" because --here was consumed by --ai
+        result = runner.invoke(app, ["init", "--ai-skills", "--ai", "--here"])
+
+        assert result.exit_code == 1
+        assert "Invalid value for --ai" in result.output
+        assert "--here" in result.output  # Should mention the invalid value
+
+    def test_ai_flag_consuming_ai_skills_flag(self):
+        """--ai without value should not consume --ai-skills flag."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        # This should fail with helpful error about missing --ai value
+        result = runner.invoke(app, ["init", "--here", "--ai", "--ai-skills"])
+
+        assert result.exit_code == 1
+        assert "Invalid value for --ai" in result.output
+        assert "--ai-skills" in result.output  # Should mention the invalid value
+
+    def test_error_message_provides_hint(self):
+        """Error message should provide helpful hint about missing value."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "--ai", "--here"])
+
+        assert result.exit_code == 1
+        assert "Hint:" in result.output or "hint" in result.output.lower()
+        assert "forget to provide a value" in result.output.lower()
+
+    def test_error_message_lists_available_agents(self):
+        """Error message should list available agents."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "--ai", "--here"])
+
+        assert result.exit_code == 1
+        # Should mention some known agents
+        output_lower = result.output.lower()
+        assert any(agent in output_lower for agent in ["claude", "copilot", "gemini"])
+
+    def test_ai_commands_dir_consuming_flag(self):
+        """--ai-commands-dir without value should not consume next flag."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "myproject", "--ai", "generic", "--ai-commands-dir", "--here"])
+
+        assert result.exit_code == 1
+        assert "Invalid value for --ai-commands-dir" in result.output
+        assert "--here" in result.output

@@ -8,9 +8,11 @@ without bloating the core framework.
 
 import json
 import hashlib
+import os
 import tempfile
 import zipfile
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from datetime import datetime, timezone
@@ -34,6 +36,16 @@ class ValidationError(ExtensionError):
 class CompatibilityError(ExtensionError):
     """Raised when extension is incompatible with current environment."""
     pass
+
+
+@dataclass
+class CatalogEntry:
+    """Represents a single catalog entry in the catalog stack."""
+    url: str
+    name: str
+    priority: int
+    install_allowed: bool
+    description: str = ""
 
 
 class ExtensionManifest:
@@ -455,6 +467,12 @@ class ExtensionManager:
                     if cmd_file.exists():
                         cmd_file.unlink()
 
+                    # Also remove companion .prompt.md for Copilot
+                    if agent_name == "copilot":
+                        prompt_file = self.project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
+                        if prompt_file.exists():
+                            prompt_file.unlink()
+
         if keep_config:
             # Preserve config files, only remove non-config files
             if extension_dir.exists():
@@ -597,7 +615,7 @@ class CommandRegistrar:
             "dir": ".github/agents",
             "format": "markdown",
             "args": "$ARGUMENTS",
-            "extension": ".md"
+            "extension": ".agent.md"
         },
         "cursor": {
             "dir": ".cursor/commands",
@@ -653,8 +671,8 @@ class CommandRegistrar:
             "args": "$ARGUMENTS",
             "extension": ".md"
         },
-        "q": {
-            "dir": ".amazonq/prompts",
+        "kiro-cli": {
+            "dir": ".kiro/prompts",
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
@@ -670,6 +688,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "tabnine": {
+            "dir": ".tabnine/agent/commands",
+            "format": "toml",
+            "args": "{{args}}",
+            "extension": ".toml"
         },
         "bob": {
             "dir": ".bob/commands",
@@ -871,15 +895,39 @@ class CommandRegistrar:
             dest_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
             dest_file.write_text(output)
 
+            # Generate companion .prompt.md for Copilot agents
+            if agent_name == "copilot":
+                self._write_copilot_prompt(project_root, cmd_name)
+
             registered.append(cmd_name)
 
             # Register aliases
             for alias in cmd_info.get("aliases", []):
                 alias_file = commands_dir / f"{alias}{agent_config['extension']}"
                 alias_file.write_text(output)
+                # Generate companion .prompt.md for alias too
+                if agent_name == "copilot":
+                    self._write_copilot_prompt(project_root, alias)
                 registered.append(alias)
 
         return registered
+
+    @staticmethod
+    def _write_copilot_prompt(project_root: Path, cmd_name: str) -> None:
+        """Generate a companion .prompt.md file for a Copilot agent command.
+
+        Copilot requires a .prompt.md file in .github/prompts/ that references
+        the corresponding .agent.md file in .github/agents/ via an ``agent:``
+        frontmatter field.
+
+        Args:
+            project_root: Path to project root
+            cmd_name: Command name (used as the file stem, e.g. 'speckit.my-ext.example')
+        """
+        prompts_dir = project_root / ".github" / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
+        prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n")
 
     def register_commands_for_all_agents(
         self,
@@ -940,6 +988,7 @@ class ExtensionCatalog:
     """Manages extension catalog fetching, caching, and searching."""
 
     DEFAULT_CATALOG_URL = "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
+    COMMUNITY_CATALOG_URL = "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
     CACHE_DURATION = 3600  # 1 hour in seconds
 
     def __init__(self, project_root: Path):
@@ -954,43 +1003,109 @@ class ExtensionCatalog:
         self.cache_file = self.cache_dir / "catalog.json"
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
-    def get_catalog_url(self) -> str:
-        """Get catalog URL from config or use default.
+    def _validate_catalog_url(self, url: str) -> None:
+        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed).
 
-        Checks in order:
-        1. SPECKIT_CATALOG_URL environment variable
-        2. Default catalog URL
-
-        Returns:
-            URL to fetch catalog from
+        Args:
+            url: URL to validate
 
         Raises:
-            ValidationError: If custom URL is invalid (non-HTTPS)
+            ValidationError: If URL is invalid or uses non-HTTPS scheme
         """
-        import os
-        import sys
         from urllib.parse import urlparse
 
-        # Environment variable override (useful for testing)
+        parsed = urlparse(url)
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+            raise ValidationError(
+                f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
+                "HTTP is only allowed for localhost."
+            )
+        if not parsed.netloc:
+            raise ValidationError("Catalog URL must be a valid URL with a host.")
+
+    def _load_catalog_config(self, config_path: Path) -> Optional[List[CatalogEntry]]:
+        """Load catalog stack configuration from a YAML file.
+
+        Args:
+            config_path: Path to extension-catalogs.yml
+
+        Returns:
+            Ordered list of CatalogEntry objects, or None if file doesn't exist
+            or contains no valid catalog entries.
+
+        Raises:
+            ValidationError: If any catalog entry has an invalid URL,
+                the file cannot be parsed, or a priority value is invalid.
+        """
+        if not config_path.exists():
+            return None
+        try:
+            data = yaml.safe_load(config_path.read_text()) or {}
+        except (yaml.YAMLError, OSError) as e:
+            raise ValidationError(
+                f"Failed to read catalog config {config_path}: {e}"
+            )
+        catalogs_data = data.get("catalogs", [])
+        if not catalogs_data:
+            return None
+        if not isinstance(catalogs_data, list):
+            raise ValidationError(
+                f"Invalid catalog config: 'catalogs' must be a list, got {type(catalogs_data).__name__}"
+            )
+        entries: List[CatalogEntry] = []
+        for idx, item in enumerate(catalogs_data):
+            if not isinstance(item, dict):
+                raise ValidationError(
+                    f"Invalid catalog entry at index {idx}: expected a mapping, got {type(item).__name__}"
+                )
+            url = str(item.get("url", "")).strip()
+            if not url:
+                continue
+            self._validate_catalog_url(url)
+            try:
+                priority = int(item.get("priority", idx + 1))
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
+                    f"expected integer, got {item.get('priority')!r}"
+                )
+            raw_install = item.get("install_allowed", False)
+            if isinstance(raw_install, str):
+                install_allowed = raw_install.strip().lower() in ("true", "yes", "1")
+            else:
+                install_allowed = bool(raw_install)
+            entries.append(CatalogEntry(
+                url=url,
+                name=str(item.get("name", f"catalog-{idx + 1}")),
+                priority=priority,
+                install_allowed=install_allowed,
+                description=str(item.get("description", "")),
+            ))
+        entries.sort(key=lambda e: e.priority)
+        return entries if entries else None
+
+    def get_active_catalogs(self) -> List[CatalogEntry]:
+        """Get the ordered list of active catalogs.
+
+        Resolution order:
+        1. SPECKIT_CATALOG_URL env var — single catalog replacing all defaults
+        2. Project-level .specify/extension-catalogs.yml
+        3. User-level ~/.specify/extension-catalogs.yml
+        4. Built-in default stack (default + community)
+
+        Returns:
+            List of CatalogEntry objects sorted by priority (ascending)
+
+        Raises:
+            ValidationError: If a catalog URL is invalid
+        """
+        import sys
+
+        # 1. SPECKIT_CATALOG_URL env var replaces all defaults for backward compat
         if env_value := os.environ.get("SPECKIT_CATALOG_URL"):
             catalog_url = env_value.strip()
-            parsed = urlparse(catalog_url)
-
-            # Require HTTPS for security (prevent man-in-the-middle attacks)
-            # Allow http://localhost for local development/testing
-            is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
-                raise ValidationError(
-                    f"Invalid SPECKIT_CATALOG_URL: must use HTTPS (got {parsed.scheme}://). "
-                    "HTTP is only allowed for localhost."
-                )
-
-            if not parsed.netloc:
-                raise ValidationError(
-                    "Invalid SPECKIT_CATALOG_URL: must be a valid URL with a host."
-                )
-
-            # Warn users when using a non-default catalog (once per instance)
+            self._validate_catalog_url(catalog_url)
             if catalog_url != self.DEFAULT_CATALOG_URL:
                 if not getattr(self, "_non_default_catalog_warning_shown", False):
                     print(
@@ -999,11 +1114,163 @@ class ExtensionCatalog:
                         file=sys.stderr,
                     )
                     self._non_default_catalog_warning_shown = True
+            return [CatalogEntry(url=catalog_url, name="custom", priority=1, install_allowed=True, description="Custom catalog via SPECKIT_CATALOG_URL")]
 
-            return catalog_url
+        # 2. Project-level config overrides all defaults
+        project_config_path = self.project_root / ".specify" / "extension-catalogs.yml"
+        catalogs = self._load_catalog_config(project_config_path)
+        if catalogs is not None:
+            return catalogs
 
-        # TODO: Support custom catalogs from .specify/extension-catalogs.yml
-        return self.DEFAULT_CATALOG_URL
+        # 3. User-level config
+        user_config_path = Path.home() / ".specify" / "extension-catalogs.yml"
+        catalogs = self._load_catalog_config(user_config_path)
+        if catalogs is not None:
+            return catalogs
+
+        # 4. Built-in default stack
+        return [
+            CatalogEntry(url=self.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True, description="Built-in catalog of installable extensions"),
+            CatalogEntry(url=self.COMMUNITY_CATALOG_URL, name="community", priority=2, install_allowed=False, description="Community-contributed extensions (discovery only)"),
+        ]
+
+    def get_catalog_url(self) -> str:
+        """Get the primary catalog URL.
+
+        Returns the URL of the highest-priority catalog. Kept for backward
+        compatibility. Use get_active_catalogs() for full multi-catalog support.
+
+        Returns:
+            URL of the primary catalog
+
+        Raises:
+            ValidationError: If a catalog URL is invalid
+        """
+        active = self.get_active_catalogs()
+        return active[0].url if active else self.DEFAULT_CATALOG_URL
+
+    def _fetch_single_catalog(self, entry: CatalogEntry, force_refresh: bool = False) -> Dict[str, Any]:
+        """Fetch a single catalog with per-URL caching.
+
+        For the DEFAULT_CATALOG_URL, uses legacy cache files (self.cache_file /
+        self.cache_metadata_file) for backward compatibility. For all other URLs,
+        uses URL-hash-based cache files in self.cache_dir.
+
+        Args:
+            entry: CatalogEntry describing the catalog to fetch
+            force_refresh: If True, bypass cache
+
+        Returns:
+            Catalog data dictionary
+
+        Raises:
+            ExtensionError: If catalog cannot be fetched or has invalid format
+        """
+        import urllib.request
+        import urllib.error
+
+        # Determine cache file paths (backward compat for default catalog)
+        if entry.url == self.DEFAULT_CATALOG_URL:
+            cache_file = self.cache_file
+            cache_meta_file = self.cache_metadata_file
+            is_valid = not force_refresh and self.is_cache_valid()
+        else:
+            url_hash = hashlib.sha256(entry.url.encode()).hexdigest()[:16]
+            cache_file = self.cache_dir / f"catalog-{url_hash}.json"
+            cache_meta_file = self.cache_dir / f"catalog-{url_hash}-metadata.json"
+            is_valid = False
+            if not force_refresh and cache_file.exists() and cache_meta_file.exists():
+                try:
+                    metadata = json.loads(cache_meta_file.read_text())
+                    cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
+                    if cached_at.tzinfo is None:
+                        cached_at = cached_at.replace(tzinfo=timezone.utc)
+                    age = (datetime.now(timezone.utc) - cached_at).total_seconds()
+                    is_valid = age < self.CACHE_DURATION
+                except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+                    # If metadata is invalid or missing expected fields, treat cache as invalid
+                    pass
+
+        # Use cache if valid
+        if is_valid:
+            try:
+                return json.loads(cache_file.read_text())
+            except json.JSONDecodeError:
+                pass
+
+        # Fetch from network
+        try:
+            with urllib.request.urlopen(entry.url, timeout=10) as response:
+                catalog_data = json.loads(response.read())
+
+            if "schema_version" not in catalog_data or "extensions" not in catalog_data:
+                raise ExtensionError(f"Invalid catalog format from {entry.url}")
+
+            # Save to cache
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(catalog_data, indent=2))
+            cache_meta_file.write_text(json.dumps({
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "catalog_url": entry.url,
+            }, indent=2))
+
+            return catalog_data
+
+        except urllib.error.URLError as e:
+            raise ExtensionError(f"Failed to fetch catalog from {entry.url}: {e}")
+        except json.JSONDecodeError as e:
+            raise ExtensionError(f"Invalid JSON in catalog from {entry.url}: {e}")
+
+    def _get_merged_extensions(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
+        """Fetch and merge extensions from all active catalogs.
+
+        Higher-priority (lower priority number) catalogs win on conflicts
+        (same extension id in two catalogs). Each extension dict is annotated with:
+          - _catalog_name: name of the source catalog
+          - _install_allowed: whether installation is allowed from this catalog
+
+        Catalogs that fail to fetch are skipped. Raises ExtensionError only if
+        ALL catalogs fail.
+
+        Args:
+            force_refresh: If True, bypass all caches
+
+        Returns:
+            List of merged extension dicts
+
+        Raises:
+            ExtensionError: If all catalogs fail to fetch
+        """
+        import sys
+
+        active_catalogs = self.get_active_catalogs()
+        merged: Dict[str, Dict[str, Any]] = {}
+        any_success = False
+
+        for catalog_entry in active_catalogs:
+            try:
+                catalog_data = self._fetch_single_catalog(catalog_entry, force_refresh)
+                any_success = True
+            except ExtensionError as e:
+                print(
+                    f"Warning: Could not fetch catalog '{catalog_entry.name}': {e}",
+                    file=sys.stderr,
+                )
+                continue
+
+            for ext_id, ext_data in catalog_data.get("extensions", {}).items():
+                if ext_id not in merged:  # Higher-priority catalog wins
+                    merged[ext_id] = {
+                        **ext_data,
+                        "id": ext_id,
+                        "_catalog_name": catalog_entry.name,
+                        "_install_allowed": catalog_entry.install_allowed,
+                    }
+
+        if not any_success and active_catalogs:
+            raise ExtensionError("Failed to fetch any extension catalog")
+
+        return list(merged.values())
 
     def is_cache_valid(self) -> bool:
         """Check if cached catalog is still valid.
@@ -1017,9 +1284,11 @@ class ExtensionCatalog:
         try:
             metadata = json.loads(self.cache_metadata_file.read_text())
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
+            if cached_at.tzinfo is None:
+                cached_at = cached_at.replace(tzinfo=timezone.utc)
             age_seconds = (datetime.now(timezone.utc) - cached_at).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError):
+        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -1080,7 +1349,7 @@ class ExtensionCatalog:
         author: Optional[str] = None,
         verified_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Search catalog for extensions.
+        """Search catalog for extensions across all active catalogs.
 
         Args:
             query: Search query (searches name, description, tags)
@@ -1089,14 +1358,16 @@ class ExtensionCatalog:
             verified_only: If True, show only verified extensions
 
         Returns:
-            List of matching extension metadata
+            List of matching extension metadata, each annotated with
+            ``_catalog_name`` and ``_install_allowed`` from its source catalog.
         """
-        catalog = self.fetch_catalog()
-        extensions = catalog.get("extensions", {})
+        all_extensions = self._get_merged_extensions()
 
         results = []
 
-        for ext_id, ext_data in extensions.items():
+        for ext_data in all_extensions:
+            ext_id = ext_data["id"]
+
             # Apply filters
             if verified_only and not ext_data.get("verified", False):
                 continue
@@ -1122,25 +1393,26 @@ class ExtensionCatalog:
                 if query_lower not in searchable_text:
                     continue
 
-            results.append({"id": ext_id, **ext_data})
+            results.append(ext_data)
 
         return results
 
     def get_extension_info(self, extension_id: str) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific extension.
 
+        Searches all active catalogs in priority order.
+
         Args:
             extension_id: ID of the extension
 
         Returns:
-            Extension metadata or None if not found
+            Extension metadata (annotated with ``_catalog_name`` and
+            ``_install_allowed``) or None if not found.
         """
-        catalog = self.fetch_catalog()
-        extensions = catalog.get("extensions", {})
-
-        if extension_id in extensions:
-            return {"id": extension_id, **extensions[extension_id]}
-
+        all_extensions = self._get_merged_extensions()
+        for ext_data in all_extensions:
+            if ext_data["id"] == extension_id:
+                return ext_data
         return None
 
     def download_extension(self, extension_id: str, target_dir: Optional[Path] = None) -> Path:
@@ -1200,11 +1472,18 @@ class ExtensionCatalog:
             raise ExtensionError(f"Failed to save extension ZIP: {e}")
 
     def clear_cache(self):
-        """Clear the catalog cache."""
+        """Clear the catalog cache (both legacy and URL-hash-based files)."""
         if self.cache_file.exists():
             self.cache_file.unlink()
         if self.cache_metadata_file.exists():
             self.cache_metadata_file.unlink()
+        # Also clear any per-URL hash-based cache files
+        if self.cache_dir.exists():
+            for extra_cache in self.cache_dir.glob("catalog-*.json"):
+                if extra_cache != self.cache_file:
+                    extra_cache.unlink(missing_ok=True)
+            for extra_meta in self.cache_dir.glob("catalog-*-metadata.json"):
+                extra_meta.unlink(missing_ok=True)
 
 
 class ConfigManager:
@@ -1781,5 +2060,4 @@ class HookExecutor:
                     hook["enabled"] = False
 
         self.save_project_config(config)
-
 

@@ -456,18 +456,20 @@ Users install with:
 specify extension add --from https://github.com/.../spec-kit-my-ext-1.0.0.zip
 ```
 
-### Option 3: Extension Catalog (Future)
+### Option 3: Community Reference Catalog
 
-Submit to official catalog:
+Submit to the community catalog for public discovery:
 
 1. **Fork** spec-kit repository
-2. **Add entry** to `extensions/catalog.json`
-3. **Create PR**
-4. **After merge**, users can install with:
+2. **Add entry** to `extensions/catalog.community.json`
+3. **Update** `extensions/README.md` with your extension
+4. **Create PR** following the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md)
+5. **After merge**, your extension becomes available:
+   - Users can browse `catalog.community.json` to discover your extension
+   - Users copy the entry to their own `catalog.json`
+   - Users install with: `specify extension add my-ext` (from their catalog)
 
-   ```bash
-   specify extension add my-ext  # No URL needed!
-   ```
+See the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md) for detailed submission instructions.
 
 ---
 

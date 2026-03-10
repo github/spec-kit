@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex amp shai bob generic (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli generic (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -155,7 +155,7 @@ build_variant() {
   
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS
-  #   * TOML (gemini, qwen): {{args}}
+  #   * TOML (gemini, qwen, tabnine): {{args}}
   # This keeps formats readable without extra abstraction.
 
   case $agent in
@@ -212,15 +212,22 @@ build_variant() {
     shai)
       mkdir -p "$base_dir/.shai/commands"
       generate_commands shai md "\$ARGUMENTS" "$base_dir/.shai/commands" "$script" ;;
-    q)
-      mkdir -p "$base_dir/.amazonq/prompts"
-      generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
+    tabnine)
+      mkdir -p "$base_dir/.tabnine/agent/commands"
+      generate_commands tabnine toml "{{args}}" "$base_dir/.tabnine/agent/commands" "$script"
+      [[ -f agent_templates/tabnine/TABNINE.md ]] && cp agent_templates/tabnine/TABNINE.md "$base_dir/TABNINE.md" ;;
+    kiro-cli)
+      mkdir -p "$base_dir/.kiro/prompts"
+      generate_commands kiro-cli md "\$ARGUMENTS" "$base_dir/.kiro/prompts" "$script" ;;
     agy)
       mkdir -p "$base_dir/.agent/workflows"
       generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/workflows" "$script" ;;
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
+    vibe)
+      mkdir -p "$base_dir/.vibe/prompts"
+      generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
@@ -230,7 +237,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q agy bob qodercli generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli generic)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
@@ -277,4 +284,3 @@ done
 
 echo "Archives in $GENRELEASES_DIR:"
 ls -1 "$GENRELEASES_DIR"/spec-kit-template-*-"${NEW_VERSION}".zip
-
