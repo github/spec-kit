@@ -1,31 +1,20 @@
 #!/usr/bin/env bash
-
-# Create GitHub Release with all agent template packages
-#
-# This script creates a GitHub release and uploads all generated zip archives
-# as release assets.
-
 set -euo pipefail
 
-#==============================================================================
-# Configuration
-#==============================================================================
+# create-github-release.sh
+# Create a GitHub release with all template zip files
+# Usage: create-github-release.sh <version>
 
-# Version from git tag or environment
-VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo 'dev')}"
-VERSION_NO_V="${VERSION#v}"
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <version>" >&2
+  exit 1
+fi
 
-# Release directory
-RELEASE_DIR=".genreleases"
+VERSION="$1"
 
-#==============================================================================
-# Main
-#==============================================================================
+# Remove 'v' prefix from version for release title
+VERSION_NO_V=${VERSION#v}
 
-echo "Creating GitHub release for version: $VERSION"
-echo ""
-
-# Create the release with all agent packages
 gh release create "$VERSION" \
   .genreleases/spec-kit-template-copilot-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-copilot-ps-"$VERSION".zip \

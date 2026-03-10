@@ -213,3 +213,7 @@ class TestAgentConfigConsistency:
 
         assert "spec-kit-template-kimi-sh-" in gh_release_text
         assert "spec-kit-template-kimi-ps-" in gh_release_text
+
+    def test_ai_help_includes_kimi(self):
+        """CLI help text for --ai should include kimi."""
+        assert "kimi" in AI_ASSISTANT_HELP
