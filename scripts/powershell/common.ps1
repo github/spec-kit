@@ -137,7 +137,7 @@ function Test-DirHasFiles {
 
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
-#   2. .specify/templates/packs/<pack-id>/templates/
+#   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
 #   3. .specify/extensions/<ext-id>/templates/
 #   4. .specify/templates/ (core)
 function Resolve-Template {
@@ -152,12 +152,37 @@ function Resolve-Template {
     $override = Join-Path $base "overrides/$TemplateName.md"
     if (Test-Path $override) { return $override }
 
-    # Priority 2: Installed packs (by directory order)
-    $packsDir = Join-Path $base 'packs'
-    if (Test-Path $packsDir) {
-        foreach ($pack in Get-ChildItem -Path $packsDir -Directory -ErrorAction SilentlyContinue) {
-            $candidate = Join-Path $pack.FullName "templates/$TemplateName.md"
-            if (Test-Path $candidate) { return $candidate }
+    # Priority 2: Installed presets (sorted by priority from .registry)
+    $presetsDir = Join-Path $RepoRoot '.specify/presets'
+    if (Test-Path $presetsDir) {
+        $registryFile = Join-Path $presetsDir '.registry'
+        $sortedPresets = @()
+        if (Test-Path $registryFile) {
+            try {
+                $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
+                $presets = $registryData.presets
+                if ($presets) {
+                    $sortedPresets = $presets.PSObject.Properties |
+                        Sort-Object { if ($_.Value.priority) { $_.Value.priority } else { 10 } } |
+                        ForEach-Object { $_.Name }
+                }
+            } catch {
+                # Fallback: alphabetical directory order
+                $sortedPresets = @()
+            }
+        }
+
+        if ($sortedPresets.Count -gt 0) {
+            foreach ($presetId in $sortedPresets) {
+                $candidate = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
+                if (Test-Path $candidate) { return $candidate }
+            }
+        } else {
+            # Fallback: alphabetical directory order
+            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue) {
+                $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
+                if (Test-Path $candidate) { return $candidate }
+            }
         }
     }
 

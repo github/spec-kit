@@ -1,6 +1,8 @@
-# Feature Specification
+# Feature Specification (Self-Test Preset)
 
-> Replace this with your actual specification content.
+<!-- preset:self-test -->
+
+> This template is provided by the self-test preset.
 
 ## Overview
 

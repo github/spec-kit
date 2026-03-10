@@ -156,7 +156,7 @@ check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" |
 
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
-#   2. .specify/templates/packs/<pack-id>/templates/
+#   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
 #   3. .specify/extensions/<ext-id>/templates/
 #   4. .specify/templates/ (core)
 resolve_template() {
@@ -168,14 +168,37 @@ resolve_template() {
     local override="$base/overrides/${template_name}.md"
     [ -f "$override" ] && echo "$override" && return 0
 
-    # Priority 2: Installed packs (by directory order)
-    local packs_dir="$base/packs"
-    if [ -d "$packs_dir" ]; then
-        for pack in "$packs_dir"/*/; do
-            [ -d "$pack" ] || continue
-            local candidate="$pack/templates/${template_name}.md"
-            [ -f "$candidate" ] && echo "$candidate" && return 0
-        done
+    # Priority 2: Installed presets (sorted by priority from .registry)
+    local presets_dir="$repo_root/.specify/presets"
+    if [ -d "$presets_dir" ]; then
+        local registry_file="$presets_dir/.registry"
+        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
+            # Read preset IDs sorted by priority (lower number = higher precedence)
+            local sorted_presets
+            sorted_presets=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open('$registry_file'))
+    presets = data.get('presets', {})
+    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10)):
+        print(pid)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null)
+            if [ $? -eq 0 ] && [ -n "$sorted_presets" ]; then
+                while IFS= read -r preset_id; do
+                    local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
+                    [ -f "$candidate" ] && echo "$candidate" && return 0
+                done <<< "$sorted_presets"
+            fi
+        else
+            # Fallback: alphabetical directory order
+            for preset in "$presets_dir"/*/; do
+                [ -d "$preset" ] || continue
+                local candidate="$preset/templates/${template_name}.md"
+                [ -f "$candidate" ] && echo "$candidate" && return 0
+            done
+        fi
     fi
 
     # Priority 3: Extension-provided templates
