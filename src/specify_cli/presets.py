@@ -419,6 +419,217 @@ class PresetManager:
         registrar = CommandRegistrar()
         registrar.unregister_commands(registered_commands, self.project_root)
 
+    def _get_skills_dir(self) -> Optional[Path]:
+        """Return the skills directory if ``--ai-skills`` was used during init.
+
+        Reads ``.specify/init-options.json`` to determine whether skills
+        are enabled and which agent was selected, then delegates to
+        ``_get_skills_dir()`` for the concrete path.
+
+        Returns:
+            The skills directory ``Path``, or ``None`` if skills were not
+            enabled or the init-options file is missing.
+        """
+        from . import load_init_options, _get_skills_dir
+
+        opts = load_init_options(self.project_root)
+        if not opts.get("ai_skills"):
+            return None
+
+        agent = opts.get("ai")
+        if not agent:
+            return None
+
+        skills_dir = _get_skills_dir(self.project_root, agent)
+        if not skills_dir.is_dir():
+            return None
+
+        return skills_dir
+
+    def _register_skills(
+        self,
+        manifest: "PresetManifest",
+        preset_dir: Path,
+    ) -> List[str]:
+        """Generate SKILL.md files for preset command overrides.
+
+        For every command template in the preset, checks whether a
+        corresponding skill already exists in any detected skills
+        directory.  If so, the skill is overwritten with content derived
+        from the preset's command file.  This ensures that presets that
+        override commands also propagate to the agentskills.io skill
+        layer when ``--ai-skills`` was used during project initialisation.
+
+        Args:
+            manifest: Preset manifest.
+            preset_dir: Installed preset directory.
+
+        Returns:
+            List of skill names that were written (for registry storage).
+        """
+        command_templates = [
+            t for t in manifest.templates if t.get("type") == "command"
+        ]
+        if not command_templates:
+            return []
+
+        skills_dir = self._get_skills_dir()
+        if not skills_dir:
+            return []
+
+        from . import SKILL_DESCRIPTIONS
+
+        written: List[str] = []
+
+        for cmd_tmpl in command_templates:
+            cmd_name = cmd_tmpl["name"]
+            cmd_file_rel = cmd_tmpl["file"]
+            source_file = preset_dir / cmd_file_rel
+            if not source_file.exists():
+                continue
+
+            # Derive the short command name (e.g. "specify" from "speckit.specify")
+            short_name = cmd_name
+            if short_name.startswith("speckit."):
+                short_name = short_name[len("speckit."):]
+            skill_name = f"speckit-{short_name}"
+
+            # Only overwrite if the skill already exists (i.e. --ai-skills was used)
+            skill_subdir = skills_dir / skill_name
+            if not skill_subdir.exists():
+                continue
+
+            # Parse the command file
+            content = source_file.read_text(encoding="utf-8")
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    frontmatter = yaml.safe_load(parts[1])
+                    if not isinstance(frontmatter, dict):
+                        frontmatter = {}
+                    body = parts[2].strip()
+                else:
+                    frontmatter = {}
+                    body = content
+            else:
+                frontmatter = {}
+                body = content
+
+            original_desc = frontmatter.get("description", "")
+            enhanced_desc = SKILL_DESCRIPTIONS.get(
+                short_name,
+                original_desc or f"Spec-kit workflow command: {short_name}",
+            )
+
+            frontmatter_data = {
+                "name": skill_name,
+                "description": enhanced_desc,
+                "compatibility": "Requires spec-kit project structure with .specify/ directory",
+                "metadata": {
+                    "author": "github-spec-kit",
+                    "source": f"preset:{manifest.id}",
+                },
+            }
+            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+            skill_content = (
+                f"---\n"
+                f"{frontmatter_text}\n"
+                f"---\n\n"
+                f"# Speckit {short_name.title()} Skill\n\n"
+                f"{body}\n"
+            )
+
+            skill_file = skill_subdir / "SKILL.md"
+            skill_file.write_text(skill_content, encoding="utf-8")
+            written.append(skill_name)
+
+        return written
+
+    def _unregister_skills(self, skill_names: List[str], preset_dir: Path) -> None:
+        """Restore original SKILL.md files after a preset is removed.
+
+        For each skill that was overridden by the preset, attempts to
+        regenerate the skill from the core command template.  If no core
+        template exists, the skill directory is removed.
+
+        Args:
+            skill_names: List of skill names written by the preset.
+            preset_dir: The preset's installed directory (may already be deleted).
+        """
+        if not skill_names:
+            return
+
+        skills_dir = self._get_skills_dir()
+        if not skills_dir:
+            return
+
+        from . import SKILL_DESCRIPTIONS
+
+        # Locate core command templates
+        script_dir = Path(__file__).parent.parent.parent  # up from src/specify_cli/
+        core_templates_dir = script_dir / "templates" / "commands"
+
+        for skill_name in skill_names:
+            # Derive command name from skill name (speckit-specify -> specify)
+            short_name = skill_name
+            if short_name.startswith("speckit-"):
+                short_name = short_name[len("speckit-"):]
+
+            skill_subdir = skills_dir / skill_name
+            skill_file = skill_subdir / "SKILL.md"
+            if not skill_file.exists():
+                continue
+
+            # Try to find the core command template
+            core_file = core_templates_dir / f"{short_name}.md" if core_templates_dir.exists() else None
+            if core_file and not core_file.exists():
+                core_file = None
+
+            if core_file:
+                # Restore from core template
+                content = core_file.read_text(encoding="utf-8")
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
+                    if len(parts) >= 3:
+                        frontmatter = yaml.safe_load(parts[1])
+                        if not isinstance(frontmatter, dict):
+                            frontmatter = {}
+                        body = parts[2].strip()
+                    else:
+                        frontmatter = {}
+                        body = content
+                else:
+                    frontmatter = {}
+                    body = content
+
+                original_desc = frontmatter.get("description", "")
+                enhanced_desc = SKILL_DESCRIPTIONS.get(
+                    short_name,
+                    original_desc or f"Spec-kit workflow command: {short_name}",
+                )
+
+                frontmatter_data = {
+                    "name": skill_name,
+                    "description": enhanced_desc,
+                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
+                    "metadata": {
+                        "author": "github-spec-kit",
+                        "source": f"templates/commands/{short_name}.md",
+                    },
+                }
+                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                skill_content = (
+                    f"---\n"
+                    f"{frontmatter_text}\n"
+                    f"---\n\n"
+                    f"# Speckit {short_name.title()} Skill\n\n"
+                    f"{body}\n"
+                )
+                skill_file.write_text(skill_content, encoding="utf-8")
+            else:
+                # No core template — remove the skill entirely
+                shutil.rmtree(skill_subdir)
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -459,6 +670,9 @@ class PresetManager:
         # Register command overrides with AI agents
         registered_commands = self._register_commands(manifest, dest_dir)
 
+        # Update corresponding skills when --ai-skills was previously used
+        registered_skills = self._register_skills(manifest, dest_dir)
+
         self.registry.add(manifest.id, {
             "version": manifest.version,
             "source": "local",
@@ -466,6 +680,7 @@ class PresetManager:
             "enabled": True,
             "priority": priority,
             "registered_commands": registered_commands,
+            "registered_skills": registered_skills,
         })
 
         return manifest
@@ -539,7 +754,12 @@ class PresetManager:
         if registered_commands:
             self._unregister_commands(registered_commands)
 
+        # Restore original skills when preset is removed
+        registered_skills = metadata.get("registered_skills", []) if metadata else []
         pack_dir = self.presets_dir / pack_id
+        if registered_skills:
+            self._unregister_skills(registered_skills, pack_dir)
+
         if pack_dir.exists():
             shutil.rmtree(pack_dir)
 

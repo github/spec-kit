@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preset catalog files (`presets/catalog.json`, `presets/catalog.community.json`)
 - Preset scaffold directory (`presets/scaffold/`)
 - Scripts updated to use template resolution instead of hardcoded paths
+- feat(presets): Preset command overrides now propagate to agent skills when `--ai-skills` was used during init
+- feat: `specify init` persists CLI options to `.specify/init-options.json` for downstream operations
 - feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
 ## [0.2.0] - 2026-03-09

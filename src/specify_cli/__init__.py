@@ -34,7 +34,7 @@ import shlex
 import json
 import yaml
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import typer
 import httpx
@@ -1060,6 +1060,36 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
         else:
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
+
+INIT_OPTIONS_FILE = ".specify/init-options.json"
+
+
+def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
+    """Persist the CLI options used during ``specify init``.
+
+    Writes a small JSON file to ``.specify/init-options.json`` so that
+    later operations (e.g. preset install) can adapt their behaviour
+    without scanning the filesystem.
+    """
+    dest = project_path / INIT_OPTIONS_FILE
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(options, indent=2, sort_keys=True))
+
+
+def load_init_options(project_path: Path) -> dict[str, Any]:
+    """Load the init options previously saved by ``specify init``.
+
+    Returns an empty dict if the file does not exist or cannot be parsed.
+    """
+    path = project_path / INIT_OPTIONS_FILE
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 # Agent-specific skill directory overrides for agents whose skills directory
 # doesn't follow the standard <agent_folder>/skills/ pattern
 AGENT_SKILLS_DIR_OVERRIDES = {
@@ -1564,6 +1594,18 @@ def init(
                             console.print(f"[yellow]Warning:[/yellow] Preset '{preset}' not found in catalog. Skipping.")
                 except Exception as preset_err:
                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
+
+            # Persist the CLI options so later operations (e.g. preset add)
+            # can adapt their behaviour without re-scanning the filesystem.
+            save_init_options(project_path, {
+                "ai": selected_ai,
+                "ai_skills": ai_skills,
+                "ai_commands_dir": ai_commands_dir,
+                "here": here,
+                "preset": preset,
+                "script": selected_script,
+                "speckit_version": get_speckit_version(),
+            })
 
             tracker.complete("final", "project ready")
         except Exception as e:

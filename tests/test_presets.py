@@ -1566,3 +1566,145 @@ class TestSelfTestPreset:
 
         cmd_file = claude_dir / "speckit.fakeext.cmd.md"
         assert cmd_file.exists(), "Command not registered despite extension being present"
+
+
+# ===== Init Options and Skills Tests =====
+
+
+class TestInitOptions:
+    """Tests for save_init_options / load_init_options helpers."""
+
+    def test_save_and_load_round_trip(self, project_dir):
+        from specify_cli import save_init_options, load_init_options
+
+        opts = {"ai": "claude", "ai_skills": True, "here": False}
+        save_init_options(project_dir, opts)
+
+        loaded = load_init_options(project_dir)
+        assert loaded["ai"] == "claude"
+        assert loaded["ai_skills"] is True
+
+    def test_load_returns_empty_when_missing(self, project_dir):
+        from specify_cli import load_init_options
+
+        assert load_init_options(project_dir) == {}
+
+    def test_load_returns_empty_on_invalid_json(self, project_dir):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text("{bad json")
+
+        assert load_init_options(project_dir) == {}
+
+
+class TestPresetSkills:
+    """Tests for preset skill registration and unregistration."""
+
+    def _write_init_options(self, project_dir, ai="claude", ai_skills=True):
+        from specify_cli import save_init_options
+
+        save_init_options(project_dir, {"ai": ai, "ai_skills": ai_skills})
+
+    def _create_skill(self, skills_dir, skill_name, body="original body"):
+        skill_dir = skills_dir / skill_name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {skill_name}\n---\n\n{body}\n"
+        )
+        return skill_dir
+
+    def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
+        """When --ai-skills was used, a preset command override should update the skill."""
+        # Simulate --ai-skills having been used: write init-options + create skill
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # Also create the claude commands dir so commands get registered
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        # Install self-test preset (has a command override for speckit.specify)
+        manager = PresetManager(project_dir)
+        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        assert "preset:self-test" in content, "Skill should reference preset source"
+
+        # Verify it was recorded in registry
+        metadata = manager.registry.get("self-test")
+        assert "speckit-specify" in metadata.get("registered_skills", [])
+
+    def test_skill_not_updated_when_ai_skills_disabled(self, project_dir, temp_dir):
+        """When --ai-skills was NOT used, preset install should not touch skills."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=False)
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify", body="untouched")
+
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "untouched" in content, "Skill should not be modified when ai_skills=False"
+
+    def test_skill_not_updated_without_init_options(self, project_dir, temp_dir):
+        """When no init-options.json exists, preset install should not touch skills."""
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify", body="untouched")
+
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "untouched" in content
+
+    def test_skill_restored_on_preset_remove(self, project_dir, temp_dir):
+        """When a preset is removed, skills should be restored from core templates."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+
+        # Verify preset content is in the skill
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:self-test" in skill_file.read_text()
+
+        # Remove the preset
+        manager.remove("self-test")
+
+        # Skill should be restored (core specify.md template exists)
+        assert skill_file.exists(), "Skill should still exist after preset removal"
+        content = skill_file.read_text()
+        assert "preset:self-test" not in content, "Preset content should be gone"
+        assert "templates/commands/specify.md" in content, "Should reference core template"
+
+    def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
+        """Skills should not be created when no existing skill dir is found."""
+        self._write_init_options(project_dir, ai="claude")
+        # Don't create skills dir — simulate --ai-skills never created them
+
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+
+        metadata = manager.registry.get("self-test")
+        assert metadata.get("registered_skills", []) == []
