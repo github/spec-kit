@@ -1,0 +1,27 @@
+{
+  "name": "speckit-memory",
+  "version": "0.1.0",
+  "description": "Integrates global agent memory with SpecKit commands for automatic knowledge accumulation",
+  "author": "SpecKit Contributors",
+  "specKit": {
+    "minVersion": "0.2.0"
+  },
+  "registered_commands": [
+    "speckit.memory.specify",
+    "speckit.memory.plan",
+    "speckit.memory.tasks",
+    "speckit.memory.clarify",
+    "speckit.memory.features"
+  ],
+  "capabilities": {
+    "headers_first_reading": true,
+    "auto_documentation": true,
+    "vector_search": true,
+    "cross_project_learning": true
+  },
+  "memory_integration": {
+    "before_task": "headers_first",
+    "when_stuck": "vector_search",
+    "after_task": "auto_document"
+  }
+}
