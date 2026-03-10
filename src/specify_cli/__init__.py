@@ -1606,7 +1606,8 @@ def init(
                             # Clean up downloaded ZIP to avoid cache accumulation
                             try:
                                 zip_path.unlink(missing_ok=True)
-                            except Exception:
+                            except OSError:
+                                # Best-effort cleanup; failure to delete is non-fatal
                                 pass
                         except PresetError:
                             console.print(f"[yellow]Warning:[/yellow] Preset '{preset}' not found in catalog. Skipping.")

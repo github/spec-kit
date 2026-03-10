@@ -1145,6 +1145,7 @@ class PresetCatalog:
                 if metadata.get("catalog_url") == catalog_url:
                     return json.loads(self.cache_file.read_text())
             except (json.JSONDecodeError, OSError):
+                # Cache is corrupt or unreadable; fall through to network fetch
                 pass
 
         try:
