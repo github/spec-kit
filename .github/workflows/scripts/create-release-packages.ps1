@@ -167,8 +167,8 @@ function Create-Package {
             Generate-Commands -Agent $Agent -Format 'md' -Args '$ARGUMENTS' -DestDir "$BaseDir/.bob\commands" -Script $Script
         }
         'tabnine' {
-            New-Item -ItemType Directory -Force -Path "$BaseDir/.tabnine\agent\commands" | Out-Null
-            Generate-Commands -Agent $Agent -Format 'toml' -Args '{{args}}' -DestDir "$BaseDir/.tabnine\agent\commands" -Script $Script
+            New-Item -ItemType Directory -Force -Path "$BaseDir/.tabnine/agent/commands" | Out-Null
+            Generate-Commands -Agent $Agent -Format 'toml' -Args '{{args}}' -DestDir "$BaseDir/.tabnine/agent/commands" -Script $Script
         }
         'vibe' {
             New-Item -ItemType Directory -Force -Path "$BaseDir/.vibe\prompts" | Out-Null
