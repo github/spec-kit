@@ -277,6 +277,97 @@ class TestExtensionRegistry:
         assert registry2.is_installed("test-ext")
         assert registry2.get("test-ext")["version"] == "1.0.0"
 
+    def test_update_preserves_installed_at(self, temp_dir):
+        """Test that update() preserves the original installed_at timestamp."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0", "enabled": True})
+
+        # Get original installed_at
+        original_data = registry.get("test-ext")
+        original_installed_at = original_data["installed_at"]
+
+        # Update with new metadata
+        registry.update("test-ext", {"version": "2.0.0", "enabled": False})
+
+        # Verify installed_at is preserved
+        updated_data = registry.get("test-ext")
+        assert updated_data["installed_at"] == original_installed_at
+        assert updated_data["version"] == "2.0.0"
+        assert updated_data["enabled"] is False
+
+    def test_update_merges_with_existing(self, temp_dir):
+        """Test that update() merges new metadata with existing fields."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {"claude": ["cmd1", "cmd2"]},
+        })
+
+        # Update with partial metadata (only enabled field)
+        registry.update("test-ext", {"enabled": False})
+
+        # Verify existing fields are preserved
+        updated_data = registry.get("test-ext")
+        assert updated_data["enabled"] is False
+        assert updated_data["version"] == "1.0.0"  # Preserved
+        assert updated_data["registered_commands"] == {"claude": ["cmd1", "cmd2"]}  # Preserved
+
+    def test_update_raises_for_missing_extension(self, temp_dir):
+        """Test that update() raises KeyError for non-installed extension."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        with pytest.raises(KeyError, match="not installed"):
+            registry.update("nonexistent-ext", {"enabled": False})
+
+    def test_restore_overwrites_completely(self, temp_dir):
+        """Test that restore() overwrites the registry entry completely."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "2.0.0", "enabled": True})
+
+        # Restore with complete backup data
+        backup_data = {
+            "version": "1.0.0",
+            "enabled": False,
+            "installed_at": "2024-01-01T00:00:00+00:00",
+            "registered_commands": {"claude": ["old-cmd"]},
+        }
+        registry.restore("test-ext", backup_data)
+
+        # Verify entry is exactly as restored
+        restored_data = registry.get("test-ext")
+        assert restored_data == backup_data
+
+    def test_restore_can_recreate_removed_entry(self, temp_dir):
+        """Test that restore() can recreate an entry after remove()."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0"})
+
+        # Save backup and remove
+        backup = registry.get("test-ext").copy()
+        registry.remove("test-ext")
+        assert not registry.is_installed("test-ext")
+
+        # Restore should recreate the entry
+        registry.restore("test-ext", backup)
+        assert registry.is_installed("test-ext")
+        assert registry.get("test-ext")["version"] == "1.0.0"
+
 
 # ===== ExtensionManager Tests =====
 

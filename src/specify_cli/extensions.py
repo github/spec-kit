@@ -229,27 +229,34 @@ class ExtensionRegistry:
         self._save()
 
     def update(self, extension_id: str, metadata: dict):
-        """Update extension metadata in registry, preserving installed_at.
+        """Update extension metadata in registry, merging with existing entry.
+
+        Merges the provided metadata with the existing entry, preserving any
+        fields not specified in the new metadata. The installed_at timestamp
+        is always preserved from the original entry.
 
         Use this method instead of add() when updating existing extension
         metadata (e.g., enabling/disabling) to preserve the original
-        installation timestamp.
+        installation timestamp and other existing fields.
 
         Args:
             extension_id: Extension ID
-            metadata: Extension metadata to update
+            metadata: Extension metadata fields to update (merged with existing)
 
         Raises:
             KeyError: If extension is not installed
         """
         if extension_id not in self.data["extensions"]:
             raise KeyError(f"Extension '{extension_id}' is not installed")
-        # Preserve the original installed_at timestamp
+        # Merge new metadata with existing, preserving original installed_at
         existing = self.data["extensions"][extension_id]
         original_installed_at = existing.get("installed_at")
-        self.data["extensions"][extension_id] = metadata
-        if original_installed_at and "installed_at" not in metadata:
-            self.data["extensions"][extension_id]["installed_at"] = original_installed_at
+        # Merge: existing fields preserved, new fields override
+        merged = {**existing, **metadata}
+        # Always preserve original installed_at
+        if original_installed_at:
+            merged["installed_at"] = original_installed_at
+        self.data["extensions"][extension_id] = merged
         self._save()
 
     def restore(self, extension_id: str, metadata: dict):
