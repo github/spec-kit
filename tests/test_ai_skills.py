@@ -672,6 +672,20 @@ class TestCliValidation:
         assert "Explicit command support was deprecated in Antigravity version 1.20.5." in result.output
         assert "--ai-skills" in result.output
 
+    def test_interactive_agy_without_ai_skills_fails(self, monkeypatch):
+        """Interactive selector returning agy without --ai-skills should fail with exit code 1."""
+        from typer.testing import CliRunner
+        
+        # Mock select_with_arrows to simulate the user picking 'agy'
+        monkeypatch.setattr("specify_cli.select_with_arrows", lambda *args, **kwargs: "agy")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "test-proj"])
+
+        assert result.exit_code == 1
+        assert "Explicit command support was deprecated in Antigravity version 1.20.5." in result.output
+        assert "--ai-skills" in result.output
+
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
         from typer.testing import CliRunner

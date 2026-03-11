@@ -1356,8 +1356,32 @@ def init(
         console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
         raise typer.Exit(1)
 
-    if ai_assistant == "agy" and not ai_skills:
+    if ai_assistant:
+        if ai_assistant not in AGENT_CONFIG:
+            console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+            raise typer.Exit(1)
+        selected_ai = ai_assistant
+    else:
+        # Create options dict for selection (agent_key: display_name)
+        ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
+        selected_ai = select_with_arrows(
+            ai_choices, 
+            "Choose your AI assistant:", 
+            "copilot"
+        )
+
+    if selected_ai == "agy" and not ai_skills:
         _handle_agy_deprecation(console)
+
+    # Validate --ai-commands-dir usage
+    if selected_ai == "generic":
+        if not ai_commands_dir:
+            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic")
+            console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
+            raise typer.Exit(1)
+    elif ai_commands_dir:
+        console.print(f"[red]Error:[/red] --ai-commands-dir can only be used with --ai generic (not '{selected_ai}')")
+        raise typer.Exit(1)
 
     if here:
         project_name = Path.cwd().name
@@ -1407,33 +1431,6 @@ def init(
         should_init_git = check_tool("git")
         if not should_init_git:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
-
-    if ai_assistant:
-        if ai_assistant not in AGENT_CONFIG:
-            console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
-            raise typer.Exit(1)
-        selected_ai = ai_assistant
-    else:
-        # Create options dict for selection (agent_key: display_name)
-        ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
-        selected_ai = select_with_arrows(
-            ai_choices, 
-            "Choose your AI assistant:", 
-            "copilot"
-        )
-
-        if selected_ai == "agy" and not ai_skills:
-            _handle_agy_deprecation(console)
-
-    # Validate --ai-commands-dir usage
-    if selected_ai == "generic":
-        if not ai_commands_dir:
-            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic")
-            console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
-            raise typer.Exit(1)
-    elif ai_commands_dir:
-        console.print(f"[red]Error:[/red] --ai-commands-dir can only be used with --ai generic (not '{selected_ai}')")
-        raise typer.Exit(1)
 
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG.get(selected_ai)
