@@ -2488,8 +2488,11 @@ def extension_info(
         if ext_manifest:
             console.print(f"{ext_manifest.description}")
             console.print()
-            console.print(f"[dim]Author:[/dim] {ext_manifest.author}")
-            console.print()
+            # Author is optional in extension.yml, safely retrieve it
+            author = ext_manifest.data.get("extension", {}).get("author")
+            if author:
+                console.print(f"[dim]Author:[/dim] {author}")
+                console.print()
 
             if ext_manifest.commands:
                 console.print("[bold]Commands:[/bold]")
