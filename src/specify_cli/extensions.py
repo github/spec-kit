@@ -12,6 +12,7 @@ import os
 import tempfile
 import zipfile
 import shutil
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Callable, Set
@@ -250,12 +251,15 @@ class ExtensionRegistry:
             raise KeyError(f"Extension '{extension_id}' is not installed")
         # Merge new metadata with existing, preserving original installed_at
         existing = self.data["extensions"][extension_id]
-        original_installed_at = existing.get("installed_at")
         # Merge: existing fields preserved, new fields override
         merged = {**existing, **metadata}
-        # Always preserve original installed_at
-        if original_installed_at:
-            merged["installed_at"] = original_installed_at
+        # Always preserve original installed_at based on key existence, not truthiness,
+        # to handle cases where the field exists but may be falsy (legacy/corruption)
+        if "installed_at" in existing:
+            merged["installed_at"] = existing["installed_at"]
+        else:
+            # If not present in existing, explicitly remove from merged if caller provided it
+            merged.pop("installed_at", None)
         self.data["extensions"][extension_id] = merged
         self._save()
 
@@ -270,7 +274,7 @@ class ExtensionRegistry:
             extension_id: Extension ID
             metadata: Complete extension metadata including installed_at
         """
-        self.data["extensions"][extension_id] = metadata
+        self.data["extensions"][extension_id] = dict(metadata)
         self._save()
 
     def remove(self, extension_id: str):
@@ -286,21 +290,28 @@ class ExtensionRegistry:
     def get(self, extension_id: str) -> Optional[dict]:
         """Get extension metadata from registry.
 
+        Returns a deep copy to prevent callers from accidentally mutating
+        nested internal registry state without going through the write path.
+
         Args:
             extension_id: Extension ID
 
         Returns:
-            Extension metadata or None if not found
+            Deep copy of extension metadata, or None if not found
         """
-        return self.data["extensions"].get(extension_id)
+        entry = self.data["extensions"].get(extension_id)
+        return copy.deepcopy(entry) if entry is not None else None
 
     def list(self) -> Dict[str, dict]:
         """Get all installed extensions.
 
+        Returns a deep copy of the extensions mapping to prevent callers
+        from accidentally mutating nested internal registry state.
+
         Returns:
-            Dictionary of extension_id -> metadata
+            Dictionary of extension_id -> metadata (deep copies)
         """
-        return self.data["extensions"]
+        return copy.deepcopy(self.data["extensions"])
 
     def is_installed(self, extension_id: str) -> bool:
         """Check if extension is installed.
@@ -645,7 +656,7 @@ class ExtensionManager:
                 result.append({
                     "id": ext_id,
                     "name": manifest.name,
-                    "version": metadata["version"],
+                    "version": metadata.get("version", "unknown"),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
                     "installed_at": metadata.get("installed_at"),

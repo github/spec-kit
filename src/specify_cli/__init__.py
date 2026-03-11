@@ -1847,7 +1847,7 @@ def _resolve_installed_extension(
         for ext in name_matches:
             table.add_row(ext.get("id", ""), ext.get("name", ""), str(ext.get("version", "")))
         console.print(table)
-        console.print(f"\nPlease rerun using the extension ID:")
+        console.print("\nPlease rerun using the extension ID:")
         console.print(f"  [bold]specify extension {command_name} <extension-id>[/bold]")
         raise typer.Exit(1)
     else:
@@ -1910,7 +1910,7 @@ def _resolve_catalog_extension(
                     ext.get("_catalog_name", ""),
                 )
             console.print(table)
-            console.print(f"\nPlease rerun using the extension ID:")
+            console.print("\nPlease rerun using the extension ID:")
             console.print(f"  [bold]specify extension {command_name} <extension-id>[/bold]")
             raise typer.Exit(1)
 
@@ -2426,7 +2426,7 @@ def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
 ):
     """Show detailed information about an extension."""
-    from .extensions import ExtensionCatalog, ExtensionManager, ExtensionError
+    from .extensions import ExtensionCatalog, ExtensionManager
 
     project_root = Path.cwd()
 
@@ -2488,7 +2488,7 @@ def extension_info(
             console.print(f"[yellow]Catalog unavailable:[/yellow] {catalog_error}")
             console.print("[dim]Note: Using locally installed extension; catalog info could not be verified.[/dim]")
         else:
-            console.print(f"[yellow]Note:[/yellow] Not found in catalog (custom/local extension)")
+            console.print("[yellow]Note:[/yellow] Not found in catalog (custom/local extension)")
 
         console.print()
         console.print("[green]✓ Installed[/green]")
@@ -2608,6 +2608,7 @@ def extension_update(
         ExtensionManager,
         ExtensionCatalog,
         ExtensionError,
+        ValidationError,
         CommandRegistrar,
         HookExecutor,
     )
@@ -2649,7 +2650,16 @@ def extension_update(
         for ext_id in extensions_to_update:
             # Get installed version
             metadata = manager.registry.get(ext_id)
-            installed_version = pkg_version.Version(metadata["version"])
+            if metadata is None or "version" not in metadata:
+                console.print(f"⚠  {ext_id}: Registry entry corrupted or missing (skipping)")
+                continue
+            try:
+                installed_version = pkg_version.Version(metadata["version"])
+            except pkg_version.InvalidVersion:
+                console.print(
+                    f"⚠  {ext_id}: Invalid installed version '{metadata.get('version')}' in registry (skipping)"
+                )
+                continue
 
             # Get catalog info
             ext_info = catalog.get_extension_info(ext_id)
@@ -2662,7 +2672,13 @@ def extension_update(
                 console.print(f"⚠  {ext_id}: Updates not allowed from '{ext_info.get('_catalog_name', 'catalog')}' (skipping)")
                 continue
 
-            catalog_version = pkg_version.Version(ext_info["version"])
+            try:
+                catalog_version = pkg_version.Version(ext_info["version"])
+            except pkg_version.InvalidVersion:
+                console.print(
+                    f"⚠  {ext_id}: Invalid catalog version '{ext_info.get('version')}' (skipping)"
+                )
+                continue
 
             if catalog_version > installed_version:
                 updates_available.append(
@@ -2710,6 +2726,7 @@ def extension_update(
             backup_base = manager.extensions_dir / ".backup" / f"{extension_id}-update"
             backup_ext_dir = backup_base / "extension"
             backup_commands_dir = backup_base / "commands"
+            backup_config_dir = backup_base / "config"
 
             # Store backup state
             backup_registry_entry = None
@@ -2727,6 +2744,15 @@ def extension_update(
                     if backup_ext_dir.exists():
                         shutil.rmtree(backup_ext_dir)
                     shutil.copytree(extension_dir, backup_ext_dir)
+
+                    # Backup config files separately so they can be restored
+                    # after a successful install (install_from_directory clears dest dir).
+                    config_files = list(extension_dir.glob("*-config.yml")) + list(
+                        extension_dir.glob("*-config.local.yml")
+                    )
+                    for cfg_file in config_files:
+                        backup_config_dir.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
 
                 # 3. Backup command files for all agents
                 registered_commands = backup_registry_entry.get("registered_commands", {})
@@ -2801,9 +2827,23 @@ def extension_update(
                     # 8. Install new version
                     _ = manager.install_from_zip(zip_path, speckit_version)
 
+                    # Restore user config files from backup after successful install.
+                    new_extension_dir = manager.extensions_dir / extension_id
+                    if backup_config_dir.exists() and new_extension_dir.exists():
+                        for cfg_file in backup_config_dir.iterdir():
+                            if cfg_file.is_file():
+                                shutil.copy2(cfg_file, new_extension_dir / cfg_file.name)
+
                     # 9. Restore metadata from backup (installed_at, enabled state)
                     if backup_registry_entry:
-                        new_metadata = manager.registry.get(extension_id)
+                        # Copy current registry entry to avoid mutating internal
+                        # registry state before explicit restore().
+                        current_metadata = manager.registry.get(extension_id)
+                        if current_metadata is None:
+                            raise RuntimeError(
+                                f"Registry entry for '{extension_id}' missing after install — update incomplete"
+                            )
+                        new_metadata = dict(current_metadata)
 
                         # Preserve the original installation timestamp
                         if "installed_at" in backup_registry_entry:
@@ -2813,7 +2853,9 @@ def extension_update(
                         if not backup_registry_entry.get("enabled", True):
                             new_metadata["enabled"] = False
 
-                        manager.registry.update(extension_id, new_metadata)
+                        # Use restore() instead of update() because update() always
+                        # preserves the existing installed_at, ignoring our override
+                        manager.registry.restore(extension_id, new_metadata)
 
                         # Also disable hooks in extensions.yml if extension was disabled
                         if not backup_registry_entry.get("enabled", True):
@@ -2860,7 +2902,10 @@ def extension_update(
                     # (files that weren't in the original backup)
                     try:
                         new_registry_entry = manager.registry.get(extension_id)
-                        new_registered_commands = new_registry_entry.get("registered_commands", {})
+                        if new_registry_entry is None:
+                            new_registered_commands = {}
+                        else:
+                            new_registered_commands = new_registry_entry.get("registered_commands", {})
                         for agent_name, cmd_names in new_registered_commands.items():
                             if agent_name not in registrar.AGENT_CONFIGS:
                                 continue
@@ -2926,7 +2971,7 @@ def extension_update(
                     if backup_registry_entry:
                         manager.registry.restore(extension_id, backup_registry_entry)
 
-                    console.print(f"   [green]✓[/green] Rollback successful")
+                    console.print("   [green]✓[/green] Rollback successful")
                     # Clean up backup directory only on successful rollback
                     if backup_base.exists():
                         shutil.rmtree(backup_base)
@@ -2944,6 +2989,9 @@ def extension_update(
                 console.print(f"   • {ext_name}: {error}")
             raise typer.Exit(1)
 
+    except ValidationError as e:
+        console.print(f"\n[red]Validation Error:[/red] {e}")
+        raise typer.Exit(1)
     except ExtensionError as e:
         console.print(f"\n[red]Error:[/red] {e}")
         raise typer.Exit(1)
@@ -2974,6 +3022,10 @@ def extension_enable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
+    if metadata is None:
+        console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+    
     if metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already enabled[/yellow]")
         raise typer.Exit(0)
@@ -3018,6 +3070,10 @@ def extension_disable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
+    if metadata is None:
+        console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+    
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already disabled[/yellow]")
         raise typer.Exit(0)
