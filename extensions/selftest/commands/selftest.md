@@ -16,10 +16,10 @@ If `$ARGUMENTS` is empty, you must tell the user to provide an extension name, f
 ### Step 1: Catalog Discovery Validation
 
 Check if the extension exists in the Spec Kit catalog.
-Execute this command and verify that `$ARGUMENTS` appears in the results. If the command fails or returns no results, fail the test.
+Execute this command and verify that it completes successfully and that the returned extension ID exactly matches `$ARGUMENTS`. If the command fails or the ID does not match `$ARGUMENTS`, fail the test.
 
 ```bash
-specify extension search "$ARGUMENTS"
+specify extension info "$ARGUMENTS"
 ```
 
 ### Step 2: Simulate Installation
