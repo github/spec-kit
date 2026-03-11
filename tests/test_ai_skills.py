@@ -1050,10 +1050,12 @@ class TestCliValidation:
         target = tmp_path / "kiro-alias-proj"
 
         with patch("specify_cli.download_and_extract_template") as mock_download, \
+             patch("specify_cli.scaffold_from_core_pack", create=True) as mock_scaffold, \
              patch("specify_cli.ensure_executable_scripts"), \
              patch("specify_cli.ensure_constitution_from_template"), \
              patch("specify_cli.is_git_repo", return_value=False), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            mock_scaffold.return_value = True
             result = runner.invoke(
                 app,
                 [
@@ -1069,9 +1071,14 @@ class TestCliValidation:
             )
 
         assert result.exit_code == 0
-        assert mock_download.called
-        # download_and_extract_template(project_path, ai_assistant, script_type, ...)
-        assert mock_download.call_args.args[1] == "kiro-cli"
+        # Alias normalisation should have happened regardless of scaffold path used.
+        # Either scaffold_from_core_pack or download_and_extract_template may be called
+        # depending on whether bundled assets are present; check the one that was called.
+        if mock_scaffold.called:
+            assert mock_scaffold.call_args.args[1] == "kiro-cli"
+        else:
+            assert mock_download.called
+            assert mock_download.call_args.args[1] == "kiro-cli"
 
     def test_q_removed_from_agent_config(self):
         """Amazon Q legacy key should not remain in AGENT_CONFIG."""
