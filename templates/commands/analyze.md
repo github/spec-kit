@@ -182,6 +182,4 @@ Ask the user: "Would you like me to suggest concrete remediation edits for the t
 - **Use examples over exhaustive rules** (cite specific instances, not generic patterns)
 - **Report zero issues gracefully** (emit success report with coverage statistics)
 
-## Context
-
-{ARGS}
+Context for analysis: {ARGS}
