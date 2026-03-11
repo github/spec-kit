@@ -1493,8 +1493,8 @@ class TestCatalogStack:
         with pytest.raises(ValidationError, match="HTTPS"):
             catalog.get_active_catalogs()
 
-    def test_empty_project_config_falls_back_to_defaults(self, temp_dir):
-        """Empty catalogs list in config falls back to default stack."""
+    def test_empty_project_config_raises_error(self, temp_dir):
+        """Empty catalogs list in config raises ValidationError (fail-closed for security)."""
         import yaml as yaml_module
 
         project_dir = self._make_project(temp_dir)
@@ -1503,11 +1503,32 @@ class TestCatalogStack:
             yaml_module.dump({"catalogs": []}, f)
 
         catalog = ExtensionCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
 
-        # Falls back to default stack
-        assert len(entries) == 2
-        assert entries[0].url == ExtensionCatalog.DEFAULT_CATALOG_URL
+        # Fail-closed: empty config should raise, not fall back to defaults
+        with pytest.raises(ValidationError) as exc_info:
+            catalog.get_active_catalogs()
+        assert "contains no 'catalogs' entries" in str(exc_info.value)
+
+    def test_catalog_entries_without_urls_raises_error(self, temp_dir):
+        """Catalog entries without URLs raise ValidationError (fail-closed for security)."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump({
+                "catalogs": [
+                    {"name": "no-url-catalog", "priority": 1},
+                    {"name": "another-no-url", "description": "Also missing URL"},
+                ]
+            }, f)
+
+        catalog = ExtensionCatalog(project_dir)
+
+        # Fail-closed: entries without URLs should raise, not fall back to defaults
+        with pytest.raises(ValidationError) as exc_info:
+            catalog.get_active_catalogs()
+        assert "none have valid URLs" in str(exc_info.value)
 
     # --- _load_catalog_config ---
 
@@ -2034,3 +2055,58 @@ class TestExtensionIgnore:
         assert not (dest / "docs" / "guide.md").exists()
         assert not (dest / "docs" / "internal.md").exists()
         assert (dest / "docs" / "api.md").exists()
+
+
+class TestExtensionAddCLI:
+    """CLI integration tests for extension add command."""
+
+    def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
+        """extension add by display name should use resolved ID for download_extension()."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Create project structure
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        # Mock catalog that returns extension by display name
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = None  # ID lookup fails
+        mock_catalog.search.return_value = [
+            {
+                "id": "acme-jira-integration",
+                "name": "Jira Integration",
+                "version": "1.0.0",
+                "description": "Jira integration extension",
+                "_install_allowed": True,
+            }
+        ]
+
+        # Track what ID was passed to download_extension
+        download_called_with = []
+        def mock_download(extension_id):
+            download_called_with.append(extension_id)
+            # Return a path that will fail install (we just want to verify the ID)
+            raise ExtensionError("Mock download - checking ID was resolved")
+
+        mock_catalog.download_extension.side_effect = mock_download
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "Jira Integration"],
+                catch_exceptions=True,
+            )
+
+        # Verify download_extension was called with the resolved ID, not the display name
+        assert len(download_called_with) == 1
+        assert download_called_with[0] == "acme-jira-integration", (
+            f"Expected download_extension to be called with resolved ID 'acme-jira-integration', "
+            f"but was called with '{download_called_with[0]}'"
+        )

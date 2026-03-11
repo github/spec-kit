@@ -2219,8 +2219,11 @@ def extension_add(
                 # Install from catalog
                 catalog = ExtensionCatalog(project_root)
 
-                # Check if extension exists in catalog
-                ext_info = catalog.get_extension_info(extension)
+                # Check if extension exists in catalog (supports both ID and display name)
+                ext_info, catalog_error = _resolve_catalog_extension(extension, catalog, "add")
+                if catalog_error:
+                    console.print(f"[red]Error:[/red] Could not query extension catalog: {catalog_error}")
+                    raise typer.Exit(1)
                 if not ext_info:
                     console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
                     console.print("\nSearch available extensions:")
@@ -2240,9 +2243,10 @@ def extension_add(
                     )
                     raise typer.Exit(1)
 
-                # Download extension ZIP
+                # Download extension ZIP (use resolved ID, not original argument which may be display name)
+                extension_id = ext_info['id']
                 console.print(f"Downloading {ext_info['name']} v{ext_info.get('version', 'unknown')}...")
-                zip_path = catalog.download_extension(extension)
+                zip_path = catalog.download_extension(extension_id)
 
                 try:
                     # Install from downloaded ZIP
@@ -2797,21 +2801,29 @@ def extension_update(
                     # 8. Install new version
                     _ = manager.install_from_zip(zip_path, speckit_version)
 
-                    # 9. Restore enabled state from backup
-                    # If extension was disabled before update, disable it again
-                    if backup_registry_entry and not backup_registry_entry.get("enabled", True):
+                    # 9. Restore metadata from backup (installed_at, enabled state)
+                    if backup_registry_entry:
                         new_metadata = manager.registry.get(extension_id)
-                        new_metadata["enabled"] = False
+
+                        # Preserve the original installation timestamp
+                        if "installed_at" in backup_registry_entry:
+                            new_metadata["installed_at"] = backup_registry_entry["installed_at"]
+
+                        # If extension was disabled before update, disable it again
+                        if not backup_registry_entry.get("enabled", True):
+                            new_metadata["enabled"] = False
+
                         manager.registry.update(extension_id, new_metadata)
 
-                        # Also disable hooks in extensions.yml to match
-                        config = hook_executor.get_project_config()
-                        if "hooks" in config:
-                            for hook_name in config["hooks"]:
-                                for hook in config["hooks"][hook_name]:
-                                    if hook.get("extension") == extension_id:
-                                        hook["enabled"] = False
-                            hook_executor.save_project_config(config)
+                        # Also disable hooks in extensions.yml if extension was disabled
+                        if not backup_registry_entry.get("enabled", True):
+                            config = hook_executor.get_project_config()
+                            if "hooks" in config:
+                                for hook_name in config["hooks"]:
+                                    for hook in config["hooks"][hook_name]:
+                                        if hook.get("extension") == extension_id:
+                                            hook["enabled"] = False
+                                hook_executor.save_project_config(config)
                 finally:
                     # Clean up downloaded ZIP
                     if zip_path.exists():
@@ -2835,16 +2847,41 @@ def extension_update(
 
                 try:
                     # Restore extension directory
+                    # Only perform destructive rollback if backup exists (meaning we
+                    # actually modified the extension). This avoids deleting a valid
+                    # installation when failure happened before changes were made.
                     extension_dir = manager.extensions_dir / extension_id
-                    # Always remove any existing directory (from failed update)
-                    if extension_dir.exists():
-                        shutil.rmtree(extension_dir)
-                    # Restore from backup if it exists; otherwise leave absent
-                    # (matching pre-update state when there was no original dir)
                     if backup_ext_dir.exists():
+                        if extension_dir.exists():
+                            shutil.rmtree(extension_dir)
                         shutil.copytree(backup_ext_dir, extension_dir)
 
-                    # Restore command files
+                    # Remove any NEW command files created by failed install
+                    # (files that weren't in the original backup)
+                    try:
+                        new_registry_entry = manager.registry.get(extension_id)
+                        new_registered_commands = new_registry_entry.get("registered_commands", {})
+                        for agent_name, cmd_names in new_registered_commands.items():
+                            if agent_name not in registrar.AGENT_CONFIGS:
+                                continue
+                            agent_config = registrar.AGENT_CONFIGS[agent_name]
+                            commands_dir = project_root / agent_config["dir"]
+
+                            for cmd_name in cmd_names:
+                                cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+                                # Delete if it exists and wasn't in our backup
+                                if cmd_file.exists() and str(cmd_file) not in backed_up_command_files:
+                                    cmd_file.unlink()
+
+                                # Also handle copilot prompt files
+                                if agent_name == "copilot":
+                                    prompt_file = project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
+                                    if prompt_file.exists() and str(prompt_file) not in backed_up_command_files:
+                                        prompt_file.unlink()
+                    except KeyError:
+                        pass  # No new registry entry exists, nothing to clean up
+
+                    # Restore backed up command files
                     for original_path, backup_path in backed_up_command_files.items():
                         backup_file = Path(backup_path)
                         if backup_file.exists():
@@ -2857,24 +2894,30 @@ def extension_update(
                     # - backup_hooks={} or {...} means config had hooks key
                     config = hook_executor.get_project_config()
                     if "hooks" in config:
-                        # Remove any hooks for this extension added by failed install
                         modified = False
-                        for hook_name, hooks_list in config["hooks"].items():
-                            original_len = len(hooks_list)
-                            config["hooks"][hook_name] = [
-                                h for h in hooks_list
-                                if h.get("extension") != extension_id
-                            ]
-                            if len(config["hooks"][hook_name]) != original_len:
-                                modified = True
 
-                        # Add back the backed up hooks if any
-                        if backup_hooks:
-                            for hook_name, hooks in backup_hooks.items():
-                                if hook_name not in config["hooks"]:
-                                    config["hooks"][hook_name] = []
-                                config["hooks"][hook_name].extend(hooks)
-                                modified = True
+                        if backup_hooks is None:
+                            # Original config had no "hooks" key; remove it entirely
+                            del config["hooks"]
+                            modified = True
+                        else:
+                            # Remove any hooks for this extension added by failed install
+                            for hook_name, hooks_list in config["hooks"].items():
+                                original_len = len(hooks_list)
+                                config["hooks"][hook_name] = [
+                                    h for h in hooks_list
+                                    if h.get("extension") != extension_id
+                                ]
+                                if len(config["hooks"][hook_name]) != original_len:
+                                    modified = True
+
+                            # Add back the backed up hooks if any
+                            if backup_hooks:
+                                for hook_name, hooks in backup_hooks.items():
+                                    if hook_name not in config["hooks"]:
+                                        config["hooks"][hook_name] = []
+                                    config["hooks"][hook_name].extend(hooks)
+                                    modified = True
 
                         if modified:
                             hook_executor.save_project_config(config)

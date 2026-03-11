@@ -1149,12 +1149,13 @@ class ExtensionCatalog:
             config_path: Path to extension-catalogs.yml
 
         Returns:
-            Ordered list of CatalogEntry objects, or None if file doesn't exist
-            or contains no valid catalog entries.
+            Ordered list of CatalogEntry objects, or None if file doesn't exist.
 
         Raises:
             ValidationError: If any catalog entry has an invalid URL,
-                the file cannot be parsed, or a priority value is invalid.
+                the file cannot be parsed, a priority value is invalid,
+                or the file exists but contains no valid catalog entries
+                (fail-closed for security).
         """
         if not config_path.exists():
             return None
@@ -1166,12 +1167,17 @@ class ExtensionCatalog:
             )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
-            return None
+            # File exists but has no catalogs key or empty list - fail closed
+            raise ValidationError(
+                f"Catalog config {config_path} exists but contains no 'catalogs' entries. "
+                f"Remove the file to use built-in defaults, or add valid catalog entries."
+            )
         if not isinstance(catalogs_data, list):
             raise ValidationError(
                 f"Invalid catalog config: 'catalogs' must be a list, got {type(catalogs_data).__name__}"
             )
         entries: List[CatalogEntry] = []
+        skipped_entries: List[int] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise ValidationError(
@@ -1179,6 +1185,7 @@ class ExtensionCatalog:
                 )
             url = str(item.get("url", "")).strip()
             if not url:
+                skipped_entries.append(idx)
                 continue
             self._validate_catalog_url(url)
             try:
@@ -1201,7 +1208,14 @@ class ExtensionCatalog:
                 description=str(item.get("description", "")),
             ))
         entries.sort(key=lambda e: e.priority)
-        return entries if entries else None
+        if not entries:
+            # All entries were invalid (missing URLs) - fail closed for security
+            raise ValidationError(
+                f"Catalog config {config_path} contains {len(catalogs_data)} entries but none have valid URLs "
+                f"(entries at indices {skipped_entries} were skipped). "
+                f"Each catalog entry must have a 'url' field."
+            )
+        return entries
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
