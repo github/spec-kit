@@ -1413,6 +1413,12 @@ def init(
             "copilot"
         )
 
+    if selected_ai == "agy" and not ai_skills:
+        console.print("\n[red]Error:[/red] Antigravity explicit command support is deprecated as of version 1.20.5.")
+        console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
+        console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
+        raise typer.Exit(1)
+
     # Validate --ai-commands-dir usage
     if selected_ai == "generic":
         if not ai_commands_dir:
