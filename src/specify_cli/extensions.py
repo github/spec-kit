@@ -228,6 +228,25 @@ class ExtensionRegistry:
         }
         self._save()
 
+    def update(self, extension_id: str, metadata: dict):
+        """Update extension metadata in registry, preserving installed_at.
+
+        Use this method instead of add() when updating existing extension
+        metadata (e.g., enabling/disabling) to preserve the original
+        installation timestamp.
+
+        Args:
+            extension_id: Extension ID
+            metadata: Extension metadata to update
+
+        Raises:
+            KeyError: If extension is not installed
+        """
+        if extension_id not in self.data["extensions"]:
+            raise KeyError(f"Extension '{extension_id}' is not installed")
+        self.data["extensions"][extension_id] = metadata
+        self._save()
+
     def remove(self, extension_id: str):
         """Remove extension from registry.
 

@@ -2839,8 +2839,7 @@ def extension_update(
 
                     # Restore registry entry
                     if backup_registry_entry:
-                        manager.registry.data["extensions"][extension_id] = backup_registry_entry
-                        manager.registry._save()
+                        manager.registry.update(extension_id, backup_registry_entry)
 
                     console.print(f"   [green]✓[/green] Rollback successful")
                 except Exception as rollback_error:
@@ -2895,9 +2894,7 @@ def extension_enable(
         raise typer.Exit(0)
 
     metadata["enabled"] = True
-    # Update registry directly to preserve installed_at (add() would overwrite it)
-    manager.registry.data["extensions"][extension_id] = metadata
-    manager.registry._save()
+    manager.registry.update(extension_id, metadata)
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
@@ -2941,9 +2938,7 @@ def extension_disable(
         raise typer.Exit(0)
 
     metadata["enabled"] = False
-    # Update registry directly to preserve installed_at (add() would overwrite it)
-    manager.registry.data["extensions"][extension_id] = metadata
-    manager.registry._save()
+    manager.registry.update(extension_id, metadata)
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()
