@@ -410,8 +410,11 @@ class TestInstallAiSkills:
         skills_dir = _get_skills_dir(proj, agent_key)
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-        assert "speckit-specify" in skill_dirs
-        assert (skills_dir / "speckit-specify" / "SKILL.md").exists()
+        # Kimi uses dot-separator (speckit.specify) to match /skill:speckit.* invocation;
+        # all other agents use hyphen-separator (speckit-specify).
+        expected_skill_name = "speckit.specify" if agent_key == "kimi" else "speckit-specify"
+        assert expected_skill_name in skill_dirs
+        assert (skills_dir / expected_skill_name / "SKILL.md").exists()
 
 
 
