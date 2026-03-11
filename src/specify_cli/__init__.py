@@ -2472,7 +2472,7 @@ def extension_info(
 
     # Case 1: Found in catalog - show full catalog info
     if ext_info:
-        _print_extension_info(ext_info, manager, catalog_error)
+        _print_extension_info(ext_info, manager)
         return
 
     # Case 2: Installed locally but catalog lookup failed or not in catalog
@@ -2522,7 +2522,7 @@ def extension_info(
     raise typer.Exit(1)
 
 
-def _print_extension_info(ext_info: dict, manager, catalog_error: Optional[Exception] = None):
+def _print_extension_info(ext_info: dict, manager):
     """Print formatted extension info from catalog data."""
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
@@ -2783,6 +2783,11 @@ def extension_update(
 
                     # 7. Verify extension ID matches
                     if installed_manifest.id != extension_id:
+                        # Remove the wrongly installed extension before raising
+                        try:
+                            manager.remove(installed_manifest.id)
+                        except Exception:
+                            pass  # Best effort cleanup
                         raise ValueError(
                             f"Extension ID mismatch: expected '{extension_id}', got '{installed_manifest.id}'"
                         )
@@ -2840,9 +2845,9 @@ def extension_update(
                             config["hooks"][hook_name].extend(hooks)
                         hook_executor.save_project_config(config)
 
-                    # Restore registry entry
+                    # Restore registry entry (use restore() since entry was removed)
                     if backup_registry_entry:
-                        manager.registry.update(extension_id, backup_registry_entry)
+                        manager.registry.restore(extension_id, backup_registry_entry)
 
                     console.print(f"   [green]✓[/green] Rollback successful")
                 except Exception as rollback_error:

@@ -244,6 +244,25 @@ class ExtensionRegistry:
         """
         if extension_id not in self.data["extensions"]:
             raise KeyError(f"Extension '{extension_id}' is not installed")
+        # Preserve the original installed_at timestamp
+        existing = self.data["extensions"][extension_id]
+        original_installed_at = existing.get("installed_at")
+        self.data["extensions"][extension_id] = metadata
+        if original_installed_at and "installed_at" not in metadata:
+            self.data["extensions"][extension_id]["installed_at"] = original_installed_at
+        self._save()
+
+    def restore(self, extension_id: str, metadata: dict):
+        """Restore extension metadata to registry without modifying timestamps.
+
+        Use this method for rollback scenarios where you have a complete backup
+        of the registry entry (including installed_at) and want to restore it
+        exactly as it was.
+
+        Args:
+            extension_id: Extension ID
+            metadata: Complete extension metadata including installed_at
+        """
         self.data["extensions"][extension_id] = metadata
         self._save()
 
