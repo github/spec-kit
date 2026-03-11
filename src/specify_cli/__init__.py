@@ -1805,19 +1805,21 @@ def _resolve_installed_extension(
     argument: str,
     installed_extensions: list,
     command_name: str = "command",
-) -> tuple[str, str]:
+    allow_not_found: bool = False,
+) -> tuple[Optional[str], Optional[str]]:
     """Resolve an extension argument (ID or display name) to an installed extension.
 
     Args:
         argument: Extension ID or display name provided by user
         installed_extensions: List of installed extension dicts from manager.list_installed()
         command_name: Name of the command for error messages (e.g., "enable", "disable")
+        allow_not_found: If True, return (None, None) when not found instead of raising
 
     Returns:
-        Tuple of (extension_id, display_name)
+        Tuple of (extension_id, display_name), or (None, None) if allow_not_found=True and not found
 
     Raises:
-        typer.Exit: If extension not found or name is ambiguous
+        typer.Exit: If extension not found (and allow_not_found=False) or name is ambiguous
     """
     from rich.table import Table
 
@@ -1850,6 +1852,8 @@ def _resolve_installed_extension(
         raise typer.Exit(1)
     else:
         # No match by ID or display name
+        if allow_not_found:
+            return (None, None)
         console.print(f"[red]Error:[/red] Extension '{argument}' is not installed")
         raise typer.Exit(1)
 
@@ -2434,38 +2438,10 @@ def extension_info(
     installed = manager.list_installed()
 
     # Try to resolve from installed extensions first (by ID or name)
-    resolved_installed_id = None
-    resolved_installed_name = None
-
-    # First check for exact ID match
-    for ext in installed:
-        if ext["id"] == extension:
-            resolved_installed_id = ext["id"]
-            resolved_installed_name = ext["name"]
-            break
-
-    # If no ID match, check for name matches (with ambiguity detection)
-    if not resolved_installed_id:
-        name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
-        if len(name_matches) == 1:
-            resolved_installed_id = name_matches[0]["id"]
-            resolved_installed_name = name_matches[0]["name"]
-        elif len(name_matches) > 1:
-            from rich.table import Table
-            console.print(
-                f"[red]Error:[/red] Extension name '{extension}' is ambiguous. "
-                "Multiple installed extensions share this name:"
-            )
-            table = Table(title="Matching extensions")
-            table.add_column("ID", style="cyan", no_wrap=True)
-            table.add_column("Name", style="white")
-            table.add_column("Version", style="green")
-            for ext in name_matches:
-                table.add_row(ext.get("id", ""), ext.get("name", ""), str(ext.get("version", "")))
-            console.print(table)
-            console.print(f"\nPlease rerun using the extension ID:")
-            console.print(f"  [bold]specify extension info <extension-id>[/bold]")
-            raise typer.Exit(1)
+    # Use allow_not_found=True since the extension may be catalog-only
+    resolved_installed_id, resolved_installed_name = _resolve_installed_extension(
+        extension, installed, "info", allow_not_found=True
+    )
 
     # Try catalog lookup (with error handling)
     # If we resolved an installed extension by display name, use its ID for catalog lookup
@@ -2688,6 +2664,7 @@ def extension_update(
                 updates_available.append(
                     {
                         "id": ext_id,
+                        "name": ext_info.get("name", ext_id),  # Display name for status messages
                         "installed": str(installed_version),
                         "available": str(catalog_version),
                         "download_url": ext_info.get("download_url"),
@@ -2722,7 +2699,7 @@ def extension_update(
 
         for update in updates_available:
             extension_id = update["id"]
-            ext_name = update["id"]
+            ext_name = update["name"]  # Use display name for user-facing messages
             console.print(f"📦 Updating {ext_name}...")
 
             # Backup paths
@@ -2732,7 +2709,7 @@ def extension_update(
 
             # Store backup state
             backup_registry_entry = None
-            backup_hooks = {}  # Initialize to empty dict, not None
+            backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
             backed_up_command_files = {}
 
             try:
@@ -2773,9 +2750,11 @@ def extension_update(
                                 backed_up_command_files[str(prompt_file)] = str(backup_prompt_path)
 
                 # 4. Backup hooks from extensions.yml
+                # Use backup_hooks=None to indicate config had no "hooks" key (don't create on restore)
+                # Use backup_hooks={} to indicate config had "hooks" key with no hooks for this extension
                 config = hook_executor.get_project_config()
                 if "hooks" in config:
-                    backup_hooks = {}
+                    backup_hooks = {}  # Config has hooks key - preserve this fact
                     for hook_name, hook_list in config["hooks"].items():
                         ext_hooks = [h for h in hook_list if h.get("extension") == extension_id]
                         if ext_hooks:
@@ -2785,12 +2764,25 @@ def extension_update(
                 zip_path = catalog.download_extension(extension_id)
                 try:
                     # 6. Validate extension ID from ZIP BEFORE modifying installation
+                    # Handle both root-level and nested extension.yml (GitHub auto-generated ZIPs)
                     with zipfile.ZipFile(zip_path, "r") as zf:
-                        try:
+                        import yaml
+                        manifest_data = None
+                        namelist = zf.namelist()
+
+                        # First try root-level extension.yml
+                        if "extension.yml" in namelist:
                             with zf.open("extension.yml") as f:
-                                import yaml
                                 manifest_data = yaml.safe_load(f) or {}
-                        except KeyError:
+                        else:
+                            # Look for extension.yml in a single top-level subdirectory
+                            # (e.g., "repo-name-branch/extension.yml")
+                            manifest_paths = [n for n in namelist if n.endswith("/extension.yml") and n.count("/") == 1]
+                            if len(manifest_paths) == 1:
+                                with zf.open(manifest_paths[0]) as f:
+                                    manifest_data = yaml.safe_load(f) or {}
+
+                        if manifest_data is None:
                             raise ValueError("Downloaded extension archive is missing 'extension.yml'")
 
                     zip_extension_id = manifest_data.get("extension", {}).get("id")
@@ -2803,7 +2795,7 @@ def extension_update(
                     manager.remove(extension_id, keep_config=True)
 
                     # 8. Install new version
-                    installed_manifest = manager.install_from_zip(zip_path, speckit_version)
+                    _ = manager.install_from_zip(zip_path, speckit_version)
 
                     # 9. Restore enabled state from backup
                     # If extension was disabled before update, disable it again
@@ -2861,26 +2853,31 @@ def extension_update(
                             shutil.copy2(backup_file, original_file)
 
                     # Restore hooks in extensions.yml
-                    # Always remove any hooks for this extension (from failed install),
-                    # then restore backed-up hooks (even if empty)
-                    if backup_hooks is not None:
-                        config = hook_executor.get_project_config()
-                        if "hooks" not in config:
-                            config["hooks"] = {}
-
-                        # First remove any existing hooks for this extension across all hook groups
+                    # - backup_hooks=None means original config had no "hooks" key
+                    # - backup_hooks={} or {...} means config had hooks key
+                    config = hook_executor.get_project_config()
+                    if "hooks" in config:
+                        # Remove any hooks for this extension added by failed install
+                        modified = False
                         for hook_name, hooks_list in config["hooks"].items():
+                            original_len = len(hooks_list)
                             config["hooks"][hook_name] = [
                                 h for h in hooks_list
                                 if h.get("extension") != extension_id
                             ]
+                            if len(config["hooks"][hook_name]) != original_len:
+                                modified = True
 
-                        # Then add back the backed up hooks (may be empty)
-                        for hook_name, hooks in backup_hooks.items():
-                            if hook_name not in config["hooks"]:
-                                config["hooks"][hook_name] = []
-                            config["hooks"][hook_name].extend(hooks)
-                        hook_executor.save_project_config(config)
+                        # Add back the backed up hooks if any
+                        if backup_hooks:
+                            for hook_name, hooks in backup_hooks.items():
+                                if hook_name not in config["hooks"]:
+                                    config["hooks"][hook_name] = []
+                                config["hooks"][hook_name].extend(hooks)
+                                modified = True
+
+                        if modified:
+                            hook_executor.save_project_config(config)
 
                     # Restore registry entry (use restore() since entry was removed)
                     if backup_registry_entry:
