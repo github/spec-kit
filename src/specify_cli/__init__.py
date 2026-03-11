@@ -2674,6 +2674,11 @@ def extension_update(
                 console.print(f"⚠  {ext_id}: Not found in catalog (skipping)")
                 continue
 
+            # Check if installation is allowed from this catalog
+            if not ext_info.get("_install_allowed", True):
+                console.print(f"⚠  {ext_id}: Updates not allowed from '{ext_info.get('_catalog_name', 'catalog')}' (skipping)")
+                continue
+
             catalog_version = pkg_version.Version(ext_info["version"])
 
             if catalog_version > installed_version:
@@ -2850,12 +2855,12 @@ def extension_update(
                         manager.registry.restore(extension_id, backup_registry_entry)
 
                     console.print(f"   [green]✓[/green] Rollback successful")
+                    # Clean up backup directory only on successful rollback
+                    if backup_base.exists():
+                        shutil.rmtree(backup_base)
                 except Exception as rollback_error:
                     console.print(f"   [red]✗[/red] Rollback failed: {rollback_error}")
-
-                # Clean up backup directory after rollback attempt
-                if backup_base.exists():
-                    shutil.rmtree(backup_base)
+                    console.print(f"   [dim]Backup preserved at: {backup_base}[/dim]")
 
         # Summary
         console.print()
