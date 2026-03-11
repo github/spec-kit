@@ -280,8 +280,8 @@ build_variant() {
       mkdir -p "$base_dir/.kiro/prompts"
       generate_commands kiro-cli md "\$ARGUMENTS" "$base_dir/.kiro/prompts" "$script" ;;
     agy)
-      mkdir -p "$base_dir/.agent/workflows"
-      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/workflows" "$script" ;;
+      mkdir -p "$base_dir/.agent/commands"
+      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/commands" "$script" ;;
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;

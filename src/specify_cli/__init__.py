@@ -247,7 +247,6 @@ AGENT_CONFIG = {
     "agy": {
         "name": "Antigravity",
         "folder": ".agent/",
-        "commands_subdir": "workflows",  # Special: uses workflows/ not commands/
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
@@ -1350,6 +1349,12 @@ def init(
         console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
         raise typer.Exit(1)
 
+    if ai_assistant == "agy" and not ai_skills:
+        console.print("\n[red]Error:[/red] Explicit command support was deprecated in Antigravity version 1.20.5.")
+        console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
+        console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
+        raise typer.Exit(1)
+
     if here:
         project_name = Path.cwd().name
         project_path = Path.cwd()
@@ -1413,11 +1418,11 @@ def init(
             "copilot"
         )
 
-    if selected_ai == "agy" and not ai_skills:
-        console.print("\n[red]Error:[/red] Antigravity explicit command support is deprecated as of version 1.20.5.")
-        console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
-        console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
-        raise typer.Exit(1)
+        if selected_ai == "agy" and not ai_skills:
+            console.print("\n[red]Error:[/red] Explicit command support was deprecated in Antigravity version 1.20.5.")
+            console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
+            console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
+            raise typer.Exit(1)
 
     # Validate --ai-commands-dir usage
     if selected_ai == "generic":

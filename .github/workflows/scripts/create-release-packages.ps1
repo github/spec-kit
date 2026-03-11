@@ -442,7 +442,7 @@ function Build-Variant {
             if (Test-Path $tabnineTemplate) { Copy-Item $tabnineTemplate (Join-Path $baseDir 'TABNINE.md') }
         }
         'agy' {
-            $cmdDir = Join-Path $baseDir ".agent/workflows"
+            $cmdDir = Join-Path $baseDir ".agent/commands"
             Generate-Commands -Agent 'agy' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
         'vibe' {
