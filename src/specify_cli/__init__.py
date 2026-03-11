@@ -315,6 +315,9 @@ AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
 }
 
+# Agents that use TOML command format (others use Markdown)
+_TOML_AGENTS = frozenset({"gemini", "qwen", "tabnine"})
+
 def _build_ai_assistant_help() -> str:
     """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
 
@@ -1095,6 +1098,235 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
     return project_path
 
 
+def _locate_core_pack() -> Path | None:
+    """Return the filesystem path to the bundled core_pack directory.
+
+    Works for wheel installs (hatchling force-include puts the directory next to
+    __init__.py as specify_cli/core_pack/) and for source-checkout / editable
+    installs (falls back to the repo-root templates/ and scripts/ trees).
+    Returns None only when neither location exists.
+    """
+    # Wheel install: core_pack is a sibling directory of this file
+    candidate = Path(__file__).parent / "core_pack"
+    if candidate.is_dir():
+        return candidate
+    return None
+
+
+def _generate_agent_commands(
+    template_dir: Path,
+    output_dir: Path,
+    agent: str,
+    script_type: str,
+) -> int:
+    """Generate agent-specific command files from Markdown command templates.
+
+    Python equivalent of the generate_commands() shell function in
+    .github/workflows/scripts/create-release-packages.sh.  Handles Markdown,
+    TOML (Gemini/Qwen/Tabnine), and .agent.md (Copilot) output formats.
+
+    Returns the number of command files written.
+    """
+    import re
+
+    if agent in _TOML_AGENTS:
+        ext = "toml"
+        arg_format = "{{args}}"
+    elif agent == "copilot":
+        ext = "agent.md"
+        arg_format = "$ARGUMENTS"
+    else:
+        ext = "md"
+        arg_format = "$ARGUMENTS"
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+
+    for template_file in sorted(template_dir.glob("*.md")):
+        raw = template_file.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+        # Parse YAML frontmatter
+        frontmatter: dict = {}
+        body: str = raw
+        if raw.startswith("---"):
+            parts = raw.split("---", 2)
+            if len(parts) >= 3:
+                try:
+                    frontmatter = yaml.safe_load(parts[1]) or {}
+                except yaml.YAMLError:
+                    frontmatter = {}
+                body = parts[2]
+
+        description = str(frontmatter.get("description", "")).strip()
+
+        # Extract script command for this script variant
+        scripts_section = frontmatter.get("scripts") or {}
+        script_command = str(scripts_section.get(script_type, "")).strip()
+        if not script_command:
+            script_command = f"(missing script command for {script_type})"
+
+        # Extract optional per-agent script command
+        agent_scripts_section = frontmatter.get("agent_scripts") or {}
+        agent_script_command = str(agent_scripts_section.get(script_type, "")).strip()
+
+        # Build cleaned frontmatter (drop scripts/agent_scripts: not in generated outputs)
+        clean_fm = {k: v for k, v in frontmatter.items() if k not in ("scripts", "agent_scripts")}
+
+        # Reconstruct the full content with clean frontmatter + body
+        if clean_fm:
+            fm_yaml = yaml.dump(clean_fm, default_flow_style=False, allow_unicode=True, sort_keys=False).rstrip()
+            full_content = f"---\n{fm_yaml}\n---\n{body}"
+        else:
+            full_content = body
+
+        # Apply placeholder substitutions (must happen before path rewriting so
+        # script paths like scripts/bash/... are then rewritten correctly)
+        full_content = full_content.replace("{SCRIPT}", script_command)
+        if agent_script_command:
+            full_content = full_content.replace("{AGENT_SCRIPT}", agent_script_command)
+        full_content = full_content.replace("{ARGS}", arg_format)
+        full_content = full_content.replace("__AGENT__", agent)
+
+        # Rewrite bare paths to .specify/-prefixed variants (mirrors rewrite_paths()
+        # in create-release-packages.sh)
+        full_content = re.sub(r"/?memory/", ".specify/memory/", full_content)
+        full_content = re.sub(r"/?scripts/", ".specify/scripts/", full_content)
+        full_content = re.sub(r"/?templates/", ".specify/templates/", full_content)
+        # Fix any accidental double-prefix introduced by the substitution
+        full_content = full_content.replace(".specify/.specify/", ".specify/")
+
+        # Write output file
+        name = template_file.stem
+        output_filename = f"speckit.{name}.{ext}"
+
+        if ext == "toml":
+            # Escape backslashes for multi-line TOML string
+            escaped = full_content.replace("\\", "\\\\")
+            toml_body = f'description = "{description}"\n\nprompt = """\n{escaped}\n"""\n'
+            (output_dir / output_filename).write_text(toml_body, encoding="utf-8")
+        else:
+            (output_dir / output_filename).write_text(full_content, encoding="utf-8")
+
+        count += 1
+
+    # Copilot: generate companion .prompt.md files alongside .agent.md files
+    if agent == "copilot":
+        prompts_dir = output_dir.parent / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        for agent_file in output_dir.glob("speckit.*.agent.md"):
+            # Strip trailing ".agent.md" to get the base name (e.g. "speckit.specify")
+            base = agent_file.name[: -len(".agent.md")]
+            prompt_file = prompts_dir / f"{base}.prompt.md"
+            prompt_file.write_text(f"---\nagent: {base}\n---\n", encoding="utf-8")
+
+    return count
+
+
+def scaffold_from_core_pack(
+    project_path: Path,
+    ai_assistant: str,
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    tracker: StepTracker | None = None,
+) -> bool:
+    """Scaffold a project from bundled core_pack assets — no network access required.
+
+    Uses templates/commands/scripts bundled inside the wheel (via hatchling
+    force-include) or, when running from a source checkout, falls back to the
+    repo-root trees.  Returns True on success, False if the required assets
+    cannot be located (caller should fall back to download_and_extract_template).
+    """
+    # --- Locate asset sources ---
+    core = _locate_core_pack()
+
+    # Command templates
+    if core and (core / "commands").is_dir():
+        commands_dir = core / "commands"
+    else:
+        # Source-checkout fallback
+        repo_root = Path(__file__).parent.parent.parent
+        commands_dir = repo_root / "templates" / "commands"
+        if not commands_dir.is_dir():
+            if tracker:
+                tracker.error("scaffold", "command templates not found")
+            return False
+
+    # Scripts for the chosen variant (bash/powershell)
+    scripts_subdir = "bash" if script_type == "sh" else "powershell"
+    if core and (core / "scripts" / scripts_subdir).is_dir():
+        scripts_src = core / "scripts" / scripts_subdir
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        scripts_src = repo_root / "scripts" / scripts_subdir
+        if not scripts_src.is_dir():
+            if tracker:
+                tracker.error("scaffold", f"{scripts_subdir} scripts not found")
+            return False
+
+    # Page templates (spec-template.md, plan-template.md, etc.)
+    if core and (core / "templates").is_dir():
+        templates_src = core / "templates"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        templates_src = repo_root / "templates"
+    # templates_src may still be absent on minimal installs; non-fatal below
+
+    if tracker:
+        tracker.start("scaffold", "applying bundled assets")
+
+    try:
+        if not is_current_dir:
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        specify_dir = project_path / ".specify"
+
+        # Copy scripts
+        target_scripts = specify_dir / "scripts" / scripts_subdir
+        target_scripts.mkdir(parents=True, exist_ok=True)
+        for f in scripts_src.iterdir():
+            if f.is_file():
+                shutil.copy2(f, target_scripts / f.name)
+
+        # Copy page templates (skip sub-directories like commands/ and vscode-settings.json)
+        if templates_src.is_dir():
+            target_templates = specify_dir / "templates"
+            target_templates.mkdir(parents=True, exist_ok=True)
+            for f in templates_src.iterdir():
+                if f.is_file() and f.name != "vscode-settings.json":
+                    shutil.copy2(f, target_templates / f.name)
+
+        # Generate agent-specific command files from bundled command templates
+        agent_cfg = AGENT_CONFIG.get(ai_assistant, {})
+        agent_folder = (agent_cfg.get("folder") or "").rstrip("/")
+        commands_subdir = agent_cfg.get("commands_subdir", "commands")
+        agent_cmds_dir = (
+            project_path / agent_folder / commands_subdir
+            if agent_folder
+            else project_path / ".speckit" / commands_subdir
+        )
+        _generate_agent_commands(commands_dir, agent_cmds_dir, ai_assistant, script_type)
+
+        # Copilot-specific: copy .vscode/settings.json
+        if ai_assistant == "copilot" and templates_src.is_dir():
+            vscode_settings_src = templates_src / "vscode-settings.json"
+            if vscode_settings_src.is_file():
+                vscode_dir = project_path / ".vscode"
+                vscode_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(vscode_settings_src, vscode_dir / "settings.json")
+
+        if tracker:
+            tracker.complete("scaffold", "bundled assets applied")
+        return True
+
+    except Exception as e:
+        if tracker:
+            tracker.error("scaffold", str(e))
+        else:
+            console.print(f"[red]Error scaffolding from bundled assets:[/red] {e}")
+        return False
+
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -1480,18 +1712,22 @@ def init(
     ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
+    from_github: bool = typer.Option(False, "--from-github", help="Download the latest template release from GitHub instead of using bundled assets (requires network access to api.github.com)"),
 ):
     """
-    Initialize a new Specify project from the latest template.
-    
+    Initialize a new Specify project.
+
+    By default, project files are scaffolded from assets bundled inside the
+    specify-cli package — no internet access is required.  Use --from-github
+    to download the latest template release from GitHub instead.
+
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant
-    3. Download the appropriate template from GitHub
-    4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
-    6. Optionally set up AI assistant commands
-    
+    3. Scaffold the project from bundled assets (or download from GitHub with --from-github)
+    4. Initialize a fresh git repository (if not --no-git and no existing repo)
+    5. Optionally set up AI assistant commands
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
@@ -1509,6 +1745,7 @@ def init(
         specify init --here --ai gemini --ai-skills
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
         specify init my-project --ai claude --preset healthcare-compliance  # With preset
+        specify init my-project --from-github  # Force download from GitHub releases
     """
 
     show_banner()
@@ -1680,12 +1917,27 @@ def init(
     tracker.complete("ai-select", f"{selected_ai}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
+
+    # Determine whether to use bundled assets (default) or download from GitHub.
+    # This is decided before the Live() context so the initial step list is stable.
+    _core = _locate_core_pack()
+    _repo_commands = Path(__file__).parent.parent.parent / "templates" / "commands"
+    _has_bundled = (_core is not None) or _repo_commands.is_dir()
+    use_github = from_github or not _has_bundled
+
+    if use_github:
+        for key, label in [
+            ("fetch", "Fetch latest release"),
+            ("download", "Download template"),
+            ("extract", "Extract template"),
+            ("zip-list", "Archive contents"),
+            ("extracted-summary", "Extraction summary"),
+        ]:
+            tracker.add(key, label)
+    else:
+        tracker.add("scaffold", "Apply bundled assets")
+
     for key, label in [
-        ("fetch", "Fetch latest release"),
-        ("download", "Download template"),
-        ("extract", "Extract template"),
-        ("zip-list", "Archive contents"),
-        ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
     ]:
@@ -1709,7 +1961,21 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            if use_github:
+                download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            else:
+                scaffold_ok = scaffold_from_core_pack(project_path, selected_ai, selected_script, here, tracker=tracker)
+                if not scaffold_ok:
+                    # Unexpected failure — fall back to GitHub download
+                    for key, label in [
+                        ("fetch", "Fetch latest release"),
+                        ("download", "Download template"),
+                        ("extract", "Extract template"),
+                        ("zip-list", "Archive contents"),
+                        ("extracted-summary", "Extraction summary"),
+                    ]:
+                        tracker.add(key, label)
+                    download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             # For generic agent, rename placeholder directory to user-specified path
             if selected_ai == "generic" and ai_commands_dir:
@@ -1824,6 +2090,10 @@ def init(
                                 console.print(f"[yellow]Warning:[/yellow] Failed to install preset '{preset}': {preset_err}")
                 except Exception as preset_err:
                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
+
+            # Scaffold path has no zip archive to clean up
+            if not use_github:
+                tracker.skip("cleanup", "not needed (no download)")
 
             tracker.complete("final", "project ready")
         except Exception as e:

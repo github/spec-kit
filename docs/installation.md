@@ -75,6 +75,50 @@ The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ## Troubleshooting
 
+### Enterprise / Air-Gapped Installation
+
+If your environment blocks access to PyPI (you see 403 errors when running `uv tool install` or `pip install`), you can install Specify using the pre-built wheel from the GitHub releases page.
+
+**Step 1: Download the wheel**
+
+Go to the [Spec Kit releases page](https://github.com/github/spec-kit/releases/latest) and download the `specify_cli-*.whl` file.
+
+**Step 2: Install the wheel**
+
+```bash
+pip install specify_cli-*.whl
+```
+
+**Step 3: Initialize a project (no network required)**
+
+```bash
+specify init my-project --ai claude
+```
+
+The CLI bundles all templates, commands, and scripts inside the wheel, so `specify init` works completely offline — no connection to `api.github.com` needed.
+
+**If you also need runtime dependencies offline** (fully air-gapped machines with no access to any PyPI), use a connected machine with the same OS and Python version to download them first:
+
+```bash
+# On a connected machine (same OS and Python version as the target):
+pip download -d vendor specify_cli-*.whl
+
+# Transfer the wheel and vendor/ directory to the target machine
+
+# On the target machine:
+pip install --no-index --find-links=./vendor specify_cli-*.whl
+```
+
+> **Note:** Python 3.11+ is required. The wheel is a pure-Python artifact, so it works on any platform without recompilation.
+
+**Getting the latest templates without upgrading the CLI:**
+
+If you want to pull freshly generated command files from the latest GitHub release instead of the bundled copy, use:
+
+```bash
+specify init my-project --ai claude --from-github
+```
+
 ### Git Credential Manager on Linux
 
 If you're having issues with Git authentication on Linux, you can install Git Credential Manager:

@@ -16,6 +16,7 @@ VERSION="$1"
 VERSION_NO_V=${VERSION#v}
 
 gh release create "$VERSION" \
+  .genreleases/specify_cli-"$VERSION_NO_V"-py3-none-any.whl \
   .genreleases/spec-kit-template-copilot-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-copilot-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-claude-sh-"$VERSION".zip \

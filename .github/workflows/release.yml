@@ -32,6 +32,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build Python wheel
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          pip install build
+          python -m build --wheel --outdir .genreleases/
+
       - name: Create release package variants
         if: steps.check_release.outputs.exists == 'false'
         run: |

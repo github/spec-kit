@@ -97,6 +97,17 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here --ai c
 - Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
 - Cleaner shell configuration
 
+#### Option 3: Enterprise / Air-Gapped Installation
+
+If your environment blocks PyPI access, download the pre-built `specify_cli-*.whl` wheel from the [releases page](https://github.com/github/spec-kit/releases/latest) and install it directly:
+
+```bash
+pip install specify_cli-*.whl
+specify init my-project --ai claude   # works fully offline — no api.github.com needed
+```
+
+The wheel bundles all templates, commands, and scripts, so `specify init` works without any network access after install. See the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) section for fully offline (no-PyPI) instructions.
+
 ### 2. Establish project principles
 
 Launch your AI assistant in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.

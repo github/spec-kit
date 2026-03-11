@@ -27,6 +27,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/specify_cli"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# Bundle core assets so `specify init` works without network access (air-gapped / enterprise)
+"templates" = "specify_cli/core_pack/templates"
+"templates/commands" = "specify_cli/core_pack/commands"
+"scripts/bash" = "specify_cli/core_pack/scripts/bash"
+"scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
+
 [project.optional-dependencies]
 test = [
     "pytest>=7.0",
