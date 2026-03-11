@@ -196,7 +196,13 @@ Integration hooks for automatic execution.
 
 Available hook points:
 
+- `before_specify`: Before `/speckit.specify` starts
+- `after_specify`: After `/speckit.specify` completes
+- `before_plan`: Before `/speckit.plan` starts
+- `after_plan`: After `/speckit.plan` completes
+- `before_tasks`: Before `/speckit.tasks` starts
 - `after_tasks`: After `/speckit.tasks` completes
+- `before_implement`: Before `/speckit.implement` starts
 - `after_implement`: After `/speckit.implement` completes (future)
 
 Hook object:

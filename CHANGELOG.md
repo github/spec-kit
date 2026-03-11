@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- feat: wire `before_specify`, `after_specify`, `before_plan`, and `after_plan` hook events into command templates (#1788)
 - feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
 ## [0.2.0] - 2026-03-09

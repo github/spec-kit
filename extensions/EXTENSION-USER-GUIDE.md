@@ -388,6 +388,28 @@ settings:
 
 # Hook configuration
 hooks:
+  before_specify:
+    - extension: contextual-research
+      command: speckit.research.pre-spec
+      enabled: true
+      optional: true
+      prompt: "Perform pre-specification research?"
+  after_specify:
+    - extension: linter
+      command: speckit.linter.check-spec
+      enabled: true
+      optional: false
+  before_plan:
+    - extension: setup-env
+      command: speckit.env.prepare
+      enabled: true
+      optional: false
+  after_plan:
+    - extension: architect
+      command: speckit.architect.validate-plan
+      enabled: true
+      optional: true
+      prompt: "Validate architecture before proceeding?"
   after_tasks:
     - extension: jira
       command: speckit.jira.specstoissues

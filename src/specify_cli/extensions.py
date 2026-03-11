@@ -1884,7 +1884,7 @@ class HookExecutor:
         """Get all registered hooks for a specific event.
 
         Args:
-            event_name: Name of the event (e.g., 'after_tasks')
+            event_name: Name of the event (e.g., 'after_specify', 'after_plan', 'after_tasks')
 
         Returns:
             List of hook configurations
@@ -2036,7 +2036,7 @@ class HookExecutor:
         This method is designed to be called by AI agents after core commands complete.
 
         Args:
-            event_name: Name of the event (e.g., 'after_spec', 'after_tasks')
+            event_name: Name of the event (e.g., 'after_specify', 'after_plan', 'after_tasks')
 
         Returns:
             Dictionary with hook information:
