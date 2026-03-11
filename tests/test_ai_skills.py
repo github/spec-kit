@@ -661,6 +661,17 @@ class TestCliValidation:
         assert "Usage:" in result.output
         assert "--ai" in result.output
 
+    def test_agy_without_ai_skills_fails(self):
+        """--ai agy without --ai-skills should fail with exit code 1."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "test-proj", "--ai", "agy"])
+
+        assert result.exit_code == 1
+        assert "Antigravity explicit command support is deprecated" in result.output
+        assert "--ai-skills" in result.output
+
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
         from typer.testing import CliRunner
