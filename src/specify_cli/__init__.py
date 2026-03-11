@@ -1269,6 +1269,13 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     return installed_count > 0 or skipped_count > 0
 
 
+def _handle_agy_deprecation(console: Console) -> None:
+    """Print the deprecation error for the Antigravity (agy) agent and exit."""
+    console.print("\n[red]Error:[/red] Explicit command support was deprecated in Antigravity version 1.20.5.")
+    console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
+    console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
+    raise typer.Exit(1)
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
@@ -1350,10 +1357,7 @@ def init(
         raise typer.Exit(1)
 
     if ai_assistant == "agy" and not ai_skills:
-        console.print("\n[red]Error:[/red] Explicit command support was deprecated in Antigravity version 1.20.5.")
-        console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
-        console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
-        raise typer.Exit(1)
+        _handle_agy_deprecation(console)
 
     if here:
         project_name = Path.cwd().name
@@ -1419,10 +1423,7 @@ def init(
         )
 
         if selected_ai == "agy" and not ai_skills:
-            console.print("\n[red]Error:[/red] Explicit command support was deprecated in Antigravity version 1.20.5.")
-            console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
-            console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
-            raise typer.Exit(1)
+            _handle_agy_deprecation(console)
 
     # Validate --ai-commands-dir usage
     if selected_ai == "generic":
