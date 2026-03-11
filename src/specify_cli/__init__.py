@@ -2436,16 +2436,21 @@ def extension_info(
     # Try to resolve from installed extensions first (by ID or name)
     resolved_installed_id = None
     resolved_installed_name = None
+
+    # First check for exact ID match
     for ext in installed:
-        if ext["id"] == extension or ext["name"].lower() == extension.lower():
+        if ext["id"] == extension:
             resolved_installed_id = ext["id"]
             resolved_installed_name = ext["name"]
             break
 
-    # Check for ambiguous installed name matches
+    # If no ID match, check for name matches (with ambiguity detection)
     if not resolved_installed_id:
         name_matches = [ext for ext in installed if ext["name"].lower() == extension.lower()]
-        if len(name_matches) > 1:
+        if len(name_matches) == 1:
+            resolved_installed_id = name_matches[0]["id"]
+            resolved_installed_name = name_matches[0]["name"]
+        elif len(name_matches) > 1:
             from rich.table import Table
             console.print(
                 f"[red]Error:[/red] Extension name '{extension}' is ambiguous. "
