@@ -272,6 +272,13 @@ AGENT_CONFIG = {
         "install_url": "https://code.kimi.com/",
         "requires_cli": True,
     },
+    "trae": {
+        "name": "Trae",
+        "folder": ".trae/",
+        "commands_subdir": "rules",  # Trae uses .trae/rules/ for project rules
+        "install_url": None,  # IDE-based
+        "requires_cli": False,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir
