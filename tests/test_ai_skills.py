@@ -674,19 +674,31 @@ class TestCliValidation:
 
     def test_interactive_agy_without_ai_skills_prompts_skills(self, monkeypatch):
         """Interactive selector returning agy without --ai-skills should automatically enable --ai-skills."""
-        import specify_cli
         from typer.testing import CliRunner
-        
-        # Mock select_with_arrows to simulate the user picking 'agy' for AI, but default otherwise
-        original_select_with_arrows = specify_cli.select_with_arrows
 
+        # Mock select_with_arrows to simulate the user picking 'agy' for AI,
+        # and return a deterministic default for any other prompts to avoid
+        # calling the real interactive implementation.
         def _fake_select_with_arrows(*args, **kwargs):
             options = kwargs.get("options")
             if options is None and len(args) >= 1:
                 options = args[0]
+
+            # If the options include 'agy', simulate selecting it.
             if isinstance(options, dict) and "agy" in options:
                 return "agy"
-            return original_select_with_arrows(*args, **kwargs)
+            if isinstance(options, (list, tuple)) and "agy" in options:
+                return "agy"
+
+            # For any other prompt, return a deterministic, non-interactive default:
+            # pick the first option if available.
+            if isinstance(options, dict) and options:
+                return next(iter(options.keys()))
+            if isinstance(options, (list, tuple)) and options:
+                return options[0]
+
+            # If no options are provided, fall back to None (should not occur in normal use).
+            return None
 
         monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
         

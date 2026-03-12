@@ -1411,7 +1411,7 @@ def init(
 
     # [DEPRECATION NOTICE: Antigravity (agy)]
     # As of Antigravity v1.20.5, traditional CLI "command" support was fully removed
-    # in favor of "Agent Skills" (Prompt.MD files within .agent/skills/).
+    # in favor of "Agent Skills" (SKILL.md files under <agent_folder>/skills/<skill_name>/).
     # Because 'specify_cli' historically populated .agent/commands/, we now must explicitly
     # enforce the `--ai-skills` flag for `agy` to ensure valid template generation.
     if selected_ai == "agy" and not ai_skills:
