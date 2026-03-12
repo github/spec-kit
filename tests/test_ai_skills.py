@@ -689,6 +689,9 @@ class TestCliValidation:
             return original_select_with_arrows(*args, **kwargs)
 
         monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
+        
+        # Mock download_and_extract_template to prevent real HTTP downloads during testing
+        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
         # We need to bypass the `git init` step, wait, it has `--no-git` by default in tests maybe?
         runner = CliRunner()
         # Create temp dir to avoid directory already exists errors or whatever

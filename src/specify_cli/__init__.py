@@ -247,6 +247,7 @@ AGENT_CONFIG = {
     "agy": {
         "name": "Antigravity",
         "folder": ".agent/",
+        "commands_subdir": "commands",
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
@@ -1407,6 +1408,11 @@ def init(
             _handle_agy_deprecation(console)
         else:
             ai_skills = True
+            console.print(
+                "\n[yellow]Note:[/yellow] 'agy' was selected interactively; "
+                "enabling [cyan]--ai-skills[/cyan] automatically for compatibility "
+                "(explicit .agent/commands usage is deprecated)."
+            )
 
     # Validate --ai-commands-dir usage
     if selected_ai == "generic":
