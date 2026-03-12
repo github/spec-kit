@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Pi Coding Agent, iFlow CLI, Antigravity or Generic
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Junie, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Pi Coding Agent, iFlow CLI, Antigravity or Generic
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|generic
 # Leave empty to update all existing agent files
 
 set -e
@@ -68,6 +68,7 @@ CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
 QWEN_FILE="$REPO_ROOT/QWEN.md"
 AGENTS_FILE="$REPO_ROOT/AGENTS.md"
 WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
+JUNIE_FILE="$REPO_ROOT/.junie/AGENTS.md"
 KILOCODE_FILE="$REPO_ROOT/.kilocode/rules/specify-rules.md"
 AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
@@ -638,6 +639,9 @@ update_specific_agent() {
         windsurf)
             update_agent_file "$WINDSURF_FILE" "Windsurf" || return 1
             ;;
+        junie)
+            update_agent_file "$JUNIE_FILE" "Junie" || return 1
+            ;;
         kilocode)
             update_agent_file "$KILOCODE_FILE" "Kilo Code" || return 1
             ;;
@@ -691,7 +695,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic"
             exit 1
             ;;
     esac
@@ -740,6 +744,7 @@ update_all_existing_agents() {
     _update_if_new "$KIRO_FILE" "Kiro CLI"                 || _all_ok=false
     _update_if_new "$BOB_FILE" "IBM Bob"                   || _all_ok=false
     _update_if_new "$WINDSURF_FILE" "Windsurf"             || _all_ok=false
+    _update_if_new "$JUNIE_FILE" "Junie"                || _all_ok=false
     _update_if_new "$KILOCODE_FILE" "Kilo Code"            || _all_ok=false
     _update_if_new "$AUGGIE_FILE" "Auggie CLI"             || _all_ok=false
     _update_if_new "$ROO_FILE" "Roo Code"                  || _all_ok=false
@@ -778,7 +783,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic]"
 }
 
 #==============================================================================

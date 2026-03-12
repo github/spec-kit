@@ -14,7 +14,7 @@
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, trae, pi, iflow, generic
+    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, junie, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, trae, pi, iflow, generic
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -395,6 +395,10 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".windsurf/workflows"
             Generate-Commands -Agent 'windsurf' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'junie' {
+            $cmdDir = Join-Path $baseDir ".junie/commands"
+            Generate-Commands -Agent 'junie' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         'codex' {
             $cmdDir = Join-Path $baseDir ".codex/prompts"
             Generate-Commands -Agent 'codex' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
@@ -483,7 +487,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'trae', 'pi', 'iflow', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'junie', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'trae', 'pi', 'iflow', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {

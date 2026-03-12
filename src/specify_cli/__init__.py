@@ -184,6 +184,13 @@ AGENT_CONFIG = {
         "install_url": None,  # IDE-based
         "requires_cli": False,
     },
+    "junie": {
+        "name": "Junie",
+        "folder": ".junie/",
+        "commands_subdir": "commands",
+        "install_url": "https://junie.jetbrains.com/",
+        "requires_cli": True,
+    },
     "kilocode": {
         "name": "Kilo Code",
         "folder": ".kilocode/",

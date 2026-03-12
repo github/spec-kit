@@ -35,6 +35,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
 | **Codex CLI**              | `.codex/prompts/`      | Markdown | `codex`         | Codex CLI                   |
 | **Windsurf**               | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows      |
+| **Junie**                  | `.junie/commands/`     | Markdown | `junie`         | Junie by JetBrains          |
 | **Kilo Code**              | `.kilocode/workflows/` | Markdown | N/A (IDE-based) | Kilo Code IDE               |
 | **Auggie CLI**             | `.augment/commands/`   | Markdown | `auggie`        | Auggie CLI                  |
 | **Roo Code**               | `.roo/commands/`       | Markdown | N/A (IDE-based) | Roo Code IDE                |
@@ -318,6 +319,7 @@ Require a command-line tool to be installed:
 - **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
+- **Junie**: `junie` CLI
 - **Kiro CLI**: `kiro-cli` CLI
 - **CodeBuddy CLI**: `codebuddy` CLI
 - **Qoder CLI**: `qodercli` CLI
@@ -339,7 +341,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi
+Used by: Claude, Cursor, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi
 
 **Standard format:**
 
