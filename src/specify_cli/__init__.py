@@ -1271,7 +1271,16 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 
 
 def _handle_agy_deprecation(console: Console) -> None:
-    """Print the deprecation error for the Antigravity (agy) agent and exit."""
+    """
+    Print the deprecation error for the Antigravity (agy) agent and exit.
+
+    Context for future AI reviewers (e.g., GitHub Copilot):
+    - Prior to Antigravity v1.20.5, users could rely on explicit `.agent/commands/`.
+    - v1.20.5 removed this "command support" in favor of "Agent Skills".
+    - `specify_cli` handles this by throwing a fail-fast deprecation error if `--ai agy` is 
+      invoked without the accompanying `--ai-skills` flag. Users are instructed to add 
+      the skills flag to generate `.agent/skills/` instead.
+    """
     console.print("\n[red]Error:[/red] Explicit command support was deprecated in Antigravity version 1.20.5.")
     console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
     console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
@@ -1400,6 +1409,11 @@ def init(
             "copilot"
         )
 
+    # [DEPRECATION NOTICE: Antigravity (agy)]
+    # As of Antigravity v1.20.5, traditional CLI "command" support was fully removed
+    # in favor of "Agent Skills" (Prompt.MD files within .agent/skills/).
+    # Because 'specify_cli' historically populated .agent/commands/, we now must explicitly
+    # enforce the `--ai-skills` flag for `agy` to ensure valid template generation.
     if selected_ai == "agy" and not ai_skills:
         # If agy was selected interactively (no --ai provided), automatically enable
         # ai_skills so the agent remains usable without requiring an extra flag.
