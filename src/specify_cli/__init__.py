@@ -1695,6 +1695,309 @@ def check():
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
 
+
+@app.command()
+def doctor():
+    """Diagnose a Specify project and report health issues."""
+    show_banner()
+    console.print("[bold]Running project diagnostics...[/bold]\n")
+
+    project_root = Path.cwd()
+    issues = []  # (severity, message) tuples: "error", "warning", "info"
+
+    # ── 1. Project structure ──────────────────────────────────────────
+    tracker = StepTracker("Project Structure")
+
+    specify_dir = project_root / ".specify"
+    tracker.add("specify_dir", ".specify/ directory")
+    if specify_dir.is_dir():
+        tracker.complete("specify_dir", "found")
+    else:
+        tracker.error("specify_dir", "missing")
+        issues.append(("error", "No .specify/ directory — run 'specify init --here' to initialize"))
+
+    specs_dir = project_root / "specs"
+    tracker.add("specs_dir", "specs/ directory")
+    if specs_dir.is_dir():
+        tracker.complete("specs_dir", "found")
+    else:
+        tracker.skip("specs_dir", "not created yet")
+        issues.append(("info", "No specs/ directory — created when you run /speckit.specify"))
+
+    scripts_dir = project_root / "scripts"
+    tracker.add("scripts_dir", "scripts/ directory")
+    if scripts_dir.is_dir():
+        tracker.complete("scripts_dir", "found")
+    else:
+        tracker.error("scripts_dir", "missing")
+        issues.append(("error", "No scripts/ directory — project may not be initialized"))
+
+    templates_dir = project_root / "templates"
+    tracker.add("templates_dir", "templates/ directory")
+    if templates_dir.is_dir():
+        tracker.complete("templates_dir", "found")
+    else:
+        tracker.error("templates_dir", "missing")
+        issues.append(("error", "No templates/ directory — project may not be initialized"))
+
+    memory_dir = project_root / "memory"
+    tracker.add("memory_dir", "memory/ directory")
+    if memory_dir.is_dir():
+        tracker.complete("memory_dir", "found")
+        constitution = memory_dir / "constitution.md"
+        tracker.add("constitution", "memory/constitution.md")
+        if constitution.is_file():
+            tracker.complete("constitution", "found")
+        else:
+            tracker.error("constitution", "missing")
+            issues.append(("warning", "No constitution.md in memory/ — project governance rules are missing"))
+    else:
+        tracker.error("memory_dir", "missing")
+        issues.append(("error", "No memory/ directory — project may not be initialized"))
+
+    console.print(tracker.render())
+    console.print()
+
+    # ── 2. AI agent detection ─────────────────────────────────────────
+    agent_tracker = StepTracker("AI Agent Configuration")
+    detected_agents = []
+
+    for agent_key, agent_config in AGENT_CONFIG.items():
+        if agent_key == "generic":
+            continue
+        agent_folder = agent_config["folder"]
+        if agent_folder and (project_root / agent_folder).is_dir():
+            detected_agents.append(agent_key)
+            agent_tracker.add(agent_key, agent_config["name"])
+            commands_dir = project_root / agent_folder / agent_config["commands_subdir"]
+            if commands_dir.is_dir() and any(commands_dir.iterdir()):
+                agent_tracker.complete(agent_key, f"commands in {agent_folder}{agent_config['commands_subdir']}/")
+            else:
+                agent_tracker.error(agent_key, f"folder exists but no commands in {agent_config['commands_subdir']}/")
+                issues.append(("warning", f"Agent '{agent_config['name']}' folder exists but commands directory is empty"))
+
+    if not detected_agents:
+        agent_tracker.add("none", "No AI agent configured")
+        agent_tracker.skip("none", "run 'specify init --here --ai <agent>' to set up")
+        issues.append(("info", "No AI agent folder detected — this is fine if you use IDE-based agents"))
+
+    console.print(agent_tracker.render())
+    console.print()
+
+    # ── 3. Feature specs ──────────────────────────────────────────────
+    feature_tracker = StepTracker("Feature Specifications")
+
+    if specs_dir.is_dir():
+        feature_dirs = sorted(
+            [d for d in specs_dir.iterdir() if d.is_dir()],
+            key=lambda d: d.name,
+        )
+        if not feature_dirs:
+            feature_tracker.add("empty", "No feature directories")
+            feature_tracker.skip("empty", "run /speckit.specify to create one")
+        else:
+            for fdir in feature_dirs:
+                key = fdir.name
+                feature_tracker.add(key, key)
+
+                spec_file = fdir / "spec.md"
+                plan_file = fdir / "plan.md"
+                tasks_file = fdir / "tasks.md"
+
+                artifacts = []
+                missing = []
+                for name, path in [("spec", spec_file), ("plan", plan_file), ("tasks", tasks_file)]:
+                    if path.is_file():
+                        artifacts.append(name)
+                    else:
+                        missing.append(name)
+
+                if missing:
+                    detail = f"{', '.join(artifacts)} present; missing {', '.join(missing)}"
+                    if "spec" in missing:
+                        feature_tracker.error(key, detail)
+                        issues.append(("error", f"Feature '{key}' is missing spec.md"))
+                    else:
+                        feature_tracker.complete(key, detail)
+                        for m in missing:
+                            issues.append(("info", f"Feature '{key}' has no {m}.md — run /speckit.{m} to generate"))
+                else:
+                    feature_tracker.complete(key, "spec, plan, tasks all present")
+    else:
+        feature_tracker.add("none", "No specs/ directory")
+        feature_tracker.skip("none", "not applicable")
+
+    console.print(feature_tracker.render())
+    console.print()
+
+    # ── 4. Scripts health ─────────────────────────────────────────────
+    script_tracker = StepTracker("Scripts")
+
+    bash_dir = project_root / "scripts" / "bash"
+    ps_dir = project_root / "scripts" / "powershell"
+
+    expected_scripts = ["common", "check-prerequisites", "create-new-feature", "setup-plan", "update-agent-context"]
+
+    if bash_dir.is_dir():
+        for name in expected_scripts:
+            key = f"sh_{name}"
+            script_path = bash_dir / f"{name}.sh"
+            script_tracker.add(key, f"bash/{name}.sh")
+            if script_path.is_file():
+                if os.name != "nt" and not os.access(script_path, os.X_OK):
+                    script_tracker.error(key, "not executable")
+                    issues.append(("warning", f"scripts/bash/{name}.sh is not executable — run chmod +x"))
+                else:
+                    script_tracker.complete(key, "ok")
+            else:
+                script_tracker.error(key, "missing")
+                issues.append(("error", f"scripts/bash/{name}.sh is missing"))
+    else:
+        script_tracker.add("no_bash", "scripts/bash/")
+        script_tracker.skip("no_bash", "not found")
+
+    if ps_dir.is_dir():
+        for name in expected_scripts:
+            key = f"ps_{name}"
+            script_path = ps_dir / f"{name}.ps1"
+            script_tracker.add(key, f"powershell/{name}.ps1")
+            if script_path.is_file():
+                script_tracker.complete(key, "ok")
+            else:
+                script_tracker.error(key, "missing")
+                issues.append(("error", f"scripts/powershell/{name}.ps1 is missing"))
+    else:
+        script_tracker.add("no_ps", "scripts/powershell/")
+        script_tracker.skip("no_ps", "not found")
+
+    console.print(script_tracker.render())
+    console.print()
+
+    # ── 5. Extensions health ──────────────────────────────────────────
+    ext_tracker = StepTracker("Extensions")
+
+    extensions_yml = specify_dir / "extensions.yml" if specify_dir.is_dir() else None
+    registry_json = specify_dir / "extensions" / "registry.json" if specify_dir.is_dir() else None
+
+    if extensions_yml and extensions_yml.is_file():
+        ext_tracker.add("config", "extensions.yml")
+        try:
+            with open(extensions_yml) as f:
+                ext_config = yaml.safe_load(f)
+            if ext_config and isinstance(ext_config, dict):
+                ext_tracker.complete("config", "valid YAML")
+                hooks = ext_config.get("hooks", {})
+                if hooks:
+                    hook_count = sum(len(v) if isinstance(v, list) else 0 for v in hooks.values())
+                    ext_tracker.add("hooks", "Hook registrations")
+                    ext_tracker.complete("hooks", f"{hook_count} hook(s) registered")
+            else:
+                ext_tracker.complete("config", "empty or no hooks")
+        except Exception as e:
+            ext_tracker.error("config", f"invalid YAML: {e}")
+            issues.append(("warning", f"extensions.yml has invalid YAML: {e}"))
+    else:
+        ext_tracker.add("config", "extensions.yml")
+        ext_tracker.skip("config", "no extensions configured")
+
+    if registry_json and registry_json.is_file():
+        ext_tracker.add("registry", "Extension registry")
+        try:
+            with open(registry_json) as f:
+                registry = json.load(f)
+            installed = [k for k, v in registry.items() if isinstance(v, dict)]
+            enabled = [k for k, v in registry.items() if isinstance(v, dict) and v.get("enabled", True)]
+            ext_tracker.complete("registry", f"{len(installed)} installed, {len(enabled)} enabled")
+        except Exception as e:
+            ext_tracker.error("registry", f"corrupt: {e}")
+            issues.append(("error", f"Extension registry is corrupt: {e}"))
+    else:
+        ext_tracker.add("registry", "Extension registry")
+        ext_tracker.skip("registry", "no extensions installed")
+
+    console.print(ext_tracker.render())
+    console.print()
+
+    # ── 6. Git status ─────────────────────────────────────────────────
+    git_tracker = StepTracker("Git Repository")
+    git_tracker.add("git", "Git repository")
+
+    git_ok = shutil.which("git") is not None
+    in_git_repo = False
+    if git_ok:
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                capture_output=True, text=True, cwd=str(project_root)
+            )
+            in_git_repo = result.returncode == 0
+        except Exception:
+            pass
+
+    if in_git_repo:
+        git_tracker.complete("git", "inside git repository")
+        try:
+            branch = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, cwd=str(project_root)
+            ).stdout.strip()
+            git_tracker.add("branch", "Current branch")
+            git_tracker.complete("branch", branch)
+        except Exception:
+            pass
+    elif git_ok:
+        git_tracker.skip("git", "not a git repository")
+        issues.append(("info", "Not inside a git repository — git features like branching won't work"))
+    else:
+        git_tracker.skip("git", "git not installed")
+        issues.append(("info", "Git is not installed — branching and version control unavailable"))
+
+    console.print(git_tracker.render())
+    console.print()
+
+    # ── Summary ───────────────────────────────────────────────────────
+    errors = [msg for sev, msg in issues if sev == "error"]
+    warnings = [msg for sev, msg in issues if sev == "warning"]
+    infos = [msg for sev, msg in issues if sev == "info"]
+
+    if not issues:
+        console.print(Panel(
+            "[bold green]All checks passed — project looks healthy![/bold green]",
+            border_style="green",
+            padding=(1, 2),
+        ))
+    else:
+        summary_lines = []
+
+        if errors:
+            summary_lines.append(f"[bold red]{len(errors)} error(s)[/bold red]")
+            for msg in errors:
+                summary_lines.append(f"  [red]●[/red] {msg}")
+            summary_lines.append("")
+
+        if warnings:
+            summary_lines.append(f"[bold yellow]{len(warnings)} warning(s)[/bold yellow]")
+            for msg in warnings:
+                summary_lines.append(f"  [yellow]●[/yellow] {msg}")
+            summary_lines.append("")
+
+        if infos:
+            summary_lines.append(f"[bold blue]{len(infos)} note(s)[/bold blue]")
+            for msg in infos:
+                summary_lines.append(f"  [blue]○[/blue] {msg}")
+
+        border = "red" if errors else "yellow" if warnings else "blue"
+        console.print(Panel(
+            "\n".join(summary_lines),
+            title="Diagnostic Summary",
+            border_style=border,
+            padding=(1, 2),
+        ))
+
+    if errors:
+        raise typer.Exit(1)
+
+
 @app.command()
 def version():
     """Display version and system information."""
