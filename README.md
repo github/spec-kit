@@ -1,18 +1,18 @@
 <div align="center">
-	<img src="./media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
-	<h1>🌱 Spec Kit</h1>
-	<h3><em>Build high-quality software faster.</em></h3>
+    <img src="./media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
+    <h1>🌱 Spec Kit</h1>
+    <h3><em>Build high-quality software faster.</em></h3>
 </div>
 
 <p align="center">
-	<strong>An open source toolkit that allows you to focus on product scenarios and predictable outcomes instead of vibe coding every piece from scratch.</strong>
+    <strong>An open source toolkit that allows you to focus on product scenarios and predictable outcomes instead of vibe coding every piece from scratch.</strong>
 </p>
 
 <p align="center">
-	<a href="https://github.com/github/spec-kit/actions/workflows/release.yml"><img src="https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
-	<a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-	<a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
-	<a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
+    <a href="https://github.com/github/spec-kit/actions/workflows/release.yml"><img src="https://github.com/github/spec-kit/actions/workflows/release.yml/badge.svg" alt="Release"/></a>
+    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
+    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
 </p>
 
 ---
@@ -203,7 +203,7 @@ The `specify` command supports the following options:
 | Argument/Option        | Type     | Description                                                                                                                                                                                  |
 | ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                           |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `qodercli`, `vibe`, `kimi`, `trae`, or `generic` (requires `--ai-commands-dir`) |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `qodercli`, `vibe`, `kimi`, or `generic` (requires `--ai-commands-dir`) |
 | `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                  |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                  |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                              |
@@ -250,9 +250,6 @@ specify init my-project --ai bob
 
 # Initialize with Antigravity support
 specify init my-project --ai agy --ai-skills
-
-# Initialize with Trae support
-specify init my-project --ai trae
 
 # Initialize with an unsupported agent (generic / bring your own agent)
 specify init my-project --ai generic --ai-commands-dir .myagent/commands/
@@ -488,21 +485,21 @@ At this stage, your project folder contents should resemble the following:
 
 ```text
 └── .specify
-	├── memory
-	│  └── constitution.md
-	├── scripts
-	│  ├── check-prerequisites.sh
-	│  ├── common.sh
-	│  ├── create-new-feature.sh
-	│  ├── setup-plan.sh
-	│  └── update-claude-md.sh
-	├── specs
-	│  └── 001-create-taskify
-	│      └── spec.md
-	└── templates
-		├── plan-template.md
-		├── spec-template.md
-		└── tasks-template.md
+    ├── memory
+    │  └── constitution.md
+    ├── scripts
+    │  ├── check-prerequisites.sh
+    │  ├── common.sh
+    │  ├── create-new-feature.sh
+    │  ├── setup-plan.sh
+    │  └── update-claude-md.sh
+    ├── specs
+    │  └── 001-create-taskify
+    │      └── spec.md
+    └── templates
+        ├── plan-template.md
+        ├── spec-template.md
+        └── tasks-template.md
 ```
 
 ### **STEP 3:** Functional specification clarification (required before planning)
@@ -568,10 +565,10 @@ The output of this step will include a number of implementation detail documents
 │      ├── research.md
 │      └── spec.md
 └── templates
-	├── CLAUDE-template.md
-	├── plan-template.md
-	├── spec-template.md
-	└── tasks-template.md
+    ├── CLAUDE-template.md
+    ├── plan-template.md
+    ├── spec-template.md
+    └── tasks-template.md
 ```
 
 Check the `research.md` document to ensure that the right tech stack is used, based on your instructions. You can ask Claude Code to refine it if any of the components stand out, or even have it check the locally-installed version of the platform/framework you want to use (e.g., .NET).
