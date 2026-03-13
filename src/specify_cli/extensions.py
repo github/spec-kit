@@ -739,7 +739,10 @@ class CommandRegistrar:
         return self._registrar.render_frontmatter(frontmatter) + "\n" + context_note + body
 
     def _render_toml_command(self, frontmatter, body, ext_id):
-        return self._registrar.render_toml_command(frontmatter, body, ext_id)
+        # Preserve extension-specific context comments for backward compatibility
+        base = self._registrar.render_toml_command(frontmatter, body, ext_id)
+        context_lines = f"# Extension: {ext_id}\n# Config: .specify/extensions/{ext_id}/\n"
+        return base.rstrip("\n") + "\n" + context_lines
 
     def register_commands_for_agent(
         self,

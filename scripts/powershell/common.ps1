@@ -163,7 +163,7 @@ function Resolve-Template {
                 $presets = $registryData.presets
                 if ($presets) {
                     $sortedPresets = $presets.PSObject.Properties |
-                        Sort-Object { if ($_.Value.priority) { $_.Value.priority } else { 10 } } |
+                        Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
                         ForEach-Object { $_.Name }
                 }
             } catch {

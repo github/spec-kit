@@ -225,6 +225,8 @@ except Exception:
     local core="$base/${template_name}.md"
     [ -f "$core" ] && echo "$core" && return 0
 
-    return 1
+    # Return success with empty output so callers using set -e don't abort;
+    # callers check [ -n "$TEMPLATE" ] to detect "not found".
+    return 0
 }
 

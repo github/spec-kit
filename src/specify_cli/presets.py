@@ -1351,11 +1351,11 @@ class PresetCatalog:
             raise PresetError(f"Failed to save preset ZIP: {e}")
 
     def clear_cache(self):
-        """Clear the catalog cache."""
-        if self.cache_file.exists():
-            self.cache_file.unlink()
-        if self.cache_metadata_file.exists():
-            self.cache_metadata_file.unlink()
+        """Clear all catalog cache files, including per-URL hashed caches."""
+        if self.cache_dir.exists():
+            for f in self.cache_dir.iterdir():
+                if f.is_file() and f.name.startswith("catalog"):
+                    f.unlink(missing_ok=True)
 
 
 class PresetResolver:
