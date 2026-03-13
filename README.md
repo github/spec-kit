@@ -184,8 +184,8 @@ See Spec-Driven Development in action across different scenarios with these comm
 | [Kimi Code](https://code.kimi.com/)                                                  | ✅      |                                                                                                                                           |
 | [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
 | [Antigravity (agy)](https://antigravity.google/)                                     | ✅      | Requires `--ai-skills` |
-agents                                                 |
 | [Trae](https://www.trae.ai/)                                                         | ✅      |                                                                                                                                           |
+| Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                 |
 | Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported 
 
 ## 🔧 Specify CLI Reference
