@@ -12,6 +12,7 @@ import os
 import tempfile
 import zipfile
 import shutil
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Callable, Set
@@ -228,6 +229,54 @@ class ExtensionRegistry:
         }
         self._save()
 
+    def update(self, extension_id: str, metadata: dict):
+        """Update extension metadata in registry, merging with existing entry.
+
+        Merges the provided metadata with the existing entry, preserving any
+        fields not specified in the new metadata. The installed_at timestamp
+        is always preserved from the original entry.
+
+        Use this method instead of add() when updating existing extension
+        metadata (e.g., enabling/disabling) to preserve the original
+        installation timestamp and other existing fields.
+
+        Args:
+            extension_id: Extension ID
+            metadata: Extension metadata fields to update (merged with existing)
+
+        Raises:
+            KeyError: If extension is not installed
+        """
+        if extension_id not in self.data["extensions"]:
+            raise KeyError(f"Extension '{extension_id}' is not installed")
+        # Merge new metadata with existing, preserving original installed_at
+        existing = self.data["extensions"][extension_id]
+        # Merge: existing fields preserved, new fields override
+        merged = {**existing, **metadata}
+        # Always preserve original installed_at based on key existence, not truthiness,
+        # to handle cases where the field exists but may be falsy (legacy/corruption)
+        if "installed_at" in existing:
+            merged["installed_at"] = existing["installed_at"]
+        else:
+            # If not present in existing, explicitly remove from merged if caller provided it
+            merged.pop("installed_at", None)
+        self.data["extensions"][extension_id] = merged
+        self._save()
+
+    def restore(self, extension_id: str, metadata: dict):
+        """Restore extension metadata to registry without modifying timestamps.
+
+        Use this method for rollback scenarios where you have a complete backup
+        of the registry entry (including installed_at) and want to restore it
+        exactly as it was.
+
+        Args:
+            extension_id: Extension ID
+            metadata: Complete extension metadata including installed_at
+        """
+        self.data["extensions"][extension_id] = dict(metadata)
+        self._save()
+
     def remove(self, extension_id: str):
         """Remove extension from registry.
 
@@ -241,21 +290,28 @@ class ExtensionRegistry:
     def get(self, extension_id: str) -> Optional[dict]:
         """Get extension metadata from registry.
 
+        Returns a deep copy to prevent callers from accidentally mutating
+        nested internal registry state without going through the write path.
+
         Args:
             extension_id: Extension ID
 
         Returns:
-            Extension metadata or None if not found
+            Deep copy of extension metadata, or None if not found
         """
-        return self.data["extensions"].get(extension_id)
+        entry = self.data["extensions"].get(extension_id)
+        return copy.deepcopy(entry) if entry is not None else None
 
     def list(self) -> Dict[str, dict]:
         """Get all installed extensions.
 
+        Returns a deep copy of the extensions mapping to prevent callers
+        from accidentally mutating nested internal registry state.
+
         Returns:
-            Dictionary of extension_id -> metadata
+            Dictionary of extension_id -> metadata (deep copies)
         """
-        return self.data["extensions"]
+        return copy.deepcopy(self.data["extensions"])
 
     def is_installed(self, extension_id: str) -> bool:
         """Check if extension is installed.
@@ -584,7 +640,7 @@ class ExtensionManager:
                 result.append({
                     "id": ext_id,
                     "name": manifest.name,
-                    "version": metadata["version"],
+                    "version": metadata.get("version", "unknown"),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
                     "installed_at": metadata.get("installed_at"),
@@ -779,12 +835,13 @@ class ExtensionCatalog:
             config_path: Path to extension-catalogs.yml
 
         Returns:
-            Ordered list of CatalogEntry objects, or None if file doesn't exist
-            or contains no valid catalog entries.
+            Ordered list of CatalogEntry objects, or None if file doesn't exist.
 
         Raises:
             ValidationError: If any catalog entry has an invalid URL,
-                the file cannot be parsed, or a priority value is invalid.
+                the file cannot be parsed, a priority value is invalid,
+                or the file exists but contains no valid catalog entries
+                (fail-closed for security).
         """
         if not config_path.exists():
             return None
@@ -796,12 +853,17 @@ class ExtensionCatalog:
             )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
-            return None
+            # File exists but has no catalogs key or empty list - fail closed
+            raise ValidationError(
+                f"Catalog config {config_path} exists but contains no 'catalogs' entries. "
+                f"Remove the file to use built-in defaults, or add valid catalog entries."
+            )
         if not isinstance(catalogs_data, list):
             raise ValidationError(
                 f"Invalid catalog config: 'catalogs' must be a list, got {type(catalogs_data).__name__}"
             )
         entries: List[CatalogEntry] = []
+        skipped_entries: List[int] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise ValidationError(
@@ -809,6 +871,7 @@ class ExtensionCatalog:
                 )
             url = str(item.get("url", "")).strip()
             if not url:
+                skipped_entries.append(idx)
                 continue
             self._validate_catalog_url(url)
             try:
@@ -831,7 +894,14 @@ class ExtensionCatalog:
                 description=str(item.get("description", "")),
             ))
         entries.sort(key=lambda e: e.priority)
-        return entries if entries else None
+        if not entries:
+            # All entries were invalid (missing URLs) - fail closed for security
+            raise ValidationError(
+                f"Catalog config {config_path} contains {len(catalogs_data)} entries but none have valid URLs "
+                f"(entries at indices {skipped_entries} were skipped). "
+                f"Each catalog entry must have a 'url' field."
+            )
+        return entries
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.

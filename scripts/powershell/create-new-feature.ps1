@@ -253,7 +253,7 @@ if ($branchName.Length -gt $maxBranchLength) {
 if ($hasGit) {
     $branchCreated = $false
     try {
-        git checkout -b $branchName 2>$null | Out-Null
+        git checkout -q -b $branchName 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) {
             $branchCreated = $true
         }

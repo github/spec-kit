@@ -8,15 +8,15 @@ run_command() {
     local command_to_run="$*"
     local output
     local exit_code
-    
+
     # Capture all output (stdout and stderr)
     output=$(eval "$command_to_run" 2>&1) || exit_code=$?
     exit_code=${exit_code:-0}
-    
+
     if [ $exit_code -ne 0 ]; then
         echo -e "\033[0;31m[ERROR] Command failed (Exit Code $exit_code): $command_to_run\033[0m" >&2
         echo -e "\033[0;31m$output\033[0m" >&2
-        
+
         exit $exit_code
     fi
 }
@@ -53,7 +53,7 @@ echo "✅ Done"
 
 echo -e "\n🤖 Installing Kiro CLI..."
 # https://kiro.dev/docs/cli/
-KIRO_INSTALLER_URL="https://cli.kiro.dev/install"
+KIRO_INSTALLER_URL="https://kiro.dev/install.sh"
 KIRO_INSTALLER_SHA256="7487a65cf310b7fb59b357c4b5e6e3f3259d383f4394ecedb39acf70f307cffb"
 KIRO_INSTALLER_PATH="$(mktemp)"
 
@@ -78,6 +78,11 @@ else
 fi
 
 run_command "$kiro_binary --help > /dev/null"
+echo "✅ Done"
+
+echo -e "\n🤖 Installing Kimi CLI..."
+# https://code.kimi.com
+run_command "pipx install kimi-cli"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing CodeBuddy CLI..."

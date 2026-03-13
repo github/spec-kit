@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli generic (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi generic (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -45,19 +45,19 @@ generate_commands() {
     [[ -f "$template" ]] || continue
     local name description script_command agent_script_command body
     name=$(basename "$template" .md)
-    
+
     # Normalize line endings
     file_content=$(tr -d '\r' < "$template")
-    
+
     # Extract description and script command from YAML frontmatter
     description=$(printf '%s\n' "$file_content" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
     script_command=$(printf '%s\n' "$file_content" | awk -v sv="$script_variant" '/^[[:space:]]*'"$script_variant"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, ""); print; exit}')
-    
+
     if [[ -z $script_command ]]; then
       echo "Warning: no script command found for $script_variant in $template" >&2
       script_command="(Missing script command for $script_variant)"
     fi
-    
+
     # Extract agent_script command from YAML frontmatter if present
     agent_script_command=$(printf '%s\n' "$file_content" | awk '
       /^agent_scripts:$/ { in_agent_scripts=1; next }
@@ -68,15 +68,15 @@ generate_commands() {
       }
       in_agent_scripts && /^[a-zA-Z]/ { in_agent_scripts=0 }
     ')
-    
+
     # Replace {SCRIPT} placeholder with the script command
     body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
-    
+
     # Replace {AGENT_SCRIPT} placeholder with the agent script command if found
     if [[ -n $agent_script_command ]]; then
       body=$(printf '%s\n' "$body" | sed "s|{AGENT_SCRIPT}|${agent_script_command}|g")
     fi
-    
+
     # Remove the scripts: and agent_scripts: sections from frontmatter while preserving YAML structure
     body=$(printf '%s\n' "$body" | awk '
       /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
@@ -86,10 +86,10 @@ generate_commands() {
       in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
       { print }
     ')
-    
+
     # Apply other substitutions
     body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
-    
+
     case $ext in
       toml)
         body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
@@ -105,15 +105,14 @@ generate_commands() {
 generate_copilot_prompts() {
   local agents_dir=$1 prompts_dir=$2
   mkdir -p "$prompts_dir"
-  
+
   # Generate a .prompt.md file for each .agent.md file
   for agent_file in "$agents_dir"/speckit.*.agent.md; do
     [[ -f "$agent_file" ]] || continue
-    
+
     local basename=$(basename "$agent_file" .agent.md)
     local prompt_file="$prompts_dir/${basename}.prompt.md"
-    
-    # Create prompt file with agent frontmatter
+
     cat > "$prompt_file" <<EOF
 ---
 agent: ${basename}
@@ -122,41 +121,104 @@ EOF
   done
 }
 
+# Create Kimi Code skills in .kimi/skills/<name>/SKILL.md format.
+# Kimi CLI discovers skills as directories containing a SKILL.md file,
+# invoked with /skill:<name> (e.g. /skill:speckit.specify).
+create_kimi_skills() {
+  local skills_dir="$1"
+  local script_variant="$2"
+
+  for template in templates/commands/*.md; do
+    [[ -f "$template" ]] || continue
+    local name
+    name=$(basename "$template" .md)
+    local skill_name="speckit.${name}"
+    local skill_dir="${skills_dir}/${skill_name}"
+    mkdir -p "$skill_dir"
+
+    local file_content
+    file_content=$(tr -d '\r' < "$template")
+
+    # Extract description from frontmatter
+    local description
+    description=$(printf '%s\n' "$file_content" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
+    [[ -z "$description" ]] && description="Spec Kit: ${name} workflow"
+
+    # Extract script command
+    local script_command
+    script_command=$(printf '%s\n' "$file_content" | awk -v sv="$script_variant" '/^[[:space:]]*'"$script_variant"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, ""); print; exit}')
+    [[ -z "$script_command" ]] && script_command="(Missing script command for $script_variant)"
+
+    # Extract agent_script command from frontmatter if present
+    local agent_script_command
+    agent_script_command=$(printf '%s\n' "$file_content" | awk '
+      /^agent_scripts:$/ { in_agent_scripts=1; next }
+      in_agent_scripts && /^[[:space:]]*'"$script_variant"':[[:space:]]*/ {
+        sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, "")
+        print
+        exit
+      }
+      in_agent_scripts && /^[a-zA-Z]/ { in_agent_scripts=0 }
+    ')
+
+    # Build body: replace placeholders, strip scripts sections, rewrite paths
+    local body
+    body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
+    if [[ -n $agent_script_command ]]; then
+      body=$(printf '%s\n' "$body" | sed "s|{AGENT_SCRIPT}|${agent_script_command}|g")
+    fi
+    body=$(printf '%s\n' "$body" | awk '
+      /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
+      in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && /^agent_scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && /^[a-zA-Z].*:/ && skip_scripts { skip_scripts=0 }
+      in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
+      { print }
+    ')
+    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | sed 's/__AGENT__/kimi/g' | rewrite_paths)
+
+    # Strip existing frontmatter and prepend Kimi frontmatter
+    local template_body
+    template_body=$(printf '%s\n' "$body" | awk '/^---/{p++; if(p==2){found=1; next}} found')
+
+    {
+      printf -- '---\n'
+      printf 'name: "%s"\n' "$skill_name"
+      printf 'description: "%s"\n' "$description"
+      printf -- '---\n\n'
+      printf '%s\n' "$template_body"
+    } > "$skill_dir/SKILL.md"
+  done
+}
+
 build_variant() {
   local agent=$1 script=$2
   local base_dir="$GENRELEASES_DIR/sdd-${agent}-package-${script}"
   echo "Building $agent ($script) package..."
   mkdir -p "$base_dir"
-  
+
   # Copy base structure but filter scripts by variant
   SPEC_DIR="$base_dir/.specify"
   mkdir -p "$SPEC_DIR"
-  
+
   [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
-  
+
   # Only copy the relevant script variant directory
   if [[ -d scripts ]]; then
     mkdir -p "$SPEC_DIR/scripts"
     case $script in
       sh)
         [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .specify/scripts"; }
-        # Copy any script files that aren't in variant-specific directories
         find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
         ;;
       ps)
         [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .specify/scripts"; }
-        # Copy any script files that aren't in variant-specific directories
         find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
         ;;
     esac
   fi
-  
+
   [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
-  
-  # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
-  #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS
-  #   * TOML (gemini, qwen, tabnine): {{args}}
-  # This keeps formats readable without extra abstraction.
 
   case $agent in
     claude)
@@ -169,9 +231,7 @@ build_variant() {
     copilot)
       mkdir -p "$base_dir/.github/agents"
       generate_commands copilot agent.md "\$ARGUMENTS" "$base_dir/.github/agents" "$script"
-      # Generate companion prompt files
       generate_copilot_prompts "$base_dir/.github/agents" "$base_dir/.github/prompts"
-      # Create VS Code workspace settings
       mkdir -p "$base_dir/.vscode"
       [[ -f templates/vscode-settings.json ]] && cp templates/vscode-settings.json "$base_dir/.vscode/settings.json"
       ;;
@@ -180,7 +240,7 @@ build_variant() {
       generate_commands cursor-agent md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
-      generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
+      generate_commands qwen md "\$ARGUMENTS" "$base_dir/.qwen/commands" "$script"
       [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
     opencode)
       mkdir -p "$base_dir/.opencode/command"
@@ -220,14 +280,17 @@ build_variant() {
       mkdir -p "$base_dir/.kiro/prompts"
       generate_commands kiro-cli md "\$ARGUMENTS" "$base_dir/.kiro/prompts" "$script" ;;
     agy)
-      mkdir -p "$base_dir/.agent/workflows"
-      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/workflows" "$script" ;;
+      mkdir -p "$base_dir/.agent/commands"
+      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/commands" "$script" ;;
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
     vibe)
       mkdir -p "$base_dir/.vibe/prompts"
       generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
+    kimi)
+      mkdir -p "$base_dir/.kimi/skills"
+      create_kimi_skills "$base_dir/.kimi/skills" "$script" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
@@ -237,11 +300,10 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi generic)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
-  # convert comma+space separated -> line separated unique while preserving order of first occurrence
   tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?"\n":"") $i);out=1}}}END{printf("\n")}'
 }
 

@@ -7,7 +7,7 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - 2026-03-10
+## [Unreleased]
 
 ### Added
 
@@ -28,10 +28,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat: `specify init` persists CLI options to `.specify/init-options.json` for downstream operations
 - feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
+## [0.2.1] - 2026-03-11
+
+### Changed
+
+- Added February 2026 newsletter (#1812)
+- feat: add Kimi Code CLI agent support (#1790)
+- docs: fix broken links in quickstart guide (#1759) (#1797)
+- docs: add catalog cli help documentation (#1793) (#1794)
+- fix: use quiet checkout to avoid exception on git checkout (#1792)
+- feat(extensions): support .extensionignore to exclude files during install (#1781)
+- feat: add Codex support for extension command registration (#1767)
+- chore: bump version to 0.2.0 (#1786)
+- fix: sync agent list comments with actual supported agents (#1785)
+- feat(extensions): support multiple active catalogs simultaneously (#1720)
+- Pavel/add tabnine cli support (#1503)
+- Add Understanding extension to community catalog (#1778)
+- Add ralph extension to community catalog (#1780)
+- Update README with project initialization instructions (#1772)
+- feat: add review extension to community catalog (#1775)
+- Add fleet extension to community catalog (#1771)
+- Integration of Mistral vibe support into speckit (#1725)
+- fix: Remove duplicate options in specify.md (#1765)
+- fix: use global branch numbering instead of per-short-name detection (#1757)
+- Add Community Walkthroughs section to README (#1766)
+- feat(extensions): add Jira Integration to community catalog (#1764)
+- Add Azure DevOps Integration extension to community catalog (#1734)
+- Fix docs: update Antigravity link and add initialization example (#1748)
+- fix: wire after_tasks and after_implement hook events into command templates (#1702)
+- make c ignores consistent with c++ (#1747)
+- chore: bump version to 0.1.13 (#1746)
+- feat: add kiro-cli and AGENT_CONFIG consistency coverage (#1690)
+- feat: add verify extension to community catalog (#1726)
+- Add Retrospective Extension to community catalog README table (#1741)
+- fix(scripts): add empty description validation and branch checkout error handling (#1559)
+- fix: correct Copilot extension command registration (#1724)
+- fix(implement): remove Makefile from C ignore patterns (#1558)
+- Add sync extension to community catalog (#1728)
+- fix(checklist): clarify file handling behavior for append vs create (#1556)
+- fix(clarify): correct conflicting question limit from 10 to 5 (#1557)
+- chore: bump version to 0.1.12 (#1737)
+- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
+- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
+- fix: Split release process to sync pyproject.toml version with git tags (#1732)
+
 ## [0.2.0] - 2026-03-09
 
 ### Changed
 
+- feat: add Kimi Code CLI agent support
 - fix: sync agent list comments with actual supported agents (#1785)
 - feat(extensions): support multiple active catalogs simultaneously (#1720)
 - Pavel/add tabnine cli support (#1503)
