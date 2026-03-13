@@ -457,7 +457,7 @@ function Build-Variant {
         'trae' {
             $rulesDir = Join-Path $baseDir ".trae/rules"
             New-Item -ItemType Directory -Force -Path $rulesDir | Out-Null
-            Generate-Commands -Agent 'trae' -Format 'md' -ArgsToken '$ARGUMENTS' -OutDir $rulesDir -ScriptVariant $script
+            Generate-Commands -Agent 'trae' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $rulesDir -ScriptVariant $Script
         }
         'generic' {
             $cmdDir = Join-Path $baseDir ".speckit/commands"
