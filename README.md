@@ -67,9 +67,6 @@ specify init --here --ai claude
 
 # Check installed tools
 specify check
-
-# Diagnose project health
-specify doctor
 ```
 
 To upgrade Specify, see the [Upgrade Guide](./docs/upgrade.md) for detailed instructions. Quick upgrade:
@@ -286,9 +283,6 @@ specify init --here --ai gemini --ai-skills
 
 # Check system requirements
 specify check
-
-# Diagnose project health
-specify doctor
 ```
 
 ### Available Slash Commands
