@@ -510,6 +510,185 @@ class ExtensionManager:
 
         return _ignore
 
+    def _get_skills_dir(self) -> Optional[Path]:
+        """Return the skills directory if ``--ai-skills`` was used during init.
+
+        Reads ``.specify/init-options.json`` to determine whether skills
+        are enabled and which agent was selected, then delegates to
+        the module-level ``_get_skills_dir()`` helper for the concrete path.
+
+        Returns:
+            The skills directory ``Path``, or ``None`` if skills were not
+            enabled or the init-options file is missing.
+        """
+        from . import load_init_options, _get_skills_dir
+
+        opts = load_init_options(self.project_root)
+        if not opts.get("ai_skills"):
+            return None
+
+        agent = opts.get("ai")
+        if not agent:
+            return None
+
+        skills_dir = _get_skills_dir(self.project_root, agent)
+        if not skills_dir.is_dir():
+            return None
+
+        return skills_dir
+
+    def _register_extension_skills(
+        self,
+        manifest: ExtensionManifest,
+        extension_dir: Path,
+    ) -> List[str]:
+        """Generate SKILL.md files for extension commands as agent skills.
+
+        For every command in the extension manifest, creates a SKILL.md
+        file in the agent's skills directory following the agentskills.io
+        specification.  This is only done when ``--ai-skills`` was used
+        during project initialisation.
+
+        Args:
+            manifest: Extension manifest.
+            extension_dir: Installed extension directory.
+
+        Returns:
+            List of skill names that were created (for registry storage).
+        """
+        skills_dir = self._get_skills_dir()
+        if not skills_dir:
+            return []
+
+        from . import load_init_options
+        import yaml
+
+        opts = load_init_options(self.project_root)
+        selected_ai = opts.get("ai", "")
+
+        written: List[str] = []
+
+        for cmd_info in manifest.commands:
+            cmd_name = cmd_info["name"]
+            cmd_file_rel = cmd_info["file"]
+            source_file = extension_dir / cmd_file_rel
+            if not source_file.exists():
+                continue
+
+            # Derive skill name from command name
+            # e.g. "speckit.jira.create" -> "speckit-jira-create" (or dot for kimi)
+            if selected_ai == "kimi":
+                skill_name = cmd_name  # Keep dot notation for kimi
+            else:
+                skill_name = cmd_name.replace(".", "-")
+
+            # Check if skill already exists before creating the directory
+            skill_subdir = skills_dir / skill_name
+            skill_file = skill_subdir / "SKILL.md"
+            if skill_file.exists():
+                # Do not overwrite user-customized skills
+                continue
+
+            # Create skill directory only when we're going to write to it
+            skill_subdir.mkdir(parents=True, exist_ok=True)
+
+            # Parse the command file
+            content = source_file.read_text(encoding="utf-8")
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    try:
+                        frontmatter = yaml.safe_load(parts[1])
+                    except yaml.YAMLError:
+                        frontmatter = {}
+                    if not isinstance(frontmatter, dict):
+                        frontmatter = {}
+                    body = parts[2].strip()
+                else:
+                    frontmatter = {}
+                    body = content
+            else:
+                frontmatter = {}
+                body = content
+
+            original_desc = frontmatter.get("description", "")
+            description = original_desc or f"Extension command: {cmd_name}"
+
+            frontmatter_data = {
+                "name": skill_name,
+                "description": description,
+                "compatibility": "Requires spec-kit project structure with .specify/ directory",
+                "metadata": {
+                    "author": "github-spec-kit",
+                    "source": f"extension:{manifest.id}",
+                },
+            }
+            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+
+            # Derive a human-friendly title from the command name
+            short_name = cmd_name
+            if short_name.startswith("speckit."):
+                short_name = short_name[len("speckit."):]
+
+            skill_content = (
+                f"---\n"
+                f"{frontmatter_text}\n"
+                f"---\n\n"
+                f"# {skill_name.replace('-', ' ').replace('.', ' ').title()} Skill\n\n"
+                f"{body}\n"
+            )
+
+            skill_file.write_text(skill_content, encoding="utf-8")
+            written.append(skill_name)
+
+        return written
+
+    def _unregister_extension_skills(self, skill_names: List[str]) -> None:
+        """Remove SKILL.md directories for extension skills.
+
+        Called during extension removal to clean up skill files that
+        were created by ``_register_extension_skills()``.
+
+        If ``_get_skills_dir()`` returns ``None`` (e.g. the user removed
+        init-options.json or toggled ai_skills after installation), we
+        fall back to scanning all known agent skills directories so that
+        orphaned skill directories are still cleaned up.
+
+        Args:
+            skill_names: List of skill names to remove.
+        """
+        if not skill_names:
+            return
+
+        skills_dir = self._get_skills_dir()
+
+        if skills_dir:
+            # Fast path: we know the exact skills directory
+            for skill_name in skill_names:
+                skill_subdir = skills_dir / skill_name
+                if skill_subdir.exists():
+                    shutil.rmtree(skill_subdir)
+        else:
+            # Fallback: scan all possible agent skills directories
+            from . import AGENT_CONFIG, AGENT_SKILLS_DIR_OVERRIDES, DEFAULT_SKILLS_DIR
+
+            candidate_dirs: set[Path] = set()
+            for override_path in AGENT_SKILLS_DIR_OVERRIDES.values():
+                candidate_dirs.add(self.project_root / override_path)
+            for cfg in AGENT_CONFIG.values():
+                folder = cfg.get("folder", "")
+                if folder:
+                    candidate_dirs.add(self.project_root / folder.rstrip("/") / "skills")
+            candidate_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
+
+            for skills_candidate in candidate_dirs:
+                if not skills_candidate.is_dir():
+                    continue
+                for skill_name in skill_names:
+                    skill_subdir = skills_candidate / skill_name
+                    if skill_subdir.exists():
+                        shutil.rmtree(skill_subdir)
+
     def check_compatibility(
         self,
         manifest: ExtensionManifest,
@@ -601,6 +780,10 @@ class ExtensionManager:
                 manifest, dest_dir, self.project_root
             )
 
+        # Auto-register extension commands as agent skills when --ai-skills
+        # was used during project initialisation (feature parity).
+        registered_skills = self._register_extension_skills(manifest, dest_dir)
+
         # Register hooks
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
@@ -612,7 +795,8 @@ class ExtensionManager:
             "manifest_hash": manifest.get_hash(),
             "enabled": True,
             "priority": priority,
-            "registered_commands": registered_commands
+            "registered_commands": registered_commands,
+            "registered_skills": registered_skills,
         })
 
         return manifest
@@ -690,9 +874,10 @@ class ExtensionManager:
         if not self.registry.is_installed(extension_id):
             return False
 
-        # Get registered commands before removal
+        # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
         registered_commands = metadata.get("registered_commands", {}) if metadata else {}
+        registered_skills = metadata.get("registered_skills", []) if metadata else []
 
         extension_dir = self.extensions_dir / extension_id
 
@@ -700,6 +885,9 @@ class ExtensionManager:
         if registered_commands:
             registrar = CommandRegistrar()
             registrar.unregister_commands(registered_commands, self.project_root)
+
+        # Unregister agent skills
+        self._unregister_extension_skills(registered_skills)
 
         if keep_config:
             # Preserve config files, only remove non-config files
