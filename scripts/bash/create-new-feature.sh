@@ -5,6 +5,7 @@ set -e
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+NUMBER_EXPLICIT=false   # true only when --number was explicitly passed by the caller
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -39,6 +40,18 @@ while [ $i -le $# ]; do
                 exit 1
             fi
             BRANCH_NUMBER="$next_arg"
+            # Validate --number is an integer in [1,999]; downstream tooling
+            # expects a 3-digit prefix (^[0-9]{3}-) so out-of-range values
+            # produce malformed branch names.
+            if ! [[ "$next_arg" =~ ^[0-9]+$ ]]; then
+                >&2 echo 'Error: --number must be an integer between 1 and 999'
+                exit 1
+            fi
+            if (( next_arg < 1 || next_arg > 999 )); then
+                >&2 echo 'Error: --number must be an integer between 1 and 999'
+                exit 1
+            fi
+            NUMBER_EXPLICIT=true
             ;;
         --help|-h) 
             echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
@@ -46,7 +59,7 @@ while [ $i -le $# ]; do
             echo "Options:"
             echo "  --json              Output in JSON format"
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --number N          Specify branch number manually (overrides auto-detection)"
+            echo "  --number N          Preferred branch number (auto-corrected if prefix already exists in specs or branches)"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
@@ -266,6 +279,53 @@ fi
 
 # Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
 FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+
+# ── Guardrail: auto-correct if --number was explicitly passed and the prefix
+# already exists in specs/ or as a git branch. Only fires on explicit --number
+# to preserve the existing auto-detection contract.
+# Fetches remotes once here; subsequent max-finding reuses local branch data
+# to avoid a second network round-trip.
+if [ "$NUMBER_EXPLICIT" = true ]; then
+    # Check for conflict in spec directories (directories only)
+    SPEC_CONFLICT=false
+    while IFS= read -r spec_path; do
+        if [ -d "$spec_path" ]; then
+            SPEC_CONFLICT=true
+            break
+        fi
+    done < <(compgen -G "$SPECS_DIR/${FEATURE_NUM}-*" 2>/dev/null)
+
+    # Check for conflict in git branches (local and remote)
+    # Fetch once here so both conflict detection and recalculation use
+    # up-to-date remote info without a second network call.
+    BRANCH_CONFLICT=false
+    if [ "$HAS_GIT" = true ]; then
+        git fetch --all --prune >/dev/null 2>&1 || true
+        if git branch -a 2>/dev/null | grep -qE "(^|[[:space:]])(remotes/[^/]+/)?${FEATURE_NUM}-"; then
+            BRANCH_CONFLICT=true
+        fi
+    fi
+
+    if [ "$SPEC_CONFLICT" = true ] || [ "$BRANCH_CONFLICT" = true ]; then
+        REQUESTED_NUM="$FEATURE_NUM"
+        # Inline the max-finding using already-fetched local branch data
+        # to avoid a second network round-trip.
+        if [ "$HAS_GIT" = true ]; then
+            HIGHEST_BRANCH=$(get_highest_from_branches)
+        else
+            HIGHEST_BRANCH=0
+        fi
+        HIGHEST_SPEC=$(get_highest_from_specs "$SPECS_DIR")
+        if [ "$HIGHEST_SPEC" -gt "$HIGHEST_BRANCH" ]; then
+            BRANCH_NUMBER=$((HIGHEST_SPEC + 1))
+        else
+            BRANCH_NUMBER=$((HIGHEST_BRANCH + 1))
+        fi
+        FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+        >&2 echo "⚠️  [specify] --number $REQUESTED_NUM conflicts with an existing spec dir or branch. Auto-corrected to $FEATURE_NUM."
+    fi
+fi
+
 BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 
 # GitHub enforces a 244-byte limit on branch names

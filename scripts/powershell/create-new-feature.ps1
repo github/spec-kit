@@ -4,6 +4,7 @@
 param(
     [switch]$Json,
     [string]$ShortName,
+    [ValidateRange(1, 999)]
     [int]$Number = 0,
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -18,7 +19,7 @@ if ($Help) {
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
-    Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
+    Write-Host "  -Number N           Preferred branch number (auto-corrected if prefix already exists in specs or branches)"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
@@ -213,6 +214,10 @@ if ($ShortName) {
 }
 
 # Determine branch number
+# Track whether the caller explicitly passed a non-zero -Number so the guardrail
+# below only fires for explicit overrides, not for auto-detected numbers.
+# Exclude -Number 0 since 0 is the auto-detect sentinel and produces prefix "000".
+$numberExplicit = $PSBoundParameters.ContainsKey('Number') -and $Number -ne 0
 if ($Number -eq 0) {
     if ($hasGit) {
         # Check existing branches on remotes
@@ -224,6 +229,43 @@ if ($Number -eq 0) {
 }
 
 $featureNum = ('{0:000}' -f $Number)
+
+# ── Guardrail: auto-correct if -Number was explicitly passed and the prefix
+# already exists in specs/ or as a git branch. Only fires on explicit -Number
+# to preserve the existing auto-detection contract.
+# Reuses Get-NextBranchNumber, which fetches remotes and checks both
+# specs directories and all local/remote branches.
+if ($numberExplicit) {
+    $requestedNum = $featureNum
+
+    # Check for conflict in spec directories
+    $specConflict = (Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |`
+        Where-Object { $_.Name -match "^$featureNum-" }).Count -gt 0
+
+    # Check for conflict in git branches (local and remote)
+    # Note: we do NOT fetch here — if a conflict is found, Get-NextBranchNumber
+    # below will fetch exactly once before computing the corrected number.
+    $branchConflict = $false
+    if ($hasGit) {
+        $allBranches = git branch -a 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $branchConflict = ($allBranches | Where-Object { $_ -match "(^|\s)(remotes/[^/]+/)?$featureNum-" }).Count -gt 0
+        }
+    }
+
+    if ($specConflict -or $branchConflict) {
+        # Delegate to Get-NextBranchNumber, which fetches and computes
+        # max(all specs, all branches) + 1 — same logic used by auto-detection.
+        if ($hasGit) {
+            $Number = Get-NextBranchNumber -SpecsDir $specsDir
+        } else {
+            $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
+        }
+        $featureNum = ('{0:000}' -f $Number)
+        Write-Warning "[specify] -Number $requestedNum conflicts with an existing spec dir or branch. Auto-corrected to $featureNum."
+    }
+}
+
 $branchName = "$featureNum-$branchSuffix"
 
 # GitHub enforces a 244-byte limit on branch names
