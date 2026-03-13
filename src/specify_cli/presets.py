@@ -596,6 +596,8 @@ class PresetManager:
             short_name = skill_name
             if short_name.startswith("speckit-"):
                 short_name = short_name[len("speckit-"):]
+            elif short_name.startswith("speckit."):
+                short_name = short_name[len("speckit."):]
 
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
