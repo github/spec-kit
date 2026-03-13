@@ -288,6 +288,50 @@ class TestSequentialBranch:
         assert data["FEATURE_NUM"] == "000"
         assert data["BRANCH_NAME"] == "000-zero"
 
+    def test_explicit_conflicting_number_uses_next_spec_prefix(self, git_repo: Path):
+        """An explicit number is advanced when its spec prefix already exists."""
+        (git_repo / "specs" / "001-existing").mkdir(parents=True)
+        (git_repo / "specs" / "1000-latest").mkdir()
+
+        result = run_script(
+            git_repo,
+            "--json",
+            "--dry-run",
+            "--number",
+            "1",
+            "--short-name",
+            "test",
+            "Test feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["FEATURE_NUM"] == "1001"
+        assert data["BRANCH_NAME"] == "1001-test"
+        assert "--number 001 conflicts with an existing spec directory" in result.stderr
+        assert "using 1001 instead" in result.stderr
+
+    def test_explicit_number_ignores_matching_file(self, git_repo: Path):
+        """A matching file does not count as a conflicting spec directory."""
+        specs_dir = git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "001-placeholder").write_text("not a directory", encoding="utf-8")
+
+        result = run_script(
+            git_repo,
+            "--json",
+            "--dry-run",
+            "--number",
+            "1",
+            "--short-name",
+            "test",
+            "Test feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["FEATURE_NUM"] == "001"
+        assert "conflicts with an existing spec directory" not in result.stderr
+
 
 class TestSequentialBranchPowerShell:
     def test_powershell_scanner_uses_long_tryparse_for_large_prefixes(self):
@@ -331,6 +375,50 @@ class TestSequentialBranchPowerShell:
         data = json.loads(result.stdout)
         assert data["FEATURE_NUM"] == "000"
         assert data["BRANCH_NAME"] == "000-zero"
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_explicit_conflicting_number_uses_next_spec_prefix(
+        self, ps_git_repo: Path
+    ):
+        """PowerShell advances an explicit number when its spec prefix exists."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        (ps_git_repo / "specs" / "001-existing").mkdir(parents=True)
+        (ps_git_repo / "specs" / "1000-latest").mkdir()
+
+        result = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-File", str(script), "-Json", "-DryRun",
+                "-Number", "1", "-ShortName", "test", "Test feature",
+            ],
+            cwd=ps_git_repo, capture_output=True, text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["FEATURE_NUM"] == "1001"
+        assert data["BRANCH_NAME"] == "1001-test"
+        assert "-Number 001 conflicts with an existing spec directory" in result.stderr
+        assert "using 1001 instead" in result.stderr
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_explicit_number_ignores_matching_file(self, ps_git_repo: Path):
+        """PowerShell ignores files that resemble numbered spec directories."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        specs_dir = ps_git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "001-placeholder").write_text("not a directory", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-File", str(script), "-Json", "-DryRun",
+                "-Number", "1", "-ShortName", "test", "Test feature",
+            ],
+            cwd=ps_git_repo, capture_output=True, text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["FEATURE_NUM"] == "001"
+        assert "conflicts with an existing spec directory" not in result.stderr
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_missing_spec_template_warns_matching_bash(self, ps_git_repo: Path):
@@ -531,14 +619,15 @@ class TestAllowExistingBranch:
         assert feature_dir.is_dir()
         assert (feature_dir / "spec.md").exists()
 
-    def test_without_flag_still_errors(self, git_repo: Path):
-        """T009: Existing feature directories still fail without the flag."""
+    def test_without_flag_auto_corrects_existing_prefix(self, git_repo: Path):
+        """T009: Existing prefix advances when exact reuse is not allowed."""
         (git_repo / "specs" / "007-no-flag").mkdir(parents=True)
         result = run_script(
             git_repo, "--short-name", "no-flag", "--number", "7", "No flag feature",
         )
-        assert result.returncode != 0, "should fail without --allow-existing-branch"
-        assert "already exists" in result.stderr
+        assert result.returncode == 0, result.stderr
+        assert (git_repo / "specs" / "008-no-flag").is_dir()
+        assert "using 008 instead" in result.stderr
 
     def test_allow_existing_no_overwrite_spec(self, git_repo: Path):
         """T010: Pre-create spec.md with content, verify it is preserved."""
@@ -597,6 +686,26 @@ class TestAllowExistingBranchPowerShell:
         contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "Feature directory '$featureDir' already exists" in contents
         assert "-not $AllowExistingBranch" in contents
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_powershell_reuses_exact_feature_dir(self, ps_git_repo: Path):
+        """PowerShell exact-directory reuse bypasses prefix auto-correction."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        feature_dir = ps_git_repo / "specs" / "004-pre-exist"
+        feature_dir.mkdir(parents=True)
+
+        result = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-File", str(script), "-Json",
+                "-AllowExistingBranch", "-Number", "4", "-ShortName",
+                "pre-exist", "Pre-existing feature",
+            ],
+            cwd=ps_git_repo, capture_output=True, text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == "004-pre-exist"
+        assert (feature_dir / "spec.md").is_file()
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     @pytest.mark.skipif(
