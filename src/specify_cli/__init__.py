@@ -1908,7 +1908,106 @@ def status():
         padding=(1, 2),
     )
     console.print(panel)
-    console.print()
+
+    # --- SDD Artifacts & Task Progress ---
+    if feature_dir and feature_dir.is_dir():
+        console.print(f"[bold cyan]  Current Feature:[/bold cyan] {feature_dir.name}")
+        console.print(f"  {'─' * 40}")
+
+        # Define all SDD artifacts to check
+        artifacts = [
+            ("spec.md", feature_dir / "spec.md"),
+            ("plan.md", feature_dir / "plan.md"),
+            ("tasks.md", feature_dir / "tasks.md"),
+            ("research.md", feature_dir / "research.md"),
+            ("data-model.md", feature_dir / "data-model.md"),
+            ("quickstart.md", feature_dir / "quickstart.md"),
+        ]
+        # Directory-based artifacts
+        contracts_dir = feature_dir / "contracts"
+        checklists_dir = feature_dir / "checklists"
+
+        # Parse task progress from tasks.md if it exists
+        tasks_file = feature_dir / "tasks.md"
+        tasks_completed = 0
+        tasks_total = 0
+        if tasks_file.is_file():
+            try:
+                tasks_content = tasks_file.read_text(encoding="utf-8")
+                import re
+                for line in tasks_content.splitlines():
+                    stripped = line.strip()
+                    if re.match(r"^-\s+\[([ xX])\]", stripped):
+                        tasks_total += 1
+                        if re.match(r"^-\s+\[[xX]\]", stripped):
+                            tasks_completed += 1
+            except OSError:
+                pass
+
+        # Parse checklist progress if checklists/ exists
+        checklist_count = 0
+        checklists_all_pass = True
+        if checklists_dir.is_dir():
+            for cl_file in checklists_dir.iterdir():
+                if cl_file.is_file() and cl_file.suffix == ".md":
+                    checklist_count += 1
+                    try:
+                        cl_content = cl_file.read_text(encoding="utf-8")
+                        for line in cl_content.splitlines():
+                            stripped = line.strip()
+                            if re.match(r"^-\s+\[ \]", stripped):
+                                checklists_all_pass = False
+                                break
+                    except OSError:
+                        pass
+
+        # Display artifacts with status
+        console.print()
+        console.print("  [bold]Artifacts:[/bold]")
+        for artifact_name, artifact_path in artifacts:
+            if artifact_path.is_file():
+                icon = "[green]✓[/green]"
+                extra = ""
+                # Add task progress info for tasks.md
+                if artifact_name == "tasks.md" and tasks_total > 0:
+                    pct = int(tasks_completed / tasks_total * 100)
+                    if tasks_completed == tasks_total:
+                        extra = f"  [green]{tasks_completed}/{tasks_total} completed (100%)[/green]"
+                    else:
+                        extra = f"  [yellow]{tasks_completed}/{tasks_total} completed ({pct}%)[/yellow]"
+                console.print(f"    {icon} {artifact_name}{extra}")
+            else:
+                console.print(f"    [dim]✗ {artifact_name}[/dim]")
+
+        # Contracts directory
+        has_contracts = contracts_dir.is_dir() and any(contracts_dir.iterdir())
+        if has_contracts:
+            contract_files = len([f for f in contracts_dir.iterdir() if f.is_file()])
+            console.print(f"    [green]✓[/green] contracts/  [dim]{contract_files} file(s)[/dim]")
+        else:
+            console.print(f"    [dim]✗ contracts/[/dim]")
+
+        # Checklists directory
+        if checklist_count > 0:
+            if checklists_all_pass:
+                console.print(f"    [green]✓[/green] checklists/  [green]{checklist_count} checklist(s), all passing[/green]")
+            else:
+                console.print(f"    [yellow]✓[/yellow] checklists/  [yellow]{checklist_count} checklist(s), some incomplete[/yellow]")
+        else:
+            console.print(f"    [dim]✗ checklists/[/dim]")
+
+        console.print()
+
+    elif current_branch and current_branch not in ("main", "master"):
+        console.print(f"\n  [yellow]No feature directory found for branch '{current_branch}'[/yellow]")
+        console.print(f"  [dim]Run /speckit.specify to create a feature.[/dim]\n")
+    else:
+        specs_dir = project_root / "specs"
+        if specs_dir.is_dir() and any(specs_dir.iterdir()):
+            feature_count = len([d for d in specs_dir.iterdir() if d.is_dir()])
+            console.print(f"\n  [dim]{feature_count} feature(s) in specs/ — switch to a feature branch to see details.[/dim]\n")
+        else:
+            console.print(f"\n  [dim]No features created yet. Run /speckit.specify to start.[/dim]\n")
 
 
 # ===== Extension Commands =====
