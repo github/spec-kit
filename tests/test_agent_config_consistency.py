@@ -62,7 +62,14 @@ class TestAgentConfigConsistency:
         ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
 
         assert re.search(r"'shai'\s*\{.*?\.shai/commands", ps_text, re.S) is not None
-        assert re.search(r"'agy'\s*\{.*?\.agent/workflows", ps_text, re.S) is not None
+        assert re.search(r"'agy'\s*\{.*?\.agent/commands", ps_text, re.S) is not None
+
+    def test_release_sh_switch_has_shai_and_agy_generation(self):
+        """Bash release builder must generate files for shai and agy agents."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+
+        assert re.search(r"shai\)\s*\n.*?\.shai/commands", sh_text, re.S) is not None
+        assert re.search(r"agy\)\s*\n.*?\.agent/commands", sh_text, re.S) is not None
 
     def test_init_ai_help_includes_roo_and_kiro_alias(self):
         """CLI help text for --ai should stay in sync with agent config and alias guidance."""
