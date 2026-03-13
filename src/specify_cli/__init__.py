@@ -1996,6 +1996,30 @@ def status():
         else:
             console.print(f"    [dim]✗ checklists/[/dim]")
 
+        # --- Workflow Phase Detection ---
+        has_spec = (feature_dir / "spec.md").is_file()
+        has_plan = (feature_dir / "plan.md").is_file()
+        has_tasks = (feature_dir / "tasks.md").is_file()
+        all_tasks_done = has_tasks and tasks_total > 0 and tasks_completed == tasks_total
+
+        if all_tasks_done:
+            phase_label = "[bold green]Complete[/bold green]"
+            phase_hint = "All tasks done. Review your implementation."
+        elif has_tasks:
+            phase_label = "[bold yellow]Implement[/bold yellow]"
+            phase_hint = "Ready for [cyan]/speckit.implement[/cyan]"
+        elif has_plan:
+            phase_label = "[bold yellow]Tasks[/bold yellow]"
+            phase_hint = "Ready for [cyan]/speckit.tasks[/cyan]"
+        elif has_spec:
+            phase_label = "[bold yellow]Plan[/bold yellow]"
+            phase_hint = "Ready for [cyan]/speckit.clarify[/cyan] or [cyan]/speckit.plan[/cyan]"
+        else:
+            phase_label = "[bold red]Not Started[/bold red]"
+            phase_hint = "Run [cyan]/speckit.specify[/cyan] to create a spec"
+
+        console.print(f"  [bold]Phase:[/bold]  {phase_label}")
+        console.print(f"  [dim]{phase_hint}[/dim]")
         console.print()
 
     elif current_branch and current_branch not in ("main", "master"):
@@ -2008,6 +2032,37 @@ def status():
             console.print(f"\n  [dim]{feature_count} feature(s) in specs/ — switch to a feature branch to see details.[/dim]\n")
         else:
             console.print(f"\n  [dim]No features created yet. Run /speckit.specify to start.[/dim]\n")
+
+    # --- Extensions Summary ---
+    extensions_dir = specify_dir / "extensions"
+    installed_count = 0
+    if extensions_dir.is_dir():
+        try:
+            from .extensions import ExtensionManager
+            manager = ExtensionManager(project_root)
+            installed_count = len(manager.list_installed())
+        except Exception:
+            pass
+
+    available_count = 0
+    try:
+        from .extensions import ExtensionCatalog
+        catalog = ExtensionCatalog(project_root)
+        available_count = len(catalog.search())
+    except Exception:
+        pass
+
+    ext_parts = []
+    ext_parts.append(f"{installed_count} installed")
+    if available_count > 0:
+        ext_parts.append(f"{available_count} available in catalog")
+    else:
+        ext_parts.append("catalog unavailable")
+
+    console.print(f"  [bold]Extensions:[/bold]  {', '.join(ext_parts)}")
+    if installed_count == 0 and available_count > 0:
+        console.print(f"  [dim]Run [cyan]specify extension search[/cyan] to browse available extensions.[/dim]")
+    console.print()
 
 
 # ===== Extension Commands =====
