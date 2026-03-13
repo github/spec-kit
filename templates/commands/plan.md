@@ -56,6 +56,8 @@ You **MUST** consider the user input before proceeding (if not empty).
     
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+
+    **CRITICAL**: You MUST execute the command above immediately after outputting it. Do not proceed until the hook has been triggered.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
@@ -102,6 +104,8 @@ You **MUST** consider the user input before proceeding (if not empty).
        Executing: `/{command}`
        EXECUTE_COMMAND: {command}
        ```
+
+       **CRITICAL**: You MUST execute the command above immediately after outputting it. Do not end the response until the hook has been triggered.
    - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Phases

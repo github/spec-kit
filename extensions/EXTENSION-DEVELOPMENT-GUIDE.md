@@ -203,7 +203,7 @@ Available hook points:
 - `before_tasks`: Before `/speckit.tasks` starts
 - `after_tasks`: After `/speckit.tasks` completes
 - `before_implement`: Before `/speckit.implement` starts
-- `after_implement`: After `/speckit.implement` completes (future)
+- `after_implement`: After `/speckit.implement` completes
 
 Hook object:
 
@@ -645,11 +645,25 @@ echo "Using endpoint: $endpoint"
 
 ### Extension with Hooks
 
-Extension that runs automatically:
+Extension that runs automatically at different lifecycle stages:
 
 ```yaml
 # extension.yml
 hooks:
+  # Pre-hook: runs before specification starts
+  before_specify:
+    command: "speckit.research.pre-spec"
+    optional: true
+    prompt: "Perform pre-specification research?"
+    description: "Gather context from codebase before writing spec"
+
+  # Post-hook: runs after planning completes
+  after_plan:
+    command: "speckit.architect.validate"
+    optional: false  # Mandatory execution
+    description: "Validate architecture against project standards"
+
+  # Post-hook: runs after task generation
   after_tasks:
     command: "speckit.auto.analyze"
     optional: false  # Always run

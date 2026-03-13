@@ -45,6 +45,8 @@ You **MUST** consider the user input before proceeding (if not empty).
     
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+
+    **CRITICAL**: You MUST execute the command above immediately after outputting it. Do not proceed until the hook has been triggered.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
@@ -198,4 +200,6 @@ Note: This command assumes a complete task breakdown exists in tasks.md. If task
         Executing: `/{command}`
         EXECUTE_COMMAND: {command}
         ```
+
+        **CRITICAL**: You MUST execute the command above immediately after outputting it. Do not end the response until the hook has been triggered.
     - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently

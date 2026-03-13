@@ -539,6 +539,12 @@ Examples:
 
 ```yaml
 hooks:
+  before_specify:
+    command: "speckit.research.pre-spec"
+    optional: true
+    prompt: "Perform pre-specification research?"
+    description: "Search context before writing spec"
+
   after_tasks:
     command: "speckit.jira.specstoissues"
     optional: true
@@ -551,10 +557,16 @@ hooks:
 
 Standard events (defined by core):
 
+- `before_specify` - Before specification generation
+- `after_specify` - After specification generation
+- `before_plan` - Before implementation planning
+- `after_plan` - After implementation planning
+- `before_tasks` - Before task generation
 - `after_tasks` - After task generation
+- `before_implement` - Before implementation
 - `after_implement` - After implementation
-- `before_commit` - Before git commit
-- `after_commit` - After git commit
+- `before_commit` - Before git commit (future)
+- `after_commit` - After git commit (future)
 
 ### Hook Configuration
 
@@ -562,6 +574,13 @@ Standard events (defined by core):
 
 ```yaml
 hooks:
+  before_specify:
+    - extension: research
+      command: speckit.research.pre-spec
+      enabled: true
+      optional: true
+      prompt: "Perform pre-specification research?"
+
   after_tasks:
     - extension: jira
       command: speckit.jira.specstoissues
@@ -591,6 +610,8 @@ Or for mandatory hooks:
 **Automatic Hook**: {extension}
 Executing: `/{command}`
 EXECUTE_COMMAND: {command}
+
+**CRITICAL**: You MUST execute the command above immediately after outputting it. Do not end the response until the hook has been triggered.
 ```
 
 ---
@@ -811,6 +832,6 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 
 ---
 
-*Last Updated: 2026-01-28*
+*Last Updated: 2026-03-13*
 *API Version: 1.0*
-*Spec Kit Version: 0.1.0*
+*Spec Kit Version: 0.2.1*

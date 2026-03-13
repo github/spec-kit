@@ -40,14 +40,14 @@ Extensions are modular packages that add new commands and functionality to Spec 
 
 ### Prerequisites
 
-- Spec Kit version 0.1.0 or higher
+- Spec Kit version 0.2.1 or higher
 - A spec-kit project (directory with `.specify/` folder)
 
 ### Check Your Version
 
 ```bash
 specify version
-# Should show 0.1.0 or higher
+# Should show 0.2.1 or higher
 ```
 
 ### First Extension
@@ -388,28 +388,6 @@ settings:
 
 # Hook configuration
 hooks:
-  before_specify:
-    - extension: contextual-research
-      command: speckit.research.pre-spec
-      enabled: true
-      optional: true
-      prompt: "Perform pre-specification research?"
-  after_specify:
-    - extension: linter
-      command: speckit.linter.check-spec
-      enabled: true
-      optional: false
-  before_plan:
-    - extension: setup-env
-      command: speckit.env.prepare
-      enabled: true
-      optional: false
-  after_plan:
-    - extension: architect
-      command: speckit.architect.validate-plan
-      enabled: true
-      optional: true
-      prompt: "Validate architecture before proceeding?"
   after_tasks:
     - extension: jira
       command: speckit.jira.specstoissues
@@ -988,5 +966,5 @@ After creating tasks, sync to Jira:
 
 ---
 
-*Last Updated: 2026-01-28*
-*Spec Kit Version: 0.1.0*
+*Last Updated: 2026-03-13*
+*Spec Kit Version: 0.2.1*
