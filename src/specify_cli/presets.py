@@ -139,6 +139,15 @@ class PresetManifest:
                     f"must be one of {sorted(VALID_PRESET_TEMPLATE_TYPES)}"
                 )
 
+            # Validate file path safety: must be relative, no parent traversal
+            file_path = tmpl["file"]
+            normalized = os.path.normpath(file_path)
+            if os.path.isabs(normalized) or normalized.startswith(".."):
+                raise PresetValidationError(
+                    f"Invalid template file path '{file_path}': "
+                    "must be a relative path within the preset directory"
+                )
+
             # Validate template name format
             if tmpl["type"] == "command":
                 # Commands use dot notation (e.g. speckit.specify)
@@ -920,6 +929,10 @@ class PresetCatalog:
         except (yaml.YAMLError, OSError) as e:
             raise PresetValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
+            )
+        if not isinstance(data, dict):
+            raise PresetValidationError(
+                f"Invalid catalog config {config_path}: expected a mapping at root, got {type(data).__name__}"
             )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
