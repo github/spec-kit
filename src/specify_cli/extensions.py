@@ -835,6 +835,18 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": "/SKILL.md"
+        },
+        "vibe": {
+            "dir": ".vibe/prompts",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
+        },
+        "agy": {
+            "dir": ".agent/commands",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
         }
     }
 
