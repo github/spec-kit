@@ -332,7 +332,7 @@ function Update-ExistingAgentFile {
             if ($existingChanges -lt 2) { $output.Add($line); $existingChanges++ }
             continue
         }
-        if ($line -match '\*\*Last updated\*\*: .*\d{4}-\d{2}-\d{2}') {
+        if ($line -match '(\*\*)?Last updated(\*\*)?: .*\d{4}-\d{2}-\d{2}') {
             $output.Add(($line -replace '\d{4}-\d{2}-\d{2}',$Date.ToString('yyyy-MM-dd')))
             continue
         }
