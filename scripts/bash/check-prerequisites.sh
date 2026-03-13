@@ -79,15 +79,28 @@ SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 # Get feature paths and validate branch
-eval $(get_feature_paths)
+_paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+eval "$_paths_output"
+unset _paths_output
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
 # If paths-only mode, output paths and exit (support JSON + paths-only combined)
 if $PATHS_ONLY; then
     if $JSON_MODE; then
         # Minimal JSON paths payload (no validation performed)
-        printf '{"REPO_ROOT":"%s","BRANCH":"%s","FEATURE_DIR":"%s","FEATURE_SPEC":"%s","IMPL_PLAN":"%s","TASKS":"%s"}\n' \
-            "$REPO_ROOT" "$CURRENT_BRANCH" "$FEATURE_DIR" "$FEATURE_SPEC" "$IMPL_PLAN" "$TASKS"
+        if has_jq; then
+            jq -cn \
+                --arg repo_root "$REPO_ROOT" \
+                --arg branch "$CURRENT_BRANCH" \
+                --arg feature_dir "$FEATURE_DIR" \
+                --arg feature_spec "$FEATURE_SPEC" \
+                --arg impl_plan "$IMPL_PLAN" \
+                --arg tasks "$TASKS" \
+                '{REPO_ROOT:$repo_root,BRANCH:$branch,FEATURE_DIR:$feature_dir,FEATURE_SPEC:$feature_spec,IMPL_PLAN:$impl_plan,TASKS:$tasks}'
+        else
+            printf '{"REPO_ROOT":"%s","BRANCH":"%s","FEATURE_DIR":"%s","FEATURE_SPEC":"%s","IMPL_PLAN":"%s","TASKS":"%s"}\n' \
+                "$(json_escape "$REPO_ROOT")" "$(json_escape "$CURRENT_BRANCH")" "$(json_escape "$FEATURE_DIR")" "$(json_escape "$FEATURE_SPEC")" "$(json_escape "$IMPL_PLAN")" "$(json_escape "$TASKS")"
+        fi
     else
         echo "REPO_ROOT: $REPO_ROOT"
         echo "BRANCH: $CURRENT_BRANCH"
@@ -141,14 +154,25 @@ fi
 # Output results
 if $JSON_MODE; then
     # Build JSON array of documents
-    if [[ ${#docs[@]} -eq 0 ]]; then
-        json_docs="[]"
+    if has_jq; then
+        if [[ ${#docs[@]} -eq 0 ]]; then
+            json_docs="[]"
+        else
+            json_docs=$(printf '%s\n' "${docs[@]}" | jq -R . | jq -s .)
+        fi
+        jq -cn \
+            --arg feature_dir "$FEATURE_DIR" \
+            --argjson docs "$json_docs" \
+            '{FEATURE_DIR:$feature_dir,AVAILABLE_DOCS:$docs}'
     else
-        json_docs=$(printf '"%s",' "${docs[@]}")
-        json_docs="[${json_docs%,}]"
+        if [[ ${#docs[@]} -eq 0 ]]; then
+            json_docs="[]"
+        else
+            json_docs=$(printf '"%s",' "${docs[@]}")
+            json_docs="[${json_docs%,}]"
+        fi
+        printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s}\n' "$(json_escape "$FEATURE_DIR")" "$json_docs"
     fi
-    
-    printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s}\n' "$FEATURE_DIR" "$json_docs"
 else
     # Text output
     echo "FEATURE_DIR:$FEATURE_DIR"
