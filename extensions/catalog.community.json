@@ -80,7 +80,7 @@
       "description": "Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 51 automated checks with config-aware traceability, quality labels, and AI-ready fix prompts. Zero dependencies.",
       "author": "raccioly",
       "version": "0.7.3",
-      "download_url": "https://github.com/raccioly/docguard/archive/refs/tags/v0.7.3.zip",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.7.3/spec-kit-docguard-v0.7.3.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
