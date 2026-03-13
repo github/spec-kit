@@ -364,7 +364,7 @@ class PresetManager:
 
         Scans the preset's templates for type "command", reads each command
         file, and writes it to every detected agent directory using the
-        CommandRegistrar from the extensions module.
+        CommandRegistrar from the agents module.
 
         Args:
             manifest: Preset manifest
@@ -424,7 +424,7 @@ class PresetManager:
 
         Reads ``.specify/init-options.json`` to determine whether skills
         are enabled and which agent was selected, then delegates to
-        ``_get_skills_dir()`` for the concrete path.
+        the module-level ``_get_skills_dir()`` helper for the concrete path.
 
         Returns:
             The skills directory ``Path``, or ``None`` if skills were not
@@ -473,15 +473,33 @@ class PresetManager:
         if not command_templates:
             return []
 
+        # Filter out extension command overrides if the extension isn't installed,
+        # matching the same logic used by _register_commands().
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        filtered = []
+        for cmd in command_templates:
+            parts = cmd["name"].split(".")
+            if len(parts) >= 3 and parts[0] == "speckit":
+                ext_id = parts[1]
+                if not (extensions_dir / ext_id).is_dir():
+                    continue
+            filtered.append(cmd)
+
+        if not filtered:
+            return []
+
         skills_dir = self._get_skills_dir()
         if not skills_dir:
             return []
 
-        from . import SKILL_DESCRIPTIONS
+        from . import SKILL_DESCRIPTIONS, load_init_options
+
+        opts = load_init_options(self.project_root)
+        selected_ai = opts.get("ai", "")
 
         written: List[str] = []
 
-        for cmd_tmpl in command_templates:
+        for cmd_tmpl in filtered:
             cmd_name = cmd_tmpl["name"]
             cmd_file_rel = cmd_tmpl["file"]
             source_file = preset_dir / cmd_file_rel
@@ -492,7 +510,12 @@ class PresetManager:
             short_name = cmd_name
             if short_name.startswith("speckit."):
                 short_name = short_name[len("speckit."):]
-            skill_name = f"speckit-{short_name}"
+            # Kimi CLI discovers skills by directory name and invokes them as
+            # /skill:<name> — use dot separator to match packaging convention.
+            if selected_ai == "kimi":
+                skill_name = f"speckit.{short_name}"
+            else:
+                skill_name = f"speckit-{short_name}"
 
             # Only overwrite if the skill already exists (i.e. --ai-skills was used)
             skill_subdir = skills_dir / skill_name
