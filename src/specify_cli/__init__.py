@@ -2884,6 +2884,12 @@ def extension_add(
         for cmd in manifest.commands:
             console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
 
+        # Report agent skills registration
+        reg_meta = manager.registry.get(manifest.id)
+        reg_skills = reg_meta.get("registered_skills", []) if reg_meta else []
+        if reg_skills:
+            console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
+
         console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
         console.print(f"   Check: .specify/extensions/{manifest.id}/")
 
@@ -2922,14 +2928,18 @@ def extension_remove(
     installed = manager.list_installed()
     extension_id, display_name = _resolve_installed_extension(extension, installed, "remove")
 
-    # Get extension info for command count
+    # Get extension info for command and skill counts
     ext_manifest = manager.get_extension(extension_id)
     cmd_count = len(ext_manifest.commands) if ext_manifest else 0
+    reg_meta = manager.registry.get(extension_id)
+    skill_count = len(reg_meta.get("registered_skills", [])) if reg_meta else 0
 
     # Confirm removal
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
         console.print(f"   • {cmd_count} commands from AI agent")
+        if skill_count:
+            console.print(f"   • {skill_count} agent skill(s)")
         console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")
         if not keep_config:
             console.print("   • Config files (will be backed up)")
