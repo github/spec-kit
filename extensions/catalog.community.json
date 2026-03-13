@@ -77,10 +77,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 51 automated checks with config-aware traceability, quality labels, and AI-ready fix prompts. Zero dependencies.",
+      "description": "Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 92 automated checks. Zero dependencies.",
       "author": "raccioly",
-      "version": "0.7.3",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.7.3/spec-kit-docguard-v0.7.3.zip",
+      "version": "0.8.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.8.0/spec-kit-docguard-v0.8.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -166,7 +166,12 @@
         "commands": 2,
         "hooks": 1
       },
-      "tags": ["orchestration", "workflow", "human-in-the-loop", "parallel"],
+      "tags": [
+        "orchestration",
+        "workflow",
+        "human-in-the-loop",
+        "parallel"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -233,7 +238,12 @@
         "commands": 2,
         "hooks": 1
       },
-      "tags": ["implementation", "automation", "loop", "copilot"],
+      "tags": [
+        "implementation",
+        "automation",
+        "loop",
+        "copilot"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -291,7 +301,15 @@
         "commands": 7,
         "hooks": 1
       },
-      "tags": ["code-review", "quality", "review", "testing", "error-handling", "type-design", "simplification"],
+      "tags": [
+        "code-review",
+        "quality",
+        "review",
+        "testing",
+        "error-handling",
+        "type-design",
+        "simplification"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
