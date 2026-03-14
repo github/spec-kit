@@ -2576,6 +2576,7 @@ def extension_list(
             status_color = "green" if ext["enabled"] else "red"
 
             console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']})")
+            console.print(f"     [dim]{ext['id']}[/dim]")
             console.print(f"     {ext['description']}")
             console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
