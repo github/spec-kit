@@ -359,11 +359,14 @@ specify extension add jira
       "installed_at": "2026-01-28T14:30:00Z",
       "source": "catalog",
       "manifest_hash": "sha256:abc123...",
-      "enabled": true
+      "enabled": true,
+      "priority": 10
     }
   }
 }
 ```
+
+**Priority Field**: Extensions are ordered by `priority` (lower = higher precedence). Default is 10. Used for template resolution when multiple extensions provide the same template.
 
 ### 3. Configuration
 
@@ -1085,10 +1088,10 @@ $ specify extension list
 
 Installed Extensions:
   ✓ jira (v1.0.0) - Jira Integration
-    Commands: 3 | Hooks: 2 | Status: Enabled
+    Commands: 3 | Hooks: 2 | Priority: 10 | Status: Enabled
 
   ✓ linear (v0.9.0) - Linear Integration
-    Commands: 1 | Hooks: 1 | Status: Enabled
+    Commands: 1 | Hooks: 1 | Priority: 10 | Status: Enabled
 ```
 
 **Options:**
@@ -1200,6 +1203,7 @@ Next steps:
 - `--version VERSION`: Install specific version
 - `--dev PATH`: Install from local path (development mode)
 - `--no-register`: Skip command registration (manual setup)
+- `--priority NUMBER`: Set resolution priority (lower = higher precedence, default 10)
 
 #### `specify extension remove NAME`
 
@@ -1279,6 +1283,29 @@ $ specify extension disable jira
 
 To re-enable: specify extension enable jira
 ```
+
+#### `specify extension set-priority NAME PRIORITY`
+
+Change the resolution priority of an installed extension.
+
+```bash
+$ specify extension set-priority jira 5
+
+✓ Extension 'Jira Integration' priority changed: 10 → 5
+
+Lower priority = higher precedence in template resolution
+```
+
+**Priority Values:**
+
+- Lower numbers = higher precedence (checked first in resolution)
+- Default priority is 10
+- Must be a positive integer (1 or higher)
+
+**Use Cases:**
+
+- Ensure a critical extension's templates take precedence
+- Override default resolution order when multiple extensions provide similar templates
 
 ---
 

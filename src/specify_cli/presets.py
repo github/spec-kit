@@ -23,6 +23,8 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
+from .extensions import ExtensionRegistry
+
 
 @dataclass
 class PresetCatalogEntry:
@@ -270,6 +272,21 @@ class PresetRegistry:
         if pack_id in self.data["presets"]:
             del self.data["presets"][pack_id]
             self._save()
+
+    def update(self, pack_id: str, updates: dict):
+        """Update preset metadata in registry.
+
+        Args:
+            pack_id: Preset ID
+            updates: Partial metadata to merge into existing metadata
+
+        Raises:
+            KeyError: If preset is not installed
+        """
+        if pack_id not in self.data["presets"]:
+            raise KeyError(f"Preset '{pack_id}' not found in registry")
+        self.data["presets"][pack_id].update(updates)
+        self._save()
 
     def get(self, pack_id: str) -> Optional[dict]:
         """Get preset metadata from registry.
@@ -729,6 +746,7 @@ class PresetManager:
         Args:
             zip_path: Path to preset ZIP file
             speckit_version: Current spec-kit version
+            priority: Resolution priority (lower = higher precedence, default 10)
 
         Returns:
             Installed preset manifest
@@ -1445,10 +1463,12 @@ class PresetResolver:
                     if candidate.exists():
                         return candidate
 
-        # Priority 3: Extension-provided templates
+        # Priority 3: Extension-provided templates (sorted by priority — lower number wins)
         if self.extensions_dir.exists():
-            for ext_dir in sorted(self.extensions_dir.iterdir()):
-                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+            registry = ExtensionRegistry(self.extensions_dir)
+            for ext_id, _metadata in registry.list_by_priority():
+                ext_dir = self.extensions_dir / ext_id
+                if not ext_dir.is_dir():
                     continue
                 for subdir in subdirs:
                     if subdir:
@@ -1515,14 +1535,17 @@ class PresetResolver:
                     continue
 
         if self.extensions_dir.exists():
-            for ext_dir in sorted(self.extensions_dir.iterdir()):
-                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+            ext_registry = ExtensionRegistry(self.extensions_dir)
+            for ext_id, ext_meta in ext_registry.list_by_priority():
+                ext_dir = self.extensions_dir / ext_id
+                if not ext_dir.is_dir():
                     continue
                 try:
                     resolved.relative_to(ext_dir)
+                    version = ext_meta.get("version", "?") if ext_meta else "?"
                     return {
                         "path": resolved_str,
-                        "source": f"extension:{ext_dir.name}",
+                        "source": f"extension:{ext_id} v{version}",
                     }
                 except ValueError:
                     continue

@@ -324,6 +324,20 @@ class ExtensionRegistry:
         """
         return extension_id in self.data["extensions"]
 
+    def list_by_priority(self) -> List[tuple]:
+        """Get all installed extensions sorted by priority.
+
+        Lower priority number = higher precedence (checked first).
+
+        Returns:
+            List of (extension_id, metadata) tuples sorted by priority
+        """
+        extensions = self.data["extensions"]
+        return sorted(
+            extensions.items(),
+            key=lambda item: item[1].get("priority", 10),
+        )
+
 
 class ExtensionManager:
     """Manages extension lifecycle: installation, removal, updates."""
@@ -440,7 +454,8 @@ class ExtensionManager:
         self,
         source_dir: Path,
         speckit_version: str,
-        register_commands: bool = True
+        register_commands: bool = True,
+        priority: int = 10,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -448,6 +463,7 @@ class ExtensionManager:
             source_dir: Path to extension directory
             speckit_version: Current spec-kit version
             register_commands: If True, register commands with AI agents
+            priority: Resolution priority (lower = higher precedence, default 10)
 
         Returns:
             Installed extension manifest
@@ -497,6 +513,7 @@ class ExtensionManager:
             "source": "local",
             "manifest_hash": manifest.get_hash(),
             "enabled": True,
+            "priority": priority,
             "registered_commands": registered_commands
         })
 
@@ -505,13 +522,15 @@ class ExtensionManager:
     def install_from_zip(
         self,
         zip_path: Path,
-        speckit_version: str
+        speckit_version: str,
+        priority: int = 10,
     ) -> ExtensionManifest:
         """Install extension from ZIP file.
 
         Args:
             zip_path: Path to extension ZIP file
             speckit_version: Current spec-kit version
+            priority: Resolution priority (lower = higher precedence, default 10)
 
         Returns:
             Installed extension manifest
@@ -554,7 +573,7 @@ class ExtensionManager:
                 raise ValidationError("No extension.yml found in ZIP file")
 
             # Install from extracted directory
-            return self.install_from_directory(extension_dir, speckit_version)
+            return self.install_from_directory(extension_dir, speckit_version, priority=priority)
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
@@ -643,6 +662,7 @@ class ExtensionManager:
                     "version": metadata.get("version", "unknown"),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
+                    "priority": metadata.get("priority", 10),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": len(manifest.commands),
                     "hook_count": len(manifest.hooks)
@@ -655,6 +675,7 @@ class ExtensionManager:
                     "version": metadata.get("version", "unknown"),
                     "description": "⚠️ Corrupted extension",
                     "enabled": False,
+                    "priority": metadata.get("priority", 10),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": 0,
                     "hook_count": 0

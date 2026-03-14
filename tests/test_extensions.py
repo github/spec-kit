@@ -2363,3 +2363,330 @@ class TestExtensionListCLI:
         # Verify name and version are also shown
         assert "Test Extension" in result.output
         assert "1.0.0" in result.output
+
+
+class TestExtensionPriority:
+    """Test extension priority-based resolution."""
+
+    def test_list_by_priority_empty(self, temp_dir):
+        """Test list_by_priority on empty registry."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        result = registry.list_by_priority()
+
+        assert result == []
+
+    def test_list_by_priority_single(self, temp_dir):
+        """Test list_by_priority with single extension."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0", "priority": 5})
+
+        result = registry.list_by_priority()
+
+        assert len(result) == 1
+        assert result[0][0] == "test-ext"
+        assert result[0][1]["priority"] == 5
+
+    def test_list_by_priority_ordering(self, temp_dir):
+        """Test list_by_priority returns extensions sorted by priority."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        # Add in non-priority order
+        registry.add("ext-low", {"version": "1.0.0", "priority": 20})
+        registry.add("ext-high", {"version": "1.0.0", "priority": 1})
+        registry.add("ext-mid", {"version": "1.0.0", "priority": 10})
+
+        result = registry.list_by_priority()
+
+        assert len(result) == 3
+        # Lower priority number = higher precedence (first)
+        assert result[0][0] == "ext-high"
+        assert result[1][0] == "ext-mid"
+        assert result[2][0] == "ext-low"
+
+    def test_list_by_priority_default(self, temp_dir):
+        """Test list_by_priority uses default priority of 10."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        # Add without explicit priority
+        registry.add("ext-default", {"version": "1.0.0"})
+        registry.add("ext-high", {"version": "1.0.0", "priority": 1})
+        registry.add("ext-low", {"version": "1.0.0", "priority": 20})
+
+        result = registry.list_by_priority()
+
+        assert len(result) == 3
+        # ext-high (1), ext-default (10), ext-low (20)
+        assert result[0][0] == "ext-high"
+        assert result[1][0] == "ext-default"
+        assert result[2][0] == "ext-low"
+
+    def test_install_with_priority(self, extension_dir, project_dir):
+        """Test that install_from_directory stores priority."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=5)
+
+        metadata = manager.registry.get("test-ext")
+        assert metadata["priority"] == 5
+
+    def test_install_default_priority(self, extension_dir, project_dir):
+        """Test that install_from_directory uses default priority of 10."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        metadata = manager.registry.get("test-ext")
+        assert metadata["priority"] == 10
+
+    def test_list_installed_includes_priority(self, extension_dir, project_dir):
+        """Test that list_installed includes priority in returned data."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=3)
+
+        installed = manager.list_installed()
+
+        assert len(installed) == 1
+        assert installed[0]["priority"] == 3
+
+    def test_priority_preserved_on_update(self, temp_dir):
+        """Test that registry update preserves priority."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0", "priority": 5, "enabled": True})
+
+        # Update with new metadata (no priority specified)
+        registry.update("test-ext", {"enabled": False})
+
+        updated = registry.get("test-ext")
+        assert updated["priority"] == 5  # Preserved
+        assert updated["enabled"] is False  # Updated
+
+
+class TestExtensionPriorityCLI:
+    """Test extension priority CLI integration."""
+
+    def test_add_with_priority_option(self, extension_dir, project_dir):
+        """Test extension add command with --priority option."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, [
+                "extension", "add", str(extension_dir), "--dev", "--priority", "3"
+            ])
+
+        assert result.exit_code == 0, result.output
+
+        manager = ExtensionManager(project_dir)
+        metadata = manager.registry.get("test-ext")
+        assert metadata["priority"] == 3
+
+    def test_list_shows_priority(self, extension_dir, project_dir):
+        """Test extension list shows priority."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension with priority
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=7)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "list"])
+
+        assert result.exit_code == 0, result.output
+        assert "Priority: 7" in result.output
+
+    def test_set_priority_changes_priority(self, extension_dir, project_dir):
+        """Test set-priority command changes extension priority."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension with default priority
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Verify default priority
+        assert manager.registry.get("test-ext")["priority"] == 10
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "priority changed: 10 → 5" in result.output
+
+        # Reload registry to see updated value
+        manager2 = ExtensionManager(project_dir)
+        assert manager2.registry.get("test-ext")["priority"] == 5
+
+    def test_set_priority_same_value_no_change(self, extension_dir, project_dir):
+        """Test set-priority with same value shows already set message."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension with priority 5
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=5)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "already has priority 5" in result.output
+
+    def test_set_priority_invalid_value(self, extension_dir, project_dir):
+        """Test set-priority rejects invalid priority values."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "0"])
+
+        assert result.exit_code == 1, result.output
+        assert "Priority must be a positive integer" in result.output
+
+    def test_set_priority_not_installed(self, project_dir):
+        """Test set-priority fails for non-installed extension."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Ensure .specify exists
+        (project_dir / ".specify").mkdir(parents=True, exist_ok=True)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "nonexistent", "5"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower() or "no extensions installed" in result.output.lower()
+
+    def test_set_priority_by_display_name(self, extension_dir, project_dir):
+        """Test set-priority works with extension display name."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Use display name "Test Extension" instead of ID "test-ext"
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "Test Extension", "3"])
+
+        assert result.exit_code == 0, result.output
+        assert "priority changed" in result.output
+
+        # Reload registry to see updated value
+        manager2 = ExtensionManager(project_dir)
+        assert manager2.registry.get("test-ext")["priority"] == 3
+
+
+class TestExtensionPriorityBackwardsCompatibility:
+    """Test backwards compatibility for extensions installed before priority feature."""
+
+    def test_legacy_extension_without_priority_field(self, temp_dir):
+        """Extensions installed before priority feature should default to 10."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        # Simulate legacy registry entry without priority field
+        registry = ExtensionRegistry(extensions_dir)
+        registry.data["extensions"]["legacy-ext"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            "installed_at": "2025-01-01T00:00:00Z",
+            # No "priority" field - simulates pre-feature extension
+        }
+        registry._save()
+
+        # Reload registry
+        registry2 = ExtensionRegistry(extensions_dir)
+
+        # list_by_priority should use default of 10
+        result = registry2.list_by_priority()
+        assert len(result) == 1
+        assert result[0][0] == "legacy-ext"
+        # Priority defaults to 10 in sorting
+
+    def test_legacy_extension_in_list_installed(self, extension_dir, project_dir):
+        """list_installed returns priority=10 for legacy extensions without priority field."""
+        manager = ExtensionManager(project_dir)
+
+        # Install extension normally
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Manually remove priority to simulate legacy extension
+        ext_data = manager.registry.data["extensions"]["test-ext"]
+        del ext_data["priority"]
+        manager.registry._save()
+
+        # list_installed should still return priority=10
+        installed = manager.list_installed()
+        assert len(installed) == 1
+        assert installed[0]["priority"] == 10
+
+    def test_mixed_legacy_and_new_extensions_ordering(self, temp_dir):
+        """Legacy extensions (no priority) sort with default=10 among prioritized extensions."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        # Add extension with explicit priority=5
+        registry.add("ext-with-priority", {"version": "1.0.0", "priority": 5})
+
+        # Add legacy extension without priority (manually)
+        registry.data["extensions"]["legacy-ext"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            # No priority field
+        }
+        registry._save()
+
+        # Add extension with priority=15
+        registry.add("ext-low-priority", {"version": "1.0.0", "priority": 15})
+
+        # Reload and check ordering
+        registry2 = ExtensionRegistry(extensions_dir)
+        result = registry2.list_by_priority()
+
+        assert len(result) == 3
+        # Order: ext-with-priority (5), legacy-ext (defaults to 10), ext-low-priority (15)
+        assert result[0][0] == "ext-with-priority"
+        assert result[1][0] == "legacy-ext"
+        assert result[2][0] == "ext-low-priority"

@@ -32,6 +32,7 @@ from specify_cli.presets import (
     PresetCompatibilityError,
     VALID_PRESET_TEMPLATE_TYPES,
 )
+from specify_cli.extensions import ExtensionRegistry
 
 
 # ===== Fixtures =====
@@ -678,6 +679,11 @@ class TestPresetResolver:
         ext_template = ext_templates_dir / "custom-template.md"
         ext_template.write_text("# Extension Custom Template\n")
 
+        # Register extension in registry
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("my-ext", {"version": "1.0.0", "priority": 10})
+
         resolver = PresetResolver(project_dir)
         result = resolver.resolve("custom-template")
         assert result is not None
@@ -741,10 +747,15 @@ class TestPresetResolver:
         ext_template = ext_templates_dir / "unique-template.md"
         ext_template.write_text("# Unique\n")
 
+        # Register extension in registry
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("my-ext", {"version": "1.0.0", "priority": 10})
+
         resolver = PresetResolver(project_dir)
         result = resolver.resolve_with_source("unique-template")
         assert result is not None
-        assert result["source"] == "extension:my-ext"
+        assert "extension:my-ext" in result["source"]
 
     def test_resolve_with_source_not_found(self, project_dir):
         """Test resolve_with_source for nonexistent template."""
@@ -979,8 +990,13 @@ class TestIntegration:
         ext_templates_dir.mkdir(parents=True)
         (ext_templates_dir / "spec-template.md").write_text("# Extension\n")
 
+        # Register extension in registry
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("my-ext", {"version": "1.0.0", "priority": 10})
+
         result = resolver.resolve_with_source("spec-template")
-        assert result["source"] == "extension:my-ext"
+        assert "extension:my-ext" in result["source"]
 
         # Install pack — should win over extension
         manager = PresetManager(project_dir)
@@ -1710,3 +1726,161 @@ class TestPresetSkills:
 
         metadata = manager.registry.get("self-test")
         assert metadata.get("registered_skills", []) == []
+
+
+class TestPresetSetPriority:
+    """Test preset set-priority CLI command."""
+
+    def test_set_priority_changes_priority(self, project_dir, pack_dir):
+        """Test set-priority command changes preset priority."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset with default priority
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Verify default priority
+        assert manager.registry.get("test-pack")["priority"] == 10
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "priority changed: 10 → 5" in result.output
+
+        # Reload registry to see updated value
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["priority"] == 5
+
+    def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
+        """Test set-priority with same value shows already set message."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset with priority 5
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5", priority=5)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "already has priority 5" in result.output
+
+    def test_set_priority_invalid_value(self, project_dir, pack_dir):
+        """Test set-priority rejects invalid priority values."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "0"])
+
+        assert result.exit_code == 1, result.output
+        assert "Priority must be a positive integer" in result.output
+
+    def test_set_priority_not_installed(self, project_dir):
+        """Test set-priority fails for non-installed preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "nonexistent", "5"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower()
+
+
+class TestPresetPriorityBackwardsCompatibility:
+    """Test backwards compatibility for presets installed before priority feature."""
+
+    def test_legacy_preset_without_priority_field(self, temp_dir):
+        """Presets installed before priority feature should default to 10."""
+        presets_dir = temp_dir / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+
+        # Simulate legacy registry entry without priority field
+        registry = PresetRegistry(presets_dir)
+        registry.data["presets"]["legacy-pack"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            "installed_at": "2025-01-01T00:00:00Z",
+            # No "priority" field - simulates pre-feature preset
+        }
+        registry._save()
+
+        # Reload registry
+        registry2 = PresetRegistry(presets_dir)
+
+        # list_by_priority should use default of 10
+        result = registry2.list_by_priority()
+        assert len(result) == 1
+        assert result[0][0] == "legacy-pack"
+        # Priority defaults to 10 in sorting
+
+    def test_legacy_preset_in_list_installed(self, project_dir, pack_dir):
+        """list_installed returns priority=10 for legacy presets without priority field."""
+        manager = PresetManager(project_dir)
+
+        # Install preset normally
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Manually remove priority to simulate legacy preset
+        pack_data = manager.registry.data["presets"]["test-pack"]
+        del pack_data["priority"]
+        manager.registry._save()
+
+        # list_installed should still return priority=10
+        installed = manager.list_installed()
+        assert len(installed) == 1
+        assert installed[0]["priority"] == 10
+
+    def test_mixed_legacy_and_new_presets_ordering(self, temp_dir):
+        """Legacy presets (no priority) sort with default=10 among prioritized presets."""
+        presets_dir = temp_dir / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+
+        registry = PresetRegistry(presets_dir)
+
+        # Add preset with explicit priority=5
+        registry.add("pack-with-priority", {"version": "1.0.0", "priority": 5})
+
+        # Add legacy preset without priority (manually)
+        registry.data["presets"]["legacy-pack"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            # No priority field
+        }
+
+        # Add another preset with priority=15
+        registry.add("low-priority-pack", {"version": "1.0.0", "priority": 15})
+        registry._save()
+
+        # Reload and check ordering
+        registry2 = PresetRegistry(presets_dir)
+        sorted_presets = registry2.list_by_priority()
+
+        # Should be: pack-with-priority (5), legacy-pack (default 10), low-priority-pack (15)
+        assert [p[0] for p in sorted_presets] == [
+            "pack-with-priority",
+            "legacy-pack",
+            "low-priority-pack",
+        ]
