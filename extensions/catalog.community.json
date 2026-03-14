@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-13T12:00:00Z",
+  "updated_at": "2026-03-14T23:30:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "azure-devops": {
@@ -98,7 +98,6 @@
       },
       "provides": {
         "commands": 8,
-        "skills": 4,
         "hooks": 3
       },
       "tags": [
@@ -108,7 +107,6 @@
         "cdd",
         "traceability",
         "ai-agents",
-        "ai-skills",
         "enforcement",
         "scoring"
       ],
