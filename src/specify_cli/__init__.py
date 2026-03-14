@@ -272,6 +272,13 @@ AGENT_CONFIG = {
         "install_url": "https://code.kimi.com/",
         "requires_cli": True,
     },
+    "pi": {
+        "name": "Pi Coding Agent",
+        "folder": ".pi/",
+        "commands_subdir": "prompts",
+        "install_url": "https://www.npmjs.com/package/@mariozechner/pi-coding-agent",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir

@@ -106,6 +106,12 @@ class CommandRegistrar:
             "args": "$ARGUMENTS",
             "extension": ".md"
         },
+        "pi": {
+            "dir": ".pi/prompts",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
+        },
         "amp": {
             "dir": ".agents/commands",
             "format": "markdown",

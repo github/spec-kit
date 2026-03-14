@@ -14,7 +14,7 @@
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, generic
+    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, pi, generic
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -454,6 +454,10 @@ function Build-Variant {
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
             New-KimiSkills -SkillsDir $skillsDir -ScriptVariant $Script
         }
+        'pi' {
+            $cmdDir = Join-Path $baseDir ".pi/prompts"
+            Generate-Commands -Agent 'pi' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         'generic' {
             $cmdDir = Join-Path $baseDir ".speckit/commands"
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
@@ -470,7 +474,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'pi', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {

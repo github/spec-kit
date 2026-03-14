@@ -541,6 +541,15 @@ class TestCommandRegistrar:
         assert "codex" in CommandRegistrar.AGENT_CONFIGS
         assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".codex/prompts"
 
+    def test_pi_agent_config_present(self):
+        """Pi should be mapped to .pi/prompts."""
+        assert "pi" in CommandRegistrar.AGENT_CONFIGS
+        cfg = CommandRegistrar.AGENT_CONFIGS["pi"]
+        assert cfg["dir"] == ".pi/prompts"
+        assert cfg["format"] == "markdown"
+        assert cfg["args"] == "$ARGUMENTS"
+        assert cfg["extension"] == ".md"
+
     def test_qwen_agent_config_is_markdown(self):
         """Qwen should use Markdown format with $ARGUMENTS (not TOML)."""
         assert "qwen" in CommandRegistrar.AGENT_CONFIGS

@@ -182,6 +182,11 @@ class TestGetSkillsDir:
         result = _get_skills_dir(project_dir, "kiro-cli")
         assert result == project_dir / ".kiro" / "skills"
 
+    def test_pi_skills_dir(self, project_dir):
+        """Pi should use .pi/skills/."""
+        result = _get_skills_dir(project_dir, "pi")
+        assert result == project_dir / ".pi" / "skills"
+
     def test_unknown_agent_uses_default(self, project_dir):
         """Unknown agents should fall back to DEFAULT_SKILLS_DIR."""
         result = _get_skills_dir(project_dir, "nonexistent-agent")
@@ -421,6 +426,27 @@ class TestInstallAiSkills:
         # .md commands should be untouched
         assert (cmds_dir / "speckit.specify.md").exists()
         assert (cmds_dir / "speckit.plan.md").exists()
+
+    def test_pi_prompt_dir_installs_skills(self, project_dir):
+        """Pi should install skills directly from .pi/prompts/."""
+        prompts_dir = project_dir / ".pi" / "prompts"
+        prompts_dir.mkdir(parents=True)
+        (prompts_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Create or update the feature specification.\n---\n\n# Specify\n\nBody.\n"
+        )
+        (prompts_dir / "speckit.plan.md").write_text(
+            "---\ndescription: Generate implementation plan.\n---\n\n# Plan\n\nBody.\n"
+        )
+
+        result = install_ai_skills(project_dir, "pi")
+
+        assert result is True
+        skills_dir = project_dir / ".pi" / "skills"
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert len(skill_dirs) >= 1
+        assert (prompts_dir / "speckit.specify.md").exists()
+        assert (prompts_dir / "speckit.plan.md").exists()
 
     @pytest.mark.parametrize("agent_key", [k for k in AGENT_CONFIG.keys() if k != "generic"])
     def test_skills_install_for_all_agents(self, temp_dir, agent_key):
