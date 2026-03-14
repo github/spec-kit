@@ -2000,6 +2000,11 @@ def preset_add(
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+
     manager = PresetManager(project_root)
     speckit_version = get_speckit_version()
 
@@ -2829,6 +2834,11 @@ def extension_add(
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)

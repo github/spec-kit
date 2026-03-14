@@ -328,14 +328,17 @@ class ExtensionRegistry:
         """Get all installed extensions sorted by priority.
 
         Lower priority number = higher precedence (checked first).
+        Extensions with equal priority are sorted alphabetically by ID
+        for deterministic ordering.
 
         Returns:
-            List of (extension_id, metadata) tuples sorted by priority
+            List of (extension_id, metadata_copy) tuples sorted by priority.
+            Metadata is deep-copied to prevent accidental mutation.
         """
         extensions = self.data["extensions"]
         return sorted(
-            extensions.items(),
-            key=lambda item: item[1].get("priority", 10),
+            [(ext_id, copy.deepcopy(meta)) for ext_id, meta in extensions.items()],
+            key=lambda item: (item[1].get("priority", 10), item[0]),
         )
 
 
@@ -469,9 +472,13 @@ class ExtensionManager:
             Installed extension manifest
 
         Raises:
-            ValidationError: If manifest is invalid
+            ValidationError: If manifest is invalid or priority is invalid
             CompatibilityError: If extension is incompatible
         """
+        # Validate priority
+        if priority < 1:
+            raise ValidationError("Priority must be a positive integer (1 or higher)")
+
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
@@ -536,9 +543,13 @@ class ExtensionManager:
             Installed extension manifest
 
         Raises:
-            ValidationError: If manifest is invalid
+            ValidationError: If manifest is invalid or priority is invalid
             CompatibilityError: If extension is incompatible
         """
+        # Validate priority early
+        if priority < 1:
+            raise ValidationError("Priority must be a positive integer (1 or higher)")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 

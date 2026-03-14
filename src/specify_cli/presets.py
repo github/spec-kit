@@ -276,6 +276,10 @@ class PresetRegistry:
     def update(self, pack_id: str, updates: dict):
         """Update preset metadata in registry.
 
+        Merges the provided updates with the existing entry, preserving any
+        fields not specified. The installed_at timestamp is always preserved
+        from the original entry.
+
         Args:
             pack_id: Preset ID
             updates: Partial metadata to merge into existing metadata
@@ -285,7 +289,13 @@ class PresetRegistry:
         """
         if pack_id not in self.data["presets"]:
             raise KeyError(f"Preset '{pack_id}' not found in registry")
-        self.data["presets"][pack_id].update(updates)
+        existing = self.data["presets"][pack_id]
+        # Merge: existing fields preserved, new fields override
+        merged = {**existing, **updates}
+        # Always preserve original installed_at
+        if "installed_at" in existing:
+            merged["installed_at"] = existing["installed_at"]
+        self.data["presets"][pack_id] = merged
         self._save()
 
     def get(self, pack_id: str) -> Optional[dict]:
@@ -311,14 +321,18 @@ class PresetRegistry:
         """Get all installed presets sorted by priority.
 
         Lower priority number = higher precedence (checked first).
+        Presets with equal priority are sorted alphabetically by ID
+        for deterministic ordering.
 
         Returns:
-            List of (pack_id, metadata) tuples sorted by priority
+            List of (pack_id, metadata_copy) tuples sorted by priority.
+            Metadata is deep-copied to prevent accidental mutation.
         """
+        import copy
         packs = self.data["presets"]
         return sorted(
-            packs.items(),
-            key=lambda item: item[1].get("priority", 10),
+            [(pack_id, copy.deepcopy(meta)) for pack_id, meta in packs.items()],
+            key=lambda item: (item[1].get("priority", 10), item[0]),
         )
 
     def is_installed(self, pack_id: str) -> bool:
@@ -697,9 +711,13 @@ class PresetManager:
             Installed preset manifest
 
         Raises:
-            PresetValidationError: If manifest is invalid
+            PresetValidationError: If manifest is invalid or priority is invalid
             PresetCompatibilityError: If pack is incompatible
         """
+        # Validate priority
+        if priority < 1:
+            raise PresetValidationError("Priority must be a positive integer (1 or higher)")
+
         manifest_path = source_dir / "preset.yml"
         manifest = PresetManifest(manifest_path)
 
@@ -752,9 +770,13 @@ class PresetManager:
             Installed preset manifest
 
         Raises:
-            PresetValidationError: If manifest is invalid
+            PresetValidationError: If manifest is invalid or priority is invalid
             PresetCompatibilityError: If pack is incompatible
         """
+        # Validate priority early
+        if priority < 1:
+            raise PresetValidationError("Priority must be a positive integer (1 or higher)")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
@@ -1474,7 +1496,7 @@ class PresetResolver:
                     if subdir:
                         candidate = ext_dir / subdir / f"{template_name}{ext}"
                     else:
-                        candidate = ext_dir / "templates" / f"{template_name}{ext}"
+                        candidate = ext_dir / f"{template_name}{ext}"
                     if candidate.exists():
                         return candidate
 

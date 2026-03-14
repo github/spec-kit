@@ -755,7 +755,7 @@ class TestPresetResolver:
         resolver = PresetResolver(project_dir)
         result = resolver.resolve_with_source("unique-template")
         assert result is not None
-        assert "extension:my-ext" in result["source"]
+        assert result["source"] == "extension:my-ext v1.0.0"
 
     def test_resolve_with_source_not_found(self, project_dir):
         """Test resolve_with_source for nonexistent template."""
@@ -996,7 +996,7 @@ class TestIntegration:
         ext_registry.add("my-ext", {"version": "1.0.0", "priority": 10})
 
         result = resolver.resolve_with_source("spec-template")
-        assert "extension:my-ext" in result["source"]
+        assert result["source"] == "extension:my-ext v1.0.0"
 
         # Install pack — should win over extension
         manager = PresetManager(project_dir)
