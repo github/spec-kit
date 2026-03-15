@@ -74,7 +74,7 @@ The following community-contributed extensions are available in [`catalog.commun
 |-----------|---------|-----|
 | Azure DevOps Integration | Sync user stories and tasks to Azure DevOps work items using OAuth authentication | [spec-kit-azure-devops](https://github.com/pragya247/spec-kit-azure-devops) |
 | Cleanup Extension | Post-implementation quality gate that reviews changes, fixes small issues (scout rule), creates tasks for medium issues, and generates analysis for large issues | [spec-kit-cleanup](https://github.com/dsrednicki/spec-kit-cleanup) |
-| DocGuard — CDD Enforcement | Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 92 automated checks with config-aware traceability, quality labels, and AI-ready fix prompts. Zero dependencies. | [spec-kit-docguard](https://github.com/raccioly/docguard) |
+| DocGuard — CDD Enforcement | Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero dependencies. | [spec-kit-docguard](https://github.com/raccioly/docguard) |
 | Fleet Orchestrator | Orchestrate a full feature lifecycle with human-in-the-loop gates across all SpecKit phases | [spec-kit-fleet](https://github.com/sharathsatish/spec-kit-fleet) |
 | Jira Integration | Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support | [spec-kit-jira](https://github.com/mbachorik/spec-kit-jira) |
 | Project Health Check | Diagnose a Spec Kit project and report health issues across structure, agents, features, scripts, extensions, and git | [spec-kit-doctor](https://github.com/KhawarHabibKhan/spec-kit-doctor) |
