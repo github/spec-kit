@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-13T12:00:00Z",
+  "updated_at": "2026-03-15T13:37:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "azure-devops": {
@@ -77,10 +77,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 92 automated checks. Zero dependencies.",
+      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero dependencies.",
       "author": "raccioly",
-      "version": "0.8.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.8.0/spec-kit-docguard-v0.8.0.zip",
+      "version": "0.9.7",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.7/spec-kit-docguard-v0.9.7.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -98,7 +98,7 @@
       },
       "provides": {
         "commands": 6,
-        "hooks": 1
+        "hooks": 3
       },
       "tags": [
         "documentation",
@@ -108,13 +108,13 @@
         "traceability",
         "ai-agents",
         "enforcement",
-        "scoring"
+        "spec-kit"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-03-13T00:00:00Z"
+      "updated_at": "2026-03-15T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
