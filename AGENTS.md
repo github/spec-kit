@@ -45,6 +45,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **Tabnine CLI**            | `.tabnine/agent/commands/` | TOML | `tabnine`       | Tabnine CLI                 |
 | **Kimi Code**              | `.kimi/skills/`        | Markdown | `kimi`          | Kimi Code CLI (Moonshot AI) |
+| **OpenClaw**               | `.openclaw/skills/`    | Markdown | `openclaw`      | OpenClaw persistent AI agent daemon |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
@@ -84,7 +85,7 @@ This eliminates the need for special-case mappings throughout the codebase.
 - `folder`: Directory where agent-specific files are stored (relative to project root)
 - `commands_subdir`: Subdirectory name within the agent folder where command/prompt files are stored (default: `"commands"`)
   - Most agents use `"commands"` (e.g., `.claude/commands/`)
-  - Some agents use alternative names: `"agents"` (copilot), `"workflows"` (windsurf, kilocode), `"prompts"` (codex, kiro-cli), `"command"` (opencode - singular)
+  - Some agents use alternative names: `"agents"` (copilot), `"workflows"` (windsurf, kilocode), `"prompts"` (codex, kiro-cli), `"command"` (opencode - singular), `"skills"` (kimi, openclaw)
   - This field enables `--ai-skills` to locate command templates correctly for skill generation
 - `install_url`: Installation documentation URL (set to `None` for IDE-based agents)
 - `requires_cli`: Whether the agent requires a CLI tool check during initialization
@@ -322,6 +323,7 @@ Require a command-line tool to be installed:
 - **SHAI**: `shai` CLI
 - **Tabnine CLI**: `tabnine` CLI
 - **Kimi Code**: `kimi` CLI
+- **OpenClaw**: `openclaw` CLI
 
 ### IDE-Based Agents
 
@@ -335,7 +337,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen
+Used by: Claude, Cursor, opencode, Windsurf, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, OpenClaw, Qwen
 
 **Standard format:**
 
@@ -373,6 +375,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
 ## Directory Conventions
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
+- **Skill-based agents**: Use `.<agent-name>/skills/<skill-name>/SKILL.md` format (Kimi Code, OpenClaw)
 - **IDE agents**: Follow IDE-specific patterns:
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
