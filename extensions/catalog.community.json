@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-15T13:37:00Z",
+  "updated_at": "2026-03-15T20:10:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "azure-devops": {
@@ -75,12 +75,12 @@
       "updated_at": "2026-02-22T00:00:00Z"
     },
     "docguard": {
-      "name": "DocGuard — CDD Enforcement",
+      "name": "DocGuard \u2014 CDD Enforcement",
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero dependencies.",
       "author": "raccioly",
-      "version": "0.9.7",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.7/spec-kit-docguard-v0.9.7.zip",
+      "version": "0.9.8",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.8/spec-kit-docguard-v0.9.8.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -114,7 +114,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-03-15T00:00:00Z"
+      "updated_at": "2026-03-15T20:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -351,7 +351,7 @@
     "understanding": {
       "name": "Understanding",
       "id": "understanding",
-      "description": "Automated requirements quality analysis — validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
+      "description": "Automated requirements quality analysis \u2014 validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
       "author": "Ladislav Bihari",
       "version": "3.4.0",
       "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
