@@ -88,6 +88,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Understanding | Automated requirements quality analysis — 31 deterministic metrics against IEEE/ISO standards with experimental energy-based ambiguity detection | [understanding](https://github.com/Testimonial/understanding) |
 | V-Model Extension Pack | Enforces V-Model paired generation of development specs and test specs with full traceability | [spec-kit-v-model](https://github.com/leocamello/spec-kit-v-model) |
 | Verify Extension | Post-implementation quality gate that validates implemented code against specification artifacts | [spec-kit-verify](https://github.com/ismaelJimenez/spec-kit-verify) |
+| Verify Tasks Extension | Detect phantom completions: tasks marked [X] in tasks.md with no real implementation | [spec-kit-verify-tasks](https://github.com/datastone-inc/spec-kit-verify-tasks) |
 
 
 ## Adding Your Extension
