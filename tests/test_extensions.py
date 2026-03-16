@@ -2337,3 +2337,29 @@ class TestExtensionUpdateCLI:
 
         for cmd_file in command_files:
             assert cmd_file.exists(), f"Expected command file to be restored after rollback: {cmd_file}"
+
+
+class TestExtensionListCLI:
+    """Test extension list CLI output format."""
+
+    def test_list_shows_extension_id(self, extension_dir, project_dir):
+        """extension list should display the extension ID."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install the extension using the manager
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "list"])
+
+        assert result.exit_code == 0, result.output
+        # Verify the extension ID is shown in the output
+        assert "test-ext" in result.output
+        # Verify name and version are also shown
+        assert "Test Extension" in result.output
+        assert "1.0.0" in result.output
