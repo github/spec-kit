@@ -161,7 +161,7 @@ has_jq() {
 }
 
 # Escape a string for safe embedding in a JSON value (fallback when jq is unavailable).
-# Handles backslash, double-quote, and control characters (newline, tab, carriage return).
+# Handles backslash, double-quote, and JSON-required control character escapes (RFC 8259).
 json_escape() {
     local s="$1"
     s="${s//\\/\\\\}"
@@ -169,6 +169,10 @@ json_escape() {
     s="${s//$'\n'/\\n}"
     s="${s//$'\t'/\\t}"
     s="${s//$'\r'/\\r}"
+    s="${s//$'\b'/\\b}"
+    s="${s//$'\f'/\\f}"
+    # Strip remaining control characters (U+0000–U+001F) not individually escaped above
+    s=$(printf '%s' "$s" | tr -d '\000-\007\013\016-\037')
     printf '%s' "$s"
 }
 
@@ -207,13 +211,17 @@ try:
 except Exception:
     sys.exit(1)
 " 2>/dev/null)
-            if [ $? -eq 0 ] && [ -n "$sorted_presets" ]; then
+            local python_rc=$?
+            if [ $python_rc -eq 0 ] && [ -n "$sorted_presets" ]; then
                 while IFS= read -r preset_id; do
                     local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
                     [ -f "$candidate" ] && echo "$candidate" && return 0
                 done <<< "$sorted_presets"
+            elif [ $python_rc -eq 0 ]; then
+                # python3 succeeded but registry has no presets — nothing to search
+                :
             else
-                # python3 returned empty list — fall through to directory scan
+                # python3 failed (missing, or registry parse error) — fall back to unordered directory scan
                 for preset in "$presets_dir"/*/; do
                     [ -d "$preset" ] || continue
                     local candidate="$preset/templates/${template_name}.md"
