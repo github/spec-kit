@@ -1071,14 +1071,14 @@ class TestCliValidation:
             )
 
         assert result.exit_code == 0
-        # Alias normalisation should have happened regardless of scaffold path used.
-        # Either scaffold_from_core_pack or download_and_extract_template may be called
-        # depending on whether bundled assets are present; check the one that was called.
-        if mock_scaffold.called:
-            assert mock_scaffold.call_args.args[1] == "kiro-cli"
-        else:
-            assert mock_download.called
-            assert mock_download.call_args.args[1] == "kiro-cli"
+        # Without --offline, the download path should be taken.
+        assert mock_download.called, (
+            "Expected download_and_extract_template to be called (default non-offline path)"
+        )
+        assert mock_download.call_args.args[1] == "kiro-cli"
+        assert not mock_scaffold.called, (
+            "scaffold_from_core_pack should not be called without --offline"
+        )
 
     def test_q_removed_from_agent_config(self):
         """Amazon Q legacy key should not remain in AGENT_CONFIG."""

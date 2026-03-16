@@ -526,3 +526,36 @@ def test_parity_bundled_vs_release_script(tmp_path, agent):
             f"Agent '{agent}': file '{name}' content differs between "
             f"bundled output and release script ZIP"
         )
+
+
+# ---------------------------------------------------------------------------
+# Section 10 – pyproject.toml force-include covers all template files
+# ---------------------------------------------------------------------------
+
+def test_pyproject_force_include_covers_all_templates():
+    """Every file in templates/ (excluding commands/) must be listed in
+    pyproject.toml's [tool.hatch.build.targets.wheel.force-include] section.
+
+    This prevents new template files from being silently omitted from the
+    wheel, which would break ``specify init --offline``.
+    """
+    templates_dir = _REPO_ROOT / "templates"
+    # Collect all files directly in templates/ (not in subdirectories like commands/)
+    repo_template_files = sorted(
+        f.name for f in templates_dir.iterdir()
+        if f.is_file()
+    )
+    assert repo_template_files, "Expected at least one template file in templates/"
+
+    pyproject_path = _REPO_ROOT / "pyproject.toml"
+    pyproject_text = pyproject_path.read_text()
+
+    missing = [
+        name for name in repo_template_files
+        if f"templates/{name}" not in pyproject_text
+    ]
+    assert not missing, (
+        f"Template files not listed in pyproject.toml force-include "
+        f"(offline scaffolding will miss them):\n  "
+        + "\n  ".join(missing)
+    )

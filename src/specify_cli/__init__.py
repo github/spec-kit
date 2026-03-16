@@ -1269,10 +1269,19 @@ def scaffold_from_core_pack(
                 env["AGENTS"] = ai_assistant
                 env["SCRIPTS"] = script_type
 
-            result = subprocess.run(
-                cmd, cwd=str(tmp), env=env,
-                capture_output=True, text=True,
-            )
+            try:
+                result = subprocess.run(
+                    cmd, cwd=str(tmp), env=env,
+                    capture_output=True, text=True,
+                    timeout=120,
+                )
+            except subprocess.TimeoutExpired:
+                msg = "release script timed out after 120 seconds"
+                if tracker:
+                    tracker.error("scaffold", msg)
+                else:
+                    console.print(f"[red]Error:[/red] {msg}")
+                return False
 
             if result.returncode != 0:
                 msg = result.stderr.strip() or result.stdout.strip() or "unknown error"
