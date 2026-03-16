@@ -215,11 +215,11 @@ Given that feature description, do this:
 8. **Check for extension hooks**: After reporting completion, check if `.specify/extensions.yml` exists in the project root.
    - If it exists, read it and look for entries under the `hooks.after_specify` key
    - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
-   - Filter to only hooks where `enabled: true`
-   - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
-     - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
-     - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
+   - From the discovered hooks, ignore only those where `enabled` is explicitly set to `false`. If `enabled` is omitted, treat the hook as enabled.
+   - Do **not** attempt to interpret or evaluate hook `condition` expressions, and do **not** filter hooks based on the presence or contents of `condition`. Condition evaluation is handled by the `HookExecutor.should_execute_hook` implementation.
+   - Treat all hooks that are not explicitly disabled (that is, all hooks where `enabled` is not `false`) as executable candidates.
    - For each executable hook, output the following based on its `optional` flag:
+     - **Optional hook** (`optional: true`):
      - **Optional hook** (`optional: true`):
        ```
        ## Extension Hooks
