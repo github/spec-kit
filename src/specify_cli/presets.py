@@ -7,6 +7,7 @@ Presets are self-contained, versioned collections of templates
 customize the Spec-Driven Development workflow.
 """
 
+import copy
 import json
 import hashlib
 import os
@@ -332,8 +333,9 @@ class PresetRegistry:
             List of (pack_id, metadata_copy) tuples sorted by priority.
             Metadata is deep-copied to prevent accidental mutation.
         """
-        import copy
-        packs = self.data["presets"]
+        packs = self.data.get("presets", {}) or {}
+        if not isinstance(packs, dict):
+            packs = {}
         return sorted(
             [(pack_id, copy.deepcopy(meta)) for pack_id, meta in packs.items()],
             key=lambda item: (item[1].get("priority", 10), item[0]),
