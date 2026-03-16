@@ -1099,12 +1099,14 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
 
 
 def _locate_core_pack() -> Path | None:
-    """Return the filesystem path to the bundled core_pack directory.
+    """Return the filesystem path to the bundled core_pack directory, or None.
 
-    Works for wheel installs (hatchling force-include puts the directory next to
-    __init__.py as specify_cli/core_pack/) and for source-checkout / editable
-    installs (falls back to the repo-root templates/ and scripts/ trees).
-    Returns None only when neither location exists.
+    Only present in wheel installs: hatchling's force-include copies
+    templates/, scripts/ etc. into specify_cli/core_pack/ at build time.
+
+    Source-checkout and editable installs do NOT have this directory.
+    Callers that need to work in both environments must check the repo-root
+    trees (templates/, scripts/) as a fallback when this returns None.
     """
     # Wheel install: core_pack is a sibling directory of this file
     candidate = Path(__file__).parent / "core_pack"
@@ -1888,7 +1890,13 @@ def init(
     _has_bundled = (_core is not None) or _repo_commands.is_dir()
 
     if offline and not _has_bundled:
-        console.print("[yellow]Warning:[/yellow] --offline requested but no bundled assets found; falling back to GitHub download")
+        console.print(
+            "\n[red]Error:[/red] --offline was specified but no bundled assets were found.\n"
+            "  • Wheel install: reinstall the specify-cli wheel (core_pack/ must be present).\n"
+            "  • Source checkout: run from the repo root so templates/ and scripts/ are accessible.\n"
+            "Remove --offline to attempt a GitHub download instead."
+        )
+        raise typer.Exit(1)
 
     use_github = not (offline and _has_bundled)
 
@@ -1933,7 +1941,15 @@ def init(
             else:
                 scaffold_ok = scaffold_from_core_pack(project_path, selected_ai, selected_script, here, tracker=tracker)
                 if not scaffold_ok:
-                    # Unexpected failure — fall back to GitHub download
+                    if offline:
+                        # --offline explicitly requested: never attempt a network download
+                        console.print(
+                            "\n[red]Error:[/red] --offline was specified but scaffolding from bundled assets failed.\n"
+                            "Ensure the specify-cli wheel was installed correctly (it must include core_pack/).\n"
+                            "Remove --offline to attempt a GitHub download instead."
+                        )
+                        raise typer.Exit(1)
+                    # No explicit offline flag — fall back to GitHub download
                     for key, label in [
                         ("fetch", "Fetch latest release"),
                         ("download", "Download template"),
