@@ -483,38 +483,6 @@
       "created_at": "2026-02-20T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
     },
-    "verify": {
-      "name": "Verify Extension",
-      "id": "verify",
-      "description": "Post-implementation quality gate that validates implemented code against specification artifacts.",
-      "author": "ismaelJimenez",
-      "version": "1.0.0",
-      "download_url": "https://github.com/ismaelJimenez/spec-kit-verify/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/ismaelJimenez/spec-kit-verify",
-      "homepage": "https://github.com/ismaelJimenez/spec-kit-verify",
-      "documentation": "https://github.com/ismaelJimenez/spec-kit-verify/blob/main/README.md",
-      "changelog": "https://github.com/ismaelJimenez/spec-kit-verify/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 1
-      },
-      "tags": [
-        "verification",
-        "quality-gate",
-        "implementation",
-        "spec-adherence",
-        "compliance"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-03T00:00:00Z",
-      "updated_at": "2026-03-03T00:00:00Z"
-    },
     "status": {
       "name": "Project Status",
       "id": "status",
@@ -546,6 +514,38 @@
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
+    },
+    "verify": {
+      "name": "Verify Extension",
+      "id": "verify",
+      "description": "Post-implementation quality gate that validates implemented code against specification artifacts.",
+      "author": "ismaelJimenez",
+      "version": "1.0.0",
+      "download_url": "https://github.com/ismaelJimenez/spec-kit-verify/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/ismaelJimenez/spec-kit-verify",
+      "homepage": "https://github.com/ismaelJimenez/spec-kit-verify",
+      "documentation": "https://github.com/ismaelJimenez/spec-kit-verify/blob/main/README.md",
+      "changelog": "https://github.com/ismaelJimenez/spec-kit-verify/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "verification",
+        "quality-gate",
+        "implementation",
+        "spec-adherence",
+        "compliance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-03T00:00:00Z",
+      "updated_at": "2026-03-03T00:00:00Z"
     }
   }
 }
