@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Antigravity or Generic
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, OpenClaw, Antigravity or Generic
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|generic
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|openclaw|generic
 # Leave empty to update all existing agent files
 
 set -e
@@ -73,8 +73,8 @@ AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 QODER_FILE="$REPO_ROOT/QODER.md"
-# AMP, Kiro CLI, and IBM Bob all share AGENTS.md — use AGENTS_FILE to avoid
-# updating the same file multiple times.
+# AMP, Kiro CLI, IBM Bob, and OpenClaw all share AGENTS.md — use AGENTS_FILE to
+# avoid updating the same file multiple times.
 AMP_FILE="$AGENTS_FILE"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
 TABNINE_FILE="$REPO_ROOT/TABNINE.md"
@@ -83,6 +83,7 @@ AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 BOB_FILE="$AGENTS_FILE"
 VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 KIMI_FILE="$REPO_ROOT/KIMI.md"
+OPENCLAW_FILE="$AGENTS_FILE"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -675,12 +676,15 @@ update_specific_agent() {
         kimi)
             update_agent_file "$KIMI_FILE" "Kimi Code" || return 1
             ;;
+        openclaw)
+            update_agent_file "$OPENCLAW_FILE" "OpenClaw" || return 1
+            ;;
         generic)
             log_info "Generic agent: no predefined context file. Use the agent-specific update script for your agent."
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|openclaw|generic"
             exit 1
             ;;
     esac
@@ -692,7 +696,8 @@ update_all_existing_agents() {
 
     # Helper: skip non-existent files and files already updated (dedup by
     # realpath so that variables pointing to the same file — e.g. AMP_FILE,
-    # KIRO_FILE, BOB_FILE all resolving to AGENTS_FILE — are only written once).
+    # KIRO_FILE, BOB_FILE, OPENCLAW_FILE all resolving to AGENTS_FILE — are
+    # only written once).
     # Uses a linear array instead of associative array for bash 3.2 compatibility.
     update_if_new() {
         local file="$1" name="$2"
@@ -719,6 +724,7 @@ update_all_existing_agents() {
     update_if_new "$AMP_FILE" "Amp"
     update_if_new "$KIRO_FILE" "Kiro CLI"
     update_if_new "$BOB_FILE" "IBM Bob"
+    update_if_new "$OPENCLAW_FILE" "OpenClaw"
     update_if_new "$WINDSURF_FILE" "Windsurf"
     update_if_new "$KILOCODE_FILE" "Kilo Code"
     update_if_new "$AUGGIE_FILE" "Auggie CLI"
@@ -754,7 +760,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|generic]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|openclaw|generic]"
 }
 
 #==============================================================================

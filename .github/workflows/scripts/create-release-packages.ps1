@@ -14,7 +14,7 @@
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, generic
+    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, openclaw, generic
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -288,6 +288,94 @@ function New-KimiSkills {
     }
 }
 
+# Create OpenClaw skills in .openclaw/skills/<name>/SKILL.md format.
+# OpenClaw discovers skills as directories containing a SKILL.md file,
+# invoked as speckit-<name> (e.g. speckit-specify).
+function New-OpenClawSkills {
+    param(
+        [string]$SkillsDir,
+        [string]$ScriptVariant
+    )
+
+    $templates = Get-ChildItem -Path "templates/commands/*.md" -File -ErrorAction SilentlyContinue
+
+    foreach ($template in $templates) {
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($template.Name)
+        $skillName = "speckit-$name"
+        $skillDir = Join-Path $SkillsDir $skillName
+        New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+
+        $fileContent = (Get-Content -Path $template.FullName -Raw) -replace "`r`n", "`n"
+
+        # Extract description
+        $description = "Spec Kit: $name workflow"
+        if ($fileContent -match '(?m)^description:\s*(.+)$') {
+            $description = $matches[1]
+        }
+
+        # Extract script command
+        $scriptCommand = "(Missing script command for $ScriptVariant)"
+        if ($fileContent -match "(?m)^\s*${ScriptVariant}:\s*(.+)$") {
+            $scriptCommand = $matches[1]
+        }
+
+        # Extract agent_script command from frontmatter if present
+        $agentScriptCommand = ""
+        if ($fileContent -match "(?ms)agent_scripts:.*?^\s*${ScriptVariant}:\s*(.+?)$") {
+            $agentScriptCommand = $matches[1].Trim()
+        }
+
+        # Replace {SCRIPT}, strip scripts sections, rewrite paths
+        $body = $fileContent -replace '\{SCRIPT\}', $scriptCommand
+        if (-not [string]::IsNullOrEmpty($agentScriptCommand)) {
+            $body = $body -replace '\{AGENT_SCRIPT\}', $agentScriptCommand
+        }
+
+        $lines = $body -split "`n"
+        $outputLines = @()
+        $inFrontmatter = $false
+        $skipScripts = $false
+        $dashCount = 0
+
+        foreach ($line in $lines) {
+            if ($line -match '^---$') {
+                $outputLines += $line
+                $dashCount++
+                $inFrontmatter = ($dashCount -eq 1)
+                continue
+            }
+            if ($inFrontmatter) {
+                if ($line -match '^(scripts|agent_scripts):$') { $skipScripts = $true; continue }
+                if ($line -match '^[a-zA-Z].*:' -and $skipScripts) { $skipScripts = $false }
+                if ($skipScripts -and $line -match '^\s+') { continue }
+            }
+            $outputLines += $line
+        }
+
+        $body = $outputLines -join "`n"
+        $body = $body -replace '\{ARGS\}', '$ARGUMENTS'
+        $body = $body -replace '__AGENT__', 'openclaw'
+        $body = Rewrite-Paths -Content $body
+
+        # Strip existing frontmatter, keep only body
+        $templateBody = ""
+        $fmCount = 0
+        $inBody = $false
+        foreach ($line in ($body -split "`n")) {
+            if ($line -match '^---$') {
+                $fmCount++
+                if ($fmCount -eq 2) { $inBody = $true }
+                continue
+            }
+            if ($inBody) { $templateBody += "$line`n" }
+        }
+
+        # Build SKILL.md with OpenClaw metadata block
+        $skillContent = "---`nname: `"$skillName`"`ndescription: `"$description`"`nmetadata:`n  author: `"github-spec-kit`"`n  source: `"templates/commands/$name.md`"`n---`n`n$templateBody"
+        Set-Content -Path (Join-Path $skillDir "SKILL.md") -Value $skillContent -NoNewline
+    }
+}
+
 function Build-Variant {
     param(
         [string]$Agent,
@@ -454,6 +542,11 @@ function Build-Variant {
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
             New-KimiSkills -SkillsDir $skillsDir -ScriptVariant $Script
         }
+        'openclaw' {
+            $skillsDir = Join-Path $baseDir ".openclaw/skills"
+            New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+            New-OpenClawSkills -SkillsDir $skillsDir -ScriptVariant $Script
+        }
         'generic' {
             $cmdDir = Join-Path $baseDir ".speckit/commands"
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
@@ -470,7 +563,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'openclaw', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {

@@ -272,6 +272,13 @@ AGENT_CONFIG = {
         "install_url": "https://code.kimi.com/",
         "requires_cli": True,
     },
+    "openclaw": {
+        "name": "OpenClaw",
+        "folder": ".openclaw/",
+        "commands_subdir": "skills",  # OpenClaw reads skills from .openclaw/skills/<skill-name>/SKILL.md
+        "install_url": "https://openclaw.ai",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir
