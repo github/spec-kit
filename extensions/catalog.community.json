@@ -108,7 +108,7 @@
     "cognitive-squad": {
       "name": "Cognitive Squad",
       "id": "cognitive-squad",
-      "description": "19-function cognitive agent squad for autonomous pre-code analysis — 7 core agents, 7 specialists, 4 learning functions with feedback loop",
+      "description": "Multi-agent cognitive system with Triadic Model: understanding, internalization, application — with quality gates, backpropagation verification, and self-healing",
       "author": "Testimonial",
       "version": "0.1.0",
       "download_url": "https://github.com/Testimonial/cognitive-squad/archive/refs/tags/v0.1.0.zip",
@@ -133,21 +133,21 @@
         ]
       },
       "provides": {
-        "commands": 7,
+        "commands": 10,
         "hooks": 1
       },
       "tags": [
         "ai-agents",
         "cognitive",
-        "pre-code",
-        "analysis",
+        "full-lifecycle",
+        "verification",
         "multi-agent"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-16T00:00:00Z"
+      "updated_at": "2026-03-18T00:00:00Z"
     },
     "docguard": {
       "name": "DocGuard \u2014 CDD Enforcement",
