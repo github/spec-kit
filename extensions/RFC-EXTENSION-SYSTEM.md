@@ -1203,10 +1203,8 @@ Next steps:
 
 **Options:**
 
-- `--from URL`: Install from custom URL or Git repo
-- `--version VERSION`: Install specific version
-- `--dev PATH`: Install from local path (development mode)
-- `--no-register`: Skip command registration (manual setup)
+- `--from URL`: Install from a remote URL (archive). Does not accept Git repositories directly.
+- `--dev`: Install from a local path in development mode (the PATH is the positional `extension` argument).
 - `--priority NUMBER`: Set resolution priority (lower = higher precedence, default 10)
 
 #### `specify extension remove NAME`

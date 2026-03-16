@@ -335,7 +335,9 @@ class ExtensionRegistry:
             List of (extension_id, metadata_copy) tuples sorted by priority.
             Metadata is deep-copied to prevent accidental mutation.
         """
-        extensions = self.data["extensions"]
+        extensions = self.data.get("extensions", {}) or {}
+        if not isinstance(extensions, dict):
+            extensions = {}
         return sorted(
             [(ext_id, copy.deepcopy(meta)) for ext_id, meta in extensions.items()],
             key=lambda item: (item[1].get("priority", 10), item[0]),
