@@ -1,0 +1,91 @@
+schema_version: "1.0"
+
+preset:
+  # CUSTOMIZE: Change 'my-preset' to your preset ID (lowercase, hyphen-separated)
+  id: "my-preset"
+
+  # CUSTOMIZE: Human-readable name for your preset
+  name: "My Preset"
+
+  # CUSTOMIZE: Update version when releasing (semantic versioning: X.Y.Z)
+  version: "1.0.0"
+
+  # CUSTOMIZE: Brief description (under 200 characters)
+  description: "Brief description of what your preset provides"
+
+  # CUSTOMIZE: Your name or organization name
+  author: "Your Name"
+
+  # CUSTOMIZE: GitHub repository URL (create before publishing)
+  repository: "https://github.com/your-org/spec-kit-preset-my-preset"
+
+  # REVIEW: License (MIT is recommended for open source)
+  license: "MIT"
+
+# Requirements for this preset
+requires:
+  # CUSTOMIZE: Minimum spec-kit version required
+  speckit_version: ">=0.1.0"
+
+# Templates provided by this preset
+provides:
+  templates:
+    # CUSTOMIZE: Define your template overrides
+    # Templates are document scaffolds (spec-template.md, plan-template.md, etc.)
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-template.md"
+      description: "Custom feature specification template"
+      replaces: "spec-template"  # Which core template this overrides (optional)
+
+    # ADD MORE TEMPLATES: Copy this block for each template
+    # - type: "template"
+    #   name: "plan-template"
+    #   file: "templates/plan-template.md"
+    #   description: "Custom plan template"
+    #   replaces: "plan-template"
+
+    # OVERRIDE EXTENSION TEMPLATES:
+    # Presets sit above extensions in the resolution stack, so you can
+    # override templates provided by any installed extension.
+    # For example, if the "myext" extension provides a spec-template,
+    # the preset's version above will take priority automatically.
+
+    # Override a template provided by the "myext" extension:
+    - type: "template"
+      name: "myext-template"
+      file: "templates/myext-template.md"
+      description: "Override myext's report template"
+      replaces: "myext-template"
+
+    # Command overrides (AI agent workflow prompts)
+    # Presets can override both core and extension commands.
+    # Commands are automatically registered into all detected agent
+    # directories (.claude/commands/, .gemini/commands/, etc.)
+
+    # Override a core command:
+    - type: "command"
+      name: "speckit.specify"
+      file: "commands/speckit.specify.md"
+      description: "Custom specification command"
+      replaces: "speckit.specify"
+
+    # Override an extension command (e.g. from the "myext" extension):
+    - type: "command"
+      name: "speckit.myext.myextcmd"
+      file: "commands/speckit.myext.myextcmd.md"
+      description: "Override myext's myextcmd command with custom workflow"
+      replaces: "speckit.myext.myextcmd"
+
+    # Script templates (reserved for future use)
+    # - type: "script"
+    #   name: "create-new-feature"
+    #   file: "scripts/bash/create-new-feature.sh"
+    #   description: "Custom feature creation script"
+    #   replaces: "create-new-feature"
+
+# CUSTOMIZE: Add relevant tags (2-5 recommended)
+# Used for discovery in catalog
+tags:
+  - "example"
+  - "preset"

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-09T00:00:00Z",
+  "updated_at": "2026-03-13T12:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "azure-devops": {
@@ -74,6 +74,79 @@
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
     },
+    "docguard": {
+      "name": "DocGuard — CDD Enforcement",
+      "id": "docguard",
+      "description": "Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 92 automated checks. Zero dependencies.",
+      "author": "raccioly",
+      "version": "0.8.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.8.0/spec-kit-docguard-v0.8.0.zip",
+      "repository": "https://github.com/raccioly/docguard",
+      "homepage": "https://www.npmjs.com/package/docguard-cli",
+      "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
+      "changelog": "https://github.com/raccioly/docguard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=18.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 1
+      },
+      "tags": [
+        "documentation",
+        "validation",
+        "quality",
+        "cdd",
+        "traceability",
+        "ai-agents",
+        "enforcement",
+        "scoring"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-13T00:00:00Z",
+      "updated_at": "2026-03-13T00:00:00Z"
+    },
+    "doctor": {
+      "name": "Project Health Check",
+      "id": "doctor",
+      "description": "Diagnose a Spec Kit project and report health issues across structure, agents, features, scripts, extensions, and git.",
+      "author": "KhawarHabibKhan",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-doctor/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KhawarHabibKhan/spec-kit-doctor",
+      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-doctor",
+      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-doctor/blob/main/README.md",
+      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-doctor/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "diagnostics",
+        "health-check",
+        "validation",
+        "project-structure"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-13T00:00:00Z",
+      "updated_at": "2026-03-13T00:00:00Z"
+    },
     "fleet": {
       "name": "Fleet Orchestrator",
       "id": "fleet",
@@ -93,7 +166,12 @@
         "commands": 2,
         "hooks": 1
       },
-      "tags": ["orchestration", "workflow", "human-in-the-loop", "parallel"],
+      "tags": [
+        "orchestration",
+        "workflow",
+        "human-in-the-loop",
+        "parallel"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -160,7 +238,12 @@
         "commands": 2,
         "hooks": 1
       },
-      "tags": ["implementation", "automation", "loop", "copilot"],
+      "tags": [
+        "implementation",
+        "automation",
+        "loop",
+        "copilot"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -218,7 +301,15 @@
         "commands": 7,
         "hooks": 1
       },
-      "tags": ["code-review", "quality", "review", "testing", "error-handling", "type-design", "simplification"],
+      "tags": [
+        "code-review",
+        "quality",
+        "review",
+        "testing",
+        "error-handling",
+        "type-design",
+        "simplification"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,

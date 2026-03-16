@@ -56,6 +56,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-bob-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-vibe-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-vibe-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-kimi-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-kimi-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \

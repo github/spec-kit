@@ -132,6 +132,16 @@ def commands_dir_gemini(project_dir):
     return cmd_dir
 
 
+@pytest.fixture
+def commands_dir_qwen(project_dir):
+    """Create a populated .qwen/commands directory (Markdown format)."""
+    cmd_dir = project_dir / ".qwen" / "commands"
+    cmd_dir.mkdir(parents=True, exist_ok=True)
+    for name in ["speckit.specify.md", "speckit.plan.md", "speckit.tasks.md"]:
+        (cmd_dir / name).write_text(f"# {name}\nContent here\n")
+    return cmd_dir
+
+
 # ===== _get_skills_dir Tests =====
 
 class TestGetSkillsDir:
@@ -390,6 +400,28 @@ class TestInstallAiSkills:
         # .toml commands should be untouched
         assert (cmds_dir / "speckit.specify.toml").exists()
 
+    def test_qwen_md_commands_dir_installs_skills(self, project_dir):
+        """Qwen now uses Markdown format; skills should install directly from .qwen/commands/."""
+        cmds_dir = project_dir / ".qwen" / "commands"
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Create or update the feature specification.\n---\n\n# Specify\n\nBody.\n"
+        )
+        (cmds_dir / "speckit.plan.md").write_text(
+            "---\ndescription: Generate implementation plan.\n---\n\n# Plan\n\nBody.\n"
+        )
+
+        result = install_ai_skills(project_dir, "qwen")
+
+        assert result is True
+        skills_dir = project_dir / ".qwen" / "skills"
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert len(skill_dirs) >= 1
+        # .md commands should be untouched
+        assert (cmds_dir / "speckit.specify.md").exists()
+        assert (cmds_dir / "speckit.plan.md").exists()
+
     @pytest.mark.parametrize("agent_key", [k for k in AGENT_CONFIG.keys() if k != "generic"])
     def test_skills_install_for_all_agents(self, temp_dir, agent_key):
         """install_ai_skills should produce skills for every configured agent."""
@@ -410,8 +442,11 @@ class TestInstallAiSkills:
         skills_dir = _get_skills_dir(proj, agent_key)
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-        assert "speckit-specify" in skill_dirs
-        assert (skills_dir / "speckit-specify" / "SKILL.md").exists()
+        # Kimi uses dot-separator (speckit.specify) to match /skill:speckit.* invocation;
+        # all other agents use hyphen-separator (speckit-specify).
+        expected_skill_name = "speckit.specify" if agent_key == "kimi" else "speckit-specify"
+        assert expected_skill_name in skill_dirs
+        assert (skills_dir / expected_skill_name / "SKILL.md").exists()
 
 
 
@@ -441,6 +476,15 @@ class TestCommandCoexistence:
         install_ai_skills(project_dir, "gemini")
 
         remaining = list(commands_dir_gemini.glob("speckit.*"))
+        assert len(remaining) == 3
+
+    def test_existing_commands_preserved_qwen(self, project_dir, templates_dir, commands_dir_qwen):
+        """install_ai_skills must NOT remove pre-existing .qwen/commands files."""
+        assert len(list(commands_dir_qwen.glob("speckit.*"))) == 3
+
+        install_ai_skills(project_dir, "qwen")
+
+        remaining = list(commands_dir_qwen.glob("speckit.*"))
         assert len(remaining) == 3
 
     def test_commands_dir_not_removed(self, project_dir, templates_dir, commands_dir_claude):
@@ -657,6 +701,59 @@ class TestCliValidation:
 
         assert "Usage:" in result.output
         assert "--ai" in result.output
+
+    def test_agy_without_ai_skills_fails(self):
+        """--ai agy without --ai-skills should fail with exit code 1."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "test-proj", "--ai", "agy"])
+
+        assert result.exit_code == 1
+        assert "Explicit command support was deprecated in Antigravity version 1.20.5." in result.output
+        assert "--ai-skills" in result.output
+
+    def test_interactive_agy_without_ai_skills_prompts_skills(self, monkeypatch):
+        """Interactive selector returning agy without --ai-skills should automatically enable --ai-skills."""
+        from typer.testing import CliRunner
+
+        # Mock select_with_arrows to simulate the user picking 'agy' for AI,
+        # and return a deterministic default for any other prompts to avoid
+        # calling the real interactive implementation.
+        def _fake_select_with_arrows(*args, **kwargs):
+            options = kwargs.get("options")
+            if options is None and len(args) >= 1:
+                options = args[0]
+
+            # If the options include 'agy', simulate selecting it.
+            if isinstance(options, dict) and "agy" in options:
+                return "agy"
+            if isinstance(options, (list, tuple)) and "agy" in options:
+                return "agy"
+
+            # For any other prompt, return a deterministic, non-interactive default:
+            # pick the first option if available.
+            if isinstance(options, dict) and options:
+                return next(iter(options.keys()))
+            if isinstance(options, (list, tuple)) and options:
+                return options[0]
+
+            # If no options are provided, fall back to None (should not occur in normal use).
+            return None
+
+        monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
+        
+        # Mock download_and_extract_template to prevent real HTTP downloads during testing
+        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
+        # We need to bypass the `git init` step, wait, it has `--no-git` by default in tests maybe?
+        runner = CliRunner()
+        # Create temp dir to avoid directory already exists errors or whatever
+        with runner.isolated_filesystem():
+            result = runner.invoke(app, ["init", "test-proj", "--no-git"])
+
+            # Interactive selection should NOT raise the deprecation error!
+            assert result.exit_code == 0
+            assert "Explicit command support was deprecated" not in result.output
 
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
