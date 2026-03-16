@@ -198,9 +198,11 @@ resolve_template() {
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
         if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
-            # Read preset IDs sorted by priority (lower number = higher precedence)
-            local sorted_presets
-            sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
+            # Read preset IDs sorted by priority (lower number = higher precedence).
+            # The python3 call is wrapped in an if-condition so that set -e does not
+            # abort the function when python3 exits non-zero (e.g. invalid JSON).
+            local sorted_presets=""
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
 import json, sys, os
 try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
@@ -210,17 +212,15 @@ try:
         print(pid)
 except Exception:
     sys.exit(1)
-" 2>/dev/null)
-            local python_rc=$?
-            if [ $python_rc -eq 0 ] && [ -n "$sorted_presets" ]; then
-                # python3 succeeded and returned preset IDs — search in priority order
-                while IFS= read -r preset_id; do
-                    local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
-                    [ -f "$candidate" ] && echo "$candidate" && return 0
-                done <<< "$sorted_presets"
-            elif [ $python_rc -eq 0 ]; then
+" 2>/dev/null); then
+                if [ -n "$sorted_presets" ]; then
+                    # python3 succeeded and returned preset IDs — search in priority order
+                    while IFS= read -r preset_id; do
+                        local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
+                        [ -f "$candidate" ] && echo "$candidate" && return 0
+                    done <<< "$sorted_presets"
+                fi
                 # python3 succeeded but registry has no presets — nothing to search
-                :
             else
                 # python3 failed (missing, or registry parse error) — fall back to unordered directory scan
                 for preset in "$presets_dir"/*/; do
