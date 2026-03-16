@@ -1949,7 +1949,8 @@ class TestPresetPriorityBackwardsCompatibility:
         result = registry2.list_by_priority()
         assert len(result) == 1
         assert result[0][0] == "legacy-pack"
-        # Priority defaults to 10 in sorting
+        # Priority defaults to 10 and is normalized in returned metadata
+        assert result[0][1]["priority"] == 10
 
     def test_legacy_preset_in_list_installed(self, project_dir, pack_dir):
         """list_installed returns priority=10 for legacy presets without priority field."""
