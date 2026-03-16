@@ -1087,11 +1087,15 @@ List installed extensions in current project.
 $ specify extension list
 
 Installed Extensions:
-  ✓ jira (v1.0.0) - Jira Integration
-    Commands: 3 | Hooks: 2 | Priority: 10 | Status: Enabled
+  ✓ Jira Integration (v1.0.0)
+     jira
+     Create Jira issues from spec-kit artifacts
+     Commands: 3 | Hooks: 2 | Priority: 10 | Status: Enabled
 
-  ✓ linear (v0.9.0) - Linear Integration
-    Commands: 1 | Hooks: 1 | Priority: 10 | Status: Enabled
+  ✓ Linear Integration (v0.9.0)
+     linear
+     Create Linear issues from spec-kit artifacts
+     Commands: 1 | Hooks: 1 | Priority: 10 | Status: Enabled
 ```
 
 **Options:**
