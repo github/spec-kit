@@ -320,13 +320,17 @@ ALL_SCRIPTS=(sh ps)
 
 validate_subset() {
   local type=$1; shift
+  local allowed_str="$1"; shift
   local invalid=0
-  local allowed=" $1 "; shift  # space-delimited allowed values
   for it in "$@"; do
-    case "$allowed" in
-      *" $it "*) ;;
-      *) echo "Error: unknown $type '$it' (allowed:$allowed)" >&2; invalid=1 ;;
-    esac
+    local found=0
+    for a in $allowed_str; do
+      if [[ "$it" == "$a" ]]; then found=1; break; fi
+    done
+    if [[ $found -eq 0 ]]; then
+      echo "Error: unknown $type '$it' (allowed: $allowed_str)" >&2
+      invalid=1
+    fi
   done
   return $invalid
 }

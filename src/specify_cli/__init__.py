@@ -1124,11 +1124,12 @@ def _locate_release_script() -> tuple[Path, str]:
     """
     if os.name == "nt":
         name = "create-release-packages.ps1"
-        shell = shutil.which("pwsh") or shutil.which("powershell")
+        shell = shutil.which("pwsh")
         if not shell:
             raise FileNotFoundError(
-                "Neither 'pwsh' (PowerShell 7) nor 'powershell' (Windows PowerShell) "
-                "found on PATH. Install PowerShell to use offline scaffolding."
+                "'pwsh' (PowerShell 7) not found on PATH. "
+                "The bundled release script requires PowerShell 7+. "
+                "Install from https://aka.ms/powershell to use offline scaffolding."
             )
     else:
         name = "create-release-packages.sh"
@@ -1205,6 +1206,19 @@ def scaffold_from_core_pack(
         if tracker:
             tracker.error("scaffold", str(exc))
         return False
+
+    # Preflight: verify required external tools are available
+    if os.name != "nt":
+        if not shutil.which("bash"):
+            msg = "'bash' not found on PATH. Required for offline scaffolding."
+            if tracker:
+                tracker.error("scaffold", msg)
+            return False
+        if not shutil.which("zip"):
+            msg = "'zip' not found on PATH. Required for offline scaffolding. Install with: apt install zip / brew install zip"
+            if tracker:
+                tracker.error("scaffold", msg)
+            return False
 
     if tracker:
         tracker.start("scaffold", "applying bundled assets")

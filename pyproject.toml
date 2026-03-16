@@ -29,7 +29,15 @@ packages = ["src/specify_cli"]
 
 [tool.hatch.build.targets.wheel.force-include]
 # Bundle core assets so `specify init` works without network access (air-gapped / enterprise)
-"templates" = "specify_cli/core_pack/templates"
+# Page templates (exclude commands/ — bundled separately below to avoid duplication)
+"templates/agent-file-template.md" = "specify_cli/core_pack/templates/agent-file-template.md"
+"templates/checklist-template.md" = "specify_cli/core_pack/templates/checklist-template.md"
+"templates/constitution-template.md" = "specify_cli/core_pack/templates/constitution-template.md"
+"templates/plan-template.md" = "specify_cli/core_pack/templates/plan-template.md"
+"templates/spec-template.md" = "specify_cli/core_pack/templates/spec-template.md"
+"templates/tasks-template.md" = "specify_cli/core_pack/templates/tasks-template.md"
+"templates/vscode-settings.json" = "specify_cli/core_pack/templates/vscode-settings.json"
+# Command templates
 "templates/commands" = "specify_cli/core_pack/commands"
 "scripts/bash" = "specify_cli/core_pack/scripts/bash"
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
