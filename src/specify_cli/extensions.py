@@ -12,6 +12,7 @@ import os
 import tempfile
 import zipfile
 import shutil
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Callable, Set
@@ -228,6 +229,54 @@ class ExtensionRegistry:
         }
         self._save()
 
+    def update(self, extension_id: str, metadata: dict):
+        """Update extension metadata in registry, merging with existing entry.
+
+        Merges the provided metadata with the existing entry, preserving any
+        fields not specified in the new metadata. The installed_at timestamp
+        is always preserved from the original entry.
+
+        Use this method instead of add() when updating existing extension
+        metadata (e.g., enabling/disabling) to preserve the original
+        installation timestamp and other existing fields.
+
+        Args:
+            extension_id: Extension ID
+            metadata: Extension metadata fields to update (merged with existing)
+
+        Raises:
+            KeyError: If extension is not installed
+        """
+        if extension_id not in self.data["extensions"]:
+            raise KeyError(f"Extension '{extension_id}' is not installed")
+        # Merge new metadata with existing, preserving original installed_at
+        existing = self.data["extensions"][extension_id]
+        # Merge: existing fields preserved, new fields override
+        merged = {**existing, **metadata}
+        # Always preserve original installed_at based on key existence, not truthiness,
+        # to handle cases where the field exists but may be falsy (legacy/corruption)
+        if "installed_at" in existing:
+            merged["installed_at"] = existing["installed_at"]
+        else:
+            # If not present in existing, explicitly remove from merged if caller provided it
+            merged.pop("installed_at", None)
+        self.data["extensions"][extension_id] = merged
+        self._save()
+
+    def restore(self, extension_id: str, metadata: dict):
+        """Restore extension metadata to registry without modifying timestamps.
+
+        Use this method for rollback scenarios where you have a complete backup
+        of the registry entry (including installed_at) and want to restore it
+        exactly as it was.
+
+        Args:
+            extension_id: Extension ID
+            metadata: Complete extension metadata including installed_at
+        """
+        self.data["extensions"][extension_id] = dict(metadata)
+        self._save()
+
     def remove(self, extension_id: str):
         """Remove extension from registry.
 
@@ -241,21 +290,28 @@ class ExtensionRegistry:
     def get(self, extension_id: str) -> Optional[dict]:
         """Get extension metadata from registry.
 
+        Returns a deep copy to prevent callers from accidentally mutating
+        nested internal registry state without going through the write path.
+
         Args:
             extension_id: Extension ID
 
         Returns:
-            Extension metadata or None if not found
+            Deep copy of extension metadata, or None if not found
         """
-        return self.data["extensions"].get(extension_id)
+        entry = self.data["extensions"].get(extension_id)
+        return copy.deepcopy(entry) if entry is not None else None
 
     def list(self) -> Dict[str, dict]:
         """Get all installed extensions.
 
+        Returns a deep copy of the extensions mapping to prevent callers
+        from accidentally mutating nested internal registry state.
+
         Returns:
-            Dictionary of extension_id -> metadata
+            Dictionary of extension_id -> metadata (deep copies)
         """
-        return self.data["extensions"]
+        return copy.deepcopy(self.data["extensions"])
 
     def is_installed(self, extension_id: str) -> bool:
         """Check if extension is installed.
@@ -522,23 +578,7 @@ class ExtensionManager:
         # Unregister commands from all AI agents
         if registered_commands:
             registrar = CommandRegistrar()
-            for agent_name, cmd_names in registered_commands.items():
-                if agent_name not in registrar.AGENT_CONFIGS:
-                    continue
-
-                agent_config = registrar.AGENT_CONFIGS[agent_name]
-                commands_dir = self.project_root / agent_config["dir"]
-
-                for cmd_name in cmd_names:
-                    cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
-                    if cmd_file.exists():
-                        cmd_file.unlink()
-
-                    # Also remove companion .prompt.md for Copilot
-                    if agent_name == "copilot":
-                        prompt_file = self.project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
-                        if prompt_file.exists():
-                            prompt_file.unlink()
+            registrar.unregister_commands(registered_commands, self.project_root)
 
         if keep_config:
             # Preserve config files, only remove non-config files
@@ -600,7 +640,7 @@ class ExtensionManager:
                 result.append({
                     "id": ext_id,
                     "name": manifest.name,
-                    "version": metadata["version"],
+                    "version": metadata.get("version", "unknown"),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
                     "installed_at": metadata.get("installed_at"),
@@ -662,255 +702,47 @@ def version_satisfies(current: str, required: str) -> bool:
 
 
 class CommandRegistrar:
-    """Handles registration of extension commands with AI agents."""
+    """Handles registration of extension commands with AI agents.
 
-    # Agent configurations with directory, format, and argument placeholder
-    AGENT_CONFIGS = {
-        "claude": {
-            "dir": ".claude/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "gemini": {
-            "dir": ".gemini/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "copilot": {
-            "dir": ".github/agents",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".agent.md"
-        },
-        "cursor": {
-            "dir": ".cursor/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qwen": {
-            "dir": ".qwen/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "opencode": {
-            "dir": ".opencode/command",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "codex": {
-            "dir": ".codex/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "windsurf": {
-            "dir": ".windsurf/workflows",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kilocode": {
-            "dir": ".kilocode/rules",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "auggie": {
-            "dir": ".augment/rules",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "roo": {
-            "dir": ".roo/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "codebuddy": {
-            "dir": ".codebuddy/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qodercli": {
-            "dir": ".qoder/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kiro-cli": {
-            "dir": ".kiro/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "amp": {
-            "dir": ".agents/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "shai": {
-            "dir": ".shai/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "tabnine": {
-            "dir": ".tabnine/agent/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "bob": {
-            "dir": ".bob/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kimi": {
-            "dir": ".kimi/skills",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": "/SKILL.md"
-        }
-    }
+    This is a backward-compatible wrapper around the shared CommandRegistrar
+    in agents.py. Extension-specific methods accept ExtensionManifest objects
+    and delegate to the generic API.
+    """
 
+    # Re-export AGENT_CONFIGS at class level for direct attribute access
+    from .agents import CommandRegistrar as _AgentRegistrar
+    AGENT_CONFIGS = _AgentRegistrar.AGENT_CONFIGS
+
+    def __init__(self):
+        from .agents import CommandRegistrar as _Registrar
+        self._registrar = _Registrar()
+
+    # Delegate static/utility methods
     @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
-        """Parse YAML frontmatter from Markdown content.
-
-        Args:
-            content: Markdown content with YAML frontmatter
-
-        Returns:
-            Tuple of (frontmatter_dict, body_content)
-        """
-        if not content.startswith("---"):
-            return {}, content
-
-        # Find second ---
-        end_marker = content.find("---", 3)
-        if end_marker == -1:
-            return {}, content
-
-        frontmatter_str = content[3:end_marker].strip()
-        body = content[end_marker + 3:].strip()
-
-        try:
-            frontmatter = yaml.safe_load(frontmatter_str) or {}
-        except yaml.YAMLError:
-            frontmatter = {}
-
-        return frontmatter, body
+        from .agents import CommandRegistrar as _Registrar
+        return _Registrar.parse_frontmatter(content)
 
     @staticmethod
     def render_frontmatter(fm: dict) -> str:
-        """Render frontmatter dictionary as YAML.
+        from .agents import CommandRegistrar as _Registrar
+        return _Registrar.render_frontmatter(fm)
 
-        Args:
-            fm: Frontmatter dictionary
+    @staticmethod
+    def _write_copilot_prompt(project_root, cmd_name: str) -> None:
+        from .agents import CommandRegistrar as _Registrar
+        _Registrar.write_copilot_prompt(project_root, cmd_name)
 
-        Returns:
-            YAML-formatted frontmatter with delimiters
-        """
-        if not fm:
-            return ""
-
-        yaml_str = yaml.dump(fm, default_flow_style=False, sort_keys=False)
-        return f"---\n{yaml_str}---\n"
-
-    def _adjust_script_paths(self, frontmatter: dict) -> dict:
-        """Adjust script paths from extension-relative to repo-relative.
-
-        Args:
-            frontmatter: Frontmatter dictionary
-
-        Returns:
-            Modified frontmatter with adjusted paths
-        """
-        if "scripts" in frontmatter:
-            for key in frontmatter["scripts"]:
-                script_path = frontmatter["scripts"][key]
-                if script_path.startswith("../../scripts/"):
-                    frontmatter["scripts"][key] = f".specify/scripts/{script_path[14:]}"
-        return frontmatter
-
-    def _render_markdown_command(
-        self,
-        frontmatter: dict,
-        body: str,
-        ext_id: str
-    ) -> str:
-        """Render command in Markdown format.
-
-        Args:
-            frontmatter: Command frontmatter
-            body: Command body content
-            ext_id: Extension ID
-
-        Returns:
-            Formatted Markdown command file content
-        """
+    def _render_markdown_command(self, frontmatter, body, ext_id):
+        # Preserve extension-specific comment format for backward compatibility
         context_note = f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n"
-        return self.render_frontmatter(frontmatter) + "\n" + context_note + body
+        return self._registrar.render_frontmatter(frontmatter) + "\n" + context_note + body
 
-    def _render_toml_command(
-        self,
-        frontmatter: dict,
-        body: str,
-        ext_id: str
-    ) -> str:
-        """Render command in TOML format.
-
-        Args:
-            frontmatter: Command frontmatter
-            body: Command body content
-            ext_id: Extension ID
-
-        Returns:
-            Formatted TOML command file content
-        """
-        # TOML format for Gemini/Qwen
-        toml_lines = []
-
-        # Add description if present
-        if "description" in frontmatter:
-            # Escape quotes in description
-            desc = frontmatter["description"].replace('"', '\\"')
-            toml_lines.append(f'description = "{desc}"')
-            toml_lines.append("")
-
-        # Add extension context as comments
-        toml_lines.append(f"# Extension: {ext_id}")
-        toml_lines.append(f"# Config: .specify/extensions/{ext_id}/")
-        toml_lines.append("")
-
-        # Add prompt content
-        toml_lines.append('prompt = """')
-        toml_lines.append(body)
-        toml_lines.append('"""')
-
-        return "\n".join(toml_lines)
-
-    def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
-        """Convert argument placeholder format.
-
-        Args:
-            content: Command content
-            from_placeholder: Source placeholder (e.g., "$ARGUMENTS")
-            to_placeholder: Target placeholder (e.g., "{{args}}")
-
-        Returns:
-            Content with converted placeholders
-        """
-        return content.replace(from_placeholder, to_placeholder)
+    def _render_toml_command(self, frontmatter, body, ext_id):
+        # Preserve extension-specific context comments for backward compatibility
+        base = self._registrar.render_toml_command(frontmatter, body, ext_id)
+        context_lines = f"# Extension: {ext_id}\n# Config: .specify/extensions/{ext_id}/\n"
+        return base.rstrip("\n") + "\n" + context_lines
 
     def register_commands_for_agent(
         self,
@@ -919,96 +751,14 @@ class CommandRegistrar:
         extension_dir: Path,
         project_root: Path
     ) -> List[str]:
-        """Register extension commands for a specific agent.
-
-        Args:
-            agent_name: Agent name (claude, gemini, copilot, etc.)
-            manifest: Extension manifest
-            extension_dir: Path to extension directory
-            project_root: Path to project root
-
-        Returns:
-            List of registered command names
-
-        Raises:
-            ExtensionError: If agent is not supported
-        """
+        """Register extension commands for a specific agent."""
         if agent_name not in self.AGENT_CONFIGS:
             raise ExtensionError(f"Unsupported agent: {agent_name}")
-
-        agent_config = self.AGENT_CONFIGS[agent_name]
-        commands_dir = project_root / agent_config["dir"]
-        commands_dir.mkdir(parents=True, exist_ok=True)
-
-        registered = []
-
-        for cmd_info in manifest.commands:
-            cmd_name = cmd_info["name"]
-            cmd_file = cmd_info["file"]
-
-            # Read source command file
-            source_file = extension_dir / cmd_file
-            if not source_file.exists():
-                continue
-
-            content = source_file.read_text()
-            frontmatter, body = self.parse_frontmatter(content)
-
-            # Adjust script paths
-            frontmatter = self._adjust_script_paths(frontmatter)
-
-            # Convert argument placeholders
-            body = self._convert_argument_placeholder(
-                body, "$ARGUMENTS", agent_config["args"]
-            )
-
-            # Render in agent-specific format
-            if agent_config["format"] == "markdown":
-                output = self._render_markdown_command(frontmatter, body, manifest.id)
-            elif agent_config["format"] == "toml":
-                output = self._render_toml_command(frontmatter, body, manifest.id)
-            else:
-                raise ExtensionError(f"Unsupported format: {agent_config['format']}")
-
-            # Write command file
-            dest_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
-            dest_file.parent.mkdir(parents=True, exist_ok=True)
-            dest_file.write_text(output)
-
-            # Generate companion .prompt.md for Copilot agents
-            if agent_name == "copilot":
-                self._write_copilot_prompt(project_root, cmd_name)
-
-            registered.append(cmd_name)
-
-            # Register aliases
-            for alias in cmd_info.get("aliases", []):
-                alias_file = commands_dir / f"{alias}{agent_config['extension']}"
-                alias_file.parent.mkdir(parents=True, exist_ok=True)
-                alias_file.write_text(output)
-                # Generate companion .prompt.md for alias too
-                if agent_name == "copilot":
-                    self._write_copilot_prompt(project_root, alias)
-                registered.append(alias)
-
-        return registered
-
-    @staticmethod
-    def _write_copilot_prompt(project_root: Path, cmd_name: str) -> None:
-        """Generate a companion .prompt.md file for a Copilot agent command.
-
-        Copilot requires a .prompt.md file in .github/prompts/ that references
-        the corresponding .agent.md file in .github/agents/ via an ``agent:``
-        frontmatter field.
-
-        Args:
-            project_root: Path to project root
-            cmd_name: Command name (used as the file stem, e.g. 'speckit.my-ext.example')
-        """
-        prompts_dir = project_root / ".github" / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
-        prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n")
+        context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
+        return self._registrar.register_commands(
+            agent_name, manifest.commands, manifest.id, extension_dir, project_root,
+            context_note=context_note
+        )
 
     def register_commands_for_all_agents(
         self,
@@ -1016,35 +766,20 @@ class CommandRegistrar:
         extension_dir: Path,
         project_root: Path
     ) -> Dict[str, List[str]]:
-        """Register extension commands for all detected agents.
+        """Register extension commands for all detected agents."""
+        context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
+        return self._registrar.register_commands_for_all_agents(
+            manifest.commands, manifest.id, extension_dir, project_root,
+            context_note=context_note
+        )
 
-        Args:
-            manifest: Extension manifest
-            extension_dir: Path to extension directory
-            project_root: Path to project root
-
-        Returns:
-            Dictionary mapping agent names to list of registered commands
-        """
-        results = {}
-
-        # Detect which agents are present in the project
-        for agent_name, agent_config in self.AGENT_CONFIGS.items():
-            agent_dir = project_root / agent_config["dir"].split("/")[0]
-
-            # Register if agent directory exists
-            if agent_dir.exists():
-                try:
-                    registered = self.register_commands_for_agent(
-                        agent_name, manifest, extension_dir, project_root
-                    )
-                    if registered:
-                        results[agent_name] = registered
-                except ExtensionError:
-                    # Skip agent on error
-                    continue
-
-        return results
+    def unregister_commands(
+        self,
+        registered_commands: Dict[str, List[str]],
+        project_root: Path
+    ) -> None:
+        """Remove previously registered command files from agent directories."""
+        self._registrar.unregister_commands(registered_commands, project_root)
 
     def register_commands_for_claude(
         self,
@@ -1052,16 +787,7 @@ class CommandRegistrar:
         extension_dir: Path,
         project_root: Path
     ) -> List[str]:
-        """Register extension commands for Claude Code agent.
-
-        Args:
-            manifest: Extension manifest
-            extension_dir: Path to extension directory
-            project_root: Path to project root
-
-        Returns:
-            List of registered command names
-        """
+        """Register extension commands for Claude Code agent."""
         return self.register_commands_for_agent("claude", manifest, extension_dir, project_root)
 
 
@@ -1112,12 +838,13 @@ class ExtensionCatalog:
             config_path: Path to extension-catalogs.yml
 
         Returns:
-            Ordered list of CatalogEntry objects, or None if file doesn't exist
-            or contains no valid catalog entries.
+            Ordered list of CatalogEntry objects, or None if file doesn't exist.
 
         Raises:
             ValidationError: If any catalog entry has an invalid URL,
-                the file cannot be parsed, or a priority value is invalid.
+                the file cannot be parsed, a priority value is invalid,
+                or the file exists but contains no valid catalog entries
+                (fail-closed for security).
         """
         if not config_path.exists():
             return None
@@ -1129,12 +856,17 @@ class ExtensionCatalog:
             )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
-            return None
+            # File exists but has no catalogs key or empty list - fail closed
+            raise ValidationError(
+                f"Catalog config {config_path} exists but contains no 'catalogs' entries. "
+                f"Remove the file to use built-in defaults, or add valid catalog entries."
+            )
         if not isinstance(catalogs_data, list):
             raise ValidationError(
                 f"Invalid catalog config: 'catalogs' must be a list, got {type(catalogs_data).__name__}"
             )
         entries: List[CatalogEntry] = []
+        skipped_entries: List[int] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise ValidationError(
@@ -1142,6 +874,7 @@ class ExtensionCatalog:
                 )
             url = str(item.get("url", "")).strip()
             if not url:
+                skipped_entries.append(idx)
                 continue
             self._validate_catalog_url(url)
             try:
@@ -1164,7 +897,14 @@ class ExtensionCatalog:
                 description=str(item.get("description", "")),
             ))
         entries.sort(key=lambda e: e.priority)
-        return entries if entries else None
+        if not entries:
+            # All entries were invalid (missing URLs) - fail closed for security
+            raise ValidationError(
+                f"Catalog config {config_path} contains {len(catalogs_data)} entries but none have valid URLs "
+                f"(entries at indices {skipped_entries} were skipped). "
+                f"Each catalog entry must have a 'url' field."
+            )
+        return entries
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.

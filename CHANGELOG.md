@@ -7,6 +7,51 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-13
+
+### Changed
+
+- No changes have been documented for this release yet.
+
+<!-- Entries for 0.2.x and earlier releases are documented in their respective sections below. -->
+- make c ignores consistent with c++ (#1747)
+- chore: bump version to 0.1.13 (#1746)
+- feat: add kiro-cli and AGENT_CONFIG consistency coverage (#1690)
+- feat: add verify extension to community catalog (#1726)
+- Add Retrospective Extension to community catalog README table (#1741)
+- fix(scripts): add empty description validation and branch checkout error handling (#1559)
+- fix: correct Copilot extension command registration (#1724)
+- fix(implement): remove Makefile from C ignore patterns (#1558)
+- Add sync extension to community catalog (#1728)
+- fix(checklist): clarify file handling behavior for append vs create (#1556)
+- fix(clarify): correct conflicting question limit from 10 to 5 (#1557)
+- chore: bump version to 0.1.12 (#1737)
+- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
+- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
+- fix: Split release process to sync pyproject.toml version with git tags (#1732)
+
+
+## [Unreleased]
+
+### Added
+
+- feat(presets): Pluggable preset system with preset catalog and template resolver
+- Preset manifest (`preset.yml`) with validation for artifact, command, and script types
+- `PresetManifest`, `PresetRegistry`, `PresetManager`, `PresetCatalog`, `PresetResolver` classes in `src/specify_cli/presets.py`
+- CLI commands: `specify preset search`, `specify preset add`, `specify preset list`, `specify preset remove`, `specify preset resolve`, `specify preset info`
+- CLI commands: `specify preset catalog list`, `specify preset catalog add`, `specify preset catalog remove` for multi-catalog management
+- `PresetCatalogEntry` dataclass and multi-catalog support mirroring the extension catalog system
+- `--preset` option for `specify init` to install presets during initialization
+- Priority-based preset resolution: presets with lower priority number win (`--priority` flag)
+- `resolve_template()` / `Resolve-Template` helpers in bash and PowerShell common scripts
+- Template resolution priority stack: overrides → presets → extensions → core
+- Preset catalog files (`presets/catalog.json`, `presets/catalog.community.json`)
+- Preset scaffold directory (`presets/scaffold/`)
+- Scripts updated to use template resolution instead of hardcoded paths
+- feat(presets): Preset command overrides now propagate to agent skills when `--ai-skills` was used during init
+- feat: `specify init` persists CLI options to `.specify/init-options.json` for downstream operations
+- feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
+
 ## [0.2.1] - 2026-03-11
 
 ### Changed
@@ -50,13 +95,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
 - fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
 - fix: Split release process to sync pyproject.toml version with git tags (#1732)
-
-
-## [Unreleased]
-
-### Added
-
-- feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
 ## [0.2.0] - 2026-03-09
 

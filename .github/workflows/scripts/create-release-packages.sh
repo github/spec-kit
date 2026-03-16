@@ -240,7 +240,7 @@ build_variant() {
       generate_commands cursor-agent md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
-      generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
+      generate_commands qwen md "\$ARGUMENTS" "$base_dir/.qwen/commands" "$script"
       [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
     opencode)
       mkdir -p "$base_dir/.opencode/command"
@@ -280,8 +280,8 @@ build_variant() {
       mkdir -p "$base_dir/.kiro/prompts"
       generate_commands kiro-cli md "\$ARGUMENTS" "$base_dir/.kiro/prompts" "$script" ;;
     agy)
-      mkdir -p "$base_dir/.agent/workflows"
-      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/workflows" "$script" ;;
+      mkdir -p "$base_dir/.agent/commands"
+      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/commands" "$script" ;;
     bob)
       mkdir -p "$base_dir/.bob/commands"
       generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;

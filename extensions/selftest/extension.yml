@@ -1,0 +1,16 @@
+schema_version: "1.0"
+extension:
+  id: selftest
+  name: Spec Kit Self-Test Utility
+  version: 1.0.0
+  description: Verifies catalog extensions by programmatically walking through the discovery, installation, and registration lifecycle.
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+requires:
+  speckit_version: ">=0.2.0"
+provides:
+  commands:
+    - name: speckit.selftest.extension
+      file: commands/selftest.md
+      description: Validate the lifecycle of an extension from the catalog.

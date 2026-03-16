@@ -135,3 +135,70 @@ function Test-DirHasFiles {
     }
 }
 
+# Resolve a template name to a file path using the priority stack:
+#   1. .specify/templates/overrides/
+#   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
+#   3. .specify/extensions/<ext-id>/templates/
+#   4. .specify/templates/ (core)
+function Resolve-Template {
+    param(
+        [Parameter(Mandatory=$true)][string]$TemplateName,
+        [Parameter(Mandatory=$true)][string]$RepoRoot
+    )
+
+    $base = Join-Path $RepoRoot '.specify/templates'
+
+    # Priority 1: Project overrides
+    $override = Join-Path $base "overrides/$TemplateName.md"
+    if (Test-Path $override) { return $override }
+
+    # Priority 2: Installed presets (sorted by priority from .registry)
+    $presetsDir = Join-Path $RepoRoot '.specify/presets'
+    if (Test-Path $presetsDir) {
+        $registryFile = Join-Path $presetsDir '.registry'
+        $sortedPresets = @()
+        if (Test-Path $registryFile) {
+            try {
+                $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
+                $presets = $registryData.presets
+                if ($presets) {
+                    $sortedPresets = $presets.PSObject.Properties |
+                        Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
+                        ForEach-Object { $_.Name }
+                }
+            } catch {
+                # Fallback: alphabetical directory order
+                $sortedPresets = @()
+            }
+        }
+
+        if ($sortedPresets.Count -gt 0) {
+            foreach ($presetId in $sortedPresets) {
+                $candidate = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
+                if (Test-Path $candidate) { return $candidate }
+            }
+        } else {
+            # Fallback: alphabetical directory order
+            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' }) {
+                $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
+                if (Test-Path $candidate) { return $candidate }
+            }
+        }
+    }
+
+    # Priority 3: Extension-provided templates
+    $extDir = Join-Path $RepoRoot '.specify/extensions'
+    if (Test-Path $extDir) {
+        foreach ($ext in Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
+            $candidate = Join-Path $ext.FullName "templates/$TemplateName.md"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+
+    # Priority 4: Core templates
+    $core = Join-Path $base "$TemplateName.md"
+    if (Test-Path $core) { return $core }
+
+    return $null
+}
+

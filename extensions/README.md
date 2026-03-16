@@ -72,12 +72,16 @@ The following community-contributed extensions are available in [`catalog.commun
 
 | Extension | Purpose | URL |
 |-----------|---------|-----|
+| Archive Extension | Archive merged features into main project memory. | [spec-kit-archive](https://github.com/stn1slv/spec-kit-archive) |
 | Azure DevOps Integration | Sync user stories and tasks to Azure DevOps work items using OAuth authentication | [spec-kit-azure-devops](https://github.com/pragya247/spec-kit-azure-devops) |
 | Cleanup Extension | Post-implementation quality gate that reviews changes, fixes small issues (scout rule), creates tasks for medium issues, and generates analysis for large issues | [spec-kit-cleanup](https://github.com/dsrednicki/spec-kit-cleanup) |
+| DocGuard — CDD Enforcement | Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 92 automated checks with config-aware traceability, quality labels, and AI-ready fix prompts. Zero dependencies. | [spec-kit-docguard](https://github.com/raccioly/docguard) |
 | Fleet Orchestrator | Orchestrate a full feature lifecycle with human-in-the-loop gates across all SpecKit phases | [spec-kit-fleet](https://github.com/sharathsatish/spec-kit-fleet) |
 | Jira Integration | Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support | [spec-kit-jira](https://github.com/mbachorik/spec-kit-jira) |
+| Project Health Check | Diagnose a Spec Kit project and report health issues across structure, agents, features, scripts, extensions, and git | [spec-kit-doctor](https://github.com/KhawarHabibKhan/spec-kit-doctor) |
 | Project Status | Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary | [spec-kit-status](https://github.com/KhawarHabibKhan/spec-kit-status) |
 | Ralph Loop | Autonomous implementation loop using AI agent CLI | [spec-kit-ralph](https://github.com/Rubiss/spec-kit-ralph) |
+| Reconcile Extension | Reconcile implementation drift by surgically updating feature artifacts. | [spec-kit-reconcile](https://github.com/stn1slv/spec-kit-reconcile) |
 | Retrospective Extension | Post-implementation retrospective with spec adherence scoring, drift analysis, and human-gated spec updates | [spec-kit-retrospective](https://github.com/emi-dm/spec-kit-retrospective) |
 | Review Extension | Post-implementation comprehensive code review with specialized agents for code quality, comments, tests, error handling, type design, and simplification | [spec-kit-review](https://github.com/ismaelJimenez/spec-kit-review) |
 | Spec Sync | Detect and resolve drift between specs and implementation. AI-assisted resolution with human approval | [spec-kit-sync](https://github.com/bgervin/spec-kit-sync) |
