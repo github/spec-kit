@@ -103,10 +103,10 @@ If your environment blocks PyPI access, download the pre-built `specify_cli-*.wh
 
 ```bash
 pip install specify_cli-*.whl
-specify init my-project --ai claude   # works fully offline — no api.github.com needed
+specify init my-project --ai claude --offline   # runs without contacting api.github.com
 ```
 
-The wheel bundles all templates, commands, and scripts, so `specify init` works without any network access after install. See the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) section for fully offline (no-PyPI) instructions.
+The wheel bundles all templates, commands, and scripts, so `specify init` can run without any network access after install when you pass `--offline`. See the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) section for fully offline (no-PyPI) instructions.
 
 ### 2. Establish project principles
 
