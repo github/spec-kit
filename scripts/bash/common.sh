@@ -171,9 +171,21 @@ json_escape() {
     s="${s//$'\r'/\\r}"
     s="${s//$'\b'/\\b}"
     s="${s//$'\f'/\\f}"
-    # Strip remaining control characters (U+0000–U+001F) not individually escaped above
-    s=$(printf '%s' "$s" | tr -d '\000-\007\013\016-\037')
-    printf '%s' "$s"
+    # Escape any remaining U+0000-U+001F control characters as \uXXXX.
+    # Only single-byte characters can be JSON control chars; multi-byte UTF-8
+    # sequences have first-byte values >= 0xC0 and are never control characters.
+    local i char code
+    local out=""
+    for (( i=0; i<${#s}; i++ )); do
+        char="${s:$i:1}"
+        code=$(LC_ALL=C printf '%d' "'$char" 2>/dev/null || echo 256)
+        if (( code >= 0 && code <= 31 )); then
+            out+=$(printf '\\u%04x' "$code")
+        else
+            out+="$char"
+        fi
+    done
+    printf '%s' "$out"
 }
 
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
