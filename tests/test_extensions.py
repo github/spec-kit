@@ -277,6 +277,135 @@ class TestExtensionRegistry:
         assert registry2.is_installed("test-ext")
         assert registry2.get("test-ext")["version"] == "1.0.0"
 
+    def test_update_preserves_installed_at(self, temp_dir):
+        """Test that update() preserves the original installed_at timestamp."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0", "enabled": True})
+
+        # Get original installed_at
+        original_data = registry.get("test-ext")
+        original_installed_at = original_data["installed_at"]
+
+        # Update with new metadata
+        registry.update("test-ext", {"version": "2.0.0", "enabled": False})
+
+        # Verify installed_at is preserved
+        updated_data = registry.get("test-ext")
+        assert updated_data["installed_at"] == original_installed_at
+        assert updated_data["version"] == "2.0.0"
+        assert updated_data["enabled"] is False
+
+    def test_update_merges_with_existing(self, temp_dir):
+        """Test that update() merges new metadata with existing fields."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {
+            "version": "1.0.0",
+            "enabled": True,
+            "registered_commands": {"claude": ["cmd1", "cmd2"]},
+        })
+
+        # Update with partial metadata (only enabled field)
+        registry.update("test-ext", {"enabled": False})
+
+        # Verify existing fields are preserved
+        updated_data = registry.get("test-ext")
+        assert updated_data["enabled"] is False
+        assert updated_data["version"] == "1.0.0"  # Preserved
+        assert updated_data["registered_commands"] == {"claude": ["cmd1", "cmd2"]}  # Preserved
+
+    def test_update_raises_for_missing_extension(self, temp_dir):
+        """Test that update() raises KeyError for non-installed extension."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        with pytest.raises(KeyError, match="not installed"):
+            registry.update("nonexistent-ext", {"enabled": False})
+
+    def test_restore_overwrites_completely(self, temp_dir):
+        """Test that restore() overwrites the registry entry completely."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "2.0.0", "enabled": True})
+
+        # Restore with complete backup data
+        backup_data = {
+            "version": "1.0.0",
+            "enabled": False,
+            "installed_at": "2024-01-01T00:00:00+00:00",
+            "registered_commands": {"claude": ["old-cmd"]},
+        }
+        registry.restore("test-ext", backup_data)
+
+        # Verify entry is exactly as restored
+        restored_data = registry.get("test-ext")
+        assert restored_data == backup_data
+
+    def test_restore_can_recreate_removed_entry(self, temp_dir):
+        """Test that restore() can recreate an entry after remove()."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0"})
+
+        # Save backup and remove
+        backup = registry.get("test-ext").copy()
+        registry.remove("test-ext")
+        assert not registry.is_installed("test-ext")
+
+        # Restore should recreate the entry
+        registry.restore("test-ext", backup)
+        assert registry.is_installed("test-ext")
+        assert registry.get("test-ext")["version"] == "1.0.0"
+
+    def test_get_returns_deep_copy(self, temp_dir):
+        """Test that get() returns deep copies for nested structures."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        metadata = {
+            "version": "1.0.0",
+            "registered_commands": {"claude": ["cmd1"]},
+        }
+        registry.add("test-ext", metadata)
+
+        fetched = registry.get("test-ext")
+        fetched["registered_commands"]["claude"].append("cmd2")
+
+        # Internal registry must remain unchanged.
+        internal = registry.data["extensions"]["test-ext"]
+        assert internal["registered_commands"] == {"claude": ["cmd1"]}
+
+    def test_list_returns_deep_copy(self, temp_dir):
+        """Test that list() returns deep copies for nested structures."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        metadata = {
+            "version": "1.0.0",
+            "registered_commands": {"claude": ["cmd1"]},
+        }
+        registry.add("test-ext", metadata)
+
+        listed = registry.list()
+        listed["test-ext"]["registered_commands"]["claude"].append("cmd2")
+
+        # Internal registry must remain unchanged.
+        internal = registry.data["extensions"]["test-ext"]
+        assert internal["registered_commands"] == {"claude": ["cmd1"]}
+
 
 # ===== ExtensionManager Tests =====
 
@@ -411,6 +540,15 @@ class TestCommandRegistrar:
         """Codex should be mapped to .codex/prompts."""
         assert "codex" in CommandRegistrar.AGENT_CONFIGS
         assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".codex/prompts"
+
+    def test_qwen_agent_config_is_markdown(self):
+        """Qwen should use Markdown format with $ARGUMENTS (not TOML)."""
+        assert "qwen" in CommandRegistrar.AGENT_CONFIGS
+        cfg = CommandRegistrar.AGENT_CONFIGS["qwen"]
+        assert cfg["dir"] == ".qwen/commands"
+        assert cfg["format"] == "markdown"
+        assert cfg["args"] == "$ARGUMENTS"
+        assert cfg["extension"] == ".md"
 
     def test_parse_frontmatter_valid(self):
         """Test parsing valid YAML frontmatter."""
@@ -1402,8 +1540,8 @@ class TestCatalogStack:
         with pytest.raises(ValidationError, match="HTTPS"):
             catalog.get_active_catalogs()
 
-    def test_empty_project_config_falls_back_to_defaults(self, temp_dir):
-        """Empty catalogs list in config falls back to default stack."""
+    def test_empty_project_config_raises_error(self, temp_dir):
+        """Empty catalogs list in config raises ValidationError (fail-closed for security)."""
         import yaml as yaml_module
 
         project_dir = self._make_project(temp_dir)
@@ -1412,11 +1550,32 @@ class TestCatalogStack:
             yaml_module.dump({"catalogs": []}, f)
 
         catalog = ExtensionCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
 
-        # Falls back to default stack
-        assert len(entries) == 2
-        assert entries[0].url == ExtensionCatalog.DEFAULT_CATALOG_URL
+        # Fail-closed: empty config should raise, not fall back to defaults
+        with pytest.raises(ValidationError) as exc_info:
+            catalog.get_active_catalogs()
+        assert "contains no 'catalogs' entries" in str(exc_info.value)
+
+    def test_catalog_entries_without_urls_raises_error(self, temp_dir):
+        """Catalog entries without URLs raise ValidationError (fail-closed for security)."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump({
+                "catalogs": [
+                    {"name": "no-url-catalog", "priority": 1},
+                    {"name": "another-no-url", "description": "Also missing URL"},
+                ]
+            }, f)
+
+        catalog = ExtensionCatalog(project_dir)
+
+        # Fail-closed: entries without URLs should raise, not fall back to defaults
+        with pytest.raises(ValidationError) as exc_info:
+            catalog.get_active_catalogs()
+        assert "none have valid URLs" in str(exc_info.value)
 
     # --- _load_catalog_config ---
 
@@ -1943,3 +2102,238 @@ class TestExtensionIgnore:
         assert not (dest / "docs" / "guide.md").exists()
         assert not (dest / "docs" / "internal.md").exists()
         assert (dest / "docs" / "api.md").exists()
+
+
+class TestExtensionAddCLI:
+    """CLI integration tests for extension add command."""
+
+    def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
+        """extension add by display name should use resolved ID for download_extension()."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Create project structure
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        # Mock catalog that returns extension by display name
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = None  # ID lookup fails
+        mock_catalog.search.return_value = [
+            {
+                "id": "acme-jira-integration",
+                "name": "Jira Integration",
+                "version": "1.0.0",
+                "description": "Jira integration extension",
+                "_install_allowed": True,
+            }
+        ]
+
+        # Track what ID was passed to download_extension
+        download_called_with = []
+        def mock_download(extension_id):
+            download_called_with.append(extension_id)
+            # Return a path that will fail install (we just want to verify the ID)
+            raise ExtensionError("Mock download - checking ID was resolved")
+
+        mock_catalog.download_extension.side_effect = mock_download
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "Jira Integration"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code != 0, (
+            f"Expected non-zero exit code since mock download raises, got {result.exit_code}"
+        )
+
+        # Verify download_extension was called with the resolved ID, not the display name
+        assert len(download_called_with) == 1
+        assert download_called_with[0] == "acme-jira-integration", (
+            f"Expected download_extension to be called with resolved ID 'acme-jira-integration', "
+            f"but was called with '{download_called_with[0]}'"
+        )
+
+
+class TestExtensionUpdateCLI:
+    """CLI integration tests for extension update command."""
+
+    @staticmethod
+    def _create_extension_source(base_dir: Path, version: str, include_config: bool = False) -> Path:
+        """Create a minimal extension source directory for install tests."""
+        import yaml
+
+        ext_dir = base_dir / f"test-ext-{version}"
+        ext_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "test-ext",
+                "name": "Test Extension",
+                "version": version,
+                "description": "A test extension",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.test.hello",
+                        "file": "commands/hello.md",
+                        "description": "Test command",
+                    }
+                ]
+            },
+            "hooks": {
+                "after_tasks": {
+                    "command": "speckit.test.hello",
+                    "optional": True,
+                }
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest, sort_keys=False))
+        commands_dir = ext_dir / "commands"
+        commands_dir.mkdir(exist_ok=True)
+        (commands_dir / "hello.md").write_text("---\ndescription: Test\n---\n\n$ARGUMENTS\n")
+        if include_config:
+            (ext_dir / "linear-config.yml").write_text("custom: true\nvalue: original\n")
+        return ext_dir
+
+    @staticmethod
+    def _create_catalog_zip(zip_path: Path, version: str):
+        """Create a minimal ZIP that passes extension_update ID validation."""
+        import zipfile
+        import yaml
+
+        manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "test-ext",
+                "name": "Test Extension",
+                "version": version,
+                "description": "A test extension",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [{"name": "speckit.test.hello", "file": "commands/hello.md"}]},
+        }
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("extension.yml", yaml.dump(manifest, sort_keys=False))
+
+    def test_update_success_preserves_installed_at(self, tmp_path):
+        """Successful update should keep original installed_at and apply new version."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".claude" / "commands").mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0", include_config=True)
+        manager.install_from_directory(v1_dir, "0.1.0")
+        original_installed_at = manager.registry.get("test-ext")["installed_at"]
+        original_config_content = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "linear-config.yml"
+        ).read_text()
+
+        zip_path = tmp_path / "test-ext-update.zip"
+        self._create_catalog_zip(zip_path, "2.0.0")
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+
+        def fake_install_from_zip(self_obj, _zip_path, speckit_version):
+            return self_obj.install_from_directory(v2_dir, speckit_version)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext",
+                 "name": "Test Extension",
+                 "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
+            result = runner.invoke(app, ["extension", "update", "test-ext"], input="y\n", catch_exceptions=True)
+
+        assert result.exit_code == 0, result.output
+
+        updated = ExtensionManager(project_dir).registry.get("test-ext")
+        assert updated["version"] == "2.0.0"
+        assert updated["installed_at"] == original_installed_at
+        restored_config_content = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "linear-config.yml"
+        ).read_text()
+        assert restored_config_content == original_config_content
+
+    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path):
+        """Failed update should restore original registry, hooks, and command files."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import yaml
+
+        runner = CliRunner()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".claude" / "commands").mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+
+        backup_registry_entry = manager.registry.get("test-ext")
+        hooks_before = yaml.safe_load((project_dir / ".specify" / "extensions.yml").read_text())
+
+        registered_commands = backup_registry_entry.get("registered_commands", {})
+        command_files = []
+        registrar = CommandRegistrar()
+        for agent_name, cmd_names in registered_commands.items():
+            if agent_name not in registrar.AGENT_CONFIGS:
+                continue
+            agent_cfg = registrar.AGENT_CONFIGS[agent_name]
+            commands_dir = project_dir / agent_cfg["dir"]
+            for cmd_name in cmd_names:
+                cmd_path = commands_dir / f"{cmd_name}{agent_cfg['extension']}"
+                command_files.append(cmd_path)
+
+        assert command_files, "Expected at least one registered command file"
+        for cmd_file in command_files:
+            assert cmd_file.exists(), f"Expected command file to exist before update: {cmd_file}"
+
+        zip_path = tmp_path / "test-ext-update.zip"
+        self._create_catalog_zip(zip_path, "2.0.0")
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext",
+                 "name": "Test Extension",
+                 "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
+             patch.object(ExtensionManager, "install_from_zip", side_effect=RuntimeError("install failed")):
+            result = runner.invoke(app, ["extension", "update", "test-ext"], input="y\n", catch_exceptions=True)
+
+        assert result.exit_code == 1, result.output
+
+        restored_entry = ExtensionManager(project_dir).registry.get("test-ext")
+        assert restored_entry == backup_registry_entry
+
+        hooks_after = yaml.safe_load((project_dir / ".specify" / "extensions.yml").read_text())
+        assert hooks_after == hooks_before
+
+        for cmd_file in command_files:
+            assert cmd_file.exists(), f"Expected command file to be restored after rollback: {cmd_file}"
