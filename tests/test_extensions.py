@@ -26,6 +26,7 @@ from specify_cli.extensions import (
     ExtensionError,
     ValidationError,
     CompatibilityError,
+    normalize_priority,
     version_satisfies,
 )
 
@@ -119,6 +120,57 @@ def project_dir(temp_dir):
     specify_dir.mkdir()
 
     return proj_dir
+
+
+# ===== normalize_priority Tests =====
+
+class TestNormalizePriority:
+    """Test normalize_priority helper function."""
+
+    def test_valid_integer(self):
+        """Test with valid integer priority."""
+        assert normalize_priority(5) == 5
+        assert normalize_priority(1) == 1
+        assert normalize_priority(100) == 100
+
+    def test_valid_string_number(self):
+        """Test with string that can be converted to int."""
+        assert normalize_priority("5") == 5
+        assert normalize_priority("10") == 10
+
+    def test_zero_returns_default(self):
+        """Test that zero priority returns default."""
+        assert normalize_priority(0) == 10
+        assert normalize_priority(0, default=5) == 5
+
+    def test_negative_returns_default(self):
+        """Test that negative priority returns default."""
+        assert normalize_priority(-1) == 10
+        assert normalize_priority(-100, default=5) == 5
+
+    def test_none_returns_default(self):
+        """Test that None returns default."""
+        assert normalize_priority(None) == 10
+        assert normalize_priority(None, default=5) == 5
+
+    def test_invalid_string_returns_default(self):
+        """Test that non-numeric string returns default."""
+        assert normalize_priority("invalid") == 10
+        assert normalize_priority("abc", default=5) == 5
+
+    def test_float_truncates(self):
+        """Test that float is truncated to int."""
+        assert normalize_priority(5.9) == 5
+        assert normalize_priority(3.1) == 3
+
+    def test_empty_string_returns_default(self):
+        """Test that empty string returns default."""
+        assert normalize_priority("") == 10
+
+    def test_custom_default(self):
+        """Test custom default value."""
+        assert normalize_priority(None, default=20) == 20
+        assert normalize_priority("invalid", default=1) == 1
 
 
 # ===== ExtensionManifest Tests =====
@@ -2430,6 +2482,24 @@ class TestExtensionPriority:
         assert result[1][0] == "ext-default"
         assert result[2][0] == "ext-low"
 
+    def test_list_by_priority_invalid_priority_defaults(self, temp_dir):
+        """Malformed priority values fall back to the default priority."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-high", {"version": "1.0.0", "priority": 1})
+        registry.data["extensions"]["ext-invalid"] = {
+            "version": "1.0.0",
+            "priority": "high",
+        }
+        registry._save()
+
+        result = registry.list_by_priority()
+
+        assert [item[0] for item in result] == ["ext-high", "ext-invalid"]
+        assert result[1][1]["priority"] == 10
+
     def test_install_with_priority(self, extension_dir, project_dir):
         """Test that install_from_directory stores priority."""
         manager = ExtensionManager(project_dir)
@@ -2470,6 +2540,35 @@ class TestExtensionPriority:
         updated = registry.get("test-ext")
         assert updated["priority"] == 5  # Preserved
         assert updated["enabled"] is False  # Updated
+
+    def test_resolve_uses_unregistered_extension_dirs_when_registry_partially_corrupted(self, project_dir):
+        """Resolution scans unregistered extension dirs after valid registry entries."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+
+        valid_dir = extensions_dir / "valid-ext" / "templates"
+        valid_dir.mkdir(parents=True)
+        (valid_dir / "other-template.md").write_text("# Valid\n")
+
+        broken_dir = extensions_dir / "broken-ext" / "templates"
+        broken_dir.mkdir(parents=True)
+        (broken_dir / "target-template.md").write_text("# Broken Target\n")
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("valid-ext", {"version": "1.0.0", "priority": 10})
+        registry.data["extensions"]["broken-ext"] = "corrupted"
+        registry._save()
+
+        from specify_cli.presets import PresetResolver
+
+        resolver = PresetResolver(project_dir)
+        resolved = resolver.resolve("target-template")
+        sourced = resolver.resolve_with_source("target-template")
+
+        assert resolved is not None
+        assert resolved.name == "target-template.md"
+        assert "Broken Target" in resolved.read_text()
+        assert sourced is not None
+        assert sourced["source"] == "extension:broken-ext (unregistered)"
 
 
 class TestExtensionPriorityCLI:

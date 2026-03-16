@@ -24,7 +24,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry
+from .extensions import ExtensionRegistry, normalize_priority
 
 
 @dataclass
@@ -336,8 +336,15 @@ class PresetRegistry:
         packs = self.data.get("presets", {}) or {}
         if not isinstance(packs, dict):
             packs = {}
+        sortable_packs = []
+        for pack_id, meta in packs.items():
+            if not isinstance(meta, dict):
+                continue
+            metadata_copy = copy.deepcopy(meta)
+            metadata_copy["priority"] = normalize_priority(metadata_copy.get("priority", 10))
+            sortable_packs.append((pack_id, metadata_copy))
         return sorted(
-            [(pack_id, copy.deepcopy(meta)) for pack_id, meta in packs.items()],
+            sortable_packs,
             key=lambda item: (item[1].get("priority", 10), item[0]),
         )
 
@@ -1495,34 +1502,37 @@ class PresetResolver:
         if self.extensions_dir.exists():
             registry = ExtensionRegistry(self.extensions_dir)
             registered_extensions = registry.list_by_priority()
+            registered_extension_ids = {ext_id for ext_id, _ in registered_extensions}
 
-            # If registry is empty but extension directories exist, fall back to
-            # directory scanning for robustness (handles corrupted/missing registry)
-            if not registered_extensions:
-                # Scan directories alphabetically with implicit priority=10
-                for ext_dir in sorted(self.extensions_dir.iterdir()):
-                    if not ext_dir.is_dir() or ext_dir.name.startswith("."):
-                        continue
-                    for subdir in subdirs:
-                        if subdir:
-                            candidate = ext_dir / subdir / f"{template_name}{ext}"
-                        else:
-                            candidate = ext_dir / f"{template_name}{ext}"
-                        if candidate.exists():
-                            return candidate
-            else:
-                # Use registry-based resolution with priority ordering
-                for ext_id, _metadata in registered_extensions:
-                    ext_dir = self.extensions_dir / ext_id
-                    if not ext_dir.is_dir():
-                        continue
-                    for subdir in subdirs:
-                        if subdir:
-                            candidate = ext_dir / subdir / f"{template_name}{ext}"
-                        else:
-                            candidate = ext_dir / f"{template_name}{ext}"
-                        if candidate.exists():
-                            return candidate
+            # Build unified list: (priority, ext_id, metadata_or_none)
+            # Registered extensions use their stored priority; unregistered get implicit 10.
+            all_extensions: list[tuple[int, str, dict | None]] = []
+
+            for ext_id, metadata in registered_extensions:
+                priority = metadata.get("priority", 10) if metadata else 10
+                all_extensions.append((priority, ext_id, metadata))
+
+            # Add unregistered directories with implicit priority=10
+            for ext_dir in self.extensions_dir.iterdir():
+                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+                    continue
+                if ext_dir.name not in registered_extension_ids:
+                    all_extensions.append((10, ext_dir.name, None))
+
+            # Sort by (priority, ext_id) for deterministic ordering
+            all_extensions.sort(key=lambda x: (x[0], x[1]))
+
+            for _priority, ext_id, _metadata in all_extensions:
+                ext_dir = self.extensions_dir / ext_id
+                if not ext_dir.is_dir():
+                    continue
+                for subdir in subdirs:
+                    if subdir:
+                        candidate = ext_dir / subdir / f"{template_name}{ext}"
+                    else:
+                        candidate = ext_dir / f"{template_name}{ext}"
+                    if candidate.exists():
+                        return candidate
 
         # Priority 4: Core templates
         if template_type == "template":
@@ -1583,34 +1593,43 @@ class PresetResolver:
         if self.extensions_dir.exists():
             ext_registry = ExtensionRegistry(self.extensions_dir)
             registered_extensions = ext_registry.list_by_priority()
+            registered_extension_ids = {ext_id for ext_id, _ in registered_extensions}
 
-            if registered_extensions:
-                # Use registry-based attribution
-                for ext_id, ext_meta in registered_extensions:
-                    ext_dir = self.extensions_dir / ext_id
-                    if not ext_dir.is_dir():
-                        continue
-                    try:
-                        resolved.relative_to(ext_dir)
-                        version = ext_meta.get("version", "?") if ext_meta else "?"
+            # Build unified list: (priority, ext_id, metadata_or_none)
+            all_extensions: list[tuple[int, str, dict | None]] = []
+
+            for ext_id, ext_meta in registered_extensions:
+                priority = ext_meta.get("priority", 10) if ext_meta else 10
+                all_extensions.append((priority, ext_id, ext_meta))
+
+            # Add unregistered directories with implicit priority=10
+            for ext_dir in self.extensions_dir.iterdir():
+                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+                    continue
+                if ext_dir.name not in registered_extension_ids:
+                    all_extensions.append((10, ext_dir.name, None))
+
+            # Sort by (priority, ext_id) for deterministic ordering
+            all_extensions.sort(key=lambda x: (x[0], x[1]))
+
+            for _priority, ext_id, ext_meta in all_extensions:
+                ext_dir = self.extensions_dir / ext_id
+                if not ext_dir.is_dir():
+                    continue
+                try:
+                    resolved.relative_to(ext_dir)
+                    if ext_meta:
+                        version = ext_meta.get("version", "?")
                         return {
                             "path": resolved_str,
                             "source": f"extension:{ext_id} v{version}",
                         }
-                    except ValueError:
-                        continue
-            else:
-                # Fallback: scan directories when registry is empty/corrupted
-                for ext_dir in sorted(self.extensions_dir.iterdir()):
-                    if not ext_dir.is_dir() or ext_dir.name.startswith("."):
-                        continue
-                    try:
-                        resolved.relative_to(ext_dir)
+                    else:
                         return {
                             "path": resolved_str,
-                            "source": f"extension:{ext_dir.name} (unregistered)",
+                            "source": f"extension:{ext_id} (unregistered)",
                         }
-                    except ValueError:
-                        continue
+                except ValueError:
+                    continue
 
         return {"path": resolved_str, "source": "core"}

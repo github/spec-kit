@@ -41,6 +41,26 @@ class CompatibilityError(ExtensionError):
     pass
 
 
+def normalize_priority(value: Any, default: int = 10) -> int:
+    """Normalize a stored priority value for sorting and display.
+
+    Corrupted registry data may contain missing, non-numeric, or non-positive
+    values. In those cases, fall back to the default priority.
+
+    Args:
+        value: Priority value to normalize (may be int, str, None, etc.)
+        default: Default priority to use for invalid values (default: 10)
+
+    Returns:
+        Normalized priority as positive integer (>= 1)
+    """
+    try:
+        priority = int(value)
+    except (TypeError, ValueError):
+        return default
+    return priority if priority >= 1 else default
+
+
 @dataclass
 class CatalogEntry:
     """Represents a single catalog entry in the catalog stack."""
@@ -338,8 +358,15 @@ class ExtensionRegistry:
         extensions = self.data.get("extensions", {}) or {}
         if not isinstance(extensions, dict):
             extensions = {}
+        sortable_extensions = []
+        for ext_id, meta in extensions.items():
+            if not isinstance(meta, dict):
+                continue
+            metadata_copy = copy.deepcopy(meta)
+            metadata_copy["priority"] = normalize_priority(metadata_copy.get("priority", 10))
+            sortable_extensions.append((ext_id, metadata_copy))
         return sorted(
-            [(ext_id, copy.deepcopy(meta)) for ext_id, meta in extensions.items()],
+            sortable_extensions,
             key=lambda item: (item[1].get("priority", 10), item[0]),
         )
 
