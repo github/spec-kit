@@ -1124,7 +1124,12 @@ def _locate_release_script() -> tuple[Path, str]:
     """
     if os.name == "nt":
         name = "create-release-packages.ps1"
-        shell = "pwsh"
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        if not shell:
+            raise FileNotFoundError(
+                "Neither 'pwsh' (PowerShell 7) nor 'powershell' (Windows PowerShell) "
+                "found on PATH. Install PowerShell to use offline scaffolding."
+            )
     else:
         name = "create-release-packages.sh"
         shell = "bash"
@@ -1941,24 +1946,14 @@ def init(
             else:
                 scaffold_ok = scaffold_from_core_pack(project_path, selected_ai, selected_script, here, tracker=tracker)
                 if not scaffold_ok:
-                    if offline:
-                        # --offline explicitly requested: never attempt a network download
-                        console.print(
-                            "\n[red]Error:[/red] --offline was specified but scaffolding from bundled assets failed.\n"
-                            "Ensure the specify-cli wheel was installed correctly (it must include core_pack/).\n"
-                            "Remove --offline to attempt a GitHub download instead."
-                        )
-                        raise typer.Exit(1)
-                    # No explicit offline flag — fall back to GitHub download
-                    for key, label in [
-                        ("fetch", "Fetch latest release"),
-                        ("download", "Download template"),
-                        ("extract", "Extract template"),
-                        ("zip-list", "Archive contents"),
-                        ("extracted-summary", "Extraction summary"),
-                    ]:
-                        tracker.add(key, label)
-                    download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+                    # --offline explicitly requested: never attempt a network download
+                    console.print(
+                        "\n[red]Error:[/red] --offline was specified but scaffolding from bundled assets failed.\n"
+                        "Check the output above for the specific error.\n"
+                        "Common causes: missing bash/pwsh, script permission errors, or incomplete wheel.\n"
+                        "Remove --offline to attempt a GitHub download instead."
+                    )
+                    raise typer.Exit(1)
 
             # For generic agent, rename placeholder directory to user-specified path
             if selected_ai == "generic" and ai_commands_dir:

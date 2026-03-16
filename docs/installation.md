@@ -92,10 +92,10 @@ pip install specify_cli-*.whl
 **Step 3: Initialize a project (no network required)**
 
 ```bash
-specify init my-project --ai claude
+specify init my-project --ai claude --offline
 ```
 
-The CLI bundles all templates, commands, and scripts inside the wheel, so `specify init` works completely offline — no connection to `api.github.com` needed.
+The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub — no connection to `api.github.com` needed.
 
 **If you also need runtime dependencies offline** (fully air-gapped machines with no access to any PyPI), use a connected machine with the same OS and Python version to download them first:
 

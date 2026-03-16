@@ -72,12 +72,14 @@ def _find_bash() -> str | None:
     return None
 
 
-def _run_release_script(agent: str, script_type: str, genreleases_dir: Path, bash: str) -> Path:
+def _run_release_script(agent: str, script_type: str, bash: str, output_dir: Path) -> Path:
     """Run create-release-packages.sh for *agent*/*script_type* and return the
-    path to the generated ZIP."""
+    path to the generated ZIP.  *output_dir* receives the build artifacts so
+    the repo working tree stays clean."""
     env = os.environ.copy()
     env["AGENTS"] = agent
     env["SCRIPTS"] = script_type
+    env["GENRELEASES_DIR"] = str(output_dir)
 
     result = subprocess.run(
         [bash, str(_RELEASE_SCRIPT), "v0.0.0"],
@@ -86,10 +88,8 @@ def _run_release_script(agent: str, script_type: str, genreleases_dir: Path, bas
         env=env,
     )
 
-    default_dir = _REPO_ROOT / ".genreleases"
     zip_pattern = f"spec-kit-template-{agent}-{script_type}-v0.0.0.zip"
-
-    zip_path = default_dir / zip_pattern
+    zip_path = output_dir / zip_pattern
     if not zip_path.exists():
         pytest.fail(
             f"Release script did not produce expected ZIP: {zip_path}\n"
@@ -476,49 +476,35 @@ def test_scaffold_powershell_variant(tmp_path, agent, source_template_stems):
 # 8. Parity: bundled vs. real create-release-packages.sh ZIP
 # ---------------------------------------------------------------------------
 
-# Session-scoped fixture: run the release script once for all agents so tests
-# can share the ZIPs without incurring the subprocess cost per test.
-
-@pytest.fixture(scope="session")
-def release_script_zips(tmp_path_factory):
-    """Invoke create-release-packages.sh (sh variant) for every testable agent
-    and return a dict mapping agent → extracted Path.
-
-    Skipped when bash is not available on this machine.
-    """
-    bash = _find_bash()
-    if bash is None:
-        pytest.skip("bash required to run create-release-packages.sh")
-
-    tmp = tmp_path_factory.mktemp("release_script")
-    extracted: dict[str, Path] = {}
-
-    for agent in _TESTABLE_AGENTS:
-        zip_path = _run_release_script(agent, "sh", tmp, bash)
-        dest = tmp / f"extracted-{agent}"
-        dest.mkdir()
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(dest)
-        extracted[agent] = dest
-
-    return extracted
-
-
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_parity_bundled_vs_release_script(tmp_path, agent, release_script_zips):
+def test_parity_bundled_vs_release_script(tmp_path, agent):
     """scaffold_from_core_pack() file tree is identical to the ZIP produced by
     create-release-packages.sh for every agent (sh variant).
 
     This is the true end-to-end parity check: the Python offline path must
     produce exactly the same artifacts as the canonical shell release script.
+
+    Each agent is tested independently: generate the release ZIP, generate
+    the bundled scaffold, compare.  This avoids cross-agent interference
+    from the release script's rm -rf at startup.
     """
+    bash = _find_bash()
+    if bash is None:
+        pytest.skip("bash required to run create-release-packages.sh")
+
+    # --- Release script path ---
+    gen_dir = tmp_path / "genreleases"
+    gen_dir.mkdir()
+    zip_path = _run_release_script(agent, "sh", bash, gen_dir)
+    script_dir = tmp_path / "extracted"
+    script_dir.mkdir()
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(script_dir)
+
     # --- Bundled path ---
     bundled_dir = tmp_path / "bundled"
     ok = scaffold_from_core_pack(bundled_dir, agent, "sh")
     assert ok
-
-    # --- Release script extracted ZIP ---
-    script_dir = release_script_zips[agent]
 
     bundled_tree = _collect_relative_files(bundled_dir)
     script_tree = _collect_relative_files(script_dir)

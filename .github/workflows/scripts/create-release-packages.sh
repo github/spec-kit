@@ -26,7 +26,8 @@ fi
 echo "Building release packages for $NEW_VERSION"
 
 # Create and use .genreleases directory for all build artifacts
-GENRELEASES_DIR=".genreleases"
+# Override via GENRELEASES_DIR env var (e.g. for tests writing to a temp dir)
+GENRELEASES_DIR="${GENRELEASES_DIR:-.genreleases}"
 mkdir -p "$GENRELEASES_DIR"
 rm -rf "$GENRELEASES_DIR"/* || true
 
@@ -319,30 +320,29 @@ ALL_SCRIPTS=(sh ps)
 
 validate_subset() {
   local type=$1; shift
-  local sep="$1"; shift  # separator-joined allowed values
   local invalid=0
+  local allowed=" $1 "; shift  # space-delimited allowed values
   for it in "$@"; do
-    case ",$sep," in
-      *,"$it",*) ;;
-      *) echo "Error: unknown $type '$it' (allowed: ${sep//,/ })" >&2; invalid=1 ;;
+    case "$allowed" in
+      *" $it "*) ;;
+      *) echo "Error: unknown $type '$it' (allowed:$allowed)" >&2; invalid=1 ;;
     esac
   done
   return $invalid
 }
 
 read_list() { tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?" ":"") $i);out=1}}}END{printf("\n")}'; }
-join_csv() { local IFS=,; echo "$*"; }
 
 if [[ -n ${AGENTS:-} ]]; then
   read -ra AGENT_LIST <<< "$(printf '%s' "$AGENTS" | read_list)"
-  validate_subset agent "$(join_csv "${ALL_AGENTS[@]}")" "${AGENT_LIST[@]}" || exit 1
+  validate_subset agent "${ALL_AGENTS[*]}" "${AGENT_LIST[@]}" || exit 1
 else
   AGENT_LIST=("${ALL_AGENTS[@]}")
 fi
 
 if [[ -n ${SCRIPTS:-} ]]; then
   read -ra SCRIPT_LIST <<< "$(printf '%s' "$SCRIPTS" | read_list)"
-  validate_subset script "$(join_csv "${ALL_SCRIPTS[@]}")" "${SCRIPT_LIST[@]}" || exit 1
+  validate_subset script "${ALL_SCRIPTS[*]}" "${SCRIPT_LIST[@]}" || exit 1
 else
   SCRIPT_LIST=("${ALL_SCRIPTS[@]}")
 fi
