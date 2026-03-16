@@ -690,13 +690,10 @@ update_specific_agent() {
 # realpath so that variables pointing to the same file — e.g. AMP_FILE,
 # KIRO_FILE, BOB_FILE all resolving to AGENTS_FILE — are only written once).
 # Uses a linear array instead of associative array for bash 3.2 compatibility.
-# Note: defined at top level because bash does not support true nested/local
-# functions. _updated_paths and _found_agent are reset at the start of each
-# update_all_existing_agents call.
-_updated_paths=()
-_found_agent=false
-# Note: both variables are reset at the start of update_all_existing_agents;
-# do not rely on these top-level values outside that function.
+# Note: defined at top level because bash 3.2 does not support true
+# nested/local functions. _updated_paths, _found_agent, and _all_ok are
+# initialised exclusively inside update_all_existing_agents so that
+# sourcing this script has no side effects on the caller's environment.
 
 _update_if_new() {
     local file="$1" name="$2"
@@ -709,9 +706,12 @@ _update_if_new() {
             [[ "$p" == "$real_path" ]] && return 0
         done
     fi
-    update_agent_file "$file" "$name" || return 1
+    # Record the file as seen before attempting the update so that:
+    # (a) aliases pointing to the same path are not retried on failure
+    # (b) _found_agent reflects file existence, not update success
     _updated_paths+=("$real_path")
     _found_agent=true
+    update_agent_file "$file" "$name"
 }
 
 update_all_existing_agents() {
