@@ -2217,7 +2217,7 @@ def preset_info(
         console.print("\n  [green]Status: installed[/green]")
         # Get priority from registry
         pack_metadata = manager.registry.get(pack_id)
-        priority = pack_metadata.get("priority", 10) if pack_metadata else 10
+        priority = pack_metadata.get("priority", 10) if isinstance(pack_metadata, dict) else 10
         console.print(f"  [dim]Priority:[/dim] {priority}")
         console.print()
         return
@@ -2281,7 +2281,7 @@ def preset_set_priority(
 
     # Get current metadata
     metadata = manager.registry.get(pack_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
 
@@ -3147,8 +3147,15 @@ def extension_info(
         # Get local manifest info
         ext_manifest = manager.get_extension(resolved_installed_id)
         metadata = manager.registry.get(resolved_installed_id)
+        metadata_is_dict = isinstance(metadata, dict)
+        if not metadata_is_dict:
+            console.print(
+                "[yellow]Warning:[/yellow] Extension metadata appears to be corrupted; "
+                "some information may be unavailable."
+            )
+        version = metadata.get("version", "unknown") if metadata_is_dict else "unknown"
 
-        console.print(f"\n[bold]{resolved_installed_name}[/bold] (v{metadata.get('version', 'unknown')})")
+        console.print(f"\n[bold]{resolved_installed_name}[/bold] (v{version})")
         console.print(f"ID: {resolved_installed_id}")
         console.print()
 
@@ -3176,7 +3183,7 @@ def extension_info(
 
         console.print()
         console.print("[green]✓ Installed[/green]")
-        priority = metadata.get("priority", 10)
+        priority = metadata.get("priority", 10) if metadata_is_dict else 10
         console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {resolved_installed_id}")
         return
@@ -3272,7 +3279,7 @@ def _print_extension_info(ext_info: dict, manager):
     if is_installed:
         console.print("[green]✓ Installed[/green]")
         metadata = manager.registry.get(ext_info['id'])
-        priority = metadata.get("priority", 10) if metadata else 10
+        priority = metadata.get("priority", 10) if isinstance(metadata, dict) else 10
         console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
     elif install_allowed:
@@ -3339,7 +3346,7 @@ def extension_update(
         for ext_id in extensions_to_update:
             # Get installed version
             metadata = manager.registry.get(ext_id)
-            if metadata is None or "version" not in metadata:
+            if metadata is None or not isinstance(metadata, dict) or "version" not in metadata:
                 console.print(f"⚠  {ext_id}: Registry entry corrupted or missing (skipping)")
                 continue
             try:
@@ -3524,13 +3531,13 @@ def extension_update(
                                 shutil.copy2(cfg_file, new_extension_dir / cfg_file.name)
 
                     # 9. Restore metadata from backup (installed_at, enabled state)
-                    if backup_registry_entry:
+                    if backup_registry_entry and isinstance(backup_registry_entry, dict):
                         # Copy current registry entry to avoid mutating internal
                         # registry state before explicit restore().
                         current_metadata = manager.registry.get(extension_id)
-                        if current_metadata is None:
+                        if current_metadata is None or not isinstance(current_metadata, dict):
                             raise RuntimeError(
-                                f"Registry entry for '{extension_id}' missing after install — update incomplete"
+                                f"Registry entry for '{extension_id}' missing or corrupted after install — update incomplete"
                             )
                         new_metadata = dict(current_metadata)
 
@@ -3595,7 +3602,7 @@ def extension_update(
                     # (files that weren't in the original backup)
                     try:
                         new_registry_entry = manager.registry.get(extension_id)
-                        if new_registry_entry is None:
+                        if new_registry_entry is None or not isinstance(new_registry_entry, dict):
                             new_registered_commands = {}
                         else:
                             new_registered_commands = new_registry_entry.get("registered_commands", {})
@@ -3715,10 +3722,10 @@ def extension_enable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
-    
+
     if metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already enabled[/yellow]")
         raise typer.Exit(0)
@@ -3763,10 +3770,10 @@ def extension_disable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
-    
+
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already disabled[/yellow]")
         raise typer.Exit(0)
@@ -3818,7 +3825,7 @@ def extension_set_priority(
 
     # Get current metadata
     metadata = manager.registry.get(extension_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
 

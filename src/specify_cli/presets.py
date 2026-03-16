@@ -861,6 +861,9 @@ class PresetManager:
         result = []
 
         for pack_id, metadata in self.registry.list().items():
+            # Ensure metadata is a dictionary to avoid AttributeError when using .get()
+            if not isinstance(metadata, dict):
+                metadata = {}
             pack_dir = self.presets_dir / pack_id
             manifest_path = pack_dir / "preset.yml"
 

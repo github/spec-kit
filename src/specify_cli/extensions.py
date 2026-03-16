@@ -691,6 +691,9 @@ class ExtensionManager:
         result = []
 
         for ext_id, metadata in self.registry.list().items():
+            # Ensure metadata is a dictionary to avoid AttributeError when using .get()
+            if not isinstance(metadata, dict):
+                metadata = {}
             ext_dir = self.extensions_dir / ext_id
             manifest_path = ext_dir / "extension.yml"
 
