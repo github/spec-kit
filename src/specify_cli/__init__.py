@@ -1181,7 +1181,10 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             console.print("[yellow]Warning: command templates not found, skipping skills installation[/yellow]")
         return False
 
-    command_files = sorted(templates_dir.glob("*.md"))
+    if selected_ai == "copilot":
+        command_files = sorted(templates_dir.glob("speckit.*.md"))
+    else:
+        command_files = sorted(templates_dir.glob("*.md"))
     if not command_files:
         if tracker:
             tracker.skip("ai-skills", "no command templates found")

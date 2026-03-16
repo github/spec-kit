@@ -430,9 +430,12 @@ class TestInstallAiSkills:
 
         # Place .md templates in the agent's commands directory
         agent_folder = AGENT_CONFIG[agent_key]["folder"]
-        cmds_dir = proj / agent_folder.rstrip("/") / "commands"
+        commands_subdir = AGENT_CONFIG[agent_key].get("commands_subdir", "commands")
+        cmds_dir = proj / agent_folder.rstrip("/") / commands_subdir
         cmds_dir.mkdir(parents=True)
-        (cmds_dir / "specify.md").write_text(
+        # Copilot filters for speckit.*.md; other agents use plain names
+        fname = "speckit.specify.md" if agent_key == "copilot" else "specify.md"
+        (cmds_dir / fname).write_text(
             "---\ndescription: Test command\n---\n\n# Test\n\nBody.\n"
         )
 
@@ -447,6 +450,26 @@ class TestInstallAiSkills:
         expected_skill_name = "speckit.specify" if agent_key == "kimi" else "speckit-specify"
         assert expected_skill_name in skill_dirs
         assert (skills_dir / expected_skill_name / "SKILL.md").exists()
+
+    def test_copilot_ignores_non_speckit_agents(self, project_dir):
+        """Non-speckit markdown in .github/agents/ must not produce skills."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        (agents_dir / "speckit.plan.md").write_text(
+            "---\ndescription: Generate implementation plan.\n---\n\n# Plan\n\nBody.\n"
+        )
+        (agents_dir / "other-agent.agent.md").write_text(
+            "---\ndescription: Some other agent\n---\n\n# Other\n\nBody.\n"
+        )
+
+        result = install_ai_skills(project_dir, "copilot")
+
+        assert result is True
+        skills_dir = project_dir / ".github" / "skills"
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert "speckit-plan" in skill_dirs
+        assert "speckit-other-agent.agent" not in skill_dirs
 
 
 
