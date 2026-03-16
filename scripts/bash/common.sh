@@ -254,8 +254,9 @@ except Exception:
     local core="$base/${template_name}.md"
     [ -f "$core" ] && echo "$core" && return 0
 
-    # Return success with empty output so callers using set -e don't abort;
-    # callers check [ -n "$TEMPLATE" ] to detect "not found".
-    return 0
+    # Template not found in any location.
+    # Return 1 so callers can distinguish "not found" from "found".
+    # Callers running under set -e should use: TEMPLATE=$(resolve_template ...) || true
+    return 1
 }
 
