@@ -3,6 +3,37 @@
   "updated_at": "2026-03-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
+    "archive": {
+      "name": "Archive Extension",
+      "id": "archive",
+      "description": "Archive merged features into main project memory, resolving gaps and conflicts.",
+      "author": "Stanislav Deviatov",
+      "version": "1.0.0",
+      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/stn1slv/spec-kit-archive",
+      "homepage": "https://github.com/stn1slv/spec-kit-archive",
+      "documentation": "https://github.com/stn1slv/spec-kit-archive/blob/main/README.md",
+      "changelog": "https://github.com/stn1slv/spec-kit-archive/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "archive",
+        "memory",
+        "merge",
+        "changelog"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-14T00:00:00Z",
+      "updated_at": "2026-03-14T00:00:00Z"
+    },
     "azure-devops": {
       "name": "Azure DevOps Integration",
       "id": "azure-devops",
@@ -249,6 +280,37 @@
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
       "updated_at": "2026-03-09T00:00:00Z"
+    },
+    "reconcile": {
+      "name": "Reconcile Extension",
+      "id": "reconcile",
+      "description": "Reconcile implementation drift by surgically updating the feature's own spec, plan, and tasks.",
+      "author": "Stanislav Deviatov",
+      "version": "1.0.0",
+      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/stn1slv/spec-kit-reconcile",
+      "homepage": "https://github.com/stn1slv/spec-kit-reconcile",
+      "documentation": "https://github.com/stn1slv/spec-kit-reconcile/blob/main/README.md",
+      "changelog": "https://github.com/stn1slv/spec-kit-reconcile/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "reconcile",
+        "drift",
+        "tasks",
+        "remediation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-14T00:00:00Z",
+      "updated_at": "2026-03-14T00:00:00Z"
     },
     "retrospective": {
       "name": "Retrospective Extension",
