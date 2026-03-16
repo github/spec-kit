@@ -220,7 +220,7 @@ build_variant() {
     esac
   fi
 
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" | while IFS= read -r f; do d="$SPEC_DIR/$(dirname "$f")"; mkdir -p "$d"; cp "$f" "$d/"; done; echo "Copied templates -> .specify/templates"; }
 
   case $agent in
     claude)
@@ -317,34 +317,32 @@ build_variant() {
 ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow generic)
 ALL_SCRIPTS=(sh ps)
 
-norm_list() {
-  tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?"\n":"") $i);out=1}}}END{printf("\n")}'
-}
-
 validate_subset() {
-  local type=$1; shift; local -n allowed=$1; shift; local items=("$@")
+  local type=$1; shift
+  local sep="$1"; shift  # separator-joined allowed values
   local invalid=0
-  for it in "${items[@]}"; do
-    local found=0
-    for a in "${allowed[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
-    if [[ $found -eq 0 ]]; then
-      echo "Error: unknown $type '$it' (allowed: ${allowed[*]})" >&2
-      invalid=1
-    fi
+  for it in "$@"; do
+    case ",$sep," in
+      *,"$it",*) ;;
+      *) echo "Error: unknown $type '$it' (allowed: ${sep//,/ })" >&2; invalid=1 ;;
+    esac
   done
   return $invalid
 }
 
+read_list() { tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?" ":"") $i);out=1}}}END{printf("\n")}'; }
+join_csv() { local IFS=,; echo "$*"; }
+
 if [[ -n ${AGENTS:-} ]]; then
-  mapfile -t AGENT_LIST < <(printf '%s' "$AGENTS" | norm_list)
-  validate_subset agent ALL_AGENTS "${AGENT_LIST[@]}" || exit 1
+  read -ra AGENT_LIST <<< "$(printf '%s' "$AGENTS" | read_list)"
+  validate_subset agent "$(join_csv "${ALL_AGENTS[@]}")" "${AGENT_LIST[@]}" || exit 1
 else
   AGENT_LIST=("${ALL_AGENTS[@]}")
 fi
 
 if [[ -n ${SCRIPTS:-} ]]; then
-  mapfile -t SCRIPT_LIST < <(printf '%s' "$SCRIPTS" | norm_list)
-  validate_subset script ALL_SCRIPTS "${SCRIPT_LIST[@]}" || exit 1
+  read -ra SCRIPT_LIST <<< "$(printf '%s' "$SCRIPTS" | read_list)"
+  validate_subset script "$(join_csv "${ALL_SCRIPTS[@]}")" "${SCRIPT_LIST[@]}" || exit 1
 else
   SCRIPT_LIST=("${ALL_SCRIPTS[@]}")
 fi

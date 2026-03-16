@@ -1,0 +1,542 @@
+"""
+Validation tests for offline/air-gapped scaffolding (PR #1803).
+
+For every supported AI agent (except "generic") the scaffold output is verified
+against invariants and compared byte-for-byte with the canonical output produced
+by create-release-packages.sh.
+
+Since scaffold_from_core_pack() now invokes the release script at runtime, the
+parity test (section 9) runs the script independently and compares the results
+to ensure the integration is correct.
+
+Per-agent invariants verified
+──────────────────────────────
+  • Command files are written to the directory declared in AGENT_CONFIG
+  • File count matches the number of source templates
+  • Extension is correct: .toml (TOML agents), .agent.md (copilot), .md (rest)
+  • No unresolved placeholders remain ({SCRIPT}, {ARGS}, __AGENT__)
+  • Argument token is correct: {{args}} for TOML agents, $ARGUMENTS for others
+  • Path rewrites applied: scripts/ → .specify/scripts/ etc.
+  • TOML files have "description" and "prompt" fields
+  • Markdown files have parseable YAML frontmatter
+  • Copilot: companion speckit.*.prompt.md files are generated in prompts/
+  • .specify/scripts/ contains at least one script file
+  • .specify/templates/ contains at least one template file
+
+Parity invariant
+────────────────
+  Every file produced by scaffold_from_core_pack() must be byte-for-byte
+  identical to the same file in the ZIP produced by the release script.
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import zipfile
+from pathlib import Path
+
+import pytest
+import yaml
+
+import specify_cli
+from specify_cli import (
+    AGENT_CONFIG,
+    _TOML_AGENTS,
+    _locate_core_pack,
+    scaffold_from_core_pack,
+)
+
+_REPO_ROOT = Path(__file__).parent.parent
+_RELEASE_SCRIPT = _REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh"
+
+
+def _find_bash() -> str | None:
+    """Return the path to a usable bash on this machine, or None."""
+    candidates = [
+        "/opt/homebrew/bin/bash",
+        "/usr/local/bin/bash",
+        "/bin/bash",
+        "/usr/bin/bash",
+    ]
+    for candidate in candidates:
+        try:
+            result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                return candidate
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return None
+
+
+def _run_release_script(agent: str, script_type: str, genreleases_dir: Path, bash: str) -> Path:
+    """Run create-release-packages.sh for *agent*/*script_type* and return the
+    path to the generated ZIP."""
+    env = os.environ.copy()
+    env["AGENTS"] = agent
+    env["SCRIPTS"] = script_type
+
+    result = subprocess.run(
+        [bash, str(_RELEASE_SCRIPT), "v0.0.0"],
+        capture_output=True, text=True,
+        cwd=str(_REPO_ROOT),
+        env=env,
+    )
+
+    default_dir = _REPO_ROOT / ".genreleases"
+    zip_pattern = f"spec-kit-template-{agent}-{script_type}-v0.0.0.zip"
+
+    zip_path = default_dir / zip_pattern
+    if not zip_path.exists():
+        pytest.fail(
+            f"Release script did not produce expected ZIP: {zip_path}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return zip_path
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# Number of source command templates (one per .md file in templates/commands/)
+_SOURCE_TEMPLATES: list[str] = []
+
+
+def _commands_dir() -> Path:
+    """Return the command templates directory (source-checkout or core_pack)."""
+    core = _locate_core_pack()
+    if core and (core / "commands").is_dir():
+        return core / "commands"
+    # Source-checkout fallback
+    repo_root = Path(__file__).parent.parent
+    return repo_root / "templates" / "commands"
+
+
+def _get_source_template_stems() -> list[str]:
+    """Return the stems of source command template files (e.g. ['specify', 'plan', ...])."""
+    return sorted(p.stem for p in _commands_dir().glob("*.md"))
+
+
+def _expected_cmd_dir(project_path: Path, agent: str) -> Path:
+    """Return the expected command-files directory for a given agent."""
+    cfg = AGENT_CONFIG[agent]
+    folder = (cfg.get("folder") or "").rstrip("/")
+    subdir = cfg.get("commands_subdir", "commands")
+    if folder:
+        return project_path / folder / subdir
+    return project_path / ".speckit" / subdir
+
+
+def _expected_ext(agent: str) -> str:
+    if agent in _TOML_AGENTS:
+        return "toml"
+    if agent == "copilot":
+        return "agent.md"
+    if agent == "kimi":
+        return "SKILL.md"  # Kimi uses skills/<name>/SKILL.md
+    return "md"
+
+
+def _list_command_files(cmd_dir: Path, agent: str) -> list[Path]:
+    """List generated command files, handling Kimi's directory-per-skill layout."""
+    if agent == "kimi":
+        # Kimi: .kimi/skills/speckit.*/SKILL.md
+        return sorted(cmd_dir.glob("speckit.*/SKILL.md"))
+    ext = _expected_ext(agent)
+    return sorted(cmd_dir.glob(f"speckit.*.{ext}"))
+
+
+def _collect_relative_files(root: Path) -> dict[str, bytes]:
+    """Walk *root* and return {relative_posix_path: file_bytes}."""
+    result: dict[str, bytes] = {}
+    for p in root.rglob("*"):
+        if p.is_file():
+            result[p.relative_to(root).as_posix()] = p.read_bytes()
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def source_template_stems() -> list[str]:
+    return _get_source_template_stems()
+
+
+@pytest.fixture
+def bundled_project(tmp_path):
+    """Run scaffold_from_core_pack for each test; caller picks agent."""
+    return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Parametrize over all agents except "generic"
+# ---------------------------------------------------------------------------
+
+_TESTABLE_AGENTS = [a for a in AGENT_CONFIG if a != "generic"]
+
+
+# ---------------------------------------------------------------------------
+# 1. Bundled scaffold — directory structure
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_scaffold_creates_specify_scripts(tmp_path, agent):
+    """scaffold_from_core_pack copies at least one script into .specify/scripts/."""
+    project = tmp_path / "proj"
+    ok = scaffold_from_core_pack(project, agent, "sh")
+    assert ok, f"scaffold_from_core_pack returned False for agent '{agent}'"
+
+    scripts_dir = project / ".specify" / "scripts" / "bash"
+    assert scripts_dir.is_dir(), f".specify/scripts/bash/ missing for agent '{agent}'"
+    assert any(scripts_dir.iterdir()), f".specify/scripts/bash/ is empty for agent '{agent}'"
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_scaffold_creates_specify_templates(tmp_path, agent):
+    """scaffold_from_core_pack copies at least one page template into .specify/templates/."""
+    project = tmp_path / "proj"
+    ok = scaffold_from_core_pack(project, agent, "sh")
+    assert ok
+
+    tpl_dir = project / ".specify" / "templates"
+    assert tpl_dir.is_dir(), f".specify/templates/ missing for agent '{agent}'"
+    assert any(tpl_dir.iterdir()), ".specify/templates/ is empty"
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_scaffold_command_dir_location(tmp_path, agent, source_template_stems):
+    """Command files land in the directory declared by AGENT_CONFIG."""
+    project = tmp_path / "proj"
+    ok = scaffold_from_core_pack(project, agent, "sh")
+    assert ok
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    assert cmd_dir.is_dir(), (
+        f"Command dir '{cmd_dir.relative_to(project)}' not created for agent '{agent}'"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2. Bundled scaffold — file count
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_scaffold_command_file_count(tmp_path, agent, source_template_stems):
+    """One command file is generated per source template for every agent."""
+    project = tmp_path / "proj"
+    ok = scaffold_from_core_pack(project, agent, "sh")
+    assert ok
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    generated = _list_command_files(cmd_dir, agent)
+    assert len(generated) == len(source_template_stems), (
+        f"Agent '{agent}': expected {len(source_template_stems)} command files "
+        f"({_expected_ext(agent)}), found {len(generated)}. Dir: {list(cmd_dir.iterdir())}"
+    )
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_scaffold_command_file_names(tmp_path, agent, source_template_stems):
+    """Each source template stem maps to a corresponding speckit.<stem>.<ext> file."""
+    project = tmp_path / "proj"
+    ok = scaffold_from_core_pack(project, agent, "sh")
+    assert ok
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    for stem in source_template_stems:
+        if agent == "kimi":
+            expected = cmd_dir / f"speckit.{stem}" / "SKILL.md"
+        else:
+            ext = _expected_ext(agent)
+            expected = cmd_dir / f"speckit.{stem}.{ext}"
+        assert expected.is_file(), (
+            f"Agent '{agent}': expected file '{expected.name}' not found in '{cmd_dir}'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 3. Bundled scaffold — content invariants
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_no_unresolved_script_placeholder(tmp_path, agent):
+    """{SCRIPT} must not appear in any generated command file."""
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, agent, "sh")
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    for f in cmd_dir.rglob("*"):
+        if f.is_file():
+            content = f.read_text(encoding="utf-8")
+            assert "{SCRIPT}" not in content, (
+                f"Unresolved {{SCRIPT}} in '{f.relative_to(project)}' for agent '{agent}'"
+            )
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_no_unresolved_agent_placeholder(tmp_path, agent):
+    """__AGENT__ must not appear in any generated command file."""
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, agent, "sh")
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    for f in cmd_dir.rglob("*"):
+        if f.is_file():
+            content = f.read_text(encoding="utf-8")
+            assert "__AGENT__" not in content, (
+                f"Unresolved __AGENT__ in '{f.relative_to(project)}' for agent '{agent}'"
+            )
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_no_unresolved_args_placeholder(tmp_path, agent):
+    """{ARGS} must not appear in any generated command file (replaced with agent-specific token)."""
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, agent, "sh")
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    for f in cmd_dir.rglob("*"):
+        if f.is_file():
+            content = f.read_text(encoding="utf-8")
+            assert "{ARGS}" not in content, (
+                f"Unresolved {{ARGS}} in '{f.relative_to(project)}' for agent '{agent}'"
+            )
+
+
+# Build a set of template stems that actually contain {ARGS} in their source.
+_TEMPLATES_WITH_ARGS: frozenset[str] = frozenset(
+    p.stem
+    for p in _commands_dir().glob("*.md")
+    if "{ARGS}" in p.read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_argument_token_format(tmp_path, agent):
+    """For templates that carry an {ARGS} token:
+    - TOML agents must emit {{args}}
+    - Markdown agents must emit $ARGUMENTS
+    Templates without {ARGS} (e.g. implement, plan) are skipped.
+    """
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, agent, "sh")
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+
+    for f in _list_command_files(cmd_dir, agent):
+        # Recover the stem from the file path
+        if agent == "kimi":
+            stem = f.parent.name.removeprefix("speckit.")
+        else:
+            ext = _expected_ext(agent)
+            stem = f.name.removeprefix("speckit.").removesuffix(f".{ext}")
+        if stem not in _TEMPLATES_WITH_ARGS:
+            continue  # this template has no argument token
+
+        content = f.read_text(encoding="utf-8")
+        if agent in _TOML_AGENTS:
+            assert "{{args}}" in content, (
+                f"TOML agent '{agent}': expected '{{{{args}}}}' in '{f.name}'"
+            )
+        else:
+            assert "$ARGUMENTS" in content, (
+                f"Markdown agent '{agent}': expected '$ARGUMENTS' in '{f.name}'"
+            )
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_path_rewrites_applied(tmp_path, agent):
+    """Bare scripts/ and templates/ paths must be rewritten to .specify/ variants."""
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, agent, "sh")
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    for f in cmd_dir.rglob("*"):
+        if not f.is_file():
+            continue
+        content = f.read_text(encoding="utf-8")
+        # Should not contain bare (non-.specify/) script paths
+        assert not re.search(r'(?<!\.specify/)scripts/', content), (
+            f"Bare scripts/ path found in '{f.relative_to(project)}' for agent '{agent}'"
+        )
+        assert not re.search(r'(?<!\.specify/)templates/', content), (
+            f"Bare templates/ path found in '{f.relative_to(project)}' for agent '{agent}'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 4. TOML format checks
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("agent", sorted(_TOML_AGENTS))
+def test_toml_format_valid(tmp_path, agent):
+    """TOML agents: every command file must have description and prompt fields."""
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, agent, "sh")
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    for f in cmd_dir.glob("speckit.*.toml"):
+        content = f.read_text(encoding="utf-8")
+        assert 'description = "' in content, (
+            f"Missing 'description' in '{f.name}' for agent '{agent}'"
+        )
+        assert 'prompt = """' in content, (
+            f"Missing 'prompt' block in '{f.name}' for agent '{agent}'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 5. Markdown frontmatter checks
+# ---------------------------------------------------------------------------
+
+_MARKDOWN_AGENTS = [a for a in _TESTABLE_AGENTS if a not in _TOML_AGENTS]
+
+
+@pytest.mark.parametrize("agent", _MARKDOWN_AGENTS)
+def test_markdown_has_frontmatter(tmp_path, agent):
+    """Markdown agents: every command file must start with valid YAML frontmatter."""
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, agent, "sh")
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    for f in _list_command_files(cmd_dir, agent):
+        content = f.read_text(encoding="utf-8")
+        assert content.startswith("---"), (
+            f"No YAML frontmatter in '{f.name}' for agent '{agent}'"
+        )
+        parts = content.split("---", 2)
+        assert len(parts) >= 3, f"Incomplete frontmatter in '{f.name}'"
+        fm = yaml.safe_load(parts[1])
+        assert fm is not None, f"Empty frontmatter in '{f.name}'"
+        assert "description" in fm, (
+            f"'description' key missing from frontmatter in '{f.name}' for agent '{agent}'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. Copilot-specific: companion .prompt.md files
+# ---------------------------------------------------------------------------
+
+def test_copilot_companion_prompt_files(tmp_path, source_template_stems):
+    """Copilot: a speckit.<stem>.prompt.md companion is created for every .agent.md file."""
+    project = tmp_path / "proj"
+    ok = scaffold_from_core_pack(project, "copilot", "sh")
+    assert ok
+
+    prompts_dir = project / ".github" / "prompts"
+    assert prompts_dir.is_dir(), ".github/prompts/ not created for copilot"
+
+    for stem in source_template_stems:
+        prompt_file = prompts_dir / f"speckit.{stem}.prompt.md"
+        assert prompt_file.is_file(), (
+            f"Companion prompt file '{prompt_file.name}' missing for copilot"
+        )
+
+
+def test_copilot_prompt_file_content(tmp_path, source_template_stems):
+    """Copilot companion .prompt.md files must reference their parent .agent.md."""
+    project = tmp_path / "proj"
+    scaffold_from_core_pack(project, "copilot", "sh")
+
+    prompts_dir = project / ".github" / "prompts"
+    for stem in source_template_stems:
+        f = prompts_dir / f"speckit.{stem}.prompt.md"
+        content = f.read_text(encoding="utf-8")
+        assert f"agent: speckit.{stem}" in content, (
+            f"Companion '{f.name}' does not reference 'speckit.{stem}'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 7. PowerShell script variant
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_scaffold_powershell_variant(tmp_path, agent, source_template_stems):
+    """scaffold_from_core_pack with script_type='ps' creates correct files."""
+    project = tmp_path / "proj"
+    ok = scaffold_from_core_pack(project, agent, "ps")
+    assert ok
+
+    scripts_dir = project / ".specify" / "scripts" / "powershell"
+    assert scripts_dir.is_dir(), f".specify/scripts/powershell/ missing for '{agent}'"
+    assert any(scripts_dir.iterdir()), ".specify/scripts/powershell/ is empty"
+
+    cmd_dir = _expected_cmd_dir(project, agent)
+    generated = _list_command_files(cmd_dir, agent)
+    assert len(generated) == len(source_template_stems)
+
+
+# ---------------------------------------------------------------------------
+# 8. Parity: bundled vs. real create-release-packages.sh ZIP
+# ---------------------------------------------------------------------------
+
+# Session-scoped fixture: run the release script once for all agents so tests
+# can share the ZIPs without incurring the subprocess cost per test.
+
+@pytest.fixture(scope="session")
+def release_script_zips(tmp_path_factory):
+    """Invoke create-release-packages.sh (sh variant) for every testable agent
+    and return a dict mapping agent → extracted Path.
+
+    Skipped when bash is not available on this machine.
+    """
+    bash = _find_bash()
+    if bash is None:
+        pytest.skip("bash required to run create-release-packages.sh")
+
+    tmp = tmp_path_factory.mktemp("release_script")
+    extracted: dict[str, Path] = {}
+
+    for agent in _TESTABLE_AGENTS:
+        zip_path = _run_release_script(agent, "sh", tmp, bash)
+        dest = tmp / f"extracted-{agent}"
+        dest.mkdir()
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(dest)
+        extracted[agent] = dest
+
+    return extracted
+
+
+@pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
+def test_parity_bundled_vs_release_script(tmp_path, agent, release_script_zips):
+    """scaffold_from_core_pack() file tree is identical to the ZIP produced by
+    create-release-packages.sh for every agent (sh variant).
+
+    This is the true end-to-end parity check: the Python offline path must
+    produce exactly the same artifacts as the canonical shell release script.
+    """
+    # --- Bundled path ---
+    bundled_dir = tmp_path / "bundled"
+    ok = scaffold_from_core_pack(bundled_dir, agent, "sh")
+    assert ok
+
+    # --- Release script extracted ZIP ---
+    script_dir = release_script_zips[agent]
+
+    bundled_tree = _collect_relative_files(bundled_dir)
+    script_tree = _collect_relative_files(script_dir)
+
+    only_bundled = set(bundled_tree) - set(script_tree)
+    only_script = set(script_tree) - set(bundled_tree)
+
+    assert not only_bundled, (
+        f"Agent '{agent}': files only in bundled output (not in release ZIP):\n  "
+        + "\n  ".join(sorted(only_bundled))
+    )
+    assert not only_script, (
+        f"Agent '{agent}': files only in release ZIP (not in bundled output):\n  "
+        + "\n  ".join(sorted(only_script))
+    )
+
+    for name in bundled_tree:
+        assert bundled_tree[name] == script_tree[name], (
+            f"Agent '{agent}': file '{name}' content differs between "
+            f"bundled output and release script ZIP"
+        )

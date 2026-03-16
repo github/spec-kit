@@ -111,12 +111,13 @@ pip install --no-index --find-links=./vendor specify_cli-*.whl
 
 > **Note:** Python 3.11+ is required. The wheel is a pure-Python artifact, so it works on any platform without recompilation.
 
-**Getting the latest templates without upgrading the CLI:**
+**Using bundled assets (offline / air-gapped):**
 
-If you want to pull freshly generated command files from the latest GitHub release instead of the bundled copy, use:
+If you want to scaffold from the templates bundled inside the specify-cli
+package instead of downloading from GitHub, use:
 
 ```bash
-specify init my-project --ai claude --from-github
+specify init my-project --ai claude --offline
 ```
 
 ### Git Credential Manager on Linux
