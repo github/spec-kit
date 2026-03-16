@@ -213,6 +213,7 @@ except Exception:
 " 2>/dev/null)
             local python_rc=$?
             if [ $python_rc -eq 0 ] && [ -n "$sorted_presets" ]; then
+                # python3 succeeded and returned preset IDs — search in priority order
                 while IFS= read -r preset_id; do
                     local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
                     [ -f "$candidate" ] && echo "$candidate" && return 0
