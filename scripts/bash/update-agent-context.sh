@@ -743,7 +743,7 @@ update_all_existing_agents() {
     _update_if_new "$AGY_FILE" "Antigravity"               || _all_ok=false
     _update_if_new "$VIBE_FILE" "Mistral Vibe"             || _all_ok=false
     _update_if_new "$KIMI_FILE" "Kimi Code"                || _all_ok=false
-	_update_if_new "$TRAE_FILE" "Trae"                     || _all_ok=false
+    _update_if_new "$TRAE_FILE" "Trae"                     || _all_ok=false
 	
     # If no agent files exist, create a default Claude file
     if [[ "$_found_agent" == false ]]; then
