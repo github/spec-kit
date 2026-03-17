@@ -7,6 +7,7 @@
 #     "platformdirs",
 #     "readchar",
 #     "httpx",
+#     "json5",
 # ]
 # ///
 """
@@ -32,6 +33,8 @@ import tempfile
 import shutil
 import shlex
 import json
+import json5
+import stat
 import yaml
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -271,6 +274,13 @@ AGENT_CONFIG = {
         "commands_subdir": "skills",  # Kimi uses /skill:<name> with .kimi/skills/<name>/SKILL.md
         "install_url": "https://code.kimi.com/",
         "requires_cli": True,
+    },
+    "trae": {
+        "name": "Trae",
+        "folder": ".trae/",
+        "commands_subdir": "rules",  # Trae uses .trae/rules/ for project rules
+        "install_url": None,  # IDE-based
+        "requires_cli": False,
     },
     "pi": {
         "name": "Pi Coding Agent",
@@ -661,37 +671,82 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Option
         os.chdir(original_cwd)
 
 def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker=None) -> None:
-    """Handle merging or copying of .vscode/settings.json files."""
+    """Handle merging or copying of .vscode/settings.json files.
+
+    Note: when merge produces changes, rewritten output is normalized JSON and
+    existing JSONC comments/trailing commas are not preserved.
+    """
     def log(message, color="green"):
         if verbose and not tracker:
             console.print(f"[{color}]{message}[/] {rel_path}")
 
+    def atomic_write_json(target_file: Path, payload: dict[str, Any]) -> None:
+        """Atomically write JSON while preserving existing mode bits when possible."""
+        temp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                encoding='utf-8',
+                dir=target_file.parent,
+                prefix=f"{target_file.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                temp_path = Path(f.name)
+                json.dump(payload, f, indent=4)
+                f.write('\n')
+
+            if target_file.exists():
+                try:
+                    existing_stat = target_file.stat()
+                    os.chmod(temp_path, stat.S_IMODE(existing_stat.st_mode))
+                    if hasattr(os, "chown"):
+                        try:
+                            os.chown(temp_path, existing_stat.st_uid, existing_stat.st_gid)
+                        except PermissionError:
+                            # Best-effort owner/group preservation without requiring elevated privileges.
+                            pass
+                except OSError:
+                    # Best-effort metadata preservation; data safety is prioritized.
+                    pass
+
+            os.replace(temp_path, target_file)
+        except Exception:
+            if temp_path and temp_path.exists():
+                temp_path.unlink()
+            raise
+
     try:
         with open(sub_item, 'r', encoding='utf-8') as f:
-            new_settings = json.load(f)
+            # json5 natively supports comments and trailing commas (JSONC)
+            new_settings = json5.load(f)
 
         if dest_file.exists():
             merged = merge_json_files(dest_file, new_settings, verbose=verbose and not tracker)
-            with open(dest_file, 'w', encoding='utf-8') as f:
-                json.dump(merged, f, indent=4)
-                f.write('\n')
-            log("Merged:", "green")
+            if merged is not None:
+                atomic_write_json(dest_file, merged)
+                log("Merged:", "green")
+                log("Note: comments/trailing commas are normalized when rewritten", "yellow")
+            else:
+                log("Skipped merge (preserved existing settings)", "yellow")
         else:
             shutil.copy2(sub_item, dest_file)
             log("Copied (no existing settings.json):", "blue")
 
     except Exception as e:
-        log(f"Warning: Could not merge, copying instead: {e}", "yellow")
-        shutil.copy2(sub_item, dest_file)
+        log(f"Warning: Could not merge settings: {e}", "yellow")
+        if not dest_file.exists():
+            shutil.copy2(sub_item, dest_file)
 
-def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = False) -> dict:
+
+def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = False) -> Optional[dict[str, Any]]:
     """Merge new JSON content into existing JSON file.
 
-    Performs a deep merge where:
+    Performs a polite deep merge where:
     - New keys are added
-    - Existing keys are preserved unless overwritten by new content
-    - Nested dictionaries are merged recursively
-    - Lists and other values are replaced (not merged)
+    - Existing keys are preserved (not overwritten) unless both values are dictionaries
+    - Nested dictionaries are merged recursively only when both sides are dictionaries
+    - Lists and other values are preserved from base if they exist
 
     Args:
         existing_path: Path to existing JSON file
@@ -699,28 +754,64 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
         verbose: Whether to print merge details
 
     Returns:
-        Merged JSON content as dict
+        Merged JSON content as dict, or None if the existing file should be left untouched.
     """
-    try:
-        with open(existing_path, 'r', encoding='utf-8') as f:
-            existing_content = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # If file doesn't exist or is invalid, just use new content
+    # Load existing content first to have a safe fallback
+    existing_content = None
+    exists = existing_path.exists()
+
+    if exists:
+        try:
+            with open(existing_path, 'r', encoding='utf-8') as f:
+                # Handle comments (JSONC) natively with json5
+                # Note: json5 handles BOM automatically
+                existing_content = json5.load(f)
+        except FileNotFoundError:
+            # Handle race condition where file is deleted after exists() check
+            exists = False
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Warning: Could not read or parse existing JSON in {existing_path.name} ({e}).[/yellow]")
+            # Skip merge to preserve existing file if unparseable or inaccessible (e.g. PermissionError)
+            return None
+
+    # Validate template content
+    if not isinstance(new_content, dict):
+        if verbose:
+            console.print(f"[yellow]Warning: Template content for {existing_path.name} is not a dictionary. Preserving existing settings.[/yellow]")
+        return None
+
+    if not exists:
         return new_content
 
-    def deep_merge(base: dict, update: dict) -> dict:
-        """Recursively merge update dict into base dict."""
+    # If existing content parsed but is not a dict, skip merge to avoid data loss
+    if not isinstance(existing_content, dict):
+        if verbose:
+            console.print(f"[yellow]Warning: Existing JSON in {existing_path.name} is not an object. Skipping merge to avoid data loss.[/yellow]")
+        return None
+
+    def deep_merge_polite(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+        """Recursively merge update dict into base dict, preserving base values."""
         result = base.copy()
         for key, value in update.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                # Recursively merge nested dictionaries
-                result[key] = deep_merge(result[key], value)
-            else:
-                # Add new key or replace existing value
+            if key not in result:
+                # Add new key
                 result[key] = value
+            elif isinstance(result[key], dict) and isinstance(value, dict):
+                # Recursively merge nested dictionaries
+                result[key] = deep_merge_polite(result[key], value)
+            else:
+                # Key already exists and values are not both dicts; preserve existing value.
+                # This ensures user settings aren't overwritten by template defaults.
+                pass
         return result
 
-    merged = deep_merge(existing_content, new_content)
+    merged = deep_merge_polite(existing_content, new_content)
+
+    # Detect if anything actually changed. If not, return None so the caller
+    # can skip rewriting the file (preserving user's comments/formatting).
+    if merged == existing_content:
+        return None
 
     if verbose:
         console.print(f"[cyan]Merged JSON file:[/cyan] {existing_path.name}")
@@ -1172,7 +1263,12 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     else:
         templates_dir = project_path / commands_subdir
 
-    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
+    # Only consider speckit.*.md templates so that user-authored command
+    # files (e.g. custom slash commands, agent files) coexisting in the
+    # same commands directory are not incorrectly converted into skills.
+    template_glob = "speckit.*.md"
+
+    if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         # Fallback: try the repo-relative path (for running from source checkout)
         # This also covers agents whose extracted commands are in a different
         # format (e.g. gemini/tabnine use .toml, not .md).
@@ -1180,15 +1276,16 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
         fallback_dir = script_dir / "templates" / "commands"
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
             templates_dir = fallback_dir
+            template_glob = "*.md"
 
-    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
+    if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         if tracker:
             tracker.error("ai-skills", "command templates not found")
         else:
             console.print("[yellow]Warning: command templates not found, skipping skills installation[/yellow]")
         return False
 
-    command_files = sorted(templates_dir.glob("*.md"))
+    command_files = sorted(templates_dir.glob(template_glob))
     if not command_files:
         if tracker:
             tracker.skip("ai-skills", "no command templates found")
@@ -1227,11 +1324,14 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                 body = content
 
             command_name = command_file.stem
-            # Normalize: extracted commands may be named "speckit.<cmd>.md";
-            # strip the "speckit." prefix so skill names stay clean and
+            # Normalize: extracted commands may be named "speckit.<cmd>.md"
+            # or "speckit.<cmd>.agent.md"; strip the "speckit." prefix and
+            # any trailing ".agent" suffix so skill names stay clean and
             # SKILL_DESCRIPTIONS lookups work.
             if command_name.startswith("speckit."):
                 command_name = command_name[len("speckit."):]
+            if command_name.endswith(".agent"):
+                command_name = command_name[:-len(".agent")]
             # Kimi CLI discovers skills by directory name and invokes them as
             # /skill:<name> — use dot separator to match packaging convention.
             if selected_ai == "kimi":
@@ -1256,6 +1356,8 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             source_name = command_file.name
             if source_name.startswith("speckit."):
                 source_name = source_name[len("speckit."):]
+            if source_name.endswith(".agent.md"):
+                source_name = source_name[:-len(".agent.md")] + ".md"
 
             frontmatter_data = {
                 "name": skill_name,
@@ -2007,6 +2109,11 @@ def preset_add(
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+
     manager = PresetManager(project_root)
     speckit_version = get_speckit_version()
 
@@ -2184,6 +2291,7 @@ def preset_info(
     pack_id: str = typer.Argument(..., help="Preset ID to get info about"),
 ):
     """Show detailed information about a preset."""
+    from .extensions import normalize_priority
     from .presets import PresetCatalog, PresetManager, PresetError
 
     project_root = Path.cwd()
@@ -2217,6 +2325,10 @@ def preset_info(
         if license_val:
             console.print(f"  License:     {license_val}")
         console.print("\n  [green]Status: installed[/green]")
+        # Get priority from registry
+        pack_metadata = manager.registry.get(pack_id)
+        priority = normalize_priority(pack_metadata.get("priority") if isinstance(pack_metadata, dict) else None)
+        console.print(f"  [dim]Priority:[/dim] {priority}")
         console.print()
         return
 
@@ -2246,6 +2358,58 @@ def preset_info(
     console.print("\n  [yellow]Status: not installed[/yellow]")
     console.print(f"  Install with: [cyan]specify preset add {pack_id}[/cyan]")
     console.print()
+
+
+@preset_app.command("set-priority")
+def preset_set_priority(
+    pack_id: str = typer.Argument(help="Preset ID"),
+    priority: int = typer.Argument(help="New priority (lower = higher precedence)"),
+):
+    """Set the resolution priority of an installed preset."""
+    from .presets import PresetManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+
+    manager = PresetManager(project_root)
+
+    # Check if preset is installed
+    if not manager.registry.is_installed(pack_id):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Get current metadata
+    metadata = manager.registry.get(pack_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    from .extensions import normalize_priority
+    raw_priority = metadata.get("priority")
+    # Only skip if the stored value is already a valid int equal to requested priority
+    # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
+    if isinstance(raw_priority, int) and raw_priority == priority:
+        console.print(f"[yellow]Preset '{pack_id}' already has priority {priority}[/yellow]")
+        raise typer.Exit(0)
+
+    old_priority = normalize_priority(raw_priority)
+
+    # Update priority
+    manager.registry.update(pack_id, {"priority": priority})
+
+    console.print(f"[green]✓[/green] Preset '{pack_id}' priority changed: {old_priority} → {priority}")
+    console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
 # ===== Preset Catalog Commands =====
@@ -2583,8 +2747,9 @@ def extension_list(
             status_color = "green" if ext["enabled"] else "red"
 
             console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']})")
+            console.print(f"     [dim]{ext['id']}[/dim]")
             console.print(f"     {ext['description']}")
-            console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
+            console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
 
     if available or all_extensions:
@@ -2772,6 +2937,7 @@ def extension_add(
     extension: str = typer.Argument(help="Extension name or path"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
+    priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
 ):
     """Install an extension."""
     from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError
@@ -2783,6 +2949,11 @@ def extension_add(
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
@@ -2801,7 +2972,7 @@ def extension_add(
                     console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
                     raise typer.Exit(1)
 
-                manifest = manager.install_from_directory(source_path, speckit_version)
+                manifest = manager.install_from_directory(source_path, speckit_version, priority=priority)
 
             elif from_url:
                 # Install from URL (ZIP file)
@@ -2834,7 +3005,7 @@ def extension_add(
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version)
+                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
@@ -2878,7 +3049,7 @@ def extension_add(
 
                 try:
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version)
+                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
                 finally:
                     # Clean up downloaded ZIP
                     if zip_path.exists():
@@ -3054,7 +3225,7 @@ def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
 ):
     """Show detailed information about an extension."""
-    from .extensions import ExtensionCatalog, ExtensionManager
+    from .extensions import ExtensionCatalog, ExtensionManager, normalize_priority
 
     project_root = Path.cwd()
 
@@ -3091,8 +3262,15 @@ def extension_info(
         # Get local manifest info
         ext_manifest = manager.get_extension(resolved_installed_id)
         metadata = manager.registry.get(resolved_installed_id)
+        metadata_is_dict = isinstance(metadata, dict)
+        if not metadata_is_dict:
+            console.print(
+                "[yellow]Warning:[/yellow] Extension metadata appears to be corrupted; "
+                "some information may be unavailable."
+            )
+        version = metadata.get("version", "unknown") if metadata_is_dict else "unknown"
 
-        console.print(f"\n[bold]{resolved_installed_name}[/bold] (v{metadata.get('version', 'unknown')})")
+        console.print(f"\n[bold]{resolved_installed_name}[/bold] (v{version})")
         console.print(f"ID: {resolved_installed_id}")
         console.print()
 
@@ -3120,6 +3298,8 @@ def extension_info(
 
         console.print()
         console.print("[green]✓ Installed[/green]")
+        priority = normalize_priority(metadata.get("priority") if metadata_is_dict else None)
+        console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {resolved_installed_id}")
         return
 
@@ -3135,6 +3315,8 @@ def extension_info(
 
 def _print_extension_info(ext_info: dict, manager):
     """Print formatted extension info from catalog data."""
+    from .extensions import normalize_priority
+
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
     console.print(f"\n[bold]{ext_info['name']}[/bold] (v{ext_info['version']}){verified_badge}")
@@ -3213,6 +3395,9 @@ def _print_extension_info(ext_info: dict, manager):
     install_allowed = ext_info.get("_install_allowed", True)
     if is_installed:
         console.print("[green]✓ Installed[/green]")
+        metadata = manager.registry.get(ext_info['id'])
+        priority = normalize_priority(metadata.get("priority") if isinstance(metadata, dict) else None)
+        console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
     elif install_allowed:
         console.print("[yellow]Not installed[/yellow]")
@@ -3239,6 +3424,7 @@ def extension_update(
         ValidationError,
         CommandRegistrar,
         HookExecutor,
+        normalize_priority,
     )
     from packaging import version as pkg_version
     import shutil
@@ -3278,7 +3464,7 @@ def extension_update(
         for ext_id in extensions_to_update:
             # Get installed version
             metadata = manager.registry.get(ext_id)
-            if metadata is None or "version" not in metadata:
+            if metadata is None or not isinstance(metadata, dict) or "version" not in metadata:
                 console.print(f"⚠  {ext_id}: Registry entry corrupted or missing (skipping)")
                 continue
             try:
@@ -3463,19 +3649,23 @@ def extension_update(
                                 shutil.copy2(cfg_file, new_extension_dir / cfg_file.name)
 
                     # 9. Restore metadata from backup (installed_at, enabled state)
-                    if backup_registry_entry:
+                    if backup_registry_entry and isinstance(backup_registry_entry, dict):
                         # Copy current registry entry to avoid mutating internal
                         # registry state before explicit restore().
                         current_metadata = manager.registry.get(extension_id)
-                        if current_metadata is None:
+                        if current_metadata is None or not isinstance(current_metadata, dict):
                             raise RuntimeError(
-                                f"Registry entry for '{extension_id}' missing after install — update incomplete"
+                                f"Registry entry for '{extension_id}' missing or corrupted after install — update incomplete"
                             )
                         new_metadata = dict(current_metadata)
 
                         # Preserve the original installation timestamp
                         if "installed_at" in backup_registry_entry:
                             new_metadata["installed_at"] = backup_registry_entry["installed_at"]
+
+                        # Preserve the original priority (normalized to handle corruption)
+                        if "priority" in backup_registry_entry:
+                            new_metadata["priority"] = normalize_priority(backup_registry_entry["priority"])
 
                         # If extension was disabled before update, disable it again
                         if not backup_registry_entry.get("enabled", True):
@@ -3530,7 +3720,7 @@ def extension_update(
                     # (files that weren't in the original backup)
                     try:
                         new_registry_entry = manager.registry.get(extension_id)
-                        if new_registry_entry is None:
+                        if new_registry_entry is None or not isinstance(new_registry_entry, dict):
                             new_registered_commands = {}
                         else:
                             new_registered_commands = new_registry_entry.get("registered_commands", {})
@@ -3650,10 +3840,10 @@ def extension_enable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
-    
+
     if metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already enabled[/yellow]")
         raise typer.Exit(0)
@@ -3698,10 +3888,10 @@ def extension_disable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
-    
+
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already disabled[/yellow]")
         raise typer.Exit(0)
@@ -3721,6 +3911,57 @@ def extension_disable(
     console.print(f"[green]✓[/green] Extension '{display_name}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")
     console.print(f"To re-enable: specify extension enable {extension_id}")
+
+
+@extension_app.command("set-priority")
+def extension_set_priority(
+    extension: str = typer.Argument(help="Extension ID or name"),
+    priority: int = typer.Argument(help="New priority (lower = higher precedence)"),
+):
+    """Set the resolution priority of an installed extension."""
+    from .extensions import ExtensionManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+
+    # Resolve extension ID from argument (handles ambiguous names)
+    installed = manager.list_installed()
+    extension_id, display_name = _resolve_installed_extension(extension, installed, "set-priority")
+
+    # Get current metadata
+    metadata = manager.registry.get(extension_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    from .extensions import normalize_priority
+    raw_priority = metadata.get("priority")
+    # Only skip if the stored value is already a valid int equal to requested priority
+    # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
+    if isinstance(raw_priority, int) and raw_priority == priority:
+        console.print(f"[yellow]Extension '{display_name}' already has priority {priority}[/yellow]")
+        raise typer.Exit(0)
+
+    old_priority = normalize_priority(raw_priority)
+
+    # Update priority
+    manager.registry.update(extension_id, {"priority": priority})
+
+    console.print(f"[green]✓[/green] Extension '{display_name}' priority changed: {old_priority} → {priority}")
+    console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
 def main():

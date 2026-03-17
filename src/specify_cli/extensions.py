@@ -41,6 +41,26 @@ class CompatibilityError(ExtensionError):
     pass
 
 
+def normalize_priority(value: Any, default: int = 10) -> int:
+    """Normalize a stored priority value for sorting and display.
+
+    Corrupted registry data may contain missing, non-numeric, or non-positive
+    values. In those cases, fall back to the default priority.
+
+    Args:
+        value: Priority value to normalize (may be int, str, None, etc.)
+        default: Default priority to use for invalid values (default: 10)
+
+    Returns:
+        Normalized priority as positive integer (>= 1)
+    """
+    try:
+        priority = int(value)
+    except (TypeError, ValueError):
+        return default
+    return priority if priority >= 1 else default
+
+
 @dataclass
 class CatalogEntry:
     """Represents a single catalog entry in the catalog stack."""
@@ -251,6 +271,9 @@ class ExtensionRegistry:
             raise KeyError(f"Extension '{extension_id}' is not installed")
         # Merge new metadata with existing, preserving original installed_at
         existing = self.data["extensions"][extension_id]
+        # Handle corrupted registry entries (e.g., string/list instead of dict)
+        if not isinstance(existing, dict):
+            existing = {}
         # Merge: existing fields preserved, new fields override
         merged = {**existing, **metadata}
         # Always preserve original installed_at based on key existence, not truthiness,
@@ -323,6 +346,32 @@ class ExtensionRegistry:
             True if extension is installed
         """
         return extension_id in self.data["extensions"]
+
+    def list_by_priority(self) -> List[tuple]:
+        """Get all installed extensions sorted by priority.
+
+        Lower priority number = higher precedence (checked first).
+        Extensions with equal priority are sorted alphabetically by ID
+        for deterministic ordering.
+
+        Returns:
+            List of (extension_id, metadata_copy) tuples sorted by priority.
+            Metadata is deep-copied to prevent accidental mutation.
+        """
+        extensions = self.data.get("extensions", {}) or {}
+        if not isinstance(extensions, dict):
+            extensions = {}
+        sortable_extensions = []
+        for ext_id, meta in extensions.items():
+            if not isinstance(meta, dict):
+                continue
+            metadata_copy = copy.deepcopy(meta)
+            metadata_copy["priority"] = normalize_priority(metadata_copy.get("priority", 10))
+            sortable_extensions.append((ext_id, metadata_copy))
+        return sorted(
+            sortable_extensions,
+            key=lambda item: (item[1]["priority"], item[0]),
+        )
 
 
 class ExtensionManager:
@@ -440,7 +489,8 @@ class ExtensionManager:
         self,
         source_dir: Path,
         speckit_version: str,
-        register_commands: bool = True
+        register_commands: bool = True,
+        priority: int = 10,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -448,14 +498,19 @@ class ExtensionManager:
             source_dir: Path to extension directory
             speckit_version: Current spec-kit version
             register_commands: If True, register commands with AI agents
+            priority: Resolution priority (lower = higher precedence, default 10)
 
         Returns:
             Installed extension manifest
 
         Raises:
-            ValidationError: If manifest is invalid
+            ValidationError: If manifest is invalid or priority is invalid
             CompatibilityError: If extension is incompatible
         """
+        # Validate priority
+        if priority < 1:
+            raise ValidationError("Priority must be a positive integer (1 or higher)")
+
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
@@ -497,6 +552,7 @@ class ExtensionManager:
             "source": "local",
             "manifest_hash": manifest.get_hash(),
             "enabled": True,
+            "priority": priority,
             "registered_commands": registered_commands
         })
 
@@ -505,21 +561,27 @@ class ExtensionManager:
     def install_from_zip(
         self,
         zip_path: Path,
-        speckit_version: str
+        speckit_version: str,
+        priority: int = 10,
     ) -> ExtensionManifest:
         """Install extension from ZIP file.
 
         Args:
             zip_path: Path to extension ZIP file
             speckit_version: Current spec-kit version
+            priority: Resolution priority (lower = higher precedence, default 10)
 
         Returns:
             Installed extension manifest
 
         Raises:
-            ValidationError: If manifest is invalid
+            ValidationError: If manifest is invalid or priority is invalid
             CompatibilityError: If extension is incompatible
         """
+        # Validate priority early
+        if priority < 1:
+            raise ValidationError("Priority must be a positive integer (1 or higher)")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
@@ -554,7 +616,7 @@ class ExtensionManager:
                 raise ValidationError("No extension.yml found in ZIP file")
 
             # Install from extracted directory
-            return self.install_from_directory(extension_dir, speckit_version)
+            return self.install_from_directory(extension_dir, speckit_version, priority=priority)
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
@@ -632,6 +694,9 @@ class ExtensionManager:
         result = []
 
         for ext_id, metadata in self.registry.list().items():
+            # Ensure metadata is a dictionary to avoid AttributeError when using .get()
+            if not isinstance(metadata, dict):
+                metadata = {}
             ext_dir = self.extensions_dir / ext_id
             manifest_path = ext_dir / "extension.yml"
 
@@ -643,6 +708,7 @@ class ExtensionManager:
                     "version": metadata.get("version", "unknown"),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
+                    "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": len(manifest.commands),
                     "hook_count": len(manifest.hooks)
@@ -655,6 +721,7 @@ class ExtensionManager:
                     "version": metadata.get("version", "unknown"),
                     "description": "⚠️ Corrupted extension",
                     "enabled": False,
+                    "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": 0,
                     "hook_count": 0

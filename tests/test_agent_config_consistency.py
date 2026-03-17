@@ -234,6 +234,82 @@ class TestAgentConfigConsistency:
         """CLI help text for --ai should include kimi."""
         assert "kimi" in AI_ASSISTANT_HELP
 
+    # --- Trae IDE consistency checks ---
+
+    def test_trae_in_agent_config(self):
+        """AGENT_CONFIG should include trae with correct folder and commands_subdir."""
+        assert "trae" in AGENT_CONFIG
+        assert AGENT_CONFIG["trae"]["folder"] == ".trae/"
+        assert AGENT_CONFIG["trae"]["commands_subdir"] == "rules"
+        assert AGENT_CONFIG["trae"]["requires_cli"] is False
+        assert AGENT_CONFIG["trae"]["install_url"] is None
+
+    def test_trae_in_extension_registrar(self):
+        """Extension command registrar should include trae using .trae/rules and markdown, if present."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "trae" in cfg
+        trae_cfg = cfg["trae"]
+        assert trae_cfg["format"] == "markdown"
+        assert trae_cfg["args"] == "$ARGUMENTS"
+        assert trae_cfg["extension"] == ".md"
+
+    def test_trae_in_release_agent_lists(self):
+        """Bash and PowerShell release scripts should include trae in agent lists."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        sh_match = re.search(r"ALL_AGENTS=\(([^)]*)\)", sh_text)
+        assert sh_match is not None
+        sh_agents = sh_match.group(1).split()
+
+        ps_match = re.search(r"\$AllAgents = @\(([^)]*)\)", ps_text)
+        assert ps_match is not None
+        ps_agents = re.findall(r"'([^']+)'", ps_match.group(1))
+
+        assert "trae" in sh_agents
+        assert "trae" in ps_agents
+
+    def test_trae_in_release_scripts_generate_commands(self):
+        """Release scripts should generate markdown commands for trae in .trae/rules."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert ".trae/rules" in sh_text
+        assert ".trae/rules" in ps_text
+        assert re.search(r"'trae'\s*\{.*?\.trae/rules", ps_text, re.S) is not None
+
+    def test_trae_in_github_release_output(self):
+        """GitHub release script should include trae template packages."""
+        gh_release_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-github-release.sh").read_text(encoding="utf-8")
+
+        assert "spec-kit-template-trae-sh-" in gh_release_text
+        assert "spec-kit-template-trae-ps-" in gh_release_text
+
+    def test_trae_in_agent_context_scripts(self):
+        """Agent context scripts should support trae agent type."""
+        bash_text = (REPO_ROOT / "scripts" / "bash" / "update-agent-context.sh").read_text(encoding="utf-8")
+        pwsh_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        assert "trae" in bash_text
+        assert "TRAE_FILE" in bash_text
+        assert "trae" in pwsh_text
+        assert "TRAE_FILE" in pwsh_text
+
+    def test_trae_in_powershell_validate_set(self):
+        """PowerShell update-agent-context script should include 'trae' in ValidateSet."""
+        ps_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        validate_set_match = re.search(r"\[ValidateSet\(([^)]*)\)\]", ps_text)
+        assert validate_set_match is not None
+        validate_set_values = re.findall(r"'([^']+)'", validate_set_match.group(1))
+
+        assert "trae" in validate_set_values
+
+    def test_ai_help_includes_trae(self):
+        """CLI help text for --ai should include trae."""
+        assert "trae" in AI_ASSISTANT_HELP
+
     # --- Pi Coding Agent consistency checks ---
 
     def test_pi_in_agent_config(self):

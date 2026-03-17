@@ -62,7 +62,7 @@ def templates_dir(project_dir):
     tpl_root.mkdir(parents=True, exist_ok=True)
 
     # Template with valid YAML frontmatter
-    (tpl_root / "specify.md").write_text(
+    (tpl_root / "speckit.specify.md").write_text(
         "---\n"
         "description: Create or update the feature specification.\n"
         "handoffs:\n"
@@ -79,7 +79,7 @@ def templates_dir(project_dir):
     )
 
     # Template with minimal frontmatter
-    (tpl_root / "plan.md").write_text(
+    (tpl_root / "speckit.plan.md").write_text(
         "---\n"
         "description: Generate implementation plan.\n"
         "---\n"
@@ -91,7 +91,7 @@ def templates_dir(project_dir):
     )
 
     # Template with no frontmatter
-    (tpl_root / "tasks.md").write_text(
+    (tpl_root / "speckit.tasks.md").write_text(
         "# Tasks Command\n"
         "\n"
         "Body without frontmatter.\n",
@@ -99,7 +99,7 @@ def templates_dir(project_dir):
     )
 
     # Template with empty YAML frontmatter (yaml.safe_load returns None)
-    (tpl_root / "empty_fm.md").write_text(
+    (tpl_root / "speckit.empty_fm.md").write_text(
         "---\n"
         "---\n"
         "\n"
@@ -342,7 +342,7 @@ class TestInstallAiSkills:
         cmds_dir = project_dir / ".claude" / "commands"
         cmds_dir.mkdir(parents=True)
 
-        (cmds_dir / "broken.md").write_text(
+        (cmds_dir / "speckit.broken.md").write_text(
             "---\n"
             "description: [unclosed bracket\n"
             "  invalid: yaml: content: here\n"
@@ -456,9 +456,12 @@ class TestInstallAiSkills:
 
         # Place .md templates in the agent's commands directory
         agent_folder = AGENT_CONFIG[agent_key]["folder"]
-        cmds_dir = proj / agent_folder.rstrip("/") / "commands"
+        commands_subdir = AGENT_CONFIG[agent_key].get("commands_subdir", "commands")
+        cmds_dir = proj / agent_folder.rstrip("/") / commands_subdir
         cmds_dir.mkdir(parents=True)
-        (cmds_dir / "specify.md").write_text(
+        # Copilot uses speckit.*.agent.md templates; other agents use speckit.*.md
+        fname = "speckit.specify.agent.md" if agent_key == "copilot" else "speckit.specify.md"
+        (cmds_dir / fname).write_text(
             "---\ndescription: Test command\n---\n\n# Test\n\nBody.\n"
         )
 
@@ -474,7 +477,100 @@ class TestInstallAiSkills:
         assert expected_skill_name in skill_dirs
         assert (skills_dir / expected_skill_name / "SKILL.md").exists()
 
+    def test_copilot_ignores_non_speckit_agents(self, project_dir):
+        """Non-speckit markdown in .github/agents/ must not produce skills."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        (agents_dir / "speckit.plan.agent.md").write_text(
+            "---\ndescription: Generate implementation plan.\n---\n\n# Plan\n\nBody.\n"
+        )
+        (agents_dir / "my-custom-agent.agent.md").write_text(
+            "---\ndescription: A user custom agent\n---\n\n# Custom\n\nBody.\n"
+        )
 
+        result = install_ai_skills(project_dir, "copilot")
+
+        assert result is True
+        skills_dir = _get_skills_dir(project_dir, "copilot")
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert "speckit-plan" in skill_dirs
+        assert "speckit-my-custom-agent.agent" not in skill_dirs
+        assert "speckit-my-custom-agent" not in skill_dirs
+
+    @pytest.mark.parametrize("agent_key,custom_file", [
+        ("claude", "review.md"),
+        ("cursor-agent", "deploy.md"),
+        ("qwen", "my-workflow.md"),
+    ])
+    def test_non_speckit_commands_ignored_for_all_agents(self, temp_dir, agent_key, custom_file):
+        """User-authored command files must not produce skills for any agent."""
+        proj = temp_dir / f"proj-{agent_key}"
+        proj.mkdir()
+
+        agent_folder = AGENT_CONFIG[agent_key]["folder"]
+        commands_subdir = AGENT_CONFIG[agent_key].get("commands_subdir", "commands")
+        cmds_dir = proj / agent_folder.rstrip("/") / commands_subdir
+        cmds_dir.mkdir(parents=True)
+        (cmds_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Create spec.\n---\n\n# Specify\n\nBody.\n"
+        )
+        (cmds_dir / custom_file).write_text(
+            "---\ndescription: User custom command\n---\n\n# Custom\n\nBody.\n"
+        )
+
+        result = install_ai_skills(proj, agent_key)
+
+        assert result is True
+        skills_dir = _get_skills_dir(proj, agent_key)
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert "speckit-specify" in skill_dirs
+        custom_stem = Path(custom_file).stem
+        assert f"speckit-{custom_stem}" not in skill_dirs
+
+    def test_copilot_fallback_when_only_non_speckit_agents(self, project_dir):
+        """Fallback to templates/commands/ when .github/agents/ has no speckit.*.md files."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        # Only a user-authored agent, no speckit.* templates
+        (agents_dir / "my-custom-agent.agent.md").write_text(
+            "---\ndescription: A user custom agent\n---\n\n# Custom\n\nBody.\n"
+        )
+
+        result = install_ai_skills(project_dir, "copilot")
+
+        # Should succeed via fallback to templates/commands/
+        assert result is True
+        skills_dir = _get_skills_dir(project_dir, "copilot")
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        # Should have skills from fallback templates, not from the custom agent
+        assert "speckit-plan" in skill_dirs
+        assert not any("my-custom" in d for d in skill_dirs)
+
+    @pytest.mark.parametrize("agent_key", ["claude", "cursor-agent", "qwen"])
+    def test_fallback_when_only_non_speckit_commands(self, temp_dir, agent_key):
+        """Fallback to templates/commands/ when agent dir has no speckit.*.md files."""
+        proj = temp_dir / f"proj-{agent_key}"
+        proj.mkdir()
+
+        agent_folder = AGENT_CONFIG[agent_key]["folder"]
+        commands_subdir = AGENT_CONFIG[agent_key].get("commands_subdir", "commands")
+        cmds_dir = proj / agent_folder.rstrip("/") / commands_subdir
+        cmds_dir.mkdir(parents=True)
+        # Only a user-authored command, no speckit.* templates
+        (cmds_dir / "my-custom-command.md").write_text(
+            "---\ndescription: User custom command\n---\n\n# Custom\n\nBody.\n"
+        )
+
+        result = install_ai_skills(proj, agent_key)
+
+        # Should succeed via fallback to templates/commands/
+        assert result is True
+        skills_dir = _get_skills_dir(proj, agent_key)
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        assert not any("my-custom" in d for d in skill_dirs)
 
 class TestCommandCoexistence:
     """Verify install_ai_skills never touches command files.
@@ -486,14 +582,16 @@ class TestCommandCoexistence:
 
     def test_existing_commands_preserved_claude(self, project_dir, templates_dir, commands_dir_claude):
         """install_ai_skills must NOT remove pre-existing .claude/commands files."""
-        # Verify commands exist before
-        assert len(list(commands_dir_claude.glob("speckit.*"))) == 3
+        # Verify commands exist before (templates_dir adds 4 speckit.* files,
+        # commands_dir_claude overlaps with 3 of them)
+        before = list(commands_dir_claude.glob("speckit.*"))
+        assert len(before) >= 3
 
         install_ai_skills(project_dir, "claude")
 
         # Commands must still be there — install_ai_skills never touches them
         remaining = list(commands_dir_claude.glob("speckit.*"))
-        assert len(remaining) == 3
+        assert len(remaining) == len(before)
 
     def test_existing_commands_preserved_gemini(self, project_dir, templates_dir, commands_dir_gemini):
         """install_ai_skills must NOT remove pre-existing .gemini/commands files."""

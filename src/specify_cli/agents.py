@@ -141,6 +141,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": "/SKILL.md"
+        },
+        "trae": {
+            "dir": ".trae/rules",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
         }
     }
 
