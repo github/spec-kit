@@ -2287,10 +2287,14 @@ def preset_set_priority(
         raise typer.Exit(1)
 
     from .extensions import normalize_priority
-    old_priority = normalize_priority(metadata.get("priority"))
-    if old_priority == priority:
+    raw_priority = metadata.get("priority")
+    # Only skip if the stored value is already a valid int equal to requested priority
+    # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
+    if isinstance(raw_priority, int) and raw_priority == priority:
         console.print(f"[yellow]Preset '{pack_id}' already has priority {priority}[/yellow]")
         raise typer.Exit(0)
+
+    old_priority = normalize_priority(raw_priority)
 
     # Update priority
     manager.registry.update(pack_id, {"priority": priority})
@@ -3834,10 +3838,14 @@ def extension_set_priority(
         raise typer.Exit(1)
 
     from .extensions import normalize_priority
-    old_priority = normalize_priority(metadata.get("priority"))
-    if old_priority == priority:
+    raw_priority = metadata.get("priority")
+    # Only skip if the stored value is already a valid int equal to requested priority
+    # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
+    if isinstance(raw_priority, int) and raw_priority == priority:
         console.print(f"[yellow]Extension '{display_name}' already has priority {priority}[/yellow]")
         raise typer.Exit(0)
+
+    old_priority = normalize_priority(raw_priority)
 
     # Update priority
     manager.registry.update(extension_id, {"priority": priority})
