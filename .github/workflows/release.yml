@@ -38,6 +38,9 @@ jobs:
           chmod +x .github/workflows/scripts/create-release-packages.sh
           .github/workflows/scripts/create-release-packages.sh ${{ steps.version.outputs.tag }}
 
+      # Note: pyproject.toml version is already synced to the git tag by
+      # release-trigger.yml (which updates pyproject.toml, commits, then pushes
+      # the tag). No version sync step is needed here.
       - name: Build Python wheel
         if: steps.check_release.outputs.exists == 'false'
         run: |

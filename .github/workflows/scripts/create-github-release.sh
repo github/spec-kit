@@ -15,8 +15,26 @@ VERSION="$1"
 # Remove 'v' prefix from version for release title
 VERSION_NO_V=${VERSION#v}
 
+# Find the built wheel dynamically to avoid version mismatch between
+# pyproject.toml and the git tag.
+shopt -s nullglob
+wheel_files=(.genreleases/specify_cli-*-py3-none-any.whl)
+
+if (( ${#wheel_files[@]} == 0 )); then
+  echo "Error: No specify_cli wheel found in .genreleases/" >&2
+  exit 1
+fi
+
+if (( ${#wheel_files[@]} > 1 )); then
+  echo "Error: Multiple specify_cli wheels found in .genreleases/; expected exactly one:" >&2
+  printf '  %s\n' "${wheel_files[@]}" >&2
+  exit 1
+fi
+
+WHEEL_FILE="${wheel_files[0]}"
+
 gh release create "$VERSION" \
-  .genreleases/specify_cli-"$VERSION_NO_V"-py3-none-any.whl \
+  "$WHEEL_FILE" \
   .genreleases/spec-kit-template-copilot-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-copilot-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-claude-sh-"$VERSION".zip \

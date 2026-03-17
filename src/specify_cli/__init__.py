@@ -1303,7 +1303,12 @@ def scaffold_from_core_pack(
                     rel = item.relative_to(build_dir)
                     dest = project_path / rel
                     dest.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(item, dest)
+                    # When scaffolding into an existing directory (--here),
+                    # use the same merge semantics as the GitHub-download path.
+                    if is_current_dir and dest.name == "settings.json" and dest.parent.name == ".vscode":
+                        handle_vscode_settings(item, dest, rel, verbose=False, tracker=tracker)
+                    else:
+                        shutil.copy2(item, dest)
 
         if tracker:
             tracker.complete("scaffold", "bundled assets applied")
