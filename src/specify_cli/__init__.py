@@ -1165,7 +1165,11 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     else:
         templates_dir = project_path / commands_subdir
 
-    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
+    # For Copilot, only consider speckit.*.md templates so that user-authored
+    # agent files don't prevent the fallback to templates/commands/.
+    template_glob = "speckit.*.md" if selected_ai == "copilot" else "*.md"
+
+    if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         # Fallback: try the repo-relative path (for running from source checkout)
         # This also covers agents whose extracted commands are in a different
         # format (e.g. gemini/tabnine use .toml, not .md).
@@ -1174,17 +1178,14 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
             templates_dir = fallback_dir
 
-    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
+    if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         if tracker:
             tracker.error("ai-skills", "command templates not found")
         else:
             console.print("[yellow]Warning: command templates not found, skipping skills installation[/yellow]")
         return False
 
-    if selected_ai == "copilot":
-        command_files = sorted(templates_dir.glob("speckit.*.md"))
-    else:
-        command_files = sorted(templates_dir.glob("*.md"))
+    command_files = sorted(templates_dir.glob(template_glob))
     if not command_files:
         if tracker:
             tracker.skip("ai-skills", "no command templates found")
@@ -1223,11 +1224,14 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                 body = content
 
             command_name = command_file.stem
-            # Normalize: extracted commands may be named "speckit.<cmd>.md";
-            # strip the "speckit." prefix so skill names stay clean and
+            # Normalize: extracted commands may be named "speckit.<cmd>.md"
+            # or "speckit.<cmd>.agent.md"; strip the "speckit." prefix and
+            # any trailing ".agent" suffix so skill names stay clean and
             # SKILL_DESCRIPTIONS lookups work.
             if command_name.startswith("speckit."):
                 command_name = command_name[len("speckit."):]
+            if command_name.endswith(".agent"):
+                command_name = command_name[:-len(".agent")]
             # Kimi CLI discovers skills by directory name and invokes them as
             # /skill:<name> — use dot separator to match packaging convention.
             if selected_ai == "kimi":
@@ -1252,6 +1256,8 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             source_name = command_file.name
             if source_name.startswith("speckit."):
                 source_name = source_name[len("speckit."):]
+            if source_name.endswith(".agent.md"):
+                source_name = source_name[:-len(".agent.md")] + ".md"
 
             frontmatter_data = {
                 "name": skill_name,
