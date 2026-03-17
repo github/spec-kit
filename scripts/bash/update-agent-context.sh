@@ -690,57 +690,68 @@ update_specific_agent() {
     esac
 }
 
+# Helper: skip non-existent files and files already updated (dedup by
+# realpath so that variables pointing to the same file — e.g. AMP_FILE,
+# KIRO_FILE, BOB_FILE all resolving to AGENTS_FILE — are only written once).
+# Uses a linear array instead of associative array for bash 3.2 compatibility.
+# Note: defined at top level because bash 3.2 does not support true
+# nested/local functions. _updated_paths, _found_agent, and _all_ok are
+# initialised exclusively inside update_all_existing_agents so that
+# sourcing this script has no side effects on the caller's environment.
+
+_update_if_new() {
+    local file="$1" name="$2"
+    [[ -f "$file" ]] || return 0
+    local real_path
+    real_path=$(realpath "$file" 2>/dev/null || echo "$file")
+    local p
+    if [[ ${#_updated_paths[@]} -gt 0 ]]; then
+        for p in "${_updated_paths[@]}"; do
+            [[ "$p" == "$real_path" ]] && return 0
+        done
+    fi
+    # Record the file as seen before attempting the update so that:
+    # (a) aliases pointing to the same path are not retried on failure
+    # (b) _found_agent reflects file existence, not update success
+    _updated_paths+=("$real_path")
+    _found_agent=true
+    update_agent_file "$file" "$name"
+}
+
 update_all_existing_agents() {
-    local found_agent=false
-    local _updated_paths=()
+    _found_agent=false
+    _updated_paths=()
+    local _all_ok=true
 
-    # Helper: skip non-existent files and files already updated (dedup by
-    # realpath so that variables pointing to the same file — e.g. AMP_FILE,
-    # KIRO_FILE, BOB_FILE all resolving to AGENTS_FILE — are only written once).
-    # Uses a linear array instead of associative array for bash 3.2 compatibility.
-    update_if_new() {
-        local file="$1" name="$2"
-        [[ -f "$file" ]] || return 0
-        local real_path
-        real_path=$(realpath "$file" 2>/dev/null || echo "$file")
-        local p
-        if [[ ${#_updated_paths[@]} -gt 0 ]]; then
-            for p in "${_updated_paths[@]}"; do
-                [[ "$p" == "$real_path" ]] && return 0
-            done
-        fi
-        update_agent_file "$file" "$name" || return 1
-        _updated_paths+=("$real_path")
-        found_agent=true
-    }
-
-    update_if_new "$CLAUDE_FILE" "Claude Code"
-    update_if_new "$GEMINI_FILE" "Gemini CLI"
-    update_if_new "$COPILOT_FILE" "GitHub Copilot"
-    update_if_new "$CURSOR_FILE" "Cursor IDE"
-    update_if_new "$QWEN_FILE" "Qwen Code"
-    update_if_new "$AGENTS_FILE" "Codex/opencode"
-    update_if_new "$AMP_FILE" "Amp"
-    update_if_new "$KIRO_FILE" "Kiro CLI"
-    update_if_new "$BOB_FILE" "IBM Bob"
-    update_if_new "$WINDSURF_FILE" "Windsurf"
-    update_if_new "$KILOCODE_FILE" "Kilo Code"
-    update_if_new "$AUGGIE_FILE" "Auggie CLI"
-    update_if_new "$ROO_FILE" "Roo Code"
-    update_if_new "$CODEBUDDY_FILE" "CodeBuddy CLI"
-    update_if_new "$SHAI_FILE" "SHAI"
-    update_if_new "$TABNINE_FILE" "Tabnine CLI"
-    update_if_new "$QODER_FILE" "Qoder CLI"
-    update_if_new "$AGY_FILE" "Antigravity"
-    update_if_new "$VIBE_FILE" "Mistral Vibe"
-    update_if_new "$KIMI_FILE" "Kimi Code"
-    update_if_new "$JUNIE_FILE" "Junie CLI"
+    _update_if_new "$CLAUDE_FILE" "Claude Code"           || _all_ok=false
+    _update_if_new "$GEMINI_FILE" "Gemini CLI"             || _all_ok=false
+    _update_if_new "$COPILOT_FILE" "GitHub Copilot"        || _all_ok=false
+    _update_if_new "$CURSOR_FILE" "Cursor IDE"             || _all_ok=false
+    _update_if_new "$QWEN_FILE" "Qwen Code"                || _all_ok=false
+    _update_if_new "$AGENTS_FILE" "Codex/opencode"         || _all_ok=false
+    _update_if_new "$AMP_FILE" "Amp"                       || _all_ok=false
+    _update_if_new "$KIRO_FILE" "Kiro CLI"                 || _all_ok=false
+    _update_if_new "$BOB_FILE" "IBM Bob"                   || _all_ok=false
+    _update_if_new "$WINDSURF_FILE" "Windsurf"             || _all_ok=false
+    _update_if_new "$KILOCODE_FILE" "Kilo Code"            || _all_ok=false
+    _update_if_new "$AUGGIE_FILE" "Auggie CLI"             || _all_ok=false
+    _update_if_new "$ROO_FILE" "Roo Code"                  || _all_ok=false
+    _update_if_new "$CODEBUDDY_FILE" "CodeBuddy CLI"       || _all_ok=false
+    _update_if_new "$SHAI_FILE" "SHAI"                     || _all_ok=false
+    _update_if_new "$TABNINE_FILE" "Tabnine CLI"           || _all_ok=false
+    _update_if_new "$QODER_FILE" "Qoder CLI"               || _all_ok=false
+    _update_if_new "$AGY_FILE" "Antigravity"               || _all_ok=false
+    _update_if_new "$VIBE_FILE" "Mistral Vibe"             || _all_ok=false
+    _update_if_new "$KIMI_FILE" "Kimi Code"                || _all_ok=false
+    _update_if_new "$JUNIE_FILE" "Junie CLI"               || _all_ok=false
 
     # If no agent files exist, create a default Claude file
-    if [[ "$found_agent" == false ]]; then
+    if [[ "$_found_agent" == false ]]; then
         log_info "No existing agent files found, creating default Claude file..."
         update_agent_file "$CLAUDE_FILE" "Claude Code" || return 1
     fi
+
+    [[ "$_all_ok" == true ]]
 }
 print_summary() {
     echo
