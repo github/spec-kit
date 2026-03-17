@@ -1,0 +1,56 @@
+# CodeRabbit configuration for spec-kit repository
+# https://docs.coderabbit.ai/guides/configuration
+
+language: en-US
+
+tone_instructions: >-
+  Be professional and concise. Focus on Python best practices, clean CLI
+  design, template correctness, and proper test coverage. Flag potential
+  issues with specification-driven development workflow integrity.
+
+early_access: false
+
+reviews:
+  profile: chill
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+  path_instructions:
+    - path: "src/**/*.py"
+      instructions: >-
+        Review Python source code for clean architecture, proper error
+        handling, type hints, and PEP 8 compliance. Verify CLI command
+        structure follows established patterns and handles edge cases.
+    - path: "tests/**"
+      instructions: >-
+        Evaluate test quality: meaningful assertions, proper fixtures,
+        and coverage of edge cases. Verify that template rendering tests
+        validate actual output correctness.
+    - path: "templates/**"
+      instructions: >-
+        Review specification templates for completeness, clear
+        instructions, proper placeholder syntax, and consistency
+        across template types. Flag ambiguous or missing sections.
+    - path: "scripts/**"
+      instructions: >-
+        Review shell scripts for proper error handling, POSIX
+        compatibility, and correct argument parsing. Verify scripts
+        work across bash and zsh.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Validate GitHub Actions workflow syntax, proper secret handling,
+        release process correctness, and test/lint/docs pipeline stages.
+  tools:
+    ruff:
+      enabled: true
+    shellcheck:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: auto
+  web_search:
+    enabled: true
