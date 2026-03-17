@@ -261,6 +261,9 @@
       "version": "2.0.0",
       "download_url": "https://github.com/imviancagrace/spec-kit-iterate/archive/refs/tags/v2.0.0.zip",
       "repository": "https://github.com/imviancagrace/spec-kit-iterate",
+      "homepage": "https://github.com/imviancagrace/spec-kit-iterate",
+      "documentation": "https://github.com/imviancagrace/spec-kit-iterate/blob/main/README.md",
+      "changelog": "https://github.com/imviancagrace/spec-kit-iterate/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.1.0"
@@ -275,12 +278,10 @@
         "spec-maintenance"
       ],
       "verified": false,
+      "downloads": 0,
+      "stars": 0,
       "created_at": "2026-03-17T00:00:00Z",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "statistics": {
-        "downloads": 0,
-        "stars": 0
-      }
+      "updated_at": "2026-03-17T00:00:00Z"
     },    
     "jira": {
       "name": "Jira Integration",
