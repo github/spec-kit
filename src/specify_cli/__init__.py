@@ -3315,6 +3315,7 @@ def extension_update(
         ValidationError,
         CommandRegistrar,
         HookExecutor,
+        normalize_priority,
     )
     from packaging import version as pkg_version
     import shutil
@@ -3553,9 +3554,9 @@ def extension_update(
                         if "installed_at" in backup_registry_entry:
                             new_metadata["installed_at"] = backup_registry_entry["installed_at"]
 
-                        # Preserve the original priority
+                        # Preserve the original priority (normalized to handle corruption)
                         if "priority" in backup_registry_entry:
-                            new_metadata["priority"] = backup_registry_entry["priority"]
+                            new_metadata["priority"] = normalize_priority(backup_registry_entry["priority"])
 
                         # If extension was disabled before update, disable it again
                         if not backup_registry_entry.get("enabled", True):

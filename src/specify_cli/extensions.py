@@ -271,6 +271,9 @@ class ExtensionRegistry:
             raise KeyError(f"Extension '{extension_id}' is not installed")
         # Merge new metadata with existing, preserving original installed_at
         existing = self.data["extensions"][extension_id]
+        # Handle corrupted registry entries (e.g., string/list instead of dict)
+        if not isinstance(existing, dict):
+            existing = {}
         # Merge: existing fields preserved, new fields override
         merged = {**existing, **metadata}
         # Always preserve original installed_at based on key existence, not truthiness,

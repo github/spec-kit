@@ -291,6 +291,9 @@ class PresetRegistry:
         if pack_id not in self.data["presets"]:
             raise KeyError(f"Preset '{pack_id}' not found in registry")
         existing = self.data["presets"][pack_id]
+        # Handle corrupted registry entries (e.g., string/list instead of dict)
+        if not isinstance(existing, dict):
+            existing = {}
         # Merge: existing fields preserved, new fields override
         merged = {**existing, **updates}
         # Always preserve original installed_at based on key existence, not truthiness,
