@@ -1165,9 +1165,10 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     else:
         templates_dir = project_path / commands_subdir
 
-    # For Copilot, only consider speckit.*.md templates so that user-authored
-    # agent files don't prevent the fallback to templates/commands/.
-    template_glob = "speckit.*.md" if selected_ai == "copilot" else "*.md"
+    # Only consider speckit.*.md templates so that user-authored command
+    # files (e.g. custom slash commands, agent files) coexisting in the
+    # same commands directory are not incorrectly converted into skills.
+    template_glob = "speckit.*.md"
 
     if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         # Fallback: try the repo-relative path (for running from source checkout)
