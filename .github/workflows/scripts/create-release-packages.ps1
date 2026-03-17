@@ -431,6 +431,10 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".qoder/commands"
             Generate-Commands -Agent 'qodercli' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'junie' {
+            $cmdDir = Join-Path $baseDir ".junie/commands"
+            Generate-Commands -Agent 'junie' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         'shai' {
             $cmdDir = Join-Path $baseDir ".shai/commands"
             Generate-Commands -Agent 'shai' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script

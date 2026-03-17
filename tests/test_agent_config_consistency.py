@@ -254,7 +254,7 @@ class TestAgentConfigConsistency:
         assert junie_cfg["extension"] == ".md"
 
     def test_junie_in_release_agent_lists(self):
-        """Bash and PowerShell release scripts should include junie in agent lists."""
+        """Bash and PowerShell release scripts should include junie and build .junie/commands."""
         sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
         ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
 
@@ -268,6 +268,10 @@ class TestAgentConfigConsistency:
 
         assert "junie" in sh_agents
         assert "junie" in ps_agents
+
+        # Ensure the release scripts actually generate Junie command files targeting .junie/commands.
+        assert re.search(r"junie.*\.junie/commands", sh_text, re.S) is not None
+        assert re.search(r"junie.*\.junie/commands", ps_text, re.S) is not None
 
     def test_junie_in_agent_context_scripts(self):
         """Agent context scripts should support junie agent type."""
