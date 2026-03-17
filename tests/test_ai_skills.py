@@ -433,8 +433,8 @@ class TestInstallAiSkills:
         commands_subdir = AGENT_CONFIG[agent_key].get("commands_subdir", "commands")
         cmds_dir = proj / agent_folder.rstrip("/") / commands_subdir
         cmds_dir.mkdir(parents=True)
-        # Copilot filters for speckit.*.md; other agents use plain names
-        fname = "speckit.specify.md" if agent_key == "copilot" else "specify.md"
+        # Copilot uses speckit.*.agent.md templates; other agents use plain names
+        fname = "speckit.specify.agent.md" if agent_key == "copilot" else "specify.md"
         (cmds_dir / fname).write_text(
             "---\ndescription: Test command\n---\n\n# Test\n\nBody.\n"
         )
