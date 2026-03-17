@@ -248,11 +248,9 @@ class TestAgentConfigConsistency:
         """Extension command registrar should include trae using .trae/rules and markdown, if present."""
         cfg = CommandRegistrar.AGENT_CONFIGS
 
-        trae_cfg = cfg.get("trae")
-        if trae_cfg is None:
-            # Trae is not yet wired into the extension registrar; tolerate absence for now.
-            return
-
+        assert "trae" in cfg
+        trae_cfg = cfg["trae"]
+        
         assert trae_cfg["dir"] == ".trae/rules"
         assert trae_cfg["format"] == "markdown"
         assert trae_cfg["args"] == "$ARGUMENTS"
