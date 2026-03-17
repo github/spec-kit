@@ -253,6 +253,35 @@
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-06T00:00:00Z"
     },
+    "iterate": {
+      "name": "Iterate",
+      "id": "iterate",
+      "description": "Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building",
+      "author": "Vianca Martinez",
+      "version": "2.0.0",
+      "download_url": "https://github.com/imviancagrace/spec-kit-iterate/archive/refs/tags/v2.0.0.zip",
+      "repository": "https://github.com/imviancagrace/spec-kit-iterate",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "iteration",
+        "change-management",
+        "spec-maintenance"
+      ],
+      "verified": false,
+      "created_at": "2026-03-17T00:00:00Z",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "statistics": {
+        "downloads": 0,
+        "stars": 0
+      }
+    },    
     "jira": {
       "name": "Jira Integration",
       "id": "jira",
