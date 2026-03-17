@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- feat(cli): polite deep merge for VSCode settings.json with JSONC support via `json5` and zero-data-loss fallbacks
 - feat(presets): Pluggable preset system with preset catalog and template resolver
 - Preset manifest (`preset.yml`) with validation for artifact, command, and script types
 - `PresetManifest`, `PresetRegistry`, `PresetManager`, `PresetCatalog`, `PresetResolver` classes in `src/specify_cli/presets.py`
