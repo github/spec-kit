@@ -455,7 +455,7 @@ class TestInstallAiSkills:
         """Non-speckit markdown in .github/agents/ must not produce skills."""
         agents_dir = project_dir / ".github" / "agents"
         agents_dir.mkdir(parents=True, exist_ok=True)
-        (agents_dir / "speckit.plan.md").write_text(
+        (agents_dir / "speckit.plan.agent.md").write_text(
             "---\ndescription: Generate implementation plan.\n---\n\n# Plan\n\nBody.\n"
         )
         (agents_dir / "other-agent.agent.md").write_text(
