@@ -289,6 +289,13 @@ AGENT_CONFIG = {
         "install_url": "https://www.npmjs.com/package/@mariozechner/pi-coding-agent",
         "requires_cli": True,
     },
+    "iflow": {
+        "name": "iFlow CLI",
+        "folder": ".iflow/",
+        "commands_subdir": "commands",
+        "install_url": "https://docs.iflow.cn/en/cli/quickstart",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir

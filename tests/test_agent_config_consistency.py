@@ -387,3 +387,67 @@ class TestAgentConfigConsistency:
     def test_ai_help_includes_pi(self):
         """CLI help text for --ai should include pi."""
         assert "pi" in AI_ASSISTANT_HELP
+
+    # --- iFlow CLI consistency checks ---
+
+    def test_iflow_in_agent_config(self):
+        """AGENT_CONFIG should include iflow with correct folder and commands_subdir."""
+        assert "iflow" in AGENT_CONFIG
+        assert AGENT_CONFIG["iflow"]["folder"] == ".iflow/"
+        assert AGENT_CONFIG["iflow"]["commands_subdir"] == "commands"
+        assert AGENT_CONFIG["iflow"]["requires_cli"] is True
+
+    def test_iflow_in_extension_registrar(self):
+        """Extension command registrar should include iflow targeting .iflow/commands."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "iflow" in cfg
+        assert cfg["iflow"]["dir"] == ".iflow/commands"
+        assert cfg["iflow"]["format"] == "markdown"
+        assert cfg["iflow"]["args"] == "$ARGUMENTS"
+
+    def test_iflow_in_release_agent_lists(self):
+        """Bash and PowerShell release scripts should include iflow in agent lists."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        sh_match = re.search(r"ALL_AGENTS=\(([^)]*)\)", sh_text)
+        assert sh_match is not None
+        sh_agents = sh_match.group(1).split()
+
+        ps_match = re.search(r"\$AllAgents = @\(([^)]*)\)", ps_text)
+        assert ps_match is not None
+        ps_agents = re.findall(r"'([^']+)'", ps_match.group(1))
+
+        assert "iflow" in sh_agents
+        assert "iflow" in ps_agents
+
+    def test_iflow_in_release_scripts_build_variant(self):
+        """Release scripts should generate Markdown commands for iflow in .iflow/commands."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert ".iflow/commands" in sh_text
+        assert ".iflow/commands" in ps_text
+        assert re.search(r"'iflow'\s*\{.*?\.iflow/commands", ps_text, re.S) is not None
+
+    def test_iflow_in_github_release_output(self):
+        """GitHub release script should include iflow template packages."""
+        gh_release_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-github-release.sh").read_text(encoding="utf-8")
+
+        assert "spec-kit-template-iflow-sh-" in gh_release_text
+        assert "spec-kit-template-iflow-ps-" in gh_release_text
+
+    def test_iflow_in_agent_context_scripts(self):
+        """Agent context scripts should support iflow agent type."""
+        bash_text = (REPO_ROOT / "scripts" / "bash" / "update-agent-context.sh").read_text(encoding="utf-8")
+        pwsh_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        assert "iflow" in bash_text
+        assert "IFLOW_FILE" in bash_text
+        assert "iflow" in pwsh_text
+        assert "IFLOW_FILE" in pwsh_text
+
+    def test_ai_help_includes_iflow(self):
+        """CLI help text for --ai should include iflow."""
+        assert "iflow" in AI_ASSISTANT_HELP
