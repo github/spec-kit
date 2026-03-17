@@ -179,7 +179,7 @@ json_escape() {
     local i char code
     for (( i=0; i<${#s}; i++ )); do
         char="${s:$i:1}"
-        code=$(printf '%d' "'$char" 2>/dev/null || echo 256)
+        printf -v code '%d' "'$char" 2>/dev/null || code=256
         if (( code >= 1 && code <= 31 )); then
             printf '\\u%04x' "$code"
         else
