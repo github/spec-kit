@@ -39,7 +39,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-import specify_cli
 from specify_cli import (
     AGENT_CONFIG,
     _TOML_AGENTS,
@@ -86,7 +85,14 @@ def _run_release_script(agent: str, script_type: str, bash: str, output_dir: Pat
         capture_output=True, text=True,
         cwd=str(_REPO_ROOT),
         env=env,
+        timeout=300,
     )
+
+    if result.returncode != 0:
+        pytest.fail(
+            f"Release script failed with exit code {result.returncode}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
 
     zip_pattern = f"spec-kit-template-{agent}-{script_type}-v0.0.0.zip"
     zip_path = output_dir / zip_pattern
@@ -102,7 +108,6 @@ def _run_release_script(agent: str, script_type: str, bash: str, output_dir: Pat
 # ---------------------------------------------------------------------------
 
 # Number of source command templates (one per .md file in templates/commands/)
-_SOURCE_TEMPLATES: list[str] = []
 
 
 def _commands_dir() -> Path:
@@ -167,10 +172,32 @@ def source_template_stems() -> list[str]:
     return _get_source_template_stems()
 
 
-@pytest.fixture
-def bundled_project(tmp_path):
-    """Run scaffold_from_core_pack for each test; caller picks agent."""
-    return tmp_path
+@pytest.fixture(scope="session")
+def scaffolded_sh(tmp_path_factory):
+    """Session-scoped cache: scaffold once per agent with script_type='sh'."""
+    cache = {}
+    def _get(agent: str) -> Path:
+        if agent not in cache:
+            project = tmp_path_factory.mktemp(f"scaffold_sh_{agent}")
+            ok = scaffold_from_core_pack(project, agent, "sh")
+            assert ok, f"scaffold_from_core_pack returned False for agent '{agent}'"
+            cache[agent] = project
+        return cache[agent]
+    return _get
+
+
+@pytest.fixture(scope="session")
+def scaffolded_ps(tmp_path_factory):
+    """Session-scoped cache: scaffold once per agent with script_type='ps'."""
+    cache = {}
+    def _get(agent: str) -> Path:
+        if agent not in cache:
+            project = tmp_path_factory.mktemp(f"scaffold_ps_{agent}")
+            ok = scaffold_from_core_pack(project, agent, "ps")
+            assert ok, f"scaffold_from_core_pack returned False for agent '{agent}'"
+            cache[agent] = project
+        return cache[agent]
+    return _get
 
 
 # ---------------------------------------------------------------------------
@@ -185,11 +212,9 @@ _TESTABLE_AGENTS = [a for a in AGENT_CONFIG if a != "generic"]
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_scaffold_creates_specify_scripts(tmp_path, agent):
+def test_scaffold_creates_specify_scripts(agent, scaffolded_sh):
     """scaffold_from_core_pack copies at least one script into .specify/scripts/."""
-    project = tmp_path / "proj"
-    ok = scaffold_from_core_pack(project, agent, "sh")
-    assert ok, f"scaffold_from_core_pack returned False for agent '{agent}'"
+    project = scaffolded_sh(agent)
 
     scripts_dir = project / ".specify" / "scripts" / "bash"
     assert scripts_dir.is_dir(), f".specify/scripts/bash/ missing for agent '{agent}'"
@@ -197,11 +222,9 @@ def test_scaffold_creates_specify_scripts(tmp_path, agent):
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_scaffold_creates_specify_templates(tmp_path, agent):
+def test_scaffold_creates_specify_templates(agent, scaffolded_sh):
     """scaffold_from_core_pack copies at least one page template into .specify/templates/."""
-    project = tmp_path / "proj"
-    ok = scaffold_from_core_pack(project, agent, "sh")
-    assert ok
+    project = scaffolded_sh(agent)
 
     tpl_dir = project / ".specify" / "templates"
     assert tpl_dir.is_dir(), f".specify/templates/ missing for agent '{agent}'"
@@ -209,11 +232,9 @@ def test_scaffold_creates_specify_templates(tmp_path, agent):
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_scaffold_command_dir_location(tmp_path, agent, source_template_stems):
+def test_scaffold_command_dir_location(agent, scaffolded_sh, source_template_stems):
     """Command files land in the directory declared by AGENT_CONFIG."""
-    project = tmp_path / "proj"
-    ok = scaffold_from_core_pack(project, agent, "sh")
-    assert ok
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     assert cmd_dir.is_dir(), (
@@ -226,11 +247,9 @@ def test_scaffold_command_dir_location(tmp_path, agent, source_template_stems):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_scaffold_command_file_count(tmp_path, agent, source_template_stems):
+def test_scaffold_command_file_count(agent, scaffolded_sh, source_template_stems):
     """One command file is generated per source template for every agent."""
-    project = tmp_path / "proj"
-    ok = scaffold_from_core_pack(project, agent, "sh")
-    assert ok
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     generated = _list_command_files(cmd_dir, agent)
@@ -241,11 +260,9 @@ def test_scaffold_command_file_count(tmp_path, agent, source_template_stems):
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_scaffold_command_file_names(tmp_path, agent, source_template_stems):
+def test_scaffold_command_file_names(agent, scaffolded_sh, source_template_stems):
     """Each source template stem maps to a corresponding speckit.<stem>.<ext> file."""
-    project = tmp_path / "proj"
-    ok = scaffold_from_core_pack(project, agent, "sh")
-    assert ok
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for stem in source_template_stems:
@@ -264,10 +281,9 @@ def test_scaffold_command_file_names(tmp_path, agent, source_template_stems):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_no_unresolved_script_placeholder(tmp_path, agent):
+def test_no_unresolved_script_placeholder(agent, scaffolded_sh):
     """{SCRIPT} must not appear in any generated command file."""
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, agent, "sh")
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for f in cmd_dir.rglob("*"):
@@ -279,10 +295,9 @@ def test_no_unresolved_script_placeholder(tmp_path, agent):
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_no_unresolved_agent_placeholder(tmp_path, agent):
+def test_no_unresolved_agent_placeholder(agent, scaffolded_sh):
     """__AGENT__ must not appear in any generated command file."""
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, agent, "sh")
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for f in cmd_dir.rglob("*"):
@@ -294,10 +309,9 @@ def test_no_unresolved_agent_placeholder(tmp_path, agent):
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_no_unresolved_args_placeholder(tmp_path, agent):
+def test_no_unresolved_args_placeholder(agent, scaffolded_sh):
     """{ARGS} must not appear in any generated command file (replaced with agent-specific token)."""
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, agent, "sh")
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for f in cmd_dir.rglob("*"):
@@ -317,14 +331,13 @@ _TEMPLATES_WITH_ARGS: frozenset[str] = frozenset(
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_argument_token_format(tmp_path, agent):
+def test_argument_token_format(agent, scaffolded_sh):
     """For templates that carry an {ARGS} token:
     - TOML agents must emit {{args}}
     - Markdown agents must emit $ARGUMENTS
     Templates without {ARGS} (e.g. implement, plan) are skipped.
     """
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, agent, "sh")
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
 
@@ -350,10 +363,9 @@ def test_argument_token_format(tmp_path, agent):
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_path_rewrites_applied(tmp_path, agent):
+def test_path_rewrites_applied(agent, scaffolded_sh):
     """Bare scripts/ and templates/ paths must be rewritten to .specify/ variants."""
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, agent, "sh")
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for f in cmd_dir.rglob("*"):
@@ -374,10 +386,9 @@ def test_path_rewrites_applied(tmp_path, agent):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("agent", sorted(_TOML_AGENTS))
-def test_toml_format_valid(tmp_path, agent):
+def test_toml_format_valid(agent, scaffolded_sh):
     """TOML agents: every command file must have description and prompt fields."""
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, agent, "sh")
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for f in cmd_dir.glob("speckit.*.toml"):
@@ -398,10 +409,9 @@ _MARKDOWN_AGENTS = [a for a in _TESTABLE_AGENTS if a not in _TOML_AGENTS]
 
 
 @pytest.mark.parametrize("agent", _MARKDOWN_AGENTS)
-def test_markdown_has_frontmatter(tmp_path, agent):
+def test_markdown_has_frontmatter(agent, scaffolded_sh):
     """Markdown agents: every command file must start with valid YAML frontmatter."""
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, agent, "sh")
+    project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for f in _list_command_files(cmd_dir, agent):
@@ -422,11 +432,9 @@ def test_markdown_has_frontmatter(tmp_path, agent):
 # 6. Copilot-specific: companion .prompt.md files
 # ---------------------------------------------------------------------------
 
-def test_copilot_companion_prompt_files(tmp_path, source_template_stems):
+def test_copilot_companion_prompt_files(scaffolded_sh, source_template_stems):
     """Copilot: a speckit.<stem>.prompt.md companion is created for every .agent.md file."""
-    project = tmp_path / "proj"
-    ok = scaffold_from_core_pack(project, "copilot", "sh")
-    assert ok
+    project = scaffolded_sh("copilot")
 
     prompts_dir = project / ".github" / "prompts"
     assert prompts_dir.is_dir(), ".github/prompts/ not created for copilot"
@@ -438,10 +446,9 @@ def test_copilot_companion_prompt_files(tmp_path, source_template_stems):
         )
 
 
-def test_copilot_prompt_file_content(tmp_path, source_template_stems):
+def test_copilot_prompt_file_content(scaffolded_sh, source_template_stems):
     """Copilot companion .prompt.md files must reference their parent .agent.md."""
-    project = tmp_path / "proj"
-    scaffold_from_core_pack(project, "copilot", "sh")
+    project = scaffolded_sh("copilot")
 
     prompts_dir = project / ".github" / "prompts"
     for stem in source_template_stems:
@@ -457,11 +464,9 @@ def test_copilot_prompt_file_content(tmp_path, source_template_stems):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_scaffold_powershell_variant(tmp_path, agent, source_template_stems):
+def test_scaffold_powershell_variant(agent, scaffolded_ps, source_template_stems):
     """scaffold_from_core_pack with script_type='ps' creates correct files."""
-    project = tmp_path / "proj"
-    ok = scaffold_from_core_pack(project, agent, "ps")
-    assert ok
+    project = scaffolded_ps(agent)
 
     scripts_dir = project / ".specify" / "scripts" / "powershell"
     assert scripts_dir.is_dir(), f".specify/scripts/powershell/ missing for '{agent}'"
