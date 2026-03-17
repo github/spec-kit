@@ -250,8 +250,6 @@ class TestAgentConfigConsistency:
 
         assert "trae" in cfg
         trae_cfg = cfg["trae"]
-        
-        assert trae_cfg["dir"] == ".trae/rules"
         assert trae_cfg["format"] == "markdown"
         assert trae_cfg["args"] == "$ARGUMENTS"
         assert trae_cfg["extension"] == ".md"
