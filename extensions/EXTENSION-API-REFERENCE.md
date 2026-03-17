@@ -53,7 +53,7 @@ provides:
       required: boolean  # Default: false
 
 hooks:                   # Optional, event hooks
-  event_name:            # e.g., "after_tasks", "after_implement"
+  event_name:            # e.g., "after_specify", "after_plan", "after_tasks", "after_implement"
     command: string      # Command to execute
     optional: boolean    # Default: true
     prompt: string       # Prompt text for optional hooks
@@ -108,7 +108,7 @@ defaults:                # Optional, default configuration values
 #### `hooks`
 
 - **Type**: object
-- **Keys**: Event names (e.g., `after_tasks`, `after_implement`, `before_commit`)
+- **Keys**: Event names (e.g., `after_specify`, `after_plan`, `after_tasks`, `after_implement`, `before_commit`)
 - **Description**: Hooks that execute at lifecycle events
 - **Events**: Defined by core spec-kit commands
 
@@ -551,7 +551,13 @@ hooks:
 
 Standard events (defined by core):
 
+- `before_specify` - Before specification generation
+- `after_specify` - After specification generation
+- `before_plan` - Before implementation planning
+- `after_plan` - After implementation planning
+- `before_tasks` - Before task generation
 - `after_tasks` - After task generation
+- `before_implement` - Before implementation
 - `after_implement` - After implementation
 - `before_commit` - Before git commit
 - `after_commit` - After git commit
