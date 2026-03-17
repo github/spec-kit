@@ -551,7 +551,7 @@
       "name": "Verify Tasks Extension",
       "id": "verify-tasks",
       "description": "Detect phantom completions: tasks marked [X] in tasks.md with no real implementation.",
-      "author": "dave.sharpe@datastone.ca",
+      "author": "Dave Sharpe",
       "version": "1.0.0",
       "download_url": "https://github.com/datastone-inc/spec-kit-verify-tasks/archive/refs/tags/v1.0.0.zip",
       "repository": "https://github.com/datastone-inc/spec-kit-verify-tasks",
