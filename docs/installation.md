@@ -77,48 +77,30 @@ The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ### Enterprise / Air-Gapped Installation
 
-If your environment blocks access to PyPI (you see 403 errors when running `uv tool install` or `pip install`), you can install Specify using the pre-built wheel from the GitHub releases page.
+For environments with no access to PyPI or GitHub, download the pre-built offline bundle from the [releases page](https://github.com/github/spec-kit/releases/latest).
 
-**Step 1: Download the wheel**
+**On a connected machine:**
 
-Go to the [Spec Kit releases page](https://github.com/github/spec-kit/releases/latest) and download the `specify_cli-*.whl` file.
+Download `specify-bundle-v*.zip` from the [Spec Kit releases page](https://github.com/github/spec-kit/releases/latest). This single ZIP contains the specify-cli wheel and all its runtime dependencies (~2.5 MB).
 
-**Step 2: Install the wheel**
-
-```bash
-pip install specify_cli-*.whl
-```
-
-**Step 3: Initialize a project (no network required)**
+**On the air-gapped machine:**
 
 ```bash
+# Unzip the bundle
+unzip specify-bundle-v*.zip
+
+# Install — no network access needed
+pip install --no-index --find-links=./specify-bundle/ specify-cli
+
+# Initialize a project — no GitHub access needed
 specify init my-project --ai claude --offline
 ```
 
-The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub — no connection to `api.github.com` needed.
+The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub.
 
-**If you also need runtime dependencies offline** (fully air-gapped machines with no access to any PyPI), use a connected machine with the same OS and Python version to download them first:
+> **Note:** Python 3.11+ is required. All dependencies are pure-Python wheels, so the bundle works on any platform without recompilation.
 
-```bash
-# On a connected machine (same OS and Python version as the target):
-pip download -d vendor specify_cli-*.whl
-
-# Transfer the wheel and vendor/ directory to the target machine
-
-# On the target machine:
-pip install --no-index --find-links=./vendor specify_cli-*.whl
-```
-
-> **Note:** Python 3.11+ is required. The wheel is a pure-Python artifact, so it works on any platform without recompilation.
-
-**Using bundled assets (offline / air-gapped):**
-
-If you want to scaffold from the templates bundled inside the specify-cli
-package instead of downloading from GitHub, use:
-
-```bash
-specify init my-project --ai claude --offline
-```
+> **Windows note:** Offline scaffolding requires PowerShell 7+ (`pwsh`), not Windows PowerShell 5.x (`powershell.exe`). Install from https://aka.ms/powershell.
 
 ### Git Credential Manager on Linux
 

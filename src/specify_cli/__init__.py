@@ -1127,8 +1127,9 @@ def _locate_release_script() -> tuple[Path, str]:
         shell = shutil.which("pwsh")
         if not shell:
             raise FileNotFoundError(
-                "'pwsh' (PowerShell 7) not found on PATH. "
-                "The bundled release script requires PowerShell 7+. "
+                "'pwsh' (PowerShell 7+) not found on PATH. "
+                "The bundled release script requires PowerShell 7+ (pwsh), "
+                "not Windows PowerShell 5.x (powershell.exe). "
                 "Install from https://aka.ms/powershell to use offline scaffolding."
             )
     else:
@@ -1919,8 +1920,14 @@ def init(
     # Determine whether to use bundled assets or download from GitHub (default).
     # --offline opts in to bundled assets; without it, always use GitHub.
     _core = _locate_core_pack()
-    _repo_commands = Path(__file__).parent.parent.parent / "templates" / "commands"
-    _has_bundled = (_core is not None) or _repo_commands.is_dir()
+    _repo_root = Path(__file__).parent.parent.parent
+    _repo_commands = _repo_root / "templates" / "commands"
+    _repo_scripts = _repo_root / "scripts"
+    # Treat bundled assets as available if we have a core_pack (wheel install),
+    # or, for a source checkout, when both commands and scripts are present.
+    _has_bundled = (_core is not None) or (
+        _repo_commands.is_dir() and _repo_scripts.is_dir()
+    )
 
     if offline and not _has_bundled:
         console.print(

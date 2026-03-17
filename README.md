@@ -99,14 +99,15 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here --ai c
 
 #### Option 3: Enterprise / Air-Gapped Installation
 
-If your environment blocks PyPI access, download the pre-built `specify_cli-*.whl` wheel from the [releases page](https://github.com/github/spec-kit/releases/latest) and install it directly:
+Download `specify-bundle-v*.zip` from the [releases page](https://github.com/github/spec-kit/releases/latest) — it contains the CLI wheel and all dependencies in one file (~2.5 MB):
 
 ```bash
-pip install specify_cli-*.whl
-specify init my-project --ai claude --offline   # runs without contacting api.github.com
+unzip specify-bundle-v*.zip
+pip install --no-index --find-links=./specify-bundle/ specify-cli
+specify init my-project --ai claude --offline
 ```
 
-The wheel bundles all templates, commands, and scripts, so `specify init` can run without any network access after install when you pass `--offline`. See the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) section for fully offline (no-PyPI) instructions.
+See the [full air-gapped guide](./docs/installation.md#enterprise--air-gapped-installation) for details.
 
 ### 2. Establish project principles
 

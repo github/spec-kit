@@ -33,6 +33,13 @@ fi
 
 WHEEL_FILE="${wheel_files[0]}"
 
+# Find the offline bundle ZIP
+bundle_files=(.genreleases/specify-bundle-"$VERSION".zip)
+BUNDLE_FILE=""
+if (( ${#bundle_files[@]} == 1 )); then
+  BUNDLE_FILE="${bundle_files[0]}"
+fi
+
 gh release create "$VERSION" \
   "$WHEEL_FILE" \
   .genreleases/spec-kit-template-copilot-sh-"$VERSION".zip \
@@ -87,5 +94,6 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-iflow-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-ps-"$VERSION".zip \
+  ${BUNDLE_FILE:+"$BUNDLE_FILE"} \
   --title "Spec Kit Templates - $VERSION_NO_V" \
   --notes-file release_notes.md

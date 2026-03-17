@@ -47,6 +47,12 @@ jobs:
           pip install build
           python -m build --wheel --outdir .genreleases/
 
+      - name: Bundle offline dependencies
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          pip download -d .genreleases/specify-bundle/ .genreleases/specify_cli-*.whl
+          cd .genreleases && zip -r specify-bundle-${{ steps.version.outputs.tag }}.zip specify-bundle/
+
       - name: Generate release notes
         if: steps.check_release.outputs.exists == 'false'
         id: release_notes
