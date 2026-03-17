@@ -458,21 +458,40 @@ class TestInstallAiSkills:
         (agents_dir / "speckit.plan.agent.md").write_text(
             "---\ndescription: Generate implementation plan.\n---\n\n# Plan\n\nBody.\n"
         )
-        (agents_dir / "other-agent.agent.md").write_text(
-            "---\ndescription: Some other agent\n---\n\n# Other\n\nBody.\n"
+        (agents_dir / "my-custom-agent.agent.md").write_text(
+            "---\ndescription: A user custom agent\n---\n\n# Custom\n\nBody.\n"
         )
 
         result = install_ai_skills(project_dir, "copilot")
 
         assert result is True
-        skills_dir = project_dir / ".github" / "skills"
+        skills_dir = _get_skills_dir(project_dir, "copilot")
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
         assert "speckit-plan" in skill_dirs
-        assert "speckit-other-agent.agent" not in skill_dirs
-        assert "speckit-other-agent" not in skill_dirs
+        assert "speckit-my-custom-agent.agent" not in skill_dirs
+        assert "speckit-my-custom-agent" not in skill_dirs
+        
+    def test_copilot_fallback_when_only_non_speckit_agents(self, project_dir):
+        """Fallback to templates/commands/ when .github/agents/ has no speckit.*.md files."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        # Only a user-authored agent, no speckit.* templates
+        (agents_dir / "my-custom-agent.agent.md").write_text(
+            "---\ndescription: A user custom agent\n---\n\n# Custom\n\nBody.\n"
+        )
 
+        result = install_ai_skills(project_dir, "copilot")
 
+        # Should succeed via fallback to templates/commands/
+        assert result is True
+        skills_dir = _get_skills_dir(project_dir, "copilot")
+        assert skills_dir.exists()
+        skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        # Should have skills from fallback templates, not from the custom agent
+        assert "speckit-plan" in skill_dirs
+        assert not any("my-custom" in d for d in skill_dirs)
+        
 
 class TestCommandCoexistence:
     """Verify install_ai_skills never touches command files.
