@@ -834,4 +834,4 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 
 *Last Updated: 2026-03-13*
 *API Version: 1.0*
-*Spec Kit Version: 0.2.1*
+*Spec Kit Version: 0.3.1*
