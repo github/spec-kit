@@ -168,7 +168,7 @@ if $JSON_MODE; then
         if [[ ${#docs[@]} -eq 0 ]]; then
             json_docs="[]"
         else
-            json_docs=$(printf '"%s",' "${docs[@]}")
+            json_docs=$(for d in "${docs[@]}"; do printf '"%s",' "$(json_escape "$d")"; done)
             json_docs="[${json_docs%,}]"
         fi
         printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s}\n' "$(json_escape "$FEATURE_DIR")" "$json_docs"
