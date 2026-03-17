@@ -7,6 +7,7 @@ Presets are self-contained, versioned collections of templates
 customize the Spec-Driven Development workflow.
 """
 
+import copy
 import json
 import hashlib
 import os
@@ -22,6 +23,8 @@ import re
 import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
+
+from .extensions import ExtensionRegistry, normalize_priority
 
 
 @dataclass
@@ -271,6 +274,38 @@ class PresetRegistry:
             del self.data["presets"][pack_id]
             self._save()
 
+    def update(self, pack_id: str, updates: dict):
+        """Update preset metadata in registry.
+
+        Merges the provided updates with the existing entry, preserving any
+        fields not specified. The installed_at timestamp is always preserved
+        from the original entry.
+
+        Args:
+            pack_id: Preset ID
+            updates: Partial metadata to merge into existing metadata
+
+        Raises:
+            KeyError: If preset is not installed
+        """
+        if pack_id not in self.data["presets"]:
+            raise KeyError(f"Preset '{pack_id}' not found in registry")
+        existing = self.data["presets"][pack_id]
+        # Handle corrupted registry entries (e.g., string/list instead of dict)
+        if not isinstance(existing, dict):
+            existing = {}
+        # Merge: existing fields preserved, new fields override
+        merged = {**existing, **updates}
+        # Always preserve original installed_at based on key existence, not truthiness,
+        # to handle cases where the field exists but may be falsy (legacy/corruption)
+        if "installed_at" in existing:
+            merged["installed_at"] = existing["installed_at"]
+        else:
+            # If not present in existing, explicitly remove from merged if caller provided it
+            merged.pop("installed_at", None)
+        self.data["presets"][pack_id] = merged
+        self._save()
+
     def get(self, pack_id: str) -> Optional[dict]:
         """Get preset metadata from registry.
 
@@ -294,14 +329,26 @@ class PresetRegistry:
         """Get all installed presets sorted by priority.
 
         Lower priority number = higher precedence (checked first).
+        Presets with equal priority are sorted alphabetically by ID
+        for deterministic ordering.
 
         Returns:
-            List of (pack_id, metadata) tuples sorted by priority
+            List of (pack_id, metadata_copy) tuples sorted by priority.
+            Metadata is deep-copied to prevent accidental mutation.
         """
-        packs = self.data["presets"]
+        packs = self.data.get("presets", {}) or {}
+        if not isinstance(packs, dict):
+            packs = {}
+        sortable_packs = []
+        for pack_id, meta in packs.items():
+            if not isinstance(meta, dict):
+                continue
+            metadata_copy = copy.deepcopy(meta)
+            metadata_copy["priority"] = normalize_priority(metadata_copy.get("priority", 10))
+            sortable_packs.append((pack_id, metadata_copy))
         return sorted(
-            packs.items(),
-            key=lambda item: item[1].get("priority", 10),
+            sortable_packs,
+            key=lambda item: (item[1]["priority"], item[0]),
         )
 
     def is_installed(self, pack_id: str) -> bool:
@@ -680,9 +727,13 @@ class PresetManager:
             Installed preset manifest
 
         Raises:
-            PresetValidationError: If manifest is invalid
+            PresetValidationError: If manifest is invalid or priority is invalid
             PresetCompatibilityError: If pack is incompatible
         """
+        # Validate priority
+        if priority < 1:
+            raise PresetValidationError("Priority must be a positive integer (1 or higher)")
+
         manifest_path = source_dir / "preset.yml"
         manifest = PresetManifest(manifest_path)
 
@@ -729,14 +780,19 @@ class PresetManager:
         Args:
             zip_path: Path to preset ZIP file
             speckit_version: Current spec-kit version
+            priority: Resolution priority (lower = higher precedence, default 10)
 
         Returns:
             Installed preset manifest
 
         Raises:
-            PresetValidationError: If manifest is invalid
+            PresetValidationError: If manifest is invalid or priority is invalid
             PresetCompatibilityError: If pack is incompatible
         """
+        # Validate priority early
+        if priority < 1:
+            raise PresetValidationError("Priority must be a positive integer (1 or higher)")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
@@ -808,6 +864,9 @@ class PresetManager:
         result = []
 
         for pack_id, metadata in self.registry.list().items():
+            # Ensure metadata is a dictionary to avoid AttributeError when using .get()
+            if not isinstance(metadata, dict):
+                metadata = {}
             pack_dir = self.presets_dir / pack_id
             manifest_path = pack_dir / "preset.yml"
 
@@ -816,13 +875,13 @@ class PresetManager:
                 result.append({
                     "id": pack_id,
                     "name": manifest.name,
-                    "version": metadata["version"],
+                    "version": metadata.get("version", manifest.version),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
                     "installed_at": metadata.get("installed_at"),
                     "template_count": len(manifest.templates),
                     "tags": manifest.tags,
-                    "priority": metadata.get("priority", 10),
+                    "priority": normalize_priority(metadata.get("priority")),
                 })
             except PresetValidationError:
                 result.append({
@@ -834,7 +893,7 @@ class PresetManager:
                     "installed_at": metadata.get("installed_at"),
                     "template_count": 0,
                     "tags": [],
-                    "priority": metadata.get("priority", 10),
+                    "priority": normalize_priority(metadata.get("priority")),
                 })
 
         return result
@@ -1393,6 +1452,40 @@ class PresetResolver:
         self.overrides_dir = self.templates_dir / "overrides"
         self.extensions_dir = project_root / ".specify" / "extensions"
 
+    def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
+        """Build unified list of registered and unregistered extensions sorted by priority.
+
+        Registered extensions use their stored priority; unregistered directories
+        get implicit priority=10. Results are sorted by (priority, ext_id) for
+        deterministic ordering.
+
+        Returns:
+            List of (priority, ext_id, metadata_or_none) tuples sorted by priority.
+        """
+        if not self.extensions_dir.exists():
+            return []
+
+        registry = ExtensionRegistry(self.extensions_dir)
+        registered_extensions = registry.list_by_priority()
+        registered_extension_ids = {ext_id for ext_id, _ in registered_extensions}
+
+        all_extensions: list[tuple[int, str, dict | None]] = []
+
+        for ext_id, metadata in registered_extensions:
+            priority = normalize_priority(metadata.get("priority") if metadata else None)
+            all_extensions.append((priority, ext_id, metadata))
+
+        # Add unregistered directories with implicit priority=10
+        for ext_dir in self.extensions_dir.iterdir():
+            if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+                continue
+            if ext_dir.name not in registered_extension_ids:
+                all_extensions.append((10, ext_dir.name, None))
+
+        # Sort by (priority, ext_id) for deterministic ordering
+        all_extensions.sort(key=lambda x: (x[0], x[1]))
+        return all_extensions
+
     def resolve(
         self,
         template_name: str,
@@ -1445,18 +1538,18 @@ class PresetResolver:
                     if candidate.exists():
                         return candidate
 
-        # Priority 3: Extension-provided templates
-        if self.extensions_dir.exists():
-            for ext_dir in sorted(self.extensions_dir.iterdir()):
-                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
-                    continue
-                for subdir in subdirs:
-                    if subdir:
-                        candidate = ext_dir / subdir / f"{template_name}{ext}"
-                    else:
-                        candidate = ext_dir / "templates" / f"{template_name}{ext}"
-                    if candidate.exists():
-                        return candidate
+        # Priority 3: Extension-provided templates (sorted by priority — lower number wins)
+        for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            for subdir in subdirs:
+                if subdir:
+                    candidate = ext_dir / subdir / f"{template_name}{ext}"
+                else:
+                    candidate = ext_dir / f"{template_name}{ext}"
+                if candidate.exists():
+                    return candidate
 
         # Priority 4: Core templates
         if template_type == "template":
@@ -1514,17 +1607,24 @@ class PresetResolver:
                 except ValueError:
                     continue
 
-        if self.extensions_dir.exists():
-            for ext_dir in sorted(self.extensions_dir.iterdir()):
-                if not ext_dir.is_dir() or ext_dir.name.startswith("."):
-                    continue
-                try:
-                    resolved.relative_to(ext_dir)
+        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            try:
+                resolved.relative_to(ext_dir)
+                if ext_meta:
+                    version = ext_meta.get("version", "?")
                     return {
                         "path": resolved_str,
-                        "source": f"extension:{ext_dir.name}",
+                        "source": f"extension:{ext_id} v{version}",
                     }
-                except ValueError:
-                    continue
+                else:
+                    return {
+                        "path": resolved_str,
+                        "source": f"extension:{ext_id} (unregistered)",
+                    }
+            except ValueError:
+                continue
 
         return {"path": resolved_str, "source": "core"}

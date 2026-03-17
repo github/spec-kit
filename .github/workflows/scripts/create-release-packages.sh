@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi generic (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae generic (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -294,6 +294,9 @@ build_variant() {
     kimi)
       mkdir -p "$base_dir/.kimi/skills"
       create_kimi_skills "$base_dir/.kimi/skills" "$script" ;;
+    trae)
+      mkdir -p "$base_dir/.trae/rules"
+      generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
@@ -303,7 +306,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli junie kimi generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli junie kimi trae generic)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {

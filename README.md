@@ -160,6 +160,8 @@ See Spec-Driven Development in action across different scenarios with these comm
 
 - **[Brownfield Go / React dashboard demo](https://github.com/mnriem/spec-kit-go-brownfield-demo)** — Demonstrates spec-kit driven entirely from the **terminal using GitHub Copilot CLI**. Extends NASA's open-source Hermes ground support system (Go) with a lightweight React-based web telemetry dashboard, showing that the full constitution → specify → plan → tasks → implement workflow works from the terminal.
 
+- **[Greenfield Spring Boot MVC with a custom preset](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo)** — Builds a Spring Boot MVC application from scratch using a custom pirate-speak preset, demonstrating how presets can reshape the entire spec-kit experience: specifications become "Voyage Manifests," plans become "Battle Plans," and tasks become "Crew Assignments" — all generated in full pirate vernacular without changing any tooling.
+
 ## 🤖 Supported AI Agents
 
 | Agent                                                                                | Support | Notes                                                                                                                                     |
@@ -187,6 +189,7 @@ See Spec-Driven Development in action across different scenarios with these comm
 | [Kimi Code](https://code.kimi.com/)                                                  | ✅      |                                                                                                                                           |
 | [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
 | [Antigravity (agy)](https://antigravity.google/)                                     | ✅      | Requires `--ai-skills` |
+| [Trae](https://www.trae.ai/)                                                         | ✅      |                                                                                                                                           |
 | Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                 |
 
 ## 🔧 Specify CLI Reference

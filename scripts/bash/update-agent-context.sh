@@ -35,7 +35,7 @@
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|junie|generic
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|junie|trae|generic
 # Leave empty to update all existing agent files
 
 set -e
@@ -84,6 +84,7 @@ BOB_FILE="$AGENTS_FILE"
 VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 KIMI_FILE="$REPO_ROOT/KIMI.md"
 JUNIE_FILE="$REPO_ROOT/.junie/guidelines.md"
+TRAE_FILE="$REPO_ROOT/.trae/rules/AGENTS.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -679,12 +680,15 @@ update_specific_agent() {
         junie)
             update_agent_file "$JUNIE_FILE" "Junie CLI" || return 1
             ;;
+        trae)
+            update_agent_file "$TRAE_FILE" "Trae" || return 1
+            ;;
         generic)
             log_info "Generic agent: no predefined context file. Use the agent-specific update script for your agent."
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|junie|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|junie|trae|generic"
             exit 1
             ;;
     esac
@@ -744,6 +748,7 @@ update_all_existing_agents() {
     _update_if_new "$VIBE_FILE" "Mistral Vibe"             || _all_ok=false
     _update_if_new "$KIMI_FILE" "Kimi Code"                || _all_ok=false
     _update_if_new "$JUNIE_FILE" "Junie CLI"               || _all_ok=false
+    _update_if_new "$TRAE_FILE" "Trae"                     || _all_ok=false
 
     # If no agent files exist, create a default Claude file
     if [[ "$_found_agent" == false ]]; then
@@ -770,7 +775,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|junie|generic]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|junie|trae|generic]"
 }
 
 #==============================================================================

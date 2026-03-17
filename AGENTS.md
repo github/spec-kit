@@ -47,6 +47,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Kimi Code**              | `.kimi/skills/`        | Markdown | `kimi`          | Kimi Code CLI (Moonshot AI) |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Junie CLI**              | `.junie/commands/`      | Markdown | `junie`         | JetBrains' Junie CLI        |
+| **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
 ### Step-by-Step Integration Guide
