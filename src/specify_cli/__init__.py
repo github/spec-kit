@@ -1177,6 +1177,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
         fallback_dir = script_dir / "templates" / "commands"
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
             templates_dir = fallback_dir
+            template_glob = "*.md"
 
     if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         if tracker:
