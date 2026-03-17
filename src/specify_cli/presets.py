@@ -875,7 +875,7 @@ class PresetManager:
                 result.append({
                     "id": pack_id,
                     "name": manifest.name,
-                    "version": metadata["version"],
+                    "version": metadata.get("version", manifest.version),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
                     "installed_at": metadata.get("installed_at"),
