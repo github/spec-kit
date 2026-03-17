@@ -367,7 +367,7 @@ class ExtensionRegistry:
             sortable_extensions.append((ext_id, metadata_copy))
         return sorted(
             sortable_extensions,
-            key=lambda item: (item[1].get("priority", 10), item[0]),
+            key=lambda item: (item[1]["priority"], item[0]),
         )
 
 
@@ -705,7 +705,7 @@ class ExtensionManager:
                     "version": metadata.get("version", "unknown"),
                     "description": manifest.description,
                     "enabled": metadata.get("enabled", True),
-                    "priority": metadata.get("priority", 10),
+                    "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": len(manifest.commands),
                     "hook_count": len(manifest.hooks)
@@ -718,7 +718,7 @@ class ExtensionManager:
                     "version": metadata.get("version", "unknown"),
                     "description": "⚠️ Corrupted extension",
                     "enabled": False,
-                    "priority": metadata.get("priority", 10),
+                    "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": 0,
                     "hook_count": 0

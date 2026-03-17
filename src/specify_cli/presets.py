@@ -345,7 +345,7 @@ class PresetRegistry:
             sortable_packs.append((pack_id, metadata_copy))
         return sorted(
             sortable_packs,
-            key=lambda item: (item[1].get("priority", 10), item[0]),
+            key=lambda item: (item[1]["priority"], item[0]),
         )
 
     def is_installed(self, pack_id: str) -> bool:
@@ -878,7 +878,7 @@ class PresetManager:
                     "installed_at": metadata.get("installed_at"),
                     "template_count": len(manifest.templates),
                     "tags": manifest.tags,
-                    "priority": metadata.get("priority", 10),
+                    "priority": normalize_priority(metadata.get("priority")),
                 })
             except PresetValidationError:
                 result.append({
@@ -890,7 +890,7 @@ class PresetManager:
                     "installed_at": metadata.get("installed_at"),
                     "template_count": 0,
                     "tags": [],
-                    "priority": metadata.get("priority", 10),
+                    "priority": normalize_priority(metadata.get("priority")),
                 })
 
         return result
@@ -1469,7 +1469,7 @@ class PresetResolver:
         all_extensions: list[tuple[int, str, dict | None]] = []
 
         for ext_id, metadata in registered_extensions:
-            priority = metadata.get("priority", 10) if metadata else 10
+            priority = normalize_priority(metadata.get("priority") if metadata else None)
             all_extensions.append((priority, ext_id, metadata))
 
         # Add unregistered directories with implicit priority=10

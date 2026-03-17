@@ -2182,6 +2182,7 @@ def preset_info(
     pack_id: str = typer.Argument(..., help="Preset ID to get info about"),
 ):
     """Show detailed information about a preset."""
+    from .extensions import normalize_priority
     from .presets import PresetCatalog, PresetManager, PresetError
 
     project_root = Path.cwd()
@@ -2217,7 +2218,7 @@ def preset_info(
         console.print("\n  [green]Status: installed[/green]")
         # Get priority from registry
         pack_metadata = manager.registry.get(pack_id)
-        priority = pack_metadata.get("priority", 10) if isinstance(pack_metadata, dict) else 10
+        priority = normalize_priority(pack_metadata.get("priority") if isinstance(pack_metadata, dict) else None)
         console.print(f"  [dim]Priority:[/dim] {priority}")
         console.print()
         return
@@ -2285,7 +2286,8 @@ def preset_set_priority(
         console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
 
-    old_priority = metadata.get("priority", 10)
+    from .extensions import normalize_priority
+    old_priority = normalize_priority(metadata.get("priority"))
     if old_priority == priority:
         console.print(f"[yellow]Preset '{pack_id}' already has priority {priority}[/yellow]")
         raise typer.Exit(0)
@@ -3110,7 +3112,7 @@ def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
 ):
     """Show detailed information about an extension."""
-    from .extensions import ExtensionCatalog, ExtensionManager
+    from .extensions import ExtensionCatalog, ExtensionManager, normalize_priority
 
     project_root = Path.cwd()
 
@@ -3183,7 +3185,7 @@ def extension_info(
 
         console.print()
         console.print("[green]✓ Installed[/green]")
-        priority = metadata.get("priority", 10) if metadata_is_dict else 10
+        priority = normalize_priority(metadata.get("priority") if metadata_is_dict else None)
         console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {resolved_installed_id}")
         return
@@ -3200,6 +3202,8 @@ def extension_info(
 
 def _print_extension_info(ext_info: dict, manager):
     """Print formatted extension info from catalog data."""
+    from .extensions import normalize_priority
+
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
     console.print(f"\n[bold]{ext_info['name']}[/bold] (v{ext_info['version']}){verified_badge}")
@@ -3279,7 +3283,7 @@ def _print_extension_info(ext_info: dict, manager):
     if is_installed:
         console.print("[green]✓ Installed[/green]")
         metadata = manager.registry.get(ext_info['id'])
-        priority = metadata.get("priority", 10) if isinstance(metadata, dict) else 10
+        priority = normalize_priority(metadata.get("priority") if isinstance(metadata, dict) else None)
         console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
     elif install_allowed:
@@ -3829,7 +3833,8 @@ def extension_set_priority(
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
 
-    old_priority = metadata.get("priority", 10)
+    from .extensions import normalize_priority
+    old_priority = normalize_priority(metadata.get("priority"))
     if old_priority == priority:
         console.print(f"[yellow]Extension '{display_name}' already has priority {priority}[/yellow]")
         raise typer.Exit(0)
