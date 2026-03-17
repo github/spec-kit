@@ -433,7 +433,7 @@ class TestInstallAiSkills:
         commands_subdir = AGENT_CONFIG[agent_key].get("commands_subdir", "commands")
         cmds_dir = proj / agent_folder.rstrip("/") / commands_subdir
         cmds_dir.mkdir(parents=True)
-        # Copilot uses speckit.*.agent.md templates; other agents use plain names
+        # In this test, Copilot uses speckit.*.agent.md templates; other agents use a simple 'specify.md' name
         fname = "speckit.specify.agent.md" if agent_key == "copilot" else "specify.md"
         (cmds_dir / fname).write_text(
             "---\ndescription: Test command\n---\n\n# Test\n\nBody.\n"
@@ -470,6 +470,7 @@ class TestInstallAiSkills:
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
         assert "speckit-plan" in skill_dirs
         assert "speckit-other-agent.agent" not in skill_dirs
+        assert "speckit-other-agent" not in skill_dirs
 
 
 
