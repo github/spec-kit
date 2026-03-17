@@ -32,8 +32,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
 - Treat hooks as enabled unless they explicitly specify `enabled: false`
 - For each enabled hook, do **not** attempt to interpret or evaluate hook `condition` expressions yourself; condition evaluation is handled by the HookExecutor implementation
-- Treat all enabled hooks as executable for the purposes of this plan, regardless of whether they define a `condition`
-- For each executable hook, output the following based on its `optional` flag:
+- Treat an enabled hook as executable for the purposes of this plan **only if it does not define a `condition`**
+- For each such executable (non-conditional) hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks
@@ -81,8 +81,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
    - From the discovered hooks, ignore only those where `enabled` is explicitly set to `false`. If `enabled` is omitted, treat the hook as enabled.
    - Do **not** attempt to interpret or evaluate hook `condition` expressions, and do **not** filter hooks based on the presence or contents of `condition`. Condition evaluation is handled by the `HookExecutor.should_execute_hook` implementation.
-   - Treat all hooks that are not explicitly disabled (that is, all hooks where `enabled` is not `false`) as executable candidates.
-   - For each executable hook, output the following based on its `optional` flag:
+   - Treat an enabled hook as executable for the purposes of this plan **only if it does not define a `condition`**
+   - For each such executable (non-conditional) hook, output the following based on its `optional` flag:
      - **Optional hook** (`optional: true`):
        ```
        ## Extension Hooks

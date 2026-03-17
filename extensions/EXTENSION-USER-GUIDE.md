@@ -987,4 +987,4 @@ After creating tasks, sync to Jira:
 ---
 
 *Last Updated: 2026-03-13*
-*Spec Kit Version: 0.2.1*
+*Spec Kit Version: 0.3.1*
