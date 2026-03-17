@@ -135,6 +135,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": "/SKILL.md"
+        },
+        "junie": {
+            "dir": ".junie/commands",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
         }
     }
 

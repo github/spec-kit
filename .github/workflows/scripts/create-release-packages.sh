@@ -288,6 +288,9 @@ build_variant() {
     vibe)
       mkdir -p "$base_dir/.vibe/prompts"
       generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
+    junie)
+      mkdir -p "$base_dir/.junie/commands"
+      generate_commands junie md "\$ARGUMENTS" "$base_dir/.junie/commands" "$script" ;;
     kimi)
       mkdir -p "$base_dir/.kimi/skills"
       create_kimi_skills "$base_dir/.kimi/skills" "$script" ;;
@@ -300,7 +303,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli junie kimi generic)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {

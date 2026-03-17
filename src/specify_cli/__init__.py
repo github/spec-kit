@@ -272,6 +272,13 @@ AGENT_CONFIG = {
         "install_url": "https://code.kimi.com/",
         "requires_cli": True,
     },
+    "junie": {
+        "name": "Junie CLI",
+        "folder": ".junie/",
+        "commands_subdir": "commands",
+        "install_url": "https://junie.jetbrains.com/",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir

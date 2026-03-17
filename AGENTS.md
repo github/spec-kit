@@ -46,6 +46,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Tabnine CLI**            | `.tabnine/agent/commands/` | TOML | `tabnine`       | Tabnine CLI                 |
 | **Kimi Code**              | `.kimi/skills/`        | Markdown | `kimi`          | Kimi Code CLI (Moonshot AI) |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| **Junie CLI**              | `.junie/commands/`      | Markdown | `junie`         | JetBrains' Junie CLI        |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
 ### Step-by-Step Integration Guide
@@ -322,6 +323,7 @@ Require a command-line tool to be installed:
 - **SHAI**: `shai` CLI
 - **Tabnine CLI**: `tabnine` CLI
 - **Kimi Code**: `kimi` CLI
+- **Junie CLI**: `junie` CLI
 
 ### IDE-Based Agents
 

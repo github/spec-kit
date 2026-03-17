@@ -233,3 +233,52 @@ class TestAgentConfigConsistency:
     def test_ai_help_includes_kimi(self):
         """CLI help text for --ai should include kimi."""
         assert "kimi" in AI_ASSISTANT_HELP
+
+    # --- Junie CLI consistency checks ---
+
+    def test_junie_in_agent_config(self):
+        """AGENT_CONFIG should include junie with correct folder and commands_subdir."""
+        assert "junie" in AGENT_CONFIG
+        assert AGENT_CONFIG["junie"]["folder"] == ".junie/"
+        assert AGENT_CONFIG["junie"]["commands_subdir"] == "commands"
+        assert AGENT_CONFIG["junie"]["requires_cli"] is True
+
+    def test_junie_in_extension_registrar(self):
+        """Extension command registrar should include junie using .junie/commands."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "junie" in cfg
+        junie_cfg = cfg["junie"]
+        assert junie_cfg["dir"] == ".junie/commands"
+        assert junie_cfg["format"] == "markdown"
+        assert junie_cfg["extension"] == ".md"
+
+    def test_junie_in_release_agent_lists(self):
+        """Bash and PowerShell release scripts should include junie in agent lists."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        sh_match = re.search(r"ALL_AGENTS=\(([^)]*)\)", sh_text)
+        assert sh_match is not None
+        sh_agents = sh_match.group(1).split()
+
+        ps_match = re.search(r"\$AllAgents = @\(([^)]*)\)", ps_text)
+        assert ps_match is not None
+        ps_agents = re.findall(r"'([^']+)'", ps_match.group(1))
+
+        assert "junie" in sh_agents
+        assert "junie" in ps_agents
+
+    def test_junie_in_agent_context_scripts(self):
+        """Agent context scripts should support junie agent type."""
+        bash_text = (REPO_ROOT / "scripts" / "bash" / "update-agent-context.sh").read_text(encoding="utf-8")
+        pwsh_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        assert "junie" in bash_text
+        assert "JUNIE_FILE" in bash_text
+        assert "junie" in pwsh_text
+        assert "JUNIE_FILE" in pwsh_text
+
+    def test_ai_help_includes_junie(self):
+        """CLI help text for --ai should include junie."""
+        assert "junie" in AI_ASSISTANT_HELP
