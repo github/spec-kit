@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-14T00:00:00Z",
+  "updated_at": "2026-03-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "archive": {
@@ -105,13 +105,57 @@
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
     },
+    "cognitive-squad": {
+      "name": "Cognitive Squad",
+      "id": "cognitive-squad",
+      "description": "19-function cognitive agent squad for autonomous pre-code analysis — 7 core agents, 7 specialists, 4 learning functions with feedback loop",
+      "author": "Testimonial",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Testimonial/cognitive-squad/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/Testimonial/cognitive-squad",
+      "homepage": "https://github.com/Testimonial/cognitive-squad",
+      "documentation": "https://github.com/Testimonial/cognitive-squad/blob/main/README.md",
+      "changelog": "https://github.com/Testimonial/cognitive-squad/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0",
+        "tools": [
+          {
+            "name": "understanding",
+            "version": ">=3.4.0",
+            "required": false
+          },
+          {
+            "name": "spec-kit-reverse-eng",
+            "version": ">=1.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 1
+      },
+      "tags": [
+        "ai-agents",
+        "cognitive",
+        "pre-code",
+        "analysis",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-16T00:00:00Z",
+      "updated_at": "2026-03-16T00:00:00Z"
+    },
     "docguard": {
-      "name": "DocGuard — CDD Enforcement",
+      "name": "DocGuard \u2014 CDD Enforcement",
       "id": "docguard",
-      "description": "Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 92 automated checks. Zero dependencies.",
+      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero dependencies.",
       "author": "raccioly",
-      "version": "0.8.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.8.0/spec-kit-docguard-v0.8.0.zip",
+      "version": "0.9.8",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.8/spec-kit-docguard-v0.9.8.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -129,7 +173,7 @@
       },
       "provides": {
         "commands": 6,
-        "hooks": 1
+        "hooks": 3
       },
       "tags": [
         "documentation",
@@ -139,13 +183,13 @@
         "traceability",
         "ai-agents",
         "enforcement",
-        "scoring"
+        "spec-kit"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-03-13T00:00:00Z"
+      "updated_at": "2026-03-15T20:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -413,7 +457,7 @@
     "understanding": {
       "name": "Understanding",
       "id": "understanding",
-      "description": "Automated requirements quality analysis — validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
+      "description": "Automated requirements quality analysis \u2014 validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
       "author": "Ladislav Bihari",
       "version": "3.4.0",
       "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
@@ -450,6 +494,38 @@
       "stars": 0,
       "created_at": "2026-03-07T00:00:00Z",
       "updated_at": "2026-03-07T00:00:00Z"
+    },
+    "status": {
+      "name": "Project Status",
+      "id": "status",
+      "description": "Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary.",
+      "author": "KhawarHabibKhan",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/README.md",
+      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "status",
+        "workflow",
+        "progress",
+        "feature-tracking",
+        "task-progress"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-16T00:00:00Z",
+      "updated_at": "2026-03-16T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",
