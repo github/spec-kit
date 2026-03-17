@@ -668,13 +668,17 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
 
     def atomic_write_json(target_file: Path, payload: dict[str, Any]) -> None:
         """Atomically write JSON while preserving existing mode bits when possible."""
-        fd, temp_path = tempfile.mkstemp(
-            dir=target_file.parent,
-            prefix=f"{target_file.name}.",
-            suffix=".tmp",
-        )
+        temp_path: Optional[Path] = None
         try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                encoding='utf-8',
+                dir=target_file.parent,
+                prefix=f"{target_file.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                temp_path = Path(f.name)
                 json.dump(payload, f, indent=4)
                 f.write('\n')
 
@@ -694,8 +698,8 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
 
             os.replace(temp_path, target_file)
         except Exception:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
+            if temp_path and temp_path.exists():
+                temp_path.unlink()
             raise
 
     try:
@@ -726,8 +730,8 @@ def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = Fals
 
     Performs a polite deep merge where:
     - New keys are added
-    - Existing keys are PRESERVED (not overwritten) unless they are dictionaries
-    - Nested dictionaries are merged recursively
+    - Existing keys are preserved (not overwritten) unless both values are dictionaries
+    - Nested dictionaries are merged recursively only when both sides are dictionaries
     - Lists and other values are preserved from base if they exist
 
     Args:
@@ -783,8 +787,8 @@ def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = Fals
                 # Recursively merge nested dictionaries
                 result[key] = deep_merge_polite(result[key], value)
             else:
-                # Key already exists and is not a dict, PRESERVE existing value
-                # This ensures user settings aren't overwritten by template defaults
+                # Key already exists and values are not both dicts; preserve existing value.
+                # This ensures user settings aren't overwritten by template defaults.
                 pass
         return result
 
