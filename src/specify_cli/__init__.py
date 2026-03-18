@@ -1995,6 +1995,269 @@ def version():
     console.print()
 
 
+def _detect_feature_state(feature_dir: Path) -> dict:
+    """Detect the SDD workflow state for a single feature directory.
+
+    Scans for spec.md, plan.md, tasks.md, and checklists to determine
+    which phases are complete and what remains.
+
+    Returns a dict with phase statuses and task counts.
+    """
+    state = {
+        "name": feature_dir.name,
+        "path": str(feature_dir),
+        "spec": False,
+        "plan": False,
+        "tasks": False,
+        "checklists": False,
+        "total_tasks": 0,
+        "completed_tasks": 0,
+        "remaining_tasks": [],
+        "phase": "unknown",
+    }
+
+    spec_file = feature_dir / "spec.md"
+    plan_file = feature_dir / "plan.md"
+    tasks_file = feature_dir / "tasks.md"
+    checklists_dir = feature_dir / "checklists"
+
+    if spec_file.exists() and spec_file.stat().st_size > 0:
+        state["spec"] = True
+    if plan_file.exists() and plan_file.stat().st_size > 0:
+        state["plan"] = True
+    if checklists_dir.exists() and any(checklists_dir.iterdir()):
+        state["checklists"] = True
+
+    if tasks_file.exists() and tasks_file.stat().st_size > 0:
+        state["tasks"] = True
+        try:
+            content = tasks_file.read_text(encoding="utf-8")
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("- [x]") or stripped.startswith("- [X]"):
+                    state["total_tasks"] += 1
+                    state["completed_tasks"] += 1
+                elif stripped.startswith("- [ ]"):
+                    state["total_tasks"] += 1
+                    state["remaining_tasks"].append(stripped[5:].strip())
+        except OSError:
+            pass
+
+    # Determine current phase
+    if not state["spec"]:
+        state["phase"] = "specify"
+    elif not state["plan"]:
+        state["phase"] = "plan"
+    elif not state["tasks"]:
+        state["phase"] = "tasks"
+    elif state["remaining_tasks"]:
+        state["phase"] = "implement"
+    else:
+        state["phase"] = "complete"
+
+    return state
+
+
+def _find_features(project_path: Path) -> list[dict]:
+    """Find all feature directories and detect their states."""
+    specs_dir = project_path / "specs"
+    features = []
+
+    if not specs_dir.exists():
+        return features
+
+    for entry in sorted(specs_dir.iterdir()):
+        if entry.is_dir() and len(entry.name) >= 4 and entry.name[:3].isdigit() and entry.name[3] == "-":
+            features.append(_detect_feature_state(entry))
+
+    return features
+
+
+def _agent_command_prefix(agent: str) -> str:
+    """Return the slash command prefix for a given agent."""
+    return "/speckit."
+
+
+def _generate_resume_prompt(feature: dict, agent: str) -> str:
+    """Generate a resume prompt for a feature in the given agent's format."""
+    prefix = _agent_command_prefix(agent)
+    lines = []
+
+    lines.append(f"Continue working on feature \"{feature['name']}\".")
+    lines.append("")
+    lines.append("Current state:")
+
+    phases = [
+        ("Spec", feature["spec"], "spec.md"),
+        ("Plan", feature["plan"], "plan.md"),
+        ("Tasks", feature["tasks"], "tasks.md"),
+    ]
+    for label, done, filename in phases:
+        status = "complete" if done else "missing"
+        path_info = f" (specs/{feature['name']}/{filename})" if done else ""
+        lines.append(f"- {label}: {status}{path_info}")
+
+    if feature["tasks"] and feature["total_tasks"] > 0:
+        lines.append(
+            f"- Progress: {feature['completed_tasks']}/{feature['total_tasks']} "
+            f"tasks complete, {len(feature['remaining_tasks'])} remaining"
+        )
+
+    if feature["remaining_tasks"]:
+        lines.append("")
+        lines.append("Remaining tasks:")
+        for task in feature["remaining_tasks"]:
+            lines.append(f"- [ ] {task}")
+
+    lines.append("")
+
+    phase = feature["phase"]
+    if phase == "specify":
+        lines.append(f"Next action: {prefix}specify Create the feature specification.")
+    elif phase == "plan":
+        lines.append(f"Next action: {prefix}plan Create the technical implementation plan.")
+    elif phase == "tasks":
+        lines.append(f"Next action: {prefix}tasks Break down the plan into tasks.")
+    elif phase == "implement":
+        first_task = feature["remaining_tasks"][0] if feature["remaining_tasks"] else ""
+        hint = f" starting with: {first_task}" if first_task else ""
+        lines.append(f"Next action: {prefix}implement Continue implementing remaining tasks{hint}.")
+    elif phase == "complete":
+        lines.append("All tasks are complete. Review and finalize the feature.")
+
+    return "\n".join(lines)
+
+
+@app.command()
+def resume(
+    feature: str = typer.Option(None, "--feature", "-f", help="Target a specific feature by name or number"),
+    copy: bool = typer.Option(False, "--copy", "-c", help="Copy the resume prompt to clipboard"),
+    agent: str = typer.Option(None, "--agent", help="Override AI agent type for prompt formatting"),
+):
+    """Generate a continuation prompt to resume work on an in-progress feature.
+
+    Scans the project for active features and their SDD workflow state,
+    then generates an agent-ready prompt to pick up where you left off.
+
+    Examples:
+        specify resume
+        specify resume --feature 003-user-auth
+        specify resume --copy
+        specify resume --agent claude
+    """
+    show_banner()
+
+    project_path = Path.cwd()
+
+    # Load project config for agent detection
+    init_options = load_init_options(project_path)
+    selected_agent = agent or init_options.get("ai_assistant", "copilot")
+
+    # Find all features
+    features = _find_features(project_path)
+
+    if not features:
+        console.print("[yellow]No features found.[/yellow]")
+        console.print("[dim]Features are expected in specs/NNN-name/ directories.[/dim]")
+        console.print("[dim]Run /speckit.specify to create a new feature.[/dim]")
+        raise typer.Exit(0)
+
+    # Filter by feature name if specified
+    if feature:
+        matched = [f for f in features if feature in f["name"] or f["name"].startswith(feature)]
+        if not matched:
+            console.print(f"[red]Error:[/red] No feature matching '{feature}' found.")
+            console.print(f"[dim]Available features: {', '.join(f['name'] for f in features)}[/dim]")
+            raise typer.Exit(1)
+        features = matched
+
+    # Filter to active (non-complete) features
+    active = [f for f in features if f["phase"] != "complete"]
+    if not active:
+        console.print("[green]All features are complete![/green]")
+        for f in features:
+            console.print(f"  [green]✓[/green] {f['name']}")
+        raise typer.Exit(0)
+
+    # Display status overview
+    console.print("[bold]Feature Status[/bold]\n")
+
+    phase_styles = {
+        "specify": "red",
+        "plan": "yellow",
+        "tasks": "yellow",
+        "implement": "cyan",
+        "complete": "green",
+    }
+
+    status_table = Table(show_header=True, box=None, padding=(0, 2))
+    status_table.add_column("Feature", style="white")
+    status_table.add_column("Spec", justify="center")
+    status_table.add_column("Plan", justify="center")
+    status_table.add_column("Tasks", justify="center")
+    status_table.add_column("Progress", justify="center")
+    status_table.add_column("Phase", justify="center")
+
+    for f in features:
+        spec_icon = "[green]✓[/green]" if f["spec"] else "[red]✗[/red]"
+        plan_icon = "[green]✓[/green]" if f["plan"] else "[red]✗[/red]"
+        tasks_icon = "[green]✓[/green]" if f["tasks"] else "[red]✗[/red]"
+
+        if f["total_tasks"] > 0:
+            progress = f"{f['completed_tasks']}/{f['total_tasks']}"
+        else:
+            progress = "-"
+
+        phase_color = phase_styles.get(f["phase"], "white")
+        phase_text = f"[{phase_color}]{f['phase']}[/{phase_color}]"
+
+        status_table.add_row(f["name"], spec_icon, plan_icon, tasks_icon, progress, phase_text)
+
+    console.print(status_table)
+    console.print()
+
+    # Generate prompts for active features
+    if len(active) == 1:
+        target = active[0]
+    elif feature:
+        target = active[0]
+    else:
+        console.print(f"[bold]{len(active)} active features found.[/bold]")
+        console.print("[dim]Use --feature to target a specific one. Showing the first active feature.[/dim]\n")
+        target = active[0]
+
+    prompt_text = _generate_resume_prompt(target, selected_agent)
+
+    console.print(Panel(
+        prompt_text,
+        title=f"[bold cyan]Resume Prompt: {target['name']}[/bold cyan]",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+
+    if copy:
+        import platform as _platform
+        system = _platform.system()
+        try:
+            if system == "Darwin":
+                subprocess.run(["pbcopy"], input=prompt_text.encode(), check=True)
+            elif system == "Linux":
+                try:
+                    subprocess.run(["xclip", "-selection", "clipboard"], input=prompt_text.encode(), check=True)
+                except FileNotFoundError:
+                    subprocess.run(["xsel", "--clipboard", "--input"], input=prompt_text.encode(), check=True)
+            elif system == "Windows":
+                subprocess.run(["clip"], input=prompt_text.encode(), check=True)
+            else:
+                console.print(f"[yellow]Clipboard not supported on {system}[/yellow]")
+                raise typer.Exit(0)
+            console.print("\n[green]✓[/green] Prompt copied to clipboard")
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            console.print("[yellow]Could not copy to clipboard. Install xclip or xsel on Linux.[/yellow]")
+    else:
+        console.print("\n[dim]Tip: Use --copy to copy this prompt to your clipboard[/dim]")
+
+
 # ===== Extension Commands =====
 
 extension_app = typer.Typer(
