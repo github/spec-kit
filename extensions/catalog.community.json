@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-18T00:00:00Z",
+  "updated_at": "2026-03-18T19:53:31Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "archive": {
@@ -108,7 +108,7 @@
     "cognitive-squad": {
       "name": "Cognitive Squad",
       "id": "cognitive-squad",
-      "description": "19-function cognitive agent squad for autonomous pre-code analysis — 7 core agents, 7 specialists, 4 learning functions with feedback loop",
+      "description": "Multi-agent cognitive system with Triadic Model: understanding, internalization, application — with quality gates, backpropagation verification, and self-healing",
       "author": "Testimonial",
       "version": "0.1.0",
       "download_url": "https://github.com/Testimonial/cognitive-squad/archive/refs/tags/v0.1.0.zip",
@@ -133,29 +133,29 @@
         ]
       },
       "provides": {
-        "commands": 7,
+        "commands": 10,
         "hooks": 1
       },
       "tags": [
         "ai-agents",
         "cognitive",
-        "pre-code",
-        "analysis",
+        "full-lifecycle",
+        "verification",
         "multi-agent"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-16T00:00:00Z"
+      "updated_at": "2026-03-18T00:00:00Z"
     },
     "docguard": {
       "name": "DocGuard \u2014 CDD Enforcement",
       "id": "docguard",
-      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero dependencies.",
+      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies.",
       "author": "raccioly",
-      "version": "0.9.8",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.8/spec-kit-docguard-v0.9.8.zip",
+      "version": "0.9.11",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.11/spec-kit-docguard-v0.9.11.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -189,7 +189,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-03-15T20:00:00Z"
+      "updated_at": "2026-03-18T18:53:31Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -252,6 +252,36 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-06T00:00:00Z"
+    },
+    "iterate": {
+      "name": "Iterate",
+      "id": "iterate",
+      "description": "Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building",
+      "author": "Vianca Martinez",
+      "version": "2.0.0",
+      "download_url": "https://github.com/imviancagrace/spec-kit-iterate/archive/refs/tags/v2.0.0.zip",
+      "repository": "https://github.com/imviancagrace/spec-kit-iterate",
+      "homepage": "https://github.com/imviancagrace/spec-kit-iterate",
+      "documentation": "https://github.com/imviancagrace/spec-kit-iterate/blob/main/README.md",
+      "changelog": "https://github.com/imviancagrace/spec-kit-iterate/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "iteration",
+        "change-management",
+        "spec-maintenance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-17T00:00:00Z",
+      "updated_at": "2026-03-17T00:00:00Z"
     },
     "jira": {
       "name": "Jira Integration",
