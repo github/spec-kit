@@ -559,8 +559,8 @@ Standard events (defined by core):
 - `after_tasks` - After task generation
 - `before_implement` - Before implementation
 - `after_implement` - After implementation
-- `before_commit` - Before git commit
-- `after_commit` - After git commit
+- `before_commit` - Before git commit *(planned - not yet wired into core templates)*
+- `after_commit` - After git commit *(planned - not yet wired into core templates)*
 
 ### Hook Configuration
 
