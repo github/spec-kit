@@ -302,6 +302,9 @@ class ExtensionRegistry:
         """
         if metadata is None or not isinstance(metadata, dict):
             raise ValueError(f"Cannot restore '{extension_id}': metadata must be a dict")
+        # Ensure extensions dict exists (handle corrupted registry)
+        if not isinstance(self.data.get("extensions"), dict):
+            self.data["extensions"] = {}
         self.data["extensions"][extension_id] = copy.deepcopy(metadata)
         self._save()
 
@@ -327,7 +330,10 @@ class ExtensionRegistry:
         Returns:
             Deep copy of extension metadata, or None if not found or corrupted
         """
-        entry = self.data["extensions"].get(extension_id)
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict):
+            return None
+        entry = extensions.get(extension_id)
         # Return None for missing or corrupted (non-dict) entries
         if entry is None or not isinstance(entry, dict):
             return None

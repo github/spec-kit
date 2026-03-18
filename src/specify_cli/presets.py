@@ -322,6 +322,9 @@ class PresetRegistry:
         """
         if metadata is None or not isinstance(metadata, dict):
             raise ValueError(f"Cannot restore '{pack_id}': metadata must be a dict")
+        # Ensure presets dict exists (handle corrupted registry)
+        if not isinstance(self.data.get("presets"), dict):
+            self.data["presets"] = {}
         self.data["presets"][pack_id] = copy.deepcopy(metadata)
         self._save()
 
@@ -337,7 +340,10 @@ class PresetRegistry:
         Returns:
             Deep copy of preset metadata, or None if not found or corrupted
         """
-        entry = self.data["presets"].get(pack_id)
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict):
+            return None
+        entry = packs.get(pack_id)
         # Return None for missing or corrupted (non-dict) entries
         if entry is None or not isinstance(entry, dict):
             return None
