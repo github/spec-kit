@@ -331,8 +331,8 @@ Spec Kit can be tailored to your needs through two complementary systems — **e
 block-beta
     columns 1
     overrides["⬆ Highest priority\nProject-Local Overrides\n.specify/templates/overrides/"]
-    presets["Presets — Customize core & extensions\n.specify/presets/‹preset›/"]
-    extensions["Extensions — Add new capabilities\n.specify/extensions/‹ext›/"]
+    presets["Presets — Customize core & extensions\n.specify/presets/<preset-id>/templates/"]
+    extensions["Extensions — Add new capabilities\n.specify/extensions/<ext-id>/templates/"]
     core["Spec Kit Core — Built-in SDD commands & templates\n.specify/templates/\n⬇ Lowest priority"]
 
     style overrides fill:transparent,stroke:#999
@@ -341,7 +341,7 @@ block-beta
     style core fill:transparent,stroke:#e6a817
 ```
 
-Templates and commands resolve top-down: the first match wins. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. If no overrides or customizations exist, Spec Kit uses its core defaults.
+Templates resolve top-down: the first match wins. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. Commands work differently — presets and extensions register their command files directly into agent directories (e.g., `.claude/commands/`), overwriting any earlier version. If no overrides or customizations exist, Spec Kit uses its core defaults.
 
 ### Extensions — Add New Capabilities
 
