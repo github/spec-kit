@@ -1,0 +1,17 @@
+# SDD Utils Extension Configuration
+# Copy to sdd-utils-config.yml and customize
+
+# Resume command settings
+resume:
+  # Show all features or only active (non-complete) ones
+  show_complete: false
+
+# Doctor command settings
+doctor:
+  # Skip specific checks (e.g., ["scripts", "constitution"])
+  skip_checks: []
+
+# Validate command settings
+validate:
+  # Treat warnings as failures
+  strict: false
