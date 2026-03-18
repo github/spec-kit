@@ -341,7 +341,7 @@ block-beta
     style core fill:transparent,stroke:#e6a817
 ```
 
-Templates resolve top-down: the first match wins. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. Commands work differently — presets and extensions register their command files directly into agent directories (e.g., `.claude/commands/`), overwriting any earlier version. If no overrides or customizations exist, Spec Kit uses its core defaults.
+**Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. **Commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are copied into agent directories (e.g., `.claude/commands/`), replacing whatever was there before; the last-installed version is the one the agent sees. Commands are cleaned up on removal. If no overrides or customizations exist, Spec Kit uses its core defaults.
 
 ### Extensions — Add New Capabilities
 

@@ -13,13 +13,15 @@ When Spec Kit needs a template (e.g. `spec-template`), it walks a resolution sta
 
 If no preset is installed, core templates are used — exactly the same behavior as before presets existed.
 
+Template resolution happens **at runtime** — nothing is copied; Spec Kit walks the stack on every lookup.
+
 For detailed resolution and command registration flows, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Command Overrides
 
 Presets can also override the commands that guide the SDD workflow. Templates define *what* gets produced (specs, plans, constitutions); commands define *how* the LLM produces them (the step-by-step instructions).
 
-When a preset includes `type: "command"` entries, the commands are automatically registered into all detected agent directories (`.claude/commands/`, `.gemini/commands/`, etc.) in the correct format (Markdown or TOML with appropriate argument placeholders). When the preset is removed, the registered commands are cleaned up.
+Unlike templates, command overrides are applied **at install time**. When a preset includes `type: "command"` entries, the commands are registered into all detected agent directories (`.claude/commands/`, `.gemini/commands/`, etc.) in the correct format (Markdown or TOML with appropriate argument placeholders). When the preset is removed, the registered commands are cleaned up.
 
 ## Quick Start
 
