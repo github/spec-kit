@@ -13,7 +13,7 @@ When Spec Kit needs a template (e.g. `spec-template`), it walks a resolution sta
 
 If no preset is installed, core templates are used — exactly the same behavior as before presets existed.
 
-Template resolution happens **at runtime** — nothing is copied; Spec Kit walks the stack on every lookup.
+Template resolution happens **at runtime** — although preset files are copied into `.specify/presets/<id>/` during installation, Spec Kit walks the resolution stack on every template lookup rather than merging templates into a single location.
 
 For detailed resolution and command registration flows, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
