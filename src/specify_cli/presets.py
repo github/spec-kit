@@ -321,8 +321,8 @@ class PresetRegistry:
             ValueError: If metadata is None or not a dict
         """
         if metadata is None or not isinstance(metadata, dict):
-            raise ValueError(f"Cannot restore '{pack_id}': metadata must be a non-empty dict")
-        self.data["presets"][pack_id] = dict(metadata)
+            raise ValueError(f"Cannot restore '{pack_id}': metadata must be a dict")
+        self.data["presets"][pack_id] = copy.deepcopy(metadata)
         self._save()
 
     def get(self, pack_id: str) -> Optional[dict]:

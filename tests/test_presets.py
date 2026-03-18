@@ -396,7 +396,7 @@ class TestPresetRegistry:
         packs_dir.mkdir()
         registry = PresetRegistry(packs_dir)
 
-        with pytest.raises(ValueError, match="metadata must be a non-empty dict"):
+        with pytest.raises(ValueError, match="metadata must be a dict"):
             registry.restore("test-pack", None)
 
     def test_restore_rejects_non_dict_metadata(self, temp_dir):
@@ -405,11 +405,32 @@ class TestPresetRegistry:
         packs_dir.mkdir()
         registry = PresetRegistry(packs_dir)
 
-        with pytest.raises(ValueError, match="metadata must be a non-empty dict"):
+        with pytest.raises(ValueError, match="metadata must be a dict"):
             registry.restore("test-pack", "not-a-dict")
 
-        with pytest.raises(ValueError, match="metadata must be a non-empty dict"):
+        with pytest.raises(ValueError, match="metadata must be a dict"):
             registry.restore("test-pack", ["list", "not", "dict"])
+
+    def test_restore_uses_deep_copy(self, temp_dir):
+        """Test restore() deep copies metadata to prevent mutation."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        original_metadata = {
+            "version": "1.0.0",
+            "nested": {"key": "original"},
+        }
+        registry.restore("test-pack", original_metadata)
+
+        # Mutate the original metadata after restore
+        original_metadata["version"] = "MUTATED"
+        original_metadata["nested"]["key"] = "MUTATED"
+
+        # Registry should have the original values
+        stored = registry.get("test-pack")
+        assert stored["version"] == "1.0.0"
+        assert stored["nested"]["key"] == "original"
 
     def test_get_returns_deep_copy(self, temp_dir):
         """Test that get() returns a deep copy to prevent mutation."""

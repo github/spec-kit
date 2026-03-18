@@ -296,8 +296,13 @@ class ExtensionRegistry:
         Args:
             extension_id: Extension ID
             metadata: Complete extension metadata including installed_at
+
+        Raises:
+            ValueError: If metadata is None or not a dict
         """
-        self.data["extensions"][extension_id] = dict(metadata)
+        if metadata is None or not isinstance(metadata, dict):
+            raise ValueError(f"Cannot restore '{extension_id}': metadata must be a dict")
+        self.data["extensions"][extension_id] = copy.deepcopy(metadata)
         self._save()
 
     def remove(self, extension_id: str):
