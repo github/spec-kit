@@ -487,6 +487,20 @@ class TestPresetRegistry:
         assert fresh["version"] == "1.0.0"
         assert fresh["nested"]["key"] == "original"
 
+    def test_list_returns_empty_dict_for_corrupted_registry(self, temp_dir):
+        """Test that list() returns empty dict when presets is not a dict."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        # Corrupt the registry - presets is a list instead of dict
+        registry.data["presets"] = ["not", "a", "dict"]
+        registry._save()
+
+        # list() should return empty dict, not crash
+        result = registry.list()
+        assert result == {}
+
     def test_list_by_priority_excludes_disabled(self, temp_dir):
         """Test that list_by_priority excludes disabled presets by default."""
         packs_dir = temp_dir / "packs"

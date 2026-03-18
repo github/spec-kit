@@ -350,9 +350,12 @@ class PresetRegistry:
         from accidentally mutating nested internal registry state.
 
         Returns:
-            Dictionary of pack_id -> metadata (deep copies)
+            Dictionary of pack_id -> metadata (deep copies), empty dict if corrupted
         """
-        return copy.deepcopy(self.data["presets"])
+        packs = self.data.get("presets", {}) or {}
+        if not isinstance(packs, dict):
+            return {}
+        return copy.deepcopy(packs)
 
     def list_by_priority(self, include_disabled: bool = False) -> List[tuple]:
         """Get all installed presets sorted by priority.

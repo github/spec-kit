@@ -520,6 +520,20 @@ class TestExtensionRegistry:
         internal = registry.data["extensions"]["test-ext"]
         assert internal["registered_commands"] == {"claude": ["cmd1"]}
 
+    def test_list_returns_empty_dict_for_corrupted_registry(self, temp_dir):
+        """Test that list() returns empty dict when extensions is not a dict."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+
+        # Corrupt the registry - extensions is a list instead of dict
+        registry.data["extensions"] = ["not", "a", "dict"]
+        registry._save()
+
+        # list() should return empty dict, not crash
+        result = registry.list()
+        assert result == {}
+
 
 # ===== ExtensionManager Tests =====
 

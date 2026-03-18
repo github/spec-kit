@@ -340,9 +340,12 @@ class ExtensionRegistry:
         from accidentally mutating nested internal registry state.
 
         Returns:
-            Dictionary of extension_id -> metadata (deep copies)
+            Dictionary of extension_id -> metadata (deep copies), empty dict if corrupted
         """
-        return copy.deepcopy(self.data["extensions"])
+        extensions = self.data.get("extensions", {}) or {}
+        if not isinstance(extensions, dict):
+            return {}
+        return copy.deepcopy(extensions)
 
     def is_installed(self, extension_id: str) -> bool:
         """Check if extension is installed.
