@@ -2405,6 +2405,87 @@ def preset_set_priority(
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
+@preset_app.command("enable")
+def preset_enable(
+    pack_id: str = typer.Argument(help="Preset ID to enable"),
+):
+    """Enable a disabled preset."""
+    from .presets import PresetManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = PresetManager(project_root)
+
+    # Check if preset is installed
+    if not manager.registry.is_installed(pack_id):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Get current metadata
+    metadata = manager.registry.get(pack_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    if metadata.get("enabled", True):
+        console.print(f"[yellow]Preset '{pack_id}' is already enabled[/yellow]")
+        raise typer.Exit(0)
+
+    # Enable the preset
+    manager.registry.update(pack_id, {"enabled": True})
+
+    console.print(f"[green]✓[/green] Preset '{pack_id}' enabled")
+    console.print("\nTemplates from this preset will now be included in resolution.")
+
+
+@preset_app.command("disable")
+def preset_disable(
+    pack_id: str = typer.Argument(help="Preset ID to disable"),
+):
+    """Disable a preset without removing it."""
+    from .presets import PresetManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = PresetManager(project_root)
+
+    # Check if preset is installed
+    if not manager.registry.is_installed(pack_id):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Get current metadata
+    metadata = manager.registry.get(pack_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    if not metadata.get("enabled", True):
+        console.print(f"[yellow]Preset '{pack_id}' is already disabled[/yellow]")
+        raise typer.Exit(0)
+
+    # Disable the preset
+    manager.registry.update(pack_id, {"enabled": False})
+
+    console.print(f"[green]✓[/green] Preset '{pack_id}' disabled")
+    console.print("\nTemplates from this preset will be skipped during resolution.")
+    console.print(f"To re-enable: specify preset enable {pack_id}")
+
+
 # ===== Preset Catalog Commands =====
 
 

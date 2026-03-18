@@ -369,6 +369,118 @@ class TestPresetRegistry:
         registry = PresetRegistry(packs_dir)
         assert registry.get("nonexistent") is None
 
+    def test_restore(self, temp_dir):
+        """Test restore() preserves timestamps exactly."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        # Create original entry with a specific timestamp
+        original_metadata = {
+            "version": "1.0.0",
+            "source": "local",
+            "installed_at": "2025-01-15T10:30:00+00:00",
+            "enabled": True,
+        }
+        registry.restore("test-pack", original_metadata)
+
+        # Verify exact restoration
+        restored = registry.get("test-pack")
+        assert restored["installed_at"] == "2025-01-15T10:30:00+00:00"
+        assert restored["version"] == "1.0.0"
+        assert restored["enabled"] is True
+
+    def test_restore_rejects_none_metadata(self, temp_dir):
+        """Test restore() raises ValueError for None metadata."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        with pytest.raises(ValueError, match="metadata must be a non-empty dict"):
+            registry.restore("test-pack", None)
+
+    def test_restore_rejects_non_dict_metadata(self, temp_dir):
+        """Test restore() raises ValueError for non-dict metadata."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        with pytest.raises(ValueError, match="metadata must be a non-empty dict"):
+            registry.restore("test-pack", "not-a-dict")
+
+        with pytest.raises(ValueError, match="metadata must be a non-empty dict"):
+            registry.restore("test-pack", ["list", "not", "dict"])
+
+    def test_get_returns_deep_copy(self, temp_dir):
+        """Test that get() returns a deep copy to prevent mutation."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("test-pack", {"version": "1.0.0", "nested": {"key": "original"}})
+
+        # Get and mutate the returned copy
+        metadata = registry.get("test-pack")
+        metadata["version"] = "MUTATED"
+        metadata["nested"]["key"] = "MUTATED"
+
+        # Original should be unchanged
+        fresh = registry.get("test-pack")
+        assert fresh["version"] == "1.0.0"
+        assert fresh["nested"]["key"] == "original"
+
+    def test_list_returns_deep_copy(self, temp_dir):
+        """Test that list() returns deep copies to prevent mutation."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("test-pack", {"version": "1.0.0", "nested": {"key": "original"}})
+
+        # Get list and mutate
+        all_packs = registry.list()
+        all_packs["test-pack"]["version"] = "MUTATED"
+        all_packs["test-pack"]["nested"]["key"] = "MUTATED"
+
+        # Original should be unchanged
+        fresh = registry.get("test-pack")
+        assert fresh["version"] == "1.0.0"
+        assert fresh["nested"]["key"] == "original"
+
+    def test_list_by_priority_excludes_disabled(self, temp_dir):
+        """Test that list_by_priority excludes disabled presets by default."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("pack-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("pack-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+        registry.add("pack-default", {"version": "1.0.0", "priority": 10})  # no enabled field = True
+
+        # Default: exclude disabled
+        by_priority = registry.list_by_priority()
+        pack_ids = [p[0] for p in by_priority]
+        assert "pack-enabled" in pack_ids
+        assert "pack-default" in pack_ids
+        assert "pack-disabled" not in pack_ids
+
+    def test_list_by_priority_includes_disabled_when_requested(self, temp_dir):
+        """Test that list_by_priority includes disabled presets when requested."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("pack-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("pack-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+
+        # Include disabled
+        by_priority = registry.list_by_priority(include_disabled=True)
+        pack_ids = [p[0] for p in by_priority]
+        assert "pack-enabled" in pack_ids
+        assert "pack-disabled" in pack_ids
+        # Disabled pack has lower priority number, so it comes first when included
+        assert pack_ids[0] == "pack-disabled"
+
 
 # ===== PresetManager Tests =====
 
@@ -2001,3 +2113,189 @@ class TestPresetPriorityBackwardsCompatibility:
             "legacy-pack",
             "low-priority-pack",
         ]
+
+
+class TestPresetEnableDisable:
+    """Test preset enable/disable CLI commands."""
+
+    def test_disable_preset(self, project_dir, pack_dir):
+        """Test disable command sets enabled=False."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Verify initially enabled
+        assert manager.registry.get("test-pack").get("enabled", True) is True
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "disabled" in result.output.lower()
+
+        # Reload registry to see updated value
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["enabled"] is False
+
+    def test_enable_preset(self, project_dir, pack_dir):
+        """Test enable command sets enabled=True."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset and disable it
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.update("test-pack", {"enabled": False})
+
+        # Verify disabled
+        assert manager.registry.get("test-pack")["enabled"] is False
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "enabled" in result.output.lower()
+
+        # Reload registry to see updated value
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["enabled"] is True
+
+    def test_disable_already_disabled(self, project_dir, pack_dir):
+        """Test disable on already disabled preset shows warning."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset and disable it
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.update("test-pack", {"enabled": False})
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "already disabled" in result.output.lower()
+
+    def test_enable_already_enabled(self, project_dir, pack_dir):
+        """Test enable on already enabled preset shows warning."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset (enabled by default)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "already enabled" in result.output.lower()
+
+    def test_disable_not_installed(self, project_dir):
+        """Test disable fails for non-installed preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "nonexistent"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower()
+
+    def test_enable_not_installed(self, project_dir):
+        """Test enable fails for non-installed preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "nonexistent"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower()
+
+    def test_disabled_preset_excluded_from_resolution(self, project_dir, pack_dir):
+        """Test that disabled presets are excluded from template resolution."""
+        # Install preset with a template
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Create a template in the preset directory
+        preset_template = project_dir / ".specify" / "presets" / "test-pack" / "templates" / "test-template.md"
+        preset_template.parent.mkdir(parents=True, exist_ok=True)
+        preset_template.write_text("# Template from test-pack")
+
+        resolver = PresetResolver(project_dir)
+
+        # Template should be found when enabled
+        result = resolver.resolve("test-template", "template")
+        assert result is not None
+        assert "test-pack" in str(result)
+
+        # Disable the preset
+        manager.registry.update("test-pack", {"enabled": False})
+
+        # Template should NOT be found when disabled
+        resolver2 = PresetResolver(project_dir)
+        result2 = resolver2.resolve("test-template", "template")
+        assert result2 is None or "test-pack" not in str(result2)
+
+    def test_enable_corrupted_registry_entry(self, project_dir, pack_dir):
+        """Test enable fails gracefully for corrupted registry entry."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset then corrupt the registry entry
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.data["presets"]["test-pack"] = "corrupted-string"
+        manager.registry._save()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code == 1
+        assert "corrupted state" in result.output.lower()
+
+    def test_disable_corrupted_registry_entry(self, project_dir, pack_dir):
+        """Test disable fails gracefully for corrupted registry entry."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset then corrupt the registry entry
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.data["presets"]["test-pack"] = "corrupted-string"
+        manager.registry._save()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "test-pack"])
+
+        assert result.exit_code == 1
+        assert "corrupted state" in result.output.lower()
