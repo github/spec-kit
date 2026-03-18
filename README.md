@@ -325,7 +325,7 @@ Additional commands for enhanced quality and validation:
 
 ## 🧩 Making Spec Kit Your Own: Extensions & Presets
 
-Spec Kit can be tailored to your needs through two complementary systems:
+Spec Kit can be tailored to your needs through two complementary systems — **extensions** and **presets** — plus project-local overrides for one-off adjustments:
 
 ```mermaid
 block-beta
@@ -341,7 +341,7 @@ block-beta
     style core fill:transparent,stroke:#e6a817
 ```
 
-Templates and commands resolve top-down: the first match wins. If no overrides or customizations exist, Spec Kit uses its core defaults.
+Templates and commands resolve top-down: the first match wins. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. If no overrides or customizations exist, Spec Kit uses its core defaults.
 
 ### Extensions — Add New Capabilities
 
