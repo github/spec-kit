@@ -1995,6 +1995,289 @@ def version():
     console.print()
 
 
+def _check_templates(project_path: Path) -> list[dict]:
+    """Check that expected template files exist and have content."""
+    results = []
+    templates_dir = project_path / "templates"
+
+    expected = [
+        "spec-template.md",
+        "plan-template.md",
+        "tasks-template.md",
+        "constitution-template.md",
+        "checklist-template.md",
+    ]
+
+    for template_name in expected:
+        path = templates_dir / template_name
+        if not path.exists():
+            results.append({"name": template_name, "status": "fail", "message": "not found"})
+        elif path.stat().st_size == 0:
+            results.append({"name": template_name, "status": "warn", "message": "empty file"})
+        else:
+            results.append({"name": template_name, "status": "pass", "message": "exists and valid"})
+
+    return results
+
+
+def _check_agent_config(project_path: Path) -> list[dict]:
+    """Check that the configured agent's command files exist."""
+    results = []
+    init_options = load_init_options(project_path)
+    agent_key = init_options.get("ai_assistant")
+
+    if not agent_key:
+        results.append({"name": "agent config", "status": "warn", "message": "no AI agent configured (run specify init --ai <agent>)"})
+        return results
+
+    config = AGENT_CONFIG.get(agent_key)
+    if not config:
+        results.append({"name": "agent config", "status": "warn", "message": f"unknown agent '{agent_key}'"})
+        return results
+
+    agent_dir = project_path / config["folder"]
+    commands_subdir = config.get("commands_subdir", "commands")
+    commands_dir = agent_dir / commands_subdir
+
+    if not agent_dir.exists():
+        results.append({"name": f"{config['name']} directory", "status": "fail", "message": f"{config['folder']} not found"})
+        return results
+
+    results.append({"name": f"{config['name']} directory", "status": "pass", "message": f"{config['folder']} exists"})
+
+    if commands_dir.exists():
+        cmd_files = list(commands_dir.glob("*.md"))
+        if cmd_files:
+            results.append({"name": "command files", "status": "pass", "message": f"{len(cmd_files)} command files found"})
+        else:
+            results.append({"name": "command files", "status": "warn", "message": "no command files in " + str(commands_dir.relative_to(project_path))})
+    else:
+        results.append({"name": "command files", "status": "warn", "message": f"{commands_subdir}/ directory not found"})
+
+    return results
+
+
+def _check_scripts(project_path: Path) -> list[dict]:
+    """Check that scripts exist and have correct permissions."""
+    results = []
+    scripts_dir = project_path / "scripts"
+
+    if not scripts_dir.exists():
+        results.append({"name": "scripts directory", "status": "warn", "message": "scripts/ not found"})
+        return results
+
+    bash_dir = scripts_dir / "bash"
+    ps_dir = scripts_dir / "powershell"
+
+    if bash_dir.exists():
+        sh_files = list(bash_dir.glob("*.sh"))
+        non_exec = [f for f in sh_files if not os.access(f, os.X_OK)]
+        if non_exec:
+            names = ", ".join(f.name for f in non_exec[:3])
+            results.append({"name": "bash scripts", "status": "warn", "message": f"{len(non_exec)} not executable: {names}"})
+        elif sh_files:
+            results.append({"name": "bash scripts", "status": "pass", "message": f"{len(sh_files)} scripts, all executable"})
+        else:
+            results.append({"name": "bash scripts", "status": "warn", "message": "no .sh files found"})
+    else:
+        results.append({"name": "bash scripts", "status": "warn", "message": "scripts/bash/ not found"})
+
+    if ps_dir.exists():
+        ps_files = list(ps_dir.glob("*.ps1"))
+        if ps_files:
+            results.append({"name": "powershell scripts", "status": "pass", "message": f"{len(ps_files)} scripts present"})
+        else:
+            results.append({"name": "powershell scripts", "status": "warn", "message": "no .ps1 files found"})
+
+    return results
+
+
+def _check_constitution(project_path: Path) -> list[dict]:
+    """Check that a constitution file exists and has content."""
+    results = []
+
+    for candidate in ["constitution.md", "CONSTITUTION.md"]:
+        path = project_path / candidate
+        if path.exists():
+            size = path.stat().st_size
+            if size > 0:
+                word_count = len(path.read_text(encoding="utf-8").split())
+                results.append({"name": "constitution", "status": "pass", "message": f"{candidate} exists ({word_count:,} words)"})
+            else:
+                results.append({"name": "constitution", "status": "warn", "message": f"{candidate} is empty"})
+            return results
+
+    results.append({"name": "constitution", "status": "warn", "message": "no constitution.md found (run /speckit.constitution)"})
+    return results
+
+
+def _check_features(project_path: Path) -> list[dict]:
+    """Check active features for artifact completeness."""
+    results = []
+    specs_dir = project_path / "specs"
+
+    if not specs_dir.exists():
+        return results
+
+    for entry in sorted(specs_dir.iterdir()):
+        if not entry.is_dir() or len(entry.name) < 4 or not entry.name[:3].isdigit():
+            continue
+
+        artifacts = []
+        for artifact in ["spec.md", "plan.md", "tasks.md"]:
+            path = entry / artifact
+            if path.exists() and path.stat().st_size > 0:
+                artifacts.append(artifact.split(".")[0])
+
+        if len(artifacts) == 3:
+            status = "pass"
+            message = "spec ✓ plan ✓ tasks ✓"
+        elif artifacts:
+            status = "warn"
+            missing = [a for a in ["spec", "plan", "tasks"] if a not in artifacts]
+            message = " ".join(f"{a} ✓" for a in artifacts) + " " + " ".join(f"{a} ✗" for a in missing)
+        else:
+            status = "warn"
+            message = "no artifacts found"
+
+        results.append({"name": entry.name, "status": status, "message": message})
+
+    return results
+
+
+@app.command()
+def doctor(
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON for CI integration"),
+    fix: bool = typer.Option(False, "--fix", help="Attempt to auto-fix common issues"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed check information"),
+):
+    """Check the health of your spec-kit project setup.
+
+    Validates template integrity, agent configuration, script permissions,
+    constitution existence, and feature artifact completeness.
+
+    Examples:
+        specify doctor
+        specify doctor --json
+        specify doctor --fix
+        specify doctor --verbose
+    """
+    show_banner()
+
+    project_path = Path.cwd()
+
+    # Check for .specify directory as a project indicator
+    specify_dir = project_path / ".specify"
+    templates_dir = project_path / "templates"
+    if not specify_dir.exists() and not templates_dir.exists():
+        console.print("[yellow]This doesn't appear to be a spec-kit project.[/yellow]")
+        console.print("[dim]Run 'specify init .' to initialize spec-kit in this directory.[/dim]")
+        raise typer.Exit(1)
+
+    all_checks = {}
+    total_pass = 0
+    total_warn = 0
+    total_fail = 0
+
+    # Run all checks
+    sections = [
+        ("Template Integrity", _check_templates(project_path)),
+        ("Agent Configuration", _check_agent_config(project_path)),
+        ("Scripts", _check_scripts(project_path)),
+        ("Constitution", _check_constitution(project_path)),
+        ("Active Features", _check_features(project_path)),
+    ]
+
+    for section_name, checks in sections:
+        all_checks[section_name] = checks
+        for check in checks:
+            if check["status"] == "pass":
+                total_pass += 1
+            elif check["status"] == "warn":
+                total_warn += 1
+            else:
+                total_fail += 1
+
+    # JSON output mode
+    if json_output:
+        import json as _json
+        output = {
+            "project": str(project_path),
+            "checks": all_checks,
+            "summary": {
+                "pass": total_pass,
+                "warn": total_warn,
+                "fail": total_fail,
+                "total": total_pass + total_warn + total_fail,
+            },
+        }
+        console.print(_json.dumps(output, indent=2))
+        if total_fail > 0:
+            raise typer.Exit(1)
+        raise typer.Exit(0)
+
+    # Rich output
+    console.print("[bold]Spec Kit Project Health Check[/bold]\n")
+
+    status_icons = {
+        "pass": "[green]✓[/green]",
+        "warn": "[yellow]⚠[/yellow]",
+        "fail": "[red]✗[/red]",
+    }
+
+    for section_name, checks in sections:
+        if not checks and not verbose:
+            continue
+
+        console.print(f"  [bold]{section_name}[/bold]")
+        for check in checks:
+            icon = status_icons[check["status"]]
+            console.print(f"    {icon} {check['name']}: {check['message']}")
+        console.print()
+
+    # Auto-fix mode
+    if fix:
+        fixed = 0
+        scripts_dir = project_path / "scripts" / "bash"
+        if scripts_dir.exists():
+            for sh_file in scripts_dir.glob("*.sh"):
+                if not os.access(sh_file, os.X_OK):
+                    sh_file.chmod(sh_file.stat().st_mode | 0o755)
+                    console.print(f"  [green]Fixed:[/green] Made {sh_file.name} executable")
+                    fixed += 1
+        if fixed:
+            console.print(f"\n[green]Auto-fixed {fixed} issue(s)[/green]")
+        else:
+            console.print("[dim]No auto-fixable issues found[/dim]")
+        console.print()
+
+    # Health score
+    total = total_pass + total_warn + total_fail
+    if total > 0:
+        score = round((total_pass / total) * 10)
+    else:
+        score = 10
+
+    if total_fail > 0:
+        score_color = "red"
+    elif total_warn > 0:
+        score_color = "yellow"
+    else:
+        score_color = "green"
+
+    detail_parts = []
+    if total_warn > 0:
+        detail_parts.append(f"{total_warn} warning{'s' if total_warn != 1 else ''}")
+    if total_fail > 0:
+        detail_parts.append(f"{total_fail} failure{'s' if total_fail != 1 else ''}")
+    detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+
+    console.print(f"[bold {score_color}]Health Score: {score}/10{detail}[/bold {score_color}]")
+
+    if total_fail > 0:
+        raise typer.Exit(1)
+
+
 # ===== Extension Commands =====
 
 extension_app = typer.Typer(
