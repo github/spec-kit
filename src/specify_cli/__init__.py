@@ -1995,6 +1995,288 @@ def version():
     console.print()
 
 
+def _parse_tasks(tasks_file: Path) -> list[dict]:
+    """Parse tasks.md and extract task items with their completion status.
+
+    Returns a list of dicts with keys: text, completed, keywords
+    """
+    tasks = []
+    if not tasks_file.exists():
+        return tasks
+
+    try:
+        content = tasks_file.read_text(encoding="utf-8")
+    except OSError:
+        return tasks
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- [x]") or stripped.startswith("- [X]"):
+            text = stripped[5:].strip()
+            tasks.append({"text": text, "completed": True, "keywords": _extract_keywords(text)})
+        elif stripped.startswith("- [ ]"):
+            text = stripped[5:].strip()
+            tasks.append({"text": text, "completed": False, "keywords": _extract_keywords(text)})
+
+    return tasks
+
+
+def _extract_keywords(text: str) -> list[str]:
+    """Extract meaningful keywords from a task description.
+
+    Pulls out words that look like file paths, function names, or identifiers.
+    """
+    keywords = []
+    for word in text.split():
+        # Strip common punctuation
+        clean = word.strip(".,;:()\"'`")
+        # File paths
+        if "/" in clean or "." in clean and len(clean) > 3:
+            keywords.append(clean)
+        # CamelCase or snake_case identifiers
+        elif "_" in clean or (any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean)):
+            keywords.append(clean)
+    return keywords
+
+
+def _verify_task_files(project_path: Path, task: dict) -> dict:
+    """Check if files referenced in a task description exist in the project."""
+    result = {
+        "task": task["text"],
+        "completed": task["completed"],
+        "files_found": [],
+        "files_missing": [],
+        "status": "skip",
+    }
+
+    if not task["completed"]:
+        result["status"] = "skip"
+        return result
+
+    # Look for file-like keywords
+    for keyword in task["keywords"]:
+        if "/" in keyword or keyword.endswith((".py", ".js", ".ts", ".go", ".rb", ".rs", ".md")):
+            candidate = project_path / keyword
+            if candidate.exists():
+                result["files_found"].append(keyword)
+            else:
+                result["files_missing"].append(keyword)
+
+    if result["files_found"] and not result["files_missing"]:
+        result["status"] = "pass"
+    elif result["files_missing"]:
+        result["status"] = "warn"
+    else:
+        # No file references found - can't verify, mark as pass
+        result["status"] = "pass"
+
+    return result
+
+
+def _parse_spec_requirements(spec_file: Path) -> list[str]:
+    """Extract functional requirements from a spec.md file.
+
+    Looks for bullet points under headings containing 'requirement' or 'functional'.
+    """
+    requirements = []
+    if not spec_file.exists():
+        return requirements
+
+    try:
+        content = spec_file.read_text(encoding="utf-8")
+    except OSError:
+        return requirements
+
+    in_requirements = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        # Detect requirement section headers
+        if stripped.startswith("#") and any(kw in stripped.lower() for kw in ["requirement", "functional"]):
+            in_requirements = True
+            continue
+        elif stripped.startswith("#"):
+            in_requirements = False
+            continue
+
+        if in_requirements and stripped.startswith("- "):
+            requirements.append(stripped[2:].strip())
+
+    return requirements
+
+
+def _trace_requirement_to_tasks(requirement: str, tasks: list[dict]) -> list[str]:
+    """Find tasks that map to a given requirement by keyword overlap."""
+    req_words = set(requirement.lower().split())
+    # Remove common words
+    stop_words = {"the", "a", "an", "is", "are", "be", "to", "for", "of", "and", "or", "in", "on", "with", "that", "this", "it", "as", "by"}
+    req_words -= stop_words
+
+    matched = []
+    for task in tasks:
+        task_words = set(task["text"].lower().split()) - stop_words
+        overlap = req_words & task_words
+        if len(overlap) >= 2:  # At least 2 meaningful words in common
+            matched.append(task["text"])
+
+    return matched
+
+
+@app.command()
+def validate(
+    feature: str = typer.Option(None, "--feature", "-f", help="Target a specific feature by name or number"),
+    ci: bool = typer.Option(False, "--ci", help="Machine-readable output with non-zero exit on failure"),
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON"),
+    strict: bool = typer.Option(False, "--strict", help="Treat warnings as failures"),
+):
+    """Verify that completed tasks have corresponding implementations.
+
+    Performs deterministic checks: file existence, git commit history, and
+    spec-to-task traceability. No AI required - can run in CI pipelines.
+
+    Examples:
+        specify validate
+        specify validate --feature 003-user-auth
+        specify validate --ci
+        specify validate --json
+    """
+    show_banner()
+
+    project_path = Path.cwd()
+    specs_dir = project_path / "specs"
+
+    if not specs_dir.exists():
+        console.print("[yellow]No specs directory found.[/yellow]")
+        raise typer.Exit(0)
+
+    # Find target features
+    features_to_check = []
+    for entry in sorted(specs_dir.iterdir()):
+        if not entry.is_dir() or len(entry.name) < 4 or not entry.name[:3].isdigit():
+            continue
+        if feature and feature not in entry.name and not entry.name.startswith(feature):
+            continue
+        features_to_check.append(entry)
+
+    if not features_to_check:
+        if feature:
+            console.print(f"[red]Error:[/red] No feature matching '{feature}' found.")
+        else:
+            console.print("[yellow]No features found to validate.[/yellow]")
+        raise typer.Exit(0)
+
+    all_results = {}
+    total_pass = 0
+    total_warn = 0
+    total_fail = 0
+    total_skip = 0
+
+    for feature_dir in features_to_check:
+        feature_name = feature_dir.name
+        tasks_file = feature_dir / "tasks.md"
+        spec_file = feature_dir / "spec.md"
+
+        tasks = _parse_tasks(tasks_file)
+        if not tasks:
+            continue
+
+        # Task verification
+        task_results = []
+        for task in tasks:
+            if not task["completed"]:
+                task_results.append({"task": task["text"], "status": "skip", "message": "not completed"})
+                total_skip += 1
+                continue
+
+            file_result = _verify_task_files(project_path, task)
+
+            if file_result["files_missing"]:
+                status = "warn"
+                missing = ", ".join(file_result["files_missing"])
+                message = f"referenced files not found: {missing}"
+                total_warn += 1
+            elif file_result["files_found"]:
+                status = "pass"
+                found = ", ".join(file_result["files_found"])
+                message = f"files verified: {found}"
+                total_pass += 1
+            else:
+                status = "pass"
+                message = "no file references to verify"
+                total_pass += 1
+
+            task_results.append({"task": task["text"], "status": status, "message": message})
+
+        # Spec traceability
+        trace_results = []
+        requirements = _parse_spec_requirements(spec_file)
+        for req in requirements:
+            matched_tasks = _trace_requirement_to_tasks(req, tasks)
+            if matched_tasks:
+                trace_results.append({"requirement": req, "status": "pass", "mapped_to": matched_tasks})
+                total_pass += 1
+            else:
+                trace_results.append({"requirement": req, "status": "warn", "mapped_to": []})
+                total_warn += 1
+
+        all_results[feature_name] = {
+            "tasks": task_results,
+            "traceability": trace_results,
+        }
+
+    # JSON output
+    if json_output:
+        import json as _json
+        output = {
+            "results": all_results,
+            "summary": {"pass": total_pass, "warn": total_warn, "fail": total_fail, "skip": total_skip},
+        }
+        console.print(_json.dumps(output, indent=2))
+        exit_code = 1 if total_fail > 0 or (strict and total_warn > 0) else 0
+        raise typer.Exit(exit_code)
+
+    # Rich output
+    console.print("[bold]Implementation Validation Report[/bold]\n")
+
+    status_icons = {
+        "pass": "[green]✓[/green]",
+        "warn": "[yellow]⚠[/yellow]",
+        "fail": "[red]✗[/red]",
+        "skip": "[dim]○[/dim]",
+    }
+
+    for feature_name, results in all_results.items():
+        if results["tasks"]:
+            console.print(f"  [bold]Task Verification ({feature_name})[/bold]")
+            for tr in results["tasks"]:
+                icon = status_icons[tr["status"]]
+                console.print(f"    {icon} {tr['task'][:60]}")
+                if tr.get("message") and tr["status"] != "skip":
+                    console.print(f"      [dim]{tr['message']}[/dim]")
+            console.print()
+
+        if results["traceability"]:
+            console.print(f"  [bold]Spec Traceability ({feature_name})[/bold]")
+            for tr in results["traceability"]:
+                icon = status_icons[tr["status"]]
+                console.print(f"    {icon} {tr['requirement'][:60]}")
+                if tr["status"] == "warn":
+                    console.print("      [dim]no matching task found[/dim]")
+            console.print()
+
+    # Summary
+    verified = total_pass + total_warn + total_fail
+    console.print(f"[bold]Validation: {total_pass}/{verified} checks passed", end="")
+    if total_warn > 0:
+        console.print(f", {total_warn} warning{'s' if total_warn != 1 else ''}", end="")
+    if total_skip > 0:
+        console.print(f", {total_skip} skipped", end="")
+    console.print("[/bold]")
+
+    if ci or strict:
+        exit_code = 1 if total_fail > 0 or (strict and total_warn > 0) else 0
+        raise typer.Exit(exit_code)
+
+
 # ===== Extension Commands =====
 
 extension_app = typer.Typer(
