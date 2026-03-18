@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-18T04:21:25Z",
+  "updated_at": "2026-03-18T19:53:31Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "archive": {
@@ -154,8 +154,8 @@
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies.",
       "author": "raccioly",
-      "version": "0.9.10",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.10/spec-kit-docguard-v0.9.10.zip",
+      "version": "0.9.11",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.11/spec-kit-docguard-v0.9.11.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -189,7 +189,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-03-18T04:21:25Z"
+      "updated_at": "2026-03-18T18:53:31Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -451,6 +451,38 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-06T00:00:00Z"
+    },
+    "speckit-utils": {
+      "name": "SDD Utilities",
+      "id": "speckit-utils",
+      "description": "Resume interrupted workflows, validate project health, and verify spec-to-task traceability.",
+      "author": "mvanhorn",
+      "version": "1.0.0",
+      "download_url": "https://github.com/mvanhorn/speckit-utils/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/mvanhorn/speckit-utils",
+      "homepage": "https://github.com/mvanhorn/speckit-utils",
+      "documentation": "https://github.com/mvanhorn/speckit-utils/blob/main/README.md",
+      "changelog": "https://github.com/mvanhorn/speckit-utils/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 2
+      },
+      "tags": [
+        "resume",
+        "doctor",
+        "validate",
+        "workflow",
+        "health-check"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-18T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
     },
     "sync": {
       "name": "Spec Sync",

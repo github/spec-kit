@@ -25,6 +25,7 @@
 - [🚶 Community Walkthroughs](#-community-walkthroughs)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
+- [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
@@ -325,6 +326,68 @@ Additional commands for enhanced quality and validation:
 | Variable          | Description                                                                                                                                                                                                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+
+## 🧩 Making Spec Kit Your Own: Extensions & Presets
+
+Spec Kit can be tailored to your needs through two complementary systems — **extensions** and **presets** — plus project-local overrides for one-off adjustments:
+
+```mermaid
+block-beta
+    columns 1
+    overrides["⬆ Highest priority\nProject-Local Overrides\n.specify/templates/overrides/"]
+    presets["Presets — Customize core & extensions\n.specify/presets/<preset-id>/templates/"]
+    extensions["Extensions — Add new capabilities\n.specify/extensions/<ext-id>/templates/"]
+    core["Spec Kit Core — Built-in SDD commands & templates\n.specify/templates/\n⬇ Lowest priority"]
+
+    style overrides fill:transparent,stroke:#999
+    style presets fill:transparent,stroke:#4a9eda
+    style extensions fill:transparent,stroke:#4a9e4a
+    style core fill:transparent,stroke:#e6a817
+```
+
+**Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. **Commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`). If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically. If no overrides or customizations exist, Spec Kit uses its core defaults.
+
+### Extensions — Add New Capabilities
+
+Use **extensions** when you need functionality that goes beyond Spec Kit's core. Extensions introduce new commands and templates — for example, adding domain-specific workflows that are not covered by the built-in SDD commands, integrating with external tools, or adding entirely new development phases. They expand *what Spec Kit can do*.
+
+```bash
+# Search available extensions
+specify extension search
+
+# Install an extension
+specify extension add <extension-name>
+```
+
+For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
+
+See the [Extensions README](./extensions/README.md) for the full guide, the complete community catalog, and how to build and publish your own.
+
+### Presets — Customize Existing Workflows
+
+Use **presets** when you want to change *how* Spec Kit works without adding new capabilities. Presets override the templates and commands that ship with the core *and* with installed extensions — for example, enforcing a compliance-oriented spec format, using domain-specific terminology, or applying organizational standards to plans and tasks. They customize the artifacts and instructions that Spec Kit and its extensions produce.
+
+```bash
+# Search available presets
+specify preset search
+
+# Install a preset
+specify preset add <preset-name>
+```
+
+For example, presets could restructure spec templates to require regulatory traceability, adapt the workflow to fit the methodology you use (e.g., Agile, Kanban, Waterfall, jobs-to-be-done, or domain-driven design), add mandatory security review gates to plans, enforce test-first task ordering, or localize the entire workflow to a different language. The [pirate-speak demo](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo) shows just how deep the customization can go. Multiple presets can be stacked with priority ordering.
+
+See the [Presets README](./presets/README.md) for the full guide, including resolution order, priority, and how to create your own.
+
+### When to Use Which
+
+| Goal | Use |
+| --- | --- |
+| Add a brand-new command or workflow | Extension |
+| Customize the format of specs, plans, or tasks | Preset |
+| Integrate an external tool or service | Extension |
+| Enforce organizational or regulatory standards | Preset |
+| Ship reusable domain-specific templates | Either — presets for template overrides, extensions for templates bundled with new commands |
 
 ## 📚 Core Philosophy
 
