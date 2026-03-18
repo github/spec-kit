@@ -68,7 +68,7 @@ specify extension add --from https://github.com/org/spec-kit-ext/archive/refs/ta
 
 ## Available Community Extensions
 
-The following community-contributed extensions are available in [`catalog.community.json`](catalog.community.json):
+The following community-contributed extensions are available in [`catalog.community.json`](catalog.community.json). See the [Extension Comparison Guide](EXTENSION-COMPARISON-GUIDE.md) for help choosing between extensions that serve similar purposes.
 
 | Extension | Purpose | URL |
 |-----------|---------|-----|
@@ -104,6 +104,7 @@ To add your extension to the community catalog:
 3. **Submit a Pull Request** that:
    - Adds your extension to `extensions/catalog.community.json`
    - Updates this README with your extension in the Available Extensions table
+   - Adds a row to the [Extension Comparison Guide](EXTENSION-COMPARISON-GUIDE.md)
 4. **Wait for review** - maintainers will review and merge if criteria are met
 
 See the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md) for detailed step-by-step instructions.

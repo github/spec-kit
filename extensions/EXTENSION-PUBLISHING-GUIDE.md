@@ -214,14 +214,18 @@ Add your extension to the Available Extensions table in `extensions/README.md`:
 
 Insert your extension in alphabetical order in the table.
 
-### 4. Submit Pull Request
+### 4. Update Comparison Guide
+
+Add a row for your extension in the appropriate category table in `extensions/EXTENSION-COMPARISON-GUIDE.md`. See the [Comparison Guide](EXTENSION-COMPARISON-GUIDE.md) for instructions.
+
+### 5. Submit Pull Request
 
 ```bash
 # Create a branch
 git checkout -b add-your-extension
 
 # Commit your changes
-git add extensions/catalog.community.json extensions/README.md
+git add extensions/catalog.community.json extensions/README.md extensions/EXTENSION-COMPARISON-GUIDE.md
 git commit -m "Add your-extension to community catalog
 
 - Extension ID: your-extension
@@ -261,6 +265,7 @@ Brief description of what your extension does.
 - [x] No security vulnerabilities
 - [x] Added to extensions/catalog.community.json
 - [x] Added to extensions/README.md Available Extensions table
+- [x] Added to extensions/EXTENSION-COMPARISON-GUIDE.md
 
 ### Testing
 Tested on:
