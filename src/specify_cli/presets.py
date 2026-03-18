@@ -335,10 +335,13 @@ class PresetRegistry:
             pack_id: Preset ID
 
         Returns:
-            Deep copy of preset metadata, or None if not found
+            Deep copy of preset metadata, or None if not found or corrupted
         """
         entry = self.data["presets"].get(pack_id)
-        return copy.deepcopy(entry) if entry is not None else None
+        # Return None for missing or corrupted (non-dict) entries
+        if entry is None or not isinstance(entry, dict):
+            return None
+        return copy.deepcopy(entry)
 
     def list(self) -> Dict[str, dict]:
         """Get all installed presets.
@@ -1498,12 +1501,17 @@ class PresetResolver:
             return []
 
         registry = ExtensionRegistry(self.extensions_dir)
-        registered_extensions = registry.list_by_priority()
-        registered_extension_ids = {ext_id for ext_id, _ in registered_extensions}
+        # Get ALL registered extensions (including disabled) to know which dirs are tracked
+        all_registered = registry.list_by_priority(include_disabled=True)
+        registered_extension_ids = {ext_id for ext_id, _ in all_registered}
 
         all_extensions: list[tuple[int, str, dict | None]] = []
 
-        for ext_id, metadata in registered_extensions:
+        # Only include enabled extensions in the result
+        for ext_id, metadata in all_registered:
+            # Skip disabled extensions
+            if not metadata.get("enabled", True):
+                continue
             priority = normalize_priority(metadata.get("priority") if metadata else None)
             all_extensions.append((priority, ext_id, metadata))
 

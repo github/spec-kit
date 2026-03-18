@@ -481,6 +481,26 @@ class TestExtensionRegistry:
         internal = registry.data["extensions"]["test-ext"]
         assert internal["registered_commands"] == {"claude": ["cmd1"]}
 
+    def test_get_returns_none_for_corrupted_entry(self, temp_dir):
+        """Test that get() returns None for corrupted (non-dict) entries."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        # Directly corrupt the registry with non-dict entries
+        registry.data["extensions"]["corrupted-string"] = "not a dict"
+        registry.data["extensions"]["corrupted-list"] = ["not", "a", "dict"]
+        registry.data["extensions"]["corrupted-int"] = 42
+        registry._save()
+
+        # All corrupted entries should return None
+        assert registry.get("corrupted-string") is None
+        assert registry.get("corrupted-list") is None
+        assert registry.get("corrupted-int") is None
+        # Non-existent should also return None
+        assert registry.get("nonexistent") is None
+
     def test_list_returns_deep_copy(self, temp_dir):
         """Test that list() returns deep copies for nested structures."""
         extensions_dir = temp_dir / "extensions"

@@ -325,10 +325,13 @@ class ExtensionRegistry:
             extension_id: Extension ID
 
         Returns:
-            Deep copy of extension metadata, or None if not found
+            Deep copy of extension metadata, or None if not found or corrupted
         """
         entry = self.data["extensions"].get(extension_id)
-        return copy.deepcopy(entry) if entry is not None else None
+        # Return None for missing or corrupted (non-dict) entries
+        if entry is None or not isinstance(entry, dict):
+            return None
+        return copy.deepcopy(entry)
 
     def list(self) -> Dict[str, dict]:
         """Get all installed extensions.

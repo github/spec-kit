@@ -450,6 +450,25 @@ class TestPresetRegistry:
         assert fresh["version"] == "1.0.0"
         assert fresh["nested"]["key"] == "original"
 
+    def test_get_returns_none_for_corrupted_entry(self, temp_dir):
+        """Test that get() returns None for corrupted (non-dict) entries."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        # Directly corrupt the registry with non-dict entries
+        registry.data["presets"]["corrupted-string"] = "not a dict"
+        registry.data["presets"]["corrupted-list"] = ["not", "a", "dict"]
+        registry.data["presets"]["corrupted-int"] = 42
+        registry._save()
+
+        # All corrupted entries should return None
+        assert registry.get("corrupted-string") is None
+        assert registry.get("corrupted-list") is None
+        assert registry.get("corrupted-int") is None
+        # Non-existent should also return None
+        assert registry.get("nonexistent") is None
+
     def test_list_returns_deep_copy(self, temp_dir):
         """Test that list() returns deep copies to prevent mutation."""
         packs_dir = temp_dir / "packs"
@@ -839,6 +858,44 @@ class TestPresetResolver:
         result = resolver.resolve("custom-template")
         assert result is not None
         assert "Extension Custom Template" in result.read_text()
+
+    def test_resolve_disabled_extension_templates_skipped(self, project_dir):
+        """Test that disabled extension templates are not resolved."""
+        # Create extension with templates
+        ext_dir = project_dir / ".specify" / "extensions" / "disabled-ext"
+        ext_templates_dir = ext_dir / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        ext_template = ext_templates_dir / "disabled-template.md"
+        ext_template.write_text("# Disabled Extension Template\n")
+
+        # Register extension as disabled
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("disabled-ext", {"version": "1.0.0", "priority": 1, "enabled": False})
+
+        # Template should NOT be resolved because extension is disabled
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("disabled-template")
+        assert result is None, "Disabled extension template should not be resolved"
+
+    def test_resolve_disabled_extension_not_picked_up_as_unregistered(self, project_dir):
+        """Test that disabled extensions are not picked up via unregistered dir scan."""
+        # Create extension directory with templates
+        ext_dir = project_dir / ".specify" / "extensions" / "test-disabled-ext"
+        ext_templates_dir = ext_dir / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        ext_template = ext_templates_dir / "unique-disabled-template.md"
+        ext_template.write_text("# Should Not Resolve\n")
+
+        # Register the extension but disable it
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("test-disabled-ext", {"version": "1.0.0", "enabled": False})
+
+        # Verify the template is NOT resolved (even though the directory exists)
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("unique-disabled-template")
+        assert result is None, "Disabled extension should not be picked up as unregistered"
 
     def test_resolve_pack_over_extension(self, project_dir, pack_dir, temp_dir, valid_pack_data):
         """Test that pack templates take priority over extension templates."""
