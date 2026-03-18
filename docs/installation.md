@@ -77,28 +77,45 @@ The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ### Enterprise / Air-Gapped Installation
 
-For environments with no access to PyPI or GitHub, download the pre-built offline bundle from the [releases page](https://github.com/github/spec-kit/releases/latest).
+If your environment blocks access to PyPI (you see 403 errors when running `uv tool install` or `pip install`), you can create a portable wheel bundle on a connected machine and transfer it to the air-gapped target.
 
-**On a connected machine:**
-
-Download `specify-bundle-v*.zip` from the [Spec Kit releases page](https://github.com/github/spec-kit/releases/latest). This single ZIP contains the specify-cli wheel and all its runtime dependencies (~2.5 MB).
-
-**On the air-gapped machine:**
+**Step 1: Build the wheel on a connected machine (same OS and Python version as the target)**
 
 ```bash
-# Unzip the bundle
-unzip specify-bundle-v*.zip
+# Clone the repository
+git clone https://github.com/github/spec-kit.git
+cd spec-kit
 
-# Install — no network access needed
-pip install --no-index --find-links=./specify-bundle/ specify-cli
+# Build the wheel
+pip install build
+python -m build --wheel --outdir dist/
 
+# Download the wheel and all its runtime dependencies
+pip download -d dist/ dist/specify_cli-*.whl
+```
+
+> **Important:** `pip download` resolves platform-specific wheels (e.g., PyYAML includes native extensions). You must run this step on a machine with the **same OS and Python version** as the air-gapped target. If you need to support multiple platforms, repeat this step on each target OS (Linux, macOS, Windows) and Python version.
+
+**Step 2: Transfer the `dist/` directory to the air-gapped machine**
+
+Copy the entire `dist/` directory (which contains the `specify-cli` wheel and all dependency wheels) to the target machine via USB, network share, or other approved transfer method.
+
+**Step 3: Install on the air-gapped machine**
+
+```bash
+pip install --no-index --find-links=./dist specify-cli
+```
+
+**Step 4: Initialize a project (no network required)**
+
+```bash
 # Initialize a project — no GitHub access needed
 specify init my-project --ai claude --offline
 ```
 
 The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub.
 
-> **Note:** Python 3.11+ is required. All dependencies are pure-Python wheels, so the bundle works on any platform without recompilation.
+> **Note:** Python 3.11+ is required.
 
 > **Windows note:** Offline scaffolding requires PowerShell 7+ (`pwsh`), not Windows PowerShell 5.x (`powershell.exe`). Install from https://aka.ms/powershell.
 

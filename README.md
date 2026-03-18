@@ -99,15 +99,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here --ai c
 
 #### Option 3: Enterprise / Air-Gapped Installation
 
-Download `specify-bundle-v*.zip` from the [releases page](https://github.com/github/spec-kit/releases/latest) — it contains the CLI wheel and all dependencies in one file (~2.5 MB):
-
-```bash
-unzip specify-bundle-v*.zip
-pip install --no-index --find-links=./specify-bundle/ specify-cli
-specify init my-project --ai claude --offline
-```
-
-See the [full air-gapped guide](./docs/installation.md#enterprise--air-gapped-installation) for details.
+If your environment blocks access to PyPI or GitHub, see the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) guide for step-by-step instructions on using `pip download` to create portable, OS-specific wheel bundles on a connected machine.
 
 ### 2. Establish project principles
 
