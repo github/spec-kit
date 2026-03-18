@@ -2443,6 +2443,7 @@ def preset_enable(
 
     console.print(f"[green]✓[/green] Preset '{pack_id}' enabled")
     console.print("\nTemplates from this preset will now be included in resolution.")
+    console.print("[dim]Note: Previously registered commands/skills remain active.[/dim]")
 
 
 @preset_app.command("disable")
@@ -2483,6 +2484,7 @@ def preset_disable(
 
     console.print(f"[green]✓[/green] Preset '{pack_id}' disabled")
     console.print("\nTemplates from this preset will be skipped during resolution.")
+    console.print("[dim]Note: Previously registered commands/skills remain active until preset removal.[/dim]")
     console.print(f"To re-enable: specify preset enable {pack_id}")
 
 

@@ -2542,6 +2542,40 @@ class TestExtensionPriority:
         assert [item[0] for item in result] == ["ext-high", "ext-invalid"]
         assert result[1][1]["priority"] == 10
 
+    def test_list_by_priority_excludes_disabled(self, temp_dir):
+        """Test that list_by_priority excludes disabled extensions by default."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("ext-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+        registry.add("ext-default", {"version": "1.0.0", "priority": 10})  # no enabled field = True
+
+        # Default: exclude disabled
+        by_priority = registry.list_by_priority()
+        ext_ids = [p[0] for p in by_priority]
+        assert "ext-enabled" in ext_ids
+        assert "ext-default" in ext_ids
+        assert "ext-disabled" not in ext_ids
+
+    def test_list_by_priority_includes_disabled_when_requested(self, temp_dir):
+        """Test that list_by_priority includes disabled extensions when requested."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("ext-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+
+        # Include disabled
+        by_priority = registry.list_by_priority(include_disabled=True)
+        ext_ids = [p[0] for p in by_priority]
+        assert "ext-enabled" in ext_ids
+        assert "ext-disabled" in ext_ids
+        # Disabled ext has lower priority number, so it comes first when included
+        assert ext_ids[0] == "ext-disabled"
+
     def test_install_with_priority(self, extension_dir, project_dir):
         """Test that install_from_directory stores priority."""
         manager = ExtensionManager(project_dir)

@@ -352,12 +352,15 @@ class ExtensionRegistry:
         """
         return extension_id in self.data["extensions"]
 
-    def list_by_priority(self) -> List[tuple]:
+    def list_by_priority(self, include_disabled: bool = False) -> List[tuple]:
         """Get all installed extensions sorted by priority.
 
         Lower priority number = higher precedence (checked first).
         Extensions with equal priority are sorted alphabetically by ID
         for deterministic ordering.
+
+        Args:
+            include_disabled: If True, include disabled extensions. Default False.
 
         Returns:
             List of (extension_id, metadata_copy) tuples sorted by priority.
@@ -369,6 +372,9 @@ class ExtensionRegistry:
         sortable_extensions = []
         for ext_id, meta in extensions.items():
             if not isinstance(meta, dict):
+                continue
+            # Skip disabled extensions unless explicitly requested
+            if not include_disabled and not meta.get("enabled", True):
                 continue
             metadata_copy = copy.deepcopy(meta)
             metadata_copy["priority"] = normalize_priority(metadata_copy.get("priority", 10))
