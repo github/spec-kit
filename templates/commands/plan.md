@@ -80,8 +80,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If it exists, read it and look for entries under the `hooks.after_plan` key
    - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
    - From the discovered hooks, ignore only those where `enabled` is explicitly set to `false`. If `enabled` is omitted, treat the hook as enabled.
-   - Do **not** attempt to interpret or evaluate hook `condition` expressions, and do **not** filter hooks based on the presence or contents of `condition`. Condition evaluation is handled by the `HookExecutor.should_execute_hook` implementation.
-   - Treat an enabled hook as executable for the purposes of this plan **only if it does not define a `condition`**
+   - Do **not** attempt to interpret or evaluate hook `condition` expressions, and do **not** implement any custom condition logic in this command. Condition evaluation is handled by the `HookExecutor.should_execute_hook` implementation.
+   - For the purposes of this plan, treat an enabled hook as executable if its `condition` field is missing, empty, or otherwise falsey (for example: `null`, `""`, or `[]`).
    - For each such executable (non-conditional) hook, output the following based on its `optional` flag:
      - **Optional hook** (`optional: true`):
        ```
