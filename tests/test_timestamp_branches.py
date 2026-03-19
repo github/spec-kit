@@ -51,7 +51,7 @@ def no_git_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def run_script(cwd: Path, *args: str, capture_stderr: bool = False) -> subprocess.CompletedProcess:
+def run_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run create-new-feature.sh with given args."""
     cmd = ["bash", "scripts/bash/create-new-feature.sh", *args]
     return subprocess.run(
@@ -91,6 +91,7 @@ class TestTimestampBranch:
     def test_number_and_timestamp_warns(self, git_repo: Path):
         """Test 3: --number + --timestamp warns and uses timestamp."""
         result = run_script(git_repo, "--timestamp", "--number", "42", "--short-name", "feat", "Feature")
+        assert result.returncode == 0, result.stderr
         assert "Warning" in result.stderr and "--number" in result.stderr
 
     def test_json_output_keys(self, git_repo: Path):
@@ -209,6 +210,7 @@ class TestNoGitTimestamp:
     def test_no_git_timestamp(self, no_git_dir: Path):
         """Test 13: No-git repo + timestamp creates spec dir with warning."""
         result = run_script(no_git_dir, "--timestamp", "--short-name", "no-git-feat", "No git feature")
+        assert result.returncode == 0, result.stderr
         spec_dirs = list((no_git_dir / "specs").iterdir()) if (no_git_dir / "specs").exists() else []
         assert len(spec_dirs) > 0, "spec dir not created"
         assert "git" in result.stderr.lower() or "warning" in result.stderr.lower()

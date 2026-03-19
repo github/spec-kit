@@ -51,20 +51,24 @@ class TestBranchNumberingValidation:
         assert result.exit_code == 1
         assert "Invalid --branch-numbering" in result.output
 
-    def test_valid_branch_numbering_sequential(self, tmp_path: Path):
+    def test_valid_branch_numbering_sequential(self, tmp_path: Path, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
+
+        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
 
         runner = CliRunner()
         result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--ai", "claude", "--branch-numbering", "sequential"])
-        # Should not fail on validation (may fail later due to network/template fetch)
+        assert result.exit_code == 0
         assert "Invalid --branch-numbering" not in (result.output or "")
 
-    def test_valid_branch_numbering_timestamp(self, tmp_path: Path):
+    def test_valid_branch_numbering_timestamp(self, tmp_path: Path, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
 
+        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
+
         runner = CliRunner()
         result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--ai", "claude", "--branch-numbering", "timestamp"])
-        # Should not fail on validation (may fail later due to network/template fetch)
+        assert result.exit_code == 0
         assert "Invalid --branch-numbering" not in (result.output or "")
