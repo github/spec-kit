@@ -264,6 +264,32 @@ class CommandRegistrar:
 
         return "\n".join(toml_lines)
 
+    def render_skill_command(
+        self,
+        skill_name: str,
+        frontmatter: dict,
+        body: str,
+        source_id: str,
+        source_file: str,
+    ) -> str:
+        """Render a command override as a SKILL.md file.
+
+        SKILL-target agents should receive the same skills-oriented
+        frontmatter shape used elsewhere in the project instead of the
+        original command frontmatter.
+        """
+        description = frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
+        skill_frontmatter = {
+            "name": skill_name,
+            "description": description,
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+            "metadata": {
+                "author": "github-spec-kit",
+                "source": f"{source_id}:{source_file}",
+            },
+        }
+        return self.render_frontmatter(skill_frontmatter) + "\n" + body
+
     def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
         """Convert argument placeholder format.
 
@@ -340,14 +366,17 @@ class CommandRegistrar:
                 body, "$ARGUMENTS", agent_config["args"]
             )
 
-            if agent_config["format"] == "markdown":
+            output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
+
+            if agent_config["extension"] == "/SKILL.md":
+                output = self.render_skill_command(output_name, frontmatter, body, source_id, cmd_file)
+            elif agent_config["format"] == "markdown":
                 output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
                 output = self.render_toml_command(frontmatter, body, source_id)
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
-            output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(output, encoding="utf-8")
@@ -404,7 +433,7 @@ class CommandRegistrar:
         results = {}
 
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
-            agent_dir = project_root / agent_config["dir"].split("/")[0]
+            agent_dir = project_root / agent_config["dir"]
 
             if agent_dir.exists():
                 try:

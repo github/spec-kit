@@ -750,6 +750,39 @@ $ARGUMENTS
         assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
         assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
 
+    def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
+        """A Codex project under .agents/skills should not implicitly activate Amp."""
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
+
+        assert "codex" in registered
+        assert "amp" not in registered
+        assert not (project_dir / ".agents" / "commands").exists()
+
+    def test_codex_skill_registration_writes_skill_frontmatter(self, extension_dir, project_dir):
+        """Codex SKILL.md output should use skills-oriented frontmatter."""
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, extension_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-test.hello" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert "name: speckit-test.hello" in content
+        assert "description: Test hello command" in content
+        assert "compatibility:" in content
+        assert "metadata:" in content
+        assert "source: test-ext:commands/hello.md" in content
+        assert "<!-- Extension:" not in content
+
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
         # Create .github/agents directory (Copilot project)
