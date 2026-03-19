@@ -305,7 +305,11 @@ if [ "$HAS_GIT" = true ]; then
     if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
         # Check if branch already exists
         if git branch --list "$BRANCH_NAME" | grep -q .; then
-            >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
+            if [ "$USE_TIMESTAMP" = true ]; then
+                >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Rerun to get a new timestamp or use a different --short-name."
+            else
+                >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
+            fi
             exit 1
         else
             >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."

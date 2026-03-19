@@ -282,7 +282,11 @@ if ($hasGit) {
         # Check if branch already exists
         $existingBranch = git branch --list $branchName 2>$null
         if ($existingBranch) {
-            Write-Error "Error: Branch '$branchName' already exists. Please use a different feature name or specify a different number with -Number."
+            if ($Timestamp) {
+                Write-Error "Error: Branch '$branchName' already exists. Rerun to get a new timestamp or use a different -ShortName."
+            } else {
+                Write-Error "Error: Branch '$branchName' already exists. Please use a different feature name or specify a different number with -Number."
+            }
             exit 1
         } else {
             Write-Error "Error: Failed to create git branch '$branchName'. Please check your git configuration and try again."

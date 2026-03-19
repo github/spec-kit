@@ -96,10 +96,13 @@ class TestTimestampBranch:
 
     def test_json_output_keys(self, git_repo: Path):
         """Test 4: JSON output contains expected keys."""
+        import json
         result = run_script(git_repo, "--json", "--timestamp", "--short-name", "api", "API feature")
         assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
         for key in ("BRANCH_NAME", "SPEC_FILE", "FEATURE_NUM"):
-            assert f'"{key}"' in result.stdout, f"missing {key} in JSON: {result.stdout}"
+            assert key in data, f"missing {key} in JSON: {data}"
+        assert re.match(r"^\d{8}-\d{6}$", data["FEATURE_NUM"])
 
     def test_long_name_truncation(self, git_repo: Path):
         """Test 5: Long branch name is truncated to <= 244 chars."""

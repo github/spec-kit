@@ -30,12 +30,21 @@ class TestSaveBranchNumbering:
         saved = json.loads((tmp_path / ".specify/init-options.json").read_text())
         assert saved["branch_numbering"] == "sequential"
 
-    def test_branch_numbering_defaults_to_sequential(self, tmp_path: Path):
-        branch_numbering = None
-        opts = {"branch_numbering": branch_numbering or "sequential"}
-        save_init_options(tmp_path, opts)
+    def test_branch_numbering_defaults_to_sequential(self, tmp_path: Path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
 
-        saved = load_init_options(tmp_path)
+        def _fake_download(project_path, *args, **kwargs):
+            Path(project_path).mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
+
+        project_dir = tmp_path / "proj"
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools"])
+        assert result.exit_code == 0
+
+        saved = json.loads((project_dir / ".specify/init-options.json").read_text())
         assert saved["branch_numbering"] == "sequential"
 
 
