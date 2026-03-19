@@ -2350,7 +2350,7 @@ class TestPresetEnableDisable:
         # Template should NOT be found when disabled
         resolver2 = PresetResolver(project_dir)
         result2 = resolver2.resolve("test-template", "template")
-        assert result2 is None or "test-pack" not in str(result2)
+        assert result2 is None
 
     def test_enable_corrupted_registry_entry(self, project_dir, pack_dir):
         """Test enable fails gracefully for corrupted registry entry."""

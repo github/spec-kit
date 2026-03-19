@@ -1523,9 +1523,12 @@ class PresetResolver:
             return []
 
         registry = ExtensionRegistry(self.extensions_dir)
-        # Get ALL registered extensions (including disabled) to know which dirs are tracked
+        # Use raw registry keys to track ALL extensions (including corrupted entries)
+        # This prevents corrupted entries from being picked up as "unregistered" dirs
+        registered_extension_ids = set(registry.list().keys())
+
+        # Get enabled extensions for resolution (list_by_priority skips corrupted/disabled)
         all_registered = registry.list_by_priority(include_disabled=True)
-        registered_extension_ids = {ext_id for ext_id, _ in all_registered}
 
         all_extensions: list[tuple[int, str, dict | None]] = []
 

@@ -2651,8 +2651,8 @@ class TestExtensionPriority:
         assert updated["priority"] == 5  # Preserved
         assert updated["enabled"] is False  # Updated
 
-    def test_resolve_uses_unregistered_extension_dirs_when_registry_partially_corrupted(self, project_dir):
-        """Resolution scans unregistered extension dirs after valid registry entries."""
+    def test_corrupted_extension_entry_not_picked_up_as_unregistered(self, project_dir):
+        """Corrupted registry entries are still tracked and NOT picked up as unregistered."""
         extensions_dir = project_dir / ".specify" / "extensions"
 
         valid_dir = extensions_dir / "valid-ext" / "templates"
@@ -2665,20 +2665,21 @@ class TestExtensionPriority:
 
         registry = ExtensionRegistry(extensions_dir)
         registry.add("valid-ext", {"version": "1.0.0", "priority": 10})
+        # Corrupt the entry - should still be tracked, not picked up as unregistered
         registry.data["extensions"]["broken-ext"] = "corrupted"
         registry._save()
 
         from specify_cli.presets import PresetResolver
 
         resolver = PresetResolver(project_dir)
+        # Corrupted extension templates should NOT be resolved
         resolved = resolver.resolve("target-template")
-        sourced = resolver.resolve_with_source("target-template")
+        assert resolved is None
 
-        assert resolved is not None
-        assert resolved.name == "target-template.md"
-        assert "Broken Target" in resolved.read_text()
-        assert sourced is not None
-        assert sourced["source"] == "extension:broken-ext (unregistered)"
+        # Valid extension template should still resolve
+        valid_resolved = resolver.resolve("other-template")
+        assert valid_resolved is not None
+        assert "Valid" in valid_resolved.read_text()
 
 
 class TestExtensionPriorityCLI:
