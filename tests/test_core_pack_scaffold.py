@@ -135,21 +135,26 @@ def _expected_cmd_dir(project_path: Path, agent: str) -> Path:
     return project_path / ".speckit" / subdir
 
 
+# Agents whose commands are laid out as <skills_dir>/<name>/SKILL.md.
+# Maps agent -> separator used in skill directory names.
+_SKILL_AGENTS: dict[str, str] = {"codex": "-", "kimi": "."}
+
+
 def _expected_ext(agent: str) -> str:
     if agent in _TOML_AGENTS:
         return "toml"
     if agent == "copilot":
         return "agent.md"
-    if agent == "kimi":
-        return "SKILL.md"  # Kimi uses skills/<name>/SKILL.md
+    if agent in _SKILL_AGENTS:
+        return "SKILL.md"
     return "md"
 
 
 def _list_command_files(cmd_dir: Path, agent: str) -> list[Path]:
-    """List generated command files, handling Kimi's directory-per-skill layout."""
-    if agent == "kimi":
-        # Kimi: .kimi/skills/speckit.*/SKILL.md
-        return sorted(cmd_dir.glob("speckit.*/SKILL.md"))
+    """List generated command files, handling skills-based directory layouts."""
+    if agent in _SKILL_AGENTS:
+        sep = _SKILL_AGENTS[agent]
+        return sorted(cmd_dir.glob(f"speckit{sep}*/SKILL.md"))
     ext = _expected_ext(agent)
     return sorted(cmd_dir.glob(f"speckit.*.{ext}"))
 
@@ -266,8 +271,9 @@ def test_scaffold_command_file_names(agent, scaffolded_sh, source_template_stems
 
     cmd_dir = _expected_cmd_dir(project, agent)
     for stem in source_template_stems:
-        if agent == "kimi":
-            expected = cmd_dir / f"speckit.{stem}" / "SKILL.md"
+        if agent in _SKILL_AGENTS:
+            sep = _SKILL_AGENTS[agent]
+            expected = cmd_dir / f"speckit{sep}{stem}" / "SKILL.md"
         else:
             ext = _expected_ext(agent)
             expected = cmd_dir / f"speckit.{stem}.{ext}"
@@ -343,8 +349,9 @@ def test_argument_token_format(agent, scaffolded_sh):
 
     for f in _list_command_files(cmd_dir, agent):
         # Recover the stem from the file path
-        if agent == "kimi":
-            stem = f.parent.name.removeprefix("speckit.")
+        if agent in _SKILL_AGENTS:
+            sep = _SKILL_AGENTS[agent]
+            stem = f.parent.name.removeprefix(f"speckit{sep}")
         else:
             ext = _expected_ext(agent)
             stem = f.name.removeprefix("speckit.").removesuffix(f".{ext}")
