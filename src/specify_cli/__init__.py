@@ -1920,25 +1920,17 @@ def init(
     # Determine whether to use bundled assets or download from GitHub (default).
     # --offline opts in to bundled assets; without it, always use GitHub.
     _core = _locate_core_pack()
-    _repo_root = Path(__file__).parent.parent.parent
-    _repo_commands = _repo_root / "templates" / "commands"
-    _repo_scripts = _repo_root / "scripts"
-    # Treat bundled assets as available if we have a core_pack (wheel install),
-    # or, for a source checkout, when both commands and scripts are present.
-    _has_bundled = (_core is not None) or (
-        _repo_commands.is_dir() and _repo_scripts.is_dir()
-    )
 
-    if offline and not _has_bundled:
+    if offline and _core is None:
         console.print(
-            "\n[red]Error:[/red] --offline was specified but no bundled assets were found.\n"
-            "  • Wheel install: reinstall the specify-cli wheel (core_pack/ must be present).\n"
-            "  • Source checkout: run from the repo root so templates/ and scripts/ are accessible.\n"
-            "Remove --offline to attempt a GitHub download instead."
+            "\n[red]Error:[/red] --offline requires a wheel install with bundled assets.\n"
+            "  Install the specify-cli wheel (it must contain core_pack/).\n"
+            "  See: docs/installation.md → Enterprise / Air-Gapped Installation\n"
+            "Remove --offline to download from GitHub instead."
         )
         raise typer.Exit(1)
 
-    use_github = not (offline and _has_bundled)
+    use_github = not (offline and _core is not None)
 
     if use_github:
         for key, label in [
