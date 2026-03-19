@@ -1,15 +1,8 @@
 # Changelog
 
-<!-- markdownlint-disable MD024 -->
-
-Recent changes to the Specify CLI and templates are documented here.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [0.3.2] - 2026-03-19
 
-### Changed
+### Changes
 
 - Add conduct extension to community catalog (#1908)
 - feat(extensions): add verify-tasks extension to community catalog (#1871)
@@ -26,72 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - chore: update DocGuard extension to v0.9.10 (#1890)
 - Feature/spec kit add pi coding agent pullrequest (#1853)
 - feat: register spec-kit-learn extension (#1883)
-- chore: bump version to 0.3.1 (#1880)
-- docs: add greenfield Spring Boot pirate-speak preset demo to README (#1878)
-- fix(ai-skills): exclude non-speckit copilot agent markdown from skill… (#1867)
-- feat: add Trae IDE support as a new agent (#1817)
-- feat(cli): polite deep merge for settings.json and support JSONC (#1874)
-- feat(extensions,presets): add priority-based resolution ordering (#1855)
-- fix(scripts): suppress stdout from git fetch in create-new-feature.sh (#1876)
-- fix(scripts): harden bash scripts — escape, compat, and error handling (#1869)
-- Add cognitive-squad to community extension catalog (#1870)
-- docs: add Go / React brownfield walkthrough to community walkthroughs (#1868)
-- chore: update DocGuard extension to v0.9.8 (#1859)
-- Feature: add specify status command (#1837)
-- fix(extensions): show extension ID in list output (#1843)
-- feat(extensions): add Archive and Reconcile extensions to community catalog (#1844)
-- feat: Add DocGuard CDD enforcement extension to community catalog (#1838)
-- chore: bump version to 0.3.0 (#1839)
-- feat(presets): Pluggable preset system with catalog, resolver, and skills propagation (#1787)
-- fix: match 'Last updated' timestamp with or without bold markers (#1836)
-- Add specify doctor command for project health diagnostics (#1828)
-- fix: harden bash scripts against shell injection and improve robustness (#1809)
-- fix: clean up command templates (specify, analyze) (#1810)
-- fix: migrate Qwen Code CLI from TOML to Markdown format (#1589) (#1730)
-- fix(cli): deprecate explicit command support for agy (#1798) (#1808)
-- Add /selftest.extension core extension to test other extensions (#1758)
-- feat(extensions): Quality of life improvements for RFC-aligned catalog integration (#1776)
-- Add Java brownfield walkthrough to community walkthroughs (#1820)
-- chore: bump version to 0.2.1 (#1813)
-- Added February 2026 newsletter (#1812)
-- feat: add Kimi Code CLI agent support (#1790)
-- docs: fix broken links in quickstart guide (#1759) (#1797)
-- docs: add catalog cli help documentation (#1793) (#1794)
-- fix: use quiet checkout to avoid exception on git checkout (#1792)
-- feat(extensions): support .extensionignore to exclude files during install (#1781)
-- feat: add Codex support for extension command registration (#1767)
-- chore: bump version to 0.2.0 (#1786)
-- fix: sync agent list comments with actual supported agents (#1785)
-- feat(extensions): support multiple active catalogs simultaneously (#1720)
-- Pavel/add tabnine cli support (#1503)
-- Add Understanding extension to community catalog (#1778)
-- Add ralph extension to community catalog (#1780)
-- Update README with project initialization instructions (#1772)
-- feat: add review extension to community catalog (#1775)
-- Add fleet extension to community catalog (#1771)
-- Integration of Mistral vibe support into speckit (#1725)
-- fix: Remove duplicate options in specify.md (#1765)
-- fix: use global branch numbering instead of per-short-name detection (#1757)
-- Add Community Walkthroughs section to README (#1766)
-- feat(extensions): add Jira Integration to community catalog (#1764)
-- Add Azure DevOps Integration extension to community catalog (#1734)
-- Fix docs: update Antigravity link and add initialization example (#1748)
-- fix: wire after_tasks and after_implement hook events into command templates (#1702)
-- make c ignores consistent with c++ (#1747)
-- chore: bump version to 0.1.13 (#1746)
-- feat: add kiro-cli and AGENT_CONFIG consistency coverage (#1690)
-- feat: add verify extension to community catalog (#1726)
-- Add Retrospective Extension to community catalog README table (#1741)
-- fix(scripts): add empty description validation and branch checkout error handling (#1559)
-- fix: correct Copilot extension command registration (#1724)
-- fix(implement): remove Makefile from C ignore patterns (#1558)
-- Add sync extension to community catalog (#1728)
-- fix(checklist): clarify file handling behavior for append vs create (#1556)
-- fix(clarify): correct conflicting question limit from 10 to 5 (#1557)
-- chore: bump version to 0.1.12 (#1737)
-- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
-- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
-- fix: Split release process to sync pyproject.toml version with git tags (#1732)
 
 
 ## [0.3.1] - 2026-03-17
@@ -394,19 +321,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - chore(deps): bump actions/stale from 9 to 10 (#1623)
 - feat: add dependabot configuration for pip and GitHub Actions updates (#1622)
-
-## [0.0.97] - 2026-02-18
-
-- Remove Maintainers section from README.md (#1618)
-
-## [0.0.96] - 2026-02-17
-
-- fix: typo in plan-template.md (#1446)
-
-## [0.0.95] - 2026-02-12
-
-- Feat: add a new agent: Google Anti Gravity (#1220)
-
-## [0.0.94] - 2026-02-11
-
-- Add stale workflow for 180-day inactive issues and PRs (#1594)

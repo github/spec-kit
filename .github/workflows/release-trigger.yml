@@ -86,8 +86,10 @@ jobs:
           if [ -f "CHANGELOG.md" ]; then
             DATE=$(date +%Y-%m-%d)
 
-            # Get the previous tag to compare commits
-            PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            # Get the previous tag by sorting all version tags numerically
+            # (git describe --tags only finds tags reachable from HEAD,
+            #  which misses tags on unmerged release branches)
+            PREVIOUS_TAG=$(git tag -l 'v*' --sort=-version:refname | head -n 1)
 
             echo "Generating changelog from commits..."
             if [[ -n "$PREVIOUS_TAG" ]]; then
@@ -104,7 +106,7 @@ jobs:
               echo ""
               echo "## [${{ steps.version.outputs.version }}] - $DATE"
               echo ""
-              echo "### Changed"
+              echo "### Changes"
               echo ""
               echo "$COMMITS"
               echo ""
