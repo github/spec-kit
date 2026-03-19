@@ -1966,10 +1966,10 @@ def init(
         try:
             verify = not skip_tls
             local_ssl_context = ssl_context if verify else False
-            local_client = httpx.Client(verify=local_ssl_context)
 
             if use_github:
-                download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+                with httpx.Client(verify=local_ssl_context) as local_client:
+                    download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
             else:
                 scaffold_ok = scaffold_from_core_pack(project_path, selected_ai, selected_script, here, tracker=tracker)
                 if not scaffold_ok:

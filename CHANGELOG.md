@@ -70,10 +70,6 @@
 ### Added
 
 - feat(cli): polite deep merge for VSCode settings.json with JSONC support via `json5` and zero-data-loss fallbacks
-- feat(cli): embed core templates/commands/scripts in wheel for air-gapped deployment; `specify init --offline` uses bundled assets without network access (#1711)
-- feat(cli): add `--offline` flag to `specify init` to scaffold from bundled assets instead of downloading from GitHub (for air-gapped/enterprise environments)
-- feat(cli): embed release scripts (bash + PowerShell) in wheel and invoke at runtime for guaranteed parity with GitHub release ZIPs
-- feat(release): build and publish `specify_cli-*.whl` Python wheel as a release asset for enterprise/offline installation (#1752)
 - feat(presets): Pluggable preset system with preset catalog and template resolver
 - Preset manifest (`preset.yml`) with validation for artifact, command, and script types
 - `PresetManifest`, `PresetRegistry`, `PresetManager`, `PresetCatalog`, `PresetResolver` classes in `src/specify_cli/presets.py`
@@ -89,9 +85,6 @@
 - Scripts updated to use template resolution instead of hardcoded paths
 - feat(presets): Preset command overrides now propagate to agent skills when `--ai-skills` was used during init
 - feat: `specify init` persists CLI options to `.specify/init-options.json` for downstream operations
-- feat(cli): embed core templates/commands/scripts in wheel for air-gapped deployment; `specify init` now works offline by default (#1711)
-- feat(cli): add `--from-github` flag to `specify init` to force download from GitHub releases instead of using bundled assets
-- feat(release): build and publish `specify_cli-*.whl` Python wheel as a release asset for enterprise/offline installation (#1752)
 - feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
 
 ## [0.2.1] - 2026-03-11
