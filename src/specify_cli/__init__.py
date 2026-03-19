@@ -31,7 +31,6 @@ import sys
 import zipfile
 import tempfile
 import shutil
-import shlex
 import json
 import json5
 import stat
@@ -1867,18 +1866,7 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    # Add Codex-specific setup step when prompt-based Codex templates are in use.
-    if selected_ai == "codex" and not ai_skills:
-        codex_path = project_path / ".codex"
-        quoted_path = shlex.quote(str(codex_path))
-        if os.name == "nt":  # Windows
-            cmd = f"setx CODEX_HOME {quoted_path}"
-        else:  # Unix-like systems
-            cmd = f"export CODEX_HOME={quoted_path}"
-        
-        steps_lines.append(f"{step_num}. Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]")
-        step_num += 1
-    elif selected_ai == "codex" and ai_skills:
+    if selected_ai == "codex" and ai_skills:
         steps_lines.append(f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]")
         step_num += 1
 
