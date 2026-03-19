@@ -1479,6 +1479,7 @@ def init(
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
     ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
+    branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
 ):
     """
     Initialize a new Specify project from the latest template.
@@ -1544,6 +1545,11 @@ def init(
     if ai_skills and not ai_assistant:
         console.print("[red]Error:[/red] --ai-skills requires --ai to be specified")
         console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
+        raise typer.Exit(1)
+
+    BRANCH_NUMBERING_CHOICES = {"sequential", "timestamp"}
+    if branch_numbering and branch_numbering not in BRANCH_NUMBERING_CHOICES:
+        console.print(f"[red]Error:[/red] Invalid --branch-numbering value '{branch_numbering}'. Choose from: {', '.join(sorted(BRANCH_NUMBERING_CHOICES))}")
         raise typer.Exit(1)
 
     if here:
@@ -1781,6 +1787,7 @@ def init(
                 "ai": selected_ai,
                 "ai_skills": ai_skills,
                 "ai_commands_dir": ai_commands_dir,
+                "branch_numbering": branch_numbering or "sequential",
                 "here": here,
                 "preset": preset,
                 "script": selected_script,

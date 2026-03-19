@@ -222,6 +222,7 @@ The `specify` command supports the following options:
 | `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                                                                                                                                                                                                                          |
 | `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                                                                                                                                                                                                                 |
 | `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`)                                                                                                                                                                                                                                                                                       |
+| `--branch-numbering`   | Option   | Branch numbering strategy: `sequential` (default — `001`, `002`, `003`) or `timestamp` (`YYYYMMDD-HHMMSS`). Timestamp mode is useful for distributed teams to avoid numbering conflicts                                                                                                                                                                                                  |
 
 ### Examples
 
@@ -295,6 +296,9 @@ specify init my-project --ai claude --ai-skills
 
 # Initialize in current directory with agent skills
 specify init --here --ai gemini --ai-skills
+
+# Use timestamp-based branch numbering (useful for distributed teams)
+specify init my-project --ai claude --branch-numbering timestamp
 
 # Check system requirements
 specify check

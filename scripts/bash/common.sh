@@ -33,16 +33,27 @@ get_current_branch() {
     if [[ -d "$specs_dir" ]]; then
         local latest_feature=""
         local highest=0
+        local latest_timestamp=""
 
         for dir in "$specs_dir"/*; do
             if [[ -d "$dir" ]]; then
                 local dirname=$(basename "$dir")
-                if [[ "$dirname" =~ ^([0-9]{3})- ]]; then
+                if [[ "$dirname" =~ ^([0-9]{8}-[0-9]{6})- ]]; then
+                    # Timestamp-based branch: compare lexicographically
+                    local ts="${BASH_REMATCH[1]}"
+                    if [[ "$ts" > "$latest_timestamp" ]]; then
+                        latest_timestamp="$ts"
+                        latest_feature=$dirname
+                    fi
+                elif [[ "$dirname" =~ ^([0-9]{3})- ]]; then
                     local number=${BASH_REMATCH[1]}
                     number=$((10#$number))
                     if [[ "$number" -gt "$highest" ]]; then
                         highest=$number
-                        latest_feature=$dirname
+                        # Only update if no timestamp branch found yet
+                        if [[ -z "$latest_timestamp" ]]; then
+                            latest_feature=$dirname
+                        fi
                     fi
                 fi
             fi
@@ -72,9 +83,9 @@ check_feature_branch() {
         return 0
     fi
 
-    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+    if [[ ! "$branch" =~ ^[0-9]{3}- ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: 001-feature-name" >&2
+        echo "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name" >&2
         return 1
     fi
 
@@ -90,14 +101,17 @@ find_feature_dir_by_prefix() {
     local branch_name="$2"
     local specs_dir="$repo_root/specs"
 
-    # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
-    if [[ ! "$branch_name" =~ ^([0-9]{3})- ]]; then
-        # If branch doesn't have numeric prefix, fall back to exact match
+    # Extract prefix from branch (e.g., "004" from "004-whatever" or "20260319-143022" from timestamp branches)
+    local prefix=""
+    if [[ "$branch_name" =~ ^([0-9]{8}-[0-9]{6})- ]]; then
+        prefix="${BASH_REMATCH[1]}"
+    elif [[ "$branch_name" =~ ^([0-9]{3})- ]]; then
+        prefix="${BASH_REMATCH[1]}"
+    else
+        # If branch doesn't have a recognized prefix, fall back to exact match
         echo "$specs_dir/$branch_name"
         return
     fi
-
-    local prefix="${BASH_REMATCH[1]}"
 
     # Search for directories in specs/ that start with this prefix
     local matches=()

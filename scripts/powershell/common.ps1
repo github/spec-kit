@@ -38,17 +38,28 @@ function Get-CurrentBranch {
     if (Test-Path $specsDir) {
         $latestFeature = ""
         $highest = 0
-        
+        $latestTimestamp = ""
+
         Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-            if ($_.Name -match '^(\d{3})-') {
+            if ($_.Name -match '^(\d{8}-\d{6})-') {
+                # Timestamp-based branch: compare lexicographically
+                $ts = $matches[1]
+                if ($ts -gt $latestTimestamp) {
+                    $latestTimestamp = $ts
+                    $latestFeature = $_.Name
+                }
+            } elseif ($_.Name -match '^(\d{3})-') {
                 $num = [int]$matches[1]
                 if ($num -gt $highest) {
                     $highest = $num
-                    $latestFeature = $_.Name
+                    # Only update if no timestamp branch found yet
+                    if (-not $latestTimestamp) {
+                        $latestFeature = $_.Name
+                    }
                 }
             }
         }
-        
+
         if ($latestFeature) {
             return $latestFeature
         }
@@ -79,9 +90,9 @@ function Test-FeatureBranch {
         return $true
     }
     
-    if ($Branch -notmatch '^[0-9]{3}-') {
+    if ($Branch -notmatch '^[0-9]{3}-' -and $Branch -notmatch '^\d{8}-\d{6}-') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name"
+        Write-Output "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name"
         return $false
     }
     return $true
