@@ -245,6 +245,9 @@ class PresetRegistry:
                     "schema_version": self.SCHEMA_VERSION,
                     "presets": {}
                 }
+            # Normalize presets field (handles corrupted presets value)
+            if not isinstance(data.get("presets"), dict):
+                data["presets"] = {}
             return data
         except (json.JSONDecodeError, FileNotFoundError):
             return {

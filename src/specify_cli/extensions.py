@@ -229,6 +229,9 @@ class ExtensionRegistry:
                     "schema_version": self.SCHEMA_VERSION,
                     "extensions": {}
                 }
+            # Normalize extensions field (handles corrupted extensions value)
+            if not isinstance(data.get("extensions"), dict):
+                data["extensions"] = {}
             return data
         except (json.JSONDecodeError, FileNotFoundError):
             # Corrupted or missing registry, start fresh
