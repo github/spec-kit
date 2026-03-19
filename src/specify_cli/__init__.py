@@ -1410,6 +1410,12 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     return installed_count > 0 or skipped_count > 0
 
 
+def _has_bundled_skills(project_path: Path, selected_ai: str) -> bool:
+    """Return True when a native-skills agent has at least one bundled SKILL.md."""
+    skills_dir = _get_skills_dir(project_path, selected_ai)
+    return skills_dir.is_dir() and any(skills_dir.glob("*/SKILL.md"))
+
+
 AGENT_SKILLS_MIGRATIONS = {
     "agy": {
         "error": "Explicit command support was deprecated in Antigravity version 1.20.5.",
@@ -1701,6 +1707,11 @@ def init(
             if ai_skills:
                 if selected_ai in NATIVE_SKILLS_AGENTS:
                     skills_dir = _get_skills_dir(project_path, selected_ai)
+                    if not _has_bundled_skills(project_path, selected_ai):
+                        raise RuntimeError(
+                            f"Expected bundled agent skills in {skills_dir.relative_to(project_path)}, "
+                            "but none were found. Re-run with an up-to-date template."
+                        )
                     if tracker:
                         tracker.start("ai-skills")
                         tracker.complete("ai-skills", f"bundled skills → {skills_dir.relative_to(project_path)}")
@@ -1887,8 +1898,13 @@ def init(
     console.print()
     console.print(steps_panel)
 
+    enhancement_intro = (
+        "Optional skills that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]"
+        if codex_skill_mode
+        else "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]"
+    )
     enhancement_lines = [
-        "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
+        enhancement_intro,
         "",
         f"○ [cyan]{_display_cmd('clarify')}[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{_display_cmd('plan')}[/] if used)",
         f"○ [cyan]{_display_cmd('analyze')}[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{_display_cmd('tasks')}[/], before [cyan]{_display_cmd('implement')}[/])",

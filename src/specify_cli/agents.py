@@ -277,6 +277,18 @@ class CommandRegistrar:
         """
         return content.replace(from_placeholder, to_placeholder)
 
+    @staticmethod
+    def _compute_output_name(agent_name: str, cmd_name: str, agent_config: Dict[str, Any]) -> str:
+        """Compute the on-disk command or skill name for an agent."""
+        if agent_config["extension"] != "/SKILL.md":
+            return cmd_name
+
+        short_name = cmd_name
+        if short_name.startswith("speckit."):
+            short_name = short_name[len("speckit."):]
+
+        return f"speckit.{short_name}" if agent_name == "kimi" else f"speckit-{short_name}"
+
     def register_commands(
         self,
         agent_name: str,
@@ -335,13 +347,7 @@ class CommandRegistrar:
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
-            output_name = cmd_name
-            if agent_config["extension"] == "/SKILL.md":
-                short_name = cmd_name
-                if short_name.startswith("speckit."):
-                    short_name = short_name[len("speckit."):]
-                output_name = f"speckit.{short_name}" if agent_name == "kimi" else f"speckit-{short_name}"
-
+            output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(output, encoding="utf-8")
@@ -352,12 +358,7 @@ class CommandRegistrar:
             registered.append(cmd_name)
 
             for alias in cmd_info.get("aliases", []):
-                alias_output_name = alias
-                if agent_config["extension"] == "/SKILL.md":
-                    short_alias = alias
-                    if short_alias.startswith("speckit."):
-                        short_alias = short_alias[len("speckit."):]
-                    alias_output_name = f"speckit.{short_alias}" if agent_name == "kimi" else f"speckit-{short_alias}"
+                alias_output_name = self._compute_output_name(agent_name, alias, agent_config)
                 alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(output, encoding="utf-8")
@@ -437,7 +438,8 @@ class CommandRegistrar:
             commands_dir = project_root / agent_config["dir"]
 
             for cmd_name in cmd_names:
-                cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+                output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
+                cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                 if cmd_file.exists():
                     cmd_file.unlink()
 

@@ -733,6 +733,23 @@ $ARGUMENTS
         assert (claude_dir / "speckit.alias.cmd.md").exists()
         assert (claude_dir / "speckit.shortcut.md").exists()
 
+    def test_unregister_commands_for_codex_skills_uses_mapped_names(self, project_dir):
+        """Codex skill cleanup should use the same mapped names as registration."""
+        skills_dir = project_dir / ".agents" / "skills"
+        (skills_dir / "speckit-specify").mkdir(parents=True)
+        (skills_dir / "speckit-specify" / "SKILL.md").write_text("body")
+        (skills_dir / "speckit-shortcut").mkdir(parents=True)
+        (skills_dir / "speckit-shortcut" / "SKILL.md").write_text("body")
+
+        registrar = CommandRegistrar()
+        registrar.unregister_commands(
+            {"codex": ["speckit.specify", "speckit.shortcut"]},
+            project_dir,
+        )
+
+        assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
+
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
         # Create .github/agents directory (Copilot project)

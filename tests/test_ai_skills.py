@@ -720,6 +720,28 @@ class TestNewProjectCommandSkip:
         mock_skills.assert_not_called()
         assert (target / ".agents" / "skills" / "speckit-specify" / "SKILL.md").exists()
 
+    def test_codex_native_skills_missing_fails_clearly(self, tmp_path):
+        """Codex native skills init should fail if bundled skills are missing."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "missing-codex-skills"
+
+        with patch("specify_cli.download_and_extract_template", lambda *args, **kwargs: None), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 1
+        mock_skills.assert_not_called()
+        assert "Expected bundled agent skills" in result.output
+
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
         from typer.testing import CliRunner
@@ -938,7 +960,14 @@ class TestCliValidation:
             return None
 
         monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
-        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
+
+        def _fake_download(*args, **kwargs):
+            project_path = Path(args[0])
+            skill_dir = project_path / ".agents" / "skills" / "speckit-specify"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
+
+        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
 
         runner = CliRunner()
         with runner.isolated_filesystem():
@@ -949,6 +978,7 @@ class TestCliValidation:
             assert ".agents/skills" in result.output
             assert "$speckit-constitution" in result.output
             assert "/speckit.constitution" not in result.output
+            assert "Optional skills that you can use for your specs" in result.output
 
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
