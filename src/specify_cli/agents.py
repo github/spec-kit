@@ -266,11 +266,13 @@ class CommandRegistrar:
 
     def render_skill_command(
         self,
+        agent_name: str,
         skill_name: str,
         frontmatter: dict,
         body: str,
         source_id: str,
         source_file: str,
+        project_root: Path,
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -278,6 +280,9 @@ class CommandRegistrar:
         frontmatter shape used elsewhere in the project instead of the
         original command frontmatter.
         """
+        if agent_name == "codex":
+            body = self._resolve_codex_skill_placeholders(frontmatter, body, project_root)
+
         description = frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
         skill_frontmatter = {
             "name": skill_name,
@@ -289,6 +294,36 @@ class CommandRegistrar:
             },
         }
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
+
+    @staticmethod
+    def _resolve_codex_skill_placeholders(frontmatter: dict, body: str, project_root: Path) -> str:
+        """Resolve script placeholders for Codex skill overrides.
+
+        This intentionally scopes the fix to Codex, which is the newly
+        migrated runtime path in this PR. Existing Kimi behavior is left
+        unchanged for now.
+        """
+        try:
+            from . import load_init_options
+        except ImportError:
+            return body
+
+        script_variant = load_init_options(project_root).get("script")
+        if script_variant not in {"sh", "ps"}:
+            return body.replace("__AGENT__", "codex")
+
+        scripts = frontmatter.get("scripts", {}) or {}
+        agent_scripts = frontmatter.get("agent_scripts", {}) or {}
+
+        script_command = scripts.get(script_variant)
+        if script_command:
+            body = body.replace("{SCRIPT}", script_command)
+
+        agent_script_command = agent_scripts.get(script_variant)
+        if agent_script_command:
+            body = body.replace("{AGENT_SCRIPT}", agent_script_command)
+
+        return body.replace("__AGENT__", "codex")
 
     def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
         """Convert argument placeholder format.
@@ -369,7 +404,9 @@ class CommandRegistrar:
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
             if agent_config["extension"] == "/SKILL.md":
-                output = self.render_skill_command(output_name, frontmatter, body, source_id, cmd_file)
+                output = self.render_skill_command(
+                    agent_name, output_name, frontmatter, body, source_id, cmd_file, project_root
+                )
             elif agent_config["format"] == "markdown":
                 output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
