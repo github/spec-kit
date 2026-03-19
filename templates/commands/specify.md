@@ -216,7 +216,7 @@ Given that feature description, do this:
    - If it exists, read it and look for entries under the `hooks.after_specify` key
    - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
    - From the discovered hooks, ignore only those where `enabled` is explicitly set to `false`. If `enabled` is omitted, treat the hook as enabled.
-   - Do **not** attempt to interpret or evaluate hook `condition` expressions, and do **not** filter hooks based on the presence or contents of `condition`. Condition evaluation is handled by the `HookExecutor.should_execute_hook` implementation.
+   - Do **not** attempt to interpret, evaluate, or decide the truth of hook `condition` expressions here. Condition evaluation is handled exclusively by the `HookExecutor.should_execute_hook` implementation at runtime.
    - Consider a hook automatically executable only if it is enabled **and** it has no `condition` field (or its `condition` is empty/falsey)
    - Hooks with a non-empty `condition` MUST NOT be auto-executed here; they are conditional and will be filtered by the HookExecutor at runtime
    - For each executable hook (enabled and without a non-empty `condition`), output the following based on its `optional` flag:
