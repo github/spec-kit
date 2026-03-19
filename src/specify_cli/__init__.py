@@ -1858,13 +1858,17 @@ def init(
         steps_lines.append(f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]")
         step_num += 1
 
-    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+    codex_skill_mode = selected_ai == "codex" and ai_skills
+    command_prefix = "$" if codex_skill_mode else "/"
+    usage_label = "skills" if codex_skill_mode else "slash commands"
 
-    steps_lines.append(f"   {step_num}.1 [cyan]/speckit.constitution[/] - Establish project principles")
-    steps_lines.append(f"   {step_num}.2 [cyan]/speckit.specify[/] - Create baseline specification")
-    steps_lines.append(f"   {step_num}.3 [cyan]/speckit.plan[/] - Create implementation plan")
-    steps_lines.append(f"   {step_num}.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
-    steps_lines.append(f"   {step_num}.5 [cyan]/speckit.implement[/] - Execute implementation")
+    steps_lines.append(f"{step_num}. Start using {usage_label} with your AI agent:")
+
+    steps_lines.append(f"   {step_num}.1 [cyan]{command_prefix}speckit.constitution[/] - Establish project principles")
+    steps_lines.append(f"   {step_num}.2 [cyan]{command_prefix}speckit.specify[/] - Create baseline specification")
+    steps_lines.append(f"   {step_num}.3 [cyan]{command_prefix}speckit.plan[/] - Create implementation plan")
+    steps_lines.append(f"   {step_num}.4 [cyan]{command_prefix}speckit.tasks[/] - Generate actionable tasks")
+    steps_lines.append(f"   {step_num}.5 [cyan]{command_prefix}speckit.implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
@@ -1873,11 +1877,12 @@ def init(
     enhancement_lines = [
         "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
         "",
-        "○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
-        "○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
-        "○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])"
+        f"○ [cyan]{command_prefix}speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{command_prefix}speckit.plan[/] if used)",
+        f"○ [cyan]{command_prefix}speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{command_prefix}speckit.tasks[/], before [cyan]{command_prefix}speckit.implement[/])",
+        f"○ [cyan]{command_prefix}speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{command_prefix}speckit.plan[/])"
     ]
-    enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
+    enhancements_title = "Enhancement Skills" if codex_skill_mode else "Enhancement Commands"
+    enhancements_panel = Panel("\n".join(enhancement_lines), title=enhancements_title, border_style="cyan", padding=(1,2))
     console.print()
     console.print(enhancements_panel)
 

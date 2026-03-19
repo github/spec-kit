@@ -921,6 +921,8 @@ class TestCliValidation:
             assert result.exit_code == 0
             assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" not in result.output
             assert ".agents/skills" in result.output
+            assert "$speckit.constitution" in result.output
+            assert "/speckit.constitution" not in result.output
 
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
