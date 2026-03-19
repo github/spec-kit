@@ -201,10 +201,9 @@ agent: $basename
     }
 }
 
-# Create Kimi Code skills in .kimi/skills/<name>/SKILL.md format.
-# Kimi CLI discovers skills as directories containing a SKILL.md file,
-# invoked with /skill:<name> (e.g. /skill:speckit.specify).
-function New-KimiSkills {
+# Create dotted-name skills in <skills_dir>\<name>\SKILL.md format.
+# Codex and Kimi both discover skills as directories containing a SKILL.md file.
+function New-DotSkills {
     param(
         [string]$SkillsDir,
         [string]$ScriptVariant
@@ -396,8 +395,9 @@ function Build-Variant {
             Generate-Commands -Agent 'windsurf' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
         'codex' {
-            $cmdDir = Join-Path $baseDir ".codex/prompts"
-            Generate-Commands -Agent 'codex' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            $skillsDir = Join-Path $baseDir ".agents/skills"
+            New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+            New-DotSkills -SkillsDir $skillsDir -ScriptVariant $Script
         }
         'kilocode' {
             $cmdDir = Join-Path $baseDir ".kilocode/workflows"
@@ -452,7 +452,7 @@ function Build-Variant {
         'kimi' {
             $skillsDir = Join-Path $baseDir ".kimi/skills"
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-            New-KimiSkills -SkillsDir $skillsDir -ScriptVariant $Script
+            New-DotSkills -SkillsDir $skillsDir -ScriptVariant $Script
         }
         'trae' {
             $rulesDir = Join-Path $baseDir ".trae/rules"

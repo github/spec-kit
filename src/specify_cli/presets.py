@@ -548,7 +548,7 @@ class PresetManager:
         if not skills_dir:
             return []
 
-        from . import SKILL_DESCRIPTIONS, load_init_options
+        from . import DOT_SKILL_NAME_AGENTS, SKILL_DESCRIPTIONS, load_init_options
 
         opts = load_init_options(self.project_root)
         selected_ai = opts.get("ai", "")
@@ -566,9 +566,7 @@ class PresetManager:
             short_name = cmd_name
             if short_name.startswith("speckit."):
                 short_name = short_name[len("speckit."):]
-            # Kimi CLI discovers skills by directory name and invokes them as
-            # /skill:<name> — use dot separator to match packaging convention.
-            if selected_ai == "kimi":
+            if selected_ai in DOT_SKILL_NAME_AGENTS:
                 skill_name = f"speckit.{short_name}"
             else:
                 skill_name = f"speckit-{short_name}"

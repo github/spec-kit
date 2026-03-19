@@ -589,9 +589,10 @@ class TestCommandRegistrar:
         assert "q" not in CommandRegistrar.AGENT_CONFIGS
 
     def test_codex_agent_config_present(self):
-        """Codex should be mapped to .codex/prompts."""
+        """Codex should be mapped to .agents/skills."""
         assert "codex" in CommandRegistrar.AGENT_CONFIGS
-        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".codex/prompts"
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".agents/skills"
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["extension"] == "/SKILL.md"
 
     def test_pi_agent_config_present(self):
         """Pi should be mapped to .pi/prompts."""

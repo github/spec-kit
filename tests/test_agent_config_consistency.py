@@ -29,11 +29,17 @@ class TestAgentConfigConsistency:
         assert "q" not in cfg
 
     def test_extension_registrar_includes_codex(self):
-        """Extension command registrar should include codex targeting .codex/prompts."""
+        """Extension command registrar should include codex targeting .agents/skills."""
         cfg = CommandRegistrar.AGENT_CONFIGS
 
         assert "codex" in cfg
-        assert cfg["codex"]["dir"] == ".codex/prompts"
+        assert cfg["codex"]["dir"] == ".agents/skills"
+        assert cfg["codex"]["extension"] == "/SKILL.md"
+
+    def test_runtime_codex_uses_native_skills(self):
+        """Codex runtime config should point at .agents/skills."""
+        assert AGENT_CONFIG["codex"]["folder"] == ".agents/"
+        assert AGENT_CONFIG["codex"]["commands_subdir"] == "skills"
 
     def test_release_agent_lists_include_kiro_cli_and_exclude_q(self):
         """Bash and PowerShell release scripts should agree on agent key set for Kiro."""
@@ -70,6 +76,16 @@ class TestAgentConfigConsistency:
 
         assert re.search(r"shai\)\s*\n.*?\.shai/commands", sh_text, re.S) is not None
         assert re.search(r"agy\)\s*\n.*?\.agent/commands", sh_text, re.S) is not None
+
+    def test_release_scripts_generate_codex_skills(self):
+        """Release scripts should generate Codex skills in .agents/skills."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert ".agents/skills" in sh_text
+        assert ".agents/skills" in ps_text
+        assert re.search(r"codex\)\s*\n.*?create_dot_skills.*?\.agents/skills", sh_text, re.S) is not None
+        assert re.search(r"'codex'\s*\{.*?\.agents/skills.*?New-DotSkills", ps_text, re.S) is not None
 
     def test_init_ai_help_includes_roo_and_kiro_alias(self):
         """CLI help text for --ai should stay in sync with agent config and alias guidance."""

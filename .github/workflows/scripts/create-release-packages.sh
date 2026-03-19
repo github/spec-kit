@@ -121,10 +121,9 @@ EOF
   done
 }
 
-# Create Kimi Code skills in .kimi/skills/<name>/SKILL.md format.
-# Kimi CLI discovers skills as directories containing a SKILL.md file,
-# invoked with /skill:<name> (e.g. /skill:speckit.specify).
-create_kimi_skills() {
+# Create dotted-name skills in <skills_dir>/<name>/SKILL.md format.
+# Codex and Kimi both discover skills as directories containing a SKILL.md file.
+create_dot_skills() {
   local skills_dir="$1"
   local script_variant="$2"
 
@@ -249,8 +248,8 @@ build_variant() {
       mkdir -p "$base_dir/.windsurf/workflows"
       generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
     codex)
-      mkdir -p "$base_dir/.codex/prompts"
-      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" ;;
+      mkdir -p "$base_dir/.agents/skills"
+      create_dot_skills "$base_dir/.agents/skills" "$script" ;;
     kilocode)
       mkdir -p "$base_dir/.kilocode/workflows"
       generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
@@ -290,7 +289,7 @@ build_variant() {
       generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
     kimi)
       mkdir -p "$base_dir/.kimi/skills"
-      create_kimi_skills "$base_dir/.kimi/skills" "$script" ;;
+      create_dot_skills "$base_dir/.kimi/skills" "$script" ;;
     trae)
       mkdir -p "$base_dir/.trae/rules"
       generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;

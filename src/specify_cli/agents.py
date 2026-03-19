@@ -59,10 +59,10 @@ class CommandRegistrar:
             "extension": ".md"
         },
         "codex": {
-            "dir": ".codex/prompts",
+            "dir": ".agents/skills",
             "format": "markdown",
             "args": "$ARGUMENTS",
-            "extension": ".md"
+            "extension": "/SKILL.md"
         },
         "windsurf": {
             "dir": ".windsurf/workflows",

@@ -471,9 +471,8 @@ class TestInstallAiSkills:
         skills_dir = _get_skills_dir(proj, agent_key)
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-        # Kimi uses dot-separator (speckit.specify) to match /skill:speckit.* invocation;
-        # all other agents use hyphen-separator (speckit-specify).
-        expected_skill_name = "speckit.specify" if agent_key == "kimi" else "speckit-specify"
+        # Codex and Kimi use dotted skill names; other agents use hyphen-separated names.
+        expected_skill_name = "speckit.specify" if agent_key in {"codex", "kimi"} else "speckit-specify"
         assert expected_skill_name in skill_dirs
         assert (skills_dir / expected_skill_name / "SKILL.md").exists()
 
@@ -693,6 +692,33 @@ class TestNewProjectCommandSkip:
 
         prompts_dir = target / ".kiro" / "prompts"
         assert not prompts_dir.exists()
+
+    def test_codex_native_skills_preserved_without_conversion(self, tmp_path):
+        """Codex should keep bundled .agents/skills and skip install_ai_skills conversion."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "new-codex-proj"
+
+        def fake_download(project_path, *args, **kwargs):
+            skill_dir = project_path / ".agents" / "skills" / "speckit.specify"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 0
+        mock_skills.assert_not_called()
+        assert (target / ".agents" / "skills" / "speckit.specify" / "SKILL.md").exists()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""

@@ -172,8 +172,8 @@ AGENT_CONFIG = {
     },
     "codex": {
         "name": "Codex CLI",
-        "folder": ".codex/",
-        "commands_subdir": "prompts",  # Special: uses prompts/ not commands/
+        "folder": ".agents/",
+        "commands_subdir": "skills",  # Codex now uses project skills directly
         "install_url": "https://github.com/openai/codex",
         "requires_cli": True,
     },
@@ -1204,6 +1204,12 @@ AGENT_SKILLS_DIR_OVERRIDES = {
 # Default skills directory for agents not in AGENT_CONFIG
 DEFAULT_SKILLS_DIR = ".agents/skills"
 
+# Agents whose skills use dotted names (e.g. speckit.specify).
+DOT_SKILL_NAME_AGENTS = {"codex", "kimi"}
+
+# Agents whose downloaded template already contains skills in the final layout.
+NATIVE_SKILLS_AGENTS = {"codex", "kimi"}
+
 # Enhanced descriptions for each spec-kit command skill
 SKILL_DESCRIPTIONS = {
     "specify": "Create or update feature specifications from natural language descriptions. Use when starting new features or refining requirements. Generates spec.md with user stories, functional requirements, and acceptance criteria following spec-driven development methodology.",
@@ -1332,9 +1338,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                 command_name = command_name[len("speckit."):]
             if command_name.endswith(".agent"):
                 command_name = command_name[:-len(".agent")]
-            # Kimi CLI discovers skills by directory name and invokes them as
-            # /skill:<name> — use dot separator to match packaging convention.
-            if selected_ai == "kimi":
+            if selected_ai in DOT_SKILL_NAME_AGENTS:
                 skill_name = f"speckit.{command_name}"
             else:
                 skill_name = f"speckit-{command_name}"
@@ -1698,28 +1702,36 @@ def init(
             ensure_constitution_from_template(project_path, tracker=tracker)
 
             if ai_skills:
-                skills_ok = install_ai_skills(project_path, selected_ai, tracker=tracker)
+                if selected_ai in NATIVE_SKILLS_AGENTS:
+                    skills_dir = _get_skills_dir(project_path, selected_ai)
+                    if tracker:
+                        tracker.start("ai-skills")
+                        tracker.complete("ai-skills", f"bundled skills → {skills_dir.relative_to(project_path)}")
+                    else:
+                        console.print(f"[green]✓[/green] Using bundled agent skills in {skills_dir.relative_to(project_path)}/")
+                else:
+                    skills_ok = install_ai_skills(project_path, selected_ai, tracker=tracker)
 
-                # When --ai-skills is used on a NEW project and skills were
-                # successfully installed, remove the command files that the
-                # template archive just created.  Skills replace commands, so
-                # keeping both would be confusing.  For --here on an existing
-                # repo we leave pre-existing commands untouched to avoid a
-                # breaking change.  We only delete AFTER skills succeed so the
-                # project always has at least one of {commands, skills}.
-                if skills_ok and not here:
-                    agent_cfg = AGENT_CONFIG.get(selected_ai, {})
-                    agent_folder = agent_cfg.get("folder", "")
-                    commands_subdir = agent_cfg.get("commands_subdir", "commands")
-                    if agent_folder:
-                        cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
-                        if cmds_dir.exists():
-                            try:
-                                shutil.rmtree(cmds_dir)
-                            except OSError:
-                                # Best-effort cleanup: skills are already installed,
-                                # so leaving stale commands is non-fatal.
-                                console.print("[yellow]Warning: could not remove extracted commands directory[/yellow]")
+                    # When --ai-skills is used on a NEW project and skills were
+                    # successfully installed, remove the command files that the
+                    # template archive just created.  Skills replace commands, so
+                    # keeping both would be confusing.  For --here on an existing
+                    # repo we leave pre-existing commands untouched to avoid a
+                    # breaking change.  We only delete AFTER skills succeed so the
+                    # project always has at least one of {commands, skills}.
+                    if skills_ok and not here:
+                        agent_cfg = AGENT_CONFIG.get(selected_ai, {})
+                        agent_folder = agent_cfg.get("folder", "")
+                        commands_subdir = agent_cfg.get("commands_subdir", "commands")
+                        if agent_folder:
+                            cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
+                            if cmds_dir.exists():
+                                try:
+                                    shutil.rmtree(cmds_dir)
+                                except OSError:
+                                    # Best-effort cleanup: skills are already installed,
+                                    # so leaving stale commands is non-fatal.
+                                    console.print("[yellow]Warning: could not remove extracted commands directory[/yellow]")
 
             if not no_git:
                 tracker.start("git")
