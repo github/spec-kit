@@ -350,10 +350,10 @@ class ExtensionRegistry:
         return copy.deepcopy(entry)
 
     def list(self) -> Dict[str, dict]:
-        """Get all installed extensions.
+        """Get all installed extensions with valid metadata.
 
-        Returns a deep copy of the extensions mapping to prevent callers
-        from accidentally mutating nested internal registry state.
+        Returns a deep copy of extensions with dict metadata only.
+        Corrupted entries (non-dict values) are filtered out.
 
         Returns:
             Dictionary of extension_id -> metadata (deep copies), empty dict if corrupted
@@ -361,7 +361,26 @@ class ExtensionRegistry:
         extensions = self.data.get("extensions", {}) or {}
         if not isinstance(extensions, dict):
             return {}
-        return copy.deepcopy(extensions)
+        # Filter to only valid dict entries to match type contract
+        return {
+            ext_id: copy.deepcopy(meta)
+            for ext_id, meta in extensions.items()
+            if isinstance(meta, dict)
+        }
+
+    def keys(self) -> set:
+        """Get all extension IDs including corrupted entries.
+
+        Lightweight method that returns IDs without deep-copying metadata.
+        Use this when you only need to check which extensions are tracked.
+
+        Returns:
+            Set of extension IDs (includes corrupted entries)
+        """
+        extensions = self.data.get("extensions", {}) or {}
+        if not isinstance(extensions, dict):
+            return set()
+        return set(extensions.keys())
 
     def is_installed(self, extension_id: str) -> bool:
         """Check if extension is installed.

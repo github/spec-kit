@@ -360,10 +360,10 @@ class PresetRegistry:
         return copy.deepcopy(entry)
 
     def list(self) -> Dict[str, dict]:
-        """Get all installed presets.
+        """Get all installed presets with valid metadata.
 
-        Returns a deep copy of the presets mapping to prevent callers
-        from accidentally mutating nested internal registry state.
+        Returns a deep copy of presets with dict metadata only.
+        Corrupted entries (non-dict values) are filtered out.
 
         Returns:
             Dictionary of pack_id -> metadata (deep copies), empty dict if corrupted
@@ -371,7 +371,26 @@ class PresetRegistry:
         packs = self.data.get("presets", {}) or {}
         if not isinstance(packs, dict):
             return {}
-        return copy.deepcopy(packs)
+        # Filter to only valid dict entries to match type contract
+        return {
+            pack_id: copy.deepcopy(meta)
+            for pack_id, meta in packs.items()
+            if isinstance(meta, dict)
+        }
+
+    def keys(self) -> set:
+        """Get all preset IDs including corrupted entries.
+
+        Lightweight method that returns IDs without deep-copying metadata.
+        Use this when you only need to check which presets are tracked.
+
+        Returns:
+            Set of preset IDs (includes corrupted entries)
+        """
+        packs = self.data.get("presets", {}) or {}
+        if not isinstance(packs, dict):
+            return set()
+        return set(packs.keys())
 
     def list_by_priority(self, include_disabled: bool = False) -> List[tuple]:
         """Get all installed presets sorted by priority.
@@ -1523,11 +1542,11 @@ class PresetResolver:
             return []
 
         registry = ExtensionRegistry(self.extensions_dir)
-        # Use raw registry keys to track ALL extensions (including corrupted entries)
+        # Use keys() to track ALL extensions (including corrupted entries) without deep copy
         # This prevents corrupted entries from being picked up as "unregistered" dirs
-        registered_extension_ids = set(registry.list().keys())
+        registered_extension_ids = registry.keys()
 
-        # Get enabled extensions for resolution (list_by_priority skips corrupted/disabled)
+        # Get all registered extensions including disabled; we filter disabled manually below
         all_registered = registry.list_by_priority(include_disabled=True)
 
         all_extensions: list[tuple[int, str, dict | None]] = []
