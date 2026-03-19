@@ -173,7 +173,7 @@ See Spec-Driven Development in action across different scenarios with these comm
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | ✅      |                                                                                                                                           |
 | [Claude Code](https://www.anthropic.com/claude-code)                                 | ✅      |                                                                                                                                           |
 | [CodeBuddy CLI](https://www.codebuddy.ai/cli)                                        | ✅      |                                                                                                                                           |
-| [Codex CLI](https://github.com/openai/codex)                                         | ✅      |                                                                                                                                           |
+| [Codex CLI](https://github.com/openai/codex)                                         | ✅      | Run `specify init . --ai codex` (or `specify init --here --ai codex`) to generate project-local `.codex/prompts`, then start Codex with `CODEX_HOME="$PWD/.codex"` so it loads them. In Codex CLI, invoke spec-kit prompts as `/prompts:speckit.specify`, `/prompts:speckit.plan`, etc. Restart Codex or start a new chat after prompt changes. OpenAI currently marks custom prompts as deprecated and recommends skills for reusable/shared workflows. |
 | [Cursor](https://cursor.sh/)                                                         | ✅      |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | ✅      |                                                                                                                                           |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | ✅      |                                                                                                                                           |
@@ -297,7 +297,9 @@ specify check
 
 ### Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development.
+
+For Codex CLI specifically, spec-kit commands are generated into `.codex/prompts` and are invoked as `/prompts:speckit.<command>` after starting Codex with `CODEX_HOME="$PWD/.codex"`.
 
 #### Core Commands
 
