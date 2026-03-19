@@ -222,7 +222,14 @@ class ExtensionRegistry:
 
         try:
             with open(self.registry_path, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+            # Validate loaded data is a dict (handles corrupted registry files)
+            if not isinstance(data, dict):
+                return {
+                    "schema_version": self.SCHEMA_VERSION,
+                    "extensions": {}
+                }
+            return data
         except (json.JSONDecodeError, FileNotFoundError):
             # Corrupted or missing registry, start fresh
             return {
@@ -360,9 +367,12 @@ class ExtensionRegistry:
             extension_id: Extension ID
 
         Returns:
-            True if extension is installed
+            True if extension is installed, False if not or registry corrupted
         """
-        return extension_id in self.data["extensions"]
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict):
+            return False
+        return extension_id in extensions
 
     def list_by_priority(self, include_disabled: bool = False) -> List[tuple]:
         """Get all installed extensions sorted by priority.

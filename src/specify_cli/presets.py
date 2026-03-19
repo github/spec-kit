@@ -238,7 +238,14 @@ class PresetRegistry:
 
         try:
             with open(self.registry_path, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+            # Validate loaded data is a dict (handles corrupted registry files)
+            if not isinstance(data, dict):
+                return {
+                    "schema_version": self.SCHEMA_VERSION,
+                    "presets": {}
+                }
+            return data
         except (json.JSONDecodeError, FileNotFoundError):
             return {
                 "schema_version": self.SCHEMA_VERSION,
@@ -402,9 +409,12 @@ class PresetRegistry:
             pack_id: Preset ID
 
         Returns:
-            True if pack is installed
+            True if pack is installed, False if not or registry corrupted
         """
-        return pack_id in self.data["presets"]
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict):
+            return False
+        return pack_id in packs
 
 
 class PresetManager:
