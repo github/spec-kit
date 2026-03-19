@@ -832,11 +832,11 @@ $ARGUMENTS
             """---
 description: "Scripted command"
 scripts:
-  sh: scripts/bash/setup-plan.sh --json "{ARGS}"
-  ps: scripts/powershell/setup-plan.ps1 -Json
+  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: ../../scripts/powershell/setup-plan.ps1 -Json
 agent_scripts:
-  sh: scripts/bash/update-agent-context.sh __AGENT__
-  ps: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
+  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
+  ps: ../../scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
 Run {SCRIPT}
@@ -864,8 +864,8 @@ Agent __AGENT__
         assert "{AGENT_SCRIPT}" not in content
         assert "__AGENT__" not in content
         assert "{ARGS}" not in content
-        assert 'scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
-        assert "scripts/bash/update-agent-context.sh codex" in content
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
     def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
         """Codex alias skills should render their own matching `name:` frontmatter."""
@@ -949,10 +949,10 @@ Agent __AGENT__
             """---
 description: "Fallback scripted command"
 scripts:
-  sh: scripts/bash/setup-plan.sh --json "{ARGS}"
-  ps: scripts/powershell/setup-plan.ps1 -Json
+  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: ../../scripts/powershell/setup-plan.ps1 -Json
 agent_scripts:
-  sh: scripts/bash/update-agent-context.sh __AGENT__
+  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
 ---
 
 Run {SCRIPT}
@@ -974,8 +974,8 @@ Then {AGENT_SCRIPT}
         content = skill_file.read_text()
         assert "{SCRIPT}" not in content
         assert "{AGENT_SCRIPT}" not in content
-        assert 'scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
-        assert "scripts/bash/update-agent-context.sh codex" in content
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""

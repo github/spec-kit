@@ -206,11 +206,14 @@ class CommandRegistrar:
         Returns:
             Modified frontmatter with adjusted paths
         """
-        if "scripts" in frontmatter:
-            for key in frontmatter["scripts"]:
-                script_path = frontmatter["scripts"][key]
-                if script_path.startswith("../../scripts/"):
-                    frontmatter["scripts"][key] = f".specify/scripts/{script_path[14:]}"
+        for script_key in ("scripts", "agent_scripts"):
+            scripts = frontmatter.get(script_key)
+            if not isinstance(scripts, dict):
+                continue
+
+            for key, script_path in scripts.items():
+                if isinstance(script_path, str) and script_path.startswith("../../scripts/"):
+                    scripts[key] = f".specify/scripts/{script_path[14:]}"
         return frontmatter
 
     def render_markdown_command(
