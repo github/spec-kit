@@ -201,19 +201,19 @@ agent: $basename
     }
 }
 
-# Create dotted-name skills in <skills_dir>\<name>\SKILL.md format.
-# Codex and Kimi both discover skills as directories containing a SKILL.md file.
-function New-DotSkills {
+# Create skills in <skills_dir>\<name>\SKILL.md format.
+function New-Skills {
     param(
         [string]$SkillsDir,
-        [string]$ScriptVariant
+        [string]$ScriptVariant,
+        [string]$Separator = '-'
     )
 
     $templates = Get-ChildItem -Path "templates/commands/*.md" -File -ErrorAction SilentlyContinue
 
     foreach ($template in $templates) {
         $name = [System.IO.Path]::GetFileNameWithoutExtension($template.Name)
-        $skillName = "speckit.$name"
+        $skillName = "speckit${Separator}$name"
         $skillDir = Join-Path $SkillsDir $skillName
         New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
 
@@ -397,7 +397,7 @@ function Build-Variant {
         'codex' {
             $skillsDir = Join-Path $baseDir ".agents/skills"
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-            New-DotSkills -SkillsDir $skillsDir -ScriptVariant $Script
+            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -Separator '-'
         }
         'kilocode' {
             $cmdDir = Join-Path $baseDir ".kilocode/workflows"
@@ -452,7 +452,7 @@ function Build-Variant {
         'kimi' {
             $skillsDir = Join-Path $baseDir ".kimi/skills"
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-            New-DotSkills -SkillsDir $skillsDir -ScriptVariant $Script
+            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -Separator '.'
         }
         'trae' {
             $rulesDir = Join-Path $baseDir ".trae/rules"

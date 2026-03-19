@@ -121,17 +121,17 @@ EOF
   done
 }
 
-# Create dotted-name skills in <skills_dir>/<name>/SKILL.md format.
-# Codex and Kimi both discover skills as directories containing a SKILL.md file.
-create_dot_skills() {
+# Create skills in <skills_dir>/<name>/SKILL.md format.
+create_skills() {
   local skills_dir="$1"
   local script_variant="$2"
+  local separator="${3:--}"
 
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
     local name
     name=$(basename "$template" .md)
-    local skill_name="speckit.${name}"
+    local skill_name="speckit${separator}${name}"
     local skill_dir="${skills_dir}/${skill_name}"
     mkdir -p "$skill_dir"
 
@@ -249,7 +249,7 @@ build_variant() {
       generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
     codex)
       mkdir -p "$base_dir/.agents/skills"
-      create_dot_skills "$base_dir/.agents/skills" "$script" ;;
+      create_skills "$base_dir/.agents/skills" "$script" "-" ;;
     kilocode)
       mkdir -p "$base_dir/.kilocode/workflows"
       generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
@@ -289,7 +289,7 @@ build_variant() {
       generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
     kimi)
       mkdir -p "$base_dir/.kimi/skills"
-      create_dot_skills "$base_dir/.kimi/skills" "$script" ;;
+      create_skills "$base_dir/.kimi/skills" "$script" "." ;;
     trae)
       mkdir -p "$base_dir/.trae/rules"
       generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;

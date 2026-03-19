@@ -593,6 +593,7 @@ class TestCommandRegistrar:
         assert "codex" in CommandRegistrar.AGENT_CONFIGS
         assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".agents/skills"
         assert CommandRegistrar.AGENT_CONFIGS["codex"]["extension"] == "/SKILL.md"
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["skill_name_style"] == "hyphen"
 
     def test_pi_agent_config_present(self):
         """Pi should be mapped to .pi/prompts."""

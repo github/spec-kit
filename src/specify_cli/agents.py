@@ -62,7 +62,8 @@ class CommandRegistrar:
             "dir": ".agents/skills",
             "format": "markdown",
             "args": "$ARGUMENTS",
-            "extension": "/SKILL.md"
+            "extension": "/SKILL.md",
+            "skill_name_style": "hyphen",
         },
         "windsurf": {
             "dir": ".windsurf/workflows",
@@ -140,7 +141,8 @@ class CommandRegistrar:
             "dir": ".kimi/skills",
             "format": "markdown",
             "args": "$ARGUMENTS",
-            "extension": "/SKILL.md"
+            "extension": "/SKILL.md",
+            "skill_name_style": "dot",
         },
         "trae": {
             "dir": ".trae/rules",
@@ -335,7 +337,15 @@ class CommandRegistrar:
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
-            dest_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+            output_name = cmd_name
+            if agent_config["extension"] == "/SKILL.md":
+                short_name = cmd_name
+                if short_name.startswith("speckit."):
+                    short_name = short_name[len("speckit."):]
+                style = agent_config.get("skill_name_style", "hyphen")
+                output_name = f"speckit.{short_name}" if style == "dot" else f"speckit-{short_name}"
+
+            dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(output, encoding="utf-8")
 
@@ -345,7 +355,14 @@ class CommandRegistrar:
             registered.append(cmd_name)
 
             for alias in cmd_info.get("aliases", []):
-                alias_file = commands_dir / f"{alias}{agent_config['extension']}"
+                alias_output_name = alias
+                if agent_config["extension"] == "/SKILL.md":
+                    short_alias = alias
+                    if short_alias.startswith("speckit."):
+                        short_alias = short_alias[len("speckit."):]
+                    style = agent_config.get("skill_name_style", "hyphen")
+                    alias_output_name = f"speckit.{short_alias}" if style == "dot" else f"speckit-{short_alias}"
+                alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(output, encoding="utf-8")
                 if agent_name == "copilot":

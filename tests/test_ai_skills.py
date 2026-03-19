@@ -471,8 +471,8 @@ class TestInstallAiSkills:
         skills_dir = _get_skills_dir(proj, agent_key)
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-        # Codex and Kimi use dotted skill names; other agents use hyphen-separated names.
-        expected_skill_name = "speckit.specify" if agent_key in {"codex", "kimi"} else "speckit-specify"
+        # Kimi uses dotted skill names; other agents use hyphen-separated names.
+        expected_skill_name = "speckit.specify" if agent_key == "kimi" else "speckit-specify"
         assert expected_skill_name in skill_dirs
         assert (skills_dir / expected_skill_name / "SKILL.md").exists()
 
@@ -701,7 +701,7 @@ class TestNewProjectCommandSkip:
         target = tmp_path / "new-codex-proj"
 
         def fake_download(project_path, *args, **kwargs):
-            skill_dir = project_path / ".agents" / "skills" / "speckit.specify"
+            skill_dir = project_path / ".agents" / "skills" / "speckit-specify"
             skill_dir.mkdir(parents=True, exist_ok=True)
             (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
 
@@ -718,7 +718,7 @@ class TestNewProjectCommandSkip:
 
         assert result.exit_code == 0
         mock_skills.assert_not_called()
-        assert (target / ".agents" / "skills" / "speckit.specify" / "SKILL.md").exists()
+        assert (target / ".agents" / "skills" / "speckit-specify" / "SKILL.md").exists()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
@@ -947,7 +947,7 @@ class TestCliValidation:
             assert result.exit_code == 0
             assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" not in result.output
             assert ".agents/skills" in result.output
-            assert "$speckit.constitution" in result.output
+            assert "$speckit-constitution" in result.output
             assert "/speckit.constitution" not in result.output
 
     def test_ai_skills_flag_appears_in_help(self):

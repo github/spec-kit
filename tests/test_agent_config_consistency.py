@@ -35,6 +35,7 @@ class TestAgentConfigConsistency:
         assert "codex" in cfg
         assert cfg["codex"]["dir"] == ".agents/skills"
         assert cfg["codex"]["extension"] == "/SKILL.md"
+        assert cfg["codex"]["skill_name_style"] == "hyphen"
 
     def test_runtime_codex_uses_native_skills(self):
         """Codex runtime config should point at .agents/skills."""
@@ -84,8 +85,8 @@ class TestAgentConfigConsistency:
 
         assert ".agents/skills" in sh_text
         assert ".agents/skills" in ps_text
-        assert re.search(r"codex\)\s*\n.*?create_dot_skills.*?\.agents/skills", sh_text, re.S) is not None
-        assert re.search(r"'codex'\s*\{.*?\.agents/skills.*?New-DotSkills", ps_text, re.S) is not None
+        assert re.search(r"codex\)\s*\n.*?create_skills.*?\.agents/skills.*?\"-\"", sh_text, re.S) is not None
+        assert re.search(r"'codex'\s*\{.*?\.agents/skills.*?New-Skills.*?-Separator '-'", ps_text, re.S) is not None
 
     def test_init_ai_help_includes_roo_and_kiro_alias(self):
         """CLI help text for --ai should stay in sync with agent config and alias guidance."""

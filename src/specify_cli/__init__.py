@@ -1205,7 +1205,7 @@ AGENT_SKILLS_DIR_OVERRIDES = {
 DEFAULT_SKILLS_DIR = ".agents/skills"
 
 # Agents whose skills use dotted names (e.g. speckit.specify).
-DOT_SKILL_NAME_AGENTS = {"codex", "kimi"}
+DOT_SKILL_NAME_AGENTS = {"kimi"}
 
 # Agents whose downloaded template already contains skills in the final layout.
 NATIVE_SKILLS_AGENTS = {"codex", "kimi"}
@@ -1871,16 +1871,20 @@ def init(
         step_num += 1
 
     codex_skill_mode = selected_ai == "codex" and ai_skills
-    command_prefix = "$" if codex_skill_mode else "/"
     usage_label = "skills" if codex_skill_mode else "slash commands"
+
+    def _display_cmd(name: str) -> str:
+        if codex_skill_mode:
+            return f"$speckit-{name}"
+        return f"/speckit.{name}"
 
     steps_lines.append(f"{step_num}. Start using {usage_label} with your AI agent:")
 
-    steps_lines.append(f"   {step_num}.1 [cyan]{command_prefix}speckit.constitution[/] - Establish project principles")
-    steps_lines.append(f"   {step_num}.2 [cyan]{command_prefix}speckit.specify[/] - Create baseline specification")
-    steps_lines.append(f"   {step_num}.3 [cyan]{command_prefix}speckit.plan[/] - Create implementation plan")
-    steps_lines.append(f"   {step_num}.4 [cyan]{command_prefix}speckit.tasks[/] - Generate actionable tasks")
-    steps_lines.append(f"   {step_num}.5 [cyan]{command_prefix}speckit.implement[/] - Execute implementation")
+    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
+    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
+    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
+    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
+    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
@@ -1889,9 +1893,9 @@ def init(
     enhancement_lines = [
         "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
         "",
-        f"○ [cyan]{command_prefix}speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{command_prefix}speckit.plan[/] if used)",
-        f"○ [cyan]{command_prefix}speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{command_prefix}speckit.tasks[/], before [cyan]{command_prefix}speckit.implement[/])",
-        f"○ [cyan]{command_prefix}speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{command_prefix}speckit.plan[/])"
+        f"○ [cyan]{_display_cmd('clarify')}[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{_display_cmd('plan')}[/] if used)",
+        f"○ [cyan]{_display_cmd('analyze')}[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{_display_cmd('tasks')}[/], before [cyan]{_display_cmd('implement')}[/])",
+        f"○ [cyan]{_display_cmd('checklist')}[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{_display_cmd('plan')}[/])"
     ]
     enhancements_title = "Enhancement Skills" if codex_skill_mode else "Enhancement Commands"
     enhancements_panel = Panel("\n".join(enhancement_lines), title=enhancements_title, border_style="cyan", padding=(1,2))
