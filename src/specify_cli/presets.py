@@ -269,7 +269,7 @@ class PresetRegistry:
             metadata: Pack metadata (version, source, etc.)
         """
         self.data["presets"][pack_id] = {
-            **metadata,
+            **copy.deepcopy(metadata),
             "installed_at": datetime.now(timezone.utc).isoformat()
         }
         self._save()
@@ -280,8 +280,11 @@ class PresetRegistry:
         Args:
             pack_id: Preset ID
         """
-        if pack_id in self.data["presets"]:
-            del self.data["presets"][pack_id]
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict):
+            return
+        if pack_id in packs:
+            del packs[pack_id]
             self._save()
 
     def update(self, pack_id: str, updates: dict):
@@ -298,9 +301,10 @@ class PresetRegistry:
         Raises:
             KeyError: If preset is not installed
         """
-        if pack_id not in self.data["presets"]:
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict) or pack_id not in packs:
             raise KeyError(f"Preset '{pack_id}' not found in registry")
-        existing = self.data["presets"][pack_id]
+        existing = packs[pack_id]
         # Handle corrupted registry entries (e.g., string/list instead of dict)
         if not isinstance(existing, dict):
             existing = {}
@@ -313,7 +317,7 @@ class PresetRegistry:
         else:
             # If not present in existing, explicitly remove from merged if caller provided it
             merged.pop("installed_at", None)
-        self.data["presets"][pack_id] = merged
+        packs[pack_id] = merged
         self._save()
 
     def restore(self, pack_id: str, metadata: dict):

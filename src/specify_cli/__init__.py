@@ -3924,8 +3924,7 @@ def extension_enable(
         console.print(f"[yellow]Extension '{display_name}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
-    metadata["enabled"] = True
-    manager.registry.update(extension_id, metadata)
+    manager.registry.update(extension_id, {"enabled": True})
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
@@ -3972,8 +3971,7 @@ def extension_disable(
         console.print(f"[yellow]Extension '{display_name}' is already disabled[/yellow]")
         raise typer.Exit(0)
 
-    metadata["enabled"] = False
-    manager.registry.update(extension_id, metadata)
+    manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()

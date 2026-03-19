@@ -254,7 +254,7 @@ class ExtensionRegistry:
             metadata: Extension metadata (version, source, etc.)
         """
         self.data["extensions"][extension_id] = {
-            **metadata,
+            **copy.deepcopy(metadata),
             "installed_at": datetime.now(timezone.utc).isoformat()
         }
         self._save()
@@ -277,10 +277,11 @@ class ExtensionRegistry:
         Raises:
             KeyError: If extension is not installed
         """
-        if extension_id not in self.data["extensions"]:
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict) or extension_id not in extensions:
             raise KeyError(f"Extension '{extension_id}' is not installed")
         # Merge new metadata with existing, preserving original installed_at
-        existing = self.data["extensions"][extension_id]
+        existing = extensions[extension_id]
         # Handle corrupted registry entries (e.g., string/list instead of dict)
         if not isinstance(existing, dict):
             existing = {}
@@ -293,7 +294,7 @@ class ExtensionRegistry:
         else:
             # If not present in existing, explicitly remove from merged if caller provided it
             merged.pop("installed_at", None)
-        self.data["extensions"][extension_id] = merged
+        extensions[extension_id] = merged
         self._save()
 
     def restore(self, extension_id: str, metadata: dict):
@@ -324,8 +325,11 @@ class ExtensionRegistry:
         Args:
             extension_id: Extension ID
         """
-        if extension_id in self.data["extensions"]:
-            del self.data["extensions"][extension_id]
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict):
+            return
+        if extension_id in extensions:
+            del extensions[extension_id]
             self._save()
 
     def get(self, extension_id: str) -> Optional[dict]:
