@@ -209,8 +209,21 @@ Edit `extensions/catalog.community.json` and add your extension:
 Add your extension to the Available Extensions table in `extensions/README.md`:
 
 ```markdown
-| Your Extension Name | Brief description of what it does | [repo-name](https://github.com/your-org/spec-kit-your-extension) |
+| Your Extension Name | Brief description of what it does | `category` | Effect | [repo-name](https://github.com/your-org/spec-kit-your-extension) |
 ```
+
+**Category** — pick the one that best fits your extension:
+
+- `docs` — reads, validates, or generates spec artifacts
+- `code` — reviews, validates, or modifies source code
+- `process` — orchestrates workflow across phases
+- `integration` — syncs with external platforms
+- `visibility` — reports on project health or progress
+
+**Effect** — choose one:
+
+- `Read-only` — produces reports without modifying files
+- `Read+Write` — modifies files, creates artifacts, or updates specs
 
 Insert your extension in alphabetical order in the table.
 
