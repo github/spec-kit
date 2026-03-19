@@ -128,7 +128,7 @@ create_skills() {
   local skills_dir="$1"
   local script_variant="$2"
   local agent_name="$3"
-  local separator="${4:--}"
+  local separator="${4:-"-"}"
 
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
