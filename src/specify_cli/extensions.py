@@ -669,7 +669,7 @@ class ExtensionManager:
 
         # Get registered commands before removal
         metadata = self.registry.get(extension_id)
-        registered_commands = metadata.get("registered_commands", {})
+        registered_commands = metadata.get("registered_commands", {}) if metadata else {}
 
         extension_dir = self.extensions_dir / extension_id
 
