@@ -238,7 +238,17 @@ class PresetRegistry:
 
         try:
             with open(self.registry_path, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+            # Validate loaded data is a dict (handles corrupted registry files)
+            if not isinstance(data, dict):
+                return {
+                    "schema_version": self.SCHEMA_VERSION,
+                    "presets": {}
+                }
+            # Normalize presets field (handles corrupted presets value)
+            if not isinstance(data.get("presets"), dict):
+                data["presets"] = {}
+            return data
         except (json.JSONDecodeError, FileNotFoundError):
             return {
                 "schema_version": self.SCHEMA_VERSION,
@@ -259,7 +269,7 @@ class PresetRegistry:
             metadata: Pack metadata (version, source, etc.)
         """
         self.data["presets"][pack_id] = {
-            **metadata,
+            **copy.deepcopy(metadata),
             "installed_at": datetime.now(timezone.utc).isoformat()
         }
         self._save()
@@ -270,8 +280,11 @@ class PresetRegistry:
         Args:
             pack_id: Preset ID
         """
-        if pack_id in self.data["presets"]:
-            del self.data["presets"][pack_id]
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict):
+            return
+        if pack_id in packs:
+            del packs[pack_id]
             self._save()
 
     def update(self, pack_id: str, updates: dict):
@@ -288,14 +301,15 @@ class PresetRegistry:
         Raises:
             KeyError: If preset is not installed
         """
-        if pack_id not in self.data["presets"]:
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict) or pack_id not in packs:
             raise KeyError(f"Preset '{pack_id}' not found in registry")
-        existing = self.data["presets"][pack_id]
+        existing = packs[pack_id]
         # Handle corrupted registry entries (e.g., string/list instead of dict)
         if not isinstance(existing, dict):
             existing = {}
-        # Merge: existing fields preserved, new fields override
-        merged = {**existing, **updates}
+        # Merge: existing fields preserved, new fields override (deep copy to prevent caller mutation)
+        merged = {**existing, **copy.deepcopy(updates)}
         # Always preserve original installed_at based on key existence, not truthiness,
         # to handle cases where the field exists but may be falsy (legacy/corruption)
         if "installed_at" in existing:
@@ -303,34 +317,94 @@ class PresetRegistry:
         else:
             # If not present in existing, explicitly remove from merged if caller provided it
             merged.pop("installed_at", None)
-        self.data["presets"][pack_id] = merged
+        packs[pack_id] = merged
+        self._save()
+
+    def restore(self, pack_id: str, metadata: dict):
+        """Restore preset metadata to registry without modifying timestamps.
+
+        Use this method for rollback scenarios where you have a complete backup
+        of the registry entry (including installed_at) and want to restore it
+        exactly as it was.
+
+        Args:
+            pack_id: Preset ID
+            metadata: Complete preset metadata including installed_at
+
+        Raises:
+            ValueError: If metadata is None or not a dict
+        """
+        if metadata is None or not isinstance(metadata, dict):
+            raise ValueError(f"Cannot restore '{pack_id}': metadata must be a dict")
+        # Ensure presets dict exists (handle corrupted registry)
+        if not isinstance(self.data.get("presets"), dict):
+            self.data["presets"] = {}
+        self.data["presets"][pack_id] = copy.deepcopy(metadata)
         self._save()
 
     def get(self, pack_id: str) -> Optional[dict]:
         """Get preset metadata from registry.
 
+        Returns a deep copy to prevent callers from accidentally mutating
+        nested internal registry state without going through the write path.
+
         Args:
             pack_id: Preset ID
 
         Returns:
-            Pack metadata or None if not found
+            Deep copy of preset metadata, or None if not found or corrupted
         """
-        return self.data["presets"].get(pack_id)
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict):
+            return None
+        entry = packs.get(pack_id)
+        # Return None for missing or corrupted (non-dict) entries
+        if entry is None or not isinstance(entry, dict):
+            return None
+        return copy.deepcopy(entry)
 
     def list(self) -> Dict[str, dict]:
-        """Get all installed presets.
+        """Get all installed presets with valid metadata.
+
+        Returns a deep copy of presets with dict metadata only.
+        Corrupted entries (non-dict values) are filtered out.
 
         Returns:
-            Dictionary of pack_id -> metadata
+            Dictionary of pack_id -> metadata (deep copies), empty dict if corrupted
         """
-        return self.data["presets"]
+        packs = self.data.get("presets", {}) or {}
+        if not isinstance(packs, dict):
+            return {}
+        # Filter to only valid dict entries to match type contract
+        return {
+            pack_id: copy.deepcopy(meta)
+            for pack_id, meta in packs.items()
+            if isinstance(meta, dict)
+        }
 
-    def list_by_priority(self) -> List[tuple]:
+    def keys(self) -> set:
+        """Get all preset IDs including corrupted entries.
+
+        Lightweight method that returns IDs without deep-copying metadata.
+        Use this when you only need to check which presets are tracked.
+
+        Returns:
+            Set of preset IDs (includes corrupted entries)
+        """
+        packs = self.data.get("presets", {}) or {}
+        if not isinstance(packs, dict):
+            return set()
+        return set(packs.keys())
+
+    def list_by_priority(self, include_disabled: bool = False) -> List[tuple]:
         """Get all installed presets sorted by priority.
 
         Lower priority number = higher precedence (checked first).
         Presets with equal priority are sorted alphabetically by ID
         for deterministic ordering.
+
+        Args:
+            include_disabled: If True, include disabled presets. Default False.
 
         Returns:
             List of (pack_id, metadata_copy) tuples sorted by priority.
@@ -342,6 +416,9 @@ class PresetRegistry:
         sortable_packs = []
         for pack_id, meta in packs.items():
             if not isinstance(meta, dict):
+                continue
+            # Skip disabled presets unless explicitly requested
+            if not include_disabled and not meta.get("enabled", True):
                 continue
             metadata_copy = copy.deepcopy(meta)
             metadata_copy["priority"] = normalize_priority(metadata_copy.get("priority", 10))
@@ -358,9 +435,12 @@ class PresetRegistry:
             pack_id: Preset ID
 
         Returns:
-            True if pack is installed
+            True if pack is installed, False if not or registry corrupted
         """
-        return pack_id in self.data["presets"]
+        packs = self.data.get("presets")
+        if not isinstance(packs, dict):
+            return False
+        return pack_id in packs
 
 
 class PresetManager:
@@ -566,8 +646,6 @@ class PresetManager:
             short_name = cmd_name
             if short_name.startswith("speckit."):
                 short_name = short_name[len("speckit."):]
-            # Kimi CLI discovers skills by directory name and invokes them as
-            # /skill:<name> — use dot separator to match packaging convention.
             if selected_ai == "kimi":
                 skill_name = f"speckit.{short_name}"
             else:
@@ -1466,12 +1544,20 @@ class PresetResolver:
             return []
 
         registry = ExtensionRegistry(self.extensions_dir)
-        registered_extensions = registry.list_by_priority()
-        registered_extension_ids = {ext_id for ext_id, _ in registered_extensions}
+        # Use keys() to track ALL extensions (including corrupted entries) without deep copy
+        # This prevents corrupted entries from being picked up as "unregistered" dirs
+        registered_extension_ids = registry.keys()
+
+        # Get all registered extensions including disabled; we filter disabled manually below
+        all_registered = registry.list_by_priority(include_disabled=True)
 
         all_extensions: list[tuple[int, str, dict | None]] = []
 
-        for ext_id, metadata in registered_extensions:
+        # Only include enabled extensions in the result
+        for ext_id, metadata in all_registered:
+            # Skip disabled extensions
+            if not metadata.get("enabled", True):
+                continue
             priority = normalize_priority(metadata.get("priority") if metadata else None)
             all_extensions.append((priority, ext_id, metadata))
 

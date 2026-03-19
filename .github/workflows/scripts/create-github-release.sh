@@ -30,6 +30,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-qwen-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-junie-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-junie-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-codex-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-codex-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-kilocode-sh-"$VERSION".zip \
@@ -62,6 +64,8 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-trae-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-pi-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-pi-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-iflow-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-iflow-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \

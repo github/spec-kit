@@ -222,7 +222,17 @@ class ExtensionRegistry:
 
         try:
             with open(self.registry_path, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+            # Validate loaded data is a dict (handles corrupted registry files)
+            if not isinstance(data, dict):
+                return {
+                    "schema_version": self.SCHEMA_VERSION,
+                    "extensions": {}
+                }
+            # Normalize extensions field (handles corrupted extensions value)
+            if not isinstance(data.get("extensions"), dict):
+                data["extensions"] = {}
+            return data
         except (json.JSONDecodeError, FileNotFoundError):
             # Corrupted or missing registry, start fresh
             return {
@@ -244,7 +254,7 @@ class ExtensionRegistry:
             metadata: Extension metadata (version, source, etc.)
         """
         self.data["extensions"][extension_id] = {
-            **metadata,
+            **copy.deepcopy(metadata),
             "installed_at": datetime.now(timezone.utc).isoformat()
         }
         self._save()
@@ -267,15 +277,16 @@ class ExtensionRegistry:
         Raises:
             KeyError: If extension is not installed
         """
-        if extension_id not in self.data["extensions"]:
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict) or extension_id not in extensions:
             raise KeyError(f"Extension '{extension_id}' is not installed")
         # Merge new metadata with existing, preserving original installed_at
-        existing = self.data["extensions"][extension_id]
+        existing = extensions[extension_id]
         # Handle corrupted registry entries (e.g., string/list instead of dict)
         if not isinstance(existing, dict):
             existing = {}
-        # Merge: existing fields preserved, new fields override
-        merged = {**existing, **metadata}
+        # Merge: existing fields preserved, new fields override (deep copy to prevent caller mutation)
+        merged = {**existing, **copy.deepcopy(metadata)}
         # Always preserve original installed_at based on key existence, not truthiness,
         # to handle cases where the field exists but may be falsy (legacy/corruption)
         if "installed_at" in existing:
@@ -283,7 +294,7 @@ class ExtensionRegistry:
         else:
             # If not present in existing, explicitly remove from merged if caller provided it
             merged.pop("installed_at", None)
-        self.data["extensions"][extension_id] = merged
+        extensions[extension_id] = merged
         self._save()
 
     def restore(self, extension_id: str, metadata: dict):
@@ -296,8 +307,16 @@ class ExtensionRegistry:
         Args:
             extension_id: Extension ID
             metadata: Complete extension metadata including installed_at
+
+        Raises:
+            ValueError: If metadata is None or not a dict
         """
-        self.data["extensions"][extension_id] = dict(metadata)
+        if metadata is None or not isinstance(metadata, dict):
+            raise ValueError(f"Cannot restore '{extension_id}': metadata must be a dict")
+        # Ensure extensions dict exists (handle corrupted registry)
+        if not isinstance(self.data.get("extensions"), dict):
+            self.data["extensions"] = {}
+        self.data["extensions"][extension_id] = copy.deepcopy(metadata)
         self._save()
 
     def remove(self, extension_id: str):
@@ -306,8 +325,11 @@ class ExtensionRegistry:
         Args:
             extension_id: Extension ID
         """
-        if extension_id in self.data["extensions"]:
-            del self.data["extensions"][extension_id]
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict):
+            return
+        if extension_id in extensions:
+            del extensions[extension_id]
             self._save()
 
     def get(self, extension_id: str) -> Optional[dict]:
@@ -320,21 +342,49 @@ class ExtensionRegistry:
             extension_id: Extension ID
 
         Returns:
-            Deep copy of extension metadata, or None if not found
+            Deep copy of extension metadata, or None if not found or corrupted
         """
-        entry = self.data["extensions"].get(extension_id)
-        return copy.deepcopy(entry) if entry is not None else None
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict):
+            return None
+        entry = extensions.get(extension_id)
+        # Return None for missing or corrupted (non-dict) entries
+        if entry is None or not isinstance(entry, dict):
+            return None
+        return copy.deepcopy(entry)
 
     def list(self) -> Dict[str, dict]:
-        """Get all installed extensions.
+        """Get all installed extensions with valid metadata.
 
-        Returns a deep copy of the extensions mapping to prevent callers
-        from accidentally mutating nested internal registry state.
+        Returns a deep copy of extensions with dict metadata only.
+        Corrupted entries (non-dict values) are filtered out.
 
         Returns:
-            Dictionary of extension_id -> metadata (deep copies)
+            Dictionary of extension_id -> metadata (deep copies), empty dict if corrupted
         """
-        return copy.deepcopy(self.data["extensions"])
+        extensions = self.data.get("extensions", {}) or {}
+        if not isinstance(extensions, dict):
+            return {}
+        # Filter to only valid dict entries to match type contract
+        return {
+            ext_id: copy.deepcopy(meta)
+            for ext_id, meta in extensions.items()
+            if isinstance(meta, dict)
+        }
+
+    def keys(self) -> set:
+        """Get all extension IDs including corrupted entries.
+
+        Lightweight method that returns IDs without deep-copying metadata.
+        Use this when you only need to check which extensions are tracked.
+
+        Returns:
+            Set of extension IDs (includes corrupted entries)
+        """
+        extensions = self.data.get("extensions", {}) or {}
+        if not isinstance(extensions, dict):
+            return set()
+        return set(extensions.keys())
 
     def is_installed(self, extension_id: str) -> bool:
         """Check if extension is installed.
@@ -343,16 +393,22 @@ class ExtensionRegistry:
             extension_id: Extension ID
 
         Returns:
-            True if extension is installed
+            True if extension is installed, False if not or registry corrupted
         """
-        return extension_id in self.data["extensions"]
+        extensions = self.data.get("extensions")
+        if not isinstance(extensions, dict):
+            return False
+        return extension_id in extensions
 
-    def list_by_priority(self) -> List[tuple]:
+    def list_by_priority(self, include_disabled: bool = False) -> List[tuple]:
         """Get all installed extensions sorted by priority.
 
         Lower priority number = higher precedence (checked first).
         Extensions with equal priority are sorted alphabetically by ID
         for deterministic ordering.
+
+        Args:
+            include_disabled: If True, include disabled extensions. Default False.
 
         Returns:
             List of (extension_id, metadata_copy) tuples sorted by priority.
@@ -364,6 +420,9 @@ class ExtensionRegistry:
         sortable_extensions = []
         for ext_id, meta in extensions.items():
             if not isinstance(meta, dict):
+                continue
+            # Skip disabled extensions unless explicitly requested
+            if not include_disabled and not meta.get("enabled", True):
                 continue
             metadata_copy = copy.deepcopy(meta)
             metadata_copy["priority"] = normalize_priority(metadata_copy.get("priority", 10))
@@ -633,7 +692,7 @@ class ExtensionManager:
 
         # Get registered commands before removal
         metadata = self.registry.get(extension_id)
-        registered_commands = metadata.get("registered_commands", {})
+        registered_commands = metadata.get("registered_commands", {}) if metadata else {}
 
         extension_dir = self.extensions_dir / extension_id
 

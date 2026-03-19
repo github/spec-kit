@@ -1,11 +1,25 @@
 # Changelog
 
-<!-- markdownlint-disable MD024 -->
+## [0.3.2] - 2026-03-19
 
-Recent changes to the Specify CLI and templates are documented here.
+### Changes
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+- Add conduct extension to community catalog (#1908)
+- feat(extensions): add verify-tasks extension to community catalog (#1871)
+- feat(presets): add enable/disable toggle and update semantics (#1891)
+- feat: add iFlow CLI support (#1875)
+- feat(commands): wire before/after hook events into specify and plan templates (#1886)
+- docs(catalog): add speckit-utils to community catalog (#1896)
+- docs: Add Extensions & Presets section to README (#1898)
+- chore: update DocGuard extension to v0.9.11 (#1899)
+- Update cognitive-squad catalog entry — Triadic Model, full lifecycle (#1884)
+- feat: register spec-kit-iterate extension (#1887)
+- fix(scripts): add explicit positional binding to PowerShell create-new-feature params (#1885)
+- fix(scripts): encode residual JSON control chars as \uXXXX instead of stripping (#1872)
+- chore: update DocGuard extension to v0.9.10 (#1890)
+- Feature/spec kit add pi coding agent pullrequest (#1853)
+- feat: register spec-kit-learn extension (#1883)
+
 
 ## [0.3.1] - 2026-03-17
 
@@ -307,19 +321,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - chore(deps): bump actions/stale from 9 to 10 (#1623)
 - feat: add dependabot configuration for pip and GitHub Actions updates (#1622)
-
-## [0.0.97] - 2026-02-18
-
-- Remove Maintainers section from README.md (#1618)
-
-## [0.0.96] - 2026-02-17
-
-- fix: typo in plan-template.md (#1446)
-
-## [0.0.95] - 2026-02-12
-
-- Feat: add a new agent: Google Anti Gravity (#1220)
-
-## [0.0.94] - 2026-02-11
-
-- Add stale workflow for 180-day inactive issues and PRs (#1594)
