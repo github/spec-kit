@@ -1,8 +1,39 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-05T00:00:00Z",
+  "updated_at": "2026-03-18T19:53:31Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
+    "archive": {
+      "name": "Archive Extension",
+      "id": "archive",
+      "description": "Archive merged features into main project memory, resolving gaps and conflicts.",
+      "author": "Stanislav Deviatov",
+      "version": "1.0.0",
+      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/stn1slv/spec-kit-archive",
+      "homepage": "https://github.com/stn1slv/spec-kit-archive",
+      "documentation": "https://github.com/stn1slv/spec-kit-archive/blob/main/README.md",
+      "changelog": "https://github.com/stn1slv/spec-kit-archive/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "archive",
+        "memory",
+        "merge",
+        "changelog"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-14T00:00:00Z",
+      "updated_at": "2026-03-14T00:00:00Z"
+    },
     "azure-devops": {
       "name": "Azure DevOps Integration",
       "id": "azure-devops",
@@ -29,7 +60,13 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["azure", "devops", "project-management", "work-items", "issue-tracking"],
+      "tags": [
+        "azure",
+        "devops",
+        "project-management",
+        "work-items",
+        "issue-tracking"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -55,12 +92,196 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["quality", "tech-debt", "review", "cleanup", "scout-rule"],
+      "tags": [
+        "quality",
+        "tech-debt",
+        "review",
+        "cleanup",
+        "scout-rule"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
+    },
+    "cognitive-squad": {
+      "name": "Cognitive Squad",
+      "id": "cognitive-squad",
+      "description": "Multi-agent cognitive system with Triadic Model: understanding, internalization, application — with quality gates, backpropagation verification, and self-healing",
+      "author": "Testimonial",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Testimonial/cognitive-squad/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/Testimonial/cognitive-squad",
+      "homepage": "https://github.com/Testimonial/cognitive-squad",
+      "documentation": "https://github.com/Testimonial/cognitive-squad/blob/main/README.md",
+      "changelog": "https://github.com/Testimonial/cognitive-squad/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0",
+        "tools": [
+          {
+            "name": "understanding",
+            "version": ">=3.4.0",
+            "required": false
+          },
+          {
+            "name": "spec-kit-reverse-eng",
+            "version": ">=1.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 10,
+        "hooks": 1
+      },
+      "tags": [
+        "ai-agents",
+        "cognitive",
+        "full-lifecycle",
+        "verification",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-16T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "docguard": {
+      "name": "DocGuard \u2014 CDD Enforcement",
+      "id": "docguard",
+      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies.",
+      "author": "raccioly",
+      "version": "0.9.11",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.11/spec-kit-docguard-v0.9.11.zip",
+      "repository": "https://github.com/raccioly/docguard",
+      "homepage": "https://www.npmjs.com/package/docguard-cli",
+      "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
+      "changelog": "https://github.com/raccioly/docguard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "node",
+            "version": ">=18.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 3
+      },
+      "tags": [
+        "documentation",
+        "validation",
+        "quality",
+        "cdd",
+        "traceability",
+        "ai-agents",
+        "enforcement",
+        "spec-kit"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-13T00:00:00Z",
+      "updated_at": "2026-03-18T18:53:31Z"
+    },
+    "doctor": {
+      "name": "Project Health Check",
+      "id": "doctor",
+      "description": "Diagnose a Spec Kit project and report health issues across structure, agents, features, scripts, extensions, and git.",
+      "author": "KhawarHabibKhan",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-doctor/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KhawarHabibKhan/spec-kit-doctor",
+      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-doctor",
+      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-doctor/blob/main/README.md",
+      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-doctor/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "diagnostics",
+        "health-check",
+        "validation",
+        "project-structure"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-13T00:00:00Z",
+      "updated_at": "2026-03-13T00:00:00Z"
+    },
+    "fleet": {
+      "name": "Fleet Orchestrator",
+      "id": "fleet",
+      "description": "Orchestrate a full feature lifecycle with human-in-the-loop gates across all SpecKit phases.",
+      "author": "sharathsatish",
+      "version": "1.0.0",
+      "download_url": "https://github.com/sharathsatish/spec-kit-fleet/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/sharathsatish/spec-kit-fleet",
+      "homepage": "https://github.com/sharathsatish/spec-kit-fleet",
+      "documentation": "https://github.com/sharathsatish/spec-kit-fleet/blob/main/README.md",
+      "changelog": "https://github.com/sharathsatish/spec-kit-fleet/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "orchestration",
+        "workflow",
+        "human-in-the-loop",
+        "parallel"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-06T00:00:00Z",
+      "updated_at": "2026-03-06T00:00:00Z"
+    },
+    "iterate": {
+      "name": "Iterate",
+      "id": "iterate",
+      "description": "Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building",
+      "author": "Vianca Martinez",
+      "version": "2.0.0",
+      "download_url": "https://github.com/imviancagrace/spec-kit-iterate/archive/refs/tags/v2.0.0.zip",
+      "repository": "https://github.com/imviancagrace/spec-kit-iterate",
+      "homepage": "https://github.com/imviancagrace/spec-kit-iterate",
+      "documentation": "https://github.com/imviancagrace/spec-kit-iterate/blob/main/README.md",
+      "changelog": "https://github.com/imviancagrace/spec-kit-iterate/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "iteration",
+        "change-management",
+        "spec-maintenance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-17T00:00:00Z",
+      "updated_at": "2026-03-17T00:00:00Z"
     },
     "jira": {
       "name": "Jira Integration",
@@ -81,12 +302,89 @@
         "commands": 3,
         "hooks": 1
       },
-      "tags": ["issue-tracking", "jira", "atlassian", "project-management"],
+      "tags": [
+        "issue-tracking",
+        "jira",
+        "atlassian",
+        "project-management"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
+    },
+    "ralph": {
+      "name": "Ralph Loop",
+      "id": "ralph",
+      "description": "Autonomous implementation loop using AI agent CLI.",
+      "author": "Rubiss",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Rubiss/spec-kit-ralph/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Rubiss/spec-kit-ralph",
+      "homepage": "https://github.com/Rubiss/spec-kit-ralph",
+      "documentation": "https://github.com/Rubiss/spec-kit-ralph/blob/main/README.md",
+      "changelog": "https://github.com/Rubiss/spec-kit-ralph/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "copilot",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "implementation",
+        "automation",
+        "loop",
+        "copilot"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-09T00:00:00Z",
+      "updated_at": "2026-03-09T00:00:00Z"
+    },
+    "reconcile": {
+      "name": "Reconcile Extension",
+      "id": "reconcile",
+      "description": "Reconcile implementation drift by surgically updating the feature's own spec, plan, and tasks.",
+      "author": "Stanislav Deviatov",
+      "version": "1.0.0",
+      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/stn1slv/spec-kit-reconcile",
+      "homepage": "https://github.com/stn1slv/spec-kit-reconcile",
+      "documentation": "https://github.com/stn1slv/spec-kit-reconcile/blob/main/README.md",
+      "changelog": "https://github.com/stn1slv/spec-kit-reconcile/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "reconcile",
+        "drift",
+        "tasks",
+        "remediation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-14T00:00:00Z",
+      "updated_at": "2026-03-14T00:00:00Z"
     },
     "retrospective": {
       "name": "Retrospective Extension",
@@ -107,12 +405,84 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["retrospective", "spec-drift", "quality", "analysis", "governance"],
+      "tags": [
+        "retrospective",
+        "spec-drift",
+        "quality",
+        "analysis",
+        "governance"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-02-24T00:00:00Z",
       "updated_at": "2026-02-24T00:00:00Z"
+    },
+    "review": {
+      "name": "Review Extension",
+      "id": "review",
+      "description": "Post-implementation comprehensive code review with specialized agents for code quality, comments, tests, error handling, type design, and simplification.",
+      "author": "ismaelJimenez",
+      "version": "1.0.0",
+      "download_url": "https://github.com/ismaelJimenez/spec-kit-review/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/ismaelJimenez/spec-kit-review",
+      "homepage": "https://github.com/ismaelJimenez/spec-kit-review",
+      "documentation": "https://github.com/ismaelJimenez/spec-kit-review/blob/main/README.md",
+      "changelog": "https://github.com/ismaelJimenez/spec-kit-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 1
+      },
+      "tags": [
+        "code-review",
+        "quality",
+        "review",
+        "testing",
+        "error-handling",
+        "type-design",
+        "simplification"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-06T00:00:00Z",
+      "updated_at": "2026-03-06T00:00:00Z"
+    },
+    "speckit-utils": {
+      "name": "SDD Utilities",
+      "id": "speckit-utils",
+      "description": "Resume interrupted workflows, validate project health, and verify spec-to-task traceability.",
+      "author": "mvanhorn",
+      "version": "1.0.0",
+      "download_url": "https://github.com/mvanhorn/speckit-utils/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/mvanhorn/speckit-utils",
+      "homepage": "https://github.com/mvanhorn/speckit-utils",
+      "documentation": "https://github.com/mvanhorn/speckit-utils/blob/main/README.md",
+      "changelog": "https://github.com/mvanhorn/speckit-utils/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 2
+      },
+      "tags": [
+        "resume",
+        "doctor",
+        "validate",
+        "workflow",
+        "health-check"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-18T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
     },
     "sync": {
       "name": "Spec Sync",
@@ -133,12 +503,91 @@
         "commands": 5,
         "hooks": 1
       },
-      "tags": ["sync", "drift", "validation", "bidirectional", "backfill"],
+      "tags": [
+        "sync",
+        "drift",
+        "validation",
+        "bidirectional",
+        "backfill"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "understanding": {
+      "name": "Understanding",
+      "id": "understanding",
+      "description": "Automated requirements quality analysis \u2014 validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
+      "author": "Ladislav Bihari",
+      "version": "3.4.0",
+      "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
+      "repository": "https://github.com/Testimonial/understanding",
+      "homepage": "https://github.com/Testimonial/understanding",
+      "documentation": "https://github.com/Testimonial/understanding/blob/main/extension/README.md",
+      "changelog": "https://github.com/Testimonial/understanding/blob/main/extension/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "understanding",
+            "version": ">=3.4.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "quality",
+        "metrics",
+        "requirements",
+        "validation",
+        "readability",
+        "IEEE-830",
+        "ISO-29148"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-07T00:00:00Z",
+      "updated_at": "2026-03-07T00:00:00Z"
+    },
+    "status": {
+      "name": "Project Status",
+      "id": "status",
+      "description": "Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary.",
+      "author": "KhawarHabibKhan",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/README.md",
+      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "status",
+        "workflow",
+        "progress",
+        "feature-tracking",
+        "task-progress"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-16T00:00:00Z",
+      "updated_at": "2026-03-16T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",
@@ -159,12 +608,49 @@
         "commands": 9,
         "hooks": 1
       },
-      "tags": ["v-model", "traceability", "testing", "compliance", "safety-critical"],
+      "tags": [
+        "v-model",
+        "traceability",
+        "testing",
+        "compliance",
+        "safety-critical"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-02-20T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
+    },
+    "learn": {
+      "name": "Learning Extension",
+      "id": "learn",
+      "description": "Generate educational guides from implementations and enhance clarifications with mentoring context.",
+      "author": "Vianca Martinez",
+      "version": "1.0.0",
+      "download_url": "https://github.com/imviancagrace/spec-kit-learn/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/imviancagrace/spec-kit-learn",
+      "homepage": "https://github.com/imviancagrace/spec-kit-learn",
+      "documentation": "https://github.com/imviancagrace/spec-kit-learn/blob/main/README.md",
+      "changelog": "https://github.com/imviancagrace/spec-kit-learn/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "learning",
+        "education",
+        "mentoring",
+        "knowledge-transfer"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-17T00:00:00Z",
+      "updated_at": "2026-03-17T00:00:00Z"
     },
     "verify": {
       "name": "Verify Extension",
@@ -185,7 +671,13 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": ["verification", "quality-gate", "implementation", "spec-adherence", "compliance"],
+      "tags": [
+        "verification",
+        "quality-gate",
+        "implementation",
+        "spec-adherence",
+        "compliance"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,

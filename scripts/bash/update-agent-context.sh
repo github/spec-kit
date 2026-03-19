@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Trae, Kiro CLI, or Antigravity
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Trae, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Pi Coding Agent, Antigravity or Generic
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|trae|kiro-cli|agy|bob|generic|qodercli
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|generic
 # Leave empty to update all existing agent files
 
 set -e
@@ -53,7 +53,9 @@ SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 # Get all paths and variables from common functions
-eval $(get_feature_paths)
+_paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+eval "$_paths_output"
+unset _paths_output
 
 NEW_PLAN="$IMPL_PLAN"  # Alias for compatibility with existing code
 AGENT_TYPE="${1:-}"
@@ -71,11 +73,16 @@ AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 QODER_FILE="$REPO_ROOT/QODER.md"
-AMP_FILE="$REPO_ROOT/AGENTS.md"
+# Amp, Kiro CLI, IBM Bob, and Pi all share AGENTS.md — use AGENTS_FILE to avoid
+# updating the same file multiple times.
+AMP_FILE="$AGENTS_FILE"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
-KIRO_FILE="$REPO_ROOT/AGENTS.md"
+TABNINE_FILE="$REPO_ROOT/TABNINE.md"
+KIRO_FILE="$AGENTS_FILE"
 AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
-BOB_FILE="$REPO_ROOT/AGENTS.md"
+BOB_FILE="$AGENTS_FILE"
+VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
+KIMI_FILE="$REPO_ROOT/KIMI.md"
 TRAE_FILE="$REPO_ROOT/.trae/rules/specify-rules.md"
 
 # Template file
@@ -110,6 +117,8 @@ log_warning() {
 # Cleanup function for temporary files
 cleanup() {
     local exit_code=$?
+    # Disarm traps to prevent re-entrant loop
+    trap - EXIT INT TERM
     rm -f /tmp/agent_update_*_$$
     rm -f /tmp/manual_additions_$$
     exit $exit_code
@@ -474,7 +483,7 @@ update_existing_agent_file() {
         fi
         
         # Update timestamp
-        if [[ "$line" =~ \*\*Last\ updated\*\*:.*[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] ]]; then
+        if [[ "$line" =~ (\*\*)?Last\ updated(\*\*)?:.*[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] ]]; then
             echo "$line" | sed "s/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/$current_date/" >> "$temp_file"
         else
             echo "$line" >> "$temp_file"
@@ -605,58 +614,73 @@ update_specific_agent() {
     
     case "$agent_type" in
         claude)
-            update_agent_file "$CLAUDE_FILE" "Claude Code"
+            update_agent_file "$CLAUDE_FILE" "Claude Code" || return 1
             ;;
         gemini)
-            update_agent_file "$GEMINI_FILE" "Gemini CLI"
+            update_agent_file "$GEMINI_FILE" "Gemini CLI" || return 1
             ;;
         copilot)
-            update_agent_file "$COPILOT_FILE" "GitHub Copilot"
+            update_agent_file "$COPILOT_FILE" "GitHub Copilot" || return 1
             ;;
         cursor-agent)
-            update_agent_file "$CURSOR_FILE" "Cursor IDE"
+            update_agent_file "$CURSOR_FILE" "Cursor IDE" || return 1
             ;;
         qwen)
-            update_agent_file "$QWEN_FILE" "Qwen Code"
+            update_agent_file "$QWEN_FILE" "Qwen Code" || return 1
             ;;
         opencode)
-            update_agent_file "$AGENTS_FILE" "opencode"
+            update_agent_file "$AGENTS_FILE" "opencode" || return 1
             ;;
         codex)
-            update_agent_file "$AGENTS_FILE" "Codex CLI"
+            update_agent_file "$AGENTS_FILE" "Codex CLI" || return 1
             ;;
         windsurf)
-            update_agent_file "$WINDSURF_FILE" "Windsurf"
+            update_agent_file "$WINDSURF_FILE" "Windsurf" || return 1
             ;;
         kilocode)
-            update_agent_file "$KILOCODE_FILE" "Kilo Code"
+            update_agent_file "$KILOCODE_FILE" "Kilo Code" || return 1
             ;;
         auggie)
-            update_agent_file "$AUGGIE_FILE" "Auggie CLI"
+            update_agent_file "$AUGGIE_FILE" "Auggie CLI" || return 1
             ;;
         roo)
-            update_agent_file "$ROO_FILE" "Roo Code"
+            update_agent_file "$ROO_FILE" "Roo Code" || return 1
             ;;
         codebuddy)
-            update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
+            update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI" || return 1
             ;;
         qodercli)
-            update_agent_file "$QODER_FILE" "Qoder CLI"
+            update_agent_file "$QODER_FILE" "Qoder CLI" || return 1
             ;;
         amp)
-            update_agent_file "$AMP_FILE" "Amp"
+            update_agent_file "$AMP_FILE" "Amp" || return 1
             ;;
         shai)
-            update_agent_file "$SHAI_FILE" "SHAI"
+            update_agent_file "$SHAI_FILE" "SHAI" || return 1
+            ;;
+        tabnine)
+            update_agent_file "$TABNINE_FILE" "Tabnine CLI" || return 1
             ;;
         kiro-cli)
-            update_agent_file "$KIRO_FILE" "Kiro CLI"
+            update_agent_file "$KIRO_FILE" "Kiro CLI" || return 1
             ;;
         agy)
-            update_agent_file "$AGY_FILE" "Antigravity"
+            update_agent_file "$AGY_FILE" "Antigravity" || return 1
             ;;
         bob)
-            update_agent_file "$BOB_FILE" "IBM Bob"
+            update_agent_file "$BOB_FILE" "IBM Bob" || return 1
+            ;;
+        vibe)
+            update_agent_file "$VIBE_FILE" "Mistral Vibe" || return 1
+            ;;
+        kimi)
+            update_agent_file "$KIMI_FILE" "Kimi Code" || return 1
+            ;;
+        trae)
+            update_agent_file "$TRAE_FILE" "Trae" || return 1
+            ;;
+        pi)
+            update_agent_file "$AGENTS_FILE" "Pi Coding Agent" || return 1
             ;;
         generic)
             log_info "Generic agent: no predefined context file. Use the agent-specific update script for your agent."
@@ -666,105 +690,74 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|trae|kiro-cli|agy|bob|qodercli|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|generic"
             exit 1
             ;;
     esac
 }
 
+# Helper: skip non-existent files and files already updated (dedup by
+# realpath so that variables pointing to the same file — e.g. AMP_FILE,
+# KIRO_FILE, BOB_FILE all resolving to AGENTS_FILE — are only written once).
+# Uses a linear array instead of associative array for bash 3.2 compatibility.
+# Note: defined at top level because bash 3.2 does not support true
+# nested/local functions. _updated_paths, _found_agent, and _all_ok are
+# initialised exclusively inside update_all_existing_agents so that
+# sourcing this script has no side effects on the caller's environment.
+
+_update_if_new() {
+    local file="$1" name="$2"
+    [[ -f "$file" ]] || return 0
+    local real_path
+    real_path=$(realpath "$file" 2>/dev/null || echo "$file")
+    local p
+    if [[ ${#_updated_paths[@]} -gt 0 ]]; then
+        for p in "${_updated_paths[@]}"; do
+            [[ "$p" == "$real_path" ]] && return 0
+        done
+    fi
+    # Record the file as seen before attempting the update so that:
+    # (a) aliases pointing to the same path are not retried on failure
+    # (b) _found_agent reflects file existence, not update success
+    _updated_paths+=("$real_path")
+    _found_agent=true
+    update_agent_file "$file" "$name"
+}
+
 update_all_existing_agents() {
-    local found_agent=false
-    
-    # Check each possible agent file and update if it exists
-    if [[ -f "$CLAUDE_FILE" ]]; then
-        update_agent_file "$CLAUDE_FILE" "Claude Code"
-        found_agent=true
-    fi
-    
-    if [[ -f "$GEMINI_FILE" ]]; then
-        update_agent_file "$GEMINI_FILE" "Gemini CLI"
-        found_agent=true
-    fi
-    
-    if [[ -f "$COPILOT_FILE" ]]; then
-        update_agent_file "$COPILOT_FILE" "GitHub Copilot"
-        found_agent=true
-    fi
-    
-    if [[ -f "$CURSOR_FILE" ]]; then
-        update_agent_file "$CURSOR_FILE" "Cursor IDE"
-        found_agent=true
-    fi
-    
-    if [[ -f "$QWEN_FILE" ]]; then
-        update_agent_file "$QWEN_FILE" "Qwen Code"
-        found_agent=true
-    fi
-    
-    if [[ -f "$AGENTS_FILE" ]]; then
-        update_agent_file "$AGENTS_FILE" "Codex/opencode"
-        found_agent=true
-    fi
-    
-    if [[ -f "$WINDSURF_FILE" ]]; then
-        update_agent_file "$WINDSURF_FILE" "Windsurf"
-        found_agent=true
-    fi
-    
-    if [[ -f "$KILOCODE_FILE" ]]; then
-        update_agent_file "$KILOCODE_FILE" "Kilo Code"
-        found_agent=true
-    fi
+    _found_agent=false
+    _updated_paths=()
+    local _all_ok=true
 
-    if [[ -f "$AUGGIE_FILE" ]]; then
-        update_agent_file "$AUGGIE_FILE" "Auggie CLI"
-        found_agent=true
-    fi
-    
-    if [[ -f "$ROO_FILE" ]]; then
-        update_agent_file "$ROO_FILE" "Roo Code"
-        found_agent=true
-    fi
-
-    if [[ -f "$CODEBUDDY_FILE" ]]; then
-        update_agent_file "$CODEBUDDY_FILE" "CodeBuddy CLI"
-        found_agent=true
-    fi
-
-    if [[ -f "$SHAI_FILE" ]]; then
-        update_agent_file "$SHAI_FILE" "SHAI"
-        found_agent=true
-    fi
-
-    if [[ -f "$QODER_FILE" ]]; then
-        update_agent_file "$QODER_FILE" "Qoder CLI"
-        found_agent=true
-    fi
-
-    if [[ -f "$KIRO_FILE" ]]; then
-        update_agent_file "$KIRO_FILE" "Kiro CLI"
-        found_agent=true
-    fi
-
-    if [[ -f "$AGY_FILE" ]]; then
-        update_agent_file "$AGY_FILE" "Antigravity"
-        found_agent=true
-    fi
-    if [[ -f "$BOB_FILE" ]]; then
-        update_agent_file "$BOB_FILE" "IBM Bob"
-        found_agent=true
-    fi
-
-    if [[ -f "$TRAE_FILE" ]]; then
-        update_agent_file "$TRAE_FILE" "Trae"
-        found_agent=true
-    fi
+    _update_if_new "$CLAUDE_FILE" "Claude Code"           || _all_ok=false
+    _update_if_new "$GEMINI_FILE" "Gemini CLI"             || _all_ok=false
+    _update_if_new "$COPILOT_FILE" "GitHub Copilot"        || _all_ok=false
+    _update_if_new "$CURSOR_FILE" "Cursor IDE"             || _all_ok=false
+    _update_if_new "$QWEN_FILE" "Qwen Code"                || _all_ok=false
+    _update_if_new "$AGENTS_FILE" "Codex/opencode"         || _all_ok=false
+    _update_if_new "$AMP_FILE" "Amp"                       || _all_ok=false
+    _update_if_new "$KIRO_FILE" "Kiro CLI"                 || _all_ok=false
+    _update_if_new "$BOB_FILE" "IBM Bob"                   || _all_ok=false
+    _update_if_new "$WINDSURF_FILE" "Windsurf"             || _all_ok=false
+    _update_if_new "$KILOCODE_FILE" "Kilo Code"            || _all_ok=false
+    _update_if_new "$AUGGIE_FILE" "Auggie CLI"             || _all_ok=false
+    _update_if_new "$ROO_FILE" "Roo Code"                  || _all_ok=false
+    _update_if_new "$CODEBUDDY_FILE" "CodeBuddy CLI"       || _all_ok=false
+    _update_if_new "$SHAI_FILE" "SHAI"                     || _all_ok=false
+    _update_if_new "$TABNINE_FILE" "Tabnine CLI"           || _all_ok=false
+    _update_if_new "$QODER_FILE" "Qoder CLI"               || _all_ok=false
+    _update_if_new "$AGY_FILE" "Antigravity"               || _all_ok=false
+    _update_if_new "$VIBE_FILE" "Mistral Vibe"             || _all_ok=false
+    _update_if_new "$KIMI_FILE" "Kimi Code"                || _all_ok=false
+    _update_if_new "$TRAE_FILE" "Trae"                     || _all_ok=false
 
     # If no agent files exist, create a default Claude file
-    if [[ "$found_agent" == false ]]; then
+    if [[ "$_found_agent" == false ]]; then
         log_info "No existing agent files found, creating default Claude file..."
-        update_agent_file "$CLAUDE_FILE" "Claude Code"
+        update_agent_file "$CLAUDE_FILE" "Claude Code" || return 1
     fi
+
+    [[ "$_all_ok" == true ]]
 }
 print_summary() {
     echo
@@ -783,8 +776,7 @@ print_summary() {
     fi
     
     echo
-
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|trae|kiro-cli|agy|bob|qodercli]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|generic]"
 }
 
 #==============================================================================

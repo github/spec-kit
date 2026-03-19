@@ -25,6 +25,7 @@
 - [🚶 Community Walkthroughs](#-community-walkthroughs)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
+- [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
@@ -80,7 +81,13 @@ uv tool install specify-cli --force --from git+https://github.com/github/spec-ki
 Run directly without installing:
 
 ```bash
+# Create new project
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+
+# Or initialize in existing project
+uvx --from git+https://github.com/github/spec-kit.git specify init . --ai claude
+# or
+uvx --from git+https://github.com/github/spec-kit.git specify init --here --ai claude
 ```
 
 **Benefits of persistent installation:**
@@ -148,7 +155,13 @@ See Spec-Driven Development in action across different scenarios with these comm
 
 - **[Greenfield Spring Boot + React platform](https://github.com/mnriem/spec-kit-spring-react-demo)** — Builds an LLM performance analytics platform (REST API, graphs, iteration tracking) from scratch using Spring Boot, embedded React, PostgreSQL, and Docker Compose, with a clarify step and a cross-artifact consistency analysis pass included.
 
-- **[Brownfield ASP.NET CMS extension](https://github.com/mnriem/spec-kit-aspnet-brownfield-demo)** — Extends an existing open-source .NET CMS (CarrotCakeCMS-Core) with two new features — cross-platform Docker Compose infrastructure and a token-authenticated headless REST API — demonstrating how spec-kit fits into existing codebases without prior specs or a constitution.
+- **[Brownfield ASP.NET CMS extension](https://github.com/mnriem/spec-kit-aspnet-brownfield-demo)** — Extends an existing open-source .NET CMS (CarrotCakeCMS-Core, ~307,000 lines of C#, Razor, SQL, JavaScript, and config files) with two new features — cross-platform Docker Compose infrastructure and a token-authenticated headless REST API — demonstrating how spec-kit fits into existing codebases without prior specs or a constitution.
+
+- **[Brownfield Java runtime extension](https://github.com/mnriem/spec-kit-java-brownfield-demo)** — Extends an existing open-source Jakarta EE runtime (Piranha, ~420,000 lines of Java, XML, JSP, HTML, and config files across 180 Maven modules) with a password-protected Server Admin Console, demonstrating spec-kit on a large multi-module Java project with no prior specs or constitution.
+
+- **[Brownfield Go / React dashboard demo](https://github.com/mnriem/spec-kit-go-brownfield-demo)** — Demonstrates spec-kit driven entirely from the **terminal using GitHub Copilot CLI**. Extends NASA's open-source Hermes ground support system (Go) with a lightweight React-based web telemetry dashboard, showing that the full constitution → specify → plan → tasks → implement workflow works from the terminal.
+
+- **[Greenfield Spring Boot MVC with a custom preset](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo)** — Builds a Spring Boot MVC application from scratch using a custom pirate-speak preset, demonstrating how presets can reshape the entire spec-kit experience: specifications become "Voyage Manifests," plans become "Battle Plans," and tasks become "Crew Assignments" — all generated in full pirate vernacular without changing any tooling.
 
 ## 🤖 Supported AI Agents
 
@@ -168,12 +181,16 @@ See Spec-Driven Development in action across different scenarios with these comm
 | [Jules](https://jules.google.com/)                                                   | ✅      |                                                                                                                                           |
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | ✅      |                                                                                                                                           |
 | [opencode](https://opencode.ai/)                                                     | ✅      |                                                                                                                                           |
+| [Pi Coding Agent](https://pi.dev)                                                    | ✅      | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | ✅      |                                                                                                                                           |
 | [Roo Code](https://roocode.com/)                                                     | ✅      |                                                                                                                                           |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | ✅      |                                                                                                                                           |
+| [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | ✅      |                                                                                                                                           |
+| [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | ✅      |                                                                                                                                           |
+| [Kimi Code](https://code.kimi.com/)                                                  | ✅      |                                                                                                                                           |
 | [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
-| [Trae](https://trae.ai/)                                                             | ✅      |                                                                                                                                           |
-| [Antigravity (agy)](https://antigravity.google/)                                     | ✅      |                                                                                                                                           |
+| [Antigravity (agy)](https://antigravity.google/)                                     | ✅      | Requires `--ai-skills` |
+| [Trae](https://www.trae.ai/)                                                         | ✅      |                                                                                                                                           |
 | Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                 |
 
 ## 🔧 Specify CLI Reference
@@ -185,24 +202,24 @@ The `specify` command supports the following options:
 | Command | Description                                                                                                                                             |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `init`  | Initialize a new Specify project from the latest template                                                                                               |
-| `check` | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`, `kiro-cli`, `shai`, `qodercli`) |
+| `check` | Check for installed tools (`git`, `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `qwen`, `opencode`, `codex`, `kiro-cli`, `shai`, `qodercli`, `vibe`, `kimi`, `pi`) |
 
 ### `specify init` Arguments & Options
 
-| Argument/Option        | Type     | Description                                                                                                                                                                                                                                                                    |
-| ---------------------- | -------- |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                                                                                                             |
-| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `trae`, `qodercli`, or `generic` (requires `--ai-commands-dir`) |
-| `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                                                                                                    |
-| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                                                                                                    |
-| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                                                                                                                |
-| `--no-git`             | Flag     | Skip git repository initialization                                                                                                                                                                                                                                             |
-| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                                                                                                                                                      |
-| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                                                                                                                                                               |
-| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                                                                                                    |
-| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                                                                                                               |
-| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                                                                                                      |
-| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`)                                                                                                                                                                            |
+| Argument/Option        | Type     | Description                                                                                                                                                                                                                                                                                          |
+| ---------------------- | -------- |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                                                                                                                                   |
+| `--ai`                 | Option   | AI assistant to use: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `qodercli`, `trae`, `vibe`, `kimi`, `pi`, or `generic` (requires `--ai-commands-dir`) |
+| `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                                                                                                                          |
+| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                                                                                                                          |
+| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                                                                                                                                      |
+| `--no-git`             | Flag     | Skip git repository initialization                                                                                                                                                                                                                                                                   |
+| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                                                                                                                                                                            |
+| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                                                                                                                                                                                     |
+| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                                                                                                                          |
+| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                                                                                                                                     |
+| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                                                                                                                            |
+| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`)                                                                                                                                                                                                  |
 
 ### Examples
 
@@ -231,11 +248,17 @@ specify init my-project --ai amp
 # Initialize with SHAI support
 specify init my-project --ai shai
 
+# Initialize with Mistral Vibe support
+specify init my-project --ai vibe
+
 # Initialize with IBM Bob support
 specify init my-project --ai bob
 
+# Initialize with Pi Coding Agent support
+specify init my-project --ai pi
+
 # Initialize with Antigravity support
-specify init my-project --ai agy
+specify init my-project --ai agy --ai-skills
 
 # Initialize with an unsupported agent (generic / bring your own agent)
 specify init my-project --ai generic --ai-commands-dir .myagent/commands/
@@ -306,6 +329,68 @@ Additional commands for enhanced quality and validation:
 | Variable          | Description                                                                                                                                                                                                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+
+## 🧩 Making Spec Kit Your Own: Extensions & Presets
+
+Spec Kit can be tailored to your needs through two complementary systems — **extensions** and **presets** — plus project-local overrides for one-off adjustments:
+
+```mermaid
+block-beta
+    columns 1
+    overrides["⬆ Highest priority\nProject-Local Overrides\n.specify/templates/overrides/"]
+    presets["Presets — Customize core & extensions\n.specify/presets/<preset-id>/templates/"]
+    extensions["Extensions — Add new capabilities\n.specify/extensions/<ext-id>/templates/"]
+    core["Spec Kit Core — Built-in SDD commands & templates\n.specify/templates/\n⬇ Lowest priority"]
+
+    style overrides fill:transparent,stroke:#999
+    style presets fill:transparent,stroke:#4a9eda
+    style extensions fill:transparent,stroke:#4a9e4a
+    style core fill:transparent,stroke:#e6a817
+```
+
+**Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. **Commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`). If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically. If no overrides or customizations exist, Spec Kit uses its core defaults.
+
+### Extensions — Add New Capabilities
+
+Use **extensions** when you need functionality that goes beyond Spec Kit's core. Extensions introduce new commands and templates — for example, adding domain-specific workflows that are not covered by the built-in SDD commands, integrating with external tools, or adding entirely new development phases. They expand *what Spec Kit can do*.
+
+```bash
+# Search available extensions
+specify extension search
+
+# Install an extension
+specify extension add <extension-name>
+```
+
+For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
+
+See the [Extensions README](./extensions/README.md) for the full guide, the complete community catalog, and how to build and publish your own.
+
+### Presets — Customize Existing Workflows
+
+Use **presets** when you want to change *how* Spec Kit works without adding new capabilities. Presets override the templates and commands that ship with the core *and* with installed extensions — for example, enforcing a compliance-oriented spec format, using domain-specific terminology, or applying organizational standards to plans and tasks. They customize the artifacts and instructions that Spec Kit and its extensions produce.
+
+```bash
+# Search available presets
+specify preset search
+
+# Install a preset
+specify preset add <preset-name>
+```
+
+For example, presets could restructure spec templates to require regulatory traceability, adapt the workflow to fit the methodology you use (e.g., Agile, Kanban, Waterfall, jobs-to-be-done, or domain-driven design), add mandatory security review gates to plans, enforce test-first task ordering, or localize the entire workflow to a different language. The [pirate-speak demo](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo) shows just how deep the customization can go. Multiple presets can be stacked with priority ordering.
+
+See the [Presets README](./presets/README.md) for the full guide, including resolution order, priority, and how to create your own.
+
+### When to Use Which
+
+| Goal | Use |
+| --- | --- |
+| Add a brand-new command or workflow | Extension |
+| Customize the format of specs, plans, or tasks | Preset |
+| Integrate an external tool or service | Extension |
+| Enforce organizational or regulatory standards | Preset |
+| Ship reusable domain-specific templates | Either — presets for template overrides, extensions for templates bundled with new commands |
 
 ## 📚 Core Philosophy
 
@@ -414,7 +499,7 @@ specify init . --force --ai claude
 specify init --here --force --ai claude
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, or Kiro CLI installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools

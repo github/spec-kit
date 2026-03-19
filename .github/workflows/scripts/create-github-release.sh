@@ -46,14 +46,22 @@ gh release create "$VERSION" \
   .genreleases/spec-kit-template-amp-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-shai-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-shai-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-tabnine-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-tabnine-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-kiro-cli-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-kiro-cli-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-agy-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-agy-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-bob-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-bob-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-vibe-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-vibe-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-kimi-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-kimi-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-trae-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-trae-ps-"$VERSION".zip \
+  .genreleases/spec-kit-template-pi-sh-"$VERSION".zip \
+  .genreleases/spec-kit-template-pi-ps-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-sh-"$VERSION".zip \
   .genreleases/spec-kit-template-generic-ps-"$VERSION".zip \
   --title "Spec Kit Templates - $VERSION_NO_V" \

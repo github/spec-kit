@@ -9,8 +9,8 @@ handoffs:
     prompt: Clarify specification requirements
     send: true
 scripts:
-  sh: scripts/bash/create-new-feature.sh --json "{ARGS}"
-  ps: scripts/powershell/create-new-feature.ps1 -Json "{ARGS}"
+  sh: scripts/bash/create-new-feature.sh "{ARGS}"
+  ps: scripts/powershell/create-new-feature.ps1 "{ARGS}"
 ---
 
 ## User Input
@@ -39,33 +39,14 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Check for existing branches before creating new one**:
+2. **Create the feature branch** by running the script with `--short-name` (and `--json`), and do NOT pass `--number` (the script auto-detects the next globally available number across all branches and spec directories):
 
-   a. First, fetch all remote branches to ensure we have the latest information:
-
-      ```bash
-      git fetch --all --prune
-      ```
-
-   b. Find the highest feature number across all sources for the short-name:
-      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
-      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
-      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
-
-   c. Determine the next available number:
-      - Extract all numbers from all three sources
-      - Find the highest number N
-      - Use N+1 for the new branch number
-
-   d. Run the script `{SCRIPT}` with the calculated number and short-name:
-      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `{SCRIPT} --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `{SCRIPT} -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
+   - Bash example: `{SCRIPT} --json --short-name "user-auth" "Add user authentication"`
+   - PowerShell example: `{SCRIPT} -Json -ShortName "user-auth" "Add user authentication"`
 
    **IMPORTANT**:
-   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
-   - Only match branches/directories with the exact short-name pattern
-   - If no existing branches/directories found with this short-name, start with number 1
+   - Do NOT pass `--number` — the script determines the correct next number automatically
+   - Always include the JSON flag (`--json` for Bash, `-Json` for PowerShell) so the output can be parsed reliably
    - You must only ever run this script once per feature
    - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
@@ -148,7 +129,7 @@ Given that feature description, do this:
 
    c. **Handle Validation Results**:
 
-      - **If all items pass**: Mark checklist complete and proceed to step 6
+      - **If all items pass**: Mark checklist complete and proceed to step 7
 
       - **If items fail (excluding [NEEDS CLARIFICATION])**:
         1. List the failing items and specific issues
@@ -196,8 +177,6 @@ Given that feature description, do this:
 7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
 **NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
-
-## General Guidelines
 
 ## Quick Guidelines
 
