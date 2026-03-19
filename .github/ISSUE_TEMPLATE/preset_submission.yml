@@ -72,8 +72,8 @@ body:
     id: download-url
     attributes:
       label: Download URL
-      description: URL to the GitHub release archive (e.g., v1.0.0.zip)
-      placeholder: "https://github.com/your-org/spec-kit-your-preset/archive/refs/tags/v1.0.0.zip"
+      description: URL to the GitHub release archive for your preset (e.g., https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip)
+      placeholder: "https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip"
     validations:
       required: true
 
