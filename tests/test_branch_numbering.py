@@ -55,10 +55,13 @@ class TestBranchNumberingValidation:
         from typer.testing import CliRunner
         from specify_cli import app
 
-        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
+        def _fake_download(project_path, *args, **kwargs):
+            Path(project_path).mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--ai", "claude", "--branch-numbering", "sequential"])
+        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--ai", "claude", "--branch-numbering", "sequential", "--ignore-agent-tools"])
         assert result.exit_code == 0
         assert "Invalid --branch-numbering" not in (result.output or "")
 
@@ -66,9 +69,12 @@ class TestBranchNumberingValidation:
         from typer.testing import CliRunner
         from specify_cli import app
 
-        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
+        def _fake_download(project_path, *args, **kwargs):
+            Path(project_path).mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--ai", "claude", "--branch-numbering", "timestamp"])
+        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--ai", "claude", "--branch-numbering", "timestamp", "--ignore-agent-tools"])
         assert result.exit_code == 0
         assert "Invalid --branch-numbering" not in (result.output or "")
