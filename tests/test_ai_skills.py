@@ -471,8 +471,7 @@ class TestInstallAiSkills:
         skills_dir = _get_skills_dir(proj, agent_key)
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-        # Kimi uses dot-separator (speckit.specify) to match /skill:speckit.* invocation;
-        # all other agents use hyphen-separator (speckit-specify).
+        # Kimi uses dotted skill names; other agents use hyphen-separated names.
         expected_skill_name = "speckit.specify" if agent_key == "kimi" else "speckit-specify"
         assert expected_skill_name in skill_dirs
         assert (skills_dir / expected_skill_name / "SKILL.md").exists()
@@ -694,6 +693,82 @@ class TestNewProjectCommandSkip:
         prompts_dir = target / ".kiro" / "prompts"
         assert not prompts_dir.exists()
 
+    def test_codex_native_skills_preserved_without_conversion(self, tmp_path):
+        """Codex should keep bundled .agents/skills and skip install_ai_skills conversion."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "new-codex-proj"
+
+        def fake_download(project_path, *args, **kwargs):
+            skill_dir = project_path / ".agents" / "skills" / "speckit-specify"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 0
+        mock_skills.assert_not_called()
+        assert (target / ".agents" / "skills" / "speckit-specify" / "SKILL.md").exists()
+
+    def test_codex_native_skills_missing_fails_clearly(self, tmp_path):
+        """Codex native skills init should fail if bundled skills are missing."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "missing-codex-skills"
+
+        with patch("specify_cli.download_and_extract_template", lambda *args, **kwargs: None), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 1
+        mock_skills.assert_not_called()
+        assert "Expected bundled agent skills" in result.output
+
+    def test_codex_native_skills_ignores_non_speckit_skill_dirs(self, tmp_path):
+        """Non-spec-kit SKILL.md files should not satisfy Codex bundled-skills validation."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "foreign-codex-skills"
+
+        def fake_download(project_path, *args, **kwargs):
+            skill_dir = project_path / ".agents" / "skills" / "other-tool"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Foreign skill\n---\n\nBody.\n")
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 1
+        mock_skills.assert_not_called()
+        assert "Expected bundled agent skills" in result.output
+
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
         from typer.testing import CliRunner
@@ -837,6 +912,17 @@ class TestCliValidation:
         assert "Explicit command support was deprecated in Antigravity version 1.20.5." in result.output
         assert "--ai-skills" in result.output
 
+    def test_codex_without_ai_skills_fails(self):
+        """--ai codex without --ai-skills should fail with exit code 1."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "test-proj", "--ai", "codex"])
+
+        assert result.exit_code == 1
+        assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" in result.output
+        assert "--ai-skills" in result.output
+
     def test_interactive_agy_without_ai_skills_prompts_skills(self, monkeypatch):
         """Interactive selector returning agy without --ai-skills should automatically enable --ai-skills."""
         from typer.testing import CliRunner
@@ -878,6 +964,48 @@ class TestCliValidation:
             # Interactive selection should NOT raise the deprecation error!
             assert result.exit_code == 0
             assert "Explicit command support was deprecated" not in result.output
+
+    def test_interactive_codex_without_ai_skills_enables_skills(self, monkeypatch):
+        """Interactive selector returning codex without --ai-skills should automatically enable --ai-skills."""
+        from typer.testing import CliRunner
+
+        def _fake_select_with_arrows(*args, **kwargs):
+            options = kwargs.get("options")
+            if options is None and len(args) >= 1:
+                options = args[0]
+
+            if isinstance(options, dict) and "codex" in options:
+                return "codex"
+            if isinstance(options, (list, tuple)) and "codex" in options:
+                return "codex"
+
+            if isinstance(options, dict) and options:
+                return next(iter(options.keys()))
+            if isinstance(options, (list, tuple)) and options:
+                return options[0]
+
+            return None
+
+        monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
+
+        def _fake_download(*args, **kwargs):
+            project_path = Path(args[0])
+            skill_dir = project_path / ".agents" / "skills" / "speckit-specify"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
+
+        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result = runner.invoke(app, ["init", "test-proj", "--no-git", "--ignore-agent-tools"])
+
+            assert result.exit_code == 0
+            assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" not in result.output
+            assert ".agents/skills" in result.output
+            assert "$speckit-constitution" in result.output
+            assert "/speckit.constitution" not in result.output
+            assert "Optional skills that you can use for your specs" in result.output
 
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""

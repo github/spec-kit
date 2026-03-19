@@ -99,7 +99,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here --ai c
 
 ### 2. Establish project principles
 
-Launch your AI assistant in the project directory. The `/speckit.*` commands are available in the assistant.
+Launch your AI assistant in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.
 
 Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
 
@@ -173,7 +173,7 @@ See Spec-Driven Development in action across different scenarios with these comm
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | ✅      |                                                                                                                                           |
 | [Claude Code](https://www.anthropic.com/claude-code)                                 | ✅      |                                                                                                                                           |
 | [CodeBuddy CLI](https://www.codebuddy.ai/cli)                                        | ✅      |                                                                                                                                           |
-| [Codex CLI](https://github.com/openai/codex)                                         | ✅      |                                                                                                                                           |
+| [Codex CLI](https://github.com/openai/codex)                                         | ✅      | Requires `--ai-skills`. Codex recommends [skills](https://developers.openai.com/codex/skills) and treats [custom prompts](https://developers.openai.com/codex/custom-prompts) as deprecated. Spec-kit installs Codex skills into `.agents/skills` and invokes them as `$speckit-<command>`. |
 | [Cursor](https://cursor.sh/)                                                         | ✅      |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | ✅      |                                                                                                                                           |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | ✅      |                                                                                                                                           |
@@ -257,6 +257,9 @@ specify init my-project --ai bob
 # Initialize with Pi Coding Agent support
 specify init my-project --ai pi
 
+# Initialize with Codex CLI support
+specify init my-project --ai codex --ai-skills
+
 # Initialize with Antigravity support
 specify init my-project --ai agy --ai-skills
 
@@ -297,7 +300,9 @@ specify check
 
 ### Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development:
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development.
+
+For Codex CLI, `--ai-skills` installs spec-kit as agent skills instead of slash-command prompt files. In Codex skills mode, invoke spec-kit as `$speckit-constitution`, `$speckit-specify`, `$speckit-plan`, `$speckit-tasks`, and `$speckit-implement`.
 
 #### Core Commands
 
@@ -483,11 +488,11 @@ specify init <project_name> --ai copilot
 
 # Or in current directory:
 specify init . --ai claude
-specify init . --ai codex
+specify init . --ai codex --ai-skills
 
 # or use --here flag
 specify init --here --ai claude
-specify init --here --ai codex
+specify init --here --ai codex --ai-skills
 
 # Force merge into a non-empty current directory
 specify init . --force --ai claude

@@ -589,9 +589,10 @@ class TestCommandRegistrar:
         assert "q" not in CommandRegistrar.AGENT_CONFIGS
 
     def test_codex_agent_config_present(self):
-        """Codex should be mapped to .codex/prompts."""
+        """Codex should be mapped to .agents/skills."""
         assert "codex" in CommandRegistrar.AGENT_CONFIGS
-        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".codex/prompts"
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".agents/skills"
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["extension"] == "/SKILL.md"
 
     def test_pi_agent_config_present(self):
         """Pi should be mapped to .pi/prompts."""
@@ -731,6 +732,172 @@ $ARGUMENTS
         assert "speckit.shortcut" in registered
         assert (claude_dir / "speckit.alias.cmd.md").exists()
         assert (claude_dir / "speckit.shortcut.md").exists()
+
+    def test_unregister_commands_for_codex_skills_uses_mapped_names(self, project_dir):
+        """Codex skill cleanup should use the same mapped names as registration."""
+        skills_dir = project_dir / ".agents" / "skills"
+        (skills_dir / "speckit-specify").mkdir(parents=True)
+        (skills_dir / "speckit-specify" / "SKILL.md").write_text("body")
+        (skills_dir / "speckit-shortcut").mkdir(parents=True)
+        (skills_dir / "speckit-shortcut" / "SKILL.md").write_text("body")
+
+        registrar = CommandRegistrar()
+        registrar.unregister_commands(
+            {"codex": ["speckit.specify", "speckit.shortcut"]},
+            project_dir,
+        )
+
+        assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
+
+    def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
+        """A Codex project under .agents/skills should not implicitly activate Amp."""
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
+
+        assert "codex" in registered
+        assert "amp" not in registered
+        assert not (project_dir / ".agents" / "commands").exists()
+
+    def test_codex_skill_registration_writes_skill_frontmatter(self, extension_dir, project_dir):
+        """Codex SKILL.md output should use skills-oriented frontmatter."""
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, extension_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-test.hello" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert "name: speckit-test.hello" in content
+        assert "description: Test hello command" in content
+        assert "compatibility:" in content
+        assert "metadata:" in content
+        assert "source: test-ext:commands/hello.md" in content
+        assert "<!-- Extension:" not in content
+
+    def test_codex_skill_registration_resolves_script_placeholders(self, project_dir, temp_dir):
+        """Codex SKILL.md overrides should resolve script placeholders."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-scripted"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-scripted",
+                "name": "Scripted Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.test.plan",
+                        "file": "commands/plan.md",
+                        "description": "Scripted command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            """---
+description: "Scripted command"
+scripts:
+  sh: scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: scripts/powershell/setup-plan.ps1 -Json
+agent_scripts:
+  sh: scripts/bash/update-agent-context.sh __AGENT__
+  ps: scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
+---
+
+Run {SCRIPT}
+Then {AGENT_SCRIPT}
+Agent __AGENT__
+"""
+        )
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text('{"ai":"codex","ai_skills":true,"script":"sh"}')
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-test.plan" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert "{SCRIPT}" not in content
+        assert "{AGENT_SCRIPT}" not in content
+        assert "__AGENT__" not in content
+        assert "{ARGS}" not in content
+        assert 'scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert "scripts/bash/update-agent-context.sh codex" in content
+
+    def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
+        """Codex alias skills should render their own matching `name:` frontmatter."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-alias-skill"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-alias-skill",
+                "name": "Alias Skill Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.alias.cmd",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.shortcut"],
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Alias skill\n---\n\nBody\n")
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        primary = skills_dir / "speckit-alias.cmd" / "SKILL.md"
+        alias = skills_dir / "speckit-shortcut" / "SKILL.md"
+
+        assert primary.exists()
+        assert alias.exists()
+        assert "name: speckit-alias.cmd" in primary.read_text()
+        assert "name: speckit-shortcut" in alias.read_text()
 
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""

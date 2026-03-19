@@ -59,10 +59,10 @@ class CommandRegistrar:
             "extension": ".md"
         },
         "codex": {
-            "dir": ".codex/prompts",
+            "dir": ".agents/skills",
             "format": "markdown",
             "args": "$ARGUMENTS",
-            "extension": ".md"
+            "extension": "/SKILL.md",
         },
         "windsurf": {
             "dir": ".windsurf/workflows",
@@ -140,7 +140,7 @@ class CommandRegistrar:
             "dir": ".kimi/skills",
             "format": "markdown",
             "args": "$ARGUMENTS",
-            "extension": "/SKILL.md"
+            "extension": "/SKILL.md",
         },
         "trae": {
             "dir": ".trae/rules",
@@ -264,6 +264,69 @@ class CommandRegistrar:
 
         return "\n".join(toml_lines)
 
+    def render_skill_command(
+        self,
+        agent_name: str,
+        skill_name: str,
+        frontmatter: dict,
+        body: str,
+        source_id: str,
+        source_file: str,
+        project_root: Path,
+    ) -> str:
+        """Render a command override as a SKILL.md file.
+
+        SKILL-target agents should receive the same skills-oriented
+        frontmatter shape used elsewhere in the project instead of the
+        original command frontmatter.
+        """
+        if agent_name == "codex":
+            body = self._resolve_codex_skill_placeholders(frontmatter, body, project_root)
+
+        description = frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
+        skill_frontmatter = {
+            "name": skill_name,
+            "description": description,
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+            "metadata": {
+                "author": "github-spec-kit",
+                "source": f"{source_id}:{source_file}",
+            },
+        }
+        return self.render_frontmatter(skill_frontmatter) + "\n" + body
+
+    @staticmethod
+    def _resolve_codex_skill_placeholders(frontmatter: dict, body: str, project_root: Path) -> str:
+        """Resolve script placeholders for Codex skill overrides.
+
+        This intentionally scopes the fix to Codex, which is the newly
+        migrated runtime path in this PR. Existing Kimi behavior is left
+        unchanged for now.
+        """
+        try:
+            from . import load_init_options
+        except ImportError:
+            return body
+
+        script_variant = load_init_options(project_root).get("script")
+        if script_variant not in {"sh", "ps"}:
+            return body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", "codex")
+
+        scripts = frontmatter.get("scripts", {}) or {}
+        agent_scripts = frontmatter.get("agent_scripts", {}) or {}
+
+        script_command = scripts.get(script_variant)
+        if script_command:
+            script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
+            body = body.replace("{SCRIPT}", script_command)
+
+        agent_script_command = agent_scripts.get(script_variant)
+        if agent_script_command:
+            agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
+            body = body.replace("{AGENT_SCRIPT}", agent_script_command)
+
+        return body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", "codex")
+
     def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
         """Convert argument placeholder format.
 
@@ -276,6 +339,18 @@ class CommandRegistrar:
             Content with converted placeholders
         """
         return content.replace(from_placeholder, to_placeholder)
+
+    @staticmethod
+    def _compute_output_name(agent_name: str, cmd_name: str, agent_config: Dict[str, Any]) -> str:
+        """Compute the on-disk command or skill name for an agent."""
+        if agent_config["extension"] != "/SKILL.md":
+            return cmd_name
+
+        short_name = cmd_name
+        if short_name.startswith("speckit."):
+            short_name = short_name[len("speckit."):]
+
+        return f"speckit.{short_name}" if agent_name == "kimi" else f"speckit-{short_name}"
 
     def register_commands(
         self,
@@ -328,14 +403,20 @@ class CommandRegistrar:
                 body, "$ARGUMENTS", agent_config["args"]
             )
 
-            if agent_config["format"] == "markdown":
+            output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
+
+            if agent_config["extension"] == "/SKILL.md":
+                output = self.render_skill_command(
+                    agent_name, output_name, frontmatter, body, source_id, cmd_file, project_root
+                )
+            elif agent_config["format"] == "markdown":
                 output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
                 output = self.render_toml_command(frontmatter, body, source_id)
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
-            dest_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+            dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(output, encoding="utf-8")
 
@@ -345,9 +426,15 @@ class CommandRegistrar:
             registered.append(cmd_name)
 
             for alias in cmd_info.get("aliases", []):
-                alias_file = commands_dir / f"{alias}{agent_config['extension']}"
+                alias_output_name = self._compute_output_name(agent_name, alias, agent_config)
+                alias_output = output
+                if agent_config["extension"] == "/SKILL.md":
+                    alias_output = self.render_skill_command(
+                        agent_name, alias_output_name, frontmatter, body, source_id, cmd_file, project_root
+                    )
+                alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
-                alias_file.write_text(output, encoding="utf-8")
+                alias_file.write_text(alias_output, encoding="utf-8")
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
                 registered.append(alias)
@@ -390,7 +477,7 @@ class CommandRegistrar:
         results = {}
 
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
-            agent_dir = project_root / agent_config["dir"].split("/")[0]
+            agent_dir = project_root / agent_config["dir"]
 
             if agent_dir.exists():
                 try:
@@ -424,7 +511,8 @@ class CommandRegistrar:
             commands_dir = project_root / agent_config["dir"]
 
             for cmd_name in cmd_names:
-                cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+                output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
+                cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                 if cmd_file.exists():
                     cmd_file.unlink()
 
