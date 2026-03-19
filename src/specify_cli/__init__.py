@@ -1411,9 +1411,13 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 
 
 def _has_bundled_skills(project_path: Path, selected_ai: str) -> bool:
-    """Return True when a native-skills agent has at least one bundled SKILL.md."""
+    """Return True when a native-skills agent has spec-kit bundled skills."""
     skills_dir = _get_skills_dir(project_path, selected_ai)
-    return skills_dir.is_dir() and any(skills_dir.glob("*/SKILL.md"))
+    if not skills_dir.is_dir():
+        return False
+
+    pattern = "speckit.*/SKILL.md" if selected_ai == "kimi" else "speckit-*/SKILL.md"
+    return any(skills_dir.glob(pattern))
 
 
 AGENT_SKILLS_MIGRATIONS = {

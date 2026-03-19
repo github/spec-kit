@@ -742,6 +742,33 @@ class TestNewProjectCommandSkip:
         mock_skills.assert_not_called()
         assert "Expected bundled agent skills" in result.output
 
+    def test_codex_native_skills_ignores_non_speckit_skill_dirs(self, tmp_path):
+        """Non-spec-kit SKILL.md files should not satisfy Codex bundled-skills validation."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "foreign-codex-skills"
+
+        def fake_download(project_path, *args, **kwargs):
+            skill_dir = project_path / ".agents" / "skills" / "other-tool"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Foreign skill\n---\n\nBody.\n")
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 1
+        mock_skills.assert_not_called()
+        assert "Expected bundled agent skills" in result.output
+
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
         from typer.testing import CliRunner
