@@ -1,6 +1,10 @@
 ---
 description: Create or update the feature specification from a natural language feature description.
-handoffs: 
+handoffs:
+  - label: Create Technical RFC
+    agent: speckit.rfc
+    prompt: Create an RFC for the spec
+    send: true
   - label: Build Technical Plan
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
