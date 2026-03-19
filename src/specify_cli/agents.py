@@ -176,6 +176,9 @@ class CommandRegistrar:
         except yaml.YAMLError:
             frontmatter = {}
 
+        if not isinstance(frontmatter, dict):
+            frontmatter = {}
+
         return frontmatter, body
 
     @staticmethod
@@ -280,6 +283,9 @@ class CommandRegistrar:
         frontmatter shape used elsewhere in the project instead of the
         original command frontmatter.
         """
+        if not isinstance(frontmatter, dict):
+            frontmatter = {}
+
         if agent_name == "codex":
             body = self._resolve_codex_skill_placeholders(frontmatter, body, project_root)
 
@@ -308,19 +314,39 @@ class CommandRegistrar:
         except ImportError:
             return body
 
-        script_variant = load_init_options(project_root).get("script")
-        if script_variant not in {"sh", "ps"}:
-            return body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", "codex")
+        if not isinstance(frontmatter, dict):
+            frontmatter = {}
 
         scripts = frontmatter.get("scripts", {}) or {}
         agent_scripts = frontmatter.get("agent_scripts", {}) or {}
+        if not isinstance(scripts, dict):
+            scripts = {}
+        if not isinstance(agent_scripts, dict):
+            agent_scripts = {}
 
-        script_command = scripts.get(script_variant)
+        script_variant = load_init_options(project_root).get("script")
+        if script_variant not in {"sh", "ps"}:
+            fallback_order = []
+            if "sh" in scripts or "sh" in agent_scripts:
+                fallback_order.append("sh")
+            if "ps" in scripts or "ps" in agent_scripts:
+                fallback_order.append("ps")
+
+            for key in scripts:
+                if key not in fallback_order:
+                    fallback_order.append(key)
+            for key in agent_scripts:
+                if key not in fallback_order:
+                    fallback_order.append(key)
+
+            script_variant = fallback_order[0] if fallback_order else None
+
+        script_command = scripts.get(script_variant) if script_variant else None
         if script_command:
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 
-        agent_script_command = agent_scripts.get(script_variant)
+        agent_script_command = agent_scripts.get(script_variant) if script_variant else None
         if agent_script_command:
             agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{AGENT_SCRIPT}", agent_script_command)

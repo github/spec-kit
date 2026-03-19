@@ -642,6 +642,21 @@ $ARGUMENTS
         assert frontmatter == {}
         assert body == content
 
+    def test_parse_frontmatter_non_mapping_returns_empty_dict(self):
+        """Non-mapping YAML frontmatter should not crash downstream renderers."""
+        content = """---
+- item1
+- item2
+---
+
+# Command body
+"""
+        registrar = CommandRegistrar()
+        frontmatter, body = registrar.parse_frontmatter(content)
+
+        assert frontmatter == {}
+        assert "Command body" in body
+
     def test_render_frontmatter(self):
         """Test rendering frontmatter to YAML."""
         frontmatter = {
@@ -898,6 +913,69 @@ Agent __AGENT__
         assert alias.exists()
         assert "name: speckit-alias.cmd" in primary.read_text()
         assert "name: speckit-shortcut" in alias.read_text()
+
+    def test_codex_skill_registration_uses_fallback_script_variant_without_init_options(
+        self, project_dir, temp_dir
+    ):
+        """Codex placeholder substitution should still work without init-options.json."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-script-fallback"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-script-fallback",
+                "name": "Script fallback",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fallback.plan",
+                        "file": "commands/plan.md",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            """---
+description: "Fallback scripted command"
+scripts:
+  sh: scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: scripts/powershell/setup-plan.ps1 -Json
+agent_scripts:
+  sh: scripts/bash/update-agent-context.sh __AGENT__
+---
+
+Run {SCRIPT}
+Then {AGENT_SCRIPT}
+"""
+        )
+
+        # Intentionally do NOT create .specify/init-options.json
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-fallback.plan" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert "{SCRIPT}" not in content
+        assert "{AGENT_SCRIPT}" not in content
+        assert 'scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert "scripts/bash/update-agent-context.sh codex" in content
 
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
