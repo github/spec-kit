@@ -285,8 +285,8 @@ class ExtensionRegistry:
         # Handle corrupted registry entries (e.g., string/list instead of dict)
         if not isinstance(existing, dict):
             existing = {}
-        # Merge: existing fields preserved, new fields override
-        merged = {**existing, **metadata}
+        # Merge: existing fields preserved, new fields override (deep copy to prevent caller mutation)
+        merged = {**existing, **copy.deepcopy(metadata)}
         # Always preserve original installed_at based on key existence, not truthiness,
         # to handle cases where the field exists but may be falsy (legacy/corruption)
         if "installed_at" in existing:
