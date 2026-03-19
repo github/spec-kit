@@ -9,6 +9,7 @@ command files into agent-specific directories in the correct format.
 from pathlib import Path
 from typing import Dict, List, Any
 
+import platform
 import yaml
 
 
@@ -330,10 +331,13 @@ class CommandRegistrar:
         script_variant = load_init_options(project_root).get("script")
         if script_variant not in {"sh", "ps"}:
             fallback_order = []
-            if "sh" in scripts or "sh" in agent_scripts:
-                fallback_order.append("sh")
-            if "ps" in scripts or "ps" in agent_scripts:
-                fallback_order.append("ps")
+            default_variant = "ps" if platform.system().lower().startswith("win") else "sh"
+            secondary_variant = "sh" if default_variant == "ps" else "ps"
+
+            if default_variant in scripts or default_variant in agent_scripts:
+                fallback_order.append(default_variant)
+            if secondary_variant in scripts or secondary_variant in agent_scripts:
+                fallback_order.append(secondary_variant)
 
             for key in scripts:
                 if key not in fallback_order:

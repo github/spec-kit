@@ -977,6 +977,70 @@ Then {AGENT_SCRIPT}
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
         assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
+    def test_codex_skill_registration_fallback_prefers_powershell_on_windows(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Without init metadata, Windows fallback should prefer ps scripts over sh."""
+        import yaml
+
+        monkeypatch.setattr("specify_cli.agents.platform.system", lambda: "Windows")
+
+        ext_dir = temp_dir / "ext-script-windows-fallback"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-script-windows-fallback",
+                "name": "Script fallback windows",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.windows.plan",
+                        "file": "commands/plan.md",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            """---
+description: "Windows fallback scripted command"
+scripts:
+  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: ../../scripts/powershell/setup-plan.ps1 -Json
+agent_scripts:
+  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
+  ps: ../../scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
+---
+
+Run {SCRIPT}
+Then {AGENT_SCRIPT}
+"""
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-windows.plan" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
+        assert ".specify/scripts/powershell/update-agent-context.ps1 -AgentType codex" in content
+        assert ".specify/scripts/bash/setup-plan.sh" not in content
+
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
         # Create .github/agents directory (Copilot project)

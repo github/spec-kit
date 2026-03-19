@@ -1871,11 +1871,15 @@ def init(
         step_num += 1
 
     codex_skill_mode = selected_ai == "codex" and ai_skills
-    usage_label = "skills" if codex_skill_mode else "slash commands"
+    kimi_skill_mode = selected_ai == "kimi"
+    native_skill_mode = codex_skill_mode or kimi_skill_mode
+    usage_label = "skills" if native_skill_mode else "slash commands"
 
     def _display_cmd(name: str) -> str:
         if codex_skill_mode:
             return f"$speckit-{name}"
+        if kimi_skill_mode:
+            return f"/skill:speckit.{name}"
         return f"/speckit.{name}"
 
     steps_lines.append(f"{step_num}. Start using {usage_label} with your AI agent:")
@@ -1892,7 +1896,7 @@ def init(
 
     enhancement_intro = (
         "Optional skills that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]"
-        if codex_skill_mode
+        if native_skill_mode
         else "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]"
     )
     enhancement_lines = [
@@ -1902,7 +1906,7 @@ def init(
         f"○ [cyan]{_display_cmd('analyze')}[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{_display_cmd('tasks')}[/], before [cyan]{_display_cmd('implement')}[/])",
         f"○ [cyan]{_display_cmd('checklist')}[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{_display_cmd('plan')}[/])"
     ]
-    enhancements_title = "Enhancement Skills" if codex_skill_mode else "Enhancement Commands"
+    enhancements_title = "Enhancement Skills" if native_skill_mode else "Enhancement Commands"
     enhancements_panel = Panel("\n".join(enhancement_lines), title=enhancements_title, border_style="cyan", padding=(1,2))
     console.print()
     console.print(enhancements_panel)

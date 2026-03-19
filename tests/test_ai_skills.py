@@ -1007,6 +1007,30 @@ class TestCliValidation:
             assert "/speckit.constitution" not in result.output
             assert "Optional skills that you can use for your specs" in result.output
 
+    def test_kimi_next_steps_show_skill_invocation(self, monkeypatch):
+        """Kimi next-steps guidance should display /skill:speckit.* usage."""
+        from typer.testing import CliRunner
+
+        def _fake_download(*args, **kwargs):
+            project_path = Path(args[0])
+            skill_dir = project_path / ".kimi" / "skills" / "speckit.specify"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
+
+        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result = runner.invoke(
+                app,
+                ["init", "test-proj", "--ai", "kimi", "--no-git", "--ignore-agent-tools"],
+            )
+
+            assert result.exit_code == 0
+            assert "/skill:speckit.constitution" in result.output
+            assert "/speckit.constitution" not in result.output
+            assert "Optional skills that you can use for your specs" in result.output
+
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
         from typer.testing import CliRunner
