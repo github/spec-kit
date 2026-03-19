@@ -425,9 +425,14 @@ class CommandRegistrar:
 
             for alias in cmd_info.get("aliases", []):
                 alias_output_name = self._compute_output_name(agent_name, alias, agent_config)
+                alias_output = output
+                if agent_config["extension"] == "/SKILL.md":
+                    alias_output = self.render_skill_command(
+                        agent_name, alias_output_name, frontmatter, body, source_id, cmd_file, project_root
+                    )
                 alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
-                alias_file.write_text(output, encoding="utf-8")
+                alias_file.write_text(alias_output, encoding="utf-8")
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
                 registered.append(alias)

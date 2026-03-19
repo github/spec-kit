@@ -851,6 +851,53 @@ Agent __AGENT__
         assert "scripts/bash/setup-plan.sh --json" in content
         assert "scripts/bash/update-agent-context.sh codex" in content
 
+    def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
+        """Codex alias skills should render their own matching `name:` frontmatter."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-alias-skill"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-alias-skill",
+                "name": "Alias Skill Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.alias.cmd",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.shortcut"],
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Alias skill\n---\n\nBody\n")
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        primary = skills_dir / "speckit-alias.cmd" / "SKILL.md"
+        alias = skills_dir / "speckit-shortcut" / "SKILL.md"
+
+        assert primary.exists()
+        assert alias.exists()
+        assert "name: speckit-alias.cmd" in primary.read_text()
+        assert "name: speckit-shortcut" in alias.read_text()
+
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
         # Create .github/agents directory (Copilot project)
