@@ -837,6 +837,17 @@ class TestCliValidation:
         assert "Explicit command support was deprecated in Antigravity version 1.20.5." in result.output
         assert "--ai-skills" in result.output
 
+    def test_codex_without_ai_skills_fails(self):
+        """--ai codex without --ai-skills should fail with exit code 1."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "test-proj", "--ai", "codex"])
+
+        assert result.exit_code == 1
+        assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" in result.output
+        assert "--ai-skills" in result.output
+
     def test_interactive_agy_without_ai_skills_prompts_skills(self, monkeypatch):
         """Interactive selector returning agy without --ai-skills should automatically enable --ai-skills."""
         from typer.testing import CliRunner
@@ -878,6 +889,38 @@ class TestCliValidation:
             # Interactive selection should NOT raise the deprecation error!
             assert result.exit_code == 0
             assert "Explicit command support was deprecated" not in result.output
+
+    def test_interactive_codex_without_ai_skills_enables_skills(self, monkeypatch):
+        """Interactive selector returning codex without --ai-skills should automatically enable --ai-skills."""
+        from typer.testing import CliRunner
+
+        def _fake_select_with_arrows(*args, **kwargs):
+            options = kwargs.get("options")
+            if options is None and len(args) >= 1:
+                options = args[0]
+
+            if isinstance(options, dict) and "codex" in options:
+                return "codex"
+            if isinstance(options, (list, tuple)) and "codex" in options:
+                return "codex"
+
+            if isinstance(options, dict) and options:
+                return next(iter(options.keys()))
+            if isinstance(options, (list, tuple)) and options:
+                return options[0]
+
+            return None
+
+        monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
+        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result = runner.invoke(app, ["init", "test-proj", "--no-git"])
+
+            assert result.exit_code == 0
+            assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" not in result.output
+            assert ".agents/skills" in result.output
 
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
