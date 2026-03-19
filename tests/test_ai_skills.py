@@ -916,7 +916,7 @@ class TestCliValidation:
 
         runner = CliRunner()
         with runner.isolated_filesystem():
-            result = runner.invoke(app, ["init", "test-proj", "--no-git"])
+            result = runner.invoke(app, ["init", "test-proj", "--no-git", "--ignore-agent-tools"])
 
             assert result.exit_code == 0
             assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" not in result.output

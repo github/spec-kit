@@ -1860,11 +1860,11 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
 
-    steps_lines.append("   2.1 [cyan]/speckit.constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/speckit.specify[/] - Create baseline specification")
-    steps_lines.append("   2.3 [cyan]/speckit.plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/speckit.implement[/] - Execute implementation")
+    steps_lines.append(f"   {step_num}.1 [cyan]/speckit.constitution[/] - Establish project principles")
+    steps_lines.append(f"   {step_num}.2 [cyan]/speckit.specify[/] - Create baseline specification")
+    steps_lines.append(f"   {step_num}.3 [cyan]/speckit.plan[/] - Create implementation plan")
+    steps_lines.append(f"   {step_num}.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
+    steps_lines.append(f"   {step_num}.5 [cyan]/speckit.implement[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
