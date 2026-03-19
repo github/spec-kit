@@ -63,7 +63,6 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": "/SKILL.md",
-            "skill_name_style": "hyphen",
         },
         "windsurf": {
             "dir": ".windsurf/workflows",
@@ -142,7 +141,6 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": "/SKILL.md",
-            "skill_name_style": "dot",
         },
         "trae": {
             "dir": ".trae/rules",
@@ -342,8 +340,7 @@ class CommandRegistrar:
                 short_name = cmd_name
                 if short_name.startswith("speckit."):
                     short_name = short_name[len("speckit."):]
-                style = agent_config.get("skill_name_style", "hyphen")
-                output_name = f"speckit.{short_name}" if style == "dot" else f"speckit-{short_name}"
+                output_name = f"speckit.{short_name}" if agent_name == "kimi" else f"speckit-{short_name}"
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             dest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -360,8 +357,7 @@ class CommandRegistrar:
                     short_alias = alias
                     if short_alias.startswith("speckit."):
                         short_alias = short_alias[len("speckit."):]
-                    style = agent_config.get("skill_name_style", "hyphen")
-                    alias_output_name = f"speckit.{short_alias}" if style == "dot" else f"speckit-{short_alias}"
+                    alias_output_name = f"speckit.{short_alias}" if agent_name == "kimi" else f"speckit-{short_alias}"
                 alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(output, encoding="utf-8")

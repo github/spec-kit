@@ -1204,9 +1204,6 @@ AGENT_SKILLS_DIR_OVERRIDES = {
 # Default skills directory for agents not in AGENT_CONFIG
 DEFAULT_SKILLS_DIR = ".agents/skills"
 
-# Agents whose skills use dotted names (e.g. speckit.specify).
-DOT_SKILL_NAME_AGENTS = {"kimi"}
-
 # Agents whose downloaded template already contains skills in the final layout.
 NATIVE_SKILLS_AGENTS = {"codex", "kimi"}
 
@@ -1338,7 +1335,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                 command_name = command_name[len("speckit."):]
             if command_name.endswith(".agent"):
                 command_name = command_name[:-len(".agent")]
-            if selected_ai in DOT_SKILL_NAME_AGENTS:
+            if selected_ai == "kimi":
                 skill_name = f"speckit.{command_name}"
             else:
                 skill_name = f"speckit-{command_name}"

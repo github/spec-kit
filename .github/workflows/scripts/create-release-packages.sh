@@ -122,10 +122,13 @@ EOF
 }
 
 # Create skills in <skills_dir>/<name>/SKILL.md format.
+# Most agents use hyphenated names (e.g. speckit-plan); Kimi is the
+# current dotted-name exception (e.g. speckit.plan).
 create_skills() {
   local skills_dir="$1"
   local script_variant="$2"
-  local separator="${3:--}"
+  local agent_name="$3"
+  local separator="${4:--}"
 
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
@@ -174,9 +177,9 @@ create_skills() {
       in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
       { print }
     ')
-    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | sed 's/__AGENT__/kimi/g' | rewrite_paths)
+    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | sed "s/__AGENT__/$agent_name/g" | rewrite_paths)
 
-    # Strip existing frontmatter and prepend Kimi frontmatter
+    # Strip existing frontmatter and prepend skills frontmatter.
     local template_body
     template_body=$(printf '%s\n' "$body" | awk '/^---/{p++; if(p==2){found=1; next}} found')
 
@@ -249,7 +252,7 @@ build_variant() {
       generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
     codex)
       mkdir -p "$base_dir/.agents/skills"
-      create_skills "$base_dir/.agents/skills" "$script" "-" ;;
+      create_skills "$base_dir/.agents/skills" "$script" "codex" "-" ;;
     kilocode)
       mkdir -p "$base_dir/.kilocode/workflows"
       generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
@@ -289,7 +292,7 @@ build_variant() {
       generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
     kimi)
       mkdir -p "$base_dir/.kimi/skills"
-      create_skills "$base_dir/.kimi/skills" "$script" "." ;;
+      create_skills "$base_dir/.kimi/skills" "$script" "kimi" "." ;;
     trae)
       mkdir -p "$base_dir/.trae/rules"
       generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;

@@ -35,7 +35,6 @@ class TestAgentConfigConsistency:
         assert "codex" in cfg
         assert cfg["codex"]["dir"] == ".agents/skills"
         assert cfg["codex"]["extension"] == "/SKILL.md"
-        assert cfg["codex"]["skill_name_style"] == "hyphen"
 
     def test_runtime_codex_uses_native_skills(self):
         """Codex runtime config should point at .agents/skills."""

@@ -202,10 +202,13 @@ agent: $basename
 }
 
 # Create skills in <skills_dir>\<name>\SKILL.md format.
+# Most agents use hyphenated names (e.g. speckit-plan); Kimi is the
+# current dotted-name exception (e.g. speckit.plan).
 function New-Skills {
     param(
         [string]$SkillsDir,
         [string]$ScriptVariant,
+        [string]$AgentName,
         [string]$Separator = '-'
     )
 
@@ -266,7 +269,7 @@ function New-Skills {
 
         $body = $outputLines -join "`n"
         $body = $body -replace '\{ARGS\}', '$ARGUMENTS'
-        $body = $body -replace '__AGENT__', 'kimi'
+        $body = $body -replace '__AGENT__', $AgentName
         $body = Rewrite-Paths -Content $body
 
         # Strip existing frontmatter, keep only body
@@ -397,7 +400,7 @@ function Build-Variant {
         'codex' {
             $skillsDir = Join-Path $baseDir ".agents/skills"
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -Separator '-'
+            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -AgentName 'codex' -Separator '-'
         }
         'kilocode' {
             $cmdDir = Join-Path $baseDir ".kilocode/workflows"
@@ -452,7 +455,7 @@ function Build-Variant {
         'kimi' {
             $skillsDir = Join-Path $baseDir ".kimi/skills"
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -Separator '.'
+            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -AgentName 'kimi' -Separator '.'
         }
         'trae' {
             $rulesDir = Join-Path $baseDir ".trae/rules"
