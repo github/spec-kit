@@ -7,6 +7,26 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-03-17
+
+### Changed
+
+- docs: add greenfield Spring Boot pirate-speak preset demo to README (#1878)
+- fix(ai-skills): exclude non-speckit copilot agent markdown from skills (#1867)
+- feat: add Trae IDE support as a new agent (#1817)
+- feat(cli): polite deep merge for settings.json and support JSONC (#1874)
+- feat(extensions,presets): add priority-based resolution ordering (#1855)
+- fix(scripts): suppress stdout from git fetch in create-new-feature.sh (#1876)
+- fix(scripts): harden bash scripts — escape, compat, and error handling (#1869)
+- Add cognitive-squad to community extension catalog (#1870)
+- docs: add Go / React brownfield walkthrough to community walkthroughs (#1868)
+- chore: update DocGuard extension to v0.9.8 (#1859)
+- Feature: add specify status command (#1837)
+- fix(extensions): show extension ID in list output (#1843)
+- feat(extensions): add Archive and Reconcile extensions to community catalog (#1844)
+- feat: Add DocGuard CDD enforcement extension to community catalog (#1838)
+
+
 ## [0.3.0] - 2026-03-13
 
 ### Changed
@@ -34,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- feat(cli): polite deep merge for VSCode settings.json with JSONC support via `json5` and zero-data-loss fallbacks
 - feat: wire `before_specify`, `after_specify`, `before_plan`, and `after_plan` hook events into command templates (#1788)
 - feat(presets): Pluggable preset system with preset catalog and template resolver
 - Preset manifest (`preset.yml`) with validation for artifact, command, and script types
@@ -139,19 +161,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - feat: add Tabnine CLI agent support
 - **Multi-Catalog Support (#1707)**: Extension catalog system now supports multiple active catalogs simultaneously via a catalog stack
-    - New `specify extension catalog list` command lists all active catalogs with name, URL, priority, and `install_allowed` status
-    - New `specify extension catalog add` and `specify extension catalog remove` commands for project-scoped catalog management
-    - Default built-in stack includes `catalog.json` (default, installable) and `catalog.community.json` (community, discovery only) — community extensions are now surfaced in search results out of the box
-    - `specify extension search` aggregates results across all active catalogs, annotating each result with source catalog
-    - `specify extension add` enforces `install_allowed` policy — extensions from discovery-only catalogs cannot be installed directly
-    - Project-level `.specify/extension-catalogs.yml` and user-level `~/.specify/extension-catalogs.yml` config files supported, with project-level taking precedence
-    - `SPECKIT_CATALOG_URL` environment variable still works for backward compatibility (replaces full stack with single catalog)
-    - All catalog URLs require HTTPS (HTTP allowed for localhost development)
-    - New `CatalogEntry` dataclass in `extensions.py` for catalog stack representation
-    - Per-URL hash-based caching for non-default catalogs; legacy cache preserved for default catalog
-    - Higher-priority catalogs win on merge conflicts (same extension id in multiple catalogs)
-    - 13 new tests covering catalog stack resolution, merge conflicts, URL validation, and `install_allowed` enforcement
-    - Updated RFC, Extension User Guide, and Extension API Reference documentation
+  - New `specify extension catalog list` command lists all active catalogs with name, URL, priority, and `install_allowed` status
+  - New `specify extension catalog add` and `specify extension catalog remove` commands for project-scoped catalog management
+  - Default built-in stack includes `catalog.json` (default, installable) and `catalog.community.json` (community, discovery only) — community extensions are now surfaced in search results out of the box
+  - `specify extension search` aggregates results across all active catalogs, annotating each result with source catalog
+  - `specify extension add` enforces `install_allowed` policy — extensions from discovery-only catalogs cannot be installed directly
+  - Project-level `.specify/extension-catalogs.yml` and user-level `~/.specify/extension-catalogs.yml` config files supported, with project-level taking precedence
+  - `SPECKIT_CATALOG_URL` environment variable still works for backward compatibility (replaces full stack with single catalog)
+  - All catalog URLs require HTTPS (HTTP allowed for localhost development)
+  - New `CatalogEntry` dataclass in `extensions.py` for catalog stack representation
+  - Per-URL hash-based caching for non-default catalogs; legacy cache preserved for default catalog
+  - Higher-priority catalogs win on merge conflicts (same extension id in multiple catalogs)
+  - 13 new tests covering catalog stack resolution, merge conflicts, URL validation, and `install_allowed` enforcement
+  - Updated RFC, Extension User Guide, and Extension API Reference documentation
 
 ## [0.1.13] - 2026-03-03
 
@@ -177,9 +199,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Copilot Extension Commands Not Visible**: Fixed extension commands not appearing in GitHub Copilot when installed via `specify extension add --dev`
-    - Changed Copilot file extension from `.md` to `.agent.md` in `CommandRegistrar.AGENT_CONFIGS` so Copilot recognizes agent files
-    - Added generation of companion `.prompt.md` files in `.github/prompts/` during extension command registration, matching the release packaging behavior
-    - Added cleanup of `.prompt.md` companion files when removing extensions via `specify extension remove`
+  - Changed Copilot file extension from `.md` to `.agent.md` in `CommandRegistrar.AGENT_CONFIGS` so Copilot recognizes agent files
+  - Added generation of companion `.prompt.md` files in `.github/prompts/` during extension command registration, matching the release packaging behavior
+  - Added cleanup of `.prompt.md` companion files when removing extensions via `specify extension remove`
 - Fixed a syntax regression in `src/specify_cli/__init__.py` in `_build_ai_assistant_help()` that broke `ruff` and `pytest` collection in CI.
 ## [0.1.12] - 2026-03-02
 
@@ -195,11 +217,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Version Sync Issue (#1721)**: Fixed version mismatch between `pyproject.toml` and git release tags
-    - Split release process into two workflows: `release-trigger.yml` for version management and `release.yml` for artifact building
-    - Version bump now happens BEFORE tag creation, ensuring tags point to commits with correct version
-    - Supports both manual version specification and auto-increment (patch version)
-    - Git tags now accurately reflect the version in `pyproject.toml` at that commit
-    - Prevents confusion when installing from source
+  - Split release process into two workflows: `release-trigger.yml` for version management and `release.yml` for artifact building
+  - Version bump now happens BEFORE tag creation, ensuring tags point to commits with correct version
+  - Supports both manual version specification and auto-increment (patch version)
+  - Git tags now accurately reflect the version in `pyproject.toml` at that commit
+  - Prevents confusion when installing from source
 
 ## [0.1.9] - 2026-02-28
 
@@ -234,20 +256,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Parameter Ordering Issues (#1641)**: Fixed CLI parameter parsing issue where option flags were incorrectly consumed as values for preceding options
-    - Added validation to detect when `--ai` or `--ai-commands-dir` incorrectly consume following flags like `--here` or `--ai-skills`
-    - Now provides clear error messages: "Invalid value for --ai: '--here'"
-    - Includes helpful hints suggesting proper usage and listing available agents
-    - Commands like `specify init --ai-skills --ai --here` now fail with actionable feedback instead of confusing "Must specify project name" errors
-    - Added comprehensive test suite (5 new tests) to prevent regressions
+  - Added validation to detect when `--ai` or `--ai-commands-dir` incorrectly consume following flags like `--here` or `--ai-skills`
+  - Now provides clear error messages: "Invalid value for --ai: '--here'"
+  - Includes helpful hints suggesting proper usage and listing available agents
+  - Commands like `specify init --ai-skills --ai --here` now fail with actionable feedback instead of confusing "Must specify project name" errors
+  - Added comprehensive test suite (5 new tests) to prevent regressions
 
 ## [0.1.5] - 2026-02-21
 
 ### Fixed
 
 - **AI Skills Installation Bug (#1658)**: Fixed `--ai-skills` flag not generating skill files for GitHub Copilot and other agents with non-standard command directory structures
-    - Added `commands_subdir` field to `AGENT_CONFIG` to explicitly specify the subdirectory name for each agent
-    - Affected agents now work correctly: copilot (`.github/agents/`), opencode (`.opencode/command/`), windsurf (`.windsurf/workflows/`), codex (`.codex/prompts/`), kilocode (`.kilocode/workflows/`), q (`.amazonq/prompts/`), and agy (`.agent/workflows/`)
-    - The `install_ai_skills()` function now uses the correct path for all agents instead of assuming `commands/` for everyone
+  - Added `commands_subdir` field to `AGENT_CONFIG` to explicitly specify the subdirectory name for each agent
+  - Affected agents now work correctly: copilot (`.github/agents/`), opencode (`.opencode/command/`), windsurf (`.windsurf/workflows/`), codex (`.codex/prompts/`), kilocode (`.kilocode/workflows/`), q (`.amazonq/prompts/`), and agy (`.agent/workflows/`)
+  - The `install_ai_skills()` function now uses the correct path for all agents instead of assuming `commands/` for everyone
 
 ## [0.1.4] - 2026-02-20
 
@@ -260,10 +282,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Generic Agent Support**: Added `--ai generic` option for unsupported AI agents ("bring your own agent")
-    - Requires `--ai-commands-dir <path>` to specify where the agent reads commands from
-    - Generates Markdown commands with `$ARGUMENTS` format (compatible with most agents)
-    - Example: `specify init my-project --ai generic --ai-commands-dir .myagent/commands/`
-    - Enables users to start with Spec Kit immediately while their agent awaits formal support
+  - Requires `--ai-commands-dir <path>` to specify where the agent reads commands from
+  - Generates Markdown commands with `$ARGUMENTS` format (compatible with most agents)
+  - Example: `specify init my-project --ai generic --ai-commands-dir .myagent/commands/`
+  - Enables users to start with Spec Kit immediately while their agent awaits formal support
 
 ## [0.0.102] - 2026-02-20
 

@@ -289,8 +289,9 @@ This tells Spec Kit which feature directory to use when creating specs, plans, a
 
    ```bash
    ls -la .claude/commands/      # Claude Code
-   ls -la .gemini/commands/       # Gemini
-   ls -la .cursor/commands/       # Cursor
+   ls -la .gemini/commands/      # Gemini
+   ls -la .cursor/commands/      # Cursor
+   ls -la .pi/prompts/           # Pi Coding Agent
    ```
 
 3. **Check agent-specific setup:**
@@ -398,7 +399,7 @@ The `specify` CLI tool is used for:
 - **Upgrades:** `specify init --here --force` to update templates and commands
 - **Diagnostics:** `specify check` to verify tool installation
 
-Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, etc.). Your AI assistant reads these command files directly—no need to run `specify` again.
+Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, etc.). Your AI assistant reads these command files directly—no need to run `specify` again.
 
 **If your agent isn't recognizing slash commands:**
 
@@ -410,6 +411,9 @@ Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/s
 
    # For Claude
    ls -la .claude/commands/
+
+   # For Pi
+   ls -la .pi/prompts/
    ```
 
 2. **Restart your IDE/editor completely** (not just reload window)

@@ -51,6 +51,10 @@ echo -e "\n🤖 Installing OpenCode CLI..."
 run_command "npm install -g opencode-ai@latest"
 echo "✅ Done"
 
+echo -e "\n🤖 Installing Pi Coding Agent..."
+run_command "npm install -g @mariozechner/pi-coding-agent@latest"
+echo "✅ Done"
+
 echo -e "\n🤖 Installing Kiro CLI..."
 # https://kiro.dev/docs/cli/
 KIRO_INSTALLER_URL="https://kiro.dev/install.sh"

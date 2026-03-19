@@ -138,7 +138,7 @@ check_existing_branches() {
     local specs_dir="$1"
 
     # Fetch all remotes to get latest branch info (suppress errors if no remotes)
-    git fetch --all --prune 2>/dev/null || true
+    git fetch --all --prune >/dev/null 2>&1 || true
 
     # Get highest number from ALL branches (not just matching short name)
     local highest_branch=$(get_highest_from_branches)
@@ -160,17 +160,6 @@ check_existing_branches() {
 clean_branch_name() {
     local name="$1"
     echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
-}
-
-# Escape a string for safe embedding in a JSON value (fallback when jq is unavailable).
-json_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\t'/\\t}"
-    s="${s//$'\r'/\\r}"
-    printf '%s' "$s"
 }
 
 # Resolve repository root. Prefer git information when available, but fall back
@@ -308,9 +297,14 @@ fi
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 mkdir -p "$FEATURE_DIR"
 
-TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT")
+TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
 SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
+    cp "$TEMPLATE" "$SPEC_FILE"
+else
+    echo "Warning: Spec template not found; created empty spec file" >&2
+    touch "$SPEC_FILE"
+fi
 
 # Inform the user how to persist the feature variable in their own shell
 printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
