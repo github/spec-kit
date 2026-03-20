@@ -204,6 +204,10 @@ agent: $basename
 # Create skills in <skills_dir>\<name>\SKILL.md format.
 # Most agents use hyphenated names (e.g. speckit-plan); Kimi is the
 # current dotted-name exception (e.g. speckit.plan).
+#
+# Technical debt note:
+# Keep SKILL.md frontmatter aligned with `install_ai_skills()` and extension
+# overrides (at minimum: name/description/compatibility/metadata.source).
 function New-Skills {
     param(
         [string]$SkillsDir,
@@ -285,7 +289,7 @@ function New-Skills {
             if ($inBody) { $templateBody += "$line`n" }
         }
 
-        $skillContent = "---`nname: `"$skillName`"`ndescription: `"$description`"`n---`n`n$templateBody"
+        $skillContent = "---`nname: `"$skillName`"`ndescription: `"$description`"`ncompatibility: `"Requires spec-kit project structure with .specify/ directory`"`nmetadata:`n  author: `"github-spec-kit`"`n  source: `"templates/commands/$name.md`"`n---`n`n$templateBody"
         Set-Content -Path (Join-Path $skillDir "SKILL.md") -Value $skillContent -NoNewline
     }
 }

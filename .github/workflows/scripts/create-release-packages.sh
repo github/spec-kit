@@ -124,6 +124,10 @@ EOF
 # Create skills in <skills_dir>/<name>/SKILL.md format.
 # Most agents use hyphenated names (e.g. speckit-plan); Kimi is the
 # current dotted-name exception (e.g. speckit.plan).
+#
+# Technical debt note:
+# Keep SKILL.md frontmatter aligned with `install_ai_skills()` and extension
+# overrides (at minimum: name/description/compatibility/metadata.source).
 create_skills() {
   local skills_dir="$1"
   local script_variant="$2"
@@ -187,6 +191,10 @@ create_skills() {
       printf -- '---\n'
       printf 'name: "%s"\n' "$skill_name"
       printf 'description: "%s"\n' "$description"
+      printf 'compatibility: "%s"\n' "Requires spec-kit project structure with .specify/ directory"
+      printf -- 'metadata:\n'
+      printf '  author: "%s"\n' "github-spec-kit"
+      printf '  source: "%s"\n' "templates/commands/${name}.md"
       printf -- '---\n\n'
       printf '%s\n' "$template_body"
     } > "$skill_dir/SKILL.md"

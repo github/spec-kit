@@ -298,6 +298,12 @@ class CommandRegistrar:
         SKILL-target agents should receive the same skills-oriented
         frontmatter shape used elsewhere in the project instead of the
         original command frontmatter.
+
+        Technical debt note:
+        Spec-kit currently has multiple SKILL.md generators (template packaging,
+        init-time conversion, and extension/preset overrides). Keep the skill
+        frontmatter keys aligned (name/description/compatibility/metadata) to
+        avoid drift across agents.
         """
         if not isinstance(frontmatter, dict):
             frontmatter = {}

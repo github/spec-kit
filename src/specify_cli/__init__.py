@@ -1218,6 +1218,15 @@ AGENT_SKILLS_DIR_OVERRIDES = {
 DEFAULT_SKILLS_DIR = ".agents/skills"
 
 # Agents whose downloaded template already contains skills in the final layout.
+#
+# Technical debt note:
+# - Spec-kit currently has multiple SKILL.md generators:
+#   1) release packaging scripts that build the template zip (native skills),
+#   2) `install_ai_skills()` which converts extracted command templates to skills,
+#   3) extension/preset overrides via `agents.CommandRegistrar.render_skill_command()`.
+# - Keep the skills frontmatter schema aligned across all generators
+#   (at minimum: name/description/compatibility/metadata.source).
+# - When adding fields here, update the release scripts and override writers too.
 NATIVE_SKILLS_AGENTS = {"codex", "kimi"}
 
 # Enhanced descriptions for each spec-kit command skill
