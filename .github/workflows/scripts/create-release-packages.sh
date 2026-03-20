@@ -40,6 +40,10 @@ case "$GENRELEASES_DIR" in
     exit 1
     ;;
 esac
+if [[ "$GENRELEASES_DIR" == *".."* ]]; then
+  echo "Refusing to use GENRELEASES_DIR containing '..' path segments: $GENRELEASES_DIR" >&2
+  exit 1
+fi
 
 mkdir -p "$GENRELEASES_DIR"
 rm -rf "${GENRELEASES_DIR%/}/"* || true

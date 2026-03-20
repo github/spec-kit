@@ -263,9 +263,15 @@ def test_scaffold_command_file_count(agent, scaffolded_sh, source_template_stems
 
     cmd_dir = _expected_cmd_dir(project, agent)
     generated = _list_command_files(cmd_dir, agent)
+
+    if cmd_dir.is_dir():
+        dir_listing = list(cmd_dir.iterdir())
+    else:
+        dir_listing = f"<command dir missing: {cmd_dir}>"
+
     assert len(generated) == len(source_template_stems), (
         f"Agent '{agent}': expected {len(source_template_stems)} command files "
-        f"({_expected_ext(agent)}), found {len(generated)}. Dir: {list(cmd_dir.iterdir())}"
+        f"({_expected_ext(agent)}), found {len(generated)}. Dir: {dir_listing}"
     )
 
 
@@ -493,39 +499,53 @@ def test_scaffold_powershell_variant(agent, scaffolded_ps, source_template_stems
 # 8. Parity: bundled vs. real create-release-packages.sh ZIP
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(scope="session")
+def release_script_trees(tmp_path_factory):
+    """Session-scoped cache: run release script once per (agent, script_type)."""
+    cache: dict[tuple[str, str], dict[str, bytes]] = {}
+    bash = _find_bash()
+
+    def _get(agent: str, script_type: str) -> dict[str, bytes] | None:
+        if bash is None:
+            return None
+        key = (agent, script_type)
+        if key not in cache:
+            tmp = tmp_path_factory.mktemp(f"release_{agent}_{script_type}")
+            gen_dir = tmp / "genreleases"
+            gen_dir.mkdir()
+            zip_path = _run_release_script(agent, script_type, bash, gen_dir)
+            extracted = tmp / "extracted"
+            extracted.mkdir()
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(extracted)
+            cache[key] = _collect_relative_files(extracted)
+        return cache[key]
+    return _get
+
+
 @pytest.mark.parametrize("script_type", ["sh", "ps"])
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_parity_bundled_vs_release_script(tmp_path, agent, script_type):
+def test_parity_bundled_vs_release_script(agent, script_type, scaffolded_sh, scaffolded_ps, release_script_trees):
     """scaffold_from_core_pack() file tree is identical to the ZIP produced by
     create-release-packages.sh for every agent and script type.
 
     This is the true end-to-end parity check: the Python offline path must
     produce exactly the same artifacts as the canonical shell release script.
 
-    Each agent is tested independently: generate the release ZIP, generate
-    the bundled scaffold, compare.  This avoids cross-agent interference
-    from the release script's rm -rf at startup.
+    Both sides are session-cached: each agent/script_type combination is
+    scaffolded and release-scripted only once across all tests.
     """
-    bash = _find_bash()
-    if bash is None:
+    script_tree = release_script_trees(agent, script_type)
+    if script_tree is None:
         pytest.skip("bash required to run create-release-packages.sh")
 
-    # --- Release script path ---
-    gen_dir = tmp_path / "genreleases"
-    gen_dir.mkdir()
-    zip_path = _run_release_script(agent, script_type, bash, gen_dir)
-    script_dir = tmp_path / "extracted"
-    script_dir.mkdir()
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(script_dir)
-
-    # --- Bundled path ---
-    bundled_dir = tmp_path / "bundled"
-    ok = scaffold_from_core_pack(bundled_dir, agent, script_type)
-    assert ok
+    # Reuse session-cached scaffold output
+    if script_type == "sh":
+        bundled_dir = scaffolded_sh(agent)
+    else:
+        bundled_dir = scaffolded_ps(agent)
 
     bundled_tree = _collect_relative_files(bundled_dir)
-    script_tree = _collect_relative_files(script_dir)
 
     only_bundled = set(bundled_tree) - set(script_tree)
     only_script = set(script_tree) - set(bundled_tree)
