@@ -28,8 +28,21 @@ echo "Building release packages for $NEW_VERSION"
 # Create and use .genreleases directory for all build artifacts
 # Override via GENRELEASES_DIR env var (e.g. for tests writing to a temp dir)
 GENRELEASES_DIR="${GENRELEASES_DIR:-.genreleases}"
+
+# Guard against unsafe GENRELEASES_DIR values before cleaning
+if [[ -z "$GENRELEASES_DIR" ]]; then
+  echo "GENRELEASES_DIR must not be empty" >&2
+  exit 1
+fi
+case "$GENRELEASES_DIR" in
+  '/'|'.'|'..')
+    echo "Refusing to use unsafe GENRELEASES_DIR value: $GENRELEASES_DIR" >&2
+    exit 1
+    ;;
+esac
+
 mkdir -p "$GENRELEASES_DIR"
-rm -rf "$GENRELEASES_DIR"/* || true
+rm -rf "${GENRELEASES_DIR%/}/"* || true
 
 rewrite_paths() {
   sed -E \

@@ -1165,8 +1165,11 @@ def scaffold_from_core_pack(
     guarantees byte-for-byte parity between ``specify init`` and the GitHub
     release ZIPs because both use the exact same script.
 
-    Returns True on success, False if the required assets cannot be located
-    (caller should fall back to download_and_extract_template).
+    Returns True on success.  Returns False if offline scaffolding failed for
+    any reason, including missing or unreadable assets, missing required tools
+    (bash, pwsh, zip), release-script failure or timeout, or unexpected runtime
+    exceptions.  When ``--offline`` is active the caller should treat False as
+    a hard error rather than falling back to a network download.
     """
     # --- Locate asset sources ---
     core = _locate_core_pack()
