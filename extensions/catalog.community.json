@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-19T12:08:20Z",
+  "updated_at": "2026-03-20T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "archive": {
@@ -545,6 +545,37 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "status-report": {
+      "name": "Status Report",
+      "id": "status-report",
+      "description": "Display project status, feature progress, and recommended next actions across the spec-driven development workflow.",
+      "author": "Open-Agent-Tools",
+      "version": "1.1.4",
+      "download_url": "https://github.com/Open-Agent-Tools/spec-kit-status/archive/refs/tags/v1.1.4.zip",
+      "repository": "https://github.com/Open-Agent-Tools/spec-kit-status",
+      "homepage": "https://github.com/Open-Agent-Tools/spec-kit-status",
+      "documentation": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/README.md",
+      "changelog": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "status",
+        "project-management",
+        "visibility"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-20T00:00:00Z",
+      "updated_at": "2026-03-20T00:00:00Z"
     },
     "understanding": {
       "name": "Understanding",
