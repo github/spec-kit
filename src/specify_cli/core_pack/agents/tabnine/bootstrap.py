@@ -18,8 +18,16 @@ class Tabnine(AgentBootstrap):
         commands_dir.mkdir(parents=True, exist_ok=True)
 
     def teardown(self, project_path: Path) -> None:
-        """Remove Tabnine CLI agent files from the project."""
+        """Remove Tabnine CLI agent files from the project.
+
+        Removes the agent/ subdirectory under .tabnine/ to preserve
+        any other Tabnine configuration.
+        """
         import shutil
-        agent_dir = project_path / self.AGENT_DIR
-        if agent_dir.is_dir():
-            shutil.rmtree(agent_dir)
+        agent_subdir = project_path / self.AGENT_DIR
+        if agent_subdir.is_dir():
+            shutil.rmtree(agent_subdir)
+        # Remove .tabnine/ only if now empty
+        tabnine_dir = project_path / ".tabnine"
+        if tabnine_dir.is_dir() and not any(tabnine_dir.iterdir()):
+            tabnine_dir.rmdir()

@@ -18,8 +18,16 @@ class Amp(AgentBootstrap):
         commands_dir.mkdir(parents=True, exist_ok=True)
 
     def teardown(self, project_path: Path) -> None:
-        """Remove Amp agent files from the project."""
+        """Remove Amp agent files from the project.
+
+        Only removes the commands/ subdirectory — preserves other .agents/
+        content (e.g. Codex skills/) which shares the same parent directory.
+        """
         import shutil
-        agent_dir = project_path / self.AGENT_DIR
-        if agent_dir.is_dir():
-            shutil.rmtree(agent_dir)
+        commands_dir = project_path / self.AGENT_DIR / self.COMMANDS_SUBDIR
+        if commands_dir.is_dir():
+            shutil.rmtree(commands_dir)
+        # Remove .agents/ only if now empty
+        agents_dir = project_path / self.AGENT_DIR
+        if agents_dir.is_dir() and not any(agents_dir.iterdir()):
+            agents_dir.rmdir()

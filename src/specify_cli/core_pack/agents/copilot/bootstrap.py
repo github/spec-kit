@@ -18,8 +18,16 @@ class Copilot(AgentBootstrap):
         commands_dir.mkdir(parents=True, exist_ok=True)
 
     def teardown(self, project_path: Path) -> None:
-        """Remove GitHub Copilot agent files from the project."""
+        """Remove GitHub Copilot agent files from the project.
+
+        Only removes the agents/ subdirectory — preserves other .github
+        content (workflows, issue templates, etc.).
+        """
         import shutil
-        agent_dir = project_path / self.AGENT_DIR
-        if agent_dir.is_dir():
-            shutil.rmtree(agent_dir)
+        agents_dir = project_path / self.AGENT_DIR / self.COMMANDS_SUBDIR
+        if agents_dir.is_dir():
+            shutil.rmtree(agents_dir)
+        # Also clean up companion .github/prompts/ if empty
+        prompts_dir = project_path / self.AGENT_DIR / "prompts"
+        if prompts_dir.is_dir() and not any(prompts_dir.iterdir()):
+            prompts_dir.rmdir()

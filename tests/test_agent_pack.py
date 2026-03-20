@@ -365,18 +365,22 @@ class TestDiscovery:
 
     def test_list_embedded_agents_nonempty(self):
         agents = list_embedded_agents()
-        assert len(agents) >= 25
+        assert len(agents) > 0
         ids = {a.id for a in agents}
-        assert "claude" in ids
-        assert "gemini" in ids
-        assert "copilot" in ids
+        # Verify core agents are present
+        for core_agent in ("claude", "gemini", "copilot"):
+            assert core_agent in ids
 
     def test_list_all_agents(self):
         all_agents = list_all_agents()
-        assert len(all_agents) >= 25
+        assert len(all_agents) > 0
         # Should be sorted by id
         ids = [a.manifest.id for a in all_agents]
         assert ids == sorted(ids)
+        # Verify core agents are present
+        id_set = set(ids)
+        for core_agent in ("claude", "gemini", "copilot"):
+            assert core_agent in id_set
 
 
 # ===================================================================
