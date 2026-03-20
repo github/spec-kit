@@ -382,7 +382,11 @@ def test_argument_token_format(agent, scaffolded_sh):
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
 def test_path_rewrites_applied(agent, scaffolded_sh):
-    """Bare scripts/ and templates/ paths must be rewritten to .specify/ variants."""
+    """Bare scripts/ and templates/ paths must be rewritten to .specify/ variants.
+
+    YAML frontmatter 'source:' metadata fields are excluded — they reference
+    the original template path for provenance, not a runtime path.
+    """
     project = scaffolded_sh(agent)
 
     cmd_dir = _expected_cmd_dir(project, agent)
@@ -390,11 +394,19 @@ def test_path_rewrites_applied(agent, scaffolded_sh):
         if not f.is_file():
             continue
         content = f.read_text(encoding="utf-8")
+
+        # Strip YAML frontmatter before checking — source: metadata is not a runtime path
+        body = content
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                body = parts[2]
+
         # Should not contain bare (non-.specify/) script paths
-        assert not re.search(r'(?<!\.specify/)scripts/', content), (
+        assert not re.search(r'(?<!\.specify/)scripts/', body), (
             f"Bare scripts/ path found in '{f.relative_to(project)}' for agent '{agent}'"
         )
-        assert not re.search(r'(?<!\.specify/)templates/', content), (
+        assert not re.search(r'(?<!\.specify/)templates/', body), (
             f"Bare templates/ path found in '{f.relative_to(project)}' for agent '{agent}'"
         )
 
