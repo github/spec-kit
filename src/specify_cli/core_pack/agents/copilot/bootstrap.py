@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Dict
 
-from specify_cli.agent_pack import AgentBootstrap
+from specify_cli.agent_pack import AgentBootstrap, record_installed_files, remove_tracked_files
 
 
 class Copilot(AgentBootstrap):
@@ -16,18 +16,15 @@ class Copilot(AgentBootstrap):
         """Install GitHub Copilot agent files into the project."""
         commands_dir = project_path / self.AGENT_DIR / self.COMMANDS_SUBDIR
         commands_dir.mkdir(parents=True, exist_ok=True)
+        # Record installed files for tracked teardown
+        installed = [p for p in commands_dir.rglob("*") if p.is_file()]
+        record_installed_files(project_path, self.manifest.id, installed)
 
-    def teardown(self, project_path: Path) -> None:
+    def teardown(self, project_path: Path, *, force: bool = False) -> None:
         """Remove GitHub Copilot agent files from the project.
 
-        Only removes the agents/ subdirectory — preserves other .github
-        content (workflows, issue templates, etc.).
+        Only removes individual tracked files — directories are never
+        deleted.  Raises ``AgentFileModifiedError`` if any tracked file
+        was modified and *force* is ``False``.
         """
-        import shutil
-        agents_dir = project_path / self.AGENT_DIR / self.COMMANDS_SUBDIR
-        if agents_dir.is_dir():
-            shutil.rmtree(agents_dir)
-        # Also clean up companion .github/prompts/ if empty
-        prompts_dir = project_path / self.AGENT_DIR / "prompts"
-        if prompts_dir.is_dir() and not any(prompts_dir.iterdir()):
-            prompts_dir.rmdir()
+        remove_tracked_files(project_path, self.manifest.id, force=force)

@@ -2533,6 +2533,7 @@ def agent_export(
 @agent_app.command("switch")
 def agent_switch(
     agent_id: str = typer.Argument(..., help="Agent pack ID to switch to"),
+    force: bool = typer.Option(False, "--force", help="Remove agent files even if they were modified since installation"),
 ):
     """Switch the active AI agent in the current project.
 
@@ -2544,6 +2545,7 @@ def agent_switch(
         load_bootstrap,
         PackResolutionError,
         AgentPackError,
+        AgentFileModifiedError,
     )
 
     show_banner()
@@ -2581,8 +2583,12 @@ def agent_switch(
             current_resolved = resolve_agent_pack(current_agent, project_path=project_path)
             current_bootstrap = load_bootstrap(current_resolved.path, current_resolved.manifest)
             console.print(f"  [dim]Tearing down {current_agent}...[/dim]")
-            current_bootstrap.teardown(project_path)
+            current_bootstrap.teardown(project_path, force=force)
             console.print(f"  [green]✓[/green] {current_agent} removed")
+        except AgentFileModifiedError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            console.print("[yellow]Hint:[/yellow] Use --force to remove modified files.")
+            raise typer.Exit(1)
         except AgentPackError:
             # If pack-based teardown fails, try legacy cleanup via AGENT_CONFIG
             agent_config = AGENT_CONFIG.get(current_agent, {})

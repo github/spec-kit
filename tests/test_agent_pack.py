@@ -17,15 +17,21 @@ from specify_cli.agent_pack import (
     MANIFEST_FILENAME,
     MANIFEST_SCHEMA_VERSION,
     AgentBootstrap,
+    AgentFileModifiedError,
     AgentManifest,
     AgentPackError,
     ManifestValidationError,
     PackResolutionError,
     ResolvedPack,
+    _manifest_path,
+    _sha256,
+    check_modified_files,
     export_pack,
     list_all_agents,
     list_embedded_agents,
     load_bootstrap,
+    record_installed_files,
+    remove_tracked_files,
     resolve_agent_pack,
     validate_pack,
 )
@@ -74,19 +80,19 @@ def _write_bootstrap(pack_dir: Path, class_name: str = "TestAgent", agent_dir: s
     bootstrap_file.write_text(textwrap.dedent(f"""\
         from pathlib import Path
         from typing import Any, Dict
-        from specify_cli.agent_pack import AgentBootstrap
+        from specify_cli.agent_pack import AgentBootstrap, record_installed_files, remove_tracked_files
 
         class {class_name}(AgentBootstrap):
             AGENT_DIR = "{agent_dir}"
 
             def setup(self, project_path: Path, script_type: str, options: Dict[str, Any]) -> None:
-                (project_path / self.AGENT_DIR / "commands").mkdir(parents=True, exist_ok=True)
+                commands_dir = project_path / self.AGENT_DIR / "commands"
+                commands_dir.mkdir(parents=True, exist_ok=True)
+                installed = [p for p in commands_dir.rglob("*") if p.is_file()]
+                record_installed_files(project_path, self.manifest.id, installed)
 
-            def teardown(self, project_path: Path) -> None:
-                import shutil
-                d = project_path / self.AGENT_DIR
-                if d.is_dir():
-                    shutil.rmtree(d)
+            def teardown(self, project_path: Path, *, force: bool = False) -> None:
+                remove_tracked_files(project_path, self.manifest.id, force=force)
     """), encoding="utf-8")
     return bootstrap_file
 
@@ -242,7 +248,7 @@ class TestBootstrapContract:
         m = AgentManifest.from_dict(_minimal_manifest_dict())
         b = AgentBootstrap(m)
         with pytest.raises(NotImplementedError):
-            b.teardown(tmp_path)
+            b.teardown(tmp_path, force=False)
 
     def test_load_bootstrap(self, tmp_path):
         data = _minimal_manifest_dict()
@@ -258,7 +264,7 @@ class TestBootstrapContract:
             load_bootstrap(tmp_path, m)
 
     def test_bootstrap_setup_and_teardown(self, tmp_path):
-        """Verify a loaded bootstrap can set up and tear down."""
+        """Verify a loaded bootstrap can set up and tear down via file tracking."""
         pack_dir = tmp_path / "pack"
         data = _minimal_manifest_dict()
         _write_manifest(pack_dir, data)
@@ -273,8 +279,14 @@ class TestBootstrapContract:
         b.setup(project, "sh", {})
         assert (project / ".test-agent" / "commands").is_dir()
 
+        # The install manifest should exist in .specify/
+        assert _manifest_path(project, "test-agent").is_file()
+
         b.teardown(project)
-        assert not (project / ".test-agent").exists()
+        # Install manifest itself should be cleaned up
+        assert not _manifest_path(project, "test-agent").is_file()
+        # Directories are preserved (only files are removed)
+        assert (project / ".test-agent" / "commands").is_dir()
 
     def test_load_bootstrap_no_subclass(self, tmp_path):
         """A bootstrap module without an AgentBootstrap subclass fails."""
@@ -522,3 +534,172 @@ class TestEmbeddedPacksConsistency:
             # Should not raise
             warnings = validate_pack(child)
             # Warnings are acceptable; hard errors are not
+
+
+# ===================================================================
+# File tracking (record / check / remove)
+# ===================================================================
+
+class TestFileTracking:
+    """Verify installed-file tracking with hashes."""
+
+    def test_record_and_check_unmodified(self, tmp_path):
+        """Files recorded at install time are reported as unmodified."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        # Create a file to track
+        f = project / ".myagent" / "commands" / "hello.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("hello world", encoding="utf-8")
+
+        record_installed_files(project, "myagent", [f])
+
+        # No modifications yet
+        assert check_modified_files(project, "myagent") == []
+
+    def test_check_detects_modification(self, tmp_path):
+        """A modified file is reported by check_modified_files()."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        f = project / ".myagent" / "cmd.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("original", encoding="utf-8")
+
+        record_installed_files(project, "myagent", [f])
+
+        # Now modify the file
+        f.write_text("modified content", encoding="utf-8")
+
+        modified = check_modified_files(project, "myagent")
+        assert len(modified) == 1
+        assert ".myagent/cmd.md" in modified[0]
+
+    def test_check_no_manifest(self, tmp_path):
+        """check_modified_files returns [] when no manifest exists."""
+        assert check_modified_files(tmp_path, "nonexistent") == []
+
+    def test_remove_tracked_unmodified(self, tmp_path):
+        """remove_tracked_files deletes unmodified files."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        f1 = project / ".ag" / "a.md"
+        f2 = project / ".ag" / "b.md"
+        f1.parent.mkdir(parents=True)
+        f1.write_text("aaa", encoding="utf-8")
+        f2.write_text("bbb", encoding="utf-8")
+
+        record_installed_files(project, "ag", [f1, f2])
+
+        removed = remove_tracked_files(project, "ag")
+        assert len(removed) == 2
+        assert not f1.exists()
+        assert not f2.exists()
+        # Directories are preserved
+        assert f1.parent.is_dir()
+        # Install manifest is cleaned up
+        assert not _manifest_path(project, "ag").is_file()
+
+    def test_remove_tracked_modified_without_force_raises(self, tmp_path):
+        """Removing modified files without --force raises AgentFileModifiedError."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        f = project / ".ag" / "c.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("original", encoding="utf-8")
+
+        record_installed_files(project, "ag", [f])
+        f.write_text("user-edited", encoding="utf-8")
+
+        with pytest.raises(AgentFileModifiedError, match="modified"):
+            remove_tracked_files(project, "ag", force=False)
+
+        # File should still exist
+        assert f.is_file()
+
+    def test_remove_tracked_modified_with_force(self, tmp_path):
+        """Removing modified files with --force succeeds."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        f = project / ".ag" / "d.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("original", encoding="utf-8")
+
+        record_installed_files(project, "ag", [f])
+        f.write_text("user-edited", encoding="utf-8")
+
+        removed = remove_tracked_files(project, "ag", force=True)
+        assert len(removed) == 1
+        assert not f.is_file()
+
+    def test_remove_no_manifest(self, tmp_path):
+        """remove_tracked_files returns [] when no manifest exists."""
+        removed = remove_tracked_files(tmp_path, "nonexistent")
+        assert removed == []
+
+    def test_remove_preserves_directories(self, tmp_path):
+        """Directories are never deleted, even when all files are removed."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        d = project / ".myagent" / "commands" / "sub"
+        d.mkdir(parents=True)
+        f = d / "deep.md"
+        f.write_text("deep", encoding="utf-8")
+
+        record_installed_files(project, "myagent", [f])
+        remove_tracked_files(project, "myagent")
+
+        assert not f.exists()
+        # All parent directories remain
+        assert d.is_dir()
+        assert (project / ".myagent").is_dir()
+
+    def test_deleted_file_skipped_gracefully(self, tmp_path):
+        """A file deleted by the user before teardown is silently skipped."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        f = project / ".ag" / "gone.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("data", encoding="utf-8")
+
+        record_installed_files(project, "ag", [f])
+
+        # User deletes the file before teardown
+        f.unlink()
+
+        # Should not raise, and should not report as modified
+        assert check_modified_files(project, "ag") == []
+        removed = remove_tracked_files(project, "ag")
+        assert removed == []
+
+    def test_sha256_consistency(self, tmp_path):
+        """_sha256 produces consistent hashes."""
+        f = tmp_path / "test.txt"
+        f.write_text("hello", encoding="utf-8")
+        h1 = _sha256(f)
+        h2 = _sha256(f)
+        assert h1 == h2
+        assert len(h1) == 64  # SHA-256 hex length
+
+    def test_manifest_json_structure(self, tmp_path):
+        """The install manifest has the expected JSON structure."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        f = project / ".ag" / "x.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("content", encoding="utf-8")
+
+        manifest_file = record_installed_files(project, "ag", [f])
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+
+        assert data["agent_id"] == "ag"
+        assert isinstance(data["files"], dict)
+        assert ".ag/x.md" in data["files"]
+        assert len(data["files"][".ag/x.md"]) == 64

@@ -14,7 +14,9 @@ The embedded packs ship inside the pip wheel so that
 `pip install specify-cli && specify init --ai claude` works offline.
 """
 
+import hashlib
 import importlib.util
+import json
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,6 +52,10 @@ class ManifestValidationError(AgentPackError):
 
 class PackResolutionError(AgentPackError):
     """Raised when no pack can be found for the requested agent id."""
+
+
+class AgentFileModifiedError(AgentPackError):
+    """Raised when teardown finds user-modified files and ``--force`` is not set."""
 
 
 # ---------------------------------------------------------------------------
@@ -191,15 +197,22 @@ class AgentBootstrap:
         """
         raise NotImplementedError
 
-    def teardown(self, project_path: Path) -> None:
+    def teardown(self, project_path: Path, *, force: bool = False) -> None:
         """Remove agent-specific files from *project_path*.
 
         Invoked by ``specify agent switch`` (for the *old* agent) and
         ``specify agent remove`` when the user explicitly uninstalls.
         Must preserve shared infrastructure (specs, plans, tasks, etc.).
 
+        Only individual files recorded in the install manifest are removed
+        — directories are never deleted.  If any tracked file has been
+        modified since installation and *force* is ``False``, raises
+        :class:`AgentFileModifiedError`.
+
         Args:
             project_path: Project directory to clean up.
+            force: When ``True``, remove files even if they were modified
+                after installation.
         """
         raise NotImplementedError
 
@@ -208,6 +221,145 @@ class AgentBootstrap:
     def agent_dir(self, project_path: Path) -> Path:
         """Return the agent's top-level directory inside the project."""
         return project_path / self.manifest.commands_dir.split("/")[0]
+
+
+# ---------------------------------------------------------------------------
+# Installed-file tracking
+# ---------------------------------------------------------------------------
+
+def _manifest_path(project_path: Path, agent_id: str) -> Path:
+    """Return the path to the install manifest for *agent_id*."""
+    return project_path / ".specify" / f"agent-manifest-{agent_id}.json"
+
+
+def _sha256(path: Path) -> str:
+    """Return the hex SHA-256 of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def record_installed_files(
+    project_path: Path,
+    agent_id: str,
+    files: List[Path],
+) -> Path:
+    """Record the installed files and their SHA-256 hashes.
+
+    Writes ``.specify/agent-manifest-<agent_id>.json`` containing a
+    mapping of project-relative paths to their SHA-256 digests.
+
+    Args:
+        project_path: Project root directory.
+        agent_id: Agent identifier.
+        files: Absolute or project-relative paths of the files that
+            were created during ``setup()``.
+
+    Returns:
+        Path to the written manifest file.
+    """
+    entries: Dict[str, str] = {}
+    for file_path in files:
+        abs_path = project_path / file_path if not file_path.is_absolute() else file_path
+        if abs_path.is_file():
+            rel = str(abs_path.relative_to(project_path))
+            entries[rel] = _sha256(abs_path)
+
+    manifest_file = _manifest_path(project_path, agent_id)
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    manifest_file.write_text(
+        json.dumps({"agent_id": agent_id, "files": entries}, indent=2),
+        encoding="utf-8",
+    )
+    return manifest_file
+
+
+def check_modified_files(
+    project_path: Path,
+    agent_id: str,
+) -> List[str]:
+    """Return project-relative paths of files modified since installation.
+
+    Returns an empty list when no install manifest exists or when every
+    tracked file still has its original hash.
+    """
+    manifest_file = _manifest_path(project_path, agent_id)
+    if not manifest_file.is_file():
+        return []
+
+    try:
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    modified: List[str] = []
+    for rel_path, original_hash in data.get("files", {}).items():
+        abs_path = project_path / rel_path
+        if abs_path.is_file():
+            if _sha256(abs_path) != original_hash:
+                modified.append(rel_path)
+        # If the file was deleted by the user, treat it as not needing
+        # removal — skip rather than flag as modified.
+
+    return modified
+
+
+def remove_tracked_files(
+    project_path: Path,
+    agent_id: str,
+    *,
+    force: bool = False,
+) -> List[str]:
+    """Remove the individual files recorded in the install manifest.
+
+    Raises :class:`AgentFileModifiedError` if any tracked file was
+    modified and *force* is ``False``.
+
+    Directories are **never** deleted — only individual files.
+
+    Args:
+        project_path: Project root directory.
+        agent_id: Agent identifier.
+        force: When ``True``, delete even modified files.
+
+    Returns:
+        List of project-relative paths that were removed.
+    """
+    manifest_file = _manifest_path(project_path, agent_id)
+    if not manifest_file.is_file():
+        return []
+
+    try:
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    entries: Dict[str, str] = data.get("files", {})
+    if not entries:
+        manifest_file.unlink(missing_ok=True)
+        return []
+
+    if not force:
+        modified = check_modified_files(project_path, agent_id)
+        if modified:
+            raise AgentFileModifiedError(
+                f"The following agent files have been modified since installation:\n"
+                + "\n".join(f"  {p}" for p in modified)
+                + "\nUse --force to remove them anyway."
+            )
+
+    removed: List[str] = []
+    for rel_path in entries:
+        abs_path = project_path / rel_path
+        if abs_path.is_file():
+            abs_path.unlink()
+            removed.append(rel_path)
+
+    # Clean up the install manifest itself
+    manifest_file.unlink(missing_ok=True)
+    return removed
 
 
 # ---------------------------------------------------------------------------
