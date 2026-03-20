@@ -1927,18 +1927,12 @@ def init(
 
     # Determine whether to use bundled assets or download from GitHub (default).
     # --offline opts in to bundled assets; without it, always use GitHub.
+    # When --offline is set, scaffold_from_core_pack() will try the wheel's
+    # core_pack/ first, then fall back to source-checkout paths. If neither
+    # location has the required assets it returns False and we error out.
     _core = _locate_core_pack()
 
-    if offline and _core is None:
-        console.print(
-            "\n[red]Error:[/red] --offline requires a wheel install with bundled assets.\n"
-            "  Install the specify-cli wheel (it must contain core_pack/).\n"
-            "  See: docs/installation.md → Enterprise / Air-Gapped Installation\n"
-            "Remove --offline to download from GitHub instead."
-        )
-        raise typer.Exit(1)
-
-    use_github = not (offline and _core is not None)
+    use_github = not offline
 
     if use_github and _core is not None:
         console.print(

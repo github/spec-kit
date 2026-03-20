@@ -27,7 +27,7 @@
 
 - chore: bump version to 0.3.1
 - docs: add greenfield Spring Boot pirate-speak preset demo to README (#1878)
-- fix(ai-skills): exclude non-speckit copilot agent markdown from skill… (#1867)
+- fix(ai-skills): exclude non-speckit copilot agent markdown from skills (#1867)
 - feat: add Trae IDE support as a new agent (#1817)
 - feat(cli): polite deep merge for settings.json and support JSONC (#1874)
 - feat(extensions,presets): add priority-based resolution ordering (#1855)
@@ -282,7 +282,3 @@
 
 - Add pytest and Python linting (ruff) to CI (#1637)
 - feat: add pull request template for better contribution guidelines (#1634)
-
-## [0.0.99] - 2026-02-19
-
-- Feat/ai skills (#1632)
