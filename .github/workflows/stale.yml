@@ -39,4 +39,4 @@ jobs:
           any-of-labels: ''
           
           # Operations per run (helps avoid rate limits)
-          operations-per-run: 100
+          operations-per-run: 250
