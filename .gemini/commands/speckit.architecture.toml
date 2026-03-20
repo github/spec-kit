@@ -1,0 +1,81 @@
+description = "Create an Architecture Review (AR) documenting technical approach, options analysis, and traceability to PRD requirements."
+
+prompt = """
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+You **MUST** consider the user input before proceeding (if not empty).
+
+## Outline
+
+1. **Setup**: Run `.specify/scripts/bash/check-prerequisites.sh --json --no-require-plan` from repo root and parse JSON for `FEATURE_DIR`, `AVAILABLE_DOCS`, and `PRD` (absolute path). The script always outputs a `PRD` field, but the file may not exist yet. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\\''m Groot' (or double-quote if possible: "I'm Groot").
+
+2. **Require PRD**: Check if the `PRD` path from the script exists; if not, try `FEATURE_DIR/prd.md`, then check `AVAILABLE_DOCS` for `prd.md`, then try `docs/PRD/<feature-prefix>-*.md`.
+   - If missing: ERROR "prd.md not found. Run /speckit.prd first to create the Product Requirements Document."
+   - Read the resolved PRD document and extract:
+     - Must Have / Should Have requirements (M-1, M-2, S-1, etc.)
+     - Technical Constraints
+     - Data Model entities and relationships
+     - User Stories with priorities
+     - Interface Contract (if present)
+
+3. **Optional context**: If `spec.md` exists in FEATURE_DIR, read it for additional context. If `ar.md` already exists, read it as a starting point.
+
+4. **Load template**: Read `.specify/templates/ar-template.md` to understand required sections and structure.
+
+5. **Execute architecture workflow**:
+
+    1. Fill **Linkage** section with references to the PRD (and SEC if it exists)
+    2. Fill **Context / Problem Space** — what architectural challenge do the PRD requirements create?
+    3. Fill **Driving Requirements** table — map PRD requirement IDs (M-1, S-1, etc.) to architectural implications. Do NOT invent requirements; extract only from the PRD
+    4. Fill **Decision Drivers** — prioritized factors influencing the decision, tracing to PRD requirements where applicable
+    5. Generate **Options Considered**:
+       - **Option 0: Status Quo / Do Nothing** — required unless greenfield
+       - **Option 1** and **Option 2** — at minimum, two real alternatives
+       - Each option must have a driver-rating table and pros/cons
+       - Architecture diagrams for each option
+    6. Draft **Selected Option** and **Rationale** — marked `@human-required` for human decision
+    7. Fill **Simplest Implementation Comparison** — compare selected option against simplest possible approach. Justify each complexity addition by referencing PRD requirements
+    8. Generate **Architecture Diagram** for selected option
+    9. Fill **Technical Specification**: Component Overview, Data Flow, Interface Definitions
+    10. Fill **Constraints & Boundaries**: distinguish inherited (from PRD) vs. new constraints
+    11. Generate **Implementation Guardrails** — DO NOT / MUST rules referencing PRD constraints
+    12. Fill **Consequences** (positive/negative), **Risks & Mitigations**
+    13. Fill **Implementation Guidance**: suggested order, testing strategy
+    14. Fill **Traceability Matrix** — ensure all PRD Must Have requirements are addressed
+    15. Return: SUCCESS (AR ready for review)
+
+6. **Write AR**: Save to `FEATURE_DIR/ar.md` using the template structure.
+
+7. **Generate human decision checklist** at end of output:
+
+   ```markdown
+   ## Human Decisions Required
+
+   The following decisions need human input:
+
+   - [ ] Summary Decision (@human-required) - Select the architectural approach
+   - [ ] Problem Space (@human-required) - Validate the architectural challenge
+   - [ ] Decision Drivers (@human-required) - Confirm priority ordering
+   - [ ] Selected Option (@human-required) - Choose between presented options
+   - [ ] Rationale (@human-required) - Confirm trade-off reasoning
+   - [ ] Rollback Plan (@human-required) - Define rollback triggers and authority
+   - [ ] All @human-review sections - Review LLM-drafted technical details
+   ```
+
+8. **Report**: Output path to generated `ar.md`, summary of options presented, and readiness for next phase (`/speckit.security` or `/speckit.tasks`).
+
+## Key Rules
+
+- Use absolute paths for all file operations
+- All component/service names in diagrams MUST match the Component Overview table
+- Every Driving Requirement MUST reference a specific PRD requirement ID
+- Do NOT invent requirements — extract only from the PRD
+- The Simplest Implementation Comparison is REQUIRED to guard against over-engineering
+- Option 0 (Status Quo) is REQUIRED unless this is a greenfield project
+
+"""
