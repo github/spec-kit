@@ -2713,8 +2713,9 @@ def _reregister_extension_commands(project_path: Path, agent_id: str) -> List[Pa
                     created_files.append(p)
 
     if reregistered:
-        console.print(f"  [green]✓[/green] Re-registered {reregistered} extension command(s)"
-                       f" ({len(created_files)} file(s))")
+        console.print(
+            f"  [green]✓[/green] Re-registered {reregistered} extension command(s) ({len(created_files)} file(s))"
+        )
 
     return created_files
 
