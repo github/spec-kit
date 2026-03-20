@@ -127,7 +127,7 @@ EOF
 #
 # Technical debt note:
 # Keep SKILL.md frontmatter aligned with `install_ai_skills()` and extension
-# overrides (at minimum: name/description/compatibility/metadata.source).
+# overrides (at minimum: name/description/compatibility/metadata.{author,source}).
 create_skills() {
   local skills_dir="$1"
   local script_variant="$2"

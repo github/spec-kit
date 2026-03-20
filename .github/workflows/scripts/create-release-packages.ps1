@@ -207,7 +207,7 @@ agent: $basename
 #
 # Technical debt note:
 # Keep SKILL.md frontmatter aligned with `install_ai_skills()` and extension
-# overrides (at minimum: name/description/compatibility/metadata.source).
+# overrides (at minimum: name/description/compatibility/metadata.{author,source}).
 function New-Skills {
     param(
         [string]$SkillsDir,

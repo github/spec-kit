@@ -379,8 +379,9 @@ Command content with {SCRIPT} and {{args}} placeholders.
 ## Directory Conventions
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
-- **Common prompt-based exceptions**:
+- **Skills-based exceptions**:
   - Codex: `.agents/skills/` (skills, invoked as `$speckit-<command>`)
+- **Prompt-based exceptions**:
   - Kiro CLI: `.kiro/prompts/`
   - Pi: `.pi/prompts/`
 - **IDE agents**: Follow IDE-specific patterns:

@@ -1225,7 +1225,7 @@ DEFAULT_SKILLS_DIR = ".agents/skills"
 #   2) `install_ai_skills()` which converts extracted command templates to skills,
 #   3) extension/preset overrides via `agents.CommandRegistrar.render_skill_command()`.
 # - Keep the skills frontmatter schema aligned across all generators
-#   (at minimum: name/description/compatibility/metadata.source).
+#   (at minimum: name/description/compatibility/metadata.{author,source}).
 # - When adding fields here, update the release scripts and override writers too.
 NATIVE_SKILLS_AGENTS = {"codex", "kimi"}
 
