@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "junie"
+  name: "Junie"
+  version: "1.0.0"
+  description: "Junie by JetBrains for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://junie.jetbrains.com/"
+  cli_tool: "junie"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'jetbrains', 'junie']
+
+command_registration:
+  commands_dir: ".junie/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

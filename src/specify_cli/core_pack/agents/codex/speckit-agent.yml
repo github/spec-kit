@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "codex"
+  name: "Codex CLI"
+  version: "1.0.0"
+  description: "OpenAI Codex CLI with project skills support"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://github.com/openai/codex"
+  cli_tool: "codex"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'openai', 'codex', 'skills']
+
+command_registration:
+  commands_dir: ".agents/skills"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: "/SKILL.md"

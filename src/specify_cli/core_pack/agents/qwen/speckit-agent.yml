@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "qwen"
+  name: "Qwen Code"
+  version: "1.0.0"
+  description: "Alibaba's Qwen Code CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://github.com/QwenLM/qwen-code"
+  cli_tool: "qwen"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'alibaba', 'qwen']
+
+command_registration:
+  commands_dir: ".qwen/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

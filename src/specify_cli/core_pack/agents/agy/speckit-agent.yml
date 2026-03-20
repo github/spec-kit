@@ -1,0 +1,23 @@
+schema_version: "1.0"
+
+agent:
+  id: "agy"
+  name: "Antigravity"
+  version: "1.0.0"
+  description: "Antigravity IDE for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: false
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['ide', 'antigravity']
+
+command_registration:
+  commands_dir: ".agent/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

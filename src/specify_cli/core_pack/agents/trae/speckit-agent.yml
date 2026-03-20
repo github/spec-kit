@@ -1,0 +1,23 @@
+schema_version: "1.0"
+
+agent:
+  id: "trae"
+  name: "Trae"
+  version: "1.0.0"
+  description: "Trae IDE for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: false
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['ide', 'trae']
+
+command_registration:
+  commands_dir: ".trae/rules"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

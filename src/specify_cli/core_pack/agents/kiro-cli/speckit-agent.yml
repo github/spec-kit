@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "kiro-cli"
+  name: "Kiro CLI"
+  version: "1.0.0"
+  description: "Kiro CLI by Amazon for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://kiro.dev/docs/cli/"
+  cli_tool: "kiro-cli"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'amazon', 'kiro']
+
+command_registration:
+  commands_dir: ".kiro/prompts"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

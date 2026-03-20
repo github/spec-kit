@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "pi"
+  name: "Pi Coding Agent"
+  version: "1.0.0"
+  description: "Pi terminal coding agent for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://www.npmjs.com/package/@mariozechner/pi-coding-agent"
+  cli_tool: "pi"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'pi']
+
+command_registration:
+  commands_dir: ".pi/prompts"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"
