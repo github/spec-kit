@@ -33,6 +33,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -241,7 +242,7 @@ def test_scaffold_creates_specify_templates(agent, scaffolded_sh):
 
 
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_scaffold_command_dir_location(agent, scaffolded_sh, source_template_stems):
+def test_scaffold_command_dir_location(agent, scaffolded_sh):
     """Command files land in the directory declared by AGENT_CONFIG."""
     project = scaffolded_sh(agent)
 
@@ -565,11 +566,13 @@ def test_pyproject_force_include_covers_all_templates():
     assert repo_template_files, "Expected at least one template file in templates/"
 
     pyproject_path = _REPO_ROOT / "pyproject.toml"
-    pyproject_text = pyproject_path.read_text()
+    with open(pyproject_path, "rb") as f:
+        pyproject = tomllib.load(f)
+    force_include = pyproject.get("tool", {}).get("hatch", {}).get("build", {}).get("targets", {}).get("wheel", {}).get("force-include", {})
 
     missing = [
         name for name in repo_template_files
-        if f"templates/{name}" not in pyproject_text
+        if f"templates/{name}" not in force_include
     ]
     assert not missing, (
         "Template files not listed in pyproject.toml force-include "
