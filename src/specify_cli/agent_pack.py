@@ -222,6 +222,22 @@ class AgentBootstrap:
         """Return the agent's top-level directory inside the project."""
         return project_path / self.manifest.commands_dir.split("/")[0]
 
+    def finalize_setup(self, project_path: Path) -> None:
+        """Record all files in the agent directory for tracked teardown.
+
+        This must be called **after** the full init pipeline has finished
+        writing files (commands, context files, etc.) into the agent
+        directory.  It scans ``self.manifest.commands_dir`` and records
+        every file with its SHA-256 hash so that :meth:`teardown` can
+        detect user modifications.
+        """
+        if not self.manifest.commands_dir:
+            return
+        commands_dir = project_path / self.manifest.commands_dir
+        if commands_dir.is_dir():
+            installed = [p for p in commands_dir.rglob("*") if p.is_file()]
+            record_installed_files(project_path, self.manifest.id, installed)
+
 
 # ---------------------------------------------------------------------------
 # Installed-file tracking

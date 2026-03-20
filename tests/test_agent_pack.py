@@ -80,16 +80,13 @@ def _write_bootstrap(pack_dir: Path, class_name: str = "TestAgent", agent_dir: s
     bootstrap_file.write_text(textwrap.dedent(f"""\
         from pathlib import Path
         from typing import Any, Dict
-        from specify_cli.agent_pack import AgentBootstrap, record_installed_files, remove_tracked_files
+        from specify_cli.agent_pack import AgentBootstrap, remove_tracked_files
 
         class {class_name}(AgentBootstrap):
             AGENT_DIR = "{agent_dir}"
 
             def setup(self, project_path: Path, script_type: str, options: Dict[str, Any]) -> None:
-                commands_dir = project_path / self.AGENT_DIR / "commands"
-                commands_dir.mkdir(parents=True, exist_ok=True)
-                installed = [p for p in commands_dir.rglob("*") if p.is_file()]
-                record_installed_files(project_path, self.manifest.id, installed)
+                (project_path / self.AGENT_DIR / "commands").mkdir(parents=True, exist_ok=True)
 
             def teardown(self, project_path: Path, *, force: bool = False) -> None:
                 remove_tracked_files(project_path, self.manifest.id, force=force)
@@ -279,10 +276,17 @@ class TestBootstrapContract:
         b.setup(project, "sh", {})
         assert (project / ".test-agent" / "commands").is_dir()
 
-        # The install manifest should exist in .specify/
+        # Simulate the init pipeline writing a file
+        cmd_file = project / ".test-agent" / "commands" / "hello.md"
+        cmd_file.write_text("hello", encoding="utf-8")
+
+        # finalize_setup records files for tracking
+        b.finalize_setup(project)
         assert _manifest_path(project, "test-agent").is_file()
 
         b.teardown(project)
+        # The tracked file should be removed
+        assert not cmd_file.exists()
         # Install manifest itself should be cleaned up
         assert not _manifest_path(project, "test-agent").is_file()
         # Directories are preserved (only files are removed)

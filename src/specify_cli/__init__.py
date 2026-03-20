@@ -2604,6 +2604,8 @@ def agent_switch(
         new_bootstrap = load_bootstrap(resolved.path, resolved.manifest)
         console.print(f"  [dim]Setting up {agent_id}...[/dim]")
         new_bootstrap.setup(project_path, script_type, options)
+        # Record all installed files for tracked teardown
+        new_bootstrap.finalize_setup(project_path)
         console.print(f"  [green]✓[/green] {agent_id} installed")
     except AgentPackError as exc:
         console.print(f"[red]Error setting up {agent_id}:[/red] {exc}")
