@@ -10,7 +10,7 @@ Tests cover:
 import json
 from pathlib import Path
 
-from specify_cli import save_init_options, load_init_options
+from specify_cli import save_init_options
 
 
 class TestSaveBranchNumbering:
