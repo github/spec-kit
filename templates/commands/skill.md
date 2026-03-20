@@ -1,10 +1,10 @@
 ---
-name: "speckit"
-description: "Full Spec-Driven Development (SDD) workflow powered by github/spec-kit. Use speckit-specify to start a feature, then speckit-plan, speckit-tasks, and speckit-implement in sequence."
+name: speckit
+description: Full Spec-Driven Development (SDD) workflow powered by github/spec-kit. Use speckit-specify to start a feature, then speckit-plan, speckit-tasks, and speckit-implement in sequence.
 metadata:
-  author: "github-spec-kit"
-  source: "https://github.com/github/spec-kit"
-  version: "1.0.0"
+  author: github-spec-kit
+  source: https://github.com/github/spec-kit
+  version: 1.0.0
 ---
 
 # Spec Kit — Spec-Driven Development
