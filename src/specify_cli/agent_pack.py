@@ -324,8 +324,10 @@ class AgentBootstrap:
         all_extension = list(extension_files or [])
 
         # Filter agent_files: only keep files under the agent's directory
-        # tree.  setup() may return shared project files (e.g. .specify/)
-        # which must not be tracked per-agent.
+        # tree.  setup() returns *all* scaffolded files (including shared
+        # project infrastructure in .specify/) but only agent-owned files
+        # should be tracked per-agent — shared files are not removed
+        # during teardown/switch.
         agent_root = self.agent_dir(project_path)
         agent_root_resolved = agent_root.resolve()
         all_agent: List[Path] = []
@@ -334,25 +336,22 @@ class AgentBootstrap:
                 p.resolve().relative_to(agent_root_resolved)
                 all_agent.append(p)
             except ValueError:
-                pass  # shared file — not tracked per-agent
+                pass
 
-        # Scan the agent's directory tree for files created by the init
-        # pipeline that setup() did not report directly.  We scan the
-        # entire agent directory (the parent of commands_dir) because
-        # skills-migrated agents replace the commands directory with a
-        # sibling skills directory during init.
+        # Scan the agent's directory tree for files created by later
+        # init pipeline steps (skills, presets, extensions) that
+        # setup() did not report.  We scan the agent root directory
+        # (e.g. .claude/) so we catch both commands and skills
+        # directories (skills-migrated agents replace the commands
+        # directory with a sibling skills directory during init).
         if self.manifest.commands_dir:
-            commands_dir = project_path / self.manifest.commands_dir
-            # Scan the agent root (e.g. .claude/) so we catch both
-            # commands and skills directories.
-            agent_root = commands_dir.parent
-            agent_set = {p.resolve() for p in all_agent}
-            for scan_dir in (commands_dir, agent_root):
-                if scan_dir.is_dir():
-                    for p in scan_dir.rglob("*"):
-                        if p.is_file() and p.resolve() not in agent_set:
-                            all_agent.append(p)
-                            agent_set.add(p.resolve())
+            agent_root = self.agent_dir(project_path)
+            if agent_root.is_dir():
+                agent_set = {p.resolve() for p in all_agent}
+                for p in agent_root.rglob("*"):
+                    if p.is_file() and p.resolve() not in agent_set:
+                        all_agent.append(p)
+                        agent_set.add(p.resolve())
 
         record_installed_files(
             project_path,
