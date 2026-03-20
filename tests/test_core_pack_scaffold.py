@@ -31,6 +31,7 @@ Parity invariant
 
 import os
 import re
+import shutil
 import subprocess
 import zipfile
 from pathlib import Path
@@ -51,6 +52,10 @@ _RELEASE_SCRIPT = _REPO_ROOT / ".github" / "workflows" / "scripts" / "create-rel
 
 def _find_bash() -> str | None:
     """Return the path to a usable bash on this machine, or None."""
+    # Prefer PATH lookup so non-standard install locations (Nix, CI) are found.
+    on_path = shutil.which("bash")
+    if on_path:
+        return on_path
     candidates = [
         "/opt/homebrew/bin/bash",
         "/usr/local/bin/bash",
@@ -487,10 +492,11 @@ def test_scaffold_powershell_variant(agent, scaffolded_ps, source_template_stems
 # 8. Parity: bundled vs. real create-release-packages.sh ZIP
 # ---------------------------------------------------------------------------
 
+@pytest.mark.parametrize("script_type", ["sh", "ps"])
 @pytest.mark.parametrize("agent", _TESTABLE_AGENTS)
-def test_parity_bundled_vs_release_script(tmp_path, agent):
+def test_parity_bundled_vs_release_script(tmp_path, agent, script_type):
     """scaffold_from_core_pack() file tree is identical to the ZIP produced by
-    create-release-packages.sh for every agent (sh variant).
+    create-release-packages.sh for every agent and script type.
 
     This is the true end-to-end parity check: the Python offline path must
     produce exactly the same artifacts as the canonical shell release script.
@@ -506,7 +512,7 @@ def test_parity_bundled_vs_release_script(tmp_path, agent):
     # --- Release script path ---
     gen_dir = tmp_path / "genreleases"
     gen_dir.mkdir()
-    zip_path = _run_release_script(agent, "sh", bash, gen_dir)
+    zip_path = _run_release_script(agent, script_type, bash, gen_dir)
     script_dir = tmp_path / "extracted"
     script_dir.mkdir()
     with zipfile.ZipFile(zip_path) as zf:
@@ -514,7 +520,7 @@ def test_parity_bundled_vs_release_script(tmp_path, agent):
 
     # --- Bundled path ---
     bundled_dir = tmp_path / "bundled"
-    ok = scaffold_from_core_pack(bundled_dir, agent, "sh")
+    ok = scaffold_from_core_pack(bundled_dir, agent, script_type)
     assert ok
 
     bundled_tree = _collect_relative_files(bundled_dir)
@@ -524,17 +530,17 @@ def test_parity_bundled_vs_release_script(tmp_path, agent):
     only_script = set(script_tree) - set(bundled_tree)
 
     assert not only_bundled, (
-        f"Agent '{agent}': files only in bundled output (not in release ZIP):\n  "
+        f"Agent '{agent}' ({script_type}): files only in bundled output (not in release ZIP):\n  "
         + "\n  ".join(sorted(only_bundled))
     )
     assert not only_script, (
-        f"Agent '{agent}': files only in release ZIP (not in bundled output):\n  "
+        f"Agent '{agent}' ({script_type}): files only in release ZIP (not in bundled output):\n  "
         + "\n  ".join(sorted(only_script))
     )
 
     for name in bundled_tree:
         assert bundled_tree[name] == script_tree[name], (
-            f"Agent '{agent}': file '{name}' content differs between "
+            f"Agent '{agent}' ({script_type}): file '{name}' content differs between "
             f"bundled output and release script ZIP"
         )
 
