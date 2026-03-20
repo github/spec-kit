@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "shai"
+  name: "SHAI"
+  version: "1.0.0"
+  description: "SHAI CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://github.com/ovh/shai"
+  cli_tool: "shai"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'ovh', 'shai']
+
+command_registration:
+  commands_dir: ".shai/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

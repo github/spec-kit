@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "codebuddy"
+  name: "CodeBuddy"
+  version: "1.0.0"
+  description: "CodeBuddy CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://www.codebuddy.ai/cli"
+  cli_tool: "codebuddy"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'codebuddy']
+
+command_registration:
+  commands_dir: ".codebuddy/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

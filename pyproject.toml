@@ -43,6 +43,8 @@ packages = ["src/specify_cli"]
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
 ".github/workflows/scripts/create-release-packages.sh" = "specify_cli/core_pack/release_scripts/create-release-packages.sh"
 ".github/workflows/scripts/create-release-packages.ps1" = "specify_cli/core_pack/release_scripts/create-release-packages.ps1"
+# Official agent packs (embedded in wheel for zero-config offline operation)
+"src/specify_cli/core_pack/agents" = "specify_cli/core_pack/agents"
 
 [project.optional-dependencies]
 test = [

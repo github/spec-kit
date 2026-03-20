@@ -36,7 +36,7 @@ import json5
 import stat
 import yaml
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import typer
 import httpx
@@ -1715,6 +1715,7 @@ def _handle_agent_skills_migration(console: Console, agent_key: str) -> None:
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
+    agent: str = typer.Option(None, "--agent", help="AI agent to use (enables file tracking for clean teardown when switching agents). Accepts the same agent IDs as --ai."),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
@@ -1753,6 +1754,7 @@ def init(
     Examples:
         specify init my-project
         specify init my-project --ai claude
+        specify init my-project --agent claude  # Pack-based flow (with file tracking)
         specify init my-project --ai copilot --no-git
         specify init --ignore-agent-tools my-project
         specify init . --ai claude         # Initialize in current directory
@@ -1765,12 +1767,24 @@ def init(
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init my-project --ai claude --ai-skills   # Install agent skills
         specify init --here --ai gemini --ai-skills
+        specify init my-project --agent claude --ai-skills  # Pack-based flow with skills
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
         specify init my-project --offline  # Use bundled assets (no network access)
         specify init my-project --ai claude --preset healthcare-compliance  # With preset
     """
 
     show_banner()
+
+    # --agent and --ai are interchangeable for agent selection, but --agent
+    # additionally opts into the pack-based flow (file tracking via
+    # finalize_setup for tracked teardown/switch).
+    use_agent_pack = False
+    if agent:
+        if ai_assistant:
+            console.print("[red]Error:[/red] --agent and --ai cannot both be specified. Use one or the other.")
+            raise typer.Exit(1)
+        ai_assistant = agent
+        use_agent_pack = True
 
     # Detect when option values are likely misinterpreted flags (parameter ordering issue)
     if ai_assistant and ai_assistant.startswith("--"):
@@ -1802,7 +1816,7 @@ def init(
         raise typer.Exit(1)
 
     if ai_skills and not ai_assistant:
-        console.print("[red]Error:[/red] --ai-skills requires --ai to be specified")
+        console.print("[red]Error:[/red] --ai-skills requires --ai or --agent to be specified")
         console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
         raise typer.Exit(1)
 
@@ -1853,6 +1867,19 @@ def init(
             "Choose your AI assistant:", 
             "copilot"
         )
+
+    # When --agent is used, validate that the agent resolves through the pack
+    # system and prepare the bootstrap for post-init file tracking.
+    agent_bootstrap = None
+    if use_agent_pack:
+        from .agent_pack import resolve_agent_pack, load_bootstrap, PackResolutionError, AgentPackError
+        try:
+            resolved = resolve_agent_pack(selected_ai)
+            agent_bootstrap = load_bootstrap(resolved.path, resolved.manifest)
+            console.print(f"[dim]Pack-based flow: {resolved.manifest.name} ({resolved.source})[/dim]")
+        except (PackResolutionError, AgentPackError) as exc:
+            console.print(f"[red]Error resolving agent pack:[/red] {exc}")
+            raise typer.Exit(1)
 
     # Agents that have moved from explicit commands/prompts to agent skills.
     if selected_ai in AGENT_SKILLS_MIGRATIONS and not ai_skills:
@@ -1957,7 +1984,10 @@ def init(
             "This will become the default in v0.6.0."
         )
 
-    if use_github:
+    if use_agent_pack:
+        # Pack-based flow: setup() owns scaffolding, always uses bundled assets.
+        tracker.add("scaffold", "Apply bundled assets")
+    elif use_github:
         for key, label in [
             ("fetch", "Fetch latest release"),
             ("download", "Download template"),
@@ -1992,7 +2022,26 @@ def init(
             verify = not skip_tls
             local_ssl_context = ssl_context if verify else False
 
-            if use_github:
+            # -- scaffolding ------------------------------------------------
+            # Pack-based flow (--agent): setup() owns scaffolding and
+            # returns every file it created.  Legacy flow (--ai): scaffold
+            # directly or download from GitHub.
+            agent_setup_files: list[Path] = []
+
+            if use_agent_pack and agent_bootstrap is not None:
+                tracker.start("scaffold")
+                try:
+                    agent_setup_files = agent_bootstrap.setup(
+                        project_path, selected_script, {"here": here})
+                    tracker.complete(
+                        "scaffold",
+                        f"{selected_ai} ({len(agent_setup_files)} files)")
+                except Exception as exc:
+                    tracker.error("scaffold", str(exc))
+                    if not here and project_path.exists():
+                        shutil.rmtree(project_path)
+                    raise typer.Exit(1)
+            elif use_github:
                 with httpx.Client(verify=local_ssl_context) as local_client:
                     download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
             else:
@@ -2090,6 +2139,7 @@ def init(
                 "ai": selected_ai,
                 "ai_skills": ai_skills,
                 "ai_commands_dir": ai_commands_dir,
+                "agent_pack": use_agent_pack,
                 "branch_numbering": branch_numbering or "sequential",
                 "here": here,
                 "preset": preset,
@@ -2132,6 +2182,16 @@ def init(
             # Scaffold path has no zip archive to clean up
             if not use_github:
                 tracker.skip("cleanup", "not needed (no download)")
+
+            # When --agent is used, record all installed agent files for
+            # tracked teardown.  setup() already returned the files it
+            # created; pass them to finalize_setup so the manifest is
+            # accurate.  finalize_setup also scans the agent directory
+            # to catch any additional files created by later pipeline
+            # steps (skills, extensions, presets).
+            if use_agent_pack and agent_bootstrap is not None:
+                agent_bootstrap.finalize_setup(
+                    project_path, agent_files=agent_setup_files)
 
             tracker.complete("final", "project ready")
         except (typer.Exit, SystemExit):
@@ -2364,6 +2424,513 @@ def version():
 
     console.print(panel)
     console.print()
+
+
+# ===== Agent Commands =====
+
+agent_app = typer.Typer(
+    name="agent",
+    help="Manage agent packs for AI assistants",
+    add_completion=False,
+)
+app.add_typer(agent_app, name="agent")
+
+
+@agent_app.command("list")
+def agent_list(
+    installed: bool = typer.Option(False, "--installed", help="Only show agents with local presence in the current project"),
+):
+    """List available agent packs."""
+    from .agent_pack import list_all_agents, list_embedded_agents
+
+    show_banner()
+
+    project_path = Path.cwd()
+    agents = list_all_agents(project_path=project_path if installed else None)
+    if not agents and not installed:
+        agents_from_embedded = list_embedded_agents()
+        if not agents_from_embedded:
+            console.print("[yellow]No agent packs found.[/yellow]")
+            console.print("[dim]Agent packs are embedded in the specify-cli wheel.[/dim]")
+            raise typer.Exit(0)
+
+    table = Table(title="Available Agent Packs", show_lines=False)
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Name", style="white")
+    table.add_column("Version", style="dim")
+    table.add_column("Source", style="green")
+    table.add_column("CLI Required", style="yellow", justify="center")
+
+    for resolved in agents:
+        m = resolved.manifest
+        cli_marker = "✓" if m.requires_cli else "—"
+        source_display = resolved.source
+        if resolved.overrides:
+            source_display += f" (overrides {resolved.overrides})"
+        table.add_row(m.id, m.name, m.version, source_display, cli_marker)
+
+    console.print(table)
+    console.print(f"\n[dim]{len(agents)} agent(s) available[/dim]")
+
+
+@agent_app.command("info")
+def agent_info(
+    agent_id: str = typer.Argument(..., help="Agent pack ID (e.g. 'claude', 'gemini')"),
+):
+    """Show detailed information about an agent pack."""
+    from .agent_pack import resolve_agent_pack, PackResolutionError
+
+    show_banner()
+
+    try:
+        resolved = resolve_agent_pack(agent_id, project_path=Path.cwd())
+    except PackResolutionError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    m = resolved.manifest
+
+    info_table = Table(show_header=False, box=None, padding=(0, 2))
+    info_table.add_column("Key", style="cyan", justify="right")
+    info_table.add_column("Value", style="white")
+
+    info_table.add_row("Agent", f"{m.name} ({m.id})")
+    info_table.add_row("Version", m.version)
+    info_table.add_row("Description", m.description or "—")
+    info_table.add_row("Author", m.author or "—")
+    info_table.add_row("License", m.license or "—")
+    info_table.add_row("", "")
+
+    source_display = resolved.source
+    if resolved.source == "catalog":
+        source_display = f"catalog — {resolved.path}"
+    elif resolved.source == "embedded":
+        source_display = f"embedded (bundled in specify-cli wheel)"
+
+    info_table.add_row("Source", source_display)
+    if resolved.overrides:
+        info_table.add_row("Overrides", resolved.overrides)
+    info_table.add_row("Pack Path", str(resolved.path))
+    info_table.add_row("", "")
+
+    info_table.add_row("Requires CLI", "Yes" if m.requires_cli else "No")
+    if m.install_url:
+        info_table.add_row("Install URL", m.install_url)
+    if m.cli_tool:
+        info_table.add_row("CLI Tool", m.cli_tool)
+    info_table.add_row("", "")
+
+    info_table.add_row("Commands Dir", m.commands_dir or "—")
+    info_table.add_row("Format", m.command_format)
+    info_table.add_row("Arg Placeholder", m.arg_placeholder)
+    info_table.add_row("File Extension", m.file_extension)
+    info_table.add_row("", "")
+
+    info_table.add_row("Tags", ", ".join(m.tags) if m.tags else "—")
+    info_table.add_row("Speckit Version", m.speckit_version)
+
+    panel = Panel(
+        info_table,
+        title=f"[bold cyan]Agent: {m.name}[/bold cyan]",
+        border_style="cyan",
+        padding=(1, 2),
+    )
+    console.print(panel)
+
+
+@agent_app.command("validate")
+def agent_validate(
+    pack_path: str = typer.Argument(..., help="Path to the agent pack directory to validate"),
+):
+    """Validate an agent pack's structure and manifest."""
+    from .agent_pack import validate_pack, ManifestValidationError, AgentManifest, MANIFEST_FILENAME
+
+    show_banner()
+
+    path = Path(pack_path).resolve()
+    if not path.is_dir():
+        console.print(f"[red]Error:[/red] Not a directory: {path}")
+        raise typer.Exit(1)
+
+    try:
+        warnings = validate_pack(path)
+    except ManifestValidationError as exc:
+        console.print(f"[red]Validation failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    manifest = AgentManifest.from_yaml(path / MANIFEST_FILENAME)
+    console.print(f"[green]✓[/green] Pack '{manifest.id}' ({manifest.name}) is valid")
+
+    if warnings:
+        console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
+        for w in warnings:
+            console.print(f"  [yellow]⚠[/yellow] {w}")
+    else:
+        console.print("[green]No warnings.[/green]")
+
+
+@agent_app.command("export")
+def agent_export(
+    agent_id: str = typer.Argument(..., help="Agent pack ID to export"),
+    to: str = typer.Option(..., "--to", help="Destination directory for the exported pack"),
+):
+    """Export the active agent pack to a directory for editing."""
+    from .agent_pack import export_pack, PackResolutionError
+
+    show_banner()
+
+    dest = Path(to).resolve()
+    try:
+        result = export_pack(agent_id, dest, project_path=Path.cwd())
+    except PackResolutionError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Exported '{agent_id}' pack to {result}")
+    console.print(f"[dim]Edit files in {result} and use as a project-level override.[/dim]")
+
+
+@agent_app.command("switch")
+def agent_switch(
+    agent_id: str = typer.Argument(..., help="Agent pack ID to switch to"),
+    force: bool = typer.Option(False, "--force", help="Remove agent files even if they were modified since installation"),
+):
+    """Switch the active AI agent in the current project.
+
+    Tears down the current agent and sets up the new one.
+    Preserves specs, plans, tasks, constitution, memory, templates, and scripts.
+    """
+    from .agent_pack import (
+        resolve_agent_pack,
+        load_bootstrap,
+        check_modified_files,
+        get_tracked_files,
+        PackResolutionError,
+        AgentPackError,
+    )
+
+    show_banner()
+
+    project_path = Path.cwd()
+    init_options_file = project_path / ".specify" / "init-options.json"
+
+    if not init_options_file.exists():
+        console.print("[red]Error:[/red] Not a Specify project (missing .specify/init-options.json)")
+        console.print("[yellow]Hint:[/yellow] Run 'specify init --here' first.")
+        raise typer.Exit(1)
+
+    # Load current project options
+    try:
+        options = json.loads(init_options_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        console.print(f"[red]Error reading init options:[/red] {exc}")
+        raise typer.Exit(1)
+
+    current_agent = options.get("ai")
+    script_type = options.get("script", "sh")
+
+    # Resolve the new agent pack
+    try:
+        resolved = resolve_agent_pack(agent_id, project_path=project_path)
+    except PackResolutionError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]Switching agent: {current_agent or '(none)'} → {agent_id}[/bold]")
+
+    # Teardown current agent (best effort — may have been set up with old system)
+    if current_agent:
+        try:
+            current_resolved = resolve_agent_pack(current_agent, project_path=project_path)
+            current_bootstrap = load_bootstrap(current_resolved.path, current_resolved.manifest)
+
+            # Check for modified files BEFORE teardown and prompt for confirmation
+            modified = check_modified_files(project_path, current_agent)
+            if modified and not force:
+                console.print("[yellow]The following files have been modified since installation:[/yellow]")
+                for f in modified:
+                    console.print(f"  {f}")
+                if not typer.confirm("Remove these modified files?"):
+                    console.print("[dim]Aborted. Use --force to skip this check.[/dim]")
+                    raise typer.Exit(0)
+
+            # Retrieve tracked file lists and feed them into teardown
+            agent_files, extension_files = get_tracked_files(project_path, current_agent)
+            all_files = {**agent_files, **extension_files}
+
+            console.print(f"  [dim]Tearing down {current_agent}...[/dim]")
+            current_bootstrap.teardown(
+                project_path,
+                force=True,  # already confirmed above
+                files=all_files if all_files else None,
+            )
+            console.print(f"  [green]✓[/green] {current_agent} removed")
+        except AgentPackError:
+            # If pack-based teardown fails, try legacy cleanup via AGENT_CONFIG
+            agent_config = AGENT_CONFIG.get(current_agent, {})
+            agent_folder = agent_config.get("folder")
+            if agent_folder:
+                agent_dir = project_path / agent_folder.rstrip("/")
+                if agent_dir.is_dir():
+                    shutil.rmtree(agent_dir)
+                    console.print(f"  [green]✓[/green] {current_agent} directory removed (legacy)")
+
+    # Setup new agent
+    try:
+        new_bootstrap = load_bootstrap(resolved.path, resolved.manifest)
+        console.print(f"  [dim]Setting up {agent_id}...[/dim]")
+        agent_files = new_bootstrap.setup(project_path, script_type, options)
+        console.print(f"  [green]✓[/green] {agent_id} installed")
+    except AgentPackError as exc:
+        console.print(f"[red]Error setting up {agent_id}:[/red] {exc}")
+        raise typer.Exit(1)
+
+    # Update init options
+    options["ai"] = agent_id
+    init_options_file.write_text(json.dumps(options, indent=2), encoding="utf-8")
+
+    # Re-register extension commands for the new agent
+    extension_files = _reregister_extension_commands(project_path, agent_id)
+
+    # Record all installed files (agent + extensions) for tracked teardown
+    new_bootstrap.finalize_setup(
+        project_path,
+        agent_files=agent_files,
+        extension_files=extension_files,
+    )
+
+    console.print(f"\n[bold green]Successfully switched to {resolved.manifest.name}[/bold green]")
+
+
+def _reregister_extension_commands(project_path: Path, agent_id: str) -> List[Path]:
+    """Re-register all installed extension commands for a new agent after switching.
+
+    Returns:
+        List of absolute file paths created by extension registration.
+    """
+    created_files: List[Path] = []
+    registry_file = project_path / ".specify" / "extensions" / ".registry"
+    if not registry_file.is_file():
+        return created_files
+
+    try:
+        registry_data = json.loads(registry_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return created_files
+
+    extensions = registry_data.get("extensions", {})
+    if not extensions:
+        return created_files
+
+    try:
+        from .agents import CommandRegistrar
+        registrar = CommandRegistrar()
+    except ImportError:
+        return created_files
+
+    # Snapshot the commands directory before registration so we can
+    # detect which files were created by extension commands.
+    agent_config = registrar.AGENT_CONFIGS.get(agent_id)
+    if agent_config:
+        commands_dir = project_path / agent_config["dir"]
+        pre_existing = set(commands_dir.rglob("*")) if commands_dir.is_dir() else set()
+    else:
+        pre_existing = set()
+
+    reregistered = 0
+    for ext_id, ext_data in extensions.items():
+        commands = ext_data.get("registered_commands", {})
+        if not commands:
+            continue
+
+        ext_dir = project_path / ".specify" / "extensions" / ext_id
+        if not ext_dir.is_dir():
+            continue
+
+        # Get the command list from the manifest
+        manifest_file = ext_dir / "extension.yml"
+        if not manifest_file.is_file():
+            continue
+
+        try:
+            from .extensions import ExtensionManifest
+            manifest = ExtensionManifest(manifest_file)
+            if manifest.commands:
+                registered = registrar.register_commands(
+                    agent_id, manifest.commands, ext_id, ext_dir / "commands", project_path
+                )
+                if registered:
+                    reregistered += len(registered)
+        except Exception:
+            continue
+
+    # Collect files created by extension registration
+    if agent_config:
+        commands_dir = project_path / agent_config["dir"]
+        if commands_dir.is_dir():
+            for p in commands_dir.rglob("*"):
+                if p.is_file() and p not in pre_existing:
+                    created_files.append(p)
+
+    if reregistered:
+        console.print(
+            f"  [green]✓[/green] Re-registered {reregistered} extension command(s) ({len(created_files)} file(s))"
+        )
+
+    return created_files
+
+
+@agent_app.command("search")
+def agent_search(
+    query: str = typer.Argument(None, help="Search query (matches agent ID, name, or tags)"),
+    tag: str = typer.Option(None, "--tag", help="Filter by tag"),
+):
+    """Search for agent packs across embedded and catalog sources."""
+    from .agent_pack import list_all_agents
+
+    show_banner()
+
+    all_agents = list_all_agents(project_path=Path.cwd())
+
+    if query:
+        query_lower = query.lower()
+        all_agents = [
+            a for a in all_agents
+            if query_lower in a.manifest.id.lower()
+            or query_lower in a.manifest.name.lower()
+            or query_lower in a.manifest.description.lower()
+            or any(query_lower in t.lower() for t in a.manifest.tags)
+        ]
+
+    if tag:
+        tag_lower = tag.lower()
+        all_agents = [
+            a for a in all_agents
+            if any(tag_lower == t.lower() for t in a.manifest.tags)
+        ]
+
+    if not all_agents:
+        console.print("[yellow]No agents found matching your search.[/yellow]")
+        raise typer.Exit(0)
+
+    table = Table(title="Search Results", show_lines=False)
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Name", style="white")
+    table.add_column("Description", style="dim")
+    table.add_column("Tags", style="green")
+    table.add_column("Source", style="yellow")
+
+    for resolved in all_agents:
+        m = resolved.manifest
+        table.add_row(
+            m.id, m.name,
+            (m.description[:50] + "...") if len(m.description) > 53 else m.description,
+            ", ".join(m.tags),
+            resolved.source,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(all_agents)} result(s)[/dim]")
+
+
+@agent_app.command("add")
+def agent_add(
+    agent_id: str = typer.Argument(..., help="Agent pack ID to install"),
+    from_path: str = typer.Option(None, "--from", help="Install from a local path instead of a catalog"),
+):
+    """Install an agent pack from a catalog or local path."""
+    from .agent_pack import (
+        _catalog_agents_dir,
+        AgentManifest,
+        ManifestValidationError,
+        MANIFEST_FILENAME,
+    )
+
+    show_banner()
+
+    if from_path:
+        source = Path(from_path).resolve()
+        if not source.is_dir():
+            console.print(f"[red]Error:[/red] Not a directory: {source}")
+            raise typer.Exit(1)
+
+        manifest_file = source / MANIFEST_FILENAME
+        if not manifest_file.is_file():
+            console.print(f"[red]Error:[/red] No {MANIFEST_FILENAME} found in {source}")
+            raise typer.Exit(1)
+
+        try:
+            manifest = AgentManifest.from_yaml(manifest_file)
+        except ManifestValidationError as exc:
+            console.print(f"[red]Validation failed:[/red] {exc}")
+            raise typer.Exit(1)
+
+        dest = _catalog_agents_dir() / manifest.id
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, dest, dirs_exist_ok=True)
+        console.print(f"[green]✓[/green] Installed '{manifest.id}' ({manifest.name}) from {source}")
+    else:
+        # Catalog fetch — placeholder for future catalog integration
+        console.print(f"[yellow]Catalog fetch not yet implemented.[/yellow]")
+        console.print(f"[dim]Use --from <path> to install from a local directory.[/dim]")
+        raise typer.Exit(1)
+
+
+@agent_app.command("remove")
+def agent_remove(
+    agent_id: str = typer.Argument(..., help="Agent pack ID to remove"),
+):
+    """Remove a cached/override agent pack.
+
+    If the agent is an official embedded agent, removing the override
+    falls back to the embedded version.
+    """
+    from .agent_pack import (
+        _catalog_agents_dir,
+        _user_agents_dir,
+        _embedded_agents_dir,
+        MANIFEST_FILENAME,
+    )
+
+    show_banner()
+
+    removed = False
+
+    # Check user-level
+    user_pack = _user_agents_dir() / agent_id
+    if user_pack.is_dir():
+        shutil.rmtree(user_pack)
+        console.print(f"[green]✓[/green] Removed user-level override for '{agent_id}'")
+        removed = True
+
+    # Check project-level
+    project_pack = Path.cwd() / ".specify" / "agents" / agent_id
+    if project_pack.is_dir():
+        shutil.rmtree(project_pack)
+        console.print(f"[green]✓[/green] Removed project-level override for '{agent_id}'")
+        removed = True
+
+    # Check catalog cache
+    catalog_pack = _catalog_agents_dir() / agent_id
+    if catalog_pack.is_dir():
+        shutil.rmtree(catalog_pack)
+        console.print(f"[green]✓[/green] Removed catalog-cached version of '{agent_id}'")
+        removed = True
+
+    if not removed:
+        # Check if it's an embedded agent
+        embedded_pack = _embedded_agents_dir() / agent_id / MANIFEST_FILENAME
+        if embedded_pack.is_file():
+            console.print(f"[yellow]'{agent_id}' is an embedded official agent and cannot be removed.[/yellow]")
+            console.print("[dim]It has no overrides to remove.[/dim]")
+        else:
+            console.print(f"[red]Error:[/red] Agent '{agent_id}' not found.")
+            raise typer.Exit(1)
+    else:
+        # Check for embedded fallback
+        embedded_pack = _embedded_agents_dir() / agent_id / MANIFEST_FILENAME
+        if embedded_pack.is_file():
+            console.print(f"[dim]Embedded version of '{agent_id}' is now active.[/dim]")
 
 
 # ===== Extension Commands =====

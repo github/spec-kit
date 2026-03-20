@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "gemini"
+  name: "Gemini CLI"
+  version: "1.0.0"
+  description: "Google's Gemini CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://github.com/google-gemini/gemini-cli"
+  cli_tool: "gemini"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'google', 'gemini']
+
+command_registration:
+  commands_dir: ".gemini/commands"
+  format: "toml"
+  arg_placeholder: "{{args}}"
+  file_extension: ".toml"

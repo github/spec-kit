@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "claude"
+  name: "Claude Code"
+  version: "1.0.0"
+  description: "Anthropic's Claude Code CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://docs.anthropic.com/en/docs/claude-code/setup"
+  cli_tool: "claude"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'anthropic', 'claude']
+
+command_registration:
+  commands_dir: ".claude/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

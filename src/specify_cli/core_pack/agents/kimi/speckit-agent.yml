@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "kimi"
+  name: "Kimi Code"
+  version: "1.0.0"
+  description: "Kimi Code CLI by Moonshot AI with skills support"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://code.kimi.com/"
+  cli_tool: "kimi"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'moonshot', 'kimi', 'skills']
+
+command_registration:
+  commands_dir: ".kimi/skills"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: "/SKILL.md"

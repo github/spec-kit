@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "amp"
+  name: "Amp"
+  version: "1.0.0"
+  description: "Amp CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://ampcode.com/manual#install"
+  cli_tool: "amp"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'amp']
+
+command_registration:
+  commands_dir: ".agents/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

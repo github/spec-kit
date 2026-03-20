@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "auggie"
+  name: "Auggie CLI"
+  version: "1.0.0"
+  description: "Auggie CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"
+  cli_tool: "auggie"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'augment', 'auggie']
+
+command_registration:
+  commands_dir: ".augment/commands"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

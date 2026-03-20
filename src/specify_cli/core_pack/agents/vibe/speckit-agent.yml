@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+agent:
+  id: "vibe"
+  name: "Mistral Vibe"
+  version: "1.0.0"
+  description: "Mistral Vibe CLI for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: true
+  install_url: "https://github.com/mistralai/mistral-vibe"
+  cli_tool: "vibe"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['cli', 'mistral', 'vibe']
+
+command_registration:
+  commands_dir: ".vibe/prompts"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"

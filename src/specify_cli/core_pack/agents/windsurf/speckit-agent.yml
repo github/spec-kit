@@ -1,0 +1,23 @@
+schema_version: "1.0"
+
+agent:
+  id: "windsurf"
+  name: "Windsurf"
+  version: "1.0.0"
+  description: "Windsurf IDE for AI-assisted development"
+  author: "github"
+  license: "MIT"
+
+runtime:
+  requires_cli: false
+
+requires:
+  speckit_version: ">=0.1.0"
+
+tags: ['ide', 'windsurf']
+
+command_registration:
+  commands_dir: ".windsurf/workflows"
+  format: "markdown"
+  arg_placeholder: "$ARGUMENTS"
+  file_extension: ".md"
