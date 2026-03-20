@@ -1715,6 +1715,7 @@ def _handle_agent_skills_migration(console: Console, agent_key: str) -> None:
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
+    agent: str = typer.Option(None, "--agent", help="AI agent to use (pack-based flow — resolves through the agent pack system and records installed files for tracked teardown). Accepts the same agent IDs as --ai."),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
@@ -1753,6 +1754,7 @@ def init(
     Examples:
         specify init my-project
         specify init my-project --ai claude
+        specify init my-project --agent claude  # Pack-based flow (with file tracking)
         specify init my-project --ai copilot --no-git
         specify init --ignore-agent-tools my-project
         specify init . --ai claude         # Initialize in current directory
@@ -1765,12 +1767,24 @@ def init(
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init my-project --ai claude --ai-skills   # Install agent skills
         specify init --here --ai gemini --ai-skills
+        specify init my-project --agent claude --ai-skills  # Pack-based flow with skills
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
         specify init my-project --offline  # Use bundled assets (no network access)
         specify init my-project --ai claude --preset healthcare-compliance  # With preset
     """
 
     show_banner()
+
+    # --agent and --ai are interchangeable for agent selection, but --agent
+    # additionally opts into the pack-based flow (file tracking via
+    # finalize_setup for tracked teardown/switch).
+    use_agent_pack = False
+    if agent:
+        if ai_assistant:
+            console.print("[red]Error:[/red] --agent and --ai cannot both be specified. Use one or the other.")
+            raise typer.Exit(1)
+        ai_assistant = agent
+        use_agent_pack = True
 
     # Detect when option values are likely misinterpreted flags (parameter ordering issue)
     if ai_assistant and ai_assistant.startswith("--"):
@@ -1802,7 +1816,7 @@ def init(
         raise typer.Exit(1)
 
     if ai_skills and not ai_assistant:
-        console.print("[red]Error:[/red] --ai-skills requires --ai to be specified")
+        console.print("[red]Error:[/red] --ai-skills requires --ai or --agent to be specified")
         console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
         raise typer.Exit(1)
 
@@ -1853,6 +1867,19 @@ def init(
             "Choose your AI assistant:", 
             "copilot"
         )
+
+    # When --agent is used, validate that the agent resolves through the pack
+    # system and prepare the bootstrap for post-init file tracking.
+    agent_bootstrap = None
+    if use_agent_pack:
+        from .agent_pack import resolve_agent_pack, load_bootstrap, PackResolutionError, AgentPackError
+        try:
+            resolved = resolve_agent_pack(selected_ai)
+            agent_bootstrap = load_bootstrap(resolved.path, resolved.manifest)
+            console.print(f"[dim]Pack-based flow: {resolved.manifest.name} ({resolved.source})[/dim]")
+        except (PackResolutionError, AgentPackError) as exc:
+            console.print(f"[red]Error resolving agent pack:[/red] {exc}")
+            raise typer.Exit(1)
 
     # Agents that have moved from explicit commands/prompts to agent skills.
     if selected_ai in AGENT_SKILLS_MIGRATIONS and not ai_skills:
@@ -2090,6 +2117,7 @@ def init(
                 "ai": selected_ai,
                 "ai_skills": ai_skills,
                 "ai_commands_dir": ai_commands_dir,
+                "agent_pack": use_agent_pack,
                 "branch_numbering": branch_numbering or "sequential",
                 "here": here,
                 "preset": preset,
@@ -2132,6 +2160,13 @@ def init(
             # Scaffold path has no zip archive to clean up
             if not use_github:
                 tracker.skip("cleanup", "not needed (no download)")
+
+            # When --agent is used, record all installed agent files for
+            # tracked teardown.  This runs AFTER the full init pipeline has
+            # finished creating files (scaffolding, skills, presets,
+            # extensions) so finalize_setup captures everything.
+            if use_agent_pack and agent_bootstrap is not None:
+                agent_bootstrap.finalize_setup(project_path)
 
             tracker.complete("final", "project ready")
         except (typer.Exit, SystemExit):

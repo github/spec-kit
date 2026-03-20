@@ -808,3 +808,109 @@ class TestFileTracking:
         modified = check_modified_files(project, "ag")
         assert len(modified) == 1
         assert ".ag/ext.md" in modified[0]
+
+
+# ===================================================================
+# --agent flag on init (pack-based flow parity)
+# ===================================================================
+
+class TestInitAgentFlag:
+    """Verify the --agent flag on ``specify init`` resolves through the
+    pack system and that pack metadata is consistent with AGENT_CONFIG."""
+
+    def test_agent_resolves_same_agent_as_ai(self):
+        """--agent <id> resolves the same agent as --ai <id> for all
+        agents in AGENT_CONFIG (except 'generic')."""
+        from specify_cli import AGENT_CONFIG
+
+        for agent_id in AGENT_CONFIG:
+            if agent_id == "generic":
+                continue
+            try:
+                resolved = resolve_agent_pack(agent_id)
+            except PackResolutionError:
+                pytest.fail(f"--agent {agent_id} would fail: no pack found")
+
+            assert resolved.manifest.id == agent_id
+
+    def test_pack_commands_dir_matches_agent_config(self):
+        """The pack's commands_dir matches the directory that the old
+        flow (AGENT_CONFIG) would use, ensuring both flows write files
+        to the same location."""
+        from specify_cli import AGENT_CONFIG
+
+        for agent_id, config in AGENT_CONFIG.items():
+            if agent_id == "generic":
+                continue
+            try:
+                resolved = resolve_agent_pack(agent_id)
+            except PackResolutionError:
+                continue
+
+            # AGENT_CONFIG stores folder + commands_subdir
+            folder = config.get("folder", "").rstrip("/")
+            subdir = config.get("commands_subdir", "commands")
+            expected_dir = f"{folder}/{subdir}" if folder else ""
+            # Normalise path separators
+            expected_dir = expected_dir.lstrip("/")
+
+            assert resolved.manifest.commands_dir == expected_dir, (
+                f"{agent_id}: commands_dir mismatch: "
+                f"pack={resolved.manifest.commands_dir!r} "
+                f"config_derived={expected_dir!r}"
+            )
+
+    def test_finalize_setup_records_files_after_init(self, tmp_path):
+        """Simulates the --agent init flow: setup → create files →
+        finalize_setup, then verifies the install manifest is present."""
+        # Pick any embedded agent (claude)
+        resolved = resolve_agent_pack("claude")
+        bootstrap = load_bootstrap(resolved.path, resolved.manifest)
+
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        # setup() creates the directory structure
+        setup_files = bootstrap.setup(project, "sh", {})
+        assert isinstance(setup_files, list)
+
+        # Simulate the init pipeline creating command files
+        commands_dir = project / resolved.manifest.commands_dir
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        cmd_file = commands_dir / "speckit-plan.md"
+        cmd_file.write_text("plan command", encoding="utf-8")
+
+        # finalize_setup records everything
+        bootstrap.finalize_setup(project)
+
+        manifest_file = _manifest_path(project, "claude")
+        assert manifest_file.is_file()
+
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        all_tracked = {
+            **data.get("agent_files", {}),
+            **data.get("extension_files", {}),
+        }
+        assert any("speckit-plan.md" in p for p in all_tracked), (
+            "finalize_setup should record files created by the init pipeline"
+        )
+
+    def test_pack_metadata_enables_same_extension_registration(self):
+        """Pack command_registration metadata matches CommandRegistrar
+        configuration, ensuring that extension registration via the pack
+        system writes to the same directories and with the same format as
+        the old AGENT_CONFIG-based flow."""
+        from specify_cli.agents import CommandRegistrar
+
+        for manifest in list_embedded_agents():
+            registrar_config = CommandRegistrar.AGENT_CONFIGS.get(manifest.id)
+            if registrar_config is None:
+                continue
+
+            # These four fields are what CommandRegistrar uses to render
+            # extension commands — they must match exactly.
+            assert manifest.commands_dir == registrar_config["dir"]
+            assert manifest.command_format == registrar_config["format"]
+            assert manifest.arg_placeholder == registrar_config["args"]
+            assert manifest.file_extension == registrar_config["extension"]
