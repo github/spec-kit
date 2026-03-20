@@ -1992,10 +1992,14 @@ def init(
                     # --offline explicitly requested: never attempt a network download
                     console.print(
                         "\n[red]Error:[/red] --offline was specified but scaffolding from bundled assets failed.\n"
-                        "Check the output above for the specific error.\n"
                         "Common causes: missing bash/pwsh, script permission errors, or incomplete wheel.\n"
                         "Remove --offline to attempt a GitHub download instead."
                     )
+                    # Surface the specific failure reason from the tracker
+                    for step in tracker.steps:
+                        if step["key"] == "scaffold" and step["detail"]:
+                            console.print(f"[red]Detail:[/red] {step['detail']}")
+                            break
                     # Clean up partial project directory (same as the GitHub-download failure path)
                     if not here and project_path.exists():
                         shutil.rmtree(project_path)
