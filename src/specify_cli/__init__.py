@@ -1710,7 +1710,7 @@ def init(
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
     ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
-    offline: bool = typer.Option(False, "--offline", help="Use assets bundled in the specify-cli package instead of downloading from GitHub (no network access required)"),
+    offline: bool = typer.Option(False, "--offline", help="Use assets bundled in the specify-cli package instead of downloading from GitHub (no network access required). Bundled assets will become the default in v0.6.0 and this flag will be removed."),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
 ):
@@ -1721,6 +1721,12 @@ def init(
     Use --offline to scaffold from assets bundled inside the specify-cli
     package instead (no internet access required, ideal for air-gapped or
     enterprise environments).
+
+    NOTE: Starting with v0.6.0, bundled assets will be used by default and
+    the --offline flag will be removed. The GitHub download path will be
+    retired because bundled assets eliminate the need for network access,
+    avoid proxy/firewall issues, and guarantee that templates always match
+    the installed CLI version.
 
     This command will:
     1. Check that required tools are installed (git is optional)
@@ -1933,6 +1939,14 @@ def init(
         raise typer.Exit(1)
 
     use_github = not (offline and _core is not None)
+
+    if use_github and _core is not None:
+        console.print(
+            "[yellow]Note:[/yellow] Bundled assets are available in this install. "
+            "Use [bold]--offline[/bold] to skip the GitHub download — faster, "
+            "no network required, and guaranteed version match.\n"
+            "This will become the default in v0.6.0."
+        )
 
     if use_github:
         for key, label in [
