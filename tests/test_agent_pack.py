@@ -851,7 +851,7 @@ class TestInitAgentFlag:
             folder = config.get("folder", "").rstrip("/")
             subdir = config.get("commands_subdir", "commands")
             expected_dir = f"{folder}/{subdir}" if folder else ""
-            # Normalise path separators
+            # Normalize path separators
             expected_dir = expected_dir.lstrip("/")
 
             assert resolved.manifest.commands_dir == expected_dir, (

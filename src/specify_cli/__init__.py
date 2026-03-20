@@ -1715,7 +1715,7 @@ def _handle_agent_skills_migration(console: Console, agent_key: str) -> None:
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
     ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
-    agent: str = typer.Option(None, "--agent", help="AI agent to use (pack-based flow — resolves through the agent pack system and records installed files for tracked teardown). Accepts the same agent IDs as --ai."),
+    agent: str = typer.Option(None, "--agent", help="AI agent to use (enables file tracking for clean teardown when switching agents). Accepts the same agent IDs as --ai."),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
