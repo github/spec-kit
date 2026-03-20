@@ -245,6 +245,57 @@ class AgentBootstrap:
         """Return the agent's top-level directory inside the project."""
         return project_path / self.manifest.commands_dir.split("/")[0]
 
+    def collect_installed_files(self, project_path: Path) -> List[Path]:
+        """Return every file under the agent's directory tree.
+
+        Subclasses should call this at the end of :meth:`setup` to build
+        the return list.  Any files present in the agent directory at
+        that point — whether created by ``setup()`` itself, by the
+        scaffold pipeline, or by a preceding step — are reported.
+        """
+        root = self.agent_dir(project_path)
+        if not root.is_dir():
+            return []
+        return sorted(p for p in root.rglob("*") if p.is_file())
+
+    def _scaffold_project(
+        self,
+        project_path: Path,
+        script_type: str,
+        is_current_dir: bool = False,
+    ) -> List[Path]:
+        """Run the shared scaffolding pipeline and return new files.
+
+        Calls ``scaffold_from_core_pack`` for this agent and then
+        collects every file that was created.  Subclasses should call
+        this from :meth:`setup` when they want to use the shared
+        scaffolding rather than creating files manually.
+
+        Returns:
+            List of absolute paths of **all** files created by the
+            scaffold (agent-specific commands, shared scripts,
+            templates, etc.).
+        """
+        # Lazy import to avoid circular dependency (agent_pack is
+        # imported by specify_cli.__init__).
+        from specify_cli import scaffold_from_core_pack
+
+        # Snapshot existing files
+        before: set[Path] = set()
+        if project_path.exists():
+            before = {p for p in project_path.rglob("*") if p.is_file()}
+
+        ok = scaffold_from_core_pack(
+            project_path, self.manifest.id, script_type, is_current_dir,
+        )
+        if not ok:
+            raise AgentPackError(
+                f"Scaffolding failed for agent '{self.manifest.id}'")
+
+        # Collect every new file
+        after = {p for p in project_path.rglob("*") if p.is_file()}
+        return sorted(after - before)
+
     def finalize_setup(
         self,
         project_path: Path,
@@ -257,25 +308,51 @@ class AgentBootstrap:
         writing files (commands, context files, extensions) into the
         project.  It combines the files reported by :meth:`setup` with
         any extra files (e.g. from extension registration), scans the
-        agent's ``commands_dir`` for anything additional, and writes the
+        agent's directory tree for anything additional, and writes the
         install manifest.
+
+        ``setup()`` may return *all* files created by the shared
+        scaffolding (including shared project files in ``.specify/``).
+        Only files under the agent's own directory tree are recorded as
+        ``agent_files`` — shared project infrastructure is not tracked
+        per-agent and will not be removed during teardown.
 
         Args:
             agent_files: Files reported by :meth:`setup`.
             extension_files: Files created by extension registration.
         """
-        all_agent = list(agent_files or [])
         all_extension = list(extension_files or [])
 
-        # Also scan the commands directory for files created by the
-        # init pipeline that setup() did not report directly.
+        # Filter agent_files: only keep files under the agent's directory
+        # tree.  setup() may return shared project files (e.g. .specify/)
+        # which must not be tracked per-agent.
+        agent_root = self.agent_dir(project_path)
+        agent_root_resolved = agent_root.resolve()
+        all_agent: List[Path] = []
+        for p in (agent_files or []):
+            try:
+                p.resolve().relative_to(agent_root_resolved)
+                all_agent.append(p)
+            except ValueError:
+                pass  # shared file — not tracked per-agent
+
+        # Scan the agent's directory tree for files created by the init
+        # pipeline that setup() did not report directly.  We scan the
+        # entire agent directory (the parent of commands_dir) because
+        # skills-migrated agents replace the commands directory with a
+        # sibling skills directory during init.
         if self.manifest.commands_dir:
             commands_dir = project_path / self.manifest.commands_dir
-            if commands_dir.is_dir():
-                agent_set = {p.resolve() for p in all_agent}
-                for p in commands_dir.rglob("*"):
-                    if p.is_file() and p.resolve() not in agent_set:
-                        all_agent.append(p)
+            # Scan the agent root (e.g. .claude/) so we catch both
+            # commands and skills directories.
+            agent_root = commands_dir.parent
+            agent_set = {p.resolve() for p in all_agent}
+            for scan_dir in (commands_dir, agent_root):
+                if scan_dir.is_dir():
+                    for p in scan_dir.rglob("*"):
+                        if p.is_file() and p.resolve() not in agent_set:
+                            all_agent.append(p)
+                            agent_set.add(p.resolve())
 
         record_installed_files(
             project_path,

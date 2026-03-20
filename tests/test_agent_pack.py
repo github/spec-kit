@@ -811,106 +811,475 @@ class TestFileTracking:
 
 
 # ===================================================================
-# --agent flag on init (pack-based flow parity)
+# setup() returns actual files (not empty list)
 # ===================================================================
 
-class TestInitAgentFlag:
-    """Verify the --agent flag on ``specify init`` resolves through the
-    pack system and that pack metadata is consistent with AGENT_CONFIG."""
+class TestSetupReturnsFiles:
+    """Verify that every embedded agent's ``setup()`` calls the shared
+    scaffolding and returns the actual files it created — not an empty
+    list."""
 
-    def test_agent_resolves_same_agent_as_ai(self):
-        """--agent <id> resolves the same agent as --ai <id> for all
-        agents in AGENT_CONFIG (except 'generic')."""
-        from specify_cli import AGENT_CONFIG
-
-        for agent_id in AGENT_CONFIG:
-            if agent_id == "generic":
-                continue
-            try:
-                resolved = resolve_agent_pack(agent_id)
-            except PackResolutionError:
-                pytest.fail(f"--agent {agent_id} would fail: no pack found")
-
-            assert resolved.manifest.id == agent_id
-
-    def test_pack_commands_dir_matches_agent_config(self):
-        """The pack's commands_dir matches the directory that the old
-        flow (AGENT_CONFIG) would use, ensuring both flows write files
-        to the same location."""
-        from specify_cli import AGENT_CONFIG
-
-        for agent_id, config in AGENT_CONFIG.items():
-            if agent_id == "generic":
-                continue
-            try:
-                resolved = resolve_agent_pack(agent_id)
-            except PackResolutionError:
-                continue
-
-            # AGENT_CONFIG stores folder + commands_subdir
-            folder = config.get("folder", "").rstrip("/")
-            subdir = config.get("commands_subdir", "commands")
-            expected_dir = f"{folder}/{subdir}" if folder else ""
-            # Normalize path separators
-            expected_dir = expected_dir.lstrip("/")
-
-            assert resolved.manifest.commands_dir == expected_dir, (
-                f"{agent_id}: commands_dir mismatch: "
-                f"pack={resolved.manifest.commands_dir!r} "
-                f"config_derived={expected_dir!r}"
-            )
-
-    def test_finalize_setup_records_files_after_init(self, tmp_path):
-        """Simulates the --agent init flow: setup → create files →
-        finalize_setup, then verifies the install manifest is present."""
-        # Pick any embedded agent (claude)
-        resolved = resolve_agent_pack("claude")
+    @pytest.mark.parametrize("agent", [
+        a for a in __import__("specify_cli").AGENT_CONFIG if a != "generic"
+    ])
+    def test_setup_returns_nonempty_file_list(self, agent, tmp_path):
+        """setup() must return at least one Path (the scaffolded command
+        files, scripts, templates, etc.)."""
+        resolved = resolve_agent_pack(agent)
         bootstrap = load_bootstrap(resolved.path, resolved.manifest)
 
-        project = tmp_path / "project"
+        project = tmp_path / f"setup_{agent}"
         project.mkdir()
-        (project / ".specify").mkdir()
 
-        # setup() creates the directory structure
-        setup_files = bootstrap.setup(project, "sh", {})
-        assert isinstance(setup_files, list)
+        files = bootstrap.setup(project, "sh", {})
+        assert isinstance(files, list)
+        assert len(files) > 0, (
+            f"Agent '{agent}': setup() returned an empty list — "
+            f"it must return the files it installed")
 
-        # Simulate the init pipeline creating command files
-        commands_dir = project / resolved.manifest.commands_dir
-        commands_dir.mkdir(parents=True, exist_ok=True)
-        cmd_file = commands_dir / "speckit-plan.md"
-        cmd_file.write_text("plan command", encoding="utf-8")
+    @pytest.mark.parametrize("agent", [
+        a for a in __import__("specify_cli").AGENT_CONFIG if a != "generic"
+    ])
+    def test_setup_returns_only_existing_paths(self, agent, tmp_path):
+        """Every path returned by setup() must exist on disk."""
+        resolved = resolve_agent_pack(agent)
+        bootstrap = load_bootstrap(resolved.path, resolved.manifest)
 
-        # finalize_setup records everything
+        project = tmp_path / f"exists_{agent}"
+        project.mkdir()
+
+        files = bootstrap.setup(project, "sh", {})
+        for f in files:
+            assert f.is_file(), (
+                f"Agent '{agent}': setup() returned '{f}' but it "
+                f"does not exist on disk")
+
+    @pytest.mark.parametrize("agent", [
+        a for a in __import__("specify_cli").AGENT_CONFIG if a != "generic"
+    ])
+    def test_setup_returns_absolute_paths(self, agent, tmp_path):
+        """setup() must return absolute paths."""
+        resolved = resolve_agent_pack(agent)
+        bootstrap = load_bootstrap(resolved.path, resolved.manifest)
+
+        project = tmp_path / f"abs_{agent}"
+        project.mkdir()
+
+        files = bootstrap.setup(project, "sh", {})
+        for f in files:
+            assert f.is_absolute(), (
+                f"Agent '{agent}': setup() returned relative path '{f}'")
+
+    @pytest.mark.parametrize("agent", [
+        a for a in __import__("specify_cli").AGENT_CONFIG if a != "generic"
+    ])
+    def test_setup_returns_include_agent_dir_files(self, agent, tmp_path):
+        """setup() return list must include files under the agent's
+        directory tree (these are the files tracked for teardown)."""
+        resolved = resolve_agent_pack(agent)
+        bootstrap = load_bootstrap(resolved.path, resolved.manifest)
+
+        project = tmp_path / f"agentdir_{agent}"
+        project.mkdir()
+
+        files = bootstrap.setup(project, "sh", {})
+        agent_root = bootstrap.agent_dir(project)
+
+        agent_dir_files = [
+            f for f in files
+            if f.resolve().is_relative_to(agent_root.resolve())
+        ]
+        assert len(agent_dir_files) > 0, (
+            f"Agent '{agent}': setup() returned no files under "
+            f"'{agent_root.relative_to(project)}'")
+
+
+# ===================================================================
+# --agent / --ai parity via CliRunner (end-to-end init command)
+# ===================================================================
+
+def _collect_project_files(
+    root: Path,
+    *,
+    exclude_metadata: bool = False,
+) -> dict[str, bytes]:
+    """Walk *root* and return ``{relative_posix_path: file_bytes}``.
+
+    When *exclude_metadata* is True, files that are expected to differ
+    between ``--ai`` and ``--agent`` flows are excluded:
+
+    - ``.specify/agent-manifest-*.json`` (tracking data, ``--agent`` only)
+    - ``.specify/init-options.json`` (contains ``agent_pack`` flag)
+    """
+    result: dict[str, bytes] = {}
+    for p in root.rglob("*"):
+        if p.is_file():
+            rel = p.relative_to(root).as_posix()
+            if exclude_metadata:
+                if rel.startswith(".specify/agent-manifest-"):
+                    continue
+                if rel == ".specify/init-options.json":
+                    continue
+            result[rel] = p.read_bytes()
+    return result
+
+
+# All agents except "generic" (which requires --ai-commands-dir)
+_ALL_AGENTS = [a for a in __import__("specify_cli").AGENT_CONFIG if a != "generic"]
+
+
+def _run_init_via_cli(
+    project_dir: Path,
+    agent: str,
+    *,
+    use_agent_flag: bool,
+) -> tuple[int, str]:
+    """Invoke ``specify init <project_dir> --ai/--agent <agent>`` via CliRunner.
+
+    Patches ``download_and_extract_template`` to use
+    ``scaffold_from_core_pack`` so the test works without network access
+    while exercising the real CLI code path — the same functions and
+    branching that the user runs.
+
+    Returns ``(exit_code, captured_output)``.
+    """
+    from unittest.mock import patch as _patch
+
+    from typer.testing import CliRunner
+
+    from specify_cli import app as specify_app
+    from specify_cli import scaffold_from_core_pack as _scaffold
+
+    runner = CliRunner()
+
+    def _mock_download(
+        project_path, ai_assistant, script_type,
+        is_current_dir=False, **kwargs,
+    ):
+        ok = _scaffold(project_path, ai_assistant, script_type, is_current_dir)
+        if not ok:
+            raise RuntimeError(
+                f"scaffold_from_core_pack failed for {ai_assistant}")
+        tracker = kwargs.get("tracker")
+        if tracker:
+            for key in [
+                "fetch", "download", "extract",
+                "zip-list", "extracted-summary",
+            ]:
+                try:
+                    tracker.start(key)
+                    tracker.complete(key, "mocked")
+                except Exception:
+                    pass
+
+    flag = "--agent" if use_agent_flag else "--ai"
+    args = [
+        "init", str(project_dir),
+        flag, agent,
+        "--no-git", "--ignore-agent-tools",
+    ]
+
+    # Agents migrated to skills need --ai-skills to avoid the fail-fast
+    # migration error — same requirement as the real CLI.
+    try:
+        from specify_cli import AGENT_SKILLS_MIGRATIONS
+        if agent in AGENT_SKILLS_MIGRATIONS:
+            args.append("--ai-skills")
+    except (ImportError, AttributeError):
+        pass
+
+    with _patch(
+        "specify_cli.download_and_extract_template", _mock_download,
+    ):
+        result = runner.invoke(specify_app, args)
+
+    return result.exit_code, result.output or ""
+
+
+class TestInitFlowParity:
+    """End-to-end parity: ``specify init --ai`` and ``specify init --agent``
+    produce identical project files for every supported agent.
+
+    Each test invokes the actual CLI via ``typer.testing.CliRunner`` with the
+    network download mocked so both flows exercise the same init pipeline
+    without requiring internet access.
+
+    The ``--agent`` flow additionally calls ``finalize_setup()`` which writes
+    a tracking manifest in ``.specify/agent-manifest-<id>.json``.  Aside from
+    that manifest and the ``agent_pack`` key in ``init-options.json``, every
+    project file must be byte-for-byte identical between the two flows.
+
+    All {n} non-generic agents are tested.
+    """.format(n=len(_ALL_AGENTS))
+
+    # -- per-class lazy caches (init is run once per agent per flow) --------
+
+    @pytest.fixture(scope="class")
+    def ai_projects(self, tmp_path_factory):
+        """Cache: run ``specify init --ai`` once per agent."""
+        cache: dict[str, tuple[Path, int, str]] = {}
+        def _get(agent: str) -> Path:
+            if agent not in cache:
+                project = tmp_path_factory.mktemp("parity_ai") / agent
+                exit_code, output = _run_init_via_cli(
+                    project, agent, use_agent_flag=False)
+                cache[agent] = (project, exit_code, output)
+            project, exit_code, output = cache[agent]
+            assert exit_code == 0, (
+                f"specify init --ai {agent} failed (exit {exit_code}):\n"
+                f"{output}")
+            return project
+        return _get
+
+    @pytest.fixture(scope="class")
+    def agent_projects(self, tmp_path_factory):
+        """Cache: run ``specify init --agent`` once per agent."""
+        cache: dict[str, tuple[Path, int, str]] = {}
+        def _get(agent: str) -> Path:
+            if agent not in cache:
+                project = tmp_path_factory.mktemp("parity_agent") / agent
+                exit_code, output = _run_init_via_cli(
+                    project, agent, use_agent_flag=True)
+                cache[agent] = (project, exit_code, output)
+            project, exit_code, output = cache[agent]
+            assert exit_code == 0, (
+                f"specify init --agent {agent} failed (exit {exit_code}):\n"
+                f"{output}")
+            return project
+        return _get
+
+    # -- parametrized parity tests over every agent -------------------------
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_ai_init_succeeds(self, agent, ai_projects):
+        """``specify init --ai <agent>`` completes successfully."""
+        assert ai_projects(agent).is_dir()
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_agent_init_succeeds(self, agent, agent_projects):
+        """``specify init --agent <agent>`` completes successfully."""
+        assert agent_projects(agent).is_dir()
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_same_file_set(self, agent, ai_projects, agent_projects):
+        """--ai and --agent produce the same set of project files."""
+        ai_files = _collect_project_files(
+            ai_projects(agent), exclude_metadata=True)
+        agent_files = _collect_project_files(
+            agent_projects(agent), exclude_metadata=True)
+
+        only_ai = sorted(set(ai_files) - set(agent_files))
+        only_agent = sorted(set(agent_files) - set(ai_files))
+
+        assert not only_ai, (
+            f"Agent '{agent}': files only in --ai output:\n  "
+            + "\n  ".join(only_ai))
+        assert not only_agent, (
+            f"Agent '{agent}': files only in --agent output:\n  "
+            + "\n  ".join(only_agent))
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_same_file_contents(self, agent, ai_projects, agent_projects):
+        """--ai and --agent produce byte-for-byte identical file contents."""
+        ai_files = _collect_project_files(
+            ai_projects(agent), exclude_metadata=True)
+        agent_files = _collect_project_files(
+            agent_projects(agent), exclude_metadata=True)
+
+        for name in ai_files:
+            if name not in agent_files:
+                continue  # caught by test_same_file_set
+            assert ai_files[name] == agent_files[name], (
+                f"Agent '{agent}': file '{name}' content differs "
+                f"between --ai and --agent flows")
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_same_directory_structure(self, agent, ai_projects, agent_projects):
+        """--ai and --agent produce the same directory tree."""
+        def _dirs(root: Path) -> set[str]:
+            return {
+                p.relative_to(root).as_posix()
+                for p in root.rglob("*") if p.is_dir()
+            }
+
+        ai_dirs = _dirs(ai_projects(agent))
+        agent_dirs = _dirs(agent_projects(agent))
+
+        only_ai = sorted(ai_dirs - agent_dirs)
+        only_agent = sorted(agent_dirs - ai_dirs)
+
+        assert not only_ai, (
+            f"Agent '{agent}': dirs only in --ai:\n  "
+            + "\n  ".join(only_ai))
+        assert not only_agent, (
+            f"Agent '{agent}': dirs only in --agent:\n  "
+            + "\n  ".join(only_agent))
+
+    # -- pack lifecycle (setup / finalize / teardown) -----------------------
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_agent_resolves_through_pack_system(self, agent):
+        """Every AGENT_CONFIG agent resolves a valid pack."""
+        try:
+            resolved = resolve_agent_pack(agent)
+        except PackResolutionError:
+            pytest.fail(f"--agent {agent} would fail: no pack found")
+        assert resolved.manifest.id == agent
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_setup_creates_commands_dir(self, agent, agent_projects):
+        """The pack's setup() creates the commands directory that the
+        scaffold pipeline writes command files into.
+
+        For agents that migrate to skills (``--ai-skills``), the commands
+        directory is replaced by a skills directory during init — verify
+        that the agent directory itself exists instead.
+        """
+        project = agent_projects(agent)
+        resolved = resolve_agent_pack(agent)
+        cmd_dir = project / resolved.manifest.commands_dir
+
+        if cmd_dir.is_dir():
+            return  # commands directory present — normal flow
+
+        # For skills-migrated agents, the commands dir is removed and
+        # replaced by a skills dir.  Verify the parent agent dir exists.
+        try:
+            from specify_cli import AGENT_SKILLS_MIGRATIONS
+            if agent in AGENT_SKILLS_MIGRATIONS:
+                agent_dir = cmd_dir.parent
+                assert agent_dir.is_dir(), (
+                    f"Agent '{agent}': agent dir "
+                    f"'{agent_dir.relative_to(project)}' missing "
+                    f"(skills migration removes commands)")
+                return
+        except (ImportError, AttributeError):
+            pass
+
+        pytest.fail(
+            f"Agent '{agent}': commands_dir "
+            f"'{resolved.manifest.commands_dir}' not present after init")
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_commands_dir_matches_agent_config(self, agent):
+        """Pack commands_dir matches the directory derived from AGENT_CONFIG."""
+        from specify_cli import AGENT_CONFIG
+
+        config = AGENT_CONFIG[agent]
+        try:
+            resolved = resolve_agent_pack(agent)
+        except PackResolutionError:
+            pytest.fail(f"No pack for {agent}")
+
+        folder = config.get("folder", "").rstrip("/")
+        subdir = config.get("commands_subdir", "commands")
+        expected = (f"{folder}/{subdir}" if folder else "").lstrip("/")
+
+        assert resolved.manifest.commands_dir == expected, (
+            f"{agent}: pack={resolved.manifest.commands_dir!r} "
+            f"vs config={expected!r}")
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_tracking_manifest_present(self, agent, agent_projects):
+        """--agent flow writes an install manifest for tracked teardown."""
+        manifest = _manifest_path(agent_projects(agent), agent)
+        assert manifest.is_file(), (
+            f"Agent '{agent}': missing tracking manifest")
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_tracking_manifest_records_all_commands(self, agent, agent_projects):
+        """The install manifest tracks every file in the commands (or skills)
+        directory that exists after init."""
+        project = agent_projects(agent)
+        resolved = resolve_agent_pack(agent)
+        cmd_dir = project / resolved.manifest.commands_dir
+
+        # For skills-migrated agents the commands_dir is removed.
+        # Check the parent agent dir for skills files instead.
+        if not cmd_dir.is_dir():
+            try:
+                from specify_cli import AGENT_SKILLS_MIGRATIONS
+                if agent in AGENT_SKILLS_MIGRATIONS:
+                    cmd_dir = cmd_dir.parent
+                    if not cmd_dir.is_dir():
+                        pytest.skip(
+                            f"{agent}: skills dir not present")
+            except (ImportError, AttributeError):
+                pytest.skip(f"{agent}: commands_dir missing")
+
+        # Actual files on disk
+        on_disk = {
+            p.relative_to(project).as_posix()
+            for p in cmd_dir.rglob("*") if p.is_file()
+        }
+
+        # Files recorded in the tracking manifest
+        manifest = _manifest_path(project, agent)
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        tracked = {
+            *data.get("agent_files", {}),
+            *data.get("extension_files", {}),
+        }
+
+        missing = on_disk - tracked
+        assert not missing, (
+            f"Agent '{agent}': files not tracked by manifest:\n  "
+            + "\n  ".join(sorted(missing)))
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_teardown_removes_all_tracked_files(self, agent, tmp_path):
+        """Full lifecycle: setup → scaffold → finalize → teardown.
+
+        After teardown every tracked file must be deleted, but directories
+        are preserved.  This proves the pack's teardown() is functional.
+        """
+        from specify_cli import scaffold_from_core_pack
+
+        project = tmp_path / f"lifecycle_{agent}"
+        project.mkdir()
+
+        # 1. Scaffold (same as init pipeline)
+        ok = scaffold_from_core_pack(project, agent, "sh")
+        assert ok, f"scaffold failed for {agent}"
+
+        # 2. Resolve pack and finalize
+        resolved = resolve_agent_pack(agent)
+        bootstrap = load_bootstrap(resolved.path, resolved.manifest)
         bootstrap.finalize_setup(project)
 
-        manifest_file = _manifest_path(project, "claude")
-        assert manifest_file.is_file()
+        # 3. Read tracked files
+        agent_files, ext_files = get_tracked_files(project, agent)
+        all_tracked = {**agent_files, **ext_files}
+        assert len(all_tracked) > 0, f"{agent}: no files tracked"
 
-        data = json.loads(manifest_file.read_text(encoding="utf-8"))
-        all_tracked = {
-            **data.get("agent_files", {}),
-            **data.get("extension_files", {}),
-        }
-        assert any("speckit-plan.md" in p for p in all_tracked), (
-            "finalize_setup should record files created by the init pipeline"
-        )
+        # 4. Teardown
+        removed = remove_tracked_files(
+            project, agent, force=True, files=all_tracked)
+        assert len(removed) > 0, f"{agent}: teardown removed nothing"
 
-    def test_pack_metadata_enables_same_extension_registration(self):
-        """Pack command_registration metadata matches CommandRegistrar
-        configuration, ensuring that extension registration via the pack
-        system writes to the same directories and with the same format as
-        the old AGENT_CONFIG-based flow."""
+        # 5. Verify all tracked files are gone
+        for rel_path in all_tracked:
+            assert not (project / rel_path).exists(), (
+                f"{agent}: '{rel_path}' still present after teardown")
+
+    # -- extension registration metadata ------------------------------------
+
+    @pytest.mark.parametrize("agent", _ALL_AGENTS)
+    def test_extension_registration_metadata_matches(self, agent):
+        """Pack command_registration matches CommandRegistrar config."""
         from specify_cli.agents import CommandRegistrar
 
-        for manifest in list_embedded_agents():
-            registrar_config = CommandRegistrar.AGENT_CONFIGS.get(manifest.id)
-            if registrar_config is None:
-                continue
+        try:
+            resolved = resolve_agent_pack(agent)
+        except PackResolutionError:
+            pytest.skip(f"No pack for {agent}")
 
-            # These four fields are what CommandRegistrar uses to render
-            # extension commands — they must match exactly.
-            assert manifest.commands_dir == registrar_config["dir"]
-            assert manifest.command_format == registrar_config["format"]
-            assert manifest.arg_placeholder == registrar_config["args"]
-            assert manifest.file_extension == registrar_config["extension"]
+        reg = CommandRegistrar.AGENT_CONFIGS.get(agent)
+        if reg is None:
+            pytest.skip(f"No CommandRegistrar config for {agent}")
+
+        m = resolved.manifest
+        assert m.commands_dir == reg["dir"]
+        assert m.command_format == reg["format"]
+        assert m.arg_placeholder == reg["args"]
+        assert m.file_extension == reg["extension"]

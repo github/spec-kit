@@ -16,7 +16,7 @@ class Junie(AgentBootstrap):
         """Install Junie agent files into the project."""
         commands_dir = project_path / self.AGENT_DIR / self.COMMANDS_SUBDIR
         commands_dir.mkdir(parents=True, exist_ok=True)
-        return []  # directories only — actual files are created by the init pipeline
+        return self._scaffold_project(project_path, script_type)
 
     def teardown(self, project_path: Path, *, force: bool = False, files: Optional[Dict[str, str]] = None) -> List[str]:
         """Remove Junie agent files from the project.

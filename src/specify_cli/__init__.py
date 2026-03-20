@@ -1984,7 +1984,10 @@ def init(
             "This will become the default in v0.6.0."
         )
 
-    if use_github:
+    if use_agent_pack:
+        # Pack-based flow: setup() owns scaffolding, always uses bundled assets.
+        tracker.add("scaffold", "Apply bundled assets")
+    elif use_github:
         for key, label in [
             ("fetch", "Fetch latest release"),
             ("download", "Download template"),
@@ -2019,7 +2022,26 @@ def init(
             verify = not skip_tls
             local_ssl_context = ssl_context if verify else False
 
-            if use_github:
+            # -- scaffolding ------------------------------------------------
+            # Pack-based flow (--agent): setup() owns scaffolding and
+            # returns every file it created.  Legacy flow (--ai): scaffold
+            # directly or download from GitHub.
+            agent_setup_files: list[Path] = []
+
+            if use_agent_pack and agent_bootstrap is not None:
+                tracker.start("scaffold")
+                try:
+                    agent_setup_files = agent_bootstrap.setup(
+                        project_path, selected_script, {"here": here})
+                    tracker.complete(
+                        "scaffold",
+                        f"{selected_ai} ({len(agent_setup_files)} files)")
+                except Exception as exc:
+                    tracker.error("scaffold", str(exc))
+                    if not here and project_path.exists():
+                        shutil.rmtree(project_path)
+                    raise typer.Exit(1)
+            elif use_github:
                 with httpx.Client(verify=local_ssl_context) as local_client:
                     download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
             else:
@@ -2162,11 +2184,14 @@ def init(
                 tracker.skip("cleanup", "not needed (no download)")
 
             # When --agent is used, record all installed agent files for
-            # tracked teardown.  This runs AFTER the full init pipeline has
-            # finished creating files (scaffolding, skills, presets,
-            # extensions) so finalize_setup captures everything.
+            # tracked teardown.  setup() already returned the files it
+            # created; pass them to finalize_setup so the manifest is
+            # accurate.  finalize_setup also scans the agent directory
+            # to catch any additional files created by later pipeline
+            # steps (skills, extensions, presets).
             if use_agent_pack and agent_bootstrap is not None:
-                agent_bootstrap.finalize_setup(project_path)
+                agent_bootstrap.finalize_setup(
+                    project_path, agent_files=agent_setup_files)
 
             tracker.complete("final", "project ready")
         except (typer.Exit, SystemExit):
