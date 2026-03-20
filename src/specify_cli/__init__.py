@@ -36,7 +36,7 @@ import json5
 import stat
 import yaml
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import typer
 import httpx
@@ -2543,9 +2543,10 @@ def agent_switch(
     from .agent_pack import (
         resolve_agent_pack,
         load_bootstrap,
+        check_modified_files,
+        get_tracked_files,
         PackResolutionError,
         AgentPackError,
-        AgentFileModifiedError,
     )
 
     show_banner()
@@ -2582,13 +2583,28 @@ def agent_switch(
         try:
             current_resolved = resolve_agent_pack(current_agent, project_path=project_path)
             current_bootstrap = load_bootstrap(current_resolved.path, current_resolved.manifest)
+
+            # Check for modified files BEFORE teardown and prompt for confirmation
+            modified = check_modified_files(project_path, current_agent)
+            if modified and not force:
+                console.print("[yellow]The following files have been modified since installation:[/yellow]")
+                for f in modified:
+                    console.print(f"  {f}")
+                if not typer.confirm("Remove these modified files?"):
+                    console.print("[dim]Aborted. Use --force to skip this check.[/dim]")
+                    raise typer.Exit(0)
+
+            # Retrieve tracked file lists and feed them into teardown
+            agent_files, extension_files = get_tracked_files(project_path, current_agent)
+            all_files = {**agent_files, **extension_files}
+
             console.print(f"  [dim]Tearing down {current_agent}...[/dim]")
-            current_bootstrap.teardown(project_path, force=force)
+            current_bootstrap.teardown(
+                project_path,
+                force=True,  # already confirmed above
+                files=all_files if all_files else None,
+            )
             console.print(f"  [green]✓[/green] {current_agent} removed")
-        except AgentFileModifiedError as exc:
-            console.print(f"[red]Error:[/red] {exc}")
-            console.print("[yellow]Hint:[/yellow] Use --force to remove modified files.")
-            raise typer.Exit(1)
         except AgentPackError:
             # If pack-based teardown fails, try legacy cleanup via AGENT_CONFIG
             agent_config = AGENT_CONFIG.get(current_agent, {})
@@ -2603,9 +2619,7 @@ def agent_switch(
     try:
         new_bootstrap = load_bootstrap(resolved.path, resolved.manifest)
         console.print(f"  [dim]Setting up {agent_id}...[/dim]")
-        new_bootstrap.setup(project_path, script_type, options)
-        # Record all installed files for tracked teardown
-        new_bootstrap.finalize_setup(project_path)
+        agent_files = new_bootstrap.setup(project_path, script_type, options)
         console.print(f"  [green]✓[/green] {agent_id} installed")
     except AgentPackError as exc:
         console.print(f"[red]Error setting up {agent_id}:[/red] {exc}")
@@ -2614,32 +2628,54 @@ def agent_switch(
     # Update init options
     options["ai"] = agent_id
     init_options_file.write_text(json.dumps(options, indent=2), encoding="utf-8")
-    console.print(f"\n[bold green]Successfully switched to {resolved.manifest.name}[/bold green]")
 
     # Re-register extension commands for the new agent
-    _reregister_extension_commands(project_path, agent_id)
+    extension_files = _reregister_extension_commands(project_path, agent_id)
+
+    # Record all installed files (agent + extensions) for tracked teardown
+    new_bootstrap.finalize_setup(
+        project_path,
+        agent_files=agent_files,
+        extension_files=extension_files,
+    )
+
+    console.print(f"\n[bold green]Successfully switched to {resolved.manifest.name}[/bold green]")
 
 
-def _reregister_extension_commands(project_path: Path, agent_id: str) -> None:
-    """Re-register all installed extension commands for a new agent after switching."""
+def _reregister_extension_commands(project_path: Path, agent_id: str) -> List[Path]:
+    """Re-register all installed extension commands for a new agent after switching.
+
+    Returns:
+        List of absolute file paths created by extension registration.
+    """
+    created_files: List[Path] = []
     registry_file = project_path / ".specify" / "extensions" / ".registry"
     if not registry_file.is_file():
-        return
+        return created_files
 
     try:
         registry_data = json.loads(registry_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return
+        return created_files
 
     extensions = registry_data.get("extensions", {})
     if not extensions:
-        return
+        return created_files
 
     try:
         from .agents import CommandRegistrar
         registrar = CommandRegistrar()
     except ImportError:
-        return
+        return created_files
+
+    # Snapshot the commands directory before registration so we can
+    # detect which files were created by extension commands.
+    agent_config = registrar.AGENT_CONFIGS.get(agent_id)
+    if agent_config:
+        commands_dir = project_path / agent_config["dir"]
+        pre_existing = set(commands_dir.rglob("*")) if commands_dir.is_dir() else set()
+    else:
+        pre_existing = set()
 
     reregistered = 0
     for ext_id, ext_data in extensions.items():
@@ -2668,8 +2704,19 @@ def _reregister_extension_commands(project_path: Path, agent_id: str) -> None:
         except Exception:
             continue
 
+    # Collect files created by extension registration
+    if agent_config:
+        commands_dir = project_path / agent_config["dir"]
+        if commands_dir.is_dir():
+            for p in commands_dir.rglob("*"):
+                if p.is_file() and p not in pre_existing:
+                    created_files.append(p)
+
     if reregistered:
-        console.print(f"  [green]✓[/green] Re-registered {reregistered} extension command(s)")
+        console.print(f"  [green]✓[/green] Re-registered {reregistered} extension command(s)"
+                       f" ({len(created_files)} file(s))")
+
+    return created_files
 
 
 @agent_app.command("search")

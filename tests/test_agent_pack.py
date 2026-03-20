@@ -27,6 +27,7 @@ from specify_cli.agent_pack import (
     _sha256,
     check_modified_files,
     export_pack,
+    get_tracked_files,
     list_all_agents,
     list_embedded_agents,
     load_bootstrap,
@@ -79,17 +80,18 @@ def _write_bootstrap(pack_dir: Path, class_name: str = "TestAgent", agent_dir: s
     bootstrap_file = pack_dir / BOOTSTRAP_FILENAME
     bootstrap_file.write_text(textwrap.dedent(f"""\
         from pathlib import Path
-        from typing import Any, Dict
+        from typing import Any, Dict, List, Optional
         from specify_cli.agent_pack import AgentBootstrap, remove_tracked_files
 
         class {class_name}(AgentBootstrap):
             AGENT_DIR = "{agent_dir}"
 
-            def setup(self, project_path: Path, script_type: str, options: Dict[str, Any]) -> None:
+            def setup(self, project_path: Path, script_type: str, options: Dict[str, Any]) -> List[Path]:
                 (project_path / self.AGENT_DIR / "commands").mkdir(parents=True, exist_ok=True)
+                return []
 
-            def teardown(self, project_path: Path, *, force: bool = False) -> None:
-                remove_tracked_files(project_path, self.manifest.id, force=force)
+            def teardown(self, project_path: Path, *, force: bool = False, files: Optional[Dict[str, str]] = None) -> List[str]:
+                return remove_tracked_files(project_path, self.manifest.id, force=force, files=files)
     """), encoding="utf-8")
     return bootstrap_file
 
@@ -273,20 +275,31 @@ class TestBootstrapContract:
         project = tmp_path / "project"
         project.mkdir()
 
-        b.setup(project, "sh", {})
+        agent_files = b.setup(project, "sh", {})
+        assert isinstance(agent_files, list)
         assert (project / ".test-agent" / "commands").is_dir()
 
         # Simulate the init pipeline writing a file
         cmd_file = project / ".test-agent" / "commands" / "hello.md"
         cmd_file.write_text("hello", encoding="utf-8")
 
-        # finalize_setup records files for tracking
-        b.finalize_setup(project)
+        # Simulate extension registration writing a file
+        ext_file = project / ".test-agent" / "commands" / "ext-cmd.md"
+        ext_file.write_text("ext", encoding="utf-8")
+
+        # finalize_setup records both agent and extension files
+        b.finalize_setup(project, agent_files=agent_files, extension_files=[ext_file])
         assert _manifest_path(project, "test-agent").is_file()
 
+        # Verify the manifest separates agent and extension files
+        manifest_data = json.loads(_manifest_path(project, "test-agent").read_text())
+        assert "agent_files" in manifest_data
+        assert "extension_files" in manifest_data
+
         b.teardown(project)
-        # The tracked file should be removed
+        # The tracked files should be removed
         assert not cmd_file.exists()
+        assert not ext_file.exists()
         # Install manifest itself should be cleaned up
         assert not _manifest_path(project, "test-agent").is_file()
         # Directories are preserved (only files are removed)
@@ -557,7 +570,7 @@ class TestFileTracking:
         f.parent.mkdir(parents=True)
         f.write_text("hello world", encoding="utf-8")
 
-        record_installed_files(project, "myagent", [f])
+        record_installed_files(project, "myagent", agent_files=[f])
 
         # No modifications yet
         assert check_modified_files(project, "myagent") == []
@@ -571,7 +584,7 @@ class TestFileTracking:
         f.parent.mkdir(parents=True)
         f.write_text("original", encoding="utf-8")
 
-        record_installed_files(project, "myagent", [f])
+        record_installed_files(project, "myagent", agent_files=[f])
 
         # Now modify the file
         f.write_text("modified content", encoding="utf-8")
@@ -595,7 +608,7 @@ class TestFileTracking:
         f1.write_text("aaa", encoding="utf-8")
         f2.write_text("bbb", encoding="utf-8")
 
-        record_installed_files(project, "ag", [f1, f2])
+        record_installed_files(project, "ag", agent_files=[f1, f2])
 
         removed = remove_tracked_files(project, "ag")
         assert len(removed) == 2
@@ -615,7 +628,7 @@ class TestFileTracking:
         f.parent.mkdir(parents=True)
         f.write_text("original", encoding="utf-8")
 
-        record_installed_files(project, "ag", [f])
+        record_installed_files(project, "ag", agent_files=[f])
         f.write_text("user-edited", encoding="utf-8")
 
         with pytest.raises(AgentFileModifiedError, match="modified"):
@@ -633,7 +646,7 @@ class TestFileTracking:
         f.parent.mkdir(parents=True)
         f.write_text("original", encoding="utf-8")
 
-        record_installed_files(project, "ag", [f])
+        record_installed_files(project, "ag", agent_files=[f])
         f.write_text("user-edited", encoding="utf-8")
 
         removed = remove_tracked_files(project, "ag", force=True)
@@ -655,7 +668,7 @@ class TestFileTracking:
         f = d / "deep.md"
         f.write_text("deep", encoding="utf-8")
 
-        record_installed_files(project, "myagent", [f])
+        record_installed_files(project, "myagent", agent_files=[f])
         remove_tracked_files(project, "myagent")
 
         assert not f.exists()
@@ -672,7 +685,7 @@ class TestFileTracking:
         f.parent.mkdir(parents=True)
         f.write_text("data", encoding="utf-8")
 
-        record_installed_files(project, "ag", [f])
+        record_installed_files(project, "ag", agent_files=[f])
 
         # User deletes the file before teardown
         f.unlink()
@@ -700,10 +713,98 @@ class TestFileTracking:
         f.parent.mkdir(parents=True)
         f.write_text("content", encoding="utf-8")
 
-        manifest_file = record_installed_files(project, "ag", [f])
+        manifest_file = record_installed_files(project, "ag", agent_files=[f])
         data = json.loads(manifest_file.read_text(encoding="utf-8"))
 
         assert data["agent_id"] == "ag"
-        assert isinstance(data["files"], dict)
-        assert ".ag/x.md" in data["files"]
-        assert len(data["files"][".ag/x.md"]) == 64
+        assert isinstance(data["agent_files"], dict)
+        assert ".ag/x.md" in data["agent_files"]
+        assert len(data["agent_files"][".ag/x.md"]) == 64
+
+    # -- New: categorised manifest & explicit file teardown --
+
+    def test_manifest_categorises_agent_and_extension_files(self, tmp_path):
+        """record_installed_files stores agent and extension files separately."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        agent_f = project / ".ag" / "core.md"
+        ext_f = project / ".ag" / "ext-cmd.md"
+        agent_f.parent.mkdir(parents=True)
+        agent_f.write_text("core", encoding="utf-8")
+        ext_f.write_text("ext", encoding="utf-8")
+
+        manifest_file = record_installed_files(
+            project, "ag", agent_files=[agent_f], extension_files=[ext_f]
+        )
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+
+        assert ".ag/core.md" in data["agent_files"]
+        assert ".ag/ext-cmd.md" in data["extension_files"]
+        assert ".ag/core.md" not in data.get("extension_files", {})
+        assert ".ag/ext-cmd.md" not in data.get("agent_files", {})
+
+    def test_get_tracked_files_returns_both_categories(self, tmp_path):
+        """get_tracked_files splits agent and extension files."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        agent_f = project / ".ag" / "a.md"
+        ext_f = project / ".ag" / "e.md"
+        agent_f.parent.mkdir(parents=True)
+        agent_f.write_text("a", encoding="utf-8")
+        ext_f.write_text("e", encoding="utf-8")
+
+        record_installed_files(
+            project, "ag", agent_files=[agent_f], extension_files=[ext_f]
+        )
+
+        agent_files, extension_files = get_tracked_files(project, "ag")
+        assert ".ag/a.md" in agent_files
+        assert ".ag/e.md" in extension_files
+
+    def test_get_tracked_files_no_manifest(self, tmp_path):
+        """get_tracked_files returns ({}, {}) when no manifest exists."""
+        agent_files, extension_files = get_tracked_files(tmp_path, "nope")
+        assert agent_files == {}
+        assert extension_files == {}
+
+    def test_teardown_with_explicit_files(self, tmp_path):
+        """teardown accepts explicit files dict (CLI-driven teardown)."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        f1 = project / ".ag" / "a.md"
+        f2 = project / ".ag" / "b.md"
+        f1.parent.mkdir(parents=True)
+        f1.write_text("aaa", encoding="utf-8")
+        f2.write_text("bbb", encoding="utf-8")
+
+        # Record the files
+        record_installed_files(project, "ag", agent_files=[f1, f2])
+
+        # Get the tracked entries
+        agent_entries, _ = get_tracked_files(project, "ag")
+
+        # Pass explicit files to remove_tracked_files
+        removed = remove_tracked_files(project, "ag", files=agent_entries)
+        assert len(removed) == 2
+        assert not f1.exists()
+        assert not f2.exists()
+
+    def test_check_detects_extension_file_modification(self, tmp_path):
+        """Modified extension files are also detected by check_modified_files."""
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        ext_f = project / ".ag" / "ext.md"
+        ext_f.parent.mkdir(parents=True)
+        ext_f.write_text("original", encoding="utf-8")
+
+        record_installed_files(project, "ag", extension_files=[ext_f])
+
+        ext_f.write_text("user-edited", encoding="utf-8")
+
+        modified = check_modified_files(project, "ag")
+        assert len(modified) == 1
+        assert ".ag/ext.md" in modified[0]

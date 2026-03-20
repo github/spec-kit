@@ -184,35 +184,58 @@ class AgentBootstrap:
 
     # -- lifecycle -----------------------------------------------------------
 
-    def setup(self, project_path: Path, script_type: str, options: Dict[str, Any]) -> None:
+    def setup(self, project_path: Path, script_type: str, options: Dict[str, Any]) -> List[Path]:
         """Install agent files into *project_path*.
 
         This is invoked by ``specify init --ai <agent>`` and
         ``specify agent switch <agent>``.
 
+        Implementations **must** return every file they create so that the
+        CLI can record both agent-installed files and extension-installed
+        files in a single install manifest.
+
         Args:
             project_path: Target project directory.
             script_type: ``"sh"`` or ``"ps"``.
             options: Arbitrary key/value options forwarded from the CLI.
+
+        Returns:
+            List of absolute paths of files created during setup.
         """
         raise NotImplementedError
 
-    def teardown(self, project_path: Path, *, force: bool = False) -> None:
+    def teardown(
+        self,
+        project_path: Path,
+        *,
+        force: bool = False,
+        files: Optional[Dict[str, str]] = None,
+    ) -> List[str]:
         """Remove agent-specific files from *project_path*.
 
         Invoked by ``specify agent switch`` (for the *old* agent) and
         ``specify agent remove`` when the user explicitly uninstalls.
         Must preserve shared infrastructure (specs, plans, tasks, etc.).
 
-        Only individual files recorded in the install manifest are removed
-        — directories are never deleted.  If any tracked file has been
-        modified since installation and *force* is ``False``, raises
-        :class:`AgentFileModifiedError`.
+        Only individual files are removed — directories are **never**
+        deleted.
+
+        The caller (CLI) is expected to check for user-modified files
+        **before** invoking teardown and prompt for confirmation.  If
+        *files* is provided, exactly those files are removed (values are
+        ignored but kept for forward compatibility).  Otherwise the
+        install manifest is read.
 
         Args:
             project_path: Project directory to clean up.
             force: When ``True``, remove files even if they were modified
                 after installation.
+            files: Mapping of project-relative path → SHA-256 hash.
+                When supplied, only these files are removed and the
+                install manifest is not consulted.
+
+        Returns:
+            List of project-relative paths that were actually deleted.
         """
         raise NotImplementedError
 
@@ -222,21 +245,44 @@ class AgentBootstrap:
         """Return the agent's top-level directory inside the project."""
         return project_path / self.manifest.commands_dir.split("/")[0]
 
-    def finalize_setup(self, project_path: Path) -> None:
-        """Record all files in the agent directory for tracked teardown.
+    def finalize_setup(
+        self,
+        project_path: Path,
+        agent_files: Optional[List[Path]] = None,
+        extension_files: Optional[List[Path]] = None,
+    ) -> None:
+        """Record installed files for tracked teardown.
 
         This must be called **after** the full init pipeline has finished
-        writing files (commands, context files, etc.) into the agent
-        directory.  It scans ``self.manifest.commands_dir`` and records
-        every file with its SHA-256 hash so that :meth:`teardown` can
-        detect user modifications.
+        writing files (commands, context files, extensions) into the
+        project.  It combines the files reported by :meth:`setup` with
+        any extra files (e.g. from extension registration), scans the
+        agent's ``commands_dir`` for anything additional, and writes the
+        install manifest.
+
+        Args:
+            agent_files: Files reported by :meth:`setup`.
+            extension_files: Files created by extension registration.
         """
-        if not self.manifest.commands_dir:
-            return
-        commands_dir = project_path / self.manifest.commands_dir
-        if commands_dir.is_dir():
-            installed = [p for p in commands_dir.rglob("*") if p.is_file()]
-            record_installed_files(project_path, self.manifest.id, installed)
+        all_agent = list(agent_files or [])
+        all_extension = list(extension_files or [])
+
+        # Also scan the commands directory for files created by the
+        # init pipeline that setup() did not report directly.
+        if self.manifest.commands_dir:
+            commands_dir = project_path / self.manifest.commands_dir
+            if commands_dir.is_dir():
+                agent_set = {p.resolve() for p in all_agent}
+                for p in commands_dir.rglob("*"):
+                    if p.is_file() and p.resolve() not in agent_set:
+                        all_agent.append(p)
+
+        record_installed_files(
+            project_path,
+            self.manifest.id,
+            agent_files=all_agent,
+            extension_files=all_extension,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -257,39 +303,105 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def record_installed_files(
+def _hash_file_list(
     project_path: Path,
-    agent_id: str,
     files: List[Path],
-) -> Path:
-    """Record the installed files and their SHA-256 hashes.
-
-    Writes ``.specify/agent-manifest-<agent_id>.json`` containing a
-    mapping of project-relative paths to their SHA-256 digests.
-
-    Args:
-        project_path: Project root directory.
-        agent_id: Agent identifier.
-        files: Absolute or project-relative paths of the files that
-            were created during ``setup()``.
-
-    Returns:
-        Path to the written manifest file.
-    """
+) -> Dict[str, str]:
+    """Build a {relative_path: sha256} dict from a list of file paths."""
     entries: Dict[str, str] = {}
     for file_path in files:
         abs_path = project_path / file_path if not file_path.is_absolute() else file_path
         if abs_path.is_file():
             rel = str(abs_path.relative_to(project_path))
             entries[rel] = _sha256(abs_path)
+    return entries
+
+
+def record_installed_files(
+    project_path: Path,
+    agent_id: str,
+    agent_files: Optional[List[Path]] = None,
+    extension_files: Optional[List[Path]] = None,
+) -> Path:
+    """Record the installed files and their SHA-256 hashes.
+
+    Writes ``.specify/agent-manifest-<agent_id>.json`` containing
+    categorised mappings of project-relative paths to SHA-256 digests.
+
+    Args:
+        project_path: Project root directory.
+        agent_id: Agent identifier.
+        agent_files: Files created by the agent's ``setup()`` and the
+            init pipeline (core commands / templates).
+        extension_files: Files created by extension registration.
+
+    Returns:
+        Path to the written manifest file.
+    """
+    agent_entries = _hash_file_list(project_path, agent_files or [])
+    extension_entries = _hash_file_list(project_path, extension_files or [])
 
     manifest_file = _manifest_path(project_path, agent_id)
     manifest_file.parent.mkdir(parents=True, exist_ok=True)
     manifest_file.write_text(
-        json.dumps({"agent_id": agent_id, "files": entries}, indent=2),
+        json.dumps(
+            {
+                "agent_id": agent_id,
+                "agent_files": agent_entries,
+                "extension_files": extension_entries,
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
     return manifest_file
+
+
+def _all_tracked_entries(data: dict) -> Dict[str, str]:
+    """Return the combined file → hash mapping from a manifest dict.
+
+    Supports both the new categorised layout (``agent_files`` +
+    ``extension_files``) and the legacy flat ``files`` key.
+    """
+    combined: Dict[str, str] = {}
+    # Legacy flat format
+    if "files" in data and isinstance(data["files"], dict):
+        combined.update(data["files"])
+    # New categorised format
+    if "agent_files" in data and isinstance(data["agent_files"], dict):
+        combined.update(data["agent_files"])
+    if "extension_files" in data and isinstance(data["extension_files"], dict):
+        combined.update(data["extension_files"])
+    return combined
+
+
+def get_tracked_files(
+    project_path: Path,
+    agent_id: str,
+) -> tuple[Dict[str, str], Dict[str, str]]:
+    """Return the tracked file hashes split by source.
+
+    Returns:
+        A tuple ``(agent_files, extension_files)`` where each is a
+        ``{relative_path: sha256}`` dict.  Returns two empty dicts
+        when no install manifest exists.
+    """
+    manifest_file = _manifest_path(project_path, agent_id)
+    if not manifest_file.is_file():
+        return {}, {}
+
+    try:
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}, {}
+
+    # Support legacy flat format
+    if "files" in data and "agent_files" not in data:
+        return dict(data["files"]), {}
+
+    agent_entries = data.get("agent_files", {})
+    ext_entries = data.get("extension_files", {})
+    return dict(agent_entries), dict(ext_entries)
 
 
 def check_modified_files(
@@ -310,8 +422,10 @@ def check_modified_files(
     except (json.JSONDecodeError, OSError):
         return []
 
+    entries = _all_tracked_entries(data)
+
     modified: List[str] = []
-    for rel_path, original_hash in data.get("files", {}).items():
+    for rel_path, original_hash in entries.items():
         abs_path = project_path / rel_path
         if abs_path.is_file():
             if _sha256(abs_path) != original_hash:
@@ -327,11 +441,18 @@ def remove_tracked_files(
     agent_id: str,
     *,
     force: bool = False,
+    files: Optional[Dict[str, str]] = None,
 ) -> List[str]:
-    """Remove the individual files recorded in the install manifest.
+    """Remove individual tracked files.
+
+    If *files* is provided, exactly those files are removed (the values
+    are ignored but accepted for forward compatibility).  Otherwise the
+    install manifest for *agent_id* is read.
 
     Raises :class:`AgentFileModifiedError` if any tracked file was
-    modified and *force* is ``False``.
+    modified and *force* is ``False`` (only when reading from the
+    manifest — callers that pass *files* are expected to have already
+    prompted the user).
 
     Directories are **never** deleted — only individual files.
 
@@ -339,32 +460,37 @@ def remove_tracked_files(
         project_path: Project root directory.
         agent_id: Agent identifier.
         force: When ``True``, delete even modified files.
+        files: Explicit mapping of project-relative path → hash.  When
+            supplied, the install manifest is not consulted.
 
     Returns:
         List of project-relative paths that were removed.
     """
     manifest_file = _manifest_path(project_path, agent_id)
-    if not manifest_file.is_file():
-        return []
 
-    try:
-        data = json.loads(manifest_file.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
+    if files is not None:
+        entries = files
+    else:
+        if not manifest_file.is_file():
+            return []
+        try:
+            data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
 
-    entries: Dict[str, str] = data.get("files", {})
-    if not entries:
-        manifest_file.unlink(missing_ok=True)
-        return []
+        entries = _all_tracked_entries(data)
+        if not entries:
+            manifest_file.unlink(missing_ok=True)
+            return []
 
-    if not force:
-        modified = check_modified_files(project_path, agent_id)
-        if modified:
-            raise AgentFileModifiedError(
-                f"The following agent files have been modified since installation:\n"
-                + "\n".join(f"  {p}" for p in modified)
-                + "\nUse --force to remove them anyway."
-            )
+        if not force:
+            modified = check_modified_files(project_path, agent_id)
+            if modified:
+                raise AgentFileModifiedError(
+                    f"The following agent files have been modified since installation:\n"
+                    + "\n".join(f"  {p}" for p in modified)
+                    + "\nUse --force to remove them anyway."
+                )
 
     removed: List[str] = []
     for rel_path in entries:
@@ -374,7 +500,8 @@ def remove_tracked_files(
             removed.append(rel_path)
 
     # Clean up the install manifest itself
-    manifest_file.unlink(missing_ok=True)
+    if manifest_file.is_file():
+        manifest_file.unlink(missing_ok=True)
     return removed
 
 
