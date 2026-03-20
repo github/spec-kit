@@ -1199,6 +1199,10 @@ def scaffold_from_core_pack(
     else:
         repo_root = Path(__file__).parent.parent.parent
         templates_dir = repo_root / "templates"
+        if not templates_dir.is_dir():
+            if tracker:
+                tracker.error("scaffold", "page templates not found")
+            return False
 
     # Release script
     try:
@@ -1709,7 +1713,6 @@ def init(
     offline: bool = typer.Option(False, "--offline", help="Use assets bundled in the specify-cli package instead of downloading from GitHub (no network access required)"),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
-    from_github: bool = typer.Option(False, "--from-github", help="Download the latest template release from GitHub instead of using bundled assets (requires network access to api.github.com)"),
 ):
     """
     Initialize a new Specify project.
@@ -1744,7 +1747,6 @@ def init(
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
         specify init my-project --offline  # Use bundled assets (no network access)
         specify init my-project --ai claude --preset healthcare-compliance  # With preset
-        specify init my-project --from-github  # Force download from GitHub releases
     """
 
     show_banner()
@@ -2102,6 +2104,8 @@ def init(
                 tracker.skip("cleanup", "not needed (no download)")
 
             tracker.complete("final", "project ready")
+        except (typer.Exit, SystemExit):
+            raise
         except Exception as e:
             tracker.error("final", str(e))
             console.print(Panel(f"Initialization failed: {e}", title="Failure", border_style="red"))

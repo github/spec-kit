@@ -31,7 +31,6 @@ Parity invariant
 
 import os
 import re
-import shutil
 import subprocess
 import zipfile
 from pathlib import Path
@@ -567,7 +566,7 @@ def test_pyproject_force_include_covers_all_templates():
         if f"templates/{name}" not in pyproject_text
     ]
     assert not missing, (
-        f"Template files not listed in pyproject.toml force-include "
-        f"(offline scaffolding will miss them):\n  "
+        "Template files not listed in pyproject.toml force-include "
+        "(offline scaffolding will miss them):\n  "
         + "\n  ".join(missing)
     )
