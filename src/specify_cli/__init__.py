@@ -1262,6 +1262,9 @@ def scaffold_from_core_pack(
 
             # Run the release script for this single agent + script type
             env = os.environ.copy()
+            # Pin GENRELEASES_DIR inside the temp dir so a user-exported
+            # value cannot redirect output or cause rm -rf outside the sandbox.
+            env["GENRELEASES_DIR"] = str(tmp / ".genreleases")
             if os.name == "nt":
                 cmd = [
                     shell_cmd, "-File", str(release_script),
@@ -1990,6 +1993,9 @@ def init(
                         "Common causes: missing bash/pwsh, script permission errors, or incomplete wheel.\n"
                         "Remove --offline to attempt a GitHub download instead."
                     )
+                    # Clean up partial project directory (same as the GitHub-download failure path)
+                    if not here and project_path.exists():
+                        shutil.rmtree(project_path)
                     raise typer.Exit(1)
 
             # For generic agent, rename placeholder directory to user-specified path
