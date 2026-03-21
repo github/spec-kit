@@ -6,9 +6,12 @@
 function Find-SpecifyRoot {
     param([string]$StartDir = (Get-Location).Path)
 
-    $current = $StartDir
+    # Normalize to absolute path to prevent issues with relative paths
+    $current = (Resolve-Path $StartDir -ErrorAction SilentlyContinue)?.Path
+    if (-not $current) { return $null }
+
     while ($true) {
-        if (Test-Path (Join-Path $current ".specify")) {
+        if (Test-Path -Path (Join-Path $current ".specify") -PathType Container) {
             return $current
         }
         $parent = Split-Path $current -Parent
@@ -86,10 +89,25 @@ function Get-CurrentBranch {
 }
 
 # Check if we have git available at the spec-kit root level
-# Returns true only if the .specify root has its own .git directory
+# Returns true only if git is installed and the repo root is inside a git work tree
+# Handles both regular repos (.git directory) and worktrees/submodules (.git file)
 function Test-HasGit {
     $repoRoot = Get-RepoRoot
-    return (Test-Path (Join-Path $repoRoot ".git"))
+    # First check if git command is available
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        return $false
+    }
+    # Check if .git exists (directory or file for worktrees/submodules)
+    if (-not (Test-Path (Join-Path $repoRoot ".git"))) {
+        return $false
+    }
+    # Verify it's actually a valid git work tree
+    try {
+        $null = git -C $repoRoot rev-parse --is-inside-work-tree 2>$null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
 }
 
 function Test-FeatureBranch {

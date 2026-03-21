@@ -5,11 +5,15 @@
 # This is the primary marker for spec-kit projects
 find_specify_root() {
     local dir="${1:-$(pwd)}"
-    while [ "$dir" != "/" ]; do
+    # Normalize to absolute path to prevent infinite loop with relative paths
+    dir="$(cd "$dir" 2>/dev/null && pwd)" || return 1
+    local prev_dir=""
+    while [ "$dir" != "/" ] && [ "$dir" != "$prev_dir" ]; do
         if [ -d "$dir/.specify" ]; then
             echo "$dir"
             return 0
         fi
+        prev_dir="$dir"
         dir="$(dirname "$dir")"
     done
     return 1
@@ -82,10 +86,16 @@ get_current_branch() {
 }
 
 # Check if we have git available at the spec-kit root level
-# Returns true only if the .specify root has its own .git directory
+# Returns true only if git is installed and the repo root is inside a git work tree
+# Handles both regular repos (.git directory) and worktrees/submodules (.git file)
 has_git() {
     local repo_root=$(get_repo_root)
-    [ -d "$repo_root/.git" ]
+    # First check if git command is available
+    command -v git >/dev/null 2>&1 || return 1
+    # Check if .git exists (directory or file for worktrees/submodules)
+    [ -e "$repo_root/.git" ] || return 1
+    # Verify it's actually a valid git work tree
+    git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
 check_feature_branch() {

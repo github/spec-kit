@@ -140,14 +140,6 @@ function ConvertTo-CleanBranchName {
 
 # Use common.ps1 functions which prioritize .specify over git
 $repoRoot = Get-RepoRoot
-if (-not $repoRoot) {
-    # Fallback to local Find-RepositoryRoot if common.ps1 couldn't find it
-    $repoRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
-    if (-not $repoRoot) {
-        Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
-        exit 1
-    }
-}
 
 # Check if git is available at this repo root (not a parent)
 $hasGit = Test-HasGit

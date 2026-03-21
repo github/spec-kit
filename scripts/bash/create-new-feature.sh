@@ -167,14 +167,6 @@ SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 REPO_ROOT=$(get_repo_root)
-if [ -z "$REPO_ROOT" ]; then
-    # Fallback to local find_repo_root if common.sh couldn't find it
-    REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
-    if [ -z "$REPO_ROOT" ]; then
-        echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
-        exit 1
-    fi
-fi
 
 # Check if git is available at this repo root (not a parent)
 if has_git; then
