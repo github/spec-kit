@@ -1,0 +1,33 @@
+{
+  "name": "speckit-plugins",
+  "owner": {
+    "name": "Hamed Mohammadpour",
+    "url": "https://github.com/hamedmp"
+  },
+  "metadata": {
+    "description": "Spec-Driven Development (SDD) workflow plugins for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "speckit",
+      "source": ".",
+      "description": "Spec-Driven Development workflow - generate specifications, plans, tasks, and implement features systematically",
+      "version": "0.1.0",
+      "author": {
+        "name": "Hamed Mohammadpour"
+      },
+      "homepage": "https://github.com/HamedMP/spec-kit",
+      "repository": "https://github.com/HamedMP/spec-kit",
+      "license": "MIT",
+      "keywords": [
+        "specification",
+        "planning",
+        "sdd",
+        "spec-driven-development",
+        "workflow"
+      ],
+      "category": "development-workflow"
+    }
+  ]
+}
