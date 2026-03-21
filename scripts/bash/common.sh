@@ -8,10 +8,14 @@ find_specify_root() {
     # Normalize to absolute path to prevent infinite loop with relative paths
     dir="$(cd "$dir" 2>/dev/null && pwd)" || return 1
     local prev_dir=""
-    while [ "$dir" != "/" ] && [ "$dir" != "$prev_dir" ]; do
+    while true; do
         if [ -d "$dir/.specify" ]; then
             echo "$dir"
             return 0
+        fi
+        # Stop if we've reached filesystem root or dirname stops changing
+        if [ "$dir" = "/" ] || [ "$dir" = "$prev_dir" ]; then
+            break
         fi
         prev_dir="$dir"
         dir="$(dirname "$dir")"
