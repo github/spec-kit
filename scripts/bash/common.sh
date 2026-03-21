@@ -52,14 +52,14 @@ get_current_branch() {
         return
     fi
 
-    # Then check git if available
-    if git rev-parse --abbrev-ref HEAD >/dev/null 2>&1; then
-        git rev-parse --abbrev-ref HEAD
+    # Then check git if available at the spec-kit root (not parent)
+    local repo_root=$(get_repo_root)
+    if has_git; then
+        git -C "$repo_root" rev-parse --abbrev-ref HEAD
         return
     fi
 
     # For non-git repos, try to find the latest feature directory
-    local repo_root=$(get_repo_root)
     local specs_dir="$repo_root/specs"
 
     if [[ -d "$specs_dir" ]]; then

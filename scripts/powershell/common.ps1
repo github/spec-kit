@@ -50,19 +50,21 @@ function Get-CurrentBranch {
     if ($env:SPECIFY_FEATURE) {
         return $env:SPECIFY_FEATURE
     }
-    
-    # Then check git if available
-    try {
-        $result = git rev-parse --abbrev-ref HEAD 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return $result
-        }
-    } catch {
-        # Git command failed
-    }
-    
-    # For non-git repos, try to find the latest feature directory
+
+    # Then check git if available at the spec-kit root (not parent)
     $repoRoot = Get-RepoRoot
+    if (Test-HasGit) {
+        try {
+            $result = git -C $repoRoot rev-parse --abbrev-ref HEAD 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                return $result
+            }
+        } catch {
+            # Git command failed
+        }
+    }
+
+    # For non-git repos, try to find the latest feature directory
     $specsDir = Join-Path $repoRoot "specs"
     
     if (Test-Path $specsDir) {
