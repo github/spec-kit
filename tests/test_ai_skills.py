@@ -770,6 +770,62 @@ class TestNewProjectCommandSkip:
         assert result.exit_code == 0
         mock_skills.assert_called_once()
         assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
+        assert not (target / ".codex").exists()
+
+    def test_codex_ai_skills_removes_legacy_codex_dir_after_fallback(self, tmp_path):
+        """Codex skills init should not leave legacy .codex prompt directory behind."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "codex-cleanup-new"
+
+        def fake_download(project_path, *args, **kwargs):
+            prompts_dir = project_path / ".codex" / "prompts"
+            prompts_dir.mkdir(parents=True, exist_ok=True)
+            (prompts_dir / "speckit.specify.md").write_text("---\ndescription: Legacy prompt\n---\n\nBody.\n")
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=True), \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 0
+        assert not (target / ".codex").exists()
+
+    def test_codex_ai_skills_here_mode_removes_legacy_codex_dir(self, tmp_path, monkeypatch):
+        """Codex --here skills init should not leave legacy .codex prompt directory behind."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "codex-cleanup-here"
+        target.mkdir()
+        monkeypatch.chdir(target)
+
+        def fake_download(project_path, *args, **kwargs):
+            prompts_dir = project_path / ".codex" / "prompts"
+            prompts_dir.mkdir(parents=True, exist_ok=True)
+            (prompts_dir / "speckit.specify.md").write_text("---\ndescription: Legacy prompt\n---\n\nBody.\n")
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=True), \
+             patch("specify_cli.is_git_repo", return_value=True), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", "--here", "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0
+        assert not (target / ".codex").exists()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""

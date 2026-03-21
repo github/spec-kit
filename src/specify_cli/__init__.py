@@ -1031,10 +1031,6 @@ def download_and_extract_template(
                             console.print("[cyan]Found nested directory structure[/cyan]")
 
                     for item in source_dir.iterdir():
-                        # Codex skills mode should not materialize legacy prompt files
-                        # from older template archives.
-                        if skip_legacy_codex_prompts and ai_assistant == "codex" and item.name == ".codex":
-                            continue
                         dest_path = project_path / item.name
                         if item.is_dir():
                             if dest_path.exists():
@@ -1084,11 +1080,6 @@ def download_and_extract_template(
                         tracker.complete("flatten")
                     elif verbose:
                         console.print("[cyan]Flattened nested directory structure[/cyan]")
-
-                if skip_legacy_codex_prompts and ai_assistant == "codex":
-                    legacy_codex_dir = project_path / ".codex"
-                    if legacy_codex_dir.is_dir():
-                        shutil.rmtree(legacy_codex_dir, ignore_errors=True)
 
     except Exception as e:
         if tracker:
@@ -2120,6 +2111,14 @@ def init(
                                     # Best-effort cleanup: skills are already installed,
                                     # so leaving stale commands is non-fatal.
                                     console.print("[yellow]Warning: could not remove extracted commands directory[/yellow]")
+
+            # In Codex skills mode, remove legacy prompt layout after skills
+            # installation/fallback completes so prompt artifacts are not left
+            # behind in the project tree.
+            if selected_ai == "codex" and ai_skills:
+                legacy_codex_dir = project_path / ".codex"
+                if legacy_codex_dir.is_dir():
+                    shutil.rmtree(legacy_codex_dir, ignore_errors=True)
 
             if not no_git:
                 tracker.start("git")
