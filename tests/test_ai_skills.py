@@ -16,6 +16,7 @@ import pytest
 import tempfile
 import shutil
 import yaml
+import typer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -829,6 +830,39 @@ class TestNewProjectCommandSkip:
         assert target.exists()
         assert (target / ".specify").exists()
         assert not (target / ".codex").exists()
+
+    @pytest.mark.parametrize("is_current_dir", [False, True])
+    def test_download_and_extract_template_blocks_zip_path_traversal(self, tmp_path, monkeypatch, is_current_dir):
+        """Extraction should reject ZIP members escaping the target directory."""
+        target = (tmp_path / "here-proj") if is_current_dir else (tmp_path / "new-proj")
+        if is_current_dir:
+            target.mkdir()
+            monkeypatch.chdir(target)
+
+        archive = tmp_path / "malicious-template.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("../evil.txt", "pwned")
+            zf.writestr("template-root/.specify/templates/constitution-template.md", "constitution")
+
+        fake_meta = {
+            "filename": archive.name,
+            "size": archive.stat().st_size,
+            "release": "vtest",
+            "asset_url": "https://example.invalid/template.zip",
+        }
+
+        with patch("specify_cli.download_template_from_github", return_value=(archive, fake_meta)):
+            with pytest.raises(typer.Exit):
+                specify_cli.download_and_extract_template(
+                    target,
+                    "codex",
+                    "sh",
+                    is_current_dir=is_current_dir,
+                    skip_legacy_codex_prompts=True,
+                    verbose=False,
+                )
+
+        assert not (tmp_path / "evil.txt").exists()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""

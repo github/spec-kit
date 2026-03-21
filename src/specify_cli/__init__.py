@@ -1007,6 +1007,19 @@ def download_and_extract_template(
             project_path.mkdir(parents=True)
 
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            def _validate_zip_members_within(root: Path) -> None:
+                """Validate all ZIP members stay within ``root`` (Zip Slip guard)."""
+                root_resolved = root.resolve()
+                for member in zip_ref.namelist():
+                    member_path = (root / member).resolve()
+                    try:
+                        member_path.relative_to(root_resolved)
+                    except ValueError:
+                        raise RuntimeError(
+                            f"Unsafe path in ZIP archive: {member} "
+                            "(potential path traversal)"
+                        )
+
             zip_contents = zip_ref.namelist()
             if tracker:
                 tracker.start("zip-list")
@@ -1017,6 +1030,7 @@ def download_and_extract_template(
             if is_current_dir:
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_path = Path(temp_dir)
+                    _validate_zip_members_within(temp_path)
                     zip_ref.extractall(temp_path)
 
                     extracted_items = list(temp_path.iterdir())
@@ -1065,6 +1079,7 @@ def download_and_extract_template(
                     if verbose and not tracker:
                         console.print("[cyan]Template files merged into current directory[/cyan]")
             else:
+                _validate_zip_members_within(project_path)
                 zip_ref.extractall(project_path)
 
                 extracted_items = list(project_path.iterdir())
