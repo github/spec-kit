@@ -80,19 +80,6 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
-# Function to find the repository root by searching for existing project markers
-find_repo_root() {
-    local dir="$1"
-    while [ "$dir" != "/" ]; do
-        if [ -d "$dir/.git" ] || [ -d "$dir/.specify" ]; then
-            echo "$dir"
-            return 0
-        fi
-        dir="$(dirname "$dir")"
-    done
-    return 1
-}
-
 # Function to get highest number from specs directory
 get_highest_from_specs() {
     local specs_dir="$1"
@@ -171,21 +158,16 @@ clean_branch_name() {
     echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
 }
 
-# Resolve repository root. Prefer git information when available, but fall back
-# to searching for repository markers so the workflow still functions in repositories that
-# were initialised with --no-git.
+# Resolve repository root using common.sh functions which prioritize .specify over git
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-if git rev-parse --show-toplevel >/dev/null 2>&1; then
-    REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_ROOT=$(get_repo_root)
+
+# Check if git is available at this repo root (not a parent)
+if has_git; then
     HAS_GIT=true
 else
-    REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
-    if [ -z "$REPO_ROOT" ]; then
-        echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
-        exit 1
-    fi
     HAS_GIT=false
 fi
 

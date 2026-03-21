@@ -1,7 +1,37 @@
 #!/usr/bin/env pwsh
 # Common PowerShell functions analogous to common.sh
 
+# Find repository root by searching upward for .specify directory
+# This is the primary marker for spec-kit projects
+function Find-SpecifyRoot {
+    param([string]$StartDir = (Get-Location).Path)
+
+    # Normalize to absolute path to prevent issues with relative paths
+    $current = (Resolve-Path $StartDir -ErrorAction SilentlyContinue)?.Path
+    if (-not $current) { return $null }
+
+    while ($true) {
+        if (Test-Path -Path (Join-Path $current ".specify") -PathType Container) {
+            return $current
+        }
+        $parent = Split-Path $current -Parent
+        if ([string]::IsNullOrEmpty($parent) -or $parent -eq $current) {
+            return $null
+        }
+        $current = $parent
+    }
+}
+
+# Get repository root, prioritizing .specify directory over git
+# This prevents using a parent git repo when spec-kit is initialized in a subdirectory
 function Get-RepoRoot {
+    # First, look for .specify directory (spec-kit's own marker)
+    $specifyRoot = Find-SpecifyRoot
+    if ($specifyRoot) {
+        return $specifyRoot
+    }
+
+    # Fallback to git if no .specify found
     try {
         $result = git rev-parse --show-toplevel 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -10,8 +40,8 @@ function Get-RepoRoot {
     } catch {
         # Git command failed
     }
-    
-    # Fall back to script location for non-git repos
+
+    # Final fallback to script location for non-git repos
     return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
 
@@ -20,19 +50,21 @@ function Get-CurrentBranch {
     if ($env:SPECIFY_FEATURE) {
         return $env:SPECIFY_FEATURE
     }
-    
-    # Then check git if available
-    try {
-        $result = git rev-parse --abbrev-ref HEAD 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return $result
-        }
-    } catch {
-        # Git command failed
-    }
-    
-    # For non-git repos, try to find the latest feature directory
+
+    # Then check git if available at the spec-kit root (not parent)
     $repoRoot = Get-RepoRoot
+    if (Test-HasGit) {
+        try {
+            $result = git -C $repoRoot rev-parse --abbrev-ref HEAD 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                return $result
+            }
+        } catch {
+            # Git command failed
+        }
+    }
+
+    # For non-git repos, try to find the latest feature directory
     $specsDir = Join-Path $repoRoot "specs"
     
     if (Test-Path $specsDir) {
@@ -69,9 +101,22 @@ function Get-CurrentBranch {
     return "main"
 }
 
+# Check if we have git available at the spec-kit root level
+# Returns true only if git is installed and the repo root is inside a git work tree
+# Handles both regular repos (.git directory) and worktrees/submodules (.git file)
 function Test-HasGit {
+    $repoRoot = Get-RepoRoot
+    # First check if git command is available
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        return $false
+    }
+    # Check if .git exists (directory or file for worktrees/submodules)
+    if (-not (Test-Path (Join-Path $repoRoot ".git"))) {
+        return $false
+    }
+    # Verify it's actually a valid git work tree
     try {
-        git rev-parse --show-toplevel 2>$null | Out-Null
+        $null = git -C $repoRoot rev-parse --is-inside-work-tree 2>$null
         return ($LASTEXITCODE -eq 0)
     } catch {
         return $false
