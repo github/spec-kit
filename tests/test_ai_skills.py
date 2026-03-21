@@ -720,8 +720,8 @@ class TestNewProjectCommandSkip:
         mock_skills.assert_not_called()
         assert (target / ".agents" / "skills" / "speckit-specify" / "SKILL.md").exists()
 
-    def test_codex_native_skills_missing_fails_clearly(self, tmp_path):
-        """Codex native skills init should fail if bundled skills are missing."""
+    def test_codex_native_skills_missing_falls_back_then_fails_cleanly(self, tmp_path):
+        """Codex should attempt fallback conversion when bundled skills are missing."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
@@ -730,7 +730,7 @@ class TestNewProjectCommandSkip:
         with patch("specify_cli.download_and_extract_template", lambda *args, **kwargs: None), \
              patch("specify_cli.ensure_executable_scripts"), \
              patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.install_ai_skills", return_value=False) as mock_skills, \
              patch("specify_cli.is_git_repo", return_value=False), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
             result = runner.invoke(
@@ -739,11 +739,12 @@ class TestNewProjectCommandSkip:
             )
 
         assert result.exit_code == 1
-        mock_skills.assert_not_called()
+        mock_skills.assert_called_once()
         assert "Expected bundled agent skills" in result.output
+        assert "fallback conversion failed" in result.output
 
     def test_codex_native_skills_ignores_non_speckit_skill_dirs(self, tmp_path):
-        """Non-spec-kit SKILL.md files should not satisfy Codex bundled-skills validation."""
+        """Non-spec-kit SKILL.md files should trigger fallback conversion, not hard-fail."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
@@ -757,7 +758,7 @@ class TestNewProjectCommandSkip:
         with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
              patch("specify_cli.ensure_executable_scripts"), \
              patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
              patch("specify_cli.is_git_repo", return_value=False), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
             result = runner.invoke(
@@ -765,9 +766,8 @@ class TestNewProjectCommandSkip:
                 ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
             )
 
-        assert result.exit_code == 1
-        mock_skills.assert_not_called()
-        assert "Expected bundled agent skills" in result.output
+        assert result.exit_code == 0
+        mock_skills.assert_called_once()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
