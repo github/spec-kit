@@ -465,6 +465,7 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 - **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
+- **[Advanced AI Workflow Extensions Proposal](./extensions/RFC-ADVANCED-AI-WORKFLOWS.md)** - Roadmap for optional debugging, self-healing, orchestration, and workflow-pack patterns
 
 ---
 

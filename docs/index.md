@@ -14,6 +14,7 @@ Spec-Driven Development **flips the script** on traditional software development
 - [Quick Start Guide](quickstart.md)
 - [Upgrade Guide](upgrade.md)
 - [Local Development](local-development.md)
+- [Advanced AI Workflow Extensions Proposal](../extensions/RFC-ADVANCED-AI-WORKFLOWS.md)
 
 ## Core Philosophy
 
