@@ -740,6 +740,7 @@ class TestNewProjectCommandSkip:
 
         assert result.exit_code == 1
         mock_skills.assert_called_once()
+        assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
         assert "Expected bundled agent skills" in result.output
         assert "fallback conversion failed" in result.output
 
@@ -768,6 +769,7 @@ class TestNewProjectCommandSkip:
 
         assert result.exit_code == 0
         mock_skills.assert_called_once()
+        assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
@@ -858,6 +860,21 @@ class TestSkipIfExists:
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
         # All 4 templates should produce skills (specify, plan, tasks, empty_fm)
         assert len(skill_dirs) == 4
+
+    def test_existing_skill_overwritten_when_enabled(self, project_dir, templates_dir):
+        """When overwrite_existing=True, pre-existing SKILL.md should be replaced."""
+        skill_dir = project_dir / ".claude" / "skills" / "speckit-specify"
+        skill_dir.mkdir(parents=True)
+        custom_content = "# My Custom Specify Skill\nUser-modified content\n"
+        skill_file = skill_dir / "SKILL.md"
+        skill_file.write_text(custom_content)
+
+        result = install_ai_skills(project_dir, "claude", overwrite_existing=True)
+
+        assert result is True
+        updated_content = skill_file.read_text()
+        assert updated_content != custom_content
+        assert "name: speckit-specify" in updated_content
 
 
 # ===== SKILL_DESCRIPTIONS Coverage Tests =====
