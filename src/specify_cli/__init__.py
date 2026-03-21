@@ -1085,6 +1085,13 @@ def download_and_extract_template(
                     elif verbose:
                         console.print("[cyan]Flattened nested directory structure[/cyan]")
 
+                # For fresh-directory Codex skills init, suppress legacy
+                # prompt-based layout extracted from older archives.
+                if skip_legacy_codex_prompts and ai_assistant == "codex":
+                    legacy_codex_dir = project_path / ".codex"
+                    if legacy_codex_dir.is_dir():
+                        shutil.rmtree(legacy_codex_dir, ignore_errors=True)
+
     except Exception as e:
         if tracker:
             tracker.error("extract", str(e))

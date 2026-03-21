@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import re
+import zipfile
 import pytest
 import tempfile
 import shutil
@@ -798,6 +799,36 @@ class TestNewProjectCommandSkip:
         assert result.exit_code == 0
         assert (target / ".codex").exists()
         assert (existing_prompts / "custom.md").exists()
+
+    def test_codex_ai_skills_fresh_dir_does_not_create_codex_dir(self, tmp_path):
+        """Fresh-directory Codex skills init should not leave legacy .codex from archive."""
+        target = tmp_path / "fresh-codex-proj"
+        archive = tmp_path / "codex-template.zip"
+
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("template-root/.codex/prompts/speckit.specify.md", "legacy")
+            zf.writestr("template-root/.specify/templates/constitution-template.md", "constitution")
+
+        fake_meta = {
+            "filename": archive.name,
+            "size": archive.stat().st_size,
+            "release": "vtest",
+            "asset_url": "https://example.invalid/template.zip",
+        }
+
+        with patch("specify_cli.download_template_from_github", return_value=(archive, fake_meta)):
+            specify_cli.download_and_extract_template(
+                target,
+                "codex",
+                "sh",
+                is_current_dir=False,
+                skip_legacy_codex_prompts=True,
+                verbose=False,
+            )
+
+        assert target.exists()
+        assert (target / ".specify").exists()
+        assert not (target / ".codex").exists()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
