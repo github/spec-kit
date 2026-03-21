@@ -1,7 +1,34 @@
 #!/usr/bin/env pwsh
 # Common PowerShell functions analogous to common.sh
 
+# Find repository root by searching upward for .specify directory
+# This is the primary marker for spec-kit projects
+function Find-SpecifyRoot {
+    param([string]$StartDir = (Get-Location).Path)
+
+    $current = $StartDir
+    while ($true) {
+        if (Test-Path (Join-Path $current ".specify")) {
+            return $current
+        }
+        $parent = Split-Path $current -Parent
+        if ([string]::IsNullOrEmpty($parent) -or $parent -eq $current) {
+            return $null
+        }
+        $current = $parent
+    }
+}
+
+# Get repository root, prioritizing .specify directory over git
+# This prevents using a parent git repo when spec-kit is initialized in a subdirectory
 function Get-RepoRoot {
+    # First, look for .specify directory (spec-kit's own marker)
+    $specifyRoot = Find-SpecifyRoot
+    if ($specifyRoot) {
+        return $specifyRoot
+    }
+
+    # Fallback to git if no .specify found
     try {
         $result = git rev-parse --show-toplevel 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -10,8 +37,8 @@ function Get-RepoRoot {
     } catch {
         # Git command failed
     }
-    
-    # Fall back to script location for non-git repos
+
+    # Final fallback to script location for non-git repos
     return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 }
 
@@ -58,13 +85,11 @@ function Get-CurrentBranch {
     return "main"
 }
 
+# Check if we have git available at the spec-kit root level
+# Returns true only if the .specify root has its own .git directory
 function Test-HasGit {
-    try {
-        git rev-parse --show-toplevel 2>$null | Out-Null
-        return ($LASTEXITCODE -eq 0)
-    } catch {
-        return $false
-    }
+    $repoRoot = Get-RepoRoot
+    return (Test-Path (Join-Path $repoRoot ".git"))
 }
 
 function Test-FeatureBranch {

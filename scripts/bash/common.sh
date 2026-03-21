@@ -1,15 +1,39 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
-# Get repository root, with fallback for non-git repositories
+# Find repository root by searching upward for .specify directory
+# This is the primary marker for spec-kit projects
+find_specify_root() {
+    local dir="${1:-$(pwd)}"
+    while [ "$dir" != "/" ]; do
+        if [ -d "$dir/.specify" ]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+# Get repository root, prioritizing .specify directory over git
+# This prevents using a parent git repo when spec-kit is initialized in a subdirectory
 get_repo_root() {
+    # First, look for .specify directory (spec-kit's own marker)
+    local specify_root
+    if specify_root=$(find_specify_root); then
+        echo "$specify_root"
+        return
+    fi
+
+    # Fallback to git if no .specify found
     if git rev-parse --show-toplevel >/dev/null 2>&1; then
         git rev-parse --show-toplevel
-    else
-        # Fall back to script location for non-git repos
-        local script_dir="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        (cd "$script_dir/../../.." && pwd)
+        return
     fi
+
+    # Final fallback to script location for non-git repos
+    local script_dir="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    (cd "$script_dir/../../.." && pwd)
 }
 
 # Get current branch, with fallback for non-git repositories
@@ -57,9 +81,11 @@ get_current_branch() {
     echo "main"  # Final fallback
 }
 
-# Check if we have git available
+# Check if we have git available at the spec-kit root level
+# Returns true only if the .specify root has its own .git directory
 has_git() {
-    git rev-parse --show-toplevel >/dev/null 2>&1
+    local repo_root=$(get_repo_root)
+    [ -d "$repo_root/.git" ]
 }
 
 check_feature_branch() {

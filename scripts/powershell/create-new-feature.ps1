@@ -135,26 +135,22 @@ function ConvertTo-CleanBranchName {
     
     return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
-$fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
-if (-not $fallbackRoot) {
-    Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
-    exit 1
-}
-
-# Load common functions (includes Resolve-Template)
+# Load common functions (includes Get-RepoRoot, Test-HasGit, Resolve-Template)
 . "$PSScriptRoot/common.ps1"
 
-try {
-    $repoRoot = git rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        $hasGit = $true
-    } else {
-        throw "Git not available"
+# Use common.ps1 functions which prioritize .specify over git
+$repoRoot = Get-RepoRoot
+if (-not $repoRoot) {
+    # Fallback to local Find-RepositoryRoot if common.ps1 couldn't find it
+    $repoRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
+    if (-not $repoRoot) {
+        Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
+        exit 1
     }
-} catch {
-    $repoRoot = $fallbackRoot
-    $hasGit = $false
 }
+
+# Check if git is available at this repo root (not a parent)
+$hasGit = Test-HasGit
 
 Set-Location $repoRoot
 
