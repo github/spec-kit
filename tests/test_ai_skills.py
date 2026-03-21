@@ -11,10 +11,12 @@ Tests cover:
 """
 
 import re
+import zipfile
 import pytest
 import tempfile
 import shutil
 import yaml
+import typer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -720,8 +722,8 @@ class TestNewProjectCommandSkip:
         mock_skills.assert_not_called()
         assert (target / ".agents" / "skills" / "speckit-specify" / "SKILL.md").exists()
 
-    def test_codex_native_skills_missing_fails_clearly(self, tmp_path):
-        """Codex native skills init should fail if bundled skills are missing."""
+    def test_codex_native_skills_missing_falls_back_then_fails_cleanly(self, tmp_path):
+        """Codex should attempt fallback conversion when bundled skills are missing."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
@@ -730,7 +732,7 @@ class TestNewProjectCommandSkip:
         with patch("specify_cli.download_and_extract_template", lambda *args, **kwargs: None), \
              patch("specify_cli.ensure_executable_scripts"), \
              patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.install_ai_skills", return_value=False) as mock_skills, \
              patch("specify_cli.is_git_repo", return_value=False), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
             result = runner.invoke(
@@ -739,11 +741,13 @@ class TestNewProjectCommandSkip:
             )
 
         assert result.exit_code == 1
-        mock_skills.assert_not_called()
+        mock_skills.assert_called_once()
+        assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
         assert "Expected bundled agent skills" in result.output
+        assert "fallback conversion failed" in result.output
 
     def test_codex_native_skills_ignores_non_speckit_skill_dirs(self, tmp_path):
-        """Non-spec-kit SKILL.md files should not satisfy Codex bundled-skills validation."""
+        """Non-spec-kit SKILL.md files should trigger fallback conversion, not hard-fail."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
@@ -757,7 +761,7 @@ class TestNewProjectCommandSkip:
         with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
              patch("specify_cli.ensure_executable_scripts"), \
              patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills") as mock_skills, \
+             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
              patch("specify_cli.is_git_repo", return_value=False), \
              patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
             result = runner.invoke(
@@ -765,9 +769,100 @@ class TestNewProjectCommandSkip:
                 ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
             )
 
-        assert result.exit_code == 1
-        mock_skills.assert_not_called()
-        assert "Expected bundled agent skills" in result.output
+        assert result.exit_code == 0
+        mock_skills.assert_called_once()
+        assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
+
+    def test_codex_ai_skills_here_mode_preserves_existing_codex_dir(self, tmp_path, monkeypatch):
+        """Codex --here skills init should not delete a pre-existing .codex directory."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "codex-preserve-here"
+        target.mkdir()
+        existing_prompts = target / ".codex" / "prompts"
+        existing_prompts.mkdir(parents=True)
+        (existing_prompts / "custom.md").write_text("custom")
+        monkeypatch.chdir(target)
+
+        with patch("specify_cli.download_and_extract_template", return_value=target), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=True), \
+             patch("specify_cli.is_git_repo", return_value=True), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
+            result = runner.invoke(
+                app,
+                ["init", "--here", "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0
+        assert (target / ".codex").exists()
+        assert (existing_prompts / "custom.md").exists()
+
+    def test_codex_ai_skills_fresh_dir_does_not_create_codex_dir(self, tmp_path):
+        """Fresh-directory Codex skills init should not leave legacy .codex from archive."""
+        target = tmp_path / "fresh-codex-proj"
+        archive = tmp_path / "codex-template.zip"
+
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("template-root/.codex/prompts/speckit.specify.md", "legacy")
+            zf.writestr("template-root/.specify/templates/constitution-template.md", "constitution")
+
+        fake_meta = {
+            "filename": archive.name,
+            "size": archive.stat().st_size,
+            "release": "vtest",
+            "asset_url": "https://example.invalid/template.zip",
+        }
+
+        with patch("specify_cli.download_template_from_github", return_value=(archive, fake_meta)):
+            specify_cli.download_and_extract_template(
+                target,
+                "codex",
+                "sh",
+                is_current_dir=False,
+                skip_legacy_codex_prompts=True,
+                verbose=False,
+            )
+
+        assert target.exists()
+        assert (target / ".specify").exists()
+        assert not (target / ".codex").exists()
+
+    @pytest.mark.parametrize("is_current_dir", [False, True])
+    def test_download_and_extract_template_blocks_zip_path_traversal(self, tmp_path, monkeypatch, is_current_dir):
+        """Extraction should reject ZIP members escaping the target directory."""
+        target = (tmp_path / "here-proj") if is_current_dir else (tmp_path / "new-proj")
+        if is_current_dir:
+            target.mkdir()
+            monkeypatch.chdir(target)
+
+        archive = tmp_path / "malicious-template.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("../evil.txt", "pwned")
+            zf.writestr("template-root/.specify/templates/constitution-template.md", "constitution")
+
+        fake_meta = {
+            "filename": archive.name,
+            "size": archive.stat().st_size,
+            "release": "vtest",
+            "asset_url": "https://example.invalid/template.zip",
+        }
+
+        with patch("specify_cli.download_template_from_github", return_value=(archive, fake_meta)):
+            with pytest.raises(typer.Exit):
+                specify_cli.download_and_extract_template(
+                    target,
+                    "codex",
+                    "sh",
+                    is_current_dir=is_current_dir,
+                    skip_legacy_codex_prompts=True,
+                    verbose=False,
+                )
+
+        assert not (tmp_path / "evil.txt").exists()
 
     def test_commands_preserved_when_skills_fail(self, tmp_path):
         """If skills fail, commands should NOT be removed (safety net)."""
@@ -858,6 +953,21 @@ class TestSkipIfExists:
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
         # All 4 templates should produce skills (specify, plan, tasks, empty_fm)
         assert len(skill_dirs) == 4
+
+    def test_existing_skill_overwritten_when_enabled(self, project_dir, templates_dir):
+        """When overwrite_existing=True, pre-existing SKILL.md should be replaced."""
+        skill_dir = project_dir / ".claude" / "skills" / "speckit-specify"
+        skill_dir.mkdir(parents=True)
+        custom_content = "# My Custom Specify Skill\nUser-modified content\n"
+        skill_file = skill_dir / "SKILL.md"
+        skill_file.write_text(custom_content)
+
+        result = install_ai_skills(project_dir, "claude", overwrite_existing=True)
+
+        assert result is True
+        updated_content = skill_file.read_text()
+        assert updated_content != custom_content
+        assert "name: speckit-specify" in updated_content
 
 
 # ===== SKILL_DESCRIPTIONS Coverage Tests =====

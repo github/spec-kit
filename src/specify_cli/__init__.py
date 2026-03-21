@@ -948,9 +948,26 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(
+    project_path: Path,
+    ai_assistant: str,
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    skip_legacy_codex_prompts: bool = False,
+    verbose: bool = True,
+    tracker: StepTracker | None = None,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None,
+) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+
+    Note:
+        ``skip_legacy_codex_prompts`` suppresses the legacy top-level
+        ``.codex`` directory from older template archives in Codex skills mode.
+        The name is kept for backward compatibility with existing callers.
     """
     current_dir = Path.cwd()
 
@@ -990,6 +1007,19 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             project_path.mkdir(parents=True)
 
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            def _validate_zip_members_within(root: Path) -> None:
+                """Validate all ZIP members stay within ``root`` (Zip Slip guard)."""
+                root_resolved = root.resolve()
+                for member in zip_ref.namelist():
+                    member_path = (root / member).resolve()
+                    try:
+                        member_path.relative_to(root_resolved)
+                    except ValueError:
+                        raise RuntimeError(
+                            f"Unsafe path in ZIP archive: {member} "
+                            "(potential path traversal)"
+                        )
+
             zip_contents = zip_ref.namelist()
             if tracker:
                 tracker.start("zip-list")
@@ -1000,6 +1030,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             if is_current_dir:
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_path = Path(temp_dir)
+                    _validate_zip_members_within(temp_path)
                     zip_ref.extractall(temp_path)
 
                     extracted_items = list(temp_path.iterdir())
@@ -1019,6 +1050,11 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                             console.print("[cyan]Found nested directory structure[/cyan]")
 
                     for item in source_dir.iterdir():
+                        # In Codex skills mode, do not materialize the legacy
+                        # top-level .codex directory from older prompt-based
+                        # template archives.
+                        if skip_legacy_codex_prompts and ai_assistant == "codex" and item.name == ".codex":
+                            continue
                         dest_path = project_path / item.name
                         if item.is_dir():
                             if dest_path.exists():
@@ -1043,6 +1079,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                     if verbose and not tracker:
                         console.print("[cyan]Template files merged into current directory[/cyan]")
             else:
+                _validate_zip_members_within(project_path)
                 zip_ref.extractall(project_path)
 
                 extracted_items = list(project_path.iterdir())
@@ -1068,6 +1105,13 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                         tracker.complete("flatten")
                     elif verbose:
                         console.print("[cyan]Flattened nested directory structure[/cyan]")
+
+                # For fresh-directory Codex skills init, suppress legacy
+                # top-level .codex layout extracted from older archives.
+                if skip_legacy_codex_prompts and ai_assistant == "codex":
+                    legacy_codex_dir = project_path / ".codex"
+                    if legacy_codex_dir.is_dir():
+                        shutil.rmtree(legacy_codex_dir, ignore_errors=True)
 
     except Exception as e:
         if tracker:
@@ -1499,18 +1543,27 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     return project_path / DEFAULT_SKILLS_DIR
 
 
-def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker | None = None) -> bool:
+def install_ai_skills(
+    project_path: Path,
+    selected_ai: str,
+    tracker: StepTracker | None = None,
+    *,
+    overwrite_existing: bool = False,
+) -> bool:
     """Install Prompt.MD files from templates/commands/ as agent skills.
 
     Skills are written to the agent-specific skills directory following the
     `agentskills.io <https://agentskills.io/specification>`_ specification.
-    Installation is additive — existing files are never removed and prompt
-    command files in the agent's commands directory are left untouched.
+    Installation is additive by default — existing files are never removed and
+    prompt command files in the agent's commands directory are left untouched.
 
     Args:
         project_path: Target project directory.
         selected_ai: AI assistant key from ``AGENT_CONFIG``.
         tracker: Optional progress tracker.
+        overwrite_existing: When True, overwrite any existing ``SKILL.md`` file
+            in the target skills directory (including user-authored content).
+            Defaults to False.
 
     Returns:
         ``True`` if at least one skill was installed or all skills were
@@ -1640,9 +1693,10 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 
             skill_file = skill_dir / "SKILL.md"
             if skill_file.exists():
-                # Do not overwrite user-customized skills on re-runs
-                skipped_count += 1
-                continue
+                if not overwrite_existing:
+                    # Default behavior: do not overwrite user-customized skills on re-runs
+                    skipped_count += 1
+                    continue
             skill_file.write_text(skill_content, encoding="utf-8")
             installed_count += 1
 
@@ -1994,7 +2048,18 @@ def init(
 
             if use_github:
                 with httpx.Client(verify=local_ssl_context) as local_client:
-                    download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+                    download_and_extract_template(
+                        project_path,
+                        selected_ai,
+                        selected_script,
+                        here,
+                        skip_legacy_codex_prompts=(selected_ai == "codex" and ai_skills),
+                        verbose=False,
+                        tracker=tracker,
+                        client=local_client,
+                        debug=debug,
+                        github_token=github_token,
+                    )
             else:
                 scaffold_ok = scaffold_from_core_pack(project_path, selected_ai, selected_script, here, tracker=tracker)
                 if not scaffold_ok:
@@ -2013,7 +2078,6 @@ def init(
                     if not here and project_path.exists():
                         shutil.rmtree(project_path)
                     raise typer.Exit(1)
-
             # For generic agent, rename placeholder directory to user-specified path
             if selected_ai == "generic" and ai_commands_dir:
                 placeholder_dir = project_path / ".speckit" / "commands"
@@ -2033,16 +2097,30 @@ def init(
             if ai_skills:
                 if selected_ai in NATIVE_SKILLS_AGENTS:
                     skills_dir = _get_skills_dir(project_path, selected_ai)
-                    if not _has_bundled_skills(project_path, selected_ai):
-                        raise RuntimeError(
-                            f"Expected bundled agent skills in {skills_dir.relative_to(project_path)}, "
-                            "but none were found. Re-run with an up-to-date template."
-                        )
-                    if tracker:
-                        tracker.start("ai-skills")
-                        tracker.complete("ai-skills", f"bundled skills → {skills_dir.relative_to(project_path)}")
+                    bundled_found = _has_bundled_skills(project_path, selected_ai)
+                    if bundled_found:
+                        if tracker:
+                            tracker.start("ai-skills")
+                            tracker.complete("ai-skills", f"bundled skills → {skills_dir.relative_to(project_path)}")
+                        else:
+                            console.print(f"[green]✓[/green] Using bundled agent skills in {skills_dir.relative_to(project_path)}/")
                     else:
-                        console.print(f"[green]✓[/green] Using bundled agent skills in {skills_dir.relative_to(project_path)}/")
+                        # Compatibility fallback: convert command templates to skills
+                        # when an older template archive does not include native skills.
+                        # This keeps `specify init --here --ai codex --ai-skills` usable
+                        # in repos that already contain unrelated skills under .agents/skills.
+                        fallback_ok = install_ai_skills(
+                            project_path,
+                            selected_ai,
+                            tracker=tracker,
+                            overwrite_existing=True,
+                        )
+                        if not fallback_ok:
+                            raise RuntimeError(
+                                f"Expected bundled agent skills in {skills_dir.relative_to(project_path)}, "
+                                "but none were found and fallback conversion failed. "
+                                "Re-run with an up-to-date template."
+                            )
                 else:
                     skills_ok = install_ai_skills(project_path, selected_ai, tracker=tracker)
 
