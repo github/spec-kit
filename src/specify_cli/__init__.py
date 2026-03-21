@@ -4416,6 +4416,177 @@ def extension_set_priority(
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
+def _validate_extension_id(name: str) -> bool:
+    """Validate extension ID: lowercase, hyphen-separated, alphanumeric."""
+    import re
+    return bool(re.match(r'^[a-z][a-z0-9]*(-[a-z0-9]+)*$', name))
+
+
+def _title_case_extension(name: str) -> str:
+    """Convert hyphen-separated extension ID to title case display name."""
+    return " ".join(word.capitalize() for word in name.split("-"))
+
+
+def _find_extension_template() -> Optional[Path]:
+    """Locate the bundled extension template directory.
+
+    Checks for the template embedded in the installed package first,
+    then falls back to the source tree layout.
+    """
+    # Check relative to this file (works both in wheel and source tree)
+    pkg_dir = Path(__file__).resolve().parent
+    candidates = [
+        pkg_dir / "extensions" / "template",          # embedded in wheel
+        pkg_dir.parent.parent / "extensions" / "template",  # source tree (src layout)
+    ]
+    for candidate in candidates:
+        if candidate.is_dir() and (candidate / "extension.yml").exists():
+            return candidate
+    return None
+
+
+@extension_app.command("init")
+def extension_init(
+    name: str = typer.Argument(help="Extension ID (lowercase, hyphen-separated, e.g. 'my-extension')"),
+    output_dir: Optional[str] = typer.Option(None, "--output", "-o", help="Output directory (default: current directory)"),
+    author: Optional[str] = typer.Option(None, "--author", help="Extension author name"),
+    description: Optional[str] = typer.Option(None, "--description", help="Brief description of the extension"),
+    repository: Optional[str] = typer.Option(None, "--repository", help="GitHub repository URL"),
+    no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
+):
+    """Scaffold a new spec-kit extension from the built-in template.
+
+    Creates a ready-to-develop extension directory with all required files
+    (extension.yml, commands, config template, README, LICENSE, CHANGELOG)
+    and substitutes your extension metadata into the template placeholders.
+
+    This command does NOT require a spec-kit project -- you can scaffold
+    an extension anywhere on your filesystem.
+
+    Examples:
+        specify extension init my-linter
+        specify extension init my-linter --author "Jane Doe" --description "Lint spec files"
+        specify extension init my-linter --output ~/projects --no-git
+    """
+    # Validate extension ID format
+    if not _validate_extension_id(name):
+        console.print(f"[red]Error:[/red] Invalid extension ID '{name}'")
+        console.print("[yellow]Hint:[/yellow] Use lowercase letters, numbers, and hyphens (e.g. 'my-extension')")
+        console.print("  Must start with a letter, no consecutive hyphens, no trailing hyphens")
+        raise typer.Exit(1)
+
+    # Determine output path
+    base_dir = Path(output_dir).resolve() if output_dir else Path.cwd()
+    ext_dir = base_dir / f"spec-kit-{name}"
+
+    if ext_dir.exists():
+        console.print(f"[red]Error:[/red] Directory already exists: {ext_dir}")
+        console.print(f"[yellow]Hint:[/yellow] Remove it first or use --output to specify a different location")
+        raise typer.Exit(1)
+
+    # Locate template
+    template_dir = _find_extension_template()
+    if template_dir is None:
+        console.print("[red]Error:[/red] Extension template not found")
+        console.print("[yellow]Hint:[/yellow] Reinstall spec-kit or check your installation")
+        raise typer.Exit(1)
+
+    # Prompt for missing metadata interactively
+    if author is None:
+        author = typer.prompt("Author name")
+    if description is None:
+        description = typer.prompt("Brief description")
+    if repository is None:
+        default_repo = f"https://github.com/{author.lower().replace(' ', '')}/spec-kit-{name}"
+        repository = typer.prompt("Repository URL", default=default_repo)
+
+    display_name = _title_case_extension(name)
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Copy template to target
+    shutil.copytree(template_dir, ext_dir)
+
+    # Define placeholder substitutions (order matters: replace URLs before
+    # individual tokens so partial matches don't break URL patterns)
+    replacements = [
+        ("https://github.com/your-org/spec-kit-my-extension", repository),
+        ("Brief description of what your extension does", description),
+        ("Your Name or Organization", author),
+        ("Your Name", author),
+        ("My Extension", display_name),
+        ("my-extension", name),
+        ("YYYY-MM-DD", today),
+    ]
+
+    # Walk all text files and apply substitutions
+    for file_path in ext_dir.rglob("*"):
+        if not file_path.is_file():
+            continue
+        # Skip binary files
+        if file_path.suffix in ('.pyc', '.pyo', '.so', '.dll', '.exe'):
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, PermissionError):
+            continue
+
+        original = content
+        for old, new in replacements:
+            content = content.replace(old, new)
+        if content != original:
+            file_path.write_text(content, encoding="utf-8")
+
+    # Remove the template README (keep EXAMPLE-README as reference)
+    template_readme = ext_dir / "README.md"
+    example_readme = ext_dir / "EXAMPLE-README.md"
+    if example_readme.exists():
+        # Replace the template README with the example (already customized)
+        if template_readme.exists():
+            template_readme.unlink()
+        example_readme.rename(template_readme)
+
+    # Initialize git repo
+    if not no_git:
+        try:
+            subprocess.run(["git", "init"], cwd=ext_dir, capture_output=True, check=True)
+            subprocess.run(["git", "add", "."], cwd=ext_dir, capture_output=True, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", f"Initial scaffold for spec-kit-{name}"],
+                cwd=ext_dir, capture_output=True, check=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            console.print("[yellow]Warning:[/yellow] Git initialization failed (git may not be installed)")
+
+    # Print success and next steps
+    console.print(f"\n[green]✓[/green] Extension scaffolded: [bold]{ext_dir}[/bold]\n")
+
+    console.print(Panel(
+        f"[bold cyan]{display_name}[/bold cyan]\n"
+        f"  ID:          {name}\n"
+        f"  Author:      {author}\n"
+        f"  Description: {description}\n"
+        f"  Repository:  {repository}",
+        title="Extension Created",
+        border_style="green",
+        padding=(1, 2),
+    ))
+
+    console.print(Panel(
+        "1. [cyan]cd " + str(ext_dir) + "[/cyan]\n"
+        "2. Edit [cyan]extension.yml[/cyan] to define your commands and hooks\n"
+        "3. Create command files in [cyan]commands/[/cyan]\n"
+        "4. Update [cyan]config-template.yml[/cyan] with your settings\n"
+        "5. Test locally:\n"
+        "   [dim]cd /path/to/spec-kit-project[/dim]\n"
+        f"   [dim]specify extension add --dev {ext_dir}[/dim]\n"
+        "6. Publish: create a GitHub release and submit to the catalog\n"
+        "   [dim]See docs/EXTENSION-PUBLISHING-GUIDE.md[/dim]",
+        title="Next Steps",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+
+
 def main():
     app()
 
