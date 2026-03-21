@@ -6,7 +6,8 @@
 find_specify_root() {
     local dir="${1:-$(pwd)}"
     # Normalize to absolute path to prevent infinite loop with relative paths
-    dir="$(cd "$dir" 2>/dev/null && pwd)" || return 1
+    # Use -- to handle paths starting with - (e.g., -P, -L)
+    dir="$(cd -- "$dir" 2>/dev/null && pwd)" || return 1
     local prev_dir=""
     while true; do
         if [ -d "$dir/.specify" ]; then
