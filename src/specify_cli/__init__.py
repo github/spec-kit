@@ -963,6 +963,11 @@ def download_and_extract_template(
 ) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+
+    Note:
+        ``skip_legacy_codex_prompts`` suppresses the legacy top-level
+        ``.codex`` directory from older template archives in Codex skills mode.
+        The name is kept for backward compatibility with existing callers.
     """
     current_dir = Path.cwd()
 
@@ -1031,8 +1036,9 @@ def download_and_extract_template(
                             console.print("[cyan]Found nested directory structure[/cyan]")
 
                     for item in source_dir.iterdir():
-                        # In Codex skills mode, do not materialize legacy prompt
-                        # templates under .codex/prompts.
+                        # In Codex skills mode, do not materialize the legacy
+                        # top-level .codex directory from older prompt-based
+                        # template archives.
                         if skip_legacy_codex_prompts and ai_assistant == "codex" and item.name == ".codex":
                             continue
                         dest_path = project_path / item.name
@@ -1086,7 +1092,7 @@ def download_and_extract_template(
                         console.print("[cyan]Flattened nested directory structure[/cyan]")
 
                 # For fresh-directory Codex skills init, suppress legacy
-                # prompt-based layout extracted from older archives.
+                # top-level .codex layout extracted from older archives.
                 if skip_legacy_codex_prompts and ai_assistant == "codex":
                     legacy_codex_dir = project_path / ".codex"
                     if legacy_codex_dir.is_dir():
