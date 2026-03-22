@@ -94,9 +94,9 @@ get_current_branch() {
 # Returns true only if git is installed and the repo root is inside a git work tree
 # Handles both regular repos (.git directory) and worktrees/submodules (.git file)
 has_git() {
-    local repo_root=$(get_repo_root)
-    # First check if git command is available
+    # First check if git command is available (before calling get_repo_root which may use git)
     command -v git >/dev/null 2>&1 || return 1
+    local repo_root=$(get_repo_root)
     # Check if .git exists (directory or file for worktrees/submodules)
     [ -e "$repo_root/.git" ] || return 1
     # Verify it's actually a valid git work tree
