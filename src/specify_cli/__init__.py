@@ -275,7 +275,8 @@ AGENT_CONFIG = {
     "openclaw": {
         "name": "OpenClaw",
         "folder": ".openclaw/",
-        "commands_subdir": "skills",  # OpenClaw reads skills from .openclaw/skills/<skill-name>/SKILL.md
+        # Use a dedicated commands template directory; OpenClaw still reads live skills from .openclaw/skills/<skill-name>/SKILL.md
+        "commands_subdir": "commands",
         "install_url": "https://openclaw.ai",
         "requires_cli": True,
     },
