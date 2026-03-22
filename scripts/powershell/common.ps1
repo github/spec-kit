@@ -7,11 +7,12 @@ function Find-SpecifyRoot {
     param([string]$StartDir = (Get-Location).Path)
 
     # Normalize to absolute path to prevent issues with relative paths
-    $current = (Resolve-Path $StartDir -ErrorAction SilentlyContinue)?.Path
+    # Use -LiteralPath to handle paths with wildcard characters ([, ], *, ?)
+    $current = (Resolve-Path -LiteralPath $StartDir -ErrorAction SilentlyContinue)?.Path
     if (-not $current) { return $null }
 
     while ($true) {
-        if (Test-Path -Path (Join-Path $current ".specify") -PathType Container) {
+        if (Test-Path -LiteralPath (Join-Path $current ".specify") -PathType Container) {
             return $current
         }
         $parent = Split-Path $current -Parent
@@ -94,11 +95,11 @@ function Get-CurrentBranch {
 # Returns true only if git is installed and the repo root is inside a git work tree
 # Handles both regular repos (.git directory) and worktrees/submodules (.git file)
 function Test-HasGit {
-    $repoRoot = Get-RepoRoot
-    # First check if git command is available
+    # First check if git command is available (before calling Get-RepoRoot which may use git)
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         return $false
     }
+    $repoRoot = Get-RepoRoot
     # Check if .git exists (directory or file for worktrees/submodules)
     if (-not (Test-Path (Join-Path $repoRoot ".git"))) {
         return $false
