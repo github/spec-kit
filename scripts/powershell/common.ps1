@@ -101,7 +101,8 @@ function Test-HasGit {
     }
     $repoRoot = Get-RepoRoot
     # Check if .git exists (directory or file for worktrees/submodules)
-    if (-not (Test-Path (Join-Path $repoRoot ".git"))) {
+    # Use -LiteralPath to handle paths with wildcard characters
+    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot ".git"))) {
         return $false
     }
     # Verify it's actually a valid git work tree
