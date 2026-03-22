@@ -249,7 +249,7 @@ specify init my-project --ai vibe
 specify init my-project --ai bob
 
 # Initialize with OpenClaw support
-specify init my-project --ai openclaw --ai-skills
+specify init my-project --ai openclaw
 
 # Initialize with Antigravity support
 specify init my-project --ai agy --ai-skills
