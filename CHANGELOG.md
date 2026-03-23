@@ -1,12 +1,5 @@
 # Changelog
 
-## [0.3.2] - 2026-03-19
-
-### Changes
-
-- chore: bump version to 0.3.2
-- Add conduct extension to community catalog (#1908)
-
 ## [0.4.0] - 2026-03-23
 
 ### Changes
@@ -38,6 +31,13 @@
 - chore: update DocGuard extension to v0.9.10 (#1890)
 - Feature/spec kit add pi coding agent pullrequest (#1853)
 - feat: register spec-kit-learn extension (#1883)
+
+## [0.3.2] - 2026-03-19
+
+### Changes
+
+- chore: bump version to 0.3.2
+- Add conduct extension to community catalog (#1908)
 
 ## [0.3.1] - 2026-03-17
 
