@@ -22,8 +22,8 @@ If yes, confirm and move on. If no, explain what needs attention and help fix it
 Verify these artifacts exist:
 
 1. **Constitution** at `.minispec/memory/constitution.md`
-2. **Design** at `.minispec/specs/[feature-name]/design.md`
-3. **Tasks** at `.minispec/specs/[feature-name]/tasks.md`
+2. **Design** at `specs/[feature-name]/design.md`
+3. **Tasks** at `specs/[feature-name]/tasks.md`
 4. **Decisions** in `.minispec/knowledge/decisions/`
 
 If `$ARGUMENTS` specifies a feature, use that. Otherwise, detect the current feature or ask.
@@ -263,8 +263,8 @@ The constitution is non-negotiable. If something violates a constitution princip
 
 This command is primarily **read-only**, but may update:
 
-1. `.minispec/specs/[feature-name]/design.md` - If fixes are applied
-2. `.minispec/specs/[feature-name]/tasks.md` - If fixes are applied
+1. `specs/[feature-name]/design.md` - If fixes are applied
+2. `specs/[feature-name]/tasks.md` - If fixes are applied
 3. `.minispec/knowledge/decisions/*.md` - If fixes are applied
 
 Only with explicit engineer approval.

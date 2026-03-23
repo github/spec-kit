@@ -30,7 +30,7 @@ Before starting, verify:
    - This determines target lines per task
 
 2. **Design exists** - Look for:
-   - `.minispec/specs/[feature-name]/design.md`
+   - `specs/[feature-name]/design.md`
    - If `$ARGUMENTS` specifies a feature, use that
    - If not, check for recent designs or ask which feature
 
@@ -64,7 +64,7 @@ This will:
 - Copy the tasks template to `tasks.md`
 - Output paths for `DESIGN`, `TASKS`, `FEATURE_DIR`, and `BRANCH`
 
-Parse the JSON output to locate the design and tasks files. If the script fails or you are on a non-numbered branch, determine the feature directory yourself: use the current branch name (sanitize `/` to `-`), create `.minispec/specs/[sanitized-branch-name]/` and proceed.
+Parse the JSON output to locate the design and tasks files. If the script fails or you are on a non-numbered branch, determine the feature directory yourself: use the current branch name (sanitize `/` to `-`), create `specs/[sanitized-branch-name]/` and proceed.
 
 ### Phase 1: Load Context
 
@@ -206,7 +206,7 @@ Once agreed:
    >
    > [N] tasks total. Ready to save?"
 
-2. **Write tasks to file** at `.minispec/specs/[feature-name]/tasks.md`. If the setup script did not run or failed, create the directory and file yourself now. The feature-name should match the current branch name (sanitize `/` to `-` for directory names):
+2. **Write tasks to file** at `specs/[feature-name]/tasks.md`. If the setup script did not run or failed, create the directory and file yourself now. The feature-name should match the current branch name (sanitize `/` to `-` for directory names):
 
 ```markdown
 ---
@@ -269,7 +269,7 @@ estimated_lines: [N]
 
 ### Phase 7: Handoff
 
-> "Tasks saved to `.minispec/specs/[feature-name]/tasks.md`
+> "Tasks saved to `specs/[feature-name]/tasks.md`
 >
 > **Summary:**
 > - [N] tasks total
@@ -317,5 +317,5 @@ estimated_lines: [N]
 
 By the end of this command, you will have created/updated:
 
-1. `.minispec/specs/[feature-name]/tasks.md` - The task breakdown
-2. `.minispec/specs/[feature-name]/design.md` - Status updated to `planned`
+1. `specs/[feature-name]/tasks.md` - The task breakdown
+2. `specs/[feature-name]/design.md` - Status updated to `planned`

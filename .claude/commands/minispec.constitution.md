@@ -25,7 +25,7 @@ Both should emerge from dialogue, not templates.
 
 First, understand the project:
 
-1. **Check for existing constitution** at `.minispec.minispec/memory/constitution.md`
+1. **Check for existing constitution** at `.minispec/memory/constitution.md`
    - If exists: Read it, acknowledge what's established, ask what they want to change
    - If not: Start fresh
 
@@ -139,7 +139,7 @@ Once you have the information:
        └── modules/ (empty dir)
    ```
 
-3. **Write the constitution** to `.minispec.minispec/memory/constitution.md`:
+3. **Write the constitution** to `.minispec/memory/constitution.md`:
    - Fill in all placeholders with concrete values
    - Remove HTML comments (they were just guidance)
    - Use clear, declarative language
@@ -155,7 +155,7 @@ Once you have the information:
 
 End with a clear summary:
 
-> "Constitution established at `.minispec.minispec/memory/constitution.md`
+> "Constitution established at `.minispec/memory/constitution.md`
 >
 > **Your Principles:**
 > [List them]
@@ -201,7 +201,7 @@ When updating an existing constitution:
 
 By the end of this command, you will have created/updated:
 
-1. `.minispec.minispec/memory/constitution.md` - The completed constitution
+1. `.minispec/memory/constitution.md` - The completed constitution
 2. `.minispec/knowledge/architecture.md` - Placeholder
 3. `.minispec/knowledge/conventions.md` - Placeholder
 4. `.minispec/knowledge/glossary.md` - Placeholder

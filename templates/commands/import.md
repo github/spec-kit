@@ -114,14 +114,14 @@ Generate the MiniSpec workflow files:
    - Extract from spec if clear
    - Or ask: "What should we call this feature? (e.g., 'user-auth', 'payment-flow')"
 
-2. **Create design.md** at `.minispec/specs/[feature]/design.md`:
+2. **Create design.md** at `specs/[feature]/design.md`:
    - Summarize the design (not copy the entire spec)
    - Reference the original spec location
    - List the reviewed decisions
    - Include component overview
    - Use the design template format
 
-3. **Create tasks.md** at `.minispec/specs/[feature]/tasks.md`:
+3. **Create tasks.md** at `specs/[feature]/tasks.md`:
    - Break down into MiniSpec-sized chunks
    - Maintain logical dependencies
    - Each task should have:
@@ -152,8 +152,8 @@ Provide a clear summary:
 - Estimated [Z] pair-programming sessions
 
 ### Files Created
-- `.minispec/specs/[feature]/design.md`
-- `.minispec/specs/[feature]/tasks.md`
+- `specs/[feature]/design.md`
+- `specs/[feature]/tasks.md`
 - `.minispec/knowledge/decisions/NNN-*.md` (N new ADRs)
 
 ### Next Steps
@@ -192,8 +192,8 @@ If the spec has design but no implementation breakdown:
 
 By the end of this command, the following should exist:
 
-1. `.minispec/specs/[feature]/design.md` - Summarized, reviewed design
-2. `.minispec/specs/[feature]/tasks.md` - MiniSpec-sized implementation chunks
+1. `specs/[feature]/design.md` - Summarized, reviewed design
+2. `specs/[feature]/tasks.md` - MiniSpec-sized implementation chunks
 3. `.minispec/knowledge/decisions/*.md` - ADRs for key decisions (marked as imported)
 4. Original spec preserved at its location
 

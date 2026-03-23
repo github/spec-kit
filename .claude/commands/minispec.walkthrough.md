@@ -36,7 +36,7 @@ Check what context exists:
    - `patterns/` - Documented patterns
    - `modules/` - Module documentation
 
-2. **Constitution** at `.minispec.minispec/memory/constitution.md`
+2. **Constitution** at `.minispec/memory/constitution.md`
    - Check `Walkthrough Depth` preference (quick/standard/deep)
 
 3. **Codebase** - The actual source code

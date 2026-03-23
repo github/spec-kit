@@ -25,17 +25,18 @@ This is a fork of SpecKit with a fundamentally different approach:
 .minispec/
 ├── memory/
 │   └── constitution.md          # Project principles + preferences
-├── specs/
-│   └── [feature-name]/
-│       ├── design.md            # Feature design (interactive)
-│       ├── tasks.md             # Implementation tasks
-│       └── checklists/          # Quality checklists
 └── knowledge/
     ├── architecture.md          # System overview
     ├── conventions.md           # Code patterns
     ├── decisions/               # ADRs (auto-created during design)
     ├── patterns/                # Code patterns (auto-created)
     └── modules/                 # Module docs (auto-created)
+
+specs/
+└── [feature-name]/
+    ├── design.md                # Feature design (interactive)
+    ├── tasks.md                 # Implementation tasks
+    └── checklists/              # Quality checklists
 ```
 
 ## Slash Commands

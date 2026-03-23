@@ -29,9 +29,9 @@ $ARGUMENTS
 
 Check for design artifacts:
 
-1. **Design** at `.minispec/specs/[feature-name]/design.md`
+1. **Design** at `specs/[feature-name]/design.md`
 2. **Decisions** in `.minispec/knowledge/decisions/`
-3. **Tasks** at `.minispec/specs/[feature-name]/tasks.md` (if exists)
+3. **Tasks** at `specs/[feature-name]/tasks.md` (if exists)
 
 If no design exists:
 > "No design found. Run `/minispec.design` first to create requirements to validate."
@@ -55,7 +55,7 @@ If no design exists:
 
 ### Phase 2: Load Design Context
 
-Read from `.minispec/specs/[feature-name]/`:
+Read from `specs/[feature-name]/`:
 - `design.md`: Components, data model, API, user stories
 - `tasks.md`: Implementation breakdown (if exists)
 
@@ -67,7 +67,7 @@ Read from `.minispec/knowledge/`:
 
 ### Phase 3: Generate Checklist
 
-Create checklist at `.minispec/specs/[feature-name]/checklists/[domain].md`
+Create checklist at `specs/[feature-name]/checklists/[domain].md`
 
 **Structure**:
 ```markdown
@@ -196,11 +196,11 @@ Show the generated checklist:
 ### Phase 5: Save
 
 Once approved:
-1. Create `.minispec/specs/[feature]/checklists/` directory if needed
+1. Create `specs/[feature]/checklists/` directory if needed
 2. Save checklist file
 3. Confirm location
 
-> "Checklist saved to `.minispec/specs/[feature]/checklists/[domain].md`
+> "Checklist saved to `specs/[feature]/checklists/[domain].md`
 >
 > Use this to validate your design before implementation.
 > Run `/minispec.analyze` to check design-task alignment."
@@ -230,6 +230,6 @@ Once approved:
 ## Output Artifacts
 
 Creates:
-1. `.minispec/specs/[feature]/checklists/[domain].md` - The checklist file
+1. `specs/[feature]/checklists/[domain].md` - The checklist file
 
 Multiple checklists can coexist (ux.md, api.md, security.md, etc.)

@@ -23,12 +23,12 @@ Task breakdown is not just about creating a list—it's about:
 
 Before starting, verify:
 
-1. **Constitution exists** at `.minispec.minispec/memory/constitution.md`
+1. **Constitution exists** at `.minispec/memory/constitution.md`
    - Read the `Review Chunk Size` preference (small/medium/large/adaptive)
    - This determines target lines per task
 
 2. **Design exists** - Look for:
-   - `.minispec/specs/[feature-name]/design.md`
+   - `specs/[feature-name]/design.md`
    - If `$ARGUMENTS` specifies a feature, use that
    - If not, check for recent designs or ask which feature
 
@@ -191,7 +191,7 @@ Once agreed:
    >
    > [N] tasks total. Ready to save?"
 
-2. **Write tasks to file** at `.minispec/specs/[feature-name]/tasks.md`:
+2. **Write tasks to file** at `specs/[feature-name]/tasks.md`:
 
 ```markdown
 ---
@@ -254,7 +254,7 @@ estimated_lines: [N]
 
 ### Phase 7: Handoff
 
-> "Tasks saved to `.minispec/specs/[feature-name]/tasks.md`
+> "Tasks saved to `specs/[feature-name]/tasks.md`
 >
 > **Summary:**
 >
@@ -305,5 +305,5 @@ estimated_lines: [N]
 
 By the end of this command, you will have created/updated:
 
-1. `.minispec/specs/[feature-name]/tasks.md` - The task breakdown
-2. `.minispec/specs/[feature-name]/design.md` - Status updated to `planned`
+1. `specs/[feature-name]/tasks.md` - The task breakdown
+2. `specs/[feature-name]/design.md` - Status updated to `planned`

@@ -7,6 +7,19 @@ All notable changes to the MiniSpec CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-23
+
+### Changed
+
+- **BREAKING: Specs directory moved** - Feature specs now live at top-level `specs/` instead of `.minispec/specs/`
+- Updated all command templates, scripts (bash + powershell), and CLI to use new path
+- OS-agnostic path matching in upgrade file classifier (Windows compatibility)
+
+### Fixed
+
+- Fixed `.minispec.minispec/` typos in `.claude/commands/` files (pre-existing)
+- Enforce tasks file creation in `/minispec.tasks` command
+
 ## [0.1.0] - 2025-02-01
 
 ### Added

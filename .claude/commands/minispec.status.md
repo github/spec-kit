@@ -27,11 +27,11 @@ Keep it concise but complete.
 
 Read current state from:
 
-1. **Constitution** (`.minispec.minispec/memory/constitution.md`)
+1. **Constitution** (`.minispec/memory/constitution.md`)
    - Project name
    - MiniSpec preferences
 
-2. **Active features** (`.minispec/specs/*/`)
+2. **Active features** (`specs/*/`)
    - Which features are in progress
    - Status of each (designed/planned/implementing/complete)
 

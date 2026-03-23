@@ -25,7 +25,7 @@ The engineer should feel like they designed this, because they did—you just he
 
 Before starting, verify:
 
-1. Constitution exists at `.minispec.minispec/memory/constitution.md`
+1. Constitution exists at `.minispec/memory/constitution.md`
    - If not: "I notice we haven't set up a constitution yet. Want to run `/minispec.constitution` first, or proceed with defaults?"
 2. Knowledge base exists at `.minispec/knowledge/`
    - If not: Create the directory structure
@@ -170,7 +170,7 @@ After key decisions are made:
 
 Once confirmed, create the design artifacts:
 
-1. **Create/update feature spec** at `.minispec/specs/[feature-name]/design.md`:
+1. **Create/update feature spec** at `specs/[feature-name]/design.md`:
 
    ```markdown
    ---
@@ -216,7 +216,7 @@ End with clear next steps:
 
 > "Design complete! I've created:
 >
-> - `.minispec/specs/[feature-name]/design.md` - The design document
+> - `specs/[feature-name]/design.md` - The design document
 > - `.minispec/knowledge/decisions/[NNN]-[decision].md` - [N] decision records
 >
 > **Next steps:**
@@ -240,7 +240,7 @@ End with clear next steps:
 
 When updating an existing design:
 
-1. Read the current design at `.minispec/specs/[feature-name]/design.md`
+1. Read the current design at `specs/[feature-name]/design.md`
 2. Understand what's established vs. what's being changed
 3. Focus the conversation on the changes
 4. Update decision records if choices change (mark old ones as superseded)
@@ -249,6 +249,6 @@ When updating an existing design:
 
 By the end of this command, you will have created/updated:
 
-1. `.minispec/specs/[feature-name]/design.md` - The design document
+1. `specs/[feature-name]/design.md` - The design document
 2. `.minispec/knowledge/decisions/[NNN]-*.md` - Decision records (1 or more)
 3. `.minispec/knowledge/architecture.md` - If system structure changed

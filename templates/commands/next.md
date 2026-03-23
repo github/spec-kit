@@ -31,11 +31,11 @@ Before implementing, verify:
 1. **Constitution** at `.minispec/memory/constitution.md`
    - Read MiniSpec preferences (chunk size, autonomy, doc review)
 
-2. **Tasks** at `.minispec/specs/[feature-name]/tasks.md`
+2. **Tasks** at `specs/[feature-name]/tasks.md`
    - Identify the next incomplete task
    - Understand its dependencies and acceptance criteria
 
-3. **Design** at `.minispec/specs/[feature-name]/design.md`
+3. **Design** at `specs/[feature-name]/design.md`
    - Context for implementation decisions
 
 4. **Knowledge base** at `.minispec/knowledge/`
@@ -303,6 +303,6 @@ Each `/minispec.next` invocation may create/update:
 
 1. **Source files** - The actual implementation
 2. **Test files** - If tests are part of the task
-3. `.minispec/specs/[feature]/tasks.md` - Mark task complete
+3. `specs/[feature]/tasks.md` - Mark task complete
 4. `.minispec/knowledge/` - Documentation updates (per policy)
 5. **Git commits** - One per task (or as appropriate)

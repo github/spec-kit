@@ -194,7 +194,7 @@ def _classify_upgrade_file(rel_path: str) -> str:
     parts = Path(rel_path).parts
 
     # Never touch user content
-    if rel_path.startswith(".minispec/memory/") or rel_path.startswith(".minispec/specs/") or rel_path.startswith(".minispec/knowledge/"):
+    if rel_path.startswith(".minispec/memory/") or rel_path.startswith("specs/") or rel_path.startswith(".minispec/knowledge/"):
         return "skip"
 
     # Deep merge JSON config files
