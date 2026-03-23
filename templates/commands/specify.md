@@ -75,9 +75,22 @@ Given that feature description, do this:
 
 2. **Create the feature branch** by running the script with `--short-name` (and `--json`). In sequential mode, do NOT pass `--number` — the script auto-detects the next available number. In timestamp mode, the script generates a `YYYYMMDD-HHMMSS` prefix automatically:
 
-   **Branch numbering mode**: Before running the script, check if `.specify/init-options.json` exists and read the `branch_numbering` value.
+   **Git extension check**: Before running the branch creation script, check if the git extension is enabled:
+   - Check if `.specify/extensions/.registry/git.json` exists
+   - If it exists, read it and verify `"enabled"` is `true` (or not explicitly set to `false`)
+   - If the git extension is **disabled** or the registry file does not exist, **skip branch creation entirely** — proceed directly to step 3 using a spec directory name derived from the short name (e.g., `specs/<short-name>/`)
+   - If the git extension is enabled (or the registry file doesn't exist but `.specify/init-options.json` has `branch_numbering` set), proceed with branch creation below
+
+   **Branch numbering mode**: Before running the script, determine the branch numbering strategy:
+   1. Check `.specify/extensions/git/git-config.yml` for `branch_numbering` value (extension config takes precedence)
+   2. If not found, check `.specify/init-options.json` for `branch_numbering` value (backward compatibility)
+   3. Default to `sequential` if neither exists
    - If `"timestamp"`, add `--timestamp` (Bash) or `-Timestamp` (PowerShell) to the script invocation
    - If `"sequential"` or absent, do not add any extra flag (default behavior)
+
+   **Script resolution**: Use the extension's bundled scripts when available, falling back to core scripts:
+   - If `.specify/extensions/git/scripts/bash/create-new-feature.sh` exists, use it
+   - Otherwise, fall back to `{SCRIPT}`
 
    - Bash example: `{SCRIPT} --json --short-name "user-auth" "Add user authentication"`
    - Bash (timestamp): `{SCRIPT} --json --timestamp --short-name "user-auth" "Add user authentication"`

@@ -1159,6 +1159,57 @@ def _locate_core_pack() -> Path | None:
     return None
 
 
+def _locate_bundled_git_extension() -> Path | None:
+    """Return the path to the bundled git extension, or None.
+
+    Checks the wheel's core_pack first, then falls back to the
+    source-checkout ``extensions/git/`` directory.
+    """
+    core = _locate_core_pack()
+    if core is not None:
+        candidate = core / "extensions" / "git"
+        if (candidate / "extension.yml").is_file():
+            return candidate
+
+    # Source-checkout / editable install: look relative to repo root
+    repo_root = Path(__file__).parent.parent.parent
+    candidate = repo_root / "extensions" / "git"
+    if (candidate / "extension.yml").is_file():
+        return candidate
+
+    return None
+
+
+def _install_bundled_git_extension(project_path: Path) -> bool:
+    """Auto-install the bundled git extension during ``specify init``.
+
+    This is a migration-period mechanism (pre-1.0.0) that auto-enables
+    the git extension so that existing branching workflows continue to work.
+    Before 1.0.0, this auto-install will be removed and the extension will
+    become opt-in.
+
+    Returns True if the extension was installed, False otherwise.
+    """
+    ext_source = _locate_bundled_git_extension()
+    if ext_source is None:
+        return False
+
+    try:
+        from .extensions import ExtensionManager, ExtensionError
+        manager = ExtensionManager(project_path)
+
+        # Skip if already installed (e.g. via preset)
+        if manager.registry.is_installed("git"):
+            return True
+
+        speckit_ver = get_speckit_version()
+        manager.install_from_directory(ext_source, speckit_ver)
+        return True
+    except Exception:
+        # Non-fatal: branching still works via core scripts during migration
+        return False
+
+
 def _locate_release_script() -> tuple[Path, str]:
     """Return (script_path, shell_cmd) for the platform-appropriate release script.
 
@@ -2175,6 +2226,11 @@ def init(
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
             })
+
+            # Auto-install the bundled git extension (migration period, pre-1.0.0).
+            # This preserves backward compatibility for existing branching workflows.
+            # Before 1.0.0, this will be removed and git becomes opt-in.
+            _install_bundled_git_extension(project_path)
 
             # Install preset if specified
             if preset:
