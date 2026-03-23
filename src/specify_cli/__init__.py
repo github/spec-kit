@@ -1188,7 +1188,8 @@ def _install_bundled_git_extension(project_path: Path) -> bool:
     Before 1.0.0, this auto-install will be removed and the extension will
     become opt-in.
 
-    Returns True if the extension was installed, False otherwise.
+    Returns True if the extension was installed or already present,
+    False otherwise.
     """
     ext_source = _locate_bundled_git_extension()
     if ext_source is None:
@@ -1205,8 +1206,14 @@ def _install_bundled_git_extension(project_path: Path) -> bool:
         speckit_ver = get_speckit_version()
         manager.install_from_directory(ext_source, speckit_ver)
         return True
-    except Exception:
-        # Non-fatal: branching still works via core scripts during migration
+    except Exception as exc:
+        # Non-fatal: branching still works via core scripts during migration,
+        # but log a warning so users can tell the auto-install did not happen.
+        console.print(
+            "[dim yellow]Warning: failed to auto-install bundled git extension; "
+            "branching via the git extension may be unavailable. "
+            f"Details: {exc}[/dim yellow]"
+        )
         return False
 
 

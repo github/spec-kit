@@ -179,6 +179,14 @@ if (-not $commonLoaded) {
     throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
 }
 
+# If only git-common.ps1 was loaded, verify that Resolve-Template is available.
+# Resolve-Template is provided by the core common.ps1; git-common.ps1 only
+# supplies Test-HasGit / Test-FeatureBranch.
+if (-not (Get-Command Resolve-Template -ErrorAction SilentlyContinue)) {
+    throw ("Resolve-Template not defined. The core common.ps1 is required but could not be located. " +
+           "Tried: $PSScriptRoot/common.ps1, .specify/scripts/powershell/common.ps1, scripts/powershell/common.ps1")
+}
+
 try {
     $repoRoot = git rev-parse --show-toplevel 2>$null
     if ($LASTEXITCODE -eq 0) {

@@ -209,6 +209,15 @@ if [ "$_common_loaded" != "true" ]; then
     exit 1
 fi
 
+# If only git-common.sh was loaded, verify that the required helpers
+# (resolve_template, json_escape) are available.  These are provided by the
+# core common.sh; git-common.sh only supplies has_git / check_feature_branch.
+if ! type resolve_template >/dev/null 2>&1 || ! type json_escape >/dev/null 2>&1; then
+    echo "Error: resolve_template/json_escape not defined.  The core common.sh is required but could not be located." >&2
+    echo "Tried: \$SCRIPT_DIR/common.sh, .specify/scripts/bash/common.sh, scripts/bash/common.sh" >&2
+    exit 1
+fi
+
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)
     HAS_GIT=true

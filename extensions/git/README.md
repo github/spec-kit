@@ -37,8 +37,8 @@ branch_numbering: sequential
 ## Installation
 
 ```bash
-# Install from the bundled extension
-specify extension add git --from extensions/git/
+# Install from the bundled extension directory
+specify extension add extensions/git --dev
 
 # Or it auto-installs during specify init (migration period)
 ```

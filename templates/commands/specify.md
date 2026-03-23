@@ -88,8 +88,8 @@ Given that feature description, do this:
          - `mkdir -p "$FEATURE_DIR"`
          - `touch "$SPEC_FILE"`
        - PowerShell:
-         - `New-Item -ItemType Directory -Path $env:FEATURE_DIR -Force | Out-Null`
-         - `New-Item -ItemType File -Path $env:SPEC_FILE -Force | Out-Null`
+         - `New-Item -ItemType Directory -Path $FEATURE_DIR -Force | Out-Null`
+         - `New-Item -ItemType File -Path $SPEC_FILE -Force | Out-Null`
      - Then proceed directly to step 3 using `FEATURE_DIR` and `SPEC_FILE`
    - If the registry file does not exist, proceed with branch creation using the default behavior (backward compatibility)
 
