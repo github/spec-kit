@@ -343,7 +343,7 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
 fi
 
 if [ "$HAS_GIT" = true ]; then
-    if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
+    if ! git checkout -q -b "$BRANCH_NAME" >/dev/null 2>&1; then
         # Check if branch already exists
         if git branch --list "$BRANCH_NAME" | grep -q .; then
             if [ "$USE_TIMESTAMP" = true ]; then

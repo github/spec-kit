@@ -77,7 +77,8 @@ Given that feature description, do this:
 
    **Git extension check**: Before running the branch creation script, check if the git extension is enabled:
    - Check if `.specify/extensions/.registry` exists (a single JSON file tracking all extensions)
-   - If it exists, read the JSON and look for `extensions.git`; verify its `"enabled"` field is `true` (or not explicitly `false`)
+   - If it exists, read the JSON and look for an `extensions.git` entry
+   - **Only skip branching** when `extensions.git.enabled` is **present and explicitly `false`**. In all other cases — including when the registry file is missing, when `extensions.git` has no entry, or when `"enabled"` is `true` or absent — proceed with normal branch creation (extension script if present, else core `{SCRIPT}` fallback)
    - If the git extension is **disabled** (explicitly `"enabled": false`), **skip branch creation entirely** — do **not** run the branch creation script. Instead:
      - Derive a spec directory name from the short name, e.g. `specs/<short-name>/`
      - Explicitly set the following variables so later steps can use them:
