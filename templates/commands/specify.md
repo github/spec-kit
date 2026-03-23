@@ -76,10 +76,10 @@ Given that feature description, do this:
 2. **Create the feature branch** by running the script with `--short-name` (and `--json`). In sequential mode, do NOT pass `--number` — the script auto-detects the next available number. In timestamp mode, the script generates a `YYYYMMDD-HHMMSS` prefix automatically:
 
    **Git extension check**: Before running the branch creation script, check if the git extension is enabled:
-   - Check if `.specify/extensions/.registry/git.json` exists
-   - If it exists, read it and verify `"enabled"` is `true` (or not explicitly set to `false`)
-   - If the git extension is **disabled** or the registry file does not exist, **skip branch creation entirely** — proceed directly to step 3 using a spec directory name derived from the short name (e.g., `specs/<short-name>/`)
-   - If the git extension is enabled (or the registry file doesn't exist but `.specify/init-options.json` has `branch_numbering` set), proceed with branch creation below
+   - Check if `.specify/extensions/.registry` exists (a single JSON file tracking all extensions)
+   - If it exists, read the JSON and look for `extensions.git`; verify its `"enabled"` field is `true` (or not explicitly `false`)
+   - If the git extension is **disabled** (explicitly `"enabled": false`), **skip branch creation entirely** — proceed directly to step 3 using a spec directory name derived from the short name (e.g., `specs/<short-name>/`)
+   - If the registry file does not exist, proceed with branch creation using the default behavior (backward compatibility)
 
    **Branch numbering mode**: Before running the script, determine the branch numbering strategy:
    1. Check `.specify/extensions/git/git-config.yml` for `branch_numbering` value (extension config takes precedence)
