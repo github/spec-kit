@@ -975,8 +975,8 @@ class ExtensionCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text()) or {}
-        except (yaml.YAMLError, OSError) as e:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, OSError, UnicodeError) as e:
             raise ValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
             )
@@ -1467,8 +1467,8 @@ class ConfigManager:
             return {}
 
         try:
-            return yaml.safe_load(file_path.read_text()) or {}
-        except (yaml.YAMLError, OSError):
+            return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, OSError, UnicodeError):
             return {}
 
     def _get_extension_defaults(self) -> Dict[str, Any]:
@@ -1659,8 +1659,8 @@ class HookExecutor:
             }
 
         try:
-            return yaml.safe_load(self.config_file.read_text()) or {}
-        except (yaml.YAMLError, OSError):
+            return yaml.safe_load(self.config_file.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, OSError, UnicodeError):
             return {
                 "installed": [],
                 "settings": {"auto_execute_hooks": True},
@@ -1675,7 +1675,8 @@ class HookExecutor:
         """
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         self.config_file.write_text(
-            yaml.dump(config, default_flow_style=False, sort_keys=False)
+            yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
         )
 
     def register_hooks(self, manifest: ExtensionManifest):

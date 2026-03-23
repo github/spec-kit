@@ -747,6 +747,18 @@ $ARGUMENTS
         assert output.endswith("---\n")
         assert "description: Test command" in output
 
+    def test_render_frontmatter_unicode(self):
+        """Test rendering frontmatter preserves non-ASCII characters."""
+        frontmatter = {
+            "description": "Prüfe Konformität der Implementierung"
+        }
+
+        registrar = CommandRegistrar()
+        output = registrar.render_frontmatter(frontmatter)
+
+        assert "Prüfe Konformität" in output
+        assert "\\u" not in output
+
     def test_register_commands_for_claude(self, extension_dir, project_dir):
         """Test registering commands for Claude agent."""
         # Create .claude directory

@@ -207,7 +207,7 @@ class CommandRegistrar:
         if not fm:
             return ""
 
-        yaml_str = yaml.dump(fm, default_flow_style=False, sort_keys=False)
+        yaml_str = yaml.dump(fm, default_flow_style=False, sort_keys=False, allow_unicode=True)
         return f"---\n{yaml_str}---\n"
 
     def _adjust_script_paths(self, frontmatter: dict) -> dict:
