@@ -1199,9 +1199,15 @@ def _install_bundled_git_extension(project_path: Path) -> bool:
         from .extensions import ExtensionManager
         manager = ExtensionManager(project_path)
 
-        # Skip if already installed (e.g. via preset)
+        # Skip if already installed (e.g. via preset), but only if the
+        # on-disk extension manifest still exists. This guards against
+        # stale/corrupted registry entries.
         if manager.registry.is_installed("git"):
-            return True
+            ext_manifest = project_path / ".specify" / "extensions" / "git" / "extension.yml"
+            if ext_manifest.is_file():
+                return True
+            # Registry is stale — remove entry so reinstall can proceed
+            manager.registry.remove("git")
 
         speckit_ver = get_speckit_version()
         manager.install_from_directory(ext_source, speckit_ver)

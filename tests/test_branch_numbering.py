@@ -138,3 +138,33 @@ class TestGitExtensionAutoInstall:
         # Only one entry in registry
         manager = ExtensionManager(project_dir)
         assert manager.registry.is_installed("git")
+
+    def test_git_extension_reinstalls_when_directory_missing(self, tmp_path: Path):
+        """_install_bundled_git_extension should reinstall if registry says installed but directory is gone."""
+        import shutil
+        from specify_cli import _install_bundled_git_extension
+        from specify_cli.extensions import ExtensionManager
+
+        project_dir = tmp_path / "proj"
+        (project_dir / ".specify").mkdir(parents=True)
+
+        # First install
+        result1 = _install_bundled_git_extension(project_dir)
+        assert result1 is True
+
+        ext_dir = project_dir / ".specify" / "extensions" / "git"
+        assert ext_dir.is_dir()
+
+        # Simulate stale registry: delete extension directory but keep registry
+        shutil.rmtree(ext_dir)
+        assert not ext_dir.exists()
+
+        # Registry still says installed
+        manager = ExtensionManager(project_dir)
+        assert manager.registry.is_installed("git")
+
+        # Re-install should detect missing directory and reinstall
+        result2 = _install_bundled_git_extension(project_dir)
+        assert result2 is True
+        assert ext_dir.is_dir(), "extension directory should be reinstalled"
+        assert (ext_dir / "extension.yml").is_file(), "extension.yml should be reinstalled"
