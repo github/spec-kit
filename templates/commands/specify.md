@@ -86,7 +86,7 @@ Given that feature description, do this:
      - Ensure the directory and spec file exist:
        - Bash:
          - `mkdir -p "$FEATURE_DIR"`
-         - `: > "$SPEC_FILE"`
+         - `touch "$SPEC_FILE"`
        - PowerShell:
          - `New-Item -ItemType Directory -Path $env:FEATURE_DIR -Force | Out-Null`
          - `New-Item -ItemType File -Path $env:SPEC_FILE -Force | Out-Null`

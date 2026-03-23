@@ -93,7 +93,7 @@ class TestGitExtensionAutoInstall:
     """Tests for bundled git extension auto-install during specify init."""
 
     def test_git_extension_installed_during_init(self, tmp_path: Path, monkeypatch):
-        """verify that `specify init` auto-installs the bundled git extension."""
+        """Verify that `specify init` auto-installs the bundled git extension."""
         from typer.testing import CliRunner
         from specify_cli import app
 
