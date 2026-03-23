@@ -214,7 +214,7 @@ fi
 # core common.sh; git-common.sh only supplies has_git / check_feature_branch.
 if ! type resolve_template >/dev/null 2>&1 || ! type json_escape >/dev/null 2>&1; then
     echo "Error: resolve_template/json_escape not defined.  The core common.sh is required but could not be located." >&2
-    echo "Tried: \$SCRIPT_DIR/common.sh, .specify/scripts/bash/common.sh, scripts/bash/common.sh" >&2
+    echo "Tried: $SCRIPT_DIR/common.sh, .specify/scripts/bash/common.sh, scripts/bash/common.sh" >&2
     exit 1
 fi
 
