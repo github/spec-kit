@@ -175,7 +175,21 @@ clean_branch_name() {
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialised with --no-git.
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
+
+# Source common.sh: try the core scripts directory first (standard layout),
+# then fall back to the extension's sibling copy.
+if [ -f "$SCRIPT_DIR/common.sh" ]; then
+    source "$SCRIPT_DIR/common.sh"
+else
+    # When running from an extension install (.specify/extensions/git/scripts/bash/),
+    # resolve common.sh from the project's core scripts directory.
+    _ext_repo_root="$(cd "$SCRIPT_DIR/../../../../.." 2>/dev/null && pwd)"
+    if [ -f "$_ext_repo_root/scripts/bash/common.sh" ]; then
+        source "$_ext_repo_root/scripts/bash/common.sh"
+    elif [ -f "$SCRIPT_DIR/git-common.sh" ]; then
+        source "$SCRIPT_DIR/git-common.sh"
+    fi
+fi
 
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)

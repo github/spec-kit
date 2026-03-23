@@ -145,8 +145,22 @@ if (-not $fallbackRoot) {
     exit 1
 }
 
-# Load common functions (includes Resolve-Template)
-. "$PSScriptRoot/common.ps1"
+# Load common functions (includes Resolve-Template).
+# Try the core scripts directory first (standard layout), then fall back
+# to the extension's sibling copy.
+if (Test-Path "$PSScriptRoot/common.ps1") {
+    . "$PSScriptRoot/common.ps1"
+} else {
+    # When running from an extension install (.specify/extensions/git/scripts/powershell/),
+    # resolve common.ps1 from the project's core scripts directory.
+    $extRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../../../..") -ErrorAction SilentlyContinue)
+    $coreCommon = if ($extRepoRoot) { Join-Path $extRepoRoot "scripts/powershell/common.ps1" } else { "" }
+    if ($coreCommon -and (Test-Path $coreCommon)) {
+        . $coreCommon
+    } elseif (Test-Path "$PSScriptRoot/git-common.ps1") {
+        . "$PSScriptRoot/git-common.ps1"
+    }
+}
 
 try {
     $repoRoot = git rev-parse --show-toplevel 2>$null
