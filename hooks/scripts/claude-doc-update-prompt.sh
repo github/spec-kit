@@ -10,8 +10,8 @@ set -euo pipefail
 # Read hook input from stdin
 INPUT=$(cat)
 
-# Extract file path from tool_input.file_path
-FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//;s/"$//')
+# Extract file path from tool_input.file_path (fail open if missing)
+FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//;s/"$//' || true)
 
 # If no file path found, exit silently
 if [[ -z "$FILE_PATH" ]]; then
