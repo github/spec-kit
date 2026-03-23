@@ -564,6 +564,52 @@ class TestPresetManager:
         with pytest.raises(PresetError, match="already installed"):
             manager.install_from_directory(pack_dir, "0.1.5")
 
+    def test_install_failure_rolls_back_files_commands_and_registry(self, project_dir, temp_dir, monkeypatch):
+        """A failed preset install should not leave partial preset or command state."""
+        preset_dir = temp_dir / "cmd-pack"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "cmd-pack",
+                "name": "Command Pack",
+                "version": "1.0.0",
+                "description": "Preset with command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/specify.md",
+                    }
+                ]
+            },
+        }
+        (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest_data))
+        (preset_dir / "commands" / "specify.md").write_text(
+            "---\ndescription: test\n---\n\n# test\n\n$ARGUMENTS\n"
+        )
+
+        (project_dir / ".claude" / "commands").mkdir(parents=True)
+
+        manager = PresetManager(project_dir)
+
+        def fail_register_skills(_manifest, _dest_dir):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(manager, "_register_skills", fail_register_skills)
+
+        with pytest.raises(RuntimeError, match="boom"):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not manager.registry.is_installed("cmd-pack")
+        assert not (project_dir / ".specify" / "presets" / "cmd-pack").exists()
+        assert not (project_dir / ".claude" / "commands" / "speckit.specify.md").exists()
+
     def test_install_incompatible(self, project_dir, temp_dir, valid_pack_data):
         """Test installing an incompatible pack raises error."""
         valid_pack_data["requires"]["speckit_version"] = ">=99.0.0"

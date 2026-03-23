@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from specify_cli import AGENT_CONFIG, AI_ASSISTANT_ALIASES, AI_ASSISTANT_HELP
+from specify_cli.agent_config import RUNTIME_TO_REGISTRAR_AGENT_KEY
 from specify_cli.extensions import CommandRegistrar
 
 
@@ -40,6 +41,28 @@ class TestAgentConfigConsistency:
         """Codex runtime config should point at .agents/skills."""
         assert AGENT_CONFIG["codex"]["folder"] == ".agents/"
         assert AGENT_CONFIG["codex"]["commands_subdir"] == "skills"
+
+    def test_runtime_agents_map_to_registrar_config(self):
+        """Every runtime agent (except generic) should resolve to a registrar target."""
+        registrar_cfg = CommandRegistrar.AGENT_CONFIGS
+
+        for runtime_agent in AGENT_CONFIG:
+            if runtime_agent == "generic":
+                continue
+            registrar_agent = RUNTIME_TO_REGISTRAR_AGENT_KEY.get(runtime_agent, runtime_agent)
+            assert registrar_agent in registrar_cfg
+
+    def test_registrar_includes_agy_and_vibe(self):
+        """Agy and Vibe should support extension/preset command registration."""
+        registrar_cfg = CommandRegistrar.AGENT_CONFIGS
+        assert "agy" in registrar_cfg
+        assert registrar_cfg["agy"]["dir"] == ".agent/commands"
+        assert "vibe" in registrar_cfg
+        assert registrar_cfg["vibe"]["dir"] == ".vibe/prompts"
+
+    def test_cursor_alias_points_to_cursor_agent(self):
+        """CLI should accept `cursor` alias while keeping cursor-agent as canonical key."""
+        assert AI_ASSISTANT_ALIASES["cursor"] == "cursor-agent"
 
     def test_release_agent_lists_include_kiro_cli_and_exclude_q(self):
         """Bash and PowerShell release scripts should agree on agent key set for Kiro."""
