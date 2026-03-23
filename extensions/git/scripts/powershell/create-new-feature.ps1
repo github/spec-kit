@@ -146,20 +146,37 @@ if (-not $fallbackRoot) {
 }
 
 # Load common functions (includes Resolve-Template).
-# Try the core scripts directory first (standard layout), then fall back
-# to the extension's sibling copy.
+# Search locations in priority order:
+#  1. common.ps1 next to this script (source checkout layout)
+#  2. .specify/scripts/powershell/common.ps1 under the project root (installed project)
+#  3. scripts/powershell/common.ps1 under the project root (source checkout fallback)
+#  4. git-common.ps1 next to this script (minimal fallback)
+$commonLoaded = $false
+
 if (Test-Path "$PSScriptRoot/common.ps1") {
     . "$PSScriptRoot/common.ps1"
+    $commonLoaded = $true
 } else {
-    # When running from an extension install (.specify/extensions/git/scripts/powershell/),
-    # resolve common.ps1 from the project's core scripts directory.
-    $extRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../../../..") -ErrorAction SilentlyContinue)
-    $coreCommon = if ($extRepoRoot) { Join-Path $extRepoRoot "scripts/powershell/common.ps1" } else { "" }
-    if ($coreCommon -and (Test-Path $coreCommon)) {
-        . $coreCommon
-    } elseif (Test-Path "$PSScriptRoot/git-common.ps1") {
-        . "$PSScriptRoot/git-common.ps1"
+    $coreCommonCandidates = @()
+
+    if ($fallbackRoot) {
+        $coreCommonCandidates += (Join-Path $fallbackRoot ".specify/scripts/powershell/common.ps1")
+        $coreCommonCandidates += (Join-Path $fallbackRoot "scripts/powershell/common.ps1")
     }
+
+    $coreCommonCandidates += "$PSScriptRoot/git-common.ps1"
+
+    foreach ($candidate in $coreCommonCandidates) {
+        if ($candidate -and (Test-Path $candidate)) {
+            . $candidate
+            $commonLoaded = $true
+            break
+        }
+    }
+}
+
+if (-not $commonLoaded) {
+    throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
 }
 
 try {

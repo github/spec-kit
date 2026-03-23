@@ -176,19 +176,37 @@ clean_branch_name() {
 # were initialised with --no-git.
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source common.sh: try the core scripts directory first (standard layout),
-# then fall back to the extension's sibling copy.
+# Source common.sh using the following priority:
+#  1. common.sh next to this script (source checkout layout)
+#  2. .specify/scripts/bash/common.sh under the project root (installed project)
+#  3. scripts/bash/common.sh under the project root (source checkout fallback)
+#  4. git-common.sh next to this script (minimal fallback)
+_common_loaded=false
+
 if [ -f "$SCRIPT_DIR/common.sh" ]; then
     source "$SCRIPT_DIR/common.sh"
+    _common_loaded=true
 else
     # When running from an extension install (.specify/extensions/git/scripts/bash/),
-    # resolve common.sh from the project's core scripts directory.
-    _ext_repo_root="$(cd "$SCRIPT_DIR/../../../../.." 2>/dev/null && pwd)"
-    if [ -f "$_ext_repo_root/scripts/bash/common.sh" ]; then
-        source "$_ext_repo_root/scripts/bash/common.sh"
+    # resolve to .specify/ (4 levels up), then to the project root (5 levels up).
+    _dot_specify="$(cd "$SCRIPT_DIR/../../../.." 2>/dev/null && pwd)"
+    _project_root="$(cd "$SCRIPT_DIR/../../../../.." 2>/dev/null && pwd)"
+
+    if [ -n "$_dot_specify" ] && [ -f "$_dot_specify/scripts/bash/common.sh" ]; then
+        source "$_dot_specify/scripts/bash/common.sh"
+        _common_loaded=true
+    elif [ -n "$_project_root" ] && [ -f "$_project_root/scripts/bash/common.sh" ]; then
+        source "$_project_root/scripts/bash/common.sh"
+        _common_loaded=true
     elif [ -f "$SCRIPT_DIR/git-common.sh" ]; then
         source "$SCRIPT_DIR/git-common.sh"
+        _common_loaded=true
     fi
+fi
+
+if [ "$_common_loaded" != "true" ]; then
+    echo "Error: Could not locate common.sh or git-common.sh. Please ensure the Specify core scripts are installed." >&2
+    exit 1
 fi
 
 if git rev-parse --show-toplevel >/dev/null 2>&1; then

@@ -32,20 +32,6 @@ Configuration is stored in `.specify/extensions/git/git-config.yml`:
 ```yaml
 # Branch numbering strategy: "sequential" or "timestamp"
 branch_numbering: sequential
-
-# Branch name template
-branch_template: "{number}-{short_name}"
-
-# Whether to fetch remotes before computing next branch number
-auto_fetch: true
-```
-
-### Environment Variable Override
-
-Set `SPECKIT_GIT_BRANCH_NUMBERING` to override the `branch_numbering` config value:
-
-```bash
-export SPECKIT_GIT_BRANCH_NUMBERING=timestamp
 ```
 
 ## Installation

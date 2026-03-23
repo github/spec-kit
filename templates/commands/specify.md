@@ -73,13 +73,27 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Create the feature branch** by running the script with `--short-name` (and `--json`). In sequential mode, do NOT pass `--number` — the script auto-detects the next available number. In timestamp mode, the script generates a `YYYYMMDD-HHMMSS` prefix automatically:
+2. **Create the feature branch** (unless already handled by a `before_specify` hook — see Pre-Execution Checks above). If a mandatory `before_specify` hook for `speckit.git.feature` already executed and created the branch, **skip this step entirely** and use the branch/spec information from the hook result. Otherwise:
 
    **Git extension check**: Before running the branch creation script, check if the git extension is enabled:
    - Check if `.specify/extensions/.registry` exists (a single JSON file tracking all extensions)
    - If it exists, read the JSON and look for `extensions.git`; verify its `"enabled"` field is `true` (or not explicitly `false`)
-   - If the git extension is **disabled** (explicitly `"enabled": false`), **skip branch creation entirely** — proceed directly to step 3 using a spec directory name derived from the short name (e.g., `specs/<short-name>/`)
+   - If the git extension is **disabled** (explicitly `"enabled": false`), **skip branch creation entirely** — do **not** run the branch creation script. Instead:
+     - Derive a spec directory name from the short name, e.g. `specs/<short-name>/`
+     - Explicitly set the following variables so later steps can use them:
+       - `FEATURE_DIR="specs/<short-name>"`
+       - `SPEC_FILE="$FEATURE_DIR/spec.md"`
+     - Ensure the directory and spec file exist:
+       - Bash:
+         - `mkdir -p "$FEATURE_DIR"`
+         - `: > "$SPEC_FILE"`
+       - PowerShell:
+         - `New-Item -ItemType Directory -Path $env:FEATURE_DIR -Force | Out-Null`
+         - `New-Item -ItemType File -Path $env:SPEC_FILE -Force | Out-Null`
+     - Then proceed directly to step 3 using `FEATURE_DIR` and `SPEC_FILE`
    - If the registry file does not exist, proceed with branch creation using the default behavior (backward compatibility)
+
+   Run the script with `--short-name` (and `--json`). In sequential mode, do NOT pass `--number` — the script auto-detects the next available number. In timestamp mode, the script generates a `YYYYMMDD-HHMMSS` prefix automatically:
 
    **Branch numbering mode**: Before running the script, determine the branch numbering strategy:
    1. Check `.specify/extensions/git/git-config.yml` for `branch_numbering` value (extension config takes precedence)
@@ -89,8 +103,8 @@ Given that feature description, do this:
    - If `"sequential"` or absent, do not add any extra flag (default behavior)
 
    **Script resolution**: Use the extension's bundled scripts when available, falling back to core scripts:
-   - If `.specify/extensions/git/scripts/bash/create-new-feature.sh` exists, use it
-   - Otherwise, fall back to `{SCRIPT}`
+   - **Bash**: If `.specify/extensions/git/scripts/bash/create-new-feature.sh` exists, use it; otherwise, fall back to `{SCRIPT}`
+   - **PowerShell**: If `.specify/extensions/git/scripts/powershell/create-new-feature.ps1` exists, use it; otherwise, fall back to `{SCRIPT}`
 
    - Bash example: `{SCRIPT} --json --short-name "user-auth" "Add user authentication"`
    - Bash (timestamp): `{SCRIPT} --json --timestamp --short-name "user-auth" "Add user authentication"`

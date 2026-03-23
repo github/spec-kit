@@ -45,5 +45,3 @@ tags:
 
 defaults:
   branch_numbering: sequential
-  branch_template: "{number}-{short_name}"
-  auto_fetch: true

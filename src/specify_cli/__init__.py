@@ -1195,7 +1195,7 @@ def _install_bundled_git_extension(project_path: Path) -> bool:
         return False
 
     try:
-        from .extensions import ExtensionManager, ExtensionError
+        from .extensions import ExtensionManager
         manager = ExtensionManager(project_path)
 
         # Skip if already installed (e.g. via preset)
