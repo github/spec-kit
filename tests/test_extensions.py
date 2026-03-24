@@ -16,6 +16,8 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
+import yaml
+
 from specify_cli.extensions import (
     CatalogEntry,
     ExtensionManifest,
@@ -587,6 +589,35 @@ class TestExtensionManager:
         # Try to install again
         with pytest.raises(ExtensionError, match="already installed"):
             manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+    def test_install_failure_rolls_back_files_hooks_commands_and_registry(self, extension_dir, project_dir, monkeypatch):
+        """A failed install should leave no partial extension state behind."""
+        from specify_cli.extensions import HookExecutor
+
+        (project_dir / ".claude" / "commands").mkdir(parents=True)
+        manager = ExtensionManager(project_dir)
+
+        def fail_hook_registration(_self, _manifest):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(HookExecutor, "register_hooks", fail_hook_registration)
+
+        with pytest.raises(RuntimeError, match="boom"):
+            manager.install_from_directory(extension_dir, "0.1.0", register_commands=True)
+
+        assert not manager.registry.is_installed("test-ext")
+        assert not (project_dir / ".specify" / "extensions" / "test-ext").exists()
+        assert not (project_dir / ".claude" / "commands" / "speckit.test.hello.md").exists()
+
+        hooks_file = project_dir / ".specify" / "extensions.yml"
+        if hooks_file.exists():
+            hooks_content = yaml.safe_load(hooks_file.read_text()) or {}
+            all_hooks = hooks_content.get("hooks", {})
+            assert not any(
+                h.get("extension") == "test-ext"
+                for hooks in all_hooks.values()
+                for h in hooks
+            )
 
     def test_remove_extension(self, extension_dir, project_dir):
         """Test removing an installed extension."""

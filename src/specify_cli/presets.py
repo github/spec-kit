@@ -827,25 +827,52 @@ class PresetManager:
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
-        shutil.copytree(source_dir, dest_dir)
+        registered_commands: Dict[str, List[str]] = {}
+        registered_skills: List[str] = []
 
-        # Register command overrides with AI agents
-        registered_commands = self._register_commands(manifest, dest_dir)
+        try:
+            shutil.copytree(source_dir, dest_dir)
 
-        # Update corresponding skills when --ai-skills was previously used
-        registered_skills = self._register_skills(manifest, dest_dir)
+            # Register command overrides with AI agents
+            registered_commands = self._register_commands(manifest, dest_dir)
 
-        self.registry.add(manifest.id, {
-            "version": manifest.version,
-            "source": "local",
-            "manifest_hash": manifest.get_hash(),
-            "enabled": True,
-            "priority": priority,
-            "registered_commands": registered_commands,
-            "registered_skills": registered_skills,
-        })
+            # Update corresponding skills when --ai-skills was previously used
+            registered_skills = self._register_skills(manifest, dest_dir)
 
-        return manifest
+            self.registry.add(manifest.id, {
+                "version": manifest.version,
+                "source": "local",
+                "manifest_hash": manifest.get_hash(),
+                "enabled": True,
+                "priority": priority,
+                "registered_commands": registered_commands,
+                "registered_skills": registered_skills,
+            })
+            return manifest
+        except Exception:
+            # Best-effort rollback for partial installs.
+            if registered_skills:
+                try:
+                    self._unregister_skills(registered_skills, dest_dir)
+                except Exception:
+                    pass
+
+            if registered_commands:
+                try:
+                    self._unregister_commands(registered_commands)
+                except Exception:
+                    pass
+
+            if self.registry.is_installed(manifest.id):
+                try:
+                    self.registry.remove(manifest.id)
+                except Exception:
+                    pass
+
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir, ignore_errors=True)
+
+            raise
 
     def install_from_zip(
         self,

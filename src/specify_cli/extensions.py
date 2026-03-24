@@ -584,38 +584,62 @@ class ExtensionManager:
                 f"Use 'specify extension remove {manifest.id}' first."
             )
 
-        # Install extension
+        # Install extension transactionally so partial failures are rolled back.
         dest_dir = self.extensions_dir / manifest.id
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
         ignore_fn = self._load_extensionignore(source_dir)
-        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
-
-        # Register commands with AI agents
-        registered_commands = {}
-        if register_commands:
-            registrar = CommandRegistrar()
-            # Register for all detected agents
-            registered_commands = registrar.register_commands_for_all_agents(
-                manifest, dest_dir, self.project_root
-            )
-
-        # Register hooks
         hook_executor = HookExecutor(self.project_root)
-        hook_executor.register_hooks(manifest)
+        registrar = CommandRegistrar() if register_commands else None
+        registered_commands = {}
 
-        # Update registry
-        self.registry.add(manifest.id, {
-            "version": manifest.version,
-            "source": "local",
-            "manifest_hash": manifest.get_hash(),
-            "enabled": True,
-            "priority": priority,
-            "registered_commands": registered_commands
-        })
+        try:
+            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
-        return manifest
+            # Register commands with AI agents
+            if registrar:
+                # Register for all detected agents
+                registered_commands = registrar.register_commands_for_all_agents(
+                    manifest, dest_dir, self.project_root
+                )
+
+            # Register hooks
+            hook_executor.register_hooks(manifest)
+
+            # Update registry
+            self.registry.add(manifest.id, {
+                "version": manifest.version,
+                "source": "local",
+                "manifest_hash": manifest.get_hash(),
+                "enabled": True,
+                "priority": priority,
+                "registered_commands": registered_commands
+            })
+            return manifest
+        except Exception:
+            # Best-effort rollback for partial installs.
+            if registered_commands and registrar:
+                try:
+                    registrar.unregister_commands(registered_commands, self.project_root)
+                except Exception:
+                    pass
+
+            try:
+                hook_executor.unregister_hooks(manifest.id)
+            except Exception:
+                pass
+
+            if self.registry.is_installed(manifest.id):
+                try:
+                    self.registry.remove(manifest.id)
+                except Exception:
+                    pass
+
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir, ignore_errors=True)
+
+            raise
 
     def install_from_zip(
         self,
