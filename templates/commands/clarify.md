@@ -100,16 +100,15 @@ Execution steps:
     - If more than 5 categories remain unresolved, select the top 5 by (Impact * Uncertainty) heuristic.
 
 4. Sequential questioning loop (interactive):
-   - Present EXACTLY ONE question at a time.
-   - When the `vscode/askQuestions` tool (or other ask user tool) is available, use it to present the current question interactively.
-   - Never present multiple queued questions at once.
+   - When the `vscode/askQuestions` tool (or other ask user tool) is available, present **all** queued questions in a **single batched call** (up to 5) to minimize round-trips. For each question in the batch, include the full option list (or short-answer guidance) and your recommendation/suggestion so the user sees the complete context for every question at once.
+   - When the tool is **not** available, present EXACTLY ONE question at a time. Never present multiple queued questions at once in chat.
    - For multiple-choice questions:
       - **Analyze all options** and determine the **most suitable option** based on:
          - Best practices for the project type
          - Common patterns in similar implementations
          - Risk reduction (security, performance, maintainability)
          - Alignment with any explicit project goals or constraints visible in the spec
-      - Present your **recommended option prominently** at the top with clear reasoning.
+      - Present your **recommended option prominently** at the top with clear reasoning (1–2 sentences explaining why this is the best choice).
       - When `vscode/askQuestions` tool (or other ask user tool) is not available, render all options as a Markdown table:
 
          | Option | Description |
@@ -121,12 +120,12 @@ Execution steps:
       
       - Format as: `**Recommended:** Option [X] - <reasoning>`
       - After the table, add:
-      `You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.`
+        - `You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.`
    - For short-answer style questions (no meaningful discrete options):
       - Provide your **suggested answer** based on best practices and context.
       - Format as: `**Suggested:** <your proposed answer> - <brief reasoning>`
       - Then output:
-      `Format: Short answer (<=5 words). You can accept the suggestion by saying "yes" or "suggested", or provide your own answer.`
+        - `Format: Short answer (<=5 words). You can accept the suggestion by saying "yes" or "suggested", or provide your own answer.`
    - After the user answers:
       - If the user replies with "yes", "recommended", or "suggested", use your previously stated recommendation or suggestion as the answer.
       - Otherwise, validate that the answer maps to one option or fits the <=5 word constraint.
