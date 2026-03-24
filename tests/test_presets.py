@@ -1172,6 +1172,8 @@ class TestPresetCatalog:
 
     def test_search_with_cached_data(self, project_dir):
         """Test search with cached catalog data."""
+        from unittest.mock import patch
+
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1200,23 +1202,26 @@ class TestPresetCatalog:
             "cached_at": datetime.now(timezone.utc).isoformat(),
         }))
 
-        # Search by query
-        results = catalog.search(query="agile")
-        assert len(results) == 1
-        assert results[0]["id"] == "safe-agile"
+        # Isolate from community catalog so results are deterministic
+        default_only = [PresetCatalogEntry(url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True)]
+        with patch.object(catalog, "get_active_catalogs", return_value=default_only):
+            # Search by query
+            results = catalog.search(query="agile")
+            assert len(results) == 1
+            assert results[0]["id"] == "safe-agile"
 
-        # Search by tag
-        results = catalog.search(tag="hipaa")
-        assert len(results) == 1
-        assert results[0]["id"] == "healthcare"
+            # Search by tag
+            results = catalog.search(tag="hipaa")
+            assert len(results) == 1
+            assert results[0]["id"] == "healthcare"
 
-        # Search by author
-        results = catalog.search(author="agile-community")
-        assert len(results) == 1
+            # Search by author
+            results = catalog.search(author="agile-community")
+            assert len(results) == 1
 
-        # Search all
-        results = catalog.search()
-        assert len(results) == 2
+            # Search all
+            results = catalog.search()
+            assert len(results) == 2
 
     def test_get_pack_info(self, project_dir):
         """Test getting info for a specific pack."""
