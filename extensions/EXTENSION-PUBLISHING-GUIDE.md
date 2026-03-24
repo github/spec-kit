@@ -204,9 +204,9 @@ Edit `extensions/catalog.community.json` and add your extension:
 - Use current timestamp for `created_at` and `updated_at`
 - Update the top-level `updated_at` to current time
 
-### 3. Update Extensions README
+### 3. Update Community Extensions Table
 
-Add your extension to the Available Extensions table in `extensions/README.md`:
+Add your extension to the Community Extensions table in the project root `README.md`:
 
 ```markdown
 | Your Extension Name | Brief description of what it does | `<category>` | <effect> | [repo-name](https://github.com/your-org/spec-kit-your-extension) |
@@ -234,7 +234,7 @@ Insert your extension in alphabetical order in the table.
 git checkout -b add-your-extension
 
 # Commit your changes
-git add extensions/catalog.community.json extensions/README.md
+git add extensions/catalog.community.json README.md
 git commit -m "Add your-extension to community catalog
 
 - Extension ID: your-extension
@@ -273,7 +273,7 @@ Brief description of what your extension does.
 - [x] All commands working
 - [x] No security vulnerabilities
 - [x] Added to extensions/catalog.community.json
-- [x] Added to extensions/README.md Available Extensions table
+- [x] Added to Community Extensions table in README.md
 
 ### Testing
 Tested on:

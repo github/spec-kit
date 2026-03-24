@@ -523,7 +523,7 @@ Submit to the community catalog for public discovery:
 
 1. **Fork** spec-kit repository
 2. **Add entry** to `extensions/catalog.community.json`
-3. **Update** `extensions/README.md` with your extension
+3. **Update** the Community Extensions table in `README.md` with your extension
 4. **Create PR** following the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md)
 5. **After merge**, your extension becomes available:
    - Users can browse `catalog.community.json` to discover your extension
