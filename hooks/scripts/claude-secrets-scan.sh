@@ -45,17 +45,18 @@ fi
 
 # Secret patterns (simplified for grep -E)
 PATTERNS=(
-    'api[_-]?key\s*[=:]\s*["\x27][^"\x27]{6,}["\x27]'
-    'secret[_-]?key\s*[=:]\s*["\x27][^"\x27]{6,}["\x27]'
-    'password\s*[=:]\s*["\x27][^"\x27]{4,}["\x27]'
+    'api[_-]?key[[:space:]]*[=:][[:space:]]*["\x27][^"\x27]{6,}["\x27]'
+    'secret[_-]?key[[:space:]]*[=:][[:space:]]*["\x27][^"\x27]{6,}["\x27]'
+    'password[[:space:]]*[=:][[:space:]]*["\x27][^"\x27]{4,}["\x27]'
     'AKIA[0-9A-Z]{16}'
     '-----BEGIN .* PRIVATE KEY-----'
 )
 
 FOUND_SECRETS=""
 
-# Scan each file
-for file in $FILES; do
+# Scan each file (read line-by-line to handle spaces in filenames)
+while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
     if [[ ! -f "$file" ]]; then
         continue
     fi
@@ -71,7 +72,7 @@ for file in $FILES; do
             FOUND_SECRETS="$FOUND_SECRETS\n- $file: $match"
         fi
     done
-done
+done <<< "$FILES"
 
 if [[ -n "$FOUND_SECRETS" ]]; then
     # Return deny decision as JSON
