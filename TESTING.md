@@ -15,6 +15,8 @@ Any change that affects a slash command's behavior requires manually testing tha
 ```bash
 # Install the CLI from your local branch
 cd <spec-kit-repo>
+uv venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -e .
 
 # Initialize a test project using your local changes
