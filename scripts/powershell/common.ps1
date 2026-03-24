@@ -43,7 +43,8 @@ function Get-RepoRoot {
     }
 
     # Final fallback to script location for non-git repos
-    return (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
+    # Use -LiteralPath to handle paths with wildcard characters
+    return (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "../../..")).Path
 }
 
 function Get-CurrentBranch {
