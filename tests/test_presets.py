@@ -1170,10 +1170,12 @@ class TestPresetCatalog:
         assert not catalog.cache_file.exists()
         assert not catalog.cache_metadata_file.exists()
 
-    def test_search_with_cached_data(self, project_dir):
+    def test_search_with_cached_data(self, project_dir, monkeypatch):
         """Test search with cached catalog data."""
         from unittest.mock import patch
 
+        # Only use the default catalog to prevent fetching the community catalog from the network
+        monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", PresetCatalog.DEFAULT_CATALOG_URL)
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
