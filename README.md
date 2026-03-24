@@ -23,7 +23,7 @@
 - [⚡ Get Started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
 - [🚶 Community Walkthroughs](#-community-walkthroughs)
-- [🛠️ Community Tools](#️-community-tools)
+- [🛠️ Community Friends](#️-community-friends)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
