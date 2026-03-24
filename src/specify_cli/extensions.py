@@ -140,11 +140,15 @@ class ExtensionManifest:
 
         # Validate provides section
         provides = self.data["provides"]
-        if "commands" not in provides or not provides["commands"]:
-            raise ValidationError("Extension must provide at least one command")
+        has_commands = "commands" in provides and provides["commands"]
+        has_scripts = "scripts" in provides and provides["scripts"]
+        if not has_commands and not has_scripts:
+            raise ValidationError(
+                "Extension must provide at least one command or script"
+            )
 
         # Validate commands
-        for cmd in provides["commands"]:
+        for cmd in provides.get("commands", []):
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
@@ -153,6 +157,27 @@ class ExtensionManifest:
                 raise ValidationError(
                     f"Invalid command name '{cmd['name']}': "
                     "must follow pattern 'speckit.{extension}.{command}'"
+                )
+
+        # Validate scripts
+        for script in provides.get("scripts", []):
+            if "name" not in script or "file" not in script:
+                raise ValidationError("Script missing 'name' or 'file'")
+
+            # Validate script name format
+            if not re.match(r'^[a-z0-9-]+$', script["name"]):
+                raise ValidationError(
+                    f"Invalid script name '{script['name']}': "
+                    "must be lowercase alphanumeric with hyphens only"
+                )
+
+            # Validate file path safety: must be relative, no parent traversal
+            file_path = script["file"]
+            normalized = os.path.normpath(file_path)
+            if os.path.isabs(normalized) or normalized.startswith(".."):
+                raise ValidationError(
+                    f"Invalid script file path '{file_path}': "
+                    "must be a relative path within the extension directory"
                 )
 
     @property
@@ -183,7 +208,12 @@ class ExtensionManifest:
     @property
     def commands(self) -> List[Dict[str, Any]]:
         """Get list of provided commands."""
-        return self.data["provides"]["commands"]
+        return self.data["provides"].get("commands", [])
+
+    @property
+    def scripts(self) -> List[Dict[str, Any]]:
+        """Get list of provided scripts."""
+        return self.data["provides"].get("scripts", [])
 
     @property
     def hooks(self) -> Dict[str, Any]:
@@ -592,6 +622,12 @@ class ExtensionManager:
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
+        # Set execute permissions on extension scripts
+        for script in manifest.scripts:
+            script_path = dest_dir / script["file"]
+            if script_path.exists() and script_path.suffix == ".sh":
+                script_path.chmod(script_path.stat().st_mode | 0o755)
+
         # Register commands with AI agents
         registered_commands = {}
         if register_commands:
@@ -770,6 +806,7 @@ class ExtensionManager:
                     "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": len(manifest.commands),
+                    "script_count": len(manifest.scripts),
                     "hook_count": len(manifest.hooks)
                 })
             except ValidationError:
@@ -783,6 +820,7 @@ class ExtensionManager:
                     "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": 0,
+                    "script_count": 0,
                     "hook_count": 0
                 })
 
@@ -869,6 +907,38 @@ class CommandRegistrar:
         base = self._registrar.render_toml_command(frontmatter, body, ext_id)
         context_lines = f"# Extension: {ext_id}\n# Config: .specify/extensions/{ext_id}/\n"
         return base.rstrip("\n") + "\n" + context_lines
+
+    @staticmethod
+    def _filter_commands_for_installed_extensions(
+        commands: List[Dict[str, Any]],
+        project_root: Path,
+    ) -> List[Dict[str, Any]]:
+        """Filter out commands targeting extensions that are not installed.
+
+        Command names follow the pattern: speckit.<ext-id>.<cmd-name>
+        Core commands (e.g. speckit.specify) have only two parts — always kept.
+        Extension-specific commands are only kept if the target extension
+        directory exists under .specify/extensions/.
+
+        If the extensions directory does not exist, no filtering is applied.
+
+        Note: This method is not applied during extension self-registration
+        (all commands in an extension's own manifest are always registered).
+        It is designed for cross-boundary filtering, e.g. when presets provide
+        commands for extensions that may not be installed.
+        """
+        extensions_dir = project_root / ".specify" / "extensions"
+        if not extensions_dir.is_dir():
+            return commands
+        filtered = []
+        for cmd in commands:
+            parts = cmd["name"].split(".")
+            if len(parts) >= 3 and parts[0] == "speckit":
+                ext_id = parts[1]
+                if not (extensions_dir / ext_id).is_dir():
+                    continue
+            filtered.append(cmd)
+        return filtered
 
     def register_commands_for_agent(
         self,

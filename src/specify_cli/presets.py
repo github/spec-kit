@@ -1714,3 +1714,94 @@ class PresetResolver:
                 continue
 
         return {"path": resolved_str, "source": "core"}
+
+    def list_available(
+        self,
+        template_type: str = "template",
+    ) -> List[Dict[str, str]]:
+        """List all available templates of a given type with source attribution.
+
+        Walks the full priority stack and collects all discoverable templates.
+        For templates that exist in multiple sources, only the winning (highest
+        priority) source is included.
+
+        Args:
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            List of dicts with 'name', 'path', and 'source' keys, sorted by name.
+        """
+        seen: set[str] = set()
+        results: List[Dict[str, str]] = []
+
+        # Determine file extension and subdirectory mapping
+        ext = ".sh" if template_type == "script" else ".md"
+        if template_type == "template":
+            subdirs = ["templates", ""]
+        elif template_type == "command":
+            subdirs = ["commands"]
+        elif template_type == "script":
+            subdirs = ["scripts"]
+        else:
+            subdirs = [""]
+
+        def _collect(directory: Path, source: str):
+            """Collect template files from a directory."""
+            if not directory.is_dir():
+                return
+            for f in sorted(directory.iterdir()):
+                if f.is_file() and f.suffix == ext:
+                    name = f.stem
+                    if name not in seen:
+                        seen.add(name)
+                        results.append({
+                            "name": name,
+                            "path": str(f),
+                            "source": source,
+                        })
+
+        # Priority 1: Project-local overrides
+        if template_type == "script":
+            _collect(self.overrides_dir / "scripts", "project override")
+        else:
+            _collect(self.overrides_dir, "project override")
+
+        # Priority 2: Installed presets (sorted by priority)
+        if self.presets_dir.exists():
+            registry = PresetRegistry(self.presets_dir)
+            for pack_id, metadata in registry.list_by_priority():
+                pack_dir = self.presets_dir / pack_id
+                version = metadata.get("version", "?") if metadata else "?"
+                source_label = f"{pack_id} v{version}"
+                for subdir in subdirs:
+                    if subdir:
+                        _collect(pack_dir / subdir, source_label)
+                    else:
+                        _collect(pack_dir, source_label)
+
+        # Priority 3: Extension-provided templates (sorted by priority)
+        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            if ext_meta:
+                version = ext_meta.get("version", "?")
+                source_label = f"extension:{ext_id} v{version}"
+            else:
+                source_label = f"extension:{ext_id} (unregistered)"
+            for subdir in subdirs:
+                if subdir:
+                    _collect(ext_dir / subdir, source_label)
+                else:
+                    _collect(ext_dir, source_label)
+
+        # Priority 4: Core templates
+        if template_type == "template":
+            _collect(self.templates_dir, "core")
+        elif template_type == "command":
+            _collect(self.templates_dir / "commands", "core")
+        elif template_type == "script":
+            _collect(self.templates_dir / "scripts", "core")
+
+        results.sort(key=lambda x: x["name"])
+        return results

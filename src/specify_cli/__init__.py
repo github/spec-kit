@@ -2735,6 +2735,38 @@ def preset_resolve(
         console.print("    [dim]No template with this name exists in the resolution stack[/dim]")
 
 
+@preset_app.command("list-templates")
+def preset_list_templates(
+    template_type: str = typer.Option(
+        "template", "--type", "-t",
+        help="Template type: template, command, or script",
+    ),
+):
+    """List all available templates from the resolution stack."""
+    from .presets import PresetResolver
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    resolver = PresetResolver(project_root)
+    available = resolver.list_available(template_type)
+
+    if not available:
+        console.print(f"[yellow]No {template_type}s found in the resolution stack[/yellow]")
+        return
+
+    console.print(f"\n[bold]Available {template_type}s ({len(available)}):[/bold]\n")
+    for entry in available:
+        console.print(f"  [bold]{entry['name']}[/bold]")
+        console.print(f"    [dim]Source: {entry['source']}[/dim]")
+        console.print(f"    [dim]Path: {entry['path']}[/dim]")
+
+
 @preset_app.command("info")
 def preset_info(
     pack_id: str = typer.Argument(..., help="Preset ID to get info about"),
@@ -3281,7 +3313,7 @@ def extension_list(
             console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']})")
             console.print(f"     [dim]{ext['id']}[/dim]")
             console.print(f"     {ext['description']}")
-            console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
+            console.print(f"     Commands: {ext['command_count']} | Scripts: {ext['script_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
 
     if available or all_extensions:
@@ -3590,9 +3622,15 @@ def extension_add(
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{manifest.name}[/bold] (v{manifest.version})")
         console.print(f"  {manifest.description}")
-        console.print("\n[bold cyan]Provided commands:[/bold cyan]")
-        for cmd in manifest.commands:
-            console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
+        if manifest.commands:
+            console.print("\n[bold cyan]Provided commands:[/bold cyan]")
+            for cmd in manifest.commands:
+                console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
+
+        if manifest.scripts:
+            console.print("\n[bold cyan]Provided scripts:[/bold cyan]")
+            for script in manifest.scripts:
+                console.print(f"  • {script['name']} - {script.get('description', '')}")
 
         console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
         console.print(f"   Check: .specify/extensions/{manifest.id}/")
@@ -3890,6 +3928,8 @@ def _print_extension_info(ext_info: dict, manager):
         provides = ext_info['provides']
         if provides.get('commands'):
             console.print(f"  • Commands: {provides['commands']}")
+        if provides.get('scripts'):
+            console.print(f"  • Scripts: {provides['scripts']}")
         if provides.get('hooks'):
             console.print(f"  • Hooks: {provides['hooks']}")
         console.print()

@@ -240,8 +240,8 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
 
-    def test_no_commands(self, temp_dir, valid_manifest_data):
-        """Test manifest with no commands provided."""
+    def test_no_commands_or_scripts(self, temp_dir, valid_manifest_data):
+        """Test manifest with no commands or scripts provided."""
         import yaml
 
         valid_manifest_data["provides"]["commands"] = []
@@ -250,7 +250,7 @@ class TestExtensionManifest:
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)
 
-        with pytest.raises(ValidationError, match="must provide at least one command"):
+        with pytest.raises(ValidationError, match="must provide at least one command or script"):
             ExtensionManifest(manifest_path)
 
     def test_manifest_hash(self, extension_dir):
@@ -3231,3 +3231,278 @@ class TestExtensionPriorityBackwardsCompatibility:
         assert result[0][0] == "ext-with-priority"
         assert result[1][0] == "legacy-ext"
         assert result[2][0] == "ext-low-priority"
+
+
+# ===== Scripts Support Tests (#1847) =====
+
+class TestScriptsSupport:
+    """Test extension scripts support (parity with presets)."""
+
+    def test_manifest_with_scripts_only(self, temp_dir):
+        """Extension with scripts but no commands is valid."""
+        import yaml
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "scripts-only",
+                "name": "Scripts Only Extension",
+                "version": "1.0.0",
+                "description": "An extension with only scripts",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "scripts": [
+                    {
+                        "name": "setup",
+                        "file": "scripts/setup.sh",
+                        "description": "Setup script",
+                    }
+                ]
+            },
+        }
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert len(manifest.scripts) == 1
+        assert manifest.scripts[0]["name"] == "setup"
+        assert len(manifest.commands) == 0
+
+    def test_manifest_with_commands_and_scripts(self, temp_dir, valid_manifest_data):
+        """Extension with both commands and scripts is valid."""
+        import yaml
+
+        valid_manifest_data["provides"]["scripts"] = [
+            {"name": "deploy", "file": "scripts/deploy.sh", "description": "Deploy"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert len(manifest.commands) == 1
+        assert len(manifest.scripts) == 1
+
+    def test_manifest_script_name_validation(self, temp_dir):
+        """Invalid script names are rejected."""
+        import yaml
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "bad-scripts",
+                "name": "Bad Scripts",
+                "version": "1.0.0",
+                "description": "Extension with bad script name",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "scripts": [
+                    {"name": "Invalid_Name", "file": "scripts/bad.sh"}
+                ]
+            },
+        }
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid script name"):
+            ExtensionManifest(manifest_path)
+
+    def test_manifest_script_path_traversal(self, temp_dir):
+        """Script with path traversal is rejected."""
+        import yaml
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "bad-path",
+                "name": "Bad Path",
+                "version": "1.0.0",
+                "description": "Extension with path traversal",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "scripts": [
+                    {"name": "evil", "file": "../../etc/passwd"}
+                ]
+            },
+        }
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid script file path"):
+            ExtensionManifest(manifest_path)
+
+    def test_manifest_script_missing_name(self, temp_dir):
+        """Script missing name field is rejected."""
+        import yaml
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "no-name",
+                "name": "No Name",
+                "version": "1.0.0",
+                "description": "Missing script name",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "scripts": [{"file": "scripts/setup.sh"}]
+            },
+        }
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Script missing 'name' or 'file'"):
+            ExtensionManifest(manifest_path)
+
+    def test_scripts_property_default(self, extension_dir):
+        """Scripts property returns empty list when no scripts defined."""
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        assert manifest.scripts == []
+
+    def test_list_installed_includes_script_count(self, temp_dir):
+        """list_installed output includes script_count."""
+        import yaml
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        extensions_dir = specify_dir / "extensions"
+        extensions_dir.mkdir()
+
+        # Create extension with scripts
+        ext_dir = extensions_dir / "scripted-ext"
+        ext_dir.mkdir()
+        scripts_dir = ext_dir / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "setup.sh").write_text("#!/bin/bash\necho setup")
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "scripted-ext",
+                "name": "Scripted",
+                "version": "1.0.0",
+                "description": "Has scripts",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "scripts": [
+                    {"name": "setup", "file": "scripts/setup.sh"}
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("scripted-ext", {"version": "1.0.0", "enabled": True})
+
+        manager = ExtensionManager(project_dir)
+        installed = manager.list_installed()
+
+        assert len(installed) == 1
+        assert installed[0]["script_count"] == 1
+        assert installed[0]["command_count"] == 0
+
+
+# ===== Command Filtering Tests (#1848) =====
+
+class TestCommandFiltering:
+    """Test extension-specific command filtering in CommandRegistrar."""
+
+    def test_extension_command_skipped_when_target_missing(self, temp_dir):
+        """Commands targeting non-installed extensions are filtered out."""
+        project_root = temp_dir / "project"
+        project_root.mkdir()
+        specify_dir = project_root / ".specify"
+        specify_dir.mkdir()
+        extensions_dir = specify_dir / "extensions"
+        extensions_dir.mkdir()
+
+        commands = [
+            {"name": "speckit.other-ext.cmd", "file": "commands/cmd.md"},
+        ]
+
+        filtered = CommandRegistrar._filter_commands_for_installed_extensions(
+            commands, project_root
+        )
+        assert filtered == []
+
+    def test_extension_command_kept_when_target_installed(self, temp_dir):
+        """Commands targeting installed extensions pass the filter."""
+        project_root = temp_dir / "project"
+        project_root.mkdir()
+        specify_dir = project_root / ".specify"
+        specify_dir.mkdir()
+        extensions_dir = specify_dir / "extensions"
+        extensions_dir.mkdir()
+        # Create the target extension directory
+        (extensions_dir / "other-ext").mkdir()
+
+        commands = [
+            {"name": "speckit.other-ext.cmd", "file": "commands/cmd.md"},
+        ]
+
+        filtered = CommandRegistrar._filter_commands_for_installed_extensions(
+            commands, project_root
+        )
+        assert len(filtered) == 1
+        assert filtered[0]["name"] == "speckit.other-ext.cmd"
+
+    def test_core_commands_always_kept(self, temp_dir):
+        """Core commands (2-part names) are never filtered out."""
+        project_root = temp_dir / "project"
+        project_root.mkdir()
+        specify_dir = project_root / ".specify"
+        specify_dir.mkdir()
+        extensions_dir = specify_dir / "extensions"
+        extensions_dir.mkdir()
+
+        commands = [
+            {"name": "speckit.specify", "file": "commands/specify.md"},
+            {"name": "speckit.tasks", "file": "commands/tasks.md"},
+        ]
+
+        filtered = CommandRegistrar._filter_commands_for_installed_extensions(
+            commands, project_root
+        )
+        assert len(filtered) == 2
+
+    def test_mixed_commands_filtered_correctly(self, temp_dir):
+        """Mix of core and extension commands is filtered correctly."""
+        project_root = temp_dir / "project"
+        project_root.mkdir()
+        specify_dir = project_root / ".specify"
+        specify_dir.mkdir()
+        extensions_dir = specify_dir / "extensions"
+        extensions_dir.mkdir()
+        # Only ext-a is installed
+        (extensions_dir / "ext-a").mkdir()
+
+        commands = [
+            {"name": "speckit.specify", "file": "commands/specify.md"},
+            {"name": "speckit.ext-a.run", "file": "commands/run.md"},
+            {"name": "speckit.ext-b.deploy", "file": "commands/deploy.md"},
+        ]
+
+        filtered = CommandRegistrar._filter_commands_for_installed_extensions(
+            commands, project_root
+        )
+        assert len(filtered) == 2
+        names = [c["name"] for c in filtered]
+        assert "speckit.specify" in names
+        assert "speckit.ext-a.run" in names
+        assert "speckit.ext-b.deploy" not in names
