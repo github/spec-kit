@@ -783,7 +783,7 @@ Projects that extend, visualize, or build on Spec Kit:
 
 | Project | Description |
 |---------|-------------|
-| [cc-sdd](https://github.com/rhuss/cc-superpowers-sdd) | Claude Code plugin that adds composable traits on top of Spec Kit: quality gates, spec/code review, git worktree isolation, and parallel implementation via agent teams. |
+| [cc-sdd](https://github.com/rhuss/cc-sdd) | Claude Code plugin that adds composable traits on top of Spec Kit: quality gates, spec/code review, git worktree isolation, and parallel implementation via agent teams. |
 
 ## 🙏 Acknowledgements
 
