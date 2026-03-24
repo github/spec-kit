@@ -38,6 +38,12 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
+# Validate description is not empty after trimming (e.g., user passed only whitespace)
+if ([string]::IsNullOrWhiteSpace($featureDesc)) {
+    Write-Error "Error: Feature description cannot be empty or contain only whitespace"
+    exit 1
+}
+
 # Resolve repository root. Prefer git information when available, but fall back
 # to searching for repository markers so the workflow still functions in repositories that
 # were initialized with --no-git.
@@ -133,6 +139,7 @@ function ConvertTo-CleanBranchName {
     return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
 
+
 # Calculate worktree path based on strategy
 # Naming convention: <repo_name>-<branch_name> for sibling/custom strategies
 function Get-WorktreePath {
@@ -196,23 +203,14 @@ function Test-BranchExists {
     return $false
 }
 
-$fallbackRoot = (Find-RepositoryRoot -StartDir $PSScriptRoot)
-if (-not $fallbackRoot) {
-    Write-Error "Error: Could not determine repository root. Please run this script from within the repository."
-    exit 1
-}
+# Load common functions (includes Get-RepoRoot, Test-HasGit, Resolve-Template)
+. "$PSScriptRoot/common.ps1"
 
-try {
-    $repoRoot = git rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        $hasGit = $true
-    } else {
-        throw "Git not available"
-    }
-} catch {
-    $repoRoot = $fallbackRoot
-    $hasGit = $false
-}
+# Use common.ps1 functions which prioritize .specify over git
+$repoRoot = Get-RepoRoot
+
+# Check if git is available at this repo root (not a parent)
+$hasGit = Test-HasGit
 
 Set-Location $repoRoot
 
