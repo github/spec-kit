@@ -30,9 +30,9 @@ DANGEROUS_PATTERNS=(
 )
 
 # Check if command matches any dangerous pattern at a command boundary
-# Matches at start of string or after command separators (&&, ||, ;)
+# Matches at start of string or after command separators (&&, ||, ;, |)
 for pattern in "${DANGEROUS_PATTERNS[@]}"; do
-    if [[ "$COMMAND" =~ (^|&&|\|\||;)[[:space:]]*$pattern ]]; then
+    if [[ "$COMMAND" =~ (^|&&|\|\||\||;)[[:space:]]*$pattern ]]; then
         # Return deny decision as JSON
         jq -n --arg cmd "$COMMAND" --arg pattern "$pattern" '{
             hookSpecificOutput: {
