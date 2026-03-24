@@ -35,7 +35,6 @@
 - [📋 Detailed Process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [💬 Support](#-support)
-- [🤝 Community Friends](#-community-friends)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
 
