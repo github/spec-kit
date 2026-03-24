@@ -23,6 +23,7 @@
 - [⚡ Get Started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
 - [🚶 Community Walkthroughs](#-community-walkthroughs)
+- [🛠️ Community Tools](#️-community-tools)
 - [🤖 Supported AI Agents](#-supported-ai-agents)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
@@ -172,6 +173,12 @@ See Spec-Driven Development in action across different scenarios with these comm
 - **[Greenfield Spring Boot MVC with a custom preset](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo)** — Builds a Spring Boot MVC application from scratch using a custom pirate-speak preset, demonstrating how presets can reshape the entire spec-kit experience: specifications become "Voyage Manifests," plans become "Battle Plans," and tasks become "Crew Assignments" — all generated in full pirate vernacular without changing any tooling.
 
 - **[Greenfield Spring Boot + React with a custom extension](https://github.com/mnriem/spec-kit-aide-extension-demo)** — Walks through the **AIDE extension**, a community extension that adds an alternative spec-driven workflow to spec-kit with high-level specs (vision) and low-level specs (work items) organized in a 7-step iterative lifecycle: vision → roadmap → progress tracking → work queue → work items → execution → feedback loops. Uses a family trading platform (Spring Boot 4, React 19, PostgreSQL, Docker Compose) as the scenario to illustrate how the extension mechanism lets you plug in a different style of spec-driven development without changing any core tooling — truly utilizing the "Kit" in Spec Kit.
+
+## 🛠️ Community Tools
+
+Community-built tools that integrate with Spec Kit to enhance the SDD workflow:
+
+- **[Spec Kit Assistant](https://marketplace.visualstudio.com/items?itemName=rfsales.speckit-assistant)** — A VS Code extension that provides a visual orchestrator for the full SDD workflow (constitution → specification → planning → tasks → implementation) with phase status visualization, an interactive task checklist, DAG visualization, and support for Claude, Gemini, GitHub Copilot, and OpenAI backends. Requires the `specify` CLI in PATH.
 
 ## 🤖 Supported AI Agents
 
