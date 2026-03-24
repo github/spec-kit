@@ -40,7 +40,7 @@ Paste this into your PR:
 
 ## Determining which tests to run
 
-Copy this prompt into your agent. Include the agent's response (reasoning + selected tests) in your PR.
+Copy this prompt into your agent. Include the agent's response (selected tests plus a brief explanation of the mapping) in your PR.
 
 ~~~text
 Read TESTING.md, then run `git diff --name-only main` to get my changed files.
