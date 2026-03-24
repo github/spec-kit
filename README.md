@@ -34,6 +34,7 @@
 - [📋 Detailed Process](#-detailed-process)
 - [🔍 Troubleshooting](#-troubleshooting)
 - [💬 Support](#-support)
+- [🤝 Community Friends](#-community-friends)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
 
@@ -775,6 +776,14 @@ rm gcm-linux_amd64.2.6.1.deb
 ## 💬 Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
+
+## 🤝 Community Friends
+
+Projects that extend, visualize, or build on Spec Kit:
+
+| Project | Description |
+|---------|-------------|
+| [cc-sdd](https://github.com/rhuss/cc-superpowers-sdd) | Claude Code plugin that adds composable traits on top of Spec Kit: quality gates, spec/code review, git worktree isolation, and parallel implementation via agent teams. |
 
 ## 🙏 Acknowledgements
 
