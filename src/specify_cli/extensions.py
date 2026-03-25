@@ -1942,17 +1942,20 @@ class HookExecutor:
         self.project_root = project_root
         self.extensions_dir = project_root / ".specify" / "extensions"
         self.config_file = project_root / ".specify" / "extensions.yml"
+        self._init_options_cache: Optional[Dict[str, Any]] = None
 
     def _load_init_options(self) -> Dict[str, Any]:
-        """Load persisted init options used to determine invocation style."""
-        options_file = self.project_root / self.INIT_OPTIONS_FILE
-        if not options_file.exists():
-            return {}
-        try:
-            payload = json.loads(options_file.read_text(encoding="utf-8"))
-            return payload if isinstance(payload, dict) else {}
-        except (json.JSONDecodeError, OSError, UnicodeError):
-            return {}
+        """Load persisted init options used to determine invocation style.
+
+        Uses the shared helper from specify_cli and caches values per executor
+        instance to avoid repeated filesystem reads during hook rendering.
+        """
+        if self._init_options_cache is None:
+            from . import load_init_options
+
+            payload = load_init_options(self.project_root)
+            self._init_options_cache = payload if isinstance(payload, dict) else {}
+        return self._init_options_cache
 
     @staticmethod
     def _skill_name_from_command(command: str) -> str:

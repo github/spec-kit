@@ -3320,3 +3320,18 @@ class TestHookInvocationRendering:
         assert "Executing: `/skill:speckit-test-hello`" in message
         assert "EXECUTE_COMMAND: speckit.test.hello" in message
         assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-test-hello" in message
+
+    def test_hook_executor_caches_init_options_lookup(self, project_dir, monkeypatch):
+        """Init options should be loaded once per executor instance."""
+        calls = {"count": 0}
+
+        def fake_load_init_options(_project_root):
+            calls["count"] += 1
+            return {"ai": "kimi", "ai_skills": False}
+
+        monkeypatch.setattr("specify_cli.load_init_options", fake_load_init_options)
+
+        hook_executor = HookExecutor(project_dir)
+        assert hook_executor._render_hook_invocation("speckit.plan") == "/skill:speckit-plan"
+        assert hook_executor._render_hook_invocation("speckit.tasks") == "/skill:speckit-tasks"
+        assert calls["count"] == 1

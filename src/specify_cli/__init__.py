@@ -1490,10 +1490,6 @@ def load_init_options(project_path: Path) -> dict[str, Any]:
         return {}
 
 
-# Agent-specific skill directory overrides for agents whose skills directory
-# doesn't follow the standard <agent_folder>/skills/ pattern
-AGENT_SKILLS_DIR_OVERRIDES = {}
-
 # Default skills directory for agents not in AGENT_CONFIG
 DEFAULT_SKILLS_DIR = ".agents/skills"
 
@@ -1526,13 +1522,9 @@ SKILL_DESCRIPTIONS = {
 def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     """Resolve the agent-specific skills directory for the given AI assistant.
 
-    Uses ``AGENT_SKILLS_DIR_OVERRIDES`` first, then falls back to
-    ``AGENT_CONFIG[agent]["folder"] + "skills"``, and finally to
-    ``DEFAULT_SKILLS_DIR``.
+    Uses ``AGENT_CONFIG[agent]["folder"] + "skills"`` and falls back to
+    ``DEFAULT_SKILLS_DIR`` for unknown agents.
     """
-    if selected_ai in AGENT_SKILLS_DIR_OVERRIDES:
-        return project_path / AGENT_SKILLS_DIR_OVERRIDES[selected_ai]
-
     agent_config = AGENT_CONFIG.get(selected_ai, {})
     agent_folder = agent_config.get("folder", "")
     if agent_folder:
@@ -1646,7 +1638,7 @@ def install_ai_skills(
                 command_name = command_name[len("speckit."):]
             if command_name.endswith(".agent"):
                 command_name = command_name[:-len(".agent")]
-            skill_name = f"speckit-{command_name}"
+            skill_name = f"speckit-{command_name.replace('.', '-')}"
 
             # Create skill directory (additive — never removes existing content)
             skill_dir = skills_dir / skill_name
@@ -1739,7 +1731,7 @@ def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
     Returns:
         Tuple[migrated_count, removed_count]
         - migrated_count: old dotted dir renamed to hyphenated dir
-        - removed_count: old dotted dir deleted because hyphenated dir already existed
+        - removed_count: old dotted dir deleted when equivalent hyphenated dir existed
     """
     if not skills_dir.is_dir():
         return (0, 0)
@@ -1759,12 +1751,23 @@ def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
 
         target_dir = skills_dir / f"speckit-{suffix.replace('.', '-')}"
 
-        if target_dir.exists():
-            shutil.rmtree(legacy_dir)
-            removed_count += 1
-        else:
+        if not target_dir.exists():
             shutil.move(str(legacy_dir), str(target_dir))
             migrated_count += 1
+            continue
+
+        # If the new target already exists, avoid destructive cleanup unless
+        # both SKILL.md files are byte-identical.
+        target_skill = target_dir / "SKILL.md"
+        legacy_skill = legacy_dir / "SKILL.md"
+        if target_skill.is_file():
+            try:
+                if target_skill.read_bytes() == legacy_skill.read_bytes():
+                    shutil.rmtree(legacy_dir)
+                    removed_count += 1
+            except OSError:
+                # Best-effort migration: preserve legacy dir on read failures.
+                pass
 
     return (migrated_count, removed_count)
 

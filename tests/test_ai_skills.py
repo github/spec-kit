@@ -26,7 +26,6 @@ from specify_cli import (
     _get_skills_dir,
     _migrate_legacy_kimi_dotted_skills,
     install_ai_skills,
-    AGENT_SKILLS_DIR_OVERRIDES,
     DEFAULT_SKILLS_DIR,
     SKILL_DESCRIPTIONS,
     AGENT_CONFIG,
@@ -204,14 +203,6 @@ class TestGetSkillsDir:
             # Should always end with "skills"
             assert result.name == "skills"
 
-    def test_override_takes_precedence_over_config(self, project_dir):
-        """AGENT_SKILLS_DIR_OVERRIDES should take precedence over AGENT_CONFIG."""
-        for agent_key in AGENT_SKILLS_DIR_OVERRIDES:
-            result = _get_skills_dir(project_dir, agent_key)
-            expected = project_dir / AGENT_SKILLS_DIR_OVERRIDES[agent_key]
-            assert result == expected
-
-
 class TestKimiLegacySkillMigration:
     """Test temporary migration from Kimi dotted skill names to hyphenated names."""
 
@@ -228,7 +219,23 @@ class TestKimiLegacySkillMigration:
         assert not legacy_dir.exists()
         assert (skills_dir / "speckit-plan" / "SKILL.md").exists()
 
-    def test_removes_legacy_dir_when_hyphenated_target_exists(self, project_dir):
+    def test_removes_legacy_dir_when_hyphenated_target_exists_with_same_content(self, project_dir):
+        skills_dir = project_dir / ".kimi" / "skills"
+        legacy_dir = skills_dir / "speckit.plan"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "SKILL.md").write_text("legacy")
+        target_dir = skills_dir / "speckit-plan"
+        target_dir.mkdir(parents=True)
+        (target_dir / "SKILL.md").write_text("legacy")
+
+        migrated, removed = _migrate_legacy_kimi_dotted_skills(skills_dir)
+
+        assert migrated == 0
+        assert removed == 1
+        assert not legacy_dir.exists()
+        assert (target_dir / "SKILL.md").read_text() == "legacy"
+
+    def test_keeps_legacy_dir_when_hyphenated_target_differs(self, project_dir):
         skills_dir = project_dir / ".kimi" / "skills"
         legacy_dir = skills_dir / "speckit.plan"
         legacy_dir.mkdir(parents=True)
@@ -240,8 +247,9 @@ class TestKimiLegacySkillMigration:
         migrated, removed = _migrate_legacy_kimi_dotted_skills(skills_dir)
 
         assert migrated == 0
-        assert removed == 1
-        assert not legacy_dir.exists()
+        assert removed == 0
+        assert legacy_dir.exists()
+        assert (legacy_dir / "SKILL.md").read_text() == "legacy"
         assert (target_dir / "SKILL.md").read_text() == "new"
 
 
