@@ -498,13 +498,13 @@ $AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode'
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {
-    param([string]$Input)
+    param([string]$Value)
 
-    if ([string]::IsNullOrEmpty($Input)) {
+    if ([string]::IsNullOrEmpty($Value)) {
         return @()
     }
 
-    $items = $Input -split '[,\s]+' | Where-Object { $_ } | Select-Object -Unique
+    $items = $Value -split '[,\s]+' | Where-Object { $_ } | Select-Object -Unique
     return $items
 }
 
@@ -527,7 +527,7 @@ function Validate-Subset {
 
 # Determine agent list
 if (-not [string]::IsNullOrEmpty($Agents)) {
-    $AgentList = Normalize-List -Input $Agents
+    $AgentList = Normalize-List -Value $Agents
     if (-not (Validate-Subset -Type 'agent' -Allowed $AllAgents -Items $AgentList)) {
         exit 1
     }
@@ -537,7 +537,7 @@ if (-not [string]::IsNullOrEmpty($Agents)) {
 
 # Determine script list
 if (-not [string]::IsNullOrEmpty($Scripts)) {
-    $ScriptList = Normalize-List -Input $Scripts
+    $ScriptList = Normalize-List -Value $Scripts
     if (-not (Validate-Subset -Type 'script' -Allowed $AllScripts -Items $ScriptList)) {
         exit 1
     }
