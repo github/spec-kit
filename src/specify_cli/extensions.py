@@ -571,7 +571,19 @@ class ExtensionManager:
         for cmd_info in manifest.commands:
             cmd_name = cmd_info["name"]
             cmd_file_rel = cmd_info["file"]
-            source_file = extension_dir / cmd_file_rel
+
+            # Guard against path traversal: reject absolute paths and ensure
+            # the resolved file stays within the extension directory.
+            cmd_path = Path(cmd_file_rel)
+            if cmd_path.is_absolute():
+                continue
+            try:
+                ext_root = extension_dir.resolve()
+                source_file = (ext_root / cmd_path).resolve()
+                source_file.relative_to(ext_root)  # raises ValueError if outside
+            except (OSError, ValueError):
+                continue
+
             if not source_file.exists():
                 continue
 
@@ -629,12 +641,13 @@ class ExtensionManager:
             short_name = cmd_name
             if short_name.startswith("speckit."):
                 short_name = short_name[len("speckit."):]
+            title_name = short_name.replace(".", " ").replace("-", " ").title()
 
             skill_content = (
                 f"---\n"
                 f"{frontmatter_text}\n"
                 f"---\n\n"
-                f"# {skill_name.replace('-', ' ').replace('.', ' ').title()} Skill\n\n"
+                f"# {title_name} Skill\n\n"
                 f"{body}\n"
             )
 
