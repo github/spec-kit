@@ -33,6 +33,38 @@
 
 [Gates determined based on constitution file]
 
+### Vision Alignment Check (Phase -1, Gate 2)
+
+Read `.specify/memory/vision.md`.
+
+If vision.md does not exist or is marked as DRAFT with no content filled in,
+skip this check and add a warning: "⚠️ Vision document not found or incomplete.
+Consider running /speckit.vision before proceeding."
+
+If vision.md exists and is populated, evaluate the proposed feature against:
+
+1. **Journey coverage** — Does this feature serve at least one Core User Journey
+   listed in vision.md Section 3?
+   If no journey is served, ask the user to explain how this feature connects
+   to the vision before proceeding.
+
+2. **Scope boundary** — Does this feature stay within the boundaries defined
+   in vision.md Section 4 (What This Is NOT)?
+   If it crosses a stated boundary, flag this as a VISION SCOPE VIOLATION
+   and block progression until the user explicitly acknowledges the conflict.
+
+3. **Quality bar** — Does the proposed implementation approach meet the
+   quality standards defined in vision.md Section 5?
+   If not, note the gap but do not block progression.
+
+Report format:
+- ✅ Vision aligned — [brief reason]
+- ⚠️ Partial alignment — [what's missing, ask for clarification]
+- ❌ Vision conflict — [specific conflict, block and explain]
+
+Only proceed to Phase 0 (technical planning) after this check passes or
+the user has explicitly acknowledged and accepted any flagged conflicts.
+
 ## Project Structure
 
 ### Documentation (this feature)
