@@ -360,7 +360,7 @@ function New-OpenClawSkills {
 
         $body = $outputLines -join "`n"
         $body = $body -replace '\{ARGS\}', '$ARGUMENTS'
-        $body = $body -replace '__AGENT__', 'openclaw'
+        $body = $body -replace '__AGENT__', 'generic'
         $body = Rewrite-Paths -Content $body
 
         # Strip existing frontmatter, keep only body
