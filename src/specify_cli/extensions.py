@@ -521,7 +521,7 @@ class ExtensionManager:
             The skills directory ``Path``, or ``None`` if skills were not
             enabled or the init-options file is missing.
         """
-        from . import load_init_options, _get_skills_dir
+        from . import load_init_options, _get_skills_dir as resolve_skills_dir
 
         opts = load_init_options(self.project_root)
         if not opts.get("ai_skills"):
@@ -531,7 +531,7 @@ class ExtensionManager:
         if not agent:
             return None
 
-        skills_dir = _get_skills_dir(self.project_root, agent)
+        skills_dir = resolve_skills_dir(self.project_root, agent)
         if not skills_dir.is_dir():
             return None
 
@@ -709,8 +709,33 @@ class ExtensionManager:
                     skill_subdir.relative_to(skills_dir.resolve())  # raises if outside
                 except (OSError, ValueError):
                     continue
-                if skill_subdir.is_dir():
-                    shutil.rmtree(skill_subdir)
+                if not skill_subdir.is_dir():
+                    continue
+                # Safety check: only delete if SKILL.md exists and its
+                # metadata.source matches exactly this extension — mirroring
+                # the fallback branch — so a corrupted registry entry cannot
+                # delete an unrelated user skill.
+                skill_md = skill_subdir / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                try:
+                    import yaml as _yaml
+                    raw = skill_md.read_text(encoding="utf-8")
+                    source = ""
+                    if raw.startswith("---"):
+                        parts = raw.split("---", 2)
+                        if len(parts) >= 3:
+                            fm = _yaml.safe_load(parts[1]) or {}
+                            source = (
+                                fm.get("metadata", {}).get("source", "")
+                                if isinstance(fm, dict)
+                                else ""
+                            )
+                    if source != f"extension:{extension_id}":
+                        continue
+                except (OSError, UnicodeDecodeError, Exception):
+                    continue
+                shutil.rmtree(skill_subdir)
         else:
             # Fallback: scan all possible agent skills directories
             from . import AGENT_CONFIG, AGENT_SKILLS_DIR_OVERRIDES, DEFAULT_SKILLS_DIR
