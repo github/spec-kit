@@ -142,7 +142,7 @@ def _expected_cmd_dir(project_path: Path, agent: str) -> Path:
 
 # Agents whose commands are laid out as <skills_dir>/<name>/SKILL.md.
 # Maps agent -> separator used in skill directory names.
-_SKILL_AGENTS: dict[str, str] = {"codex": "-", "kimi": "."}
+_SKILL_AGENTS: dict[str, str] = {"codex": "-", "kimi": "-"}
 
 
 def _expected_ext(agent: str) -> str:
