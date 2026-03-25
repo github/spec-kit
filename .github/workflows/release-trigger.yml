@@ -100,18 +100,16 @@ jobs:
               COMMITS="- Initial release"
             fi
 
-            # Create new changelog entry
-            {
-              head -n 8 CHANGELOG.md
-              echo ""
-              echo "## [${{ steps.version.outputs.version }}] - $DATE"
-              echo ""
-              echo "### Changes"
-              echo ""
-              echo "$COMMITS"
-              echo ""
-              tail -n +9 CHANGELOG.md
-            } > CHANGELOG.md.tmp
+            # Create new changelog entry — insert after the marker comment
+            NEW_ENTRY=$(printf '%s\n' \
+              "" \
+              "## [${{ steps.version.outputs.version }}] - $DATE" \
+              "" \
+              "### Changed" \
+              "" \
+              "$COMMITS")
+
+            awk -v entry="$NEW_ENTRY" '/<!-- insert new changelog below this comment -->/ { print; print entry; next } {print}' CHANGELOG.md > CHANGELOG.md.tmp
             mv CHANGELOG.md.tmp CHANGELOG.md
 
             echo "✅ Updated CHANGELOG.md with commits since $PREVIOUS_TAG"
