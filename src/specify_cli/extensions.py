@@ -1931,8 +1931,6 @@ class ConfigManager:
 class HookExecutor:
     """Manages extension hook execution."""
 
-    INIT_OPTIONS_FILE = ".specify/init-options.json"
-
     def __init__(self, project_root: Path):
         """Initialize hook executor.
 

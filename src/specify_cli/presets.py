@@ -556,24 +556,29 @@ class PresetManager:
         registrar.unregister_commands(registered_commands, self.project_root)
 
     def _get_skills_dir(self) -> Optional[Path]:
-        """Return the skills directory if ``--ai-skills`` was used during init.
+        """Return the active skills directory for preset skill overrides.
 
         Reads ``.specify/init-options.json`` to determine whether skills
         are enabled and which agent was selected, then delegates to
         the module-level ``_get_skills_dir()`` helper for the concrete path.
 
+        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
+        ``.kimi/skills`` exists, presets should still propagate command
+        overrides to skills even when ``ai_skills`` is false.
+
         Returns:
             The skills directory ``Path``, or ``None`` if skills were not
-            enabled or the init-options file is missing.
+            enabled and no native-skills fallback applies.
         """
         from . import load_init_options, _get_skills_dir
 
         opts = load_init_options(self.project_root)
-        if not opts.get("ai_skills"):
-            return None
-
         agent = opts.get("ai")
         if not agent:
+            return None
+
+        ai_skills_enabled = bool(opts.get("ai_skills"))
+        if not ai_skills_enabled and agent != "kimi":
             return None
 
         skills_dir = _get_skills_dir(self.project_root, agent)

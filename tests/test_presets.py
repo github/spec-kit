@@ -2122,6 +2122,27 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit.specify" in metadata.get("registered_skills", [])
 
+    def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
+        """Kimi presets should still propagate command overrides to existing skills."""
+        self._write_init_options(project_dir, ai="kimi", ai_skills=False)
+        skills_dir = project_dir / ".kimi" / "skills"
+        self._create_skill(skills_dir, "speckit-specify", body="untouched")
+
+        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(self_test_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        assert "preset:self-test" in content
+        assert "name: speckit-specify" in content
+
+        metadata = manager.registry.get("self-test")
+        assert "speckit-specify" in metadata.get("registered_skills", [])
+
 
 class TestPresetSetPriority:
     """Test preset set-priority CLI command."""
