@@ -628,12 +628,15 @@ class ExtensionManager:
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
-        # Set execute permissions on extension scripts (POSIX only)
+        # Set execute permissions on extension scripts (POSIX only, best-effort)
         if os.name == "posix":
             for script in manifest.scripts:
                 script_path = dest_dir / script["file"]
                 if script_path.exists() and script_path.suffix == ".sh":
-                    script_path.chmod(script_path.stat().st_mode | 0o111)
+                    try:
+                        script_path.chmod(script_path.stat().st_mode | 0o111)
+                    except OSError:
+                        pass
 
         # Register commands with AI agents
         registered_commands = {}

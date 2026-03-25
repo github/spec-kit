@@ -1703,6 +1703,21 @@ class PresetResolver:
         else:  # script
             subdirs = ["scripts"]
 
+        def _name_matches_type(name: str) -> bool:
+            """Check if a file name matches the expected pattern for the template type.
+
+            Commands use dot notation (e.g. speckit.specify), templates use
+            hyphens only (e.g. spec-template). This prevents the shared
+            overrides directory from leaking commands into template listings
+            or vice versa. Scripts live in their own subdirectory so no
+            filtering is needed.
+            """
+            if template_type == "command":
+                return "." in name
+            if template_type == "template":
+                return "." not in name
+            return True
+
         def _collect(directory: Path, source: str):
             """Collect template files from a directory."""
             if not directory.is_dir():
@@ -1710,13 +1725,16 @@ class PresetResolver:
             for f in sorted(directory.iterdir()):
                 if f.is_file() and f.suffix == ext:
                     name = f.stem
-                    if name not in seen:
-                        seen.add(name)
-                        results.append({
-                            "name": name,
-                            "path": str(f),
-                            "source": source,
-                        })
+                    if name in seen:
+                        continue
+                    if not _name_matches_type(name):
+                        continue
+                    seen.add(name)
+                    results.append({
+                        "name": name,
+                        "path": str(f),
+                        "source": source,
+                    })
 
         # Priority 1: Project-local overrides
         if template_type == "script":
