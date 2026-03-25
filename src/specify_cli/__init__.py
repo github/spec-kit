@@ -3597,6 +3597,9 @@ def extension_add(
         # Report agent skills registration
         reg_meta = manager.registry.get(manifest.id)
         reg_skills = reg_meta.get("registered_skills", []) if reg_meta else []
+        # Normalize to guard against corrupted registry entries
+        if not isinstance(reg_skills, list):
+            reg_skills = []
         if reg_skills:
             console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
 
@@ -3642,7 +3645,8 @@ def extension_remove(
     ext_manifest = manager.get_extension(extension_id)
     cmd_count = len(ext_manifest.commands) if ext_manifest else 0
     reg_meta = manager.registry.get(extension_id)
-    skill_count = len(reg_meta.get("registered_skills", [])) if reg_meta else 0
+    raw_skills = reg_meta.get("registered_skills") if reg_meta else None
+    skill_count = len(raw_skills) if isinstance(raw_skills, list) else 0
 
     # Confirm removal
     if not force:

@@ -587,12 +587,17 @@ class ExtensionManager:
             if not source_file.is_file():
                 continue
 
-            # Derive skill name from command name
-            # e.g. "speckit.jira.create" -> "speckit-jira-create" (or dot for kimi)
+            # Derive skill name from command name, matching the convention used by
+            # presets.py: strip the leading "speckit." prefix, then form:
+            #   Kimi  → "speckit.{short_name}"  (dot preserved for Kimi agent)
+            #   other → "speckit-{short_name}"  (hyphen separator)
+            short_name_raw = cmd_name
+            if short_name_raw.startswith("speckit."):
+                short_name_raw = short_name_raw[len("speckit."):]
             if selected_ai == "kimi":
-                skill_name = cmd_name  # Keep dot notation for kimi
+                skill_name = f"speckit.{short_name_raw}"
             else:
-                skill_name = cmd_name.replace(".", "-")
+                skill_name = f"speckit-{short_name_raw}"
 
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
@@ -601,14 +606,20 @@ class ExtensionManager:
                 # Do not overwrite user-customized skills
                 continue
 
-            # Create skill directory only when we're going to write to it
+            # Create skill directory; track whether we created it so we can clean
+            # up safely if reading the source file subsequently fails.
+            created_now = not skill_subdir.exists()
             skill_subdir.mkdir(parents=True, exist_ok=True)
 
             # Parse the command file — guard against IsADirectoryError / decode errors
             try:
                 content = source_file.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
-                skill_subdir.rmdir()  # undo the mkdir above before skipping
+                if created_now:
+                    try:
+                        skill_subdir.rmdir()  # undo the mkdir; dir is empty at this point
+                    except OSError:
+                        pass  # best-effort cleanup
                 continue
             if content.startswith("---"):
                 parts = content.split("---", 2)
@@ -710,30 +721,32 @@ class ExtensionManager:
                     skill_subdir = skills_candidate / skill_name
                     if not skill_subdir.is_dir():
                         continue
-                    # Safety check: only delete if SKILL.md metadata.source matches
-                    # this extension, to avoid wiping user-created skills with the
-                    # same name under a different agent dir.
+                    # Safety check: only delete if SKILL.md exists and its
+                    # metadata.source matches exactly this extension.  If the
+                    # file is missing or unreadable we skip to avoid deleting
+                    # unrelated user-created directories.
                     skill_md = skill_subdir / "SKILL.md"
-                    if skill_md.is_file():
-                        try:
-                            import yaml as _yaml
-                            raw = skill_md.read_text(encoding="utf-8")
-                            source = ""
-                            if raw.startswith("---"):
-                                parts = raw.split("---", 2)
-                                if len(parts) >= 3:
-                                    fm = _yaml.safe_load(parts[1]) or {}
-                                    source = (
-                                        fm.get("metadata", {}).get("source", "")
-                                        if isinstance(fm, dict)
-                                        else ""
-                                    )
-                            # Only remove skills explicitly created by this extension
-                            if source != f"extension:{extension_id}":
-                                continue
-                        except (OSError, UnicodeDecodeError, Exception):
-                            # If we can't verify, skip to avoid accidental deletion
+                    if not skill_md.is_file():
+                        continue
+                    try:
+                        import yaml as _yaml
+                        raw = skill_md.read_text(encoding="utf-8")
+                        source = ""
+                        if raw.startswith("---"):
+                            parts = raw.split("---", 2)
+                            if len(parts) >= 3:
+                                fm = _yaml.safe_load(parts[1]) or {}
+                                source = (
+                                    fm.get("metadata", {}).get("source", "")
+                                    if isinstance(fm, dict)
+                                    else ""
+                                )
+                        # Only remove skills explicitly created by this extension
+                        if source != f"extension:{extension_id}":
                             continue
+                    except (OSError, UnicodeDecodeError, Exception):
+                        # If we can't verify, skip to avoid accidental deletion
+                        continue
                     shutil.rmtree(skill_subdir)
 
     def check_compatibility(
