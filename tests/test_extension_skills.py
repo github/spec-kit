@@ -376,7 +376,7 @@ class TestExtensionSkillRegistration:
 
         metadata = manager.registry.get(manifest.id)
         assert "speckit-missing-cmd-ext.exists" in metadata["registered_skills"]
-        assert "speckit-missing-cmd-ext-ghost" not in metadata["registered_skills"]
+        assert "speckit-missing-cmd-ext.ghost" not in metadata["registered_skills"]
 
 
 # ===== Extension Skill Unregistration Tests =====

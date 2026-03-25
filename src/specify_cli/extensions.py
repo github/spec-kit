@@ -699,7 +699,7 @@ class ExtensionManager:
             # Fast path: we know the exact skills directory
             for skill_name in skill_names:
                 skill_subdir = skills_dir / skill_name
-                if skill_subdir.exists():
+                if skill_subdir.is_dir():
                     shutil.rmtree(skill_subdir)
         else:
             # Fallback: scan all possible agent skills directories
