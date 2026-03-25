@@ -584,7 +584,7 @@ class ExtensionManager:
             except (OSError, ValueError):
                 continue
 
-            if not source_file.exists():
+            if not source_file.is_file():
                 continue
 
             # Derive skill name from command name
@@ -604,8 +604,12 @@ class ExtensionManager:
             # Create skill directory only when we're going to write to it
             skill_subdir.mkdir(parents=True, exist_ok=True)
 
-            # Parse the command file
-            content = source_file.read_text(encoding="utf-8")
+            # Parse the command file — guard against IsADirectoryError / decode errors
+            try:
+                content = source_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                skill_subdir.rmdir()  # undo the mkdir above before skipping
+                continue
             if content.startswith("---"):
                 parts = content.split("---", 2)
                 if len(parts) >= 3:
@@ -656,7 +660,7 @@ class ExtensionManager:
 
         return written
 
-    def _unregister_extension_skills(self, skill_names: List[str]) -> None:
+    def _unregister_extension_skills(self, skill_names: List[str], extension_id: str) -> None:
         """Remove SKILL.md directories for extension skills.
 
         Called during extension removal to clean up skill files that
@@ -665,10 +669,15 @@ class ExtensionManager:
         If ``_get_skills_dir()`` returns ``None`` (e.g. the user removed
         init-options.json or toggled ai_skills after installation), we
         fall back to scanning all known agent skills directories so that
-        orphaned skill directories are still cleaned up.
+        orphaned skill directories are still cleaned up.  In that case
+        each candidate directory is verified against the SKILL.md
+        ``metadata.source`` field before removal to avoid accidentally
+        deleting user-created skills with the same name.
 
         Args:
             skill_names: List of skill names to remove.
+            extension_id: Extension ID used to verify ownership during
+                fallback candidate scanning.
         """
         if not skill_names:
             return
@@ -699,8 +708,33 @@ class ExtensionManager:
                     continue
                 for skill_name in skill_names:
                     skill_subdir = skills_candidate / skill_name
-                    if skill_subdir.exists():
-                        shutil.rmtree(skill_subdir)
+                    if not skill_subdir.is_dir():
+                        continue
+                    # Safety check: only delete if SKILL.md metadata.source matches
+                    # this extension, to avoid wiping user-created skills with the
+                    # same name under a different agent dir.
+                    skill_md = skill_subdir / "SKILL.md"
+                    if skill_md.is_file():
+                        try:
+                            import yaml as _yaml
+                            raw = skill_md.read_text(encoding="utf-8")
+                            source = ""
+                            if raw.startswith("---"):
+                                parts = raw.split("---", 2)
+                                if len(parts) >= 3:
+                                    fm = _yaml.safe_load(parts[1]) or {}
+                                    source = (
+                                        fm.get("metadata", {}).get("source", "")
+                                        if isinstance(fm, dict)
+                                        else ""
+                                    )
+                            # Only remove skills explicitly created by this extension
+                            if source != f"extension:{extension_id}":
+                                continue
+                        except (OSError, UnicodeDecodeError, Exception):
+                            # If we can't verify, skip to avoid accidental deletion
+                            continue
+                    shutil.rmtree(skill_subdir)
 
     def check_compatibility(
         self,
@@ -890,7 +924,12 @@ class ExtensionManager:
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
         registered_commands = metadata.get("registered_commands", {}) if metadata else {}
-        registered_skills = metadata.get("registered_skills", []) if metadata else []
+        raw_skills = metadata.get("registered_skills", []) if metadata else []
+        # Normalize: must be a list of plain strings to avoid corrupted-registry errors
+        if isinstance(raw_skills, list):
+            registered_skills = [s for s in raw_skills if isinstance(s, str)]
+        else:
+            registered_skills = []
 
         extension_dir = self.extensions_dir / extension_id
 
@@ -900,7 +939,7 @@ class ExtensionManager:
             registrar.unregister_commands(registered_commands, self.project_root)
 
         # Unregister agent skills
-        self._unregister_extension_skills(registered_skills)
+        self._unregister_extension_skills(registered_skills, extension_id)
 
         if keep_config:
             # Preserve config files, only remove non-config files
