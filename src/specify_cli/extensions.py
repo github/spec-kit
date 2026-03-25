@@ -698,7 +698,17 @@ class ExtensionManager:
         if skills_dir:
             # Fast path: we know the exact skills directory
             for skill_name in skill_names:
-                skill_subdir = skills_dir / skill_name
+                # Guard against path traversal from a corrupted registry entry:
+                # reject names that are absolute, contain path separators, or
+                # resolve to a path outside the skills directory.
+                sn_path = Path(skill_name)
+                if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                    continue
+                try:
+                    skill_subdir = (skills_dir / skill_name).resolve()
+                    skill_subdir.relative_to(skills_dir.resolve())  # raises if outside
+                except (OSError, ValueError):
+                    continue
                 if skill_subdir.is_dir():
                     shutil.rmtree(skill_subdir)
         else:
@@ -718,7 +728,15 @@ class ExtensionManager:
                 if not skills_candidate.is_dir():
                     continue
                 for skill_name in skill_names:
-                    skill_subdir = skills_candidate / skill_name
+                    # Same path-traversal guard as the fast path above
+                    sn_path = Path(skill_name)
+                    if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                        continue
+                    try:
+                        skill_subdir = (skills_candidate / skill_name).resolve()
+                        skill_subdir.relative_to(skills_candidate.resolve())  # raises if outside
+                    except (OSError, ValueError):
+                        continue
                     if not skill_subdir.is_dir():
                         continue
                     # Safety check: only delete if SKILL.md exists and its
