@@ -187,6 +187,21 @@ Provided commands:
    Check: .specify/extensions/jira/
 ```
 
+### Automatic Agent Skill Registration
+
+If your project was initialized with `--ai-skills`, extension commands are **automatically registered as agent skills** during installation. This ensures that extensions are discoverable by agents that use the [agentskills.io](https://agentskills.io) skill specification.
+
+```text
+✓ Extension installed successfully!
+
+Jira Integration (v1.0.0)
+  ...
+
+✓ 3 agent skill(s) auto-registered
+```
+
+When an extension is removed, its corresponding skills are also cleaned up automatically. Pre-existing skills that were manually customized are never overwritten.
+
 ---
 
 ## Using Extensions
@@ -387,6 +402,9 @@ settings:
   auto_execute_hooks: true
 
 # Hook configuration
+# Available events: before_specify, after_specify, before_plan, after_plan,
+#                   before_tasks, after_tasks, before_implement, after_implement
+# Planned (not yet wired into core templates): before_commit, after_commit
 hooks:
   after_tasks:
     - extension: jira

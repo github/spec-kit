@@ -7,6 +7,7 @@
 #     "platformdirs",
 #     "readchar",
 #     "httpx",
+#     "json5",
 # ]
 # ///
 """
@@ -30,8 +31,9 @@ import sys
 import zipfile
 import tempfile
 import shutil
-import shlex
 import json
+import json5
+import stat
 import yaml
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -169,8 +171,8 @@ AGENT_CONFIG = {
     },
     "codex": {
         "name": "Codex CLI",
-        "folder": ".codex/",
-        "commands_subdir": "prompts",  # Special: uses prompts/ not commands/
+        "folder": ".agents/",
+        "commands_subdir": "skills",  # Codex now uses project skills directly
         "install_url": "https://github.com/openai/codex",
         "requires_cli": True,
     },
@@ -180,6 +182,13 @@ AGENT_CONFIG = {
         "commands_subdir": "workflows",  # Special: uses workflows/ not commands/
         "install_url": None,  # IDE-based
         "requires_cli": False,
+    },
+    "junie": {
+        "name": "Junie",
+        "folder": ".junie/",
+        "commands_subdir": "commands",
+        "install_url": "https://junie.jetbrains.com/",
+        "requires_cli": True,
     },
     "kilocode": {
         "name": "Kilo Code",
@@ -272,12 +281,25 @@ AGENT_CONFIG = {
         "install_url": "https://code.kimi.com/",
         "requires_cli": True,
     },
-    "openclaw": {
-        "name": "OpenClaw",
-        "folder": ".openclaw/",
-        # Use a dedicated commands template directory; OpenClaw still reads live skills from .openclaw/skills/<skill-name>/SKILL.md
+    "trae": {
+        "name": "Trae",
+        "folder": ".trae/",
+        "commands_subdir": "rules",  # Trae uses .trae/rules/ for project rules
+        "install_url": None,  # IDE-based
+        "requires_cli": False,
+    },
+    "pi": {
+        "name": "Pi Coding Agent",
+        "folder": ".pi/",
+        "commands_subdir": "prompts",
+        "install_url": "https://www.npmjs.com/package/@mariozechner/pi-coding-agent",
+        "requires_cli": True,
+    },
+    "iflow": {
+        "name": "iFlow CLI",
+        "folder": ".iflow/",
         "commands_subdir": "commands",
-        "install_url": "https://openclaw.ai",
+        "install_url": "https://docs.iflow.cn/en/cli/quickstart",
         "requires_cli": True,
     },
     "generic": {
@@ -292,6 +314,9 @@ AGENT_CONFIG = {
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
 }
+
+# Agents that use TOML command format (others use Markdown)
+_TOML_AGENTS = frozenset({"gemini", "tabnine"})
 
 def _build_ai_assistant_help() -> str:
     """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
@@ -662,37 +687,82 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Option
         os.chdir(original_cwd)
 
 def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker=None) -> None:
-    """Handle merging or copying of .vscode/settings.json files."""
+    """Handle merging or copying of .vscode/settings.json files.
+
+    Note: when merge produces changes, rewritten output is normalized JSON and
+    existing JSONC comments/trailing commas are not preserved.
+    """
     def log(message, color="green"):
         if verbose and not tracker:
             console.print(f"[{color}]{message}[/] {rel_path}")
 
+    def atomic_write_json(target_file: Path, payload: dict[str, Any]) -> None:
+        """Atomically write JSON while preserving existing mode bits when possible."""
+        temp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                encoding='utf-8',
+                dir=target_file.parent,
+                prefix=f"{target_file.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                temp_path = Path(f.name)
+                json.dump(payload, f, indent=4)
+                f.write('\n')
+
+            if target_file.exists():
+                try:
+                    existing_stat = target_file.stat()
+                    os.chmod(temp_path, stat.S_IMODE(existing_stat.st_mode))
+                    if hasattr(os, "chown"):
+                        try:
+                            os.chown(temp_path, existing_stat.st_uid, existing_stat.st_gid)
+                        except PermissionError:
+                            # Best-effort owner/group preservation without requiring elevated privileges.
+                            pass
+                except OSError:
+                    # Best-effort metadata preservation; data safety is prioritized.
+                    pass
+
+            os.replace(temp_path, target_file)
+        except Exception:
+            if temp_path and temp_path.exists():
+                temp_path.unlink()
+            raise
+
     try:
         with open(sub_item, 'r', encoding='utf-8') as f:
-            new_settings = json.load(f)
+            # json5 natively supports comments and trailing commas (JSONC)
+            new_settings = json5.load(f)
 
         if dest_file.exists():
             merged = merge_json_files(dest_file, new_settings, verbose=verbose and not tracker)
-            with open(dest_file, 'w', encoding='utf-8') as f:
-                json.dump(merged, f, indent=4)
-                f.write('\n')
-            log("Merged:", "green")
+            if merged is not None:
+                atomic_write_json(dest_file, merged)
+                log("Merged:", "green")
+                log("Note: comments/trailing commas are normalized when rewritten", "yellow")
+            else:
+                log("Skipped merge (preserved existing settings)", "yellow")
         else:
             shutil.copy2(sub_item, dest_file)
             log("Copied (no existing settings.json):", "blue")
 
     except Exception as e:
-        log(f"Warning: Could not merge, copying instead: {e}", "yellow")
-        shutil.copy2(sub_item, dest_file)
+        log(f"Warning: Could not merge settings: {e}", "yellow")
+        if not dest_file.exists():
+            shutil.copy2(sub_item, dest_file)
 
-def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = False) -> dict:
+
+def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = False) -> Optional[dict[str, Any]]:
     """Merge new JSON content into existing JSON file.
 
-    Performs a deep merge where:
+    Performs a polite deep merge where:
     - New keys are added
-    - Existing keys are preserved unless overwritten by new content
-    - Nested dictionaries are merged recursively
-    - Lists and other values are replaced (not merged)
+    - Existing keys are preserved (not overwritten) unless both values are dictionaries
+    - Nested dictionaries are merged recursively only when both sides are dictionaries
+    - Lists and other values are preserved from base if they exist
 
     Args:
         existing_path: Path to existing JSON file
@@ -700,28 +770,64 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
         verbose: Whether to print merge details
 
     Returns:
-        Merged JSON content as dict
+        Merged JSON content as dict, or None if the existing file should be left untouched.
     """
-    try:
-        with open(existing_path, 'r', encoding='utf-8') as f:
-            existing_content = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # If file doesn't exist or is invalid, just use new content
+    # Load existing content first to have a safe fallback
+    existing_content = None
+    exists = existing_path.exists()
+
+    if exists:
+        try:
+            with open(existing_path, 'r', encoding='utf-8') as f:
+                # Handle comments (JSONC) natively with json5
+                # Note: json5 handles BOM automatically
+                existing_content = json5.load(f)
+        except FileNotFoundError:
+            # Handle race condition where file is deleted after exists() check
+            exists = False
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Warning: Could not read or parse existing JSON in {existing_path.name} ({e}).[/yellow]")
+            # Skip merge to preserve existing file if unparseable or inaccessible (e.g. PermissionError)
+            return None
+
+    # Validate template content
+    if not isinstance(new_content, dict):
+        if verbose:
+            console.print(f"[yellow]Warning: Template content for {existing_path.name} is not a dictionary. Preserving existing settings.[/yellow]")
+        return None
+
+    if not exists:
         return new_content
 
-    def deep_merge(base: dict, update: dict) -> dict:
-        """Recursively merge update dict into base dict."""
+    # If existing content parsed but is not a dict, skip merge to avoid data loss
+    if not isinstance(existing_content, dict):
+        if verbose:
+            console.print(f"[yellow]Warning: Existing JSON in {existing_path.name} is not an object. Skipping merge to avoid data loss.[/yellow]")
+        return None
+
+    def deep_merge_polite(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+        """Recursively merge update dict into base dict, preserving base values."""
         result = base.copy()
         for key, value in update.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                # Recursively merge nested dictionaries
-                result[key] = deep_merge(result[key], value)
-            else:
-                # Add new key or replace existing value
+            if key not in result:
+                # Add new key
                 result[key] = value
+            elif isinstance(result[key], dict) and isinstance(value, dict):
+                # Recursively merge nested dictionaries
+                result[key] = deep_merge_polite(result[key], value)
+            else:
+                # Key already exists and values are not both dicts; preserve existing value.
+                # This ensures user settings aren't overwritten by template defaults.
+                pass
         return result
 
-    merged = deep_merge(existing_content, new_content)
+    merged = deep_merge_polite(existing_content, new_content)
+
+    # Detect if anything actually changed. If not, return None so the caller
+    # can skip rewriting the file (preserving user's comments/formatting).
+    if merged == existing_content:
+        return None
 
     if verbose:
         console.print(f"[cyan]Merged JSON file:[/cyan] {existing_path.name}")
@@ -842,9 +948,26 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(
+    project_path: Path,
+    ai_assistant: str,
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    skip_legacy_codex_prompts: bool = False,
+    verbose: bool = True,
+    tracker: StepTracker | None = None,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None,
+) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
+
+    Note:
+        ``skip_legacy_codex_prompts`` suppresses the legacy top-level
+        ``.codex`` directory from older template archives in Codex skills mode.
+        The name is kept for backward compatibility with existing callers.
     """
     current_dir = Path.cwd()
 
@@ -884,6 +1007,19 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             project_path.mkdir(parents=True)
 
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            def _validate_zip_members_within(root: Path) -> None:
+                """Validate all ZIP members stay within ``root`` (Zip Slip guard)."""
+                root_resolved = root.resolve()
+                for member in zip_ref.namelist():
+                    member_path = (root / member).resolve()
+                    try:
+                        member_path.relative_to(root_resolved)
+                    except ValueError:
+                        raise RuntimeError(
+                            f"Unsafe path in ZIP archive: {member} "
+                            "(potential path traversal)"
+                        )
+
             zip_contents = zip_ref.namelist()
             if tracker:
                 tracker.start("zip-list")
@@ -894,6 +1030,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
             if is_current_dir:
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_path = Path(temp_dir)
+                    _validate_zip_members_within(temp_path)
                     zip_ref.extractall(temp_path)
 
                     extracted_items = list(temp_path.iterdir())
@@ -913,6 +1050,11 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                             console.print("[cyan]Found nested directory structure[/cyan]")
 
                     for item in source_dir.iterdir():
+                        # In Codex skills mode, do not materialize the legacy
+                        # top-level .codex directory from older prompt-based
+                        # template archives.
+                        if skip_legacy_codex_prompts and ai_assistant == "codex" and item.name == ".codex":
+                            continue
                         dest_path = project_path / item.name
                         if item.is_dir():
                             if dest_path.exists():
@@ -937,6 +1079,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                     if verbose and not tracker:
                         console.print("[cyan]Template files merged into current directory[/cyan]")
             else:
+                _validate_zip_members_within(project_path)
                 zip_ref.extractall(project_path)
 
                 extracted_items = list(project_path.iterdir())
@@ -962,6 +1105,13 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                         tracker.complete("flatten")
                     elif verbose:
                         console.print("[cyan]Flattened nested directory structure[/cyan]")
+
+                # For fresh-directory Codex skills init, suppress legacy
+                # top-level .codex layout extracted from older archives.
+                if skip_legacy_codex_prompts and ai_assistant == "codex":
+                    legacy_codex_dir = project_path / ".codex"
+                    if legacy_codex_dir.is_dir():
+                        shutil.rmtree(legacy_codex_dir, ignore_errors=True)
 
     except Exception as e:
         if tracker:
@@ -990,6 +1140,241 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
                 console.print(f"Cleaned up: {zip_path.name}")
 
     return project_path
+
+
+def _locate_core_pack() -> Path | None:
+    """Return the filesystem path to the bundled core_pack directory, or None.
+
+    Only present in wheel installs: hatchling's force-include copies
+    templates/, scripts/ etc. into specify_cli/core_pack/ at build time.
+
+    Source-checkout and editable installs do NOT have this directory.
+    Callers that need to work in both environments must check the repo-root
+    trees (templates/, scripts/) as a fallback when this returns None.
+    """
+    # Wheel install: core_pack is a sibling directory of this file
+    candidate = Path(__file__).parent / "core_pack"
+    if candidate.is_dir():
+        return candidate
+    return None
+
+
+def _locate_release_script() -> tuple[Path, str]:
+    """Return (script_path, shell_cmd) for the platform-appropriate release script.
+
+    Checks the bundled core_pack first, then falls back to the source checkout.
+    Returns the bash script on Unix and the PowerShell script on Windows.
+    Raises FileNotFoundError if neither can be found.
+    """
+    if os.name == "nt":
+        name = "create-release-packages.ps1"
+        shell = shutil.which("pwsh")
+        if not shell:
+            raise FileNotFoundError(
+                "'pwsh' (PowerShell 7+) not found on PATH. "
+                "The bundled release script requires PowerShell 7+ (pwsh), "
+                "not Windows PowerShell 5.x (powershell.exe). "
+                "Install from https://aka.ms/powershell to use offline scaffolding."
+            )
+    else:
+        name = "create-release-packages.sh"
+        shell = "bash"
+
+    # Wheel install: core_pack/release_scripts/
+    candidate = Path(__file__).parent / "core_pack" / "release_scripts" / name
+    if candidate.is_file():
+        return candidate, shell
+
+    # Source-checkout fallback
+    repo_root = Path(__file__).parent.parent.parent
+    candidate = repo_root / ".github" / "workflows" / "scripts" / name
+    if candidate.is_file():
+        return candidate, shell
+
+    raise FileNotFoundError(f"Release script '{name}' not found in core_pack or source checkout")
+
+
+def scaffold_from_core_pack(
+    project_path: Path,
+    ai_assistant: str,
+    script_type: str,
+    is_current_dir: bool = False,
+    *,
+    tracker: StepTracker | None = None,
+) -> bool:
+    """Scaffold a project from bundled core_pack assets — no network access required.
+
+    Invokes the bundled create-release-packages script (bash on Unix, PowerShell
+    on Windows) to generate the full project scaffold for a single agent.  This
+    guarantees byte-for-byte parity between ``specify init`` and the GitHub
+    release ZIPs because both use the exact same script.
+
+    Returns True on success.  Returns False if offline scaffolding failed for
+    any reason, including missing or unreadable assets, missing required tools
+    (bash, pwsh, zip), release-script failure or timeout, or unexpected runtime
+    exceptions.  When ``--offline`` is active the caller should treat False as
+    a hard error rather than falling back to a network download.
+    """
+    # --- Locate asset sources ---
+    core = _locate_core_pack()
+
+    # Command templates
+    if core and (core / "commands").is_dir():
+        commands_dir = core / "commands"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        commands_dir = repo_root / "templates" / "commands"
+        if not commands_dir.is_dir():
+            if tracker:
+                tracker.error("scaffold", "command templates not found")
+            return False
+
+    # Scripts directory (parent of bash/ and powershell/)
+    if core and (core / "scripts").is_dir():
+        scripts_dir = core / "scripts"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        scripts_dir = repo_root / "scripts"
+        if not scripts_dir.is_dir():
+            if tracker:
+                tracker.error("scaffold", "scripts directory not found")
+            return False
+
+    # Page templates (spec-template.md, plan-template.md, vscode-settings.json, etc.)
+    if core and (core / "templates").is_dir():
+        templates_dir = core / "templates"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        templates_dir = repo_root / "templates"
+        if not templates_dir.is_dir():
+            if tracker:
+                tracker.error("scaffold", "page templates not found")
+            return False
+
+    # Release script
+    try:
+        release_script, shell_cmd = _locate_release_script()
+    except FileNotFoundError as exc:
+        if tracker:
+            tracker.error("scaffold", str(exc))
+        return False
+
+    # Preflight: verify required external tools are available
+    if os.name != "nt":
+        if not shutil.which("bash"):
+            msg = "'bash' not found on PATH. Required for offline scaffolding."
+            if tracker:
+                tracker.error("scaffold", msg)
+            return False
+        if not shutil.which("zip"):
+            msg = "'zip' not found on PATH. Required for offline scaffolding. Install with: apt install zip / brew install zip"
+            if tracker:
+                tracker.error("scaffold", msg)
+            return False
+
+    if tracker:
+        tracker.start("scaffold", "applying bundled assets")
+
+    try:
+        if not is_current_dir:
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+
+            # Set up a repo-like directory layout in the temp dir so the
+            # release script finds templates/commands/, scripts/, etc.
+            tmpl_cmds = tmp / "templates" / "commands"
+            tmpl_cmds.mkdir(parents=True)
+            for f in commands_dir.iterdir():
+                if f.is_file():
+                    shutil.copy2(f, tmpl_cmds / f.name)
+
+            # Page templates (needed for vscode-settings.json etc.)
+            if templates_dir.is_dir():
+                tmpl_root = tmp / "templates"
+                for f in templates_dir.iterdir():
+                    if f.is_file():
+                        shutil.copy2(f, tmpl_root / f.name)
+
+            # Scripts (bash/ and powershell/)
+            for subdir in ("bash", "powershell"):
+                src = scripts_dir / subdir
+                if src.is_dir():
+                    dst = tmp / "scripts" / subdir
+                    dst.mkdir(parents=True, exist_ok=True)
+                    for f in src.iterdir():
+                        if f.is_file():
+                            shutil.copy2(f, dst / f.name)
+
+            # Run the release script for this single agent + script type
+            env = os.environ.copy()
+            # Pin GENRELEASES_DIR inside the temp dir so a user-exported
+            # value cannot redirect output or cause rm -rf outside the sandbox.
+            env["GENRELEASES_DIR"] = str(tmp / ".genreleases")
+            if os.name == "nt":
+                cmd = [
+                    shell_cmd, "-File", str(release_script),
+                    "-Version", "v0.0.0",
+                    "-Agents", ai_assistant,
+                    "-Scripts", script_type,
+                ]
+            else:
+                cmd = [shell_cmd, str(release_script), "v0.0.0"]
+                env["AGENTS"] = ai_assistant
+                env["SCRIPTS"] = script_type
+
+            try:
+                result = subprocess.run(
+                    cmd, cwd=str(tmp), env=env,
+                    capture_output=True, text=True,
+                    timeout=120,
+                )
+            except subprocess.TimeoutExpired:
+                msg = "release script timed out after 120 seconds"
+                if tracker:
+                    tracker.error("scaffold", msg)
+                else:
+                    console.print(f"[red]Error:[/red] {msg}")
+                return False
+
+            if result.returncode != 0:
+                msg = result.stderr.strip() or result.stdout.strip() or "unknown error"
+                if tracker:
+                    tracker.error("scaffold", f"release script failed: {msg}")
+                else:
+                    console.print(f"[red]Release script failed:[/red] {msg}")
+                return False
+
+            # Copy the generated files to the project directory
+            build_dir = tmp / ".genreleases" / f"sdd-{ai_assistant}-package-{script_type}"
+            if not build_dir.is_dir():
+                if tracker:
+                    tracker.error("scaffold", "release script produced no output")
+                return False
+
+            for item in build_dir.rglob("*"):
+                if item.is_file():
+                    rel = item.relative_to(build_dir)
+                    dest = project_path / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    # When scaffolding into an existing directory (--here),
+                    # use the same merge semantics as the GitHub-download path.
+                    if is_current_dir and dest.name == "settings.json" and dest.parent.name == ".vscode":
+                        handle_vscode_settings(item, dest, rel, verbose=False, tracker=tracker)
+                    else:
+                        shutil.copy2(item, dest)
+
+        if tracker:
+            tracker.complete("scaffold", "bundled assets applied")
+        return True
+
+    except Exception as e:
+        if tracker:
+            tracker.error("scaffold", str(e))
+        else:
+            console.print(f"[red]Error scaffolding from bundled assets:[/red] {e}")
+        return False
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
@@ -1114,6 +1499,18 @@ AGENT_SKILLS_DIR_OVERRIDES = {
 # Default skills directory for agents not in AGENT_CONFIG
 DEFAULT_SKILLS_DIR = ".agents/skills"
 
+# Agents whose downloaded template already contains skills in the final layout.
+#
+# Technical debt note:
+# - Spec-kit currently has multiple SKILL.md generators:
+#   1) release packaging scripts that build the template zip (native skills),
+#   2) `install_ai_skills()` which converts extracted command templates to skills,
+#   3) extension/preset overrides via `agents.CommandRegistrar.render_skill_command()`.
+# - Keep the skills frontmatter schema aligned across all generators
+#   (at minimum: name/description/compatibility/metadata.{author,source}).
+# - When adding fields here, update the release scripts and override writers too.
+NATIVE_SKILLS_AGENTS = {"codex", "kimi"}
+
 # Enhanced descriptions for each spec-kit command skill
 SKILL_DESCRIPTIONS = {
     "specify": "Create or update feature specifications from natural language descriptions. Use when starting new features or refining requirements. Generates spec.md with user stories, functional requirements, and acceptance criteria following spec-driven development methodology.",
@@ -1146,18 +1543,27 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     return project_path / DEFAULT_SKILLS_DIR
 
 
-def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker | None = None) -> bool:
+def install_ai_skills(
+    project_path: Path,
+    selected_ai: str,
+    tracker: StepTracker | None = None,
+    *,
+    overwrite_existing: bool = False,
+) -> bool:
     """Install Prompt.MD files from templates/commands/ as agent skills.
 
     Skills are written to the agent-specific skills directory following the
     `agentskills.io <https://agentskills.io/specification>`_ specification.
-    Installation is additive — existing files are never removed and prompt
-    command files in the agent's commands directory are left untouched.
+    Installation is additive by default — existing files are never removed and
+    prompt command files in the agent's commands directory are left untouched.
 
     Args:
         project_path: Target project directory.
         selected_ai: AI assistant key from ``AGENT_CONFIG``.
         tracker: Optional progress tracker.
+        overwrite_existing: When True, overwrite any existing ``SKILL.md`` file
+            in the target skills directory (including user-authored content).
+            Defaults to False.
 
     Returns:
         ``True`` if at least one skill was installed or all skills were
@@ -1173,7 +1579,12 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     else:
         templates_dir = project_path / commands_subdir
 
-    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
+    # Only consider speckit.*.md templates so that user-authored command
+    # files (e.g. custom slash commands, agent files) coexisting in the
+    # same commands directory are not incorrectly converted into skills.
+    template_glob = "speckit.*.md"
+
+    if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         # Fallback: try the repo-relative path (for running from source checkout)
         # This also covers agents whose extracted commands are in a different
         # format (e.g. gemini/tabnine use .toml, not .md).
@@ -1181,15 +1592,16 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
         fallback_dir = script_dir / "templates" / "commands"
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
             templates_dir = fallback_dir
+            template_glob = "*.md"
 
-    if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
+    if not templates_dir.exists() or not any(templates_dir.glob(template_glob)):
         if tracker:
             tracker.error("ai-skills", "command templates not found")
         else:
             console.print("[yellow]Warning: command templates not found, skipping skills installation[/yellow]")
         return False
 
-    command_files = sorted(templates_dir.glob("*.md"))
+    command_files = sorted(templates_dir.glob(template_glob))
     if not command_files:
         if tracker:
             tracker.skip("ai-skills", "no command templates found")
@@ -1228,13 +1640,14 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                 body = content
 
             command_name = command_file.stem
-            # Normalize: extracted commands may be named "speckit.<cmd>.md";
-            # strip the "speckit." prefix so skill names stay clean and
+            # Normalize: extracted commands may be named "speckit.<cmd>.md"
+            # or "speckit.<cmd>.agent.md"; strip the "speckit." prefix and
+            # any trailing ".agent" suffix so skill names stay clean and
             # SKILL_DESCRIPTIONS lookups work.
             if command_name.startswith("speckit."):
                 command_name = command_name[len("speckit."):]
-            # Kimi CLI discovers skills by directory name and invokes them as
-            # /skill:<name> — use dot separator to match packaging convention.
+            if command_name.endswith(".agent"):
+                command_name = command_name[:-len(".agent")]
             if selected_ai == "kimi":
                 skill_name = f"speckit.{command_name}"
             else:
@@ -1257,6 +1670,8 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
             source_name = command_file.name
             if source_name.startswith("speckit."):
                 source_name = source_name[len("speckit."):]
+            if source_name.endswith(".agent.md"):
+                source_name = source_name[:-len(".agent.md")] + ".md"
 
             frontmatter_data = {
                 "name": skill_name,
@@ -1278,9 +1693,10 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 
             skill_file = skill_dir / "SKILL.md"
             if skill_file.exists():
-                # Do not overwrite user-customized skills on re-runs
-                skipped_count += 1
-                continue
+                if not overwrite_existing:
+                    # Default behavior: do not overwrite user-customized skills on re-runs
+                    skipped_count += 1
+                    continue
             skill_file.write_text(skill_content, encoding="utf-8")
             installed_count += 1
 
@@ -1308,20 +1724,45 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
     return installed_count > 0 or skipped_count > 0
 
 
-def _handle_agy_deprecation(console: Console) -> None:
-    """
-    Print the deprecation error for the Antigravity (agy) agent and exit.
+def _has_bundled_skills(project_path: Path, selected_ai: str) -> bool:
+    """Return True when a native-skills agent has spec-kit bundled skills."""
+    skills_dir = _get_skills_dir(project_path, selected_ai)
+    if not skills_dir.is_dir():
+        return False
 
-    Context for future AI reviewers (e.g., GitHub Copilot):
-    - Prior to Antigravity v1.20.5, users could rely on explicit agent command definitions generated by this tool.
-    - v1.20.5 removed this "command support" in favor of "Agent Skills".
-    - `specify_cli` handles this by throwing a fail-fast deprecation error if `--ai agy` is 
-      invoked without the accompanying `--ai-skills` flag. Users are instructed to add 
-      the skills flag to generate agent skills templates instead.
-    """
-    console.print("\n[red]Error:[/red] Explicit command support was deprecated in Antigravity version 1.20.5.")
+    pattern = "speckit.*/SKILL.md" if selected_ai == "kimi" else "speckit-*/SKILL.md"
+    return any(skills_dir.glob(pattern))
+
+
+AGENT_SKILLS_MIGRATIONS = {
+    "agy": {
+        "error": "Explicit command support was deprecated in Antigravity version 1.20.5.",
+        "usage": "specify init <project> --ai agy --ai-skills",
+        "interactive_note": (
+            "'agy' was selected interactively; enabling [cyan]--ai-skills[/cyan] "
+            "automatically for compatibility (explicit .agent/commands usage is deprecated)."
+        ),
+    },
+    "codex": {
+        "error": (
+            "Custom prompt-based spec-kit initialization is deprecated for Codex CLI; "
+            "use agent skills instead."
+        ),
+        "usage": "specify init <project> --ai codex --ai-skills",
+        "interactive_note": (
+            "'codex' was selected interactively; enabling [cyan]--ai-skills[/cyan] "
+            "automatically for compatibility (.agents/skills is the recommended Codex layout)."
+        ),
+    },
+}
+
+
+def _handle_agent_skills_migration(console: Console, agent_key: str) -> None:
+    """Print a fail-fast migration error for agents that now require skills."""
+    migration = AGENT_SKILLS_MIGRATIONS[agent_key]
+    console.print(f"\n[red]Error:[/red] {migration['error']}")
     console.print("Please use [cyan]--ai-skills[/cyan] when initializing to install templates as agent skills instead.")
-    console.print("[yellow]Usage:[/yellow] specify init <project> --ai agy --ai-skills")
+    console.print(f"[yellow]Usage:[/yellow] {migration['usage']}")
     raise typer.Exit(1)
 
 @app.command()
@@ -1338,19 +1779,31 @@ def init(
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
     ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
+    offline: bool = typer.Option(False, "--offline", help="Use assets bundled in the specify-cli package instead of downloading from GitHub (no network access required). Bundled assets will become the default in v0.6.0 and this flag will be removed."),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
+    branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
 ):
     """
-    Initialize a new Specify project from the latest template.
-    
+    Initialize a new Specify project.
+
+    By default, project files are downloaded from the latest GitHub release.
+    Use --offline to scaffold from assets bundled inside the specify-cli
+    package instead (no internet access required, ideal for air-gapped or
+    enterprise environments).
+
+    NOTE: Starting with v0.6.0, bundled assets will be used by default and
+    the --offline flag will be removed. The GitHub download path will be
+    retired because bundled assets eliminate the need for network access,
+    avoid proxy/firewall issues, and guarantee that templates always match
+    the installed CLI version.
+
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant
-    3. Download the appropriate template from GitHub
-    4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
-    6. Optionally set up AI assistant commands
-    
+    3. Download template from GitHub (or use bundled assets with --offline)
+    4. Initialize a fresh git repository (if not --no-git and no existing repo)
+    5. Optionally set up AI assistant commands
+
     Examples:
         specify init my-project
         specify init my-project --ai claude
@@ -1359,7 +1812,7 @@ def init(
         specify init . --ai claude         # Initialize in current directory
         specify init .                     # Initialize in current directory (interactive AI selection)
         specify init --here --ai claude    # Alternative syntax for current directory
-        specify init --here --ai codex
+        specify init --here --ai codex --ai-skills
         specify init --here --ai codebuddy
         specify init --here --ai vibe      # Initialize with Mistral Vibe support
         specify init --here
@@ -1367,6 +1820,7 @@ def init(
         specify init my-project --ai claude --ai-skills   # Install agent skills
         specify init --here --ai gemini --ai-skills
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
+        specify init my-project --offline  # Use bundled assets (no network access)
         specify init my-project --ai claude --preset healthcare-compliance  # With preset
     """
 
@@ -1404,6 +1858,11 @@ def init(
     if ai_skills and not ai_assistant:
         console.print("[red]Error:[/red] --ai-skills requires --ai to be specified")
         console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
+        raise typer.Exit(1)
+
+    BRANCH_NUMBERING_CHOICES = {"sequential", "timestamp"}
+    if branch_numbering and branch_numbering not in BRANCH_NUMBERING_CHOICES:
+        console.print(f"[red]Error:[/red] Invalid --branch-numbering value '{branch_numbering}'. Choose from: {', '.join(sorted(BRANCH_NUMBERING_CHOICES))}")
         raise typer.Exit(1)
 
     if here:
@@ -1449,24 +1908,16 @@ def init(
             "copilot"
         )
 
-    # [DEPRECATION NOTICE: Antigravity (agy)]
-    # As of Antigravity v1.20.5, traditional CLI "command" support was fully removed
-    # in favor of "Agent Skills" (SKILL.md files under <agent_folder>/skills/<skill_name>/).
-    # Because 'specify_cli' historically populated .agent/commands/, we now must explicitly
-    # enforce the `--ai-skills` flag for `agy` to ensure valid template generation.
-    if selected_ai == "agy" and not ai_skills:
-        # If agy was selected interactively (no --ai provided), automatically enable
+    # Agents that have moved from explicit commands/prompts to agent skills.
+    if selected_ai in AGENT_SKILLS_MIGRATIONS and not ai_skills:
+        # If selected interactively (no --ai provided), automatically enable
         # ai_skills so the agent remains usable without requiring an extra flag.
-        # Preserve deprecation behavior only for explicit '--ai agy' without skills.
+        # Preserve fail-fast behavior only for explicit '--ai <agent>' without skills.
         if ai_assistant:
-            _handle_agy_deprecation(console)
+            _handle_agent_skills_migration(console, selected_ai)
         else:
             ai_skills = True
-            console.print(
-                "\n[yellow]Note:[/yellow] 'agy' was selected interactively; "
-                "enabling [cyan]--ai-skills[/cyan] automatically for compatibility "
-                "(explicit .agent/commands usage is deprecated)."
-            )
+            console.print(f"\n[yellow]Note:[/yellow] {AGENT_SKILLS_MIGRATIONS[selected_ai]['interactive_note']}")
 
     # Validate --ai-commands-dir usage
     if selected_ai == "generic":
@@ -1542,12 +1993,37 @@ def init(
     tracker.complete("ai-select", f"{selected_ai}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
+
+    # Determine whether to use bundled assets or download from GitHub (default).
+    # --offline opts in to bundled assets; without it, always use GitHub.
+    # When --offline is set, scaffold_from_core_pack() will try the wheel's
+    # core_pack/ first, then fall back to source-checkout paths. If neither
+    # location has the required assets it returns False and we error out.
+    _core = _locate_core_pack()
+
+    use_github = not offline
+
+    if use_github and _core is not None:
+        console.print(
+            "[yellow]Note:[/yellow] Bundled assets are available in this install. "
+            "Use [bold]--offline[/bold] to skip the GitHub download — faster, "
+            "no network required, and guaranteed version match.\n"
+            "This will become the default in v0.6.0."
+        )
+
+    if use_github:
+        for key, label in [
+            ("fetch", "Fetch latest release"),
+            ("download", "Download template"),
+            ("extract", "Extract template"),
+            ("zip-list", "Archive contents"),
+            ("extracted-summary", "Extraction summary"),
+        ]:
+            tracker.add(key, label)
+    else:
+        tracker.add("scaffold", "Apply bundled assets")
+
     for key, label in [
-        ("fetch", "Fetch latest release"),
-        ("download", "Download template"),
-        ("extract", "Extract template"),
-        ("zip-list", "Archive contents"),
-        ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
     ]:
@@ -1569,10 +2045,39 @@ def init(
         try:
             verify = not skip_tls
             local_ssl_context = ssl_context if verify else False
-            local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
-
+            if use_github:
+                with httpx.Client(verify=local_ssl_context) as local_client:
+                    download_and_extract_template(
+                        project_path,
+                        selected_ai,
+                        selected_script,
+                        here,
+                        skip_legacy_codex_prompts=(selected_ai == "codex" and ai_skills),
+                        verbose=False,
+                        tracker=tracker,
+                        client=local_client,
+                        debug=debug,
+                        github_token=github_token,
+                    )
+            else:
+                scaffold_ok = scaffold_from_core_pack(project_path, selected_ai, selected_script, here, tracker=tracker)
+                if not scaffold_ok:
+                    # --offline explicitly requested: never attempt a network download
+                    console.print(
+                        "\n[red]Error:[/red] --offline was specified but scaffolding from bundled assets failed.\n"
+                        "Common causes: missing bash/pwsh, script permission errors, or incomplete wheel.\n"
+                        "Remove --offline to attempt a GitHub download instead."
+                    )
+                    # Surface the specific failure reason from the tracker
+                    for step in tracker.steps:
+                        if step["key"] == "scaffold" and step["detail"]:
+                            console.print(f"[red]Detail:[/red] {step['detail']}")
+                            break
+                    # Clean up partial project directory (same as the GitHub-download failure path)
+                    if not here and project_path.exists():
+                        shutil.rmtree(project_path)
+                    raise typer.Exit(1)
             # For generic agent, rename placeholder directory to user-specified path
             if selected_ai == "generic" and ai_commands_dir:
                 placeholder_dir = project_path / ".speckit" / "commands"
@@ -1590,28 +2095,55 @@ def init(
             ensure_constitution_from_template(project_path, tracker=tracker)
 
             if ai_skills:
-                skills_ok = install_ai_skills(project_path, selected_ai, tracker=tracker)
+                if selected_ai in NATIVE_SKILLS_AGENTS:
+                    skills_dir = _get_skills_dir(project_path, selected_ai)
+                    bundled_found = _has_bundled_skills(project_path, selected_ai)
+                    if bundled_found:
+                        if tracker:
+                            tracker.start("ai-skills")
+                            tracker.complete("ai-skills", f"bundled skills → {skills_dir.relative_to(project_path)}")
+                        else:
+                            console.print(f"[green]✓[/green] Using bundled agent skills in {skills_dir.relative_to(project_path)}/")
+                    else:
+                        # Compatibility fallback: convert command templates to skills
+                        # when an older template archive does not include native skills.
+                        # This keeps `specify init --here --ai codex --ai-skills` usable
+                        # in repos that already contain unrelated skills under .agents/skills.
+                        fallback_ok = install_ai_skills(
+                            project_path,
+                            selected_ai,
+                            tracker=tracker,
+                            overwrite_existing=True,
+                        )
+                        if not fallback_ok:
+                            raise RuntimeError(
+                                f"Expected bundled agent skills in {skills_dir.relative_to(project_path)}, "
+                                "but none were found and fallback conversion failed. "
+                                "Re-run with an up-to-date template."
+                            )
+                else:
+                    skills_ok = install_ai_skills(project_path, selected_ai, tracker=tracker)
 
-                # When --ai-skills is used on a NEW project and skills were
-                # successfully installed, remove the command files that the
-                # template archive just created.  Skills replace commands, so
-                # keeping both would be confusing.  For --here on an existing
-                # repo we leave pre-existing commands untouched to avoid a
-                # breaking change.  We only delete AFTER skills succeed so the
-                # project always has at least one of {commands, skills}.
-                if skills_ok and not here:
-                    agent_cfg = AGENT_CONFIG.get(selected_ai, {})
-                    agent_folder = agent_cfg.get("folder", "")
-                    commands_subdir = agent_cfg.get("commands_subdir", "commands")
-                    if agent_folder:
-                        cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
-                        if cmds_dir.exists():
-                            try:
-                                shutil.rmtree(cmds_dir)
-                            except OSError:
-                                # Best-effort cleanup: skills are already installed,
-                                # so leaving stale commands is non-fatal.
-                                console.print("[yellow]Warning: could not remove extracted commands directory[/yellow]")
+                    # When --ai-skills is used on a NEW project and skills were
+                    # successfully installed, remove the command files that the
+                    # template archive just created.  Skills replace commands, so
+                    # keeping both would be confusing.  For --here on an existing
+                    # repo we leave pre-existing commands untouched to avoid a
+                    # breaking change.  We only delete AFTER skills succeed so the
+                    # project always has at least one of {commands, skills}.
+                    if skills_ok and not here:
+                        agent_cfg = AGENT_CONFIG.get(selected_ai, {})
+                        agent_folder = agent_cfg.get("folder", "")
+                        commands_subdir = agent_cfg.get("commands_subdir", "commands")
+                        if agent_folder:
+                            cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
+                            if cmds_dir.exists():
+                                try:
+                                    shutil.rmtree(cmds_dir)
+                                except OSError:
+                                    # Best-effort cleanup: skills are already installed,
+                                    # so leaving stale commands is non-fatal.
+                                    console.print("[yellow]Warning: could not remove extracted commands directory[/yellow]")
 
             if not no_git:
                 tracker.start("git")
@@ -1636,8 +2168,10 @@ def init(
                 "ai": selected_ai,
                 "ai_skills": ai_skills,
                 "ai_commands_dir": ai_commands_dir,
+                "branch_numbering": branch_numbering or "sequential",
                 "here": here,
                 "preset": preset,
+                "offline": offline,
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
             })
@@ -1673,7 +2207,13 @@ def init(
                 except Exception as preset_err:
                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
 
+            # Scaffold path has no zip archive to clean up
+            if not use_github:
+                tracker.skip("cleanup", "not needed (no download)")
+
             tracker.complete("final", "project ready")
+        except (typer.Exit, SystemExit):
+            raise
         except Exception as e:
             tracker.error("final", str(e))
             console.print(Panel(f"Initialization failed: {e}", title="Failure", border_style="red"))
@@ -1735,38 +2275,48 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    # Add Codex-specific setup step if needed
-    if selected_ai == "codex":
-        codex_path = project_path / ".codex"
-        quoted_path = shlex.quote(str(codex_path))
-        if os.name == "nt":  # Windows
-            cmd = f"setx CODEX_HOME {quoted_path}"
-        else:  # Unix-like systems
-            cmd = f"export CODEX_HOME={quoted_path}"
-        
-        steps_lines.append(f"{step_num}. Set [cyan]CODEX_HOME[/cyan] environment variable before running Codex: [cyan]{cmd}[/cyan]")
+    if selected_ai == "codex" and ai_skills:
+        steps_lines.append(f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]")
         step_num += 1
 
-    steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
+    codex_skill_mode = selected_ai == "codex" and ai_skills
+    kimi_skill_mode = selected_ai == "kimi"
+    native_skill_mode = codex_skill_mode or kimi_skill_mode
+    usage_label = "skills" if native_skill_mode else "slash commands"
 
-    steps_lines.append("   2.1 [cyan]/speckit.constitution[/] - Establish project principles")
-    steps_lines.append("   2.2 [cyan]/speckit.specify[/] - Create baseline specification")
-    steps_lines.append("   2.3 [cyan]/speckit.plan[/] - Create implementation plan")
-    steps_lines.append("   2.4 [cyan]/speckit.tasks[/] - Generate actionable tasks")
-    steps_lines.append("   2.5 [cyan]/speckit.implement[/] - Execute implementation")
+    def _display_cmd(name: str) -> str:
+        if codex_skill_mode:
+            return f"$speckit-{name}"
+        if kimi_skill_mode:
+            return f"/skill:speckit.{name}"
+        return f"/speckit.{name}"
+
+    steps_lines.append(f"{step_num}. Start using {usage_label} with your AI agent:")
+
+    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
+    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
+    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
+    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
+    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
     console.print(steps_panel)
 
+    enhancement_intro = (
+        "Optional skills that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]"
+        if native_skill_mode
+        else "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]"
+    )
     enhancement_lines = [
-        "Optional commands that you can use for your specs [bright_black](improve quality & confidence)[/bright_black]",
+        enhancement_intro,
         "",
-        "○ [cyan]/speckit.clarify[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]/speckit.plan[/] if used)",
-        "○ [cyan]/speckit.analyze[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]/speckit.tasks[/], before [cyan]/speckit.implement[/])",
-        "○ [cyan]/speckit.checklist[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]/speckit.plan[/])"
+        f"○ [cyan]{_display_cmd('clarify')}[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{_display_cmd('plan')}[/] if used)",
+        f"○ [cyan]{_display_cmd('analyze')}[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{_display_cmd('tasks')}[/], before [cyan]{_display_cmd('implement')}[/])",
+        f"○ [cyan]{_display_cmd('checklist')}[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{_display_cmd('plan')}[/])"
     ]
-    enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
+    enhancements_title = "Enhancement Skills" if native_skill_mode else "Enhancement Commands"
+    enhancements_panel = Panel("\n".join(enhancement_lines), title=enhancements_title, border_style="cyan", padding=(1,2))
     console.print()
     console.print(enhancements_panel)
 
@@ -2008,6 +2558,11 @@ def preset_add(
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+
     manager = PresetManager(project_root)
     speckit_version = get_speckit_version()
 
@@ -2185,6 +2740,7 @@ def preset_info(
     pack_id: str = typer.Argument(..., help="Preset ID to get info about"),
 ):
     """Show detailed information about a preset."""
+    from .extensions import normalize_priority
     from .presets import PresetCatalog, PresetManager, PresetError
 
     project_root = Path.cwd()
@@ -2218,6 +2774,10 @@ def preset_info(
         if license_val:
             console.print(f"  License:     {license_val}")
         console.print("\n  [green]Status: installed[/green]")
+        # Get priority from registry
+        pack_metadata = manager.registry.get(pack_id)
+        priority = normalize_priority(pack_metadata.get("priority") if isinstance(pack_metadata, dict) else None)
+        console.print(f"  [dim]Priority:[/dim] {priority}")
         console.print()
         return
 
@@ -2247,6 +2807,141 @@ def preset_info(
     console.print("\n  [yellow]Status: not installed[/yellow]")
     console.print(f"  Install with: [cyan]specify preset add {pack_id}[/cyan]")
     console.print()
+
+
+@preset_app.command("set-priority")
+def preset_set_priority(
+    pack_id: str = typer.Argument(help="Preset ID"),
+    priority: int = typer.Argument(help="New priority (lower = higher precedence)"),
+):
+    """Set the resolution priority of an installed preset."""
+    from .presets import PresetManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+
+    manager = PresetManager(project_root)
+
+    # Check if preset is installed
+    if not manager.registry.is_installed(pack_id):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Get current metadata
+    metadata = manager.registry.get(pack_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    from .extensions import normalize_priority
+    raw_priority = metadata.get("priority")
+    # Only skip if the stored value is already a valid int equal to requested priority
+    # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
+    if isinstance(raw_priority, int) and raw_priority == priority:
+        console.print(f"[yellow]Preset '{pack_id}' already has priority {priority}[/yellow]")
+        raise typer.Exit(0)
+
+    old_priority = normalize_priority(raw_priority)
+
+    # Update priority
+    manager.registry.update(pack_id, {"priority": priority})
+
+    console.print(f"[green]✓[/green] Preset '{pack_id}' priority changed: {old_priority} → {priority}")
+    console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
+
+
+@preset_app.command("enable")
+def preset_enable(
+    pack_id: str = typer.Argument(help="Preset ID to enable"),
+):
+    """Enable a disabled preset."""
+    from .presets import PresetManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = PresetManager(project_root)
+
+    # Check if preset is installed
+    if not manager.registry.is_installed(pack_id):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Get current metadata
+    metadata = manager.registry.get(pack_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    if metadata.get("enabled", True):
+        console.print(f"[yellow]Preset '{pack_id}' is already enabled[/yellow]")
+        raise typer.Exit(0)
+
+    # Enable the preset
+    manager.registry.update(pack_id, {"enabled": True})
+
+    console.print(f"[green]✓[/green] Preset '{pack_id}' enabled")
+    console.print("\nTemplates from this preset will now be included in resolution.")
+    console.print("[dim]Note: Previously registered commands/skills remain active.[/dim]")
+
+
+@preset_app.command("disable")
+def preset_disable(
+    pack_id: str = typer.Argument(help="Preset ID to disable"),
+):
+    """Disable a preset without removing it."""
+    from .presets import PresetManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    manager = PresetManager(project_root)
+
+    # Check if preset is installed
+    if not manager.registry.is_installed(pack_id):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Get current metadata
+    metadata = manager.registry.get(pack_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    if not metadata.get("enabled", True):
+        console.print(f"[yellow]Preset '{pack_id}' is already disabled[/yellow]")
+        raise typer.Exit(0)
+
+    # Disable the preset
+    manager.registry.update(pack_id, {"enabled": False})
+
+    console.print(f"[green]✓[/green] Preset '{pack_id}' disabled")
+    console.print("\nTemplates from this preset will be skipped during resolution.")
+    console.print("[dim]Note: Previously registered commands/skills remain active until preset removal.[/dim]")
+    console.print(f"To re-enable: specify preset enable {pack_id}")
 
 
 # ===== Preset Catalog Commands =====
@@ -2347,7 +3042,7 @@ def preset_catalog_add(
     # Load existing config
     if config_path.exists():
         try:
-            config = yaml.safe_load(config_path.read_text()) or {}
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         except Exception as e:
             console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
             raise typer.Exit(1)
@@ -2375,7 +3070,7 @@ def preset_catalog_add(
     })
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
@@ -2403,7 +3098,7 @@ def preset_catalog_remove(
         raise typer.Exit(1)
 
     try:
-        config = yaml.safe_load(config_path.read_text()) or {}
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     except Exception:
         console.print("[red]Error:[/red] Failed to read preset catalog config.")
         raise typer.Exit(1)
@@ -2420,7 +3115,7 @@ def preset_catalog_remove(
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     console.print(f"[green]✓[/green] Removed catalog '{name}'")
     if not catalogs:
@@ -2584,8 +3279,9 @@ def extension_list(
             status_color = "green" if ext["enabled"] else "red"
 
             console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']})")
+            console.print(f"     [dim]{ext['id']}[/dim]")
             console.print(f"     {ext['description']}")
-            console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
+            console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
 
     if available or all_extensions:
@@ -2688,7 +3384,7 @@ def catalog_add(
     # Load existing config
     if config_path.exists():
         try:
-            config = yaml.safe_load(config_path.read_text()) or {}
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         except Exception as e:
             console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
             raise typer.Exit(1)
@@ -2716,7 +3412,7 @@ def catalog_add(
     })
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
@@ -2744,7 +3440,7 @@ def catalog_remove(
         raise typer.Exit(1)
 
     try:
-        config = yaml.safe_load(config_path.read_text()) or {}
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     except Exception:
         console.print("[red]Error:[/red] Failed to read catalog config.")
         raise typer.Exit(1)
@@ -2761,7 +3457,7 @@ def catalog_remove(
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     console.print(f"[green]✓[/green] Removed catalog '{name}'")
     if not catalogs:
@@ -2773,6 +3469,7 @@ def extension_add(
     extension: str = typer.Argument(help="Extension name or path"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
+    priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
 ):
     """Install an extension."""
     from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError
@@ -2784,6 +3481,11 @@ def extension_add(
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
@@ -2802,7 +3504,7 @@ def extension_add(
                     console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
                     raise typer.Exit(1)
 
-                manifest = manager.install_from_directory(source_path, speckit_version)
+                manifest = manager.install_from_directory(source_path, speckit_version, priority=priority)
 
             elif from_url:
                 # Install from URL (ZIP file)
@@ -2835,7 +3537,7 @@ def extension_add(
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version)
+                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
@@ -2879,7 +3581,7 @@ def extension_add(
 
                 try:
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version)
+                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
                 finally:
                     # Clean up downloaded ZIP
                     if zip_path.exists():
@@ -2891,6 +3593,15 @@ def extension_add(
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
             console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
+
+        # Report agent skills registration
+        reg_meta = manager.registry.get(manifest.id)
+        reg_skills = reg_meta.get("registered_skills", []) if reg_meta else []
+        # Normalize to guard against corrupted registry entries
+        if not isinstance(reg_skills, list):
+            reg_skills = []
+        if reg_skills:
+            console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
 
         console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
         console.print(f"   Check: .specify/extensions/{manifest.id}/")
@@ -2930,14 +3641,19 @@ def extension_remove(
     installed = manager.list_installed()
     extension_id, display_name = _resolve_installed_extension(extension, installed, "remove")
 
-    # Get extension info for command count
+    # Get extension info for command and skill counts
     ext_manifest = manager.get_extension(extension_id)
     cmd_count = len(ext_manifest.commands) if ext_manifest else 0
+    reg_meta = manager.registry.get(extension_id)
+    raw_skills = reg_meta.get("registered_skills") if reg_meta else None
+    skill_count = len(raw_skills) if isinstance(raw_skills, list) else 0
 
     # Confirm removal
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
         console.print(f"   • {cmd_count} commands from AI agent")
+        if skill_count:
+            console.print(f"   • {skill_count} agent skill(s)")
         console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")
         if not keep_config:
             console.print("   • Config files (will be backed up)")
@@ -3055,7 +3771,7 @@ def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
 ):
     """Show detailed information about an extension."""
-    from .extensions import ExtensionCatalog, ExtensionManager
+    from .extensions import ExtensionCatalog, ExtensionManager, normalize_priority
 
     project_root = Path.cwd()
 
@@ -3092,8 +3808,15 @@ def extension_info(
         # Get local manifest info
         ext_manifest = manager.get_extension(resolved_installed_id)
         metadata = manager.registry.get(resolved_installed_id)
+        metadata_is_dict = isinstance(metadata, dict)
+        if not metadata_is_dict:
+            console.print(
+                "[yellow]Warning:[/yellow] Extension metadata appears to be corrupted; "
+                "some information may be unavailable."
+            )
+        version = metadata.get("version", "unknown") if metadata_is_dict else "unknown"
 
-        console.print(f"\n[bold]{resolved_installed_name}[/bold] (v{metadata.get('version', 'unknown')})")
+        console.print(f"\n[bold]{resolved_installed_name}[/bold] (v{version})")
         console.print(f"ID: {resolved_installed_id}")
         console.print()
 
@@ -3121,6 +3844,8 @@ def extension_info(
 
         console.print()
         console.print("[green]✓ Installed[/green]")
+        priority = normalize_priority(metadata.get("priority") if metadata_is_dict else None)
+        console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {resolved_installed_id}")
         return
 
@@ -3136,6 +3861,8 @@ def extension_info(
 
 def _print_extension_info(ext_info: dict, manager):
     """Print formatted extension info from catalog data."""
+    from .extensions import normalize_priority
+
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
     console.print(f"\n[bold]{ext_info['name']}[/bold] (v{ext_info['version']}){verified_badge}")
@@ -3214,6 +3941,9 @@ def _print_extension_info(ext_info: dict, manager):
     install_allowed = ext_info.get("_install_allowed", True)
     if is_installed:
         console.print("[green]✓ Installed[/green]")
+        metadata = manager.registry.get(ext_info['id'])
+        priority = normalize_priority(metadata.get("priority") if isinstance(metadata, dict) else None)
+        console.print(f"[dim]Priority:[/dim] {priority}")
         console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
     elif install_allowed:
         console.print("[yellow]Not installed[/yellow]")
@@ -3240,6 +3970,7 @@ def extension_update(
         ValidationError,
         CommandRegistrar,
         HookExecutor,
+        normalize_priority,
     )
     from packaging import version as pkg_version
     import shutil
@@ -3279,7 +4010,7 @@ def extension_update(
         for ext_id in extensions_to_update:
             # Get installed version
             metadata = manager.registry.get(ext_id)
-            if metadata is None or "version" not in metadata:
+            if metadata is None or not isinstance(metadata, dict) or "version" not in metadata:
                 console.print(f"⚠  {ext_id}: Registry entry corrupted or missing (skipping)")
                 continue
             try:
@@ -3464,19 +4195,23 @@ def extension_update(
                                 shutil.copy2(cfg_file, new_extension_dir / cfg_file.name)
 
                     # 9. Restore metadata from backup (installed_at, enabled state)
-                    if backup_registry_entry:
+                    if backup_registry_entry and isinstance(backup_registry_entry, dict):
                         # Copy current registry entry to avoid mutating internal
                         # registry state before explicit restore().
                         current_metadata = manager.registry.get(extension_id)
-                        if current_metadata is None:
+                        if current_metadata is None or not isinstance(current_metadata, dict):
                             raise RuntimeError(
-                                f"Registry entry for '{extension_id}' missing after install — update incomplete"
+                                f"Registry entry for '{extension_id}' missing or corrupted after install — update incomplete"
                             )
                         new_metadata = dict(current_metadata)
 
                         # Preserve the original installation timestamp
                         if "installed_at" in backup_registry_entry:
                             new_metadata["installed_at"] = backup_registry_entry["installed_at"]
+
+                        # Preserve the original priority (normalized to handle corruption)
+                        if "priority" in backup_registry_entry:
+                            new_metadata["priority"] = normalize_priority(backup_registry_entry["priority"])
 
                         # If extension was disabled before update, disable it again
                         if not backup_registry_entry.get("enabled", True):
@@ -3531,7 +4266,7 @@ def extension_update(
                     # (files that weren't in the original backup)
                     try:
                         new_registry_entry = manager.registry.get(extension_id)
-                        if new_registry_entry is None:
+                        if new_registry_entry is None or not isinstance(new_registry_entry, dict):
                             new_registered_commands = {}
                         else:
                             new_registered_commands = new_registry_entry.get("registered_commands", {})
@@ -3651,16 +4386,15 @@ def extension_enable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
-    
+
     if metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
-    metadata["enabled"] = True
-    manager.registry.update(extension_id, metadata)
+    manager.registry.update(extension_id, {"enabled": True})
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
@@ -3699,16 +4433,15 @@ def extension_disable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None:
+    if metadata is None or not isinstance(metadata, dict):
         console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
-    
+
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Extension '{display_name}' is already disabled[/yellow]")
         raise typer.Exit(0)
 
-    metadata["enabled"] = False
-    manager.registry.update(extension_id, metadata)
+    manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()
@@ -3722,6 +4455,57 @@ def extension_disable(
     console.print(f"[green]✓[/green] Extension '{display_name}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")
     console.print(f"To re-enable: specify extension enable {extension_id}")
+
+
+@extension_app.command("set-priority")
+def extension_set_priority(
+    extension: str = typer.Argument(help="Extension ID or name"),
+    priority: int = typer.Argument(help="New priority (lower = higher precedence)"),
+):
+    """Set the resolution priority of an installed extension."""
+    from .extensions import ExtensionManager
+
+    project_root = Path.cwd()
+
+    # Check if we're in a spec-kit project
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    # Validate priority
+    if priority < 1:
+        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+
+    manager = ExtensionManager(project_root)
+
+    # Resolve extension ID from argument (handles ambiguous names)
+    installed = manager.list_installed()
+    extension_id, display_name = _resolve_installed_extension(extension, installed, "set-priority")
+
+    # Get current metadata
+    metadata = manager.registry.get(extension_id)
+    if metadata is None or not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
+        raise typer.Exit(1)
+
+    from .extensions import normalize_priority
+    raw_priority = metadata.get("priority")
+    # Only skip if the stored value is already a valid int equal to requested priority
+    # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
+    if isinstance(raw_priority, int) and raw_priority == priority:
+        console.print(f"[yellow]Extension '{display_name}' already has priority {priority}[/yellow]")
+        raise typer.Exit(0)
+
+    old_priority = normalize_priority(raw_priority)
+
+    # Update priority
+    manager.registry.update(extension_id, {"priority": priority})
+
+    console.print(f"[green]✓[/green] Extension '{display_name}' priority changed: {old_priority} → {priority}")
+    console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
 def main():

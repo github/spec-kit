@@ -29,11 +29,17 @@ class TestAgentConfigConsistency:
         assert "q" not in cfg
 
     def test_extension_registrar_includes_codex(self):
-        """Extension command registrar should include codex targeting .codex/prompts."""
+        """Extension command registrar should include codex targeting .agents/skills."""
         cfg = CommandRegistrar.AGENT_CONFIGS
 
         assert "codex" in cfg
-        assert cfg["codex"]["dir"] == ".codex/prompts"
+        assert cfg["codex"]["dir"] == ".agents/skills"
+        assert cfg["codex"]["extension"] == "/SKILL.md"
+
+    def test_runtime_codex_uses_native_skills(self):
+        """Codex runtime config should point at .agents/skills."""
+        assert AGENT_CONFIG["codex"]["folder"] == ".agents/"
+        assert AGENT_CONFIG["codex"]["commands_subdir"] == "skills"
 
     def test_release_agent_lists_include_kiro_cli_and_exclude_q(self):
         """Bash and PowerShell release scripts should agree on agent key set for Kiro."""
@@ -70,6 +76,16 @@ class TestAgentConfigConsistency:
 
         assert re.search(r"shai\)\s*\n.*?\.shai/commands", sh_text, re.S) is not None
         assert re.search(r"agy\)\s*\n.*?\.agent/commands", sh_text, re.S) is not None
+
+    def test_release_scripts_generate_codex_skills(self):
+        """Release scripts should generate Codex skills in .agents/skills."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert ".agents/skills" in sh_text
+        assert ".agents/skills" in ps_text
+        assert re.search(r"codex\)\s*\n.*?create_skills.*?\.agents/skills.*?\"-\"", sh_text, re.S) is not None
+        assert re.search(r"'codex'\s*\{.*?\.agents/skills.*?New-Skills.*?-Separator '-'", ps_text, re.S) is not None
 
     def test_init_ai_help_includes_roo_and_kiro_alias(self):
         """CLI help text for --ai should stay in sync with agent config and alias guidance."""
@@ -233,3 +249,221 @@ class TestAgentConfigConsistency:
     def test_ai_help_includes_kimi(self):
         """CLI help text for --ai should include kimi."""
         assert "kimi" in AI_ASSISTANT_HELP
+
+    # --- Trae IDE consistency checks ---
+
+    def test_trae_in_agent_config(self):
+        """AGENT_CONFIG should include trae with correct folder and commands_subdir."""
+        assert "trae" in AGENT_CONFIG
+        assert AGENT_CONFIG["trae"]["folder"] == ".trae/"
+        assert AGENT_CONFIG["trae"]["commands_subdir"] == "rules"
+        assert AGENT_CONFIG["trae"]["requires_cli"] is False
+        assert AGENT_CONFIG["trae"]["install_url"] is None
+
+    def test_trae_in_extension_registrar(self):
+        """Extension command registrar should include trae using .trae/rules and markdown, if present."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "trae" in cfg
+        trae_cfg = cfg["trae"]
+        assert trae_cfg["format"] == "markdown"
+        assert trae_cfg["args"] == "$ARGUMENTS"
+        assert trae_cfg["extension"] == ".md"
+
+    def test_trae_in_release_agent_lists(self):
+        """Bash and PowerShell release scripts should include trae in agent lists."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        sh_match = re.search(r"ALL_AGENTS=\(([^)]*)\)", sh_text)
+        assert sh_match is not None
+        sh_agents = sh_match.group(1).split()
+
+        ps_match = re.search(r"\$AllAgents = @\(([^)]*)\)", ps_text)
+        assert ps_match is not None
+        ps_agents = re.findall(r"'([^']+)'", ps_match.group(1))
+
+        assert "trae" in sh_agents
+        assert "trae" in ps_agents
+
+    def test_trae_in_release_scripts_generate_commands(self):
+        """Release scripts should generate markdown commands for trae in .trae/rules."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert ".trae/rules" in sh_text
+        assert ".trae/rules" in ps_text
+        assert re.search(r"'trae'\s*\{.*?\.trae/rules", ps_text, re.S) is not None
+
+    def test_trae_in_github_release_output(self):
+        """GitHub release script should include trae template packages."""
+        gh_release_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-github-release.sh").read_text(encoding="utf-8")
+
+        assert "spec-kit-template-trae-sh-" in gh_release_text
+        assert "spec-kit-template-trae-ps-" in gh_release_text
+
+    def test_trae_in_agent_context_scripts(self):
+        """Agent context scripts should support trae agent type."""
+        bash_text = (REPO_ROOT / "scripts" / "bash" / "update-agent-context.sh").read_text(encoding="utf-8")
+        pwsh_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        assert "trae" in bash_text
+        assert "TRAE_FILE" in bash_text
+        assert "trae" in pwsh_text
+        assert "TRAE_FILE" in pwsh_text
+
+    def test_trae_in_powershell_validate_set(self):
+        """PowerShell update-agent-context script should include 'trae' in ValidateSet."""
+        ps_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        validate_set_match = re.search(r"\[ValidateSet\(([^)]*)\)\]", ps_text)
+        assert validate_set_match is not None
+        validate_set_values = re.findall(r"'([^']+)'", validate_set_match.group(1))
+
+        assert "trae" in validate_set_values
+
+    def test_ai_help_includes_trae(self):
+        """CLI help text for --ai should include trae."""
+        assert "trae" in AI_ASSISTANT_HELP
+
+    # --- Pi Coding Agent consistency checks ---
+
+    def test_pi_in_agent_config(self):
+        """AGENT_CONFIG should include pi with correct folder and commands_subdir."""
+        assert "pi" in AGENT_CONFIG
+        assert AGENT_CONFIG["pi"]["folder"] == ".pi/"
+        assert AGENT_CONFIG["pi"]["commands_subdir"] == "prompts"
+        assert AGENT_CONFIG["pi"]["requires_cli"] is True
+        assert AGENT_CONFIG["pi"]["install_url"] is not None
+
+    def test_pi_in_extension_registrar(self):
+        """Extension command registrar should include pi using .pi/prompts."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "pi" in cfg
+        pi_cfg = cfg["pi"]
+        assert pi_cfg["dir"] == ".pi/prompts"
+        assert pi_cfg["format"] == "markdown"
+        assert pi_cfg["args"] == "$ARGUMENTS"
+        assert pi_cfg["extension"] == ".md"
+
+    def test_pi_in_release_agent_lists(self):
+        """Bash and PowerShell release scripts should include pi in agent lists."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        sh_match = re.search(r"ALL_AGENTS=\(([^)]*)\)", sh_text)
+        assert sh_match is not None
+        sh_agents = sh_match.group(1).split()
+
+        ps_match = re.search(r"\$AllAgents = @\(([^)]*)\)", ps_text)
+        assert ps_match is not None
+        ps_agents = re.findall(r"'([^']+)'", ps_match.group(1))
+
+        assert "pi" in sh_agents
+        assert "pi" in ps_agents
+
+    def test_release_scripts_generate_pi_prompt_templates(self):
+        """Release scripts should generate Markdown prompt templates for pi in .pi/prompts."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert ".pi/prompts" in sh_text
+        assert ".pi/prompts" in ps_text
+        assert re.search(r"pi\)\s*\n.*?\.pi/prompts", sh_text, re.S) is not None
+        assert re.search(r"'pi'\s*\{.*?\.pi/prompts", ps_text, re.S) is not None
+
+    def test_pi_in_powershell_validate_set(self):
+        """PowerShell update-agent-context script should include 'pi' in ValidateSet."""
+        ps_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        validate_set_match = re.search(r"\[ValidateSet\(([^)]*)\)\]", ps_text)
+        assert validate_set_match is not None
+        validate_set_values = re.findall(r"'([^']+)'", validate_set_match.group(1))
+
+        assert "pi" in validate_set_values
+
+    def test_pi_in_github_release_output(self):
+        """GitHub release script should include pi template packages."""
+        gh_release_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-github-release.sh").read_text(encoding="utf-8")
+
+        assert "spec-kit-template-pi-sh-" in gh_release_text
+        assert "spec-kit-template-pi-ps-" in gh_release_text
+
+    def test_agent_context_scripts_include_pi(self):
+        """Agent context scripts should support pi agent type."""
+        bash_text = (REPO_ROOT / "scripts" / "bash" / "update-agent-context.sh").read_text(encoding="utf-8")
+        pwsh_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        assert "pi" in bash_text
+        assert "Pi Coding Agent" in bash_text
+        assert "pi" in pwsh_text
+        assert "Pi Coding Agent" in pwsh_text
+
+    def test_ai_help_includes_pi(self):
+        """CLI help text for --ai should include pi."""
+        assert "pi" in AI_ASSISTANT_HELP
+
+    # --- iFlow CLI consistency checks ---
+
+    def test_iflow_in_agent_config(self):
+        """AGENT_CONFIG should include iflow with correct folder and commands_subdir."""
+        assert "iflow" in AGENT_CONFIG
+        assert AGENT_CONFIG["iflow"]["folder"] == ".iflow/"
+        assert AGENT_CONFIG["iflow"]["commands_subdir"] == "commands"
+        assert AGENT_CONFIG["iflow"]["requires_cli"] is True
+
+    def test_iflow_in_extension_registrar(self):
+        """Extension command registrar should include iflow targeting .iflow/commands."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "iflow" in cfg
+        assert cfg["iflow"]["dir"] == ".iflow/commands"
+        assert cfg["iflow"]["format"] == "markdown"
+        assert cfg["iflow"]["args"] == "$ARGUMENTS"
+
+    def test_iflow_in_release_agent_lists(self):
+        """Bash and PowerShell release scripts should include iflow in agent lists."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        sh_match = re.search(r"ALL_AGENTS=\(([^)]*)\)", sh_text)
+        assert sh_match is not None
+        sh_agents = sh_match.group(1).split()
+
+        ps_match = re.search(r"\$AllAgents = @\(([^)]*)\)", ps_text)
+        assert ps_match is not None
+        ps_agents = re.findall(r"'([^']+)'", ps_match.group(1))
+
+        assert "iflow" in sh_agents
+        assert "iflow" in ps_agents
+
+    def test_iflow_in_release_scripts_build_variant(self):
+        """Release scripts should generate Markdown commands for iflow in .iflow/commands."""
+        sh_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.sh").read_text(encoding="utf-8")
+        ps_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-release-packages.ps1").read_text(encoding="utf-8")
+
+        assert ".iflow/commands" in sh_text
+        assert ".iflow/commands" in ps_text
+        assert re.search(r"'iflow'\s*\{.*?\.iflow/commands", ps_text, re.S) is not None
+
+    def test_iflow_in_github_release_output(self):
+        """GitHub release script should include iflow template packages."""
+        gh_release_text = (REPO_ROOT / ".github" / "workflows" / "scripts" / "create-github-release.sh").read_text(encoding="utf-8")
+
+        assert "spec-kit-template-iflow-sh-" in gh_release_text
+        assert "spec-kit-template-iflow-ps-" in gh_release_text
+
+    def test_iflow_in_agent_context_scripts(self):
+        """Agent context scripts should support iflow agent type."""
+        bash_text = (REPO_ROOT / "scripts" / "bash" / "update-agent-context.sh").read_text(encoding="utf-8")
+        pwsh_text = (REPO_ROOT / "scripts" / "powershell" / "update-agent-context.ps1").read_text(encoding="utf-8")
+
+        assert "iflow" in bash_text
+        assert "IFLOW_FILE" in bash_text
+        assert "iflow" in pwsh_text
+        assert "IFLOW_FILE" in pwsh_text
+
+    def test_ai_help_includes_iflow(self):
+        """CLI help text for --ai should include iflow."""
+        assert "iflow" in AI_ASSISTANT_HELP

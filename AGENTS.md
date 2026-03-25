@@ -33,11 +33,12 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
 | **Qwen Code**              | `.qwen/commands/`      | Markdown | `qwen`          | Alibaba's Qwen Code CLI     |
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
-| **Codex CLI**              | `.codex/commands/`     | Markdown | `codex`         | Codex CLI                   |
+| **Codex CLI**              | `.agents/skills/`      | Markdown | `codex`         | Codex CLI (skills)          |
 | **Windsurf**               | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows      |
-| **Kilo Code**              | `.kilocode/rules/`     | Markdown | N/A (IDE-based) | Kilo Code IDE               |
-| **Auggie CLI**             | `.augment/rules/`      | Markdown | `auggie`        | Auggie CLI                  |
-| **Roo Code**               | `.roo/rules/`          | Markdown | N/A (IDE-based) | Roo Code IDE                |
+| **Junie**                  | `.junie/commands/`     | Markdown | `junie`         | Junie by JetBrains          |
+| **Kilo Code**              | `.kilocode/workflows/` | Markdown | N/A (IDE-based) | Kilo Code IDE               |
+| **Auggie CLI**             | `.augment/commands/`   | Markdown | `auggie`        | Auggie CLI                  |
+| **Roo Code**               | `.roo/commands/`       | Markdown | N/A (IDE-based) | Roo Code IDE                |
 | **CodeBuddy CLI**          | `.codebuddy/commands/` | Markdown | `codebuddy`     | CodeBuddy CLI               |
 | **Qoder CLI**              | `.qoder/commands/`     | Markdown | `qodercli`      | Qoder CLI                   |
 | **Kiro CLI**               | `.kiro/prompts/`       | Markdown | `kiro-cli`      | Kiro CLI                    |
@@ -45,8 +46,10 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
 | **Tabnine CLI**            | `.tabnine/agent/commands/` | TOML | `tabnine`       | Tabnine CLI                 |
 | **Kimi Code**              | `.kimi/skills/`        | Markdown | `kimi`          | Kimi Code CLI (Moonshot AI) |
-| **OpenClaw**               | `.openclaw/skills/`    | Markdown | `openclaw`      | OpenClaw persistent AI agent daemon |
+| **Pi Coding Agent**        | `.pi/prompts/`         | Markdown | `pi`            | Pi terminal coding agent    |
+| **iFlow CLI**              | `.iflow/commands/`     | Markdown | `iflow`         | iFlow CLI (iflow-ai)        |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
+| **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
 ### Step-by-Step Integration Guide
@@ -85,7 +88,7 @@ This eliminates the need for special-case mappings throughout the codebase.
 - `folder`: Directory where agent-specific files are stored (relative to project root)
 - `commands_subdir`: Subdirectory name within the agent folder where command/prompt files are stored (default: `"commands"`)
   - Most agents use `"commands"` (e.g., `.claude/commands/`)
-  - Some agents use alternative names: `"agents"` (copilot), `"workflows"` (windsurf, kilocode), `"prompts"` (codex, kiro-cli), `"command"` (opencode - singular), `"skills"` (kimi)
+  - Some agents use alternative names: `"agents"` (copilot), `"workflows"` (windsurf, kilocode), `"prompts"` (codex, kiro-cli, pi), `"command"` (opencode - singular)
   - This field enables `--ai-skills` to locate command templates correctly for skill generation
 - `install_url`: Installation documentation URL (set to `None` for IDE-based agents)
 - `requires_cli`: Whether the agent requires a CLI tool check during initialization
@@ -316,6 +319,7 @@ Require a command-line tool to be installed:
 - **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
+- **Junie**: `junie` CLI
 - **Kiro CLI**: `kiro-cli` CLI
 - **CodeBuddy CLI**: `codebuddy` CLI
 - **Qoder CLI**: `qodercli` CLI
@@ -323,7 +327,7 @@ Require a command-line tool to be installed:
 - **SHAI**: `shai` CLI
 - **Tabnine CLI**: `tabnine` CLI
 - **Kimi Code**: `kimi` CLI
-- **OpenClaw**: `openclaw` CLI
+- **Pi Coding Agent**: `pi` CLI
 
 ### IDE-Based Agents
 
@@ -337,7 +341,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, OpenClaw, Qwen
+Used by: Claude, Cursor, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi
 
 **Standard format:**
 
@@ -375,7 +379,11 @@ Command content with {SCRIPT} and {{args}} placeholders.
 ## Directory Conventions
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
-- **Skill-based agents**: Use `.<agent-name>/skills/<skill-name>/SKILL.md` format (Kimi Code, OpenClaw)
+- **Skills-based exceptions**:
+  - Codex: `.agents/skills/` (skills, invoked as `$speckit-<command>`)
+- **Prompt-based exceptions**:
+  - Kiro CLI: `.kiro/prompts/`
+  - Pi: `.pi/prompts/`
 - **IDE agents**: Follow IDE-specific patterns:
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`

@@ -68,23 +68,9 @@ specify extension add --from https://github.com/org/spec-kit-ext/archive/refs/ta
 
 ## Available Community Extensions
 
-The following community-contributed extensions are available in [`catalog.community.json`](catalog.community.json):
+See the [Community Extensions](../README.md#-community-extensions) section in the main README for the full list of available community-contributed extensions.
 
-| Extension | Purpose | URL |
-|-----------|---------|-----|
-| Azure DevOps Integration | Sync user stories and tasks to Azure DevOps work items using OAuth authentication | [spec-kit-azure-devops](https://github.com/pragya247/spec-kit-azure-devops) |
-| Cleanup Extension | Post-implementation quality gate that reviews changes, fixes small issues (scout rule), creates tasks for medium issues, and generates analysis for large issues | [spec-kit-cleanup](https://github.com/dsrednicki/spec-kit-cleanup) |
-| DocGuard — CDD Enforcement | Canonical-Driven Development enforcement. Generates, validates, scores, and traces project documentation against 92 automated checks with config-aware traceability, quality labels, and AI-ready fix prompts. Zero dependencies. | [spec-kit-docguard](https://github.com/raccioly/docguard) |
-| Fleet Orchestrator | Orchestrate a full feature lifecycle with human-in-the-loop gates across all SpecKit phases | [spec-kit-fleet](https://github.com/sharathsatish/spec-kit-fleet) |
-| Jira Integration | Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support | [spec-kit-jira](https://github.com/mbachorik/spec-kit-jira) |
-| Project Health Check | Diagnose a Spec Kit project and report health issues across structure, agents, features, scripts, extensions, and git | [spec-kit-doctor](https://github.com/KhawarHabibKhan/spec-kit-doctor) |
-| Ralph Loop | Autonomous implementation loop using AI agent CLI | [spec-kit-ralph](https://github.com/Rubiss/spec-kit-ralph) |
-| Retrospective Extension | Post-implementation retrospective with spec adherence scoring, drift analysis, and human-gated spec updates | [spec-kit-retrospective](https://github.com/emi-dm/spec-kit-retrospective) |
-| Review Extension | Post-implementation comprehensive code review with specialized agents for code quality, comments, tests, error handling, type design, and simplification | [spec-kit-review](https://github.com/ismaelJimenez/spec-kit-review) |
-| Spec Sync | Detect and resolve drift between specs and implementation. AI-assisted resolution with human approval | [spec-kit-sync](https://github.com/bgervin/spec-kit-sync) |
-| Understanding | Automated requirements quality analysis — 31 deterministic metrics against IEEE/ISO standards with experimental energy-based ambiguity detection | [understanding](https://github.com/Testimonial/understanding) |
-| V-Model Extension Pack | Enforces V-Model paired generation of development specs and test specs with full traceability | [spec-kit-v-model](https://github.com/leocamello/spec-kit-v-model) |
-| Verify Extension | Post-implementation quality gate that validates implemented code against specification artifacts | [spec-kit-verify](https://github.com/ismaelJimenez/spec-kit-verify) |
+For the raw catalog data, see [`catalog.community.json`](catalog.community.json).
 
 
 ## Adding Your Extension

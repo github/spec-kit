@@ -1,6 +1,58 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-09T00:00:00Z",
+  "updated_at": "2026-03-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
-  "presets": {}
+  "presets": {
+    "aide-in-place": {
+      "name": "AIDE In-Place Migration",
+      "id": "aide-in-place",
+      "version": "1.0.0",
+      "description": "Adapts the AIDE workflow for in-place technology migrations (X → Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
+      "author": "mnriem",
+      "repository": "https://github.com/mnriem/spec-kit-presets",
+      "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/aide-in-place-v1.0.0/aide-in-place.zip",
+      "homepage": "https://github.com/mnriem/spec-kit-presets",
+      "documentation": "https://github.com/mnriem/spec-kit-presets/blob/main/aide-in-place/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": ["aide"]
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 8
+      },
+      "tags": [
+        "migration",
+        "in-place",
+        "brownfield",
+        "aide"
+      ]
+    },
+    "pirate": {
+      "name": "Pirate Speak (Full)",
+      "id": "pirate",
+      "version": "1.0.0",
+      "description": "Arrr! Transforms all Spec Kit output into pirate speak. Specs, plans, and tasks be written fer scallywags.",
+      "author": "mnriem",
+      "repository": "https://github.com/mnriem/spec-kit-presets",
+      "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/pirate-v1.0.0/pirate.zip",
+      "homepage": "https://github.com/mnriem/spec-kit-presets",
+      "documentation": "https://github.com/mnriem/spec-kit-presets/blob/main/pirate/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 9
+      },
+      "tags": [
+        "pirate",
+        "theme",
+        "fun",
+        "experimental"
+      ]
+    }
+  }
 }

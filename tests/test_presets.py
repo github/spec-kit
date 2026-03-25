@@ -32,6 +32,7 @@ from specify_cli.presets import (
     PresetCompatibilityError,
     VALID_PRESET_TEMPLATE_TYPES,
 )
+from specify_cli.extensions import ExtensionRegistry
 
 
 # ===== Fixtures =====
@@ -368,6 +369,172 @@ class TestPresetRegistry:
         registry = PresetRegistry(packs_dir)
         assert registry.get("nonexistent") is None
 
+    def test_restore(self, temp_dir):
+        """Test restore() preserves timestamps exactly."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        # Create original entry with a specific timestamp
+        original_metadata = {
+            "version": "1.0.0",
+            "source": "local",
+            "installed_at": "2025-01-15T10:30:00+00:00",
+            "enabled": True,
+        }
+        registry.restore("test-pack", original_metadata)
+
+        # Verify exact restoration
+        restored = registry.get("test-pack")
+        assert restored["installed_at"] == "2025-01-15T10:30:00+00:00"
+        assert restored["version"] == "1.0.0"
+        assert restored["enabled"] is True
+
+    def test_restore_rejects_none_metadata(self, temp_dir):
+        """Test restore() raises ValueError for None metadata."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        with pytest.raises(ValueError, match="metadata must be a dict"):
+            registry.restore("test-pack", None)
+
+    def test_restore_rejects_non_dict_metadata(self, temp_dir):
+        """Test restore() raises ValueError for non-dict metadata."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        with pytest.raises(ValueError, match="metadata must be a dict"):
+            registry.restore("test-pack", "not-a-dict")
+
+        with pytest.raises(ValueError, match="metadata must be a dict"):
+            registry.restore("test-pack", ["list", "not", "dict"])
+
+    def test_restore_uses_deep_copy(self, temp_dir):
+        """Test restore() deep copies metadata to prevent mutation."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        original_metadata = {
+            "version": "1.0.0",
+            "nested": {"key": "original"},
+        }
+        registry.restore("test-pack", original_metadata)
+
+        # Mutate the original metadata after restore
+        original_metadata["version"] = "MUTATED"
+        original_metadata["nested"]["key"] = "MUTATED"
+
+        # Registry should have the original values
+        stored = registry.get("test-pack")
+        assert stored["version"] == "1.0.0"
+        assert stored["nested"]["key"] == "original"
+
+    def test_get_returns_deep_copy(self, temp_dir):
+        """Test that get() returns a deep copy to prevent mutation."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("test-pack", {"version": "1.0.0", "nested": {"key": "original"}})
+
+        # Get and mutate the returned copy
+        metadata = registry.get("test-pack")
+        metadata["version"] = "MUTATED"
+        metadata["nested"]["key"] = "MUTATED"
+
+        # Original should be unchanged
+        fresh = registry.get("test-pack")
+        assert fresh["version"] == "1.0.0"
+        assert fresh["nested"]["key"] == "original"
+
+    def test_get_returns_none_for_corrupted_entry(self, temp_dir):
+        """Test that get() returns None for corrupted (non-dict) entries."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        # Directly corrupt the registry with non-dict entries
+        registry.data["presets"]["corrupted-string"] = "not a dict"
+        registry.data["presets"]["corrupted-list"] = ["not", "a", "dict"]
+        registry.data["presets"]["corrupted-int"] = 42
+        registry._save()
+
+        # All corrupted entries should return None
+        assert registry.get("corrupted-string") is None
+        assert registry.get("corrupted-list") is None
+        assert registry.get("corrupted-int") is None
+        # Non-existent should also return None
+        assert registry.get("nonexistent") is None
+
+    def test_list_returns_deep_copy(self, temp_dir):
+        """Test that list() returns deep copies to prevent mutation."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("test-pack", {"version": "1.0.0", "nested": {"key": "original"}})
+
+        # Get list and mutate
+        all_packs = registry.list()
+        all_packs["test-pack"]["version"] = "MUTATED"
+        all_packs["test-pack"]["nested"]["key"] = "MUTATED"
+
+        # Original should be unchanged
+        fresh = registry.get("test-pack")
+        assert fresh["version"] == "1.0.0"
+        assert fresh["nested"]["key"] == "original"
+
+    def test_list_returns_empty_dict_for_corrupted_registry(self, temp_dir):
+        """Test that list() returns empty dict when presets is not a dict."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        # Corrupt the registry - presets is a list instead of dict
+        registry.data["presets"] = ["not", "a", "dict"]
+        registry._save()
+
+        # list() should return empty dict, not crash
+        result = registry.list()
+        assert result == {}
+
+    def test_list_by_priority_excludes_disabled(self, temp_dir):
+        """Test that list_by_priority excludes disabled presets by default."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("pack-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("pack-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+        registry.add("pack-default", {"version": "1.0.0", "priority": 10})  # no enabled field = True
+
+        # Default: exclude disabled
+        by_priority = registry.list_by_priority()
+        pack_ids = [p[0] for p in by_priority]
+        assert "pack-enabled" in pack_ids
+        assert "pack-default" in pack_ids
+        assert "pack-disabled" not in pack_ids
+
+    def test_list_by_priority_includes_disabled_when_requested(self, temp_dir):
+        """Test that list_by_priority includes disabled presets when requested."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("pack-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("pack-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+
+        # Include disabled
+        by_priority = registry.list_by_priority(include_disabled=True)
+        pack_ids = [p[0] for p in by_priority]
+        assert "pack-enabled" in pack_ids
+        assert "pack-disabled" in pack_ids
+        # Disabled pack has lower priority number, so it comes first when included
+        assert pack_ids[0] == "pack-disabled"
+
 
 # ===== PresetManager Tests =====
 
@@ -573,6 +740,24 @@ class TestRegistryPriority:
         assert sorted_packs[0][0] == "pack-b"
         assert sorted_packs[1][0] == "pack-a"
 
+    def test_list_by_priority_invalid_priority_defaults(self, temp_dir):
+        """Malformed priority values fall back to the default priority."""
+        packs_dir = temp_dir / "packs"
+        packs_dir.mkdir()
+        registry = PresetRegistry(packs_dir)
+
+        registry.add("pack-high", {"version": "1.0.0", "priority": 1})
+        registry.data["presets"]["pack-invalid"] = {
+            "version": "1.0.0",
+            "priority": "high",
+        }
+        registry._save()
+
+        sorted_packs = registry.list_by_priority()
+
+        assert [item[0] for item in sorted_packs] == ["pack-high", "pack-invalid"]
+        assert sorted_packs[1][1]["priority"] == 10
+
 
 # ===== PresetResolver Tests =====
 
@@ -678,10 +863,53 @@ class TestPresetResolver:
         ext_template = ext_templates_dir / "custom-template.md"
         ext_template.write_text("# Extension Custom Template\n")
 
+        # Register extension in registry
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("my-ext", {"version": "1.0.0", "priority": 10})
+
         resolver = PresetResolver(project_dir)
         result = resolver.resolve("custom-template")
         assert result is not None
         assert "Extension Custom Template" in result.read_text()
+
+    def test_resolve_disabled_extension_templates_skipped(self, project_dir):
+        """Test that disabled extension templates are not resolved."""
+        # Create extension with templates
+        ext_dir = project_dir / ".specify" / "extensions" / "disabled-ext"
+        ext_templates_dir = ext_dir / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        ext_template = ext_templates_dir / "disabled-template.md"
+        ext_template.write_text("# Disabled Extension Template\n")
+
+        # Register extension as disabled
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("disabled-ext", {"version": "1.0.0", "priority": 1, "enabled": False})
+
+        # Template should NOT be resolved because extension is disabled
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("disabled-template")
+        assert result is None, "Disabled extension template should not be resolved"
+
+    def test_resolve_disabled_extension_not_picked_up_as_unregistered(self, project_dir):
+        """Test that disabled extensions are not picked up via unregistered dir scan."""
+        # Create extension directory with templates
+        ext_dir = project_dir / ".specify" / "extensions" / "test-disabled-ext"
+        ext_templates_dir = ext_dir / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        ext_template = ext_templates_dir / "unique-disabled-template.md"
+        ext_template.write_text("# Should Not Resolve\n")
+
+        # Register the extension but disable it
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("test-disabled-ext", {"version": "1.0.0", "enabled": False})
+
+        # Verify the template is NOT resolved (even though the directory exists)
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("unique-disabled-template")
+        assert result is None, "Disabled extension should not be picked up as unregistered"
 
     def test_resolve_pack_over_extension(self, project_dir, pack_dir, temp_dir, valid_pack_data):
         """Test that pack templates take priority over extension templates."""
@@ -741,10 +969,15 @@ class TestPresetResolver:
         ext_template = ext_templates_dir / "unique-template.md"
         ext_template.write_text("# Unique\n")
 
+        # Register extension in registry
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("my-ext", {"version": "1.0.0", "priority": 10})
+
         resolver = PresetResolver(project_dir)
         result = resolver.resolve_with_source("unique-template")
         assert result is not None
-        assert result["source"] == "extension:my-ext"
+        assert result["source"] == "extension:my-ext v1.0.0"
 
     def test_resolve_with_source_not_found(self, project_dir):
         """Test resolve_with_source for nonexistent template."""
@@ -763,6 +996,104 @@ class TestPresetResolver:
         resolver = PresetResolver(project_dir)
         result = resolver.resolve("hidden-template")
         assert result is None
+
+
+class TestExtensionPriorityResolution:
+    """Test extension priority resolution with registered and unregistered extensions."""
+
+    def test_unregistered_beats_registered_with_lower_precedence(self, project_dir):
+        """Unregistered extension (implicit priority 10) beats registered with priority 20."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create registered extension with priority 20 (lower precedence than 10)
+        registered_dir = extensions_dir / "registered-ext"
+        (registered_dir / "templates").mkdir(parents=True)
+        (registered_dir / "templates" / "test-template.md").write_text("# From Registered\n")
+
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("registered-ext", {"version": "1.0.0", "priority": 20})
+
+        # Create unregistered extension directory (implicit priority 10)
+        unregistered_dir = extensions_dir / "unregistered-ext"
+        (unregistered_dir / "templates").mkdir(parents=True)
+        (unregistered_dir / "templates" / "test-template.md").write_text("# From Unregistered\n")
+
+        # Unregistered (priority 10) should beat registered (priority 20)
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("test-template")
+        assert result is not None
+        assert "From Unregistered" in result.read_text()
+
+    def test_registered_with_higher_precedence_beats_unregistered(self, project_dir):
+        """Registered extension with priority 5 beats unregistered (implicit priority 10)."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create registered extension with priority 5 (higher precedence than 10)
+        registered_dir = extensions_dir / "registered-ext"
+        (registered_dir / "templates").mkdir(parents=True)
+        (registered_dir / "templates" / "test-template.md").write_text("# From Registered\n")
+
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("registered-ext", {"version": "1.0.0", "priority": 5})
+
+        # Create unregistered extension directory (implicit priority 10)
+        unregistered_dir = extensions_dir / "unregistered-ext"
+        (unregistered_dir / "templates").mkdir(parents=True)
+        (unregistered_dir / "templates" / "test-template.md").write_text("# From Unregistered\n")
+
+        # Registered (priority 5) should beat unregistered (priority 10)
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("test-template")
+        assert result is not None
+        assert "From Registered" in result.read_text()
+
+    def test_unregistered_attribution_with_priority_ordering(self, project_dir):
+        """Test resolve_with_source correctly attributes unregistered extension."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create registered extension with priority 20
+        registered_dir = extensions_dir / "registered-ext"
+        (registered_dir / "templates").mkdir(parents=True)
+        (registered_dir / "templates" / "test-template.md").write_text("# From Registered\n")
+
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("registered-ext", {"version": "1.0.0", "priority": 20})
+
+        # Create unregistered extension (implicit priority 10)
+        unregistered_dir = extensions_dir / "unregistered-ext"
+        (unregistered_dir / "templates").mkdir(parents=True)
+        (unregistered_dir / "templates" / "test-template.md").write_text("# From Unregistered\n")
+
+        # Attribution should show unregistered extension
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve_with_source("test-template")
+        assert result is not None
+        assert "unregistered-ext" in result["source"]
+        assert "(unregistered)" in result["source"]
+
+    def test_same_priority_sorted_alphabetically(self, project_dir):
+        """Extensions with same priority are sorted alphabetically by ID."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create two unregistered extensions (both implicit priority 10)
+        # "aaa-ext" should come before "zzz-ext" alphabetically
+        zzz_dir = extensions_dir / "zzz-ext"
+        (zzz_dir / "templates").mkdir(parents=True)
+        (zzz_dir / "templates" / "test-template.md").write_text("# From ZZZ\n")
+
+        aaa_dir = extensions_dir / "aaa-ext"
+        (aaa_dir / "templates").mkdir(parents=True)
+        (aaa_dir / "templates" / "test-template.md").write_text("# From AAA\n")
+
+        # AAA should win due to alphabetical ordering at same priority
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("test-template")
+        assert result is not None
+        assert "From AAA" in result.read_text()
 
 
 # ===== PresetCatalog Tests =====
@@ -839,8 +1170,12 @@ class TestPresetCatalog:
         assert not catalog.cache_file.exists()
         assert not catalog.cache_metadata_file.exists()
 
-    def test_search_with_cached_data(self, project_dir):
+    def test_search_with_cached_data(self, project_dir, monkeypatch):
         """Test search with cached catalog data."""
+        from unittest.mock import patch
+
+        # Only use the default catalog to prevent fetching the community catalog from the network
+        monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", PresetCatalog.DEFAULT_CATALOG_URL)
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -869,23 +1204,26 @@ class TestPresetCatalog:
             "cached_at": datetime.now(timezone.utc).isoformat(),
         }))
 
-        # Search by query
-        results = catalog.search(query="agile")
-        assert len(results) == 1
-        assert results[0]["id"] == "safe-agile"
+        # Isolate from community catalog so results are deterministic
+        default_only = [PresetCatalogEntry(url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True)]
+        with patch.object(catalog, "get_active_catalogs", return_value=default_only):
+            # Search by query
+            results = catalog.search(query="agile")
+            assert len(results) == 1
+            assert results[0]["id"] == "safe-agile"
 
-        # Search by tag
-        results = catalog.search(tag="hipaa")
-        assert len(results) == 1
-        assert results[0]["id"] == "healthcare"
+            # Search by tag
+            results = catalog.search(tag="hipaa")
+            assert len(results) == 1
+            assert results[0]["id"] == "healthcare"
 
-        # Search by author
-        results = catalog.search(author="agile-community")
-        assert len(results) == 1
+            # Search by author
+            results = catalog.search(author="agile-community")
+            assert len(results) == 1
 
-        # Search all
-        results = catalog.search()
-        assert len(results) == 2
+            # Search all
+            results = catalog.search()
+            assert len(results) == 2
 
     def test_get_pack_info(self, project_dir):
         """Test getting info for a specific pack."""
@@ -979,8 +1317,13 @@ class TestIntegration:
         ext_templates_dir.mkdir(parents=True)
         (ext_templates_dir / "spec-template.md").write_text("# Extension\n")
 
+        # Register extension in registry
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_registry = ExtensionRegistry(extensions_dir)
+        ext_registry.add("my-ext", {"version": "1.0.0", "priority": 10})
+
         result = resolver.resolve_with_source("spec-template")
-        assert result["source"] == "extension:my-ext"
+        assert result["source"] == "extension:my-ext v1.0.0"
 
         # Install pack — should win over extension
         manager = PresetManager(project_dir)
@@ -1710,3 +2053,348 @@ class TestPresetSkills:
 
         metadata = manager.registry.get("self-test")
         assert metadata.get("registered_skills", []) == []
+
+
+class TestPresetSetPriority:
+    """Test preset set-priority CLI command."""
+
+    def test_set_priority_changes_priority(self, project_dir, pack_dir):
+        """Test set-priority command changes preset priority."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset with default priority
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Verify default priority
+        assert manager.registry.get("test-pack")["priority"] == 10
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "priority changed: 10 → 5" in result.output
+
+        # Reload registry to see updated value
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["priority"] == 5
+
+    def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
+        """Test set-priority with same value shows already set message."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset with priority 5
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5", priority=5)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "already has priority 5" in result.output
+
+    def test_set_priority_invalid_value(self, project_dir, pack_dir):
+        """Test set-priority rejects invalid priority values."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "0"])
+
+        assert result.exit_code == 1, result.output
+        assert "Priority must be a positive integer" in result.output
+
+    def test_set_priority_not_installed(self, project_dir):
+        """Test set-priority fails for non-installed preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "nonexistent", "5"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower()
+
+
+class TestPresetPriorityBackwardsCompatibility:
+    """Test backwards compatibility for presets installed before priority feature."""
+
+    def test_legacy_preset_without_priority_field(self, temp_dir):
+        """Presets installed before priority feature should default to 10."""
+        presets_dir = temp_dir / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+
+        # Simulate legacy registry entry without priority field
+        registry = PresetRegistry(presets_dir)
+        registry.data["presets"]["legacy-pack"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            "installed_at": "2025-01-01T00:00:00Z",
+            # No "priority" field - simulates pre-feature preset
+        }
+        registry._save()
+
+        # Reload registry
+        registry2 = PresetRegistry(presets_dir)
+
+        # list_by_priority should use default of 10
+        result = registry2.list_by_priority()
+        assert len(result) == 1
+        assert result[0][0] == "legacy-pack"
+        # Priority defaults to 10 and is normalized in returned metadata
+        assert result[0][1]["priority"] == 10
+
+    def test_legacy_preset_in_list_installed(self, project_dir, pack_dir):
+        """list_installed returns priority=10 for legacy presets without priority field."""
+        manager = PresetManager(project_dir)
+
+        # Install preset normally
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Manually remove priority to simulate legacy preset
+        pack_data = manager.registry.data["presets"]["test-pack"]
+        del pack_data["priority"]
+        manager.registry._save()
+
+        # list_installed should still return priority=10
+        installed = manager.list_installed()
+        assert len(installed) == 1
+        assert installed[0]["priority"] == 10
+
+    def test_mixed_legacy_and_new_presets_ordering(self, temp_dir):
+        """Legacy presets (no priority) sort with default=10 among prioritized presets."""
+        presets_dir = temp_dir / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+
+        registry = PresetRegistry(presets_dir)
+
+        # Add preset with explicit priority=5
+        registry.add("pack-with-priority", {"version": "1.0.0", "priority": 5})
+
+        # Add legacy preset without priority (manually)
+        registry.data["presets"]["legacy-pack"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            # No priority field
+        }
+
+        # Add another preset with priority=15
+        registry.add("low-priority-pack", {"version": "1.0.0", "priority": 15})
+        registry._save()
+
+        # Reload and check ordering
+        registry2 = PresetRegistry(presets_dir)
+        sorted_presets = registry2.list_by_priority()
+
+        # Should be: pack-with-priority (5), legacy-pack (default 10), low-priority-pack (15)
+        assert [p[0] for p in sorted_presets] == [
+            "pack-with-priority",
+            "legacy-pack",
+            "low-priority-pack",
+        ]
+
+
+class TestPresetEnableDisable:
+    """Test preset enable/disable CLI commands."""
+
+    def test_disable_preset(self, project_dir, pack_dir):
+        """Test disable command sets enabled=False."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Verify initially enabled
+        assert manager.registry.get("test-pack").get("enabled", True) is True
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "disabled" in result.output.lower()
+
+        # Reload registry to see updated value
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["enabled"] is False
+
+    def test_enable_preset(self, project_dir, pack_dir):
+        """Test enable command sets enabled=True."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset and disable it
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.update("test-pack", {"enabled": False})
+
+        # Verify disabled
+        assert manager.registry.get("test-pack")["enabled"] is False
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "enabled" in result.output.lower()
+
+        # Reload registry to see updated value
+        manager2 = PresetManager(project_dir)
+        assert manager2.registry.get("test-pack")["enabled"] is True
+
+    def test_disable_already_disabled(self, project_dir, pack_dir):
+        """Test disable on already disabled preset shows warning."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset and disable it
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.update("test-pack", {"enabled": False})
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "already disabled" in result.output.lower()
+
+    def test_enable_already_enabled(self, project_dir, pack_dir):
+        """Test enable on already enabled preset shows warning."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset (enabled by default)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code == 0, result.output
+        assert "already enabled" in result.output.lower()
+
+    def test_disable_not_installed(self, project_dir):
+        """Test disable fails for non-installed preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "nonexistent"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower()
+
+    def test_enable_not_installed(self, project_dir):
+        """Test enable fails for non-installed preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "nonexistent"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower()
+
+    def test_disabled_preset_excluded_from_resolution(self, project_dir, pack_dir):
+        """Test that disabled presets are excluded from template resolution."""
+        # Install preset with a template
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Create a template in the preset directory
+        preset_template = project_dir / ".specify" / "presets" / "test-pack" / "templates" / "test-template.md"
+        preset_template.parent.mkdir(parents=True, exist_ok=True)
+        preset_template.write_text("# Template from test-pack")
+
+        resolver = PresetResolver(project_dir)
+
+        # Template should be found when enabled
+        result = resolver.resolve("test-template", "template")
+        assert result is not None
+        assert "test-pack" in str(result)
+
+        # Disable the preset
+        manager.registry.update("test-pack", {"enabled": False})
+
+        # Template should NOT be found when disabled
+        resolver2 = PresetResolver(project_dir)
+        result2 = resolver2.resolve("test-template", "template")
+        assert result2 is None
+
+    def test_enable_corrupted_registry_entry(self, project_dir, pack_dir):
+        """Test enable fails gracefully for corrupted registry entry."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset then corrupt the registry entry
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.data["presets"]["test-pack"] = "corrupted-string"
+        manager.registry._save()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "enable", "test-pack"])
+
+        assert result.exit_code == 1
+        assert "corrupted state" in result.output.lower()
+
+    def test_disable_corrupted_registry_entry(self, project_dir, pack_dir):
+        """Test disable fails gracefully for corrupted registry entry."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install preset then corrupt the registry entry
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.registry.data["presets"]["test-pack"] = "corrupted-string"
+        manager.registry._save()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "disable", "test-pack"])
+
+        assert result.exit_code == 1
+        assert "corrupted state" in result.output.lower()

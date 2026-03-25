@@ -1,56 +1,90 @@
 # Changelog
 
-<!-- markdownlint-disable MD024 -->
+## [0.4.1] - 2026-03-24
 
-Recent changes to the Specify CLI and templates are documented here.
+### Changes
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+- Add checkpoint extension (#1947)
+- fix(scripts): prioritize .specify over git for repo root detection (#1933)
+- docs: add AIDE extension demo to community projects (#1943)
+- fix(templates): add missing Assumptions section to spec template (#1939)
+- chore: bump version to 0.4.1 (#1937)
+
+## [0.4.0] - 2026-03-23
+
+### Changes
+
+- fix(cli): add allow_unicode=True and encoding="utf-8" to YAML I/O (#1936)
+- fix(codex): native skills fallback refresh + legacy prompt suppression (#1930)
+
+- feat(cli): embed core pack in wheel for offline/air-gapped deployment (#1803)
+- ci: increase stale workflow operations-per-run to 250 (#1922)
+- docs: update publishing guide with Category and Effect columns (#1913)
+- fix: Align native skills frontmatter with install_ai_skills (#1920)
+- feat: add timestamp-based branch naming option for `specify init` (#1911)
+- docs: add Extension Comparison Guide for community extensions (#1897)
+- docs: update SUPPORT.md, fix issue templates, add preset submission template (#1910)
+- Add support for Junie (#1831)
+- feat: migrate Codex/agy init to native skills workflow (#1906)
+- chore: bump version to 0.3.2 (#1909)
+
+- feat(extensions): add verify-tasks extension to community catalog (#1871)
+- feat(presets): add enable/disable toggle and update semantics (#1891)
+- feat: add iFlow CLI support (#1875)
+- feat(commands): wire before/after hook events into specify and plan templates (#1886)
+- docs(catalog): add speckit-utils to community catalog (#1896)
+- docs: Add Extensions & Presets section to README (#1898)
+- chore: update DocGuard extension to v0.9.11 (#1899)
+- Update cognitive-squad catalog entry — Triadic Model, full lifecycle (#1884)
+- feat: register spec-kit-iterate extension (#1887)
+- fix(scripts): add explicit positional binding to PowerShell create-new-feature params (#1885)
+- fix(scripts): encode residual JSON control chars as \uXXXX instead of stripping (#1872)
+- chore: update DocGuard extension to v0.9.10 (#1890)
+- Feature/spec kit add pi coding agent pullrequest (#1853)
+- feat: register spec-kit-learn extension (#1883)
+
+## [0.3.2] - 2026-03-19
+
+### Changes
+
+- chore: bump version to 0.3.2
+- Add conduct extension to community catalog (#1908)
+
+## [0.3.1] - 2026-03-17
+
+### Changed
+
+- chore: bump version to 0.3.1
+- docs: add greenfield Spring Boot pirate-speak preset demo to README (#1878)
+- fix(ai-skills): exclude non-speckit copilot agent markdown from skills (#1867)
+- feat: add Trae IDE support as a new agent (#1817)
+- feat(cli): polite deep merge for settings.json and support JSONC (#1874)
+- feat(extensions,presets): add priority-based resolution ordering (#1855)
+- fix(scripts): suppress stdout from git fetch in create-new-feature.sh (#1876)
+- fix(scripts): harden bash scripts — escape, compat, and error handling (#1869)
+- Add cognitive-squad to community extension catalog (#1870)
+- docs: add Go / React brownfield walkthrough to community walkthroughs (#1868)
+- chore: update DocGuard extension to v0.9.8 (#1859)
+- Feature: add specify status command (#1837)
+- fix(extensions): show extension ID in list output (#1843)
+- feat(extensions): add Archive and Reconcile extensions to community catalog (#1844)
+- feat: Add DocGuard CDD enforcement extension to community catalog (#1838)
 
 ## [0.3.0] - 2026-03-13
 
 ### Changed
 
-- No changes have been documented for this release yet.
-
-<!-- Entries for 0.2.x and earlier releases are documented in their respective sections below. -->
-- make c ignores consistent with c++ (#1747)
-- chore: bump version to 0.1.13 (#1746)
-- feat: add kiro-cli and AGENT_CONFIG consistency coverage (#1690)
-- feat: add verify extension to community catalog (#1726)
-- Add Retrospective Extension to community catalog README table (#1741)
-- fix(scripts): add empty description validation and branch checkout error handling (#1559)
-- fix: correct Copilot extension command registration (#1724)
-- fix(implement): remove Makefile from C ignore patterns (#1558)
-- Add sync extension to community catalog (#1728)
-- fix(checklist): clarify file handling behavior for append vs create (#1556)
-- fix(clarify): correct conflicting question limit from 10 to 5 (#1557)
-- chore: bump version to 0.1.12 (#1737)
-- fix: use RELEASE_PAT so tag push triggers release workflow (#1736)
-- fix: release-trigger uses release branch + PR instead of direct push to main (#1733)
-- fix: Split release process to sync pyproject.toml version with git tags (#1732)
-
-
-## [Unreleased]
-
-### Added
-
-- feat(presets): Pluggable preset system with preset catalog and template resolver
-- Preset manifest (`preset.yml`) with validation for artifact, command, and script types
-- `PresetManifest`, `PresetRegistry`, `PresetManager`, `PresetCatalog`, `PresetResolver` classes in `src/specify_cli/presets.py`
-- CLI commands: `specify preset search`, `specify preset add`, `specify preset list`, `specify preset remove`, `specify preset resolve`, `specify preset info`
-- CLI commands: `specify preset catalog list`, `specify preset catalog add`, `specify preset catalog remove` for multi-catalog management
-- `PresetCatalogEntry` dataclass and multi-catalog support mirroring the extension catalog system
-- `--preset` option for `specify init` to install presets during initialization
-- Priority-based preset resolution: presets with lower priority number win (`--priority` flag)
-- `resolve_template()` / `Resolve-Template` helpers in bash and PowerShell common scripts
-- Template resolution priority stack: overrides → presets → extensions → core
-- Preset catalog files (`presets/catalog.json`, `presets/catalog.community.json`)
-- Preset scaffold directory (`presets/scaffold/`)
-- Scripts updated to use template resolution instead of hardcoded paths
-- feat(presets): Preset command overrides now propagate to agent skills when `--ai-skills` was used during init
-- feat: `specify init` persists CLI options to `.specify/init-options.json` for downstream operations
-- feat(extensions): support `.extensionignore` to exclude files/folders during `specify extension add` (#1781)
+- chore: bump version to 0.3.0
+- feat(presets): Pluggable preset system with catalog, resolver, and skills propagation (#1787)
+- fix: match 'Last updated' timestamp with or without bold markers (#1836)
+- Add specify doctor command for project health diagnostics (#1828)
+- fix: harden bash scripts against shell injection and improve robustness (#1809)
+- fix: clean up command templates (specify, analyze) (#1810)
+- fix: migrate Qwen Code CLI from TOML to Markdown format (#1589) (#1730)
+- fix(cli): deprecate explicit command support for agy (#1798) (#1808)
+- Add /selftest.extension core extension to test other extensions (#1758)
+- feat(extensions): Quality of life improvements for RFC-aligned catalog integration (#1776)
+- Add Java brownfield walkthrough to community walkthroughs (#1820)
 
 ## [0.2.1] - 2026-03-11
 
@@ -277,28 +311,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add pytest and Python linting (ruff) to CI (#1637)
 - feat: add pull request template for better contribution guidelines (#1634)
-
-## [0.0.99] - 2026-02-19
-
-- Feat/ai skills (#1632)
-
-## [0.0.98] - 2026-02-19
-
-- chore(deps): bump actions/stale from 9 to 10 (#1623)
-- feat: add dependabot configuration for pip and GitHub Actions updates (#1622)
-
-## [0.0.97] - 2026-02-18
-
-- Remove Maintainers section from README.md (#1618)
-
-## [0.0.96] - 2026-02-17
-
-- fix: typo in plan-template.md (#1446)
-
-## [0.0.95] - 2026-02-12
-
-- Feat: add a new agent: Google Anti Gravity (#1220)
-
-## [0.0.94] - 2026-02-11
-
-- Add stale workflow for 180-day inactive issues and PRs (#1594)

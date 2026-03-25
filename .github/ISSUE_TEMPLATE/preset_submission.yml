@@ -1,0 +1,169 @@
+name: Preset Submission
+description: Submit your preset to the Spec Kit preset catalog
+title: "[Preset]: Add "
+labels: ["preset-submission", "enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for contributing a preset! This template helps you submit your preset to the community catalog.
+        
+        **Before submitting:**
+        - Review the [Preset Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md)
+        - Ensure your preset has a valid `preset.yml` manifest
+        - Create a GitHub release with a version tag (e.g., v1.0.0)
+        - Test installation from the release archive: `specify preset add --from <download-url>`
+
+  - type: input
+    id: preset-id
+    attributes:
+      label: Preset ID
+      description: Unique preset identifier (lowercase with hyphens only)
+      placeholder: "e.g., healthcare-compliance"
+    validations:
+      required: true
+
+  - type: input
+    id: preset-name
+    attributes:
+      label: Preset Name
+      description: Human-readable preset name
+      placeholder: "e.g., Healthcare Compliance"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Semantic version number
+      placeholder: "e.g., 1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Brief description of what your preset does (under 200 characters)
+      placeholder: Enforces HIPAA-compliant spec workflows with audit templates and compliance checklists
+    validations:
+      required: true
+
+  - type: input
+    id: author
+    attributes:
+      label: Author
+      description: Your name or organization
+      placeholder: "e.g., John Doe or Acme Corp"
+    validations:
+      required: true
+
+  - type: input
+    id: repository
+    attributes:
+      label: Repository URL
+      description: GitHub repository URL for your preset
+      placeholder: "https://github.com/your-org/spec-kit-your-preset"
+    validations:
+      required: true
+
+  - type: input
+    id: download-url
+    attributes:
+      label: Download URL
+      description: URL to the GitHub release archive for your preset (e.g., https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip)
+      placeholder: "https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip"
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: License
+      description: Open source license type
+      placeholder: "e.g., MIT, Apache-2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: speckit-version
+    attributes:
+      label: Required Spec Kit Version
+      description: Minimum Spec Kit version required
+      placeholder: "e.g., >=0.3.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: templates-provided
+    attributes:
+      label: Templates Provided
+      description: List the template overrides your preset provides
+      placeholder: |
+        - spec-template.md — adds compliance section
+        - plan-template.md — includes audit checkpoints
+        - checklist-template.md — HIPAA compliance checklist
+    validations:
+      required: true
+
+  - type: textarea
+    id: commands-provided
+    attributes:
+      label: Commands Provided (optional)
+      description: List any command overrides your preset provides
+      placeholder: |
+        - speckit.specify.md — customized for compliance workflows
+
+  - type: textarea
+    id: tags
+    attributes:
+      label: Tags
+      description: 2-5 relevant tags (lowercase, separated by commas)
+      placeholder: "compliance, healthcare, hipaa, audit"
+    validations:
+      required: true
+
+  - type: textarea
+    id: features
+    attributes:
+      label: Key Features
+      description: List the main features and capabilities of your preset
+      placeholder: |
+        - HIPAA-compliant spec templates
+        - Audit trail checklists
+        - Compliance review workflow
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: testing
+    attributes:
+      label: Testing Checklist
+      description: Confirm that your preset has been tested
+      options:
+        - label: Preset installs successfully via `specify preset add`
+          required: true
+        - label: Template resolution works correctly after installation
+          required: true
+        - label: Documentation is complete and accurate
+          required: true
+        - label: Tested on at least one real project
+          required: true
+
+  - type: checkboxes
+    id: requirements
+    attributes:
+      label: Submission Requirements
+      description: Verify your preset meets all requirements
+      options:
+        - label: Valid `preset.yml` manifest included
+          required: true
+        - label: README.md with description and usage instructions
+          required: true
+        - label: LICENSE file included
+          required: true
+        - label: GitHub release created with version tag
+          required: true
+        - label: Preset ID follows naming conventions (lowercase-with-hyphens)
+          required: true

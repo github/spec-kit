@@ -26,6 +26,7 @@ from specify_cli.extensions import (
     ExtensionError,
     ValidationError,
     CompatibilityError,
+    normalize_priority,
     version_satisfies,
 )
 
@@ -119,6 +120,57 @@ def project_dir(temp_dir):
     specify_dir.mkdir()
 
     return proj_dir
+
+
+# ===== normalize_priority Tests =====
+
+class TestNormalizePriority:
+    """Test normalize_priority helper function."""
+
+    def test_valid_integer(self):
+        """Test with valid integer priority."""
+        assert normalize_priority(5) == 5
+        assert normalize_priority(1) == 1
+        assert normalize_priority(100) == 100
+
+    def test_valid_string_number(self):
+        """Test with string that can be converted to int."""
+        assert normalize_priority("5") == 5
+        assert normalize_priority("10") == 10
+
+    def test_zero_returns_default(self):
+        """Test that zero priority returns default."""
+        assert normalize_priority(0) == 10
+        assert normalize_priority(0, default=5) == 5
+
+    def test_negative_returns_default(self):
+        """Test that negative priority returns default."""
+        assert normalize_priority(-1) == 10
+        assert normalize_priority(-100, default=5) == 5
+
+    def test_none_returns_default(self):
+        """Test that None returns default."""
+        assert normalize_priority(None) == 10
+        assert normalize_priority(None, default=5) == 5
+
+    def test_invalid_string_returns_default(self):
+        """Test that non-numeric string returns default."""
+        assert normalize_priority("invalid") == 10
+        assert normalize_priority("abc", default=5) == 5
+
+    def test_float_truncates(self):
+        """Test that float is truncated to int."""
+        assert normalize_priority(5.9) == 5
+        assert normalize_priority(3.1) == 3
+
+    def test_empty_string_returns_default(self):
+        """Test that empty string returns default."""
+        assert normalize_priority("") == 10
+
+    def test_custom_default(self):
+        """Test custom default value."""
+        assert normalize_priority(None, default=20) == 20
+        assert normalize_priority("invalid", default=1) == 1
 
 
 # ===== ExtensionManifest Tests =====
@@ -368,6 +420,48 @@ class TestExtensionRegistry:
         assert registry.is_installed("test-ext")
         assert registry.get("test-ext")["version"] == "1.0.0"
 
+    def test_restore_rejects_none_metadata(self, temp_dir):
+        """Test restore() raises ValueError for None metadata."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+
+        with pytest.raises(ValueError, match="metadata must be a dict"):
+            registry.restore("test-ext", None)
+
+    def test_restore_rejects_non_dict_metadata(self, temp_dir):
+        """Test restore() raises ValueError for non-dict metadata."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+
+        with pytest.raises(ValueError, match="metadata must be a dict"):
+            registry.restore("test-ext", "not-a-dict")
+
+        with pytest.raises(ValueError, match="metadata must be a dict"):
+            registry.restore("test-ext", ["list", "not", "dict"])
+
+    def test_restore_uses_deep_copy(self, temp_dir):
+        """Test restore() deep copies metadata to prevent mutation."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+
+        original_metadata = {
+            "version": "1.0.0",
+            "nested": {"key": "original"},
+        }
+        registry.restore("test-ext", original_metadata)
+
+        # Mutate the original metadata after restore
+        original_metadata["version"] = "MUTATED"
+        original_metadata["nested"]["key"] = "MUTATED"
+
+        # Registry should have the original values
+        stored = registry.get("test-ext")
+        assert stored["version"] == "1.0.0"
+        assert stored["nested"]["key"] == "original"
+
     def test_get_returns_deep_copy(self, temp_dir):
         """Test that get() returns deep copies for nested structures."""
         extensions_dir = temp_dir / "extensions"
@@ -387,6 +481,26 @@ class TestExtensionRegistry:
         internal = registry.data["extensions"]["test-ext"]
         assert internal["registered_commands"] == {"claude": ["cmd1"]}
 
+    def test_get_returns_none_for_corrupted_entry(self, temp_dir):
+        """Test that get() returns None for corrupted (non-dict) entries."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        # Directly corrupt the registry with non-dict entries
+        registry.data["extensions"]["corrupted-string"] = "not a dict"
+        registry.data["extensions"]["corrupted-list"] = ["not", "a", "dict"]
+        registry.data["extensions"]["corrupted-int"] = 42
+        registry._save()
+
+        # All corrupted entries should return None
+        assert registry.get("corrupted-string") is None
+        assert registry.get("corrupted-list") is None
+        assert registry.get("corrupted-int") is None
+        # Non-existent should also return None
+        assert registry.get("nonexistent") is None
+
     def test_list_returns_deep_copy(self, temp_dir):
         """Test that list() returns deep copies for nested structures."""
         extensions_dir = temp_dir / "extensions"
@@ -405,6 +519,20 @@ class TestExtensionRegistry:
         # Internal registry must remain unchanged.
         internal = registry.data["extensions"]["test-ext"]
         assert internal["registered_commands"] == {"claude": ["cmd1"]}
+
+    def test_list_returns_empty_dict_for_corrupted_registry(self, temp_dir):
+        """Test that list() returns empty dict when extensions is not a dict."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+
+        # Corrupt the registry - extensions is a list instead of dict
+        registry.data["extensions"] = ["not", "a", "dict"]
+        registry._save()
+
+        # list() should return empty dict, not crash
+        result = registry.list()
+        assert result == {}
 
 
 # ===== ExtensionManager Tests =====
@@ -537,9 +665,19 @@ class TestCommandRegistrar:
         assert "q" not in CommandRegistrar.AGENT_CONFIGS
 
     def test_codex_agent_config_present(self):
-        """Codex should be mapped to .codex/prompts."""
+        """Codex should be mapped to .agents/skills."""
         assert "codex" in CommandRegistrar.AGENT_CONFIGS
-        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".codex/prompts"
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["dir"] == ".agents/skills"
+        assert CommandRegistrar.AGENT_CONFIGS["codex"]["extension"] == "/SKILL.md"
+
+    def test_pi_agent_config_present(self):
+        """Pi should be mapped to .pi/prompts."""
+        assert "pi" in CommandRegistrar.AGENT_CONFIGS
+        cfg = CommandRegistrar.AGENT_CONFIGS["pi"]
+        assert cfg["dir"] == ".pi/prompts"
+        assert cfg["format"] == "markdown"
+        assert cfg["args"] == "$ARGUMENTS"
+        assert cfg["extension"] == ".md"
 
     def test_qwen_agent_config_is_markdown(self):
         """Qwen should use Markdown format with $ARGUMENTS (not TOML)."""
@@ -580,6 +718,21 @@ $ARGUMENTS
         assert frontmatter == {}
         assert body == content
 
+    def test_parse_frontmatter_non_mapping_returns_empty_dict(self):
+        """Non-mapping YAML frontmatter should not crash downstream renderers."""
+        content = """---
+- item1
+- item2
+---
+
+# Command body
+"""
+        registrar = CommandRegistrar()
+        frontmatter, body = registrar.parse_frontmatter(content)
+
+        assert frontmatter == {}
+        assert "Command body" in body
+
     def test_render_frontmatter(self):
         """Test rendering frontmatter to YAML."""
         frontmatter = {
@@ -593,6 +746,18 @@ $ARGUMENTS
         assert output.startswith("---\n")
         assert output.endswith("---\n")
         assert "description: Test command" in output
+
+    def test_render_frontmatter_unicode(self):
+        """Test rendering frontmatter preserves non-ASCII characters."""
+        frontmatter = {
+            "description": "Prüfe Konformität der Implementierung"
+        }
+
+        registrar = CommandRegistrar()
+        output = registrar.render_frontmatter(frontmatter)
+
+        assert "Prüfe Konformität" in output
+        assert "\\u" not in output
 
     def test_register_commands_for_claude(self, extension_dir, project_dir):
         """Test registering commands for Claude agent."""
@@ -670,6 +835,299 @@ $ARGUMENTS
         assert "speckit.shortcut" in registered
         assert (claude_dir / "speckit.alias.cmd.md").exists()
         assert (claude_dir / "speckit.shortcut.md").exists()
+
+    def test_unregister_commands_for_codex_skills_uses_mapped_names(self, project_dir):
+        """Codex skill cleanup should use the same mapped names as registration."""
+        skills_dir = project_dir / ".agents" / "skills"
+        (skills_dir / "speckit-specify").mkdir(parents=True)
+        (skills_dir / "speckit-specify" / "SKILL.md").write_text("body")
+        (skills_dir / "speckit-shortcut").mkdir(parents=True)
+        (skills_dir / "speckit-shortcut" / "SKILL.md").write_text("body")
+
+        registrar = CommandRegistrar()
+        registrar.unregister_commands(
+            {"codex": ["speckit.specify", "speckit.shortcut"]},
+            project_dir,
+        )
+
+        assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
+
+    def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
+        """A Codex project under .agents/skills should not implicitly activate Amp."""
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
+
+        assert "codex" in registered
+        assert "amp" not in registered
+        assert not (project_dir / ".agents" / "commands").exists()
+
+    def test_codex_skill_registration_writes_skill_frontmatter(self, extension_dir, project_dir):
+        """Codex SKILL.md output should use skills-oriented frontmatter."""
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, extension_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-test.hello" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert "name: speckit-test.hello" in content
+        assert "description: Test hello command" in content
+        assert "compatibility:" in content
+        assert "metadata:" in content
+        assert "source: test-ext:commands/hello.md" in content
+        assert "<!-- Extension:" not in content
+
+    def test_codex_skill_registration_resolves_script_placeholders(self, project_dir, temp_dir):
+        """Codex SKILL.md overrides should resolve script placeholders."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-scripted"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-scripted",
+                "name": "Scripted Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.test.plan",
+                        "file": "commands/plan.md",
+                        "description": "Scripted command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            """---
+description: "Scripted command"
+scripts:
+  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: ../../scripts/powershell/setup-plan.ps1 -Json
+agent_scripts:
+  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
+  ps: ../../scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
+---
+
+Run {SCRIPT}
+Then {AGENT_SCRIPT}
+Agent __AGENT__
+"""
+        )
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text('{"ai":"codex","ai_skills":true,"script":"sh"}')
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-test.plan" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert "{SCRIPT}" not in content
+        assert "{AGENT_SCRIPT}" not in content
+        assert "__AGENT__" not in content
+        assert "{ARGS}" not in content
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert ".specify/scripts/bash/update-agent-context.sh codex" in content
+
+    def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
+        """Codex alias skills should render their own matching `name:` frontmatter."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-alias-skill"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-alias-skill",
+                "name": "Alias Skill Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.alias.cmd",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.shortcut"],
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Alias skill\n---\n\nBody\n")
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        primary = skills_dir / "speckit-alias.cmd" / "SKILL.md"
+        alias = skills_dir / "speckit-shortcut" / "SKILL.md"
+
+        assert primary.exists()
+        assert alias.exists()
+        assert "name: speckit-alias.cmd" in primary.read_text()
+        assert "name: speckit-shortcut" in alias.read_text()
+
+    def test_codex_skill_registration_uses_fallback_script_variant_without_init_options(
+        self, project_dir, temp_dir
+    ):
+        """Codex placeholder substitution should still work without init-options.json."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-script-fallback"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-script-fallback",
+                "name": "Script fallback",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fallback.plan",
+                        "file": "commands/plan.md",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            """---
+description: "Fallback scripted command"
+scripts:
+  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: ../../scripts/powershell/setup-plan.ps1 -Json
+agent_scripts:
+  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
+---
+
+Run {SCRIPT}
+Then {AGENT_SCRIPT}
+"""
+        )
+
+        # Intentionally do NOT create .specify/init-options.json
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-fallback.plan" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert "{SCRIPT}" not in content
+        assert "{AGENT_SCRIPT}" not in content
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert ".specify/scripts/bash/update-agent-context.sh codex" in content
+
+    def test_codex_skill_registration_fallback_prefers_powershell_on_windows(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Without init metadata, Windows fallback should prefer ps scripts over sh."""
+        import yaml
+
+        monkeypatch.setattr("specify_cli.agents.platform.system", lambda: "Windows")
+
+        ext_dir = temp_dir / "ext-script-windows-fallback"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-script-windows-fallback",
+                "name": "Script fallback windows",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.windows.plan",
+                        "file": "commands/plan.md",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            """---
+description: "Windows fallback scripted command"
+scripts:
+  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
+  ps: ../../scripts/powershell/setup-plan.ps1 -Json
+agent_scripts:
+  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
+  ps: ../../scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
+---
+
+Run {SCRIPT}
+Then {AGENT_SCRIPT}
+"""
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_file = skills_dir / "speckit-windows.plan" / "SKILL.md"
+        assert skill_file.exists()
+
+        content = skill_file.read_text()
+        assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
+        assert ".specify/scripts/powershell/update-agent-context.ps1 -AgentType codex" in content
+        assert ".specify/scripts/bash/setup-plan.sh" not in content
 
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
@@ -2337,3 +2795,439 @@ class TestExtensionUpdateCLI:
 
         for cmd_file in command_files:
             assert cmd_file.exists(), f"Expected command file to be restored after rollback: {cmd_file}"
+
+
+class TestExtensionListCLI:
+    """Test extension list CLI output format."""
+
+    def test_list_shows_extension_id(self, extension_dir, project_dir):
+        """extension list should display the extension ID."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install the extension using the manager
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "list"])
+
+        assert result.exit_code == 0, result.output
+        # Verify the extension ID is shown in the output
+        assert "test-ext" in result.output
+        # Verify name and version are also shown
+        assert "Test Extension" in result.output
+        assert "1.0.0" in result.output
+
+
+class TestExtensionPriority:
+    """Test extension priority-based resolution."""
+
+    def test_list_by_priority_empty(self, temp_dir):
+        """Test list_by_priority on empty registry."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        result = registry.list_by_priority()
+
+        assert result == []
+
+    def test_list_by_priority_single(self, temp_dir):
+        """Test list_by_priority with single extension."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0", "priority": 5})
+
+        result = registry.list_by_priority()
+
+        assert len(result) == 1
+        assert result[0][0] == "test-ext"
+        assert result[0][1]["priority"] == 5
+
+    def test_list_by_priority_ordering(self, temp_dir):
+        """Test list_by_priority returns extensions sorted by priority."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        # Add in non-priority order
+        registry.add("ext-low", {"version": "1.0.0", "priority": 20})
+        registry.add("ext-high", {"version": "1.0.0", "priority": 1})
+        registry.add("ext-mid", {"version": "1.0.0", "priority": 10})
+
+        result = registry.list_by_priority()
+
+        assert len(result) == 3
+        # Lower priority number = higher precedence (first)
+        assert result[0][0] == "ext-high"
+        assert result[1][0] == "ext-mid"
+        assert result[2][0] == "ext-low"
+
+    def test_list_by_priority_default(self, temp_dir):
+        """Test list_by_priority uses default priority of 10."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        # Add without explicit priority
+        registry.add("ext-default", {"version": "1.0.0"})
+        registry.add("ext-high", {"version": "1.0.0", "priority": 1})
+        registry.add("ext-low", {"version": "1.0.0", "priority": 20})
+
+        result = registry.list_by_priority()
+
+        assert len(result) == 3
+        # ext-high (1), ext-default (10), ext-low (20)
+        assert result[0][0] == "ext-high"
+        assert result[1][0] == "ext-default"
+        assert result[2][0] == "ext-low"
+
+    def test_list_by_priority_invalid_priority_defaults(self, temp_dir):
+        """Malformed priority values fall back to the default priority."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-high", {"version": "1.0.0", "priority": 1})
+        registry.data["extensions"]["ext-invalid"] = {
+            "version": "1.0.0",
+            "priority": "high",
+        }
+        registry._save()
+
+        result = registry.list_by_priority()
+
+        assert [item[0] for item in result] == ["ext-high", "ext-invalid"]
+        assert result[1][1]["priority"] == 10
+
+    def test_list_by_priority_excludes_disabled(self, temp_dir):
+        """Test that list_by_priority excludes disabled extensions by default."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("ext-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+        registry.add("ext-default", {"version": "1.0.0", "priority": 10})  # no enabled field = True
+
+        # Default: exclude disabled
+        by_priority = registry.list_by_priority()
+        ext_ids = [p[0] for p in by_priority]
+        assert "ext-enabled" in ext_ids
+        assert "ext-default" in ext_ids
+        assert "ext-disabled" not in ext_ids
+
+    def test_list_by_priority_includes_disabled_when_requested(self, temp_dir):
+        """Test that list_by_priority includes disabled extensions when requested."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-enabled", {"version": "1.0.0", "enabled": True, "priority": 5})
+        registry.add("ext-disabled", {"version": "1.0.0", "enabled": False, "priority": 1})
+
+        # Include disabled
+        by_priority = registry.list_by_priority(include_disabled=True)
+        ext_ids = [p[0] for p in by_priority]
+        assert "ext-enabled" in ext_ids
+        assert "ext-disabled" in ext_ids
+        # Disabled ext has lower priority number, so it comes first when included
+        assert ext_ids[0] == "ext-disabled"
+
+    def test_install_with_priority(self, extension_dir, project_dir):
+        """Test that install_from_directory stores priority."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=5)
+
+        metadata = manager.registry.get("test-ext")
+        assert metadata["priority"] == 5
+
+    def test_install_default_priority(self, extension_dir, project_dir):
+        """Test that install_from_directory uses default priority of 10."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        metadata = manager.registry.get("test-ext")
+        assert metadata["priority"] == 10
+
+    def test_list_installed_includes_priority(self, extension_dir, project_dir):
+        """Test that list_installed includes priority in returned data."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=3)
+
+        installed = manager.list_installed()
+
+        assert len(installed) == 1
+        assert installed[0]["priority"] == 3
+
+    def test_priority_preserved_on_update(self, temp_dir):
+        """Test that registry update preserves priority."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("test-ext", {"version": "1.0.0", "priority": 5, "enabled": True})
+
+        # Update with new metadata (no priority specified)
+        registry.update("test-ext", {"enabled": False})
+
+        updated = registry.get("test-ext")
+        assert updated["priority"] == 5  # Preserved
+        assert updated["enabled"] is False  # Updated
+
+    def test_corrupted_extension_entry_not_picked_up_as_unregistered(self, project_dir):
+        """Corrupted registry entries are still tracked and NOT picked up as unregistered."""
+        extensions_dir = project_dir / ".specify" / "extensions"
+
+        valid_dir = extensions_dir / "valid-ext" / "templates"
+        valid_dir.mkdir(parents=True)
+        (valid_dir / "other-template.md").write_text("# Valid\n")
+
+        broken_dir = extensions_dir / "broken-ext" / "templates"
+        broken_dir.mkdir(parents=True)
+        (broken_dir / "target-template.md").write_text("# Broken Target\n")
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("valid-ext", {"version": "1.0.0", "priority": 10})
+        # Corrupt the entry - should still be tracked, not picked up as unregistered
+        registry.data["extensions"]["broken-ext"] = "corrupted"
+        registry._save()
+
+        from specify_cli.presets import PresetResolver
+
+        resolver = PresetResolver(project_dir)
+        # Corrupted extension templates should NOT be resolved
+        resolved = resolver.resolve("target-template")
+        assert resolved is None
+
+        # Valid extension template should still resolve
+        valid_resolved = resolver.resolve("other-template")
+        assert valid_resolved is not None
+        assert "Valid" in valid_resolved.read_text()
+
+
+class TestExtensionPriorityCLI:
+    """Test extension priority CLI integration."""
+
+    def test_add_with_priority_option(self, extension_dir, project_dir):
+        """Test extension add command with --priority option."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, [
+                "extension", "add", str(extension_dir), "--dev", "--priority", "3"
+            ])
+
+        assert result.exit_code == 0, result.output
+
+        manager = ExtensionManager(project_dir)
+        metadata = manager.registry.get("test-ext")
+        assert metadata["priority"] == 3
+
+    def test_list_shows_priority(self, extension_dir, project_dir):
+        """Test extension list shows priority."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension with priority
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=7)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "list"])
+
+        assert result.exit_code == 0, result.output
+        assert "Priority: 7" in result.output
+
+    def test_set_priority_changes_priority(self, extension_dir, project_dir):
+        """Test set-priority command changes extension priority."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension with default priority
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Verify default priority
+        assert manager.registry.get("test-ext")["priority"] == 10
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "priority changed: 10 → 5" in result.output
+
+        # Reload registry to see updated value
+        manager2 = ExtensionManager(project_dir)
+        assert manager2.registry.get("test-ext")["priority"] == 5
+
+    def test_set_priority_same_value_no_change(self, extension_dir, project_dir):
+        """Test set-priority with same value shows already set message."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension with priority 5
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=5)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
+
+        assert result.exit_code == 0, result.output
+        assert "already has priority 5" in result.output
+
+    def test_set_priority_invalid_value(self, extension_dir, project_dir):
+        """Test set-priority rejects invalid priority values."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "0"])
+
+        assert result.exit_code == 1, result.output
+        assert "Priority must be a positive integer" in result.output
+
+    def test_set_priority_not_installed(self, project_dir):
+        """Test set-priority fails for non-installed extension."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Ensure .specify exists
+        (project_dir / ".specify").mkdir(parents=True, exist_ok=True)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "nonexistent", "5"])
+
+        assert result.exit_code == 1, result.output
+        assert "not installed" in result.output.lower() or "no extensions installed" in result.output.lower()
+
+    def test_set_priority_by_display_name(self, extension_dir, project_dir):
+        """Test set-priority works with extension display name."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install extension
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Use display name "Test Extension" instead of ID "test-ext"
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "set-priority", "Test Extension", "3"])
+
+        assert result.exit_code == 0, result.output
+        assert "priority changed" in result.output
+
+        # Reload registry to see updated value
+        manager2 = ExtensionManager(project_dir)
+        assert manager2.registry.get("test-ext")["priority"] == 3
+
+
+class TestExtensionPriorityBackwardsCompatibility:
+    """Test backwards compatibility for extensions installed before priority feature."""
+
+    def test_legacy_extension_without_priority_field(self, temp_dir):
+        """Extensions installed before priority feature should default to 10."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        # Simulate legacy registry entry without priority field
+        registry = ExtensionRegistry(extensions_dir)
+        registry.data["extensions"]["legacy-ext"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            "installed_at": "2025-01-01T00:00:00Z",
+            # No "priority" field - simulates pre-feature extension
+        }
+        registry._save()
+
+        # Reload registry
+        registry2 = ExtensionRegistry(extensions_dir)
+
+        # list_by_priority should use default of 10
+        result = registry2.list_by_priority()
+        assert len(result) == 1
+        assert result[0][0] == "legacy-ext"
+        # Priority defaults to 10 and is normalized in returned metadata
+        assert result[0][1]["priority"] == 10
+
+    def test_legacy_extension_in_list_installed(self, extension_dir, project_dir):
+        """list_installed returns priority=10 for legacy extensions without priority field."""
+        manager = ExtensionManager(project_dir)
+
+        # Install extension normally
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Manually remove priority to simulate legacy extension
+        ext_data = manager.registry.data["extensions"]["test-ext"]
+        del ext_data["priority"]
+        manager.registry._save()
+
+        # list_installed should still return priority=10
+        installed = manager.list_installed()
+        assert len(installed) == 1
+        assert installed[0]["priority"] == 10
+
+    def test_mixed_legacy_and_new_extensions_ordering(self, temp_dir):
+        """Legacy extensions (no priority) sort with default=10 among prioritized extensions."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        # Add extension with explicit priority=5
+        registry.add("ext-with-priority", {"version": "1.0.0", "priority": 5})
+
+        # Add legacy extension without priority (manually)
+        registry.data["extensions"]["legacy-ext"] = {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": True,
+            # No priority field
+        }
+        registry._save()
+
+        # Add extension with priority=15
+        registry.add("ext-low-priority", {"version": "1.0.0", "priority": 15})
+
+        # Reload and check ordering
+        registry2 = ExtensionRegistry(extensions_dir)
+        result = registry2.list_by_priority()
+
+        assert len(result) == 3
+        # Order: ext-with-priority (5), legacy-ext (defaults to 10), ext-low-priority (15)
+        assert result[0][0] == "ext-with-priority"
+        assert result[1][0] == "legacy-ext"
+        assert result[2][0] == "ext-low-priority"

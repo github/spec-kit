@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi openclaw generic (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow generic (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -26,9 +26,27 @@ fi
 echo "Building release packages for $NEW_VERSION"
 
 # Create and use .genreleases directory for all build artifacts
-GENRELEASES_DIR=".genreleases"
+# Override via GENRELEASES_DIR env var (e.g. for tests writing to a temp dir)
+GENRELEASES_DIR="${GENRELEASES_DIR:-.genreleases}"
+
+# Guard against unsafe GENRELEASES_DIR values before cleaning
+if [[ -z "$GENRELEASES_DIR" ]]; then
+  echo "GENRELEASES_DIR must not be empty" >&2
+  exit 1
+fi
+case "$GENRELEASES_DIR" in
+  '/'|'.'|'..')
+    echo "Refusing to use unsafe GENRELEASES_DIR value: $GENRELEASES_DIR" >&2
+    exit 1
+    ;;
+esac
+if [[ "$GENRELEASES_DIR" == *".."* ]]; then
+  echo "Refusing to use GENRELEASES_DIR containing '..' path segments: $GENRELEASES_DIR" >&2
+  exit 1
+fi
+
 mkdir -p "$GENRELEASES_DIR"
-rm -rf "$GENRELEASES_DIR"/* || true
+rm -rf "${GENRELEASES_DIR%/}/"* || true
 
 rewrite_paths() {
   sed -E \
@@ -121,18 +139,24 @@ EOF
   done
 }
 
-# Create Kimi Code skills in .kimi/skills/<name>/SKILL.md format.
-# Kimi CLI discovers skills as directories containing a SKILL.md file,
-# invoked with /skill:<name> (e.g. /skill:speckit.specify).
-create_kimi_skills() {
+# Create skills in <skills_dir>/<name>/SKILL.md format.
+# Most agents use hyphenated names (e.g. speckit-plan); Kimi is the
+# current dotted-name exception (e.g. speckit.plan).
+#
+# Technical debt note:
+# Keep SKILL.md frontmatter aligned with `install_ai_skills()` and extension
+# overrides (at minimum: name/description/compatibility/metadata.{author,source}).
+create_skills() {
   local skills_dir="$1"
   local script_variant="$2"
+  local agent_name="$3"
+  local separator="${4:-"-"}"
 
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
     local name
     name=$(basename "$template" .md)
-    local skill_name="speckit.${name}"
+    local skill_name="speckit${separator}${name}"
     local skill_dir="${skills_dir}/${skill_name}"
     mkdir -p "$skill_dir"
 
@@ -175,9 +199,9 @@ create_kimi_skills() {
       in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
       { print }
     ')
-    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | sed 's/__AGENT__/kimi/g' | rewrite_paths)
+    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | sed "s/__AGENT__/$agent_name/g" | rewrite_paths)
 
-    # Strip existing frontmatter and prepend Kimi frontmatter
+    # Strip existing frontmatter and prepend skills frontmatter.
     local template_body
     template_body=$(printf '%s\n' "$body" | awk '/^---/{p++; if(p==2){found=1; next}} found')
 
@@ -185,6 +209,10 @@ create_kimi_skills() {
       printf -- '---\n'
       printf 'name: "%s"\n' "$skill_name"
       printf 'description: "%s"\n' "$description"
+      printf 'compatibility: "%s"\n' "Requires spec-kit project structure with .specify/ directory"
+      printf -- 'metadata:\n'
+      printf '  author: "%s"\n' "github-spec-kit"
+      printf '  source: "%s"\n' "templates/commands/${name}.md"
       printf -- '---\n\n'
       printf '%s\n' "$template_body"
     } > "$skill_dir/SKILL.md"
@@ -291,7 +319,7 @@ build_variant() {
     esac
   fi
 
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" | while IFS= read -r f; do d="$SPEC_DIR/$(dirname "$f")"; mkdir -p "$d"; cp "$f" "$d/"; done; echo "Copied templates -> .specify/templates"; }
 
   case $agent in
     claude)
@@ -321,9 +349,12 @@ build_variant() {
     windsurf)
       mkdir -p "$base_dir/.windsurf/workflows"
       generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
+    junie)
+      mkdir -p "$base_dir/.junie/commands"
+      generate_commands junie md "\$ARGUMENTS" "$base_dir/.junie/commands" "$script" ;;
     codex)
-      mkdir -p "$base_dir/.codex/prompts"
-      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" ;;
+      mkdir -p "$base_dir/.agents/skills"
+      create_skills "$base_dir/.agents/skills" "$script" "codex" "-" ;;
     kilocode)
       mkdir -p "$base_dir/.kilocode/workflows"
       generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
@@ -363,10 +394,16 @@ build_variant() {
       generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
     kimi)
       mkdir -p "$base_dir/.kimi/skills"
-      create_kimi_skills "$base_dir/.kimi/skills" "$script" ;;
-    openclaw)
-      mkdir -p "$base_dir/.openclaw/skills"
-      create_openclaw_skills "$base_dir/.openclaw/skills" "$script" ;;
+      create_skills "$base_dir/.kimi/skills" "$script" "kimi" "." ;;
+    trae)
+      mkdir -p "$base_dir/.trae/rules"
+      generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;
+    pi)
+      mkdir -p "$base_dir/.pi/prompts"
+      generate_commands pi md "\$ARGUMENTS" "$base_dir/.pi/prompts" "$script" ;;
+    iflow)
+      mkdir -p "$base_dir/.iflow/commands"
+      generate_commands iflow md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
@@ -376,37 +413,38 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi openclaw generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow generic)
 ALL_SCRIPTS=(sh ps)
 
-norm_list() {
-  tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?"\n":"") $i);out=1}}}END{printf("\n")}'
-}
-
 validate_subset() {
-  local type=$1; shift; local -n allowed=$1; shift; local items=("$@")
+  local type=$1; shift
+  local allowed_str="$1"; shift
   local invalid=0
-  for it in "${items[@]}"; do
+  for it in "$@"; do
     local found=0
-    for a in "${allowed[@]}"; do [[ $it == "$a" ]] && { found=1; break; }; done
+    for a in $allowed_str; do
+      if [[ "$it" == "$a" ]]; then found=1; break; fi
+    done
     if [[ $found -eq 0 ]]; then
-      echo "Error: unknown $type '$it' (allowed: ${allowed[*]})" >&2
+      echo "Error: unknown $type '$it' (allowed: $allowed_str)" >&2
       invalid=1
     fi
   done
   return $invalid
 }
 
+read_list() { tr ',\n' '  ' | awk '{for(i=1;i<=NF;i++){if(!seen[$i]++){printf((out?" ":"") $i);out=1}}}END{printf("\n")}'; }
+
 if [[ -n ${AGENTS:-} ]]; then
-  mapfile -t AGENT_LIST < <(printf '%s' "$AGENTS" | norm_list)
-  validate_subset agent ALL_AGENTS "${AGENT_LIST[@]}" || exit 1
+  read -ra AGENT_LIST <<< "$(printf '%s' "$AGENTS" | read_list)"
+  validate_subset agent "${ALL_AGENTS[*]}" "${AGENT_LIST[@]}" || exit 1
 else
   AGENT_LIST=("${ALL_AGENTS[@]}")
 fi
 
 if [[ -n ${SCRIPTS:-} ]]; then
-  mapfile -t SCRIPT_LIST < <(printf '%s' "$SCRIPTS" | norm_list)
-  validate_subset script ALL_SCRIPTS "${SCRIPT_LIST[@]}" || exit 1
+  read -ra SCRIPT_LIST <<< "$(printf '%s' "$SCRIPTS" | read_list)"
+  validate_subset script "${ALL_SCRIPTS[*]}" "${SCRIPT_LIST[@]}" || exit 1
 else
   SCRIPT_LIST=("${ALL_SCRIPTS[@]}")
 fi
