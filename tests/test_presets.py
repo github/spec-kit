@@ -2101,6 +2101,27 @@ class TestPresetSkills:
         metadata = manager.registry.get("ext-skill-override")
         assert "speckit-fakeext-cmd" in metadata.get("registered_skills", [])
 
+    def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
+        """Preset overrides should still target legacy dotted Kimi skill directories."""
+        self._write_init_options(project_dir, ai="kimi")
+        skills_dir = project_dir / ".kimi" / "skills"
+        self._create_skill(skills_dir, "speckit.specify", body="untouched")
+
+        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(self_test_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit.specify" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        assert "preset:self-test" in content
+        assert "name: speckit.specify" in content
+
+        metadata = manager.registry.get("self-test")
+        assert "speckit.specify" in metadata.get("registered_skills", [])
+
 
 class TestPresetSetPriority:
     """Test preset set-priority CLI command."""

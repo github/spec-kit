@@ -640,15 +640,21 @@ class PresetManager:
                 continue
 
             # Derive the short command name (e.g. "specify" from "speckit.specify")
-            short_name = cmd_name
-            if short_name.startswith("speckit."):
-                short_name = short_name[len("speckit."):]
-            short_name = short_name.replace(".", "-")
+            raw_short_name = cmd_name
+            if raw_short_name.startswith("speckit."):
+                raw_short_name = raw_short_name[len("speckit."):]
+            short_name = raw_short_name.replace(".", "-")
             skill_name = f"speckit-{short_name}"
+            legacy_skill_name = f"speckit.{raw_short_name}"
 
-            # Only overwrite if the skill already exists (i.e. --ai-skills was used)
-            skill_subdir = skills_dir / skill_name
-            if not skill_subdir.exists():
+            # Only overwrite existing skills (i.e. --ai-skills was used).
+            # If both modern and legacy directories exist, update both.
+            target_skill_names: List[str] = []
+            if (skills_dir / skill_name).exists():
+                target_skill_names.append(skill_name)
+            if legacy_skill_name != skill_name and (skills_dir / legacy_skill_name).exists():
+                target_skill_names.append(legacy_skill_name)
+            if not target_skill_names:
                 continue
 
             # Parse the command file
@@ -673,27 +679,28 @@ class PresetManager:
                 original_desc or f"Spec-kit workflow command: {short_name}",
             )
 
-            frontmatter_data = {
-                "name": skill_name,
-                "description": enhanced_desc,
-                "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                "metadata": {
-                    "author": "github-spec-kit",
-                    "source": f"preset:{manifest.id}",
-                },
-            }
-            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
-            skill_content = (
-                f"---\n"
-                f"{frontmatter_text}\n"
-                f"---\n\n"
-                f"# Speckit {short_name.title()} Skill\n\n"
-                f"{body}\n"
-            )
+            for target_skill_name in target_skill_names:
+                frontmatter_data = {
+                    "name": target_skill_name,
+                    "description": enhanced_desc,
+                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
+                    "metadata": {
+                        "author": "github-spec-kit",
+                        "source": f"preset:{manifest.id}",
+                    },
+                }
+                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                skill_content = (
+                    f"---\n"
+                    f"{frontmatter_text}\n"
+                    f"---\n\n"
+                    f"# Speckit {short_name.title()} Skill\n\n"
+                    f"{body}\n"
+                )
 
-            skill_file = skill_subdir / "SKILL.md"
-            skill_file.write_text(skill_content, encoding="utf-8")
-            written.append(skill_name)
+                skill_file = skills_dir / target_skill_name / "SKILL.md"
+                skill_file.write_text(skill_content, encoding="utf-8")
+                written.append(target_skill_name)
 
         return written
 
