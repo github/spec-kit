@@ -24,7 +24,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority
+from .extensions import ExtensionRegistry, ExtensionResolver, normalize_priority
 
 
 @dataclass
@@ -1529,48 +1529,7 @@ class PresetResolver:
         self.presets_dir = project_root / ".specify" / "presets"
         self.overrides_dir = self.templates_dir / "overrides"
         self.extensions_dir = project_root / ".specify" / "extensions"
-
-    def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
-        """Build unified list of registered and unregistered extensions sorted by priority.
-
-        Registered extensions use their stored priority; unregistered directories
-        get implicit priority=10. Results are sorted by (priority, ext_id) for
-        deterministic ordering.
-
-        Returns:
-            List of (priority, ext_id, metadata_or_none) tuples sorted by priority.
-        """
-        if not self.extensions_dir.exists():
-            return []
-
-        registry = ExtensionRegistry(self.extensions_dir)
-        # Use keys() to track ALL extensions (including corrupted entries) without deep copy
-        # This prevents corrupted entries from being picked up as "unregistered" dirs
-        registered_extension_ids = registry.keys()
-
-        # Get all registered extensions including disabled; we filter disabled manually below
-        all_registered = registry.list_by_priority(include_disabled=True)
-
-        all_extensions: list[tuple[int, str, dict | None]] = []
-
-        # Only include enabled extensions in the result
-        for ext_id, metadata in all_registered:
-            # Skip disabled extensions
-            if not metadata.get("enabled", True):
-                continue
-            priority = normalize_priority(metadata.get("priority") if metadata else None)
-            all_extensions.append((priority, ext_id, metadata))
-
-        # Add unregistered directories with implicit priority=10
-        for ext_dir in self.extensions_dir.iterdir():
-            if not ext_dir.is_dir() or ext_dir.name.startswith("."):
-                continue
-            if ext_dir.name not in registered_extension_ids:
-                all_extensions.append((10, ext_dir.name, None))
-
-        # Sort by (priority, ext_id) for deterministic ordering
-        all_extensions.sort(key=lambda x: (x[0], x[1]))
-        return all_extensions
+        self._ext_resolver = ExtensionResolver(project_root)
 
     def resolve(
         self,
@@ -1624,18 +1583,10 @@ class PresetResolver:
                     if candidate.exists():
                         return candidate
 
-        # Priority 3: Extension-provided templates (sorted by priority — lower number wins)
-        for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
-            ext_dir = self.extensions_dir / ext_id
-            if not ext_dir.is_dir():
-                continue
-            for subdir in subdirs:
-                if subdir:
-                    candidate = ext_dir / subdir / f"{template_name}{ext}"
-                else:
-                    candidate = ext_dir / f"{template_name}{ext}"
-                if candidate.exists():
-                    return candidate
+        # Priority 3: Extension-provided templates (delegated to ExtensionResolver)
+        ext_result = self._ext_resolver.resolve(template_name, template_type)
+        if ext_result is not None:
+            return ext_result
 
         # Priority 4: Core templates
         if template_type == "template":
@@ -1693,7 +1644,7 @@ class PresetResolver:
                 except ValueError:
                     continue
 
-        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
+        for _priority, ext_id, ext_meta in self._ext_resolver.get_all_by_priority():
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
                 continue
@@ -1779,21 +1730,11 @@ class PresetResolver:
                     else:
                         _collect(pack_dir, source_label)
 
-        # Priority 3: Extension-provided templates (sorted by priority)
-        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
-            ext_dir = self.extensions_dir / ext_id
-            if not ext_dir.is_dir():
-                continue
-            if ext_meta:
-                version = ext_meta.get("version", "?")
-                source_label = f"extension:{ext_id} v{version}"
-            else:
-                source_label = f"extension:{ext_id} (unregistered)"
-            for subdir in subdirs:
-                if subdir:
-                    _collect(ext_dir / subdir, source_label)
-                else:
-                    _collect(ext_dir, source_label)
+        # Priority 3: Extension-provided templates (delegated to ExtensionResolver)
+        for entry in self._ext_resolver.list_templates(template_type):
+            if entry["name"] not in seen:
+                seen.add(entry["name"])
+                results.append(entry)
 
         # Priority 4: Core templates
         if template_type == "template":

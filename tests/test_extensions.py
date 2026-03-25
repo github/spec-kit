@@ -21,6 +21,7 @@ from specify_cli.extensions import (
     ExtensionManifest,
     ExtensionRegistry,
     ExtensionManager,
+    ExtensionResolver,
     CommandRegistrar,
     ExtensionCatalog,
     ExtensionError,
@@ -3506,3 +3507,150 @@ class TestCommandFiltering:
         assert "speckit.specify" in names
         assert "speckit.ext-a.run" in names
         assert "speckit.ext-b.deploy" not in names
+
+
+# ===== ExtensionResolver Tests (#1846) =====
+
+class TestExtensionResolver:
+    """Test ExtensionResolver template resolution and discovery."""
+
+    def test_resolve_extension_template(self, temp_dir):
+        """Resolves a template from an installed extension."""
+        project_dir = temp_dir / "project"
+        specify_dir = project_dir / ".specify"
+        ext_dir = specify_dir / "extensions" / "my-ext" / "templates"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "custom.md").write_text("# Custom")
+
+        registry = ExtensionRegistry(specify_dir / "extensions")
+        registry.add("my-ext", {"version": "1.0.0", "enabled": True, "priority": 5})
+
+        resolver = ExtensionResolver(project_dir)
+        result = resolver.resolve("custom", "template")
+
+        assert result is not None
+        assert result.name == "custom.md"
+
+    def test_resolve_returns_none_when_not_found(self, temp_dir):
+        """Returns None when no extension has the template."""
+        project_dir = temp_dir / "project"
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        resolver = ExtensionResolver(project_dir)
+        assert resolver.resolve("nonexistent") is None
+
+    def test_resolve_with_source_attribution(self, temp_dir):
+        """resolve_with_source returns correct source label."""
+        project_dir = temp_dir / "project"
+        ext_dir = project_dir / ".specify" / "extensions" / "docguard" / "commands"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "speckit.docguard.check.md").write_text("# Check")
+
+        registry = ExtensionRegistry(project_dir / ".specify" / "extensions")
+        registry.add("docguard", {"version": "2.1.0", "enabled": True})
+
+        resolver = ExtensionResolver(project_dir)
+        result = resolver.resolve_with_source("speckit.docguard.check", "command")
+
+        assert result is not None
+        assert result["source"] == "extension:docguard v2.1.0"
+
+    def test_resolve_with_source_unregistered(self, temp_dir):
+        """Unregistered extension directories get '(unregistered)' label."""
+        project_dir = temp_dir / "project"
+        ext_dir = project_dir / ".specify" / "extensions" / "loose-ext" / "templates"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "loose.md").write_text("# Loose")
+
+        # Don't register — just have the directory
+        resolver = ExtensionResolver(project_dir)
+        result = resolver.resolve_with_source("loose", "template")
+
+        assert result is not None
+        assert "unregistered" in result["source"]
+
+    def test_list_templates_from_extensions(self, temp_dir):
+        """list_templates discovers templates across extensions."""
+        project_dir = temp_dir / "project"
+        extensions_dir = project_dir / ".specify" / "extensions"
+
+        # Extension A (priority 1)
+        (extensions_dir / "ext-a" / "commands").mkdir(parents=True)
+        (extensions_dir / "ext-a" / "commands" / "speckit.ext-a.run.md").write_text("# Run")
+
+        # Extension B (priority 5)
+        (extensions_dir / "ext-b" / "commands").mkdir(parents=True)
+        (extensions_dir / "ext-b" / "commands" / "speckit.ext-b.deploy.md").write_text("# Deploy")
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-a", {"version": "1.0.0", "enabled": True, "priority": 1})
+        registry.add("ext-b", {"version": "2.0.0", "enabled": True, "priority": 5})
+
+        resolver = ExtensionResolver(project_dir)
+        results = resolver.list_templates("command")
+
+        assert len(results) == 2
+        names = [r["name"] for r in results]
+        assert "speckit.ext-a.run" in names
+        assert "speckit.ext-b.deploy" in names
+
+    def test_list_templates_priority_deduplication(self, temp_dir):
+        """Higher-priority extension wins when same template name exists."""
+        project_dir = temp_dir / "project"
+        extensions_dir = project_dir / ".specify" / "extensions"
+
+        # Both extensions provide "shared.md"
+        (extensions_dir / "ext-high" / "templates").mkdir(parents=True)
+        (extensions_dir / "ext-high" / "templates" / "shared.md").write_text("# High")
+        (extensions_dir / "ext-low" / "templates").mkdir(parents=True)
+        (extensions_dir / "ext-low" / "templates" / "shared.md").write_text("# Low")
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("ext-high", {"version": "1.0.0", "enabled": True, "priority": 1})
+        registry.add("ext-low", {"version": "1.0.0", "enabled": True, "priority": 10})
+
+        resolver = ExtensionResolver(project_dir)
+        results = resolver.list_templates("template")
+
+        shared = [r for r in results if r["name"] == "shared"]
+        assert len(shared) == 1
+        assert "ext-high" in shared[0]["source"]
+
+    def test_list_templates_empty(self, temp_dir):
+        """Returns empty list when no extensions directory exists."""
+        project_dir = temp_dir / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+
+        resolver = ExtensionResolver(project_dir)
+        assert resolver.list_templates("template") == []
+
+    def test_disabled_extension_excluded(self, temp_dir):
+        """Disabled extensions are not resolved."""
+        project_dir = temp_dir / "project"
+        ext_dir = project_dir / ".specify" / "extensions" / "disabled-ext" / "templates"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "hidden.md").write_text("# Hidden")
+
+        registry = ExtensionRegistry(project_dir / ".specify" / "extensions")
+        registry.add("disabled-ext", {"version": "1.0.0", "enabled": False})
+
+        resolver = ExtensionResolver(project_dir)
+        assert resolver.resolve("hidden", "template") is None
+        assert resolver.list_templates("template") == []
+
+    def test_list_scripts(self, temp_dir):
+        """list_templates discovers script files from extensions."""
+        project_dir = temp_dir / "project"
+        ext_dir = project_dir / ".specify" / "extensions" / "script-ext" / "scripts"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "deploy.sh").write_text("#!/bin/bash")
+
+        registry = ExtensionRegistry(project_dir / ".specify" / "extensions")
+        registry.add("script-ext", {"version": "1.0.0", "enabled": True})
+
+        resolver = ExtensionResolver(project_dir)
+        results = resolver.list_templates("script")
+
+        assert len(results) == 1
+        assert results[0]["name"] == "deploy"
+        assert "script-ext" in results[0]["source"]

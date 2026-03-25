@@ -847,6 +847,178 @@ class ExtensionManager:
             return None
 
 
+class ExtensionResolver:
+    """Resolves and discovers templates provided by installed extensions.
+
+    Handles priority-based ordering of extensions, template resolution,
+    and source attribution for extension-provided templates.
+
+    This class owns the extension tier of the template resolution stack.
+    PresetResolver delegates to it for extension lookups rather than
+    walking extension directories directly.
+    """
+
+    def __init__(self, project_root: Path):
+        self.project_root = project_root
+        self.extensions_dir = project_root / ".specify" / "extensions"
+
+    def get_all_by_priority(self) -> List[tuple]:
+        """Build unified list of registered and unregistered extensions sorted by priority.
+
+        Registered extensions use their stored priority; unregistered directories
+        get implicit priority=10. Results are sorted by (priority, ext_id) for
+        deterministic ordering.
+
+        Returns:
+            List of (priority, ext_id, metadata_or_none) tuples sorted by priority.
+        """
+        if not self.extensions_dir.exists():
+            return []
+
+        registry = ExtensionRegistry(self.extensions_dir)
+        registered_extension_ids = registry.keys()
+        all_registered = registry.list_by_priority(include_disabled=True)
+
+        all_extensions: list[tuple[int, str, dict | None]] = []
+
+        for ext_id, metadata in all_registered:
+            if not metadata.get("enabled", True):
+                continue
+            priority = normalize_priority(metadata.get("priority") if metadata else None)
+            all_extensions.append((priority, ext_id, metadata))
+
+        for ext_dir in self.extensions_dir.iterdir():
+            if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+                continue
+            if ext_dir.name not in registered_extension_ids:
+                all_extensions.append((10, ext_dir.name, None))
+
+        all_extensions.sort(key=lambda x: (x[0], x[1]))
+        return all_extensions
+
+    def resolve(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> Optional[Path]:
+        """Resolve a template name to its file path within extensions.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            Path to the resolved template file, or None if not found
+        """
+        subdirs, ext = self._type_config(template_type)
+
+        for _priority, ext_id, _metadata in self.get_all_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            for subdir in subdirs:
+                if subdir:
+                    candidate = ext_dir / subdir / f"{template_name}{ext}"
+                else:
+                    candidate = ext_dir / f"{template_name}{ext}"
+                if candidate.exists():
+                    return candidate
+
+        return None
+
+    def resolve_with_source(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> Optional[Dict[str, str]]:
+        """Resolve a template name and return source attribution.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            Dictionary with 'path' and 'source' keys, or None if not found
+        """
+        subdirs, ext = self._type_config(template_type)
+
+        for _priority, ext_id, ext_meta in self.get_all_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            for subdir in subdirs:
+                if subdir:
+                    candidate = ext_dir / subdir / f"{template_name}{ext}"
+                else:
+                    candidate = ext_dir / f"{template_name}{ext}"
+                if candidate.exists():
+                    if ext_meta:
+                        version = ext_meta.get("version", "?")
+                        source = f"extension:{ext_id} v{version}"
+                    else:
+                        source = f"extension:{ext_id} (unregistered)"
+                    return {"path": str(candidate), "source": source}
+
+        return None
+
+    def list_templates(
+        self,
+        template_type: str = "template",
+    ) -> List[Dict[str, str]]:
+        """List all templates of a given type provided by extensions.
+
+        Returns templates sorted by extension priority, then alphabetically.
+
+        Args:
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            List of dicts with 'name', 'path', and 'source' keys.
+        """
+        subdirs, ext = self._type_config(template_type)
+        results: List[Dict[str, str]] = []
+        seen: set[str] = set()
+
+        for _priority, ext_id, ext_meta in self.get_all_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+
+            if ext_meta:
+                version = ext_meta.get("version", "?")
+                source_label = f"extension:{ext_id} v{version}"
+            else:
+                source_label = f"extension:{ext_id} (unregistered)"
+
+            for subdir in subdirs:
+                scan_dir = ext_dir / subdir if subdir else ext_dir
+                if not scan_dir.is_dir():
+                    continue
+                for f in sorted(scan_dir.iterdir()):
+                    if f.is_file() and f.suffix == ext:
+                        name = f.stem
+                        if name not in seen:
+                            seen.add(name)
+                            results.append({
+                                "name": name,
+                                "path": str(f),
+                                "source": source_label,
+                            })
+
+        return results
+
+    @staticmethod
+    def _type_config(template_type: str) -> tuple:
+        """Return (subdirs, file_extension) for a template type."""
+        if template_type == "template":
+            return ["templates", ""], ".md"
+        elif template_type == "command":
+            return ["commands"], ".md"
+        elif template_type == "script":
+            return ["scripts"], ".sh"
+        return [""], ".md"
+
+
 def version_satisfies(current: str, required: str) -> bool:
     """Check if current version satisfies required version specifier.
 
