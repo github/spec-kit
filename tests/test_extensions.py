@@ -22,6 +22,7 @@ from specify_cli.extensions import (
     ExtensionRegistry,
     ExtensionManager,
     CommandRegistrar,
+    HookExecutor,
     ExtensionCatalog,
     ExtensionError,
     ValidationError,
@@ -875,11 +876,11 @@ $ARGUMENTS
         registrar = CommandRegistrar()
         registrar.register_commands_for_agent("codex", manifest, extension_dir, project_dir)
 
-        skill_file = skills_dir / "speckit-test.hello" / "SKILL.md"
+        skill_file = skills_dir / "speckit-test-hello" / "SKILL.md"
         assert skill_file.exists()
 
         content = skill_file.read_text()
-        assert "name: speckit-test.hello" in content
+        assert "name: speckit-test-hello" in content
         assert "description: Test hello command" in content
         assert "compatibility:" in content
         assert "metadata:" in content
@@ -944,7 +945,7 @@ Agent __AGENT__
         registrar = CommandRegistrar()
         registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
-        skill_file = skills_dir / "speckit-test.plan" / "SKILL.md"
+        skill_file = skills_dir / "speckit-test-plan" / "SKILL.md"
         assert skill_file.exists()
 
         content = skill_file.read_text()
@@ -994,12 +995,12 @@ Agent __AGENT__
         registrar = CommandRegistrar()
         registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
-        primary = skills_dir / "speckit-alias.cmd" / "SKILL.md"
+        primary = skills_dir / "speckit-alias-cmd" / "SKILL.md"
         alias = skills_dir / "speckit-shortcut" / "SKILL.md"
 
         assert primary.exists()
         assert alias.exists()
-        assert "name: speckit-alias.cmd" in primary.read_text()
+        assert "name: speckit-alias-cmd" in primary.read_text()
         assert "name: speckit-shortcut" in alias.read_text()
 
     def test_codex_skill_registration_uses_fallback_script_variant_without_init_options(
@@ -1056,7 +1057,7 @@ Then {AGENT_SCRIPT}
         registrar = CommandRegistrar()
         registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
-        skill_file = skills_dir / "speckit-fallback.plan" / "SKILL.md"
+        skill_file = skills_dir / "speckit-fallback-plan" / "SKILL.md"
         assert skill_file.exists()
 
         content = skill_file.read_text()
@@ -1121,7 +1122,7 @@ Then {AGENT_SCRIPT}
         registrar = CommandRegistrar()
         registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
-        skill_file = skills_dir / "speckit-windows.plan" / "SKILL.md"
+        skill_file = skills_dir / "speckit-windows-plan" / "SKILL.md"
         assert skill_file.exists()
 
         content = skill_file.read_text()
@@ -3231,3 +3232,91 @@ class TestExtensionPriorityBackwardsCompatibility:
         assert result[0][0] == "ext-with-priority"
         assert result[1][0] == "legacy-ext"
         assert result[2][0] == "ext-low-priority"
+
+
+class TestHookInvocationRendering:
+    """Test hook invocation formatting for different agent modes."""
+
+    def test_kimi_hooks_render_skill_invocation(self, project_dir):
+        """Kimi projects should render /skill:speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "kimi", "ai_skills": False}))
+
+        hook_executor = HookExecutor(project_dir)
+        message = hook_executor.format_hook_message(
+            "before_plan",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": "speckit.plan",
+                    "optional": False,
+                }
+            ],
+        )
+
+        assert "Executing: `/skill:speckit-plan`" in message
+        assert "EXECUTE_COMMAND: speckit.plan" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-plan" in message
+
+    def test_codex_hooks_render_dollar_skill_invocation(self, project_dir):
+        """Codex projects with --ai-skills should render $speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "codex", "ai_skills": True}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "$speckit-tasks"
+
+    def test_non_skill_command_keeps_slash_invocation(self, project_dir):
+        """Custom hook commands should keep slash invocation style."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "kimi", "ai_skills": False}))
+
+        hook_executor = HookExecutor(project_dir)
+        message = hook_executor.format_hook_message(
+            "before_tasks",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": "pre_tasks_test",
+                    "optional": False,
+                }
+            ],
+        )
+
+        assert "Executing: `/pre_tasks_test`" in message
+        assert "EXECUTE_COMMAND: pre_tasks_test" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /pre_tasks_test" in message
+
+    def test_extension_command_uses_hyphenated_skill_invocation(self, project_dir):
+        """Multi-segment extension command ids should map to hyphenated skills."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "kimi", "ai_skills": False}))
+
+        hook_executor = HookExecutor(project_dir)
+        message = hook_executor.format_hook_message(
+            "after_tasks",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": "speckit.test.hello",
+                    "optional": False,
+                }
+            ],
+        )
+
+        assert "Executing: `/skill:speckit-test-hello`" in message
+        assert "EXECUTE_COMMAND: speckit.test.hello" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-test-hello" in message

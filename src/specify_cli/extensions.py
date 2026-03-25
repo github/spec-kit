@@ -1931,6 +1931,8 @@ class ConfigManager:
 class HookExecutor:
     """Manages extension hook execution."""
 
+    INIT_OPTIONS_FILE = ".specify/init-options.json"
+
     def __init__(self, project_root: Path):
         """Initialize hook executor.
 
@@ -1940,6 +1942,49 @@ class HookExecutor:
         self.project_root = project_root
         self.extensions_dir = project_root / ".specify" / "extensions"
         self.config_file = project_root / ".specify" / "extensions.yml"
+
+    def _load_init_options(self) -> Dict[str, Any]:
+        """Load persisted init options used to determine invocation style."""
+        options_file = self.project_root / self.INIT_OPTIONS_FILE
+        if not options_file.exists():
+            return {}
+        try:
+            payload = json.loads(options_file.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except (json.JSONDecodeError, OSError, UnicodeError):
+            return {}
+
+    @staticmethod
+    def _skill_name_from_command(command: str) -> str:
+        """Map a command id like speckit.plan to speckit-plan skill name."""
+        if not isinstance(command, str):
+            return ""
+        command_id = command.strip()
+        if not command_id.startswith("speckit."):
+            return ""
+        return f"speckit-{command_id[len('speckit.'):].replace('.', '-')}"
+
+    def _render_hook_invocation(self, command: str) -> str:
+        """Render an agent-specific invocation string for a hook command."""
+        if not isinstance(command, str):
+            return ""
+
+        command_id = command.strip()
+        if not command_id:
+            return ""
+
+        init_options = self._load_init_options()
+        selected_ai = init_options.get("ai")
+        codex_skill_mode = selected_ai == "codex" and bool(init_options.get("ai_skills"))
+        kimi_skill_mode = selected_ai == "kimi"
+
+        skill_name = self._skill_name_from_command(command_id)
+        if codex_skill_mode and skill_name:
+            return f"${skill_name}"
+        if kimi_skill_mode and skill_name:
+            return f"/skill:{skill_name}"
+
+        return f"/{command_id}"
 
     def get_project_config(self) -> Dict[str, Any]:
         """Load project-level extension configuration.
@@ -2183,21 +2228,27 @@ class HookExecutor:
         for hook in hooks:
             extension = hook.get("extension")
             command = hook.get("command")
+            invocation = self._render_hook_invocation(command)
             optional = hook.get("optional", True)
             prompt = hook.get("prompt", "")
             description = hook.get("description", "")
 
             if optional:
                 lines.append(f"\n**Optional Hook**: {extension}")
-                lines.append(f"Command: `/{command}`")
+                if invocation:
+                    lines.append(f"Command: `{invocation}`")
                 if description:
                     lines.append(f"Description: {description}")
                 lines.append(f"\nPrompt: {prompt}")
-                lines.append(f"To execute: `/{command}`")
+                if invocation:
+                    lines.append(f"To execute: `{invocation}`")
             else:
                 lines.append(f"\n**Automatic Hook**: {extension}")
-                lines.append(f"Executing: `/{command}`")
+                if invocation:
+                    lines.append(f"Executing: `{invocation}`")
                 lines.append(f"EXECUTE_COMMAND: {command}")
+                if invocation:
+                    lines.append(f"EXECUTE_COMMAND_INVOCATION: {invocation}")
 
         return "\n".join(lines)
 
@@ -2261,6 +2312,7 @@ class HookExecutor:
         """
         return {
             "command": hook.get("command"),
+            "invocation": self._render_hook_invocation(hook.get("command")),
             "extension": hook.get("extension"),
             "optional": hook.get("optional", True),
             "description": hook.get("description", ""),
@@ -2304,4 +2356,3 @@ class HookExecutor:
                     hook["enabled"] = False
 
         self.save_project_config(config)
-

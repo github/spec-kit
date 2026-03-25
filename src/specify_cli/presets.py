@@ -628,10 +628,7 @@ class PresetManager:
         if not skills_dir:
             return []
 
-        from . import SKILL_DESCRIPTIONS, load_init_options
-
-        opts = load_init_options(self.project_root)
-        selected_ai = opts.get("ai", "")
+        from . import SKILL_DESCRIPTIONS
 
         written: List[str] = []
 
@@ -646,10 +643,8 @@ class PresetManager:
             short_name = cmd_name
             if short_name.startswith("speckit."):
                 short_name = short_name[len("speckit."):]
-            if selected_ai == "kimi":
-                skill_name = f"speckit.{short_name}"
-            else:
-                skill_name = f"speckit-{short_name}"
+            short_name = short_name.replace(".", "-")
+            skill_name = f"speckit-{short_name}"
 
             # Only overwrite if the skill already exists (i.e. --ai-skills was used)
             skill_subdir = skills_dir / skill_name

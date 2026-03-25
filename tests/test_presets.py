@@ -2054,6 +2054,53 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert metadata.get("registered_skills", []) == []
 
+    def test_extension_skill_override_matches_hyphenated_multisegment_name(self, project_dir, temp_dir):
+        """Preset overrides for speckit.<ext>.<cmd> should target speckit-<ext>-<cmd> skills."""
+        self._write_init_options(project_dir, ai="codex")
+        skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(skills_dir, "speckit-fakeext-cmd", body="untouched")
+        (project_dir / ".specify" / "extensions" / "fakeext").mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / "ext-skill-override"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Override fakeext cmd\n---\n\npreset:ext-skill-override\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-skill-override",
+                "name": "Ext Skill Override",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        assert "preset:ext-skill-override" in content
+        assert "name: speckit-fakeext-cmd" in content
+
+        metadata = manager.registry.get("ext-skill-override")
+        assert "speckit-fakeext-cmd" in metadata.get("registered_skills", [])
+
 
 class TestPresetSetPriority:
     """Test preset set-priority CLI command."""

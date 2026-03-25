@@ -400,8 +400,9 @@ class CommandRegistrar:
         short_name = cmd_name
         if short_name.startswith("speckit."):
             short_name = short_name[len("speckit."):]
+        short_name = short_name.replace(".", "-")
 
-        return f"speckit.{short_name}" if agent_name == "kimi" else f"speckit-{short_name}"
+        return f"speckit-{short_name}"
 
     def register_commands(
         self,

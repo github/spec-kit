@@ -202,8 +202,7 @@ agent: $basename
 }
 
 # Create skills in <skills_dir>\<name>\SKILL.md format.
-# Most agents use hyphenated names (e.g. speckit-plan); Kimi is the
-# current dotted-name exception (e.g. speckit.plan).
+# Skills use hyphenated names (e.g. speckit-plan).
 #
 # Technical debt note:
 # Keep SKILL.md frontmatter aligned with `install_ai_skills()` and extension
@@ -463,7 +462,7 @@ function Build-Variant {
         'kimi' {
             $skillsDir = Join-Path $baseDir ".kimi/skills"
             New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -AgentName 'kimi' -Separator '.'
+            New-Skills -SkillsDir $skillsDir -ScriptVariant $Script -AgentName 'kimi'
         }
         'trae' {
             $rulesDir = Join-Path $baseDir ".trae/rules"

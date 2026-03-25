@@ -1492,9 +1492,7 @@ def load_init_options(project_path: Path) -> dict[str, Any]:
 
 # Agent-specific skill directory overrides for agents whose skills directory
 # doesn't follow the standard <agent_folder>/skills/ pattern
-AGENT_SKILLS_DIR_OVERRIDES = {
-    "codex": ".agents/skills",  # Codex agent layout override
-}
+AGENT_SKILLS_DIR_OVERRIDES = {}
 
 # Default skills directory for agents not in AGENT_CONFIG
 DEFAULT_SKILLS_DIR = ".agents/skills"
@@ -1648,10 +1646,7 @@ def install_ai_skills(
                 command_name = command_name[len("speckit."):]
             if command_name.endswith(".agent"):
                 command_name = command_name[:-len(".agent")]
-            if selected_ai == "kimi":
-                skill_name = f"speckit.{command_name}"
-            else:
-                skill_name = f"speckit-{command_name}"
+            skill_name = f"speckit-{command_name}"
 
             # Create skill directory (additive — never removes existing content)
             skill_dir = skills_dir / skill_name
@@ -1730,8 +1725,48 @@ def _has_bundled_skills(project_path: Path, selected_ai: str) -> bool:
     if not skills_dir.is_dir():
         return False
 
-    pattern = "speckit.*/SKILL.md" if selected_ai == "kimi" else "speckit-*/SKILL.md"
-    return any(skills_dir.glob(pattern))
+    return any(skills_dir.glob("speckit-*/SKILL.md"))
+
+
+def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
+    """Migrate legacy Kimi dotted skill dirs (speckit.xxx) to hyphenated format.
+
+    Temporary migration helper:
+    - Intended removal window: after 2026-06-25.
+    - Purpose: one-time cleanup for projects initialized before Kimi moved to
+      hyphenated skills (speckit-xxx).
+
+    Returns:
+        Tuple[migrated_count, removed_count]
+        - migrated_count: old dotted dir renamed to hyphenated dir
+        - removed_count: old dotted dir deleted because hyphenated dir already existed
+    """
+    if not skills_dir.is_dir():
+        return (0, 0)
+
+    migrated_count = 0
+    removed_count = 0
+
+    for legacy_dir in sorted(skills_dir.glob("speckit.*")):
+        if not legacy_dir.is_dir():
+            continue
+        if not (legacy_dir / "SKILL.md").exists():
+            continue
+
+        suffix = legacy_dir.name[len("speckit."):]
+        if not suffix:
+            continue
+
+        target_dir = skills_dir / f"speckit-{suffix.replace('.', '-')}"
+
+        if target_dir.exists():
+            shutil.rmtree(legacy_dir)
+            removed_count += 1
+        else:
+            shutil.move(str(legacy_dir), str(target_dir))
+            migrated_count += 1
+
+    return (migrated_count, removed_count)
 
 
 AGENT_SKILLS_MIGRATIONS = {
@@ -2097,13 +2132,23 @@ def init(
             if ai_skills:
                 if selected_ai in NATIVE_SKILLS_AGENTS:
                     skills_dir = _get_skills_dir(project_path, selected_ai)
+                    migrated_legacy_kimi_skills = 0
+                    removed_legacy_kimi_skills = 0
+                    if selected_ai == "kimi":
+                        migrated_legacy_kimi_skills, removed_legacy_kimi_skills = _migrate_legacy_kimi_dotted_skills(skills_dir)
                     bundled_found = _has_bundled_skills(project_path, selected_ai)
                     if bundled_found:
+                        detail = f"bundled skills → {skills_dir.relative_to(project_path)}"
+                        if migrated_legacy_kimi_skills or removed_legacy_kimi_skills:
+                            detail += (
+                                f" (migrated {migrated_legacy_kimi_skills}, "
+                                f"removed {removed_legacy_kimi_skills} legacy Kimi dotted skills)"
+                            )
                         if tracker:
                             tracker.start("ai-skills")
-                            tracker.complete("ai-skills", f"bundled skills → {skills_dir.relative_to(project_path)}")
+                            tracker.complete("ai-skills", detail)
                         else:
-                            console.print(f"[green]✓[/green] Using bundled agent skills in {skills_dir.relative_to(project_path)}/")
+                            console.print(f"[green]✓[/green] Using {detail}")
                     else:
                         # Compatibility fallback: convert command templates to skills
                         # when an older template archive does not include native skills.
@@ -2288,7 +2333,7 @@ def init(
         if codex_skill_mode:
             return f"$speckit-{name}"
         if kimi_skill_mode:
-            return f"/skill:speckit.{name}"
+            return f"/skill:speckit-{name}"
         return f"/speckit.{name}"
 
     steps_lines.append(f"{step_num}. Start using {usage_label} with your AI agent:")

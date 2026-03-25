@@ -140,8 +140,7 @@ EOF
 }
 
 # Create skills in <skills_dir>/<name>/SKILL.md format.
-# Most agents use hyphenated names (e.g. speckit-plan); Kimi is the
-# current dotted-name exception (e.g. speckit.plan).
+# Skills use hyphenated names (e.g. speckit-plan).
 #
 # Technical debt note:
 # Keep SKILL.md frontmatter aligned with `install_ai_skills()` and extension
@@ -321,7 +320,7 @@ build_variant() {
       generate_commands vibe md "\$ARGUMENTS" "$base_dir/.vibe/prompts" "$script" ;;
     kimi)
       mkdir -p "$base_dir/.kimi/skills"
-      create_skills "$base_dir/.kimi/skills" "$script" "kimi" "." ;;
+      create_skills "$base_dir/.kimi/skills" "$script" "kimi" ;;
     trae)
       mkdir -p "$base_dir/.trae/rules"
       generate_commands trae md "\$ARGUMENTS" "$base_dir/.trae/rules" "$script" ;;

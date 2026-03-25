@@ -24,6 +24,7 @@ import specify_cli
 
 from specify_cli import (
     _get_skills_dir,
+    _migrate_legacy_kimi_dotted_skills,
     install_ai_skills,
     AGENT_SKILLS_DIR_OVERRIDES,
     DEFAULT_SKILLS_DIR,
@@ -169,8 +170,8 @@ class TestGetSkillsDir:
         result = _get_skills_dir(project_dir, "copilot")
         assert result == project_dir / ".github" / "skills"
 
-    def test_codex_uses_override(self, project_dir):
-        """Codex should use the AGENT_SKILLS_DIR_OVERRIDES value."""
+    def test_codex_skills_dir_from_agent_config(self, project_dir):
+        """Codex should resolve skills directory from AGENT_CONFIG folder."""
         result = _get_skills_dir(project_dir, "codex")
         assert result == project_dir / ".agents" / "skills"
 
@@ -209,6 +210,39 @@ class TestGetSkillsDir:
             result = _get_skills_dir(project_dir, agent_key)
             expected = project_dir / AGENT_SKILLS_DIR_OVERRIDES[agent_key]
             assert result == expected
+
+
+class TestKimiLegacySkillMigration:
+    """Test temporary migration from Kimi dotted skill names to hyphenated names."""
+
+    def test_migrates_legacy_dotted_skill_directory(self, project_dir):
+        skills_dir = project_dir / ".kimi" / "skills"
+        legacy_dir = skills_dir / "speckit.plan"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "SKILL.md").write_text("legacy")
+
+        migrated, removed = _migrate_legacy_kimi_dotted_skills(skills_dir)
+
+        assert migrated == 1
+        assert removed == 0
+        assert not legacy_dir.exists()
+        assert (skills_dir / "speckit-plan" / "SKILL.md").exists()
+
+    def test_removes_legacy_dir_when_hyphenated_target_exists(self, project_dir):
+        skills_dir = project_dir / ".kimi" / "skills"
+        legacy_dir = skills_dir / "speckit.plan"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "SKILL.md").write_text("legacy")
+        target_dir = skills_dir / "speckit-plan"
+        target_dir.mkdir(parents=True)
+        (target_dir / "SKILL.md").write_text("new")
+
+        migrated, removed = _migrate_legacy_kimi_dotted_skills(skills_dir)
+
+        assert migrated == 0
+        assert removed == 1
+        assert not legacy_dir.exists()
+        assert (target_dir / "SKILL.md").read_text() == "new"
 
 
 # ===== install_ai_skills Tests =====
@@ -473,8 +507,7 @@ class TestInstallAiSkills:
         skills_dir = _get_skills_dir(proj, agent_key)
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-        # Kimi uses dotted skill names; other agents use hyphen-separated names.
-        expected_skill_name = "speckit.specify" if agent_key == "kimi" else "speckit-specify"
+        expected_skill_name = "speckit-specify"
         assert expected_skill_name in skill_dirs
         assert (skills_dir / expected_skill_name / "SKILL.md").exists()
 
@@ -1118,12 +1151,12 @@ class TestCliValidation:
             assert "Optional skills that you can use for your specs" in result.output
 
     def test_kimi_next_steps_show_skill_invocation(self, monkeypatch):
-        """Kimi next-steps guidance should display /skill:speckit.* usage."""
+        """Kimi next-steps guidance should display /skill:speckit-* usage."""
         from typer.testing import CliRunner
 
         def _fake_download(*args, **kwargs):
             project_path = Path(args[0])
-            skill_dir = project_path / ".kimi" / "skills" / "speckit.specify"
+            skill_dir = project_path / ".kimi" / "skills" / "speckit-specify"
             skill_dir.mkdir(parents=True, exist_ok=True)
             (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
 
@@ -1137,7 +1170,7 @@ class TestCliValidation:
             )
 
             assert result.exit_code == 0
-            assert "/skill:speckit.constitution" in result.output
+            assert "/skill:speckit-constitution" in result.output
             assert "/speckit.constitution" not in result.output
             assert "Optional skills that you can use for your specs" in result.output
 
