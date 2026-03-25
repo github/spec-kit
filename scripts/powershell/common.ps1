@@ -8,7 +8,8 @@ function Find-SpecifyRoot {
 
     # Normalize to absolute path to prevent issues with relative paths
     # Use -LiteralPath to handle paths with wildcard characters ([, ], *, ?)
-    $current = (Resolve-Path -LiteralPath $StartDir -ErrorAction SilentlyContinue)?.Path
+    $resolved = Resolve-Path -LiteralPath $StartDir -ErrorAction SilentlyContinue
+    $current = if ($resolved) { $resolved.Path } else { $null }
     if (-not $current) { return $null }
 
     while ($true) {
