@@ -2743,7 +2743,14 @@ def preset_list_templates(
     ),
 ):
     """List all available templates from the resolution stack."""
-    from .presets import PresetResolver
+    from .presets import PresetResolver, VALID_PRESET_TEMPLATE_TYPES
+
+    if template_type not in VALID_PRESET_TEMPLATE_TYPES:
+        console.print(
+            f"[red]Error:[/red] Invalid template type '{template_type}'. "
+            f"Must be one of: {', '.join(sorted(VALID_PRESET_TEMPLATE_TYPES))}"
+        )
+        raise typer.Exit(1)
 
     project_root = Path.cwd()
 

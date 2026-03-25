@@ -1681,7 +1681,16 @@ class PresetResolver:
 
         Returns:
             List of dicts with 'name', 'path', and 'source' keys, sorted by name.
+
+        Raises:
+            ValueError: If template_type is not one of "template", "command", "script"
         """
+        if template_type not in VALID_PRESET_TEMPLATE_TYPES:
+            raise ValueError(
+                f"Invalid template type '{template_type}': "
+                f"must be one of {sorted(VALID_PRESET_TEMPLATE_TYPES)}"
+            )
+
         seen: set[str] = set()
         results: List[Dict[str, str]] = []
 
@@ -1691,10 +1700,8 @@ class PresetResolver:
             subdirs = ["templates", ""]
         elif template_type == "command":
             subdirs = ["commands"]
-        elif template_type == "script":
+        else:  # script
             subdirs = ["scripts"]
-        else:
-            subdirs = [""]
 
         def _collect(directory: Path, source: str):
             """Collect template files from a directory."""

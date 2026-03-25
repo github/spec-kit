@@ -171,10 +171,16 @@ class ExtensionManifest:
                     "must be lowercase alphanumeric with hyphens only"
                 )
 
-            # Validate file path safety: must be relative, no parent traversal
+            # Validate file path safety: must be relative, no anchored/drive
+            # paths, and no parent traversal components
             file_path = script["file"]
-            normalized = os.path.normpath(file_path)
-            if os.path.isabs(normalized) or normalized.startswith(".."):
+            p = Path(file_path)
+            if p.is_absolute() or p.anchor:
+                raise ValidationError(
+                    f"Invalid script file path '{file_path}': "
+                    "must be a relative path within the extension directory"
+                )
+            if ".." in p.parts:
                 raise ValidationError(
                     f"Invalid script file path '{file_path}': "
                     "must be a relative path within the extension directory"
@@ -622,11 +628,12 @@ class ExtensionManager:
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
-        # Set execute permissions on extension scripts
-        for script in manifest.scripts:
-            script_path = dest_dir / script["file"]
-            if script_path.exists() and script_path.suffix == ".sh":
-                script_path.chmod(script_path.stat().st_mode | 0o755)
+        # Set execute permissions on extension scripts (POSIX only)
+        if os.name == "posix":
+            for script in manifest.scripts:
+                script_path = dest_dir / script["file"]
+                if script_path.exists() and script_path.suffix == ".sh":
+                    script_path.chmod(script_path.stat().st_mode | 0o111)
 
         # Register commands with AI agents
         registered_commands = {}
@@ -1092,7 +1099,9 @@ class CommandRegistrar:
         Extension-specific commands are only kept if the target extension
         directory exists under .specify/extensions/.
 
-        If the extensions directory does not exist, no filtering is applied.
+        If the extensions directory does not exist, it is treated as empty
+        and all extension-scoped commands are filtered out (matching the
+        preset filtering behavior at presets.py:518-529).
 
         Note: This method is not applied during extension self-registration
         (all commands in an extension's own manifest are always registered).
@@ -1100,8 +1109,6 @@ class CommandRegistrar:
         commands for extensions that may not be installed.
         """
         extensions_dir = project_root / ".specify" / "extensions"
-        if not extensions_dir.is_dir():
-            return commands
         filtered = []
         for cmd in commands:
             parts = cmd["name"].split(".")
