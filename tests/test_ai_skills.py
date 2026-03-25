@@ -806,6 +806,32 @@ class TestNewProjectCommandSkip:
         mock_skills.assert_called_once()
         assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
 
+    def test_kimi_legacy_migration_runs_without_ai_skills_flag(self, tmp_path):
+        """Kimi init should migrate dotted legacy skills even when --ai-skills is not set."""
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "kimi-legacy-no-ai-skills"
+
+        def fake_download(project_path, *args, **kwargs):
+            legacy_dir = project_path / ".kimi" / "skills" / "speckit.plan"
+            legacy_dir.mkdir(parents=True, exist_ok=True)
+            (legacy_dir / "SKILL.md").write_text("---\nname: speckit.plan\n---\n\nlegacy\n")
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/kimi"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "kimi", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 0
+        assert not (target / ".kimi" / "skills" / "speckit.plan").exists()
+        assert (target / ".kimi" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
     def test_codex_ai_skills_here_mode_preserves_existing_codex_dir(self, tmp_path, monkeypatch):
         """Codex --here skills init should not delete a pre-existing .codex directory."""
         from typer.testing import CliRunner

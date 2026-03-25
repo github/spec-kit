@@ -2129,13 +2129,24 @@ def init(
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
+            # Determine skills directory and migrate any legacy Kimi dotted skills.
+            migrated_legacy_kimi_skills = 0
+            removed_legacy_kimi_skills = 0
+            skills_dir: Optional[Path] = None
+            if selected_ai in NATIVE_SKILLS_AGENTS:
+                skills_dir = _get_skills_dir(project_path, selected_ai)
+                if selected_ai == "kimi" and skills_dir.is_dir():
+                    (
+                        migrated_legacy_kimi_skills,
+                        removed_legacy_kimi_skills,
+                    ) = _migrate_legacy_kimi_dotted_skills(skills_dir)
+
             if ai_skills:
                 if selected_ai in NATIVE_SKILLS_AGENTS:
-                    skills_dir = _get_skills_dir(project_path, selected_ai)
-                    migrated_legacy_kimi_skills = 0
-                    removed_legacy_kimi_skills = 0
-                    if selected_ai == "kimi":
-                        migrated_legacy_kimi_skills, removed_legacy_kimi_skills = _migrate_legacy_kimi_dotted_skills(skills_dir)
+                    if skills_dir is None:
+                        raise RuntimeError(
+                            f"Could not resolve skills directory for agent: {selected_ai}"
+                        )
                     bundled_found = _has_bundled_skills(project_path, selected_ai)
                     if bundled_found:
                         detail = f"bundled skills → {skills_dir.relative_to(project_path)}"
