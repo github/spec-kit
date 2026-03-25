@@ -652,7 +652,8 @@ class PresetManager:
             skill_name = f"speckit-{short_name}"
             legacy_skill_name = f"speckit.{raw_short_name}"
 
-            # Only overwrite existing skills (i.e. --ai-skills was used).
+            # Only overwrite skills that already exist under skills_dir,
+            # including Kimi native skills when ai_skills is false.
             # If both modern and legacy directories exist, update both.
             target_skill_names: List[str] = []
             if (skills_dir / skill_name).exists():

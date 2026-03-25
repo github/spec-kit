@@ -1956,7 +1956,7 @@ class HookExecutor:
         return self._init_options_cache
 
     @staticmethod
-    def _skill_name_from_command(command: str) -> str:
+    def _skill_name_from_command(command: Any) -> str:
         """Map a command id like speckit.plan to speckit-plan skill name."""
         if not isinstance(command, str):
             return ""
@@ -1965,7 +1965,7 @@ class HookExecutor:
             return ""
         return f"speckit-{command_id[len('speckit.'):].replace('.', '-')}"
 
-    def _render_hook_invocation(self, command: str) -> str:
+    def _render_hook_invocation(self, command: Any) -> str:
         """Render an agent-specific invocation string for a hook command."""
         if not isinstance(command, str):
             return ""
