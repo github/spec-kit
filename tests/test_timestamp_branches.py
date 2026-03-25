@@ -147,6 +147,18 @@ class TestSequentialBranch:
                 branch = line.split(":", 1)[1].strip()
         assert branch == "003-next-feat", f"expected 003-next-feat, got: {branch}"
 
+    def test_sequential_supports_four_digit_prefixes(self, git_repo: Path):
+        """Sequential numbering should continue past 999 without truncation."""
+        (git_repo / "specs" / "999-last-3digit").mkdir(parents=True)
+        (git_repo / "specs" / "1000-first-4digit").mkdir(parents=True)
+        result = run_script(git_repo, "--short-name", "next-feat", "Next feature")
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch == "1001-next-feat", f"expected 1001-next-feat, got: {branch}"
+
 
 # ── check_feature_branch Tests ───────────────────────────────────────────────
 
