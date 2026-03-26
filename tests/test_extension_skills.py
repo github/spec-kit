@@ -192,6 +192,24 @@ class TestExtensionManagerGetSkillsDir:
         result = manager._get_skills_dir()
         assert result is None
 
+    def test_returns_kimi_skills_dir_when_ai_skills_disabled(self, project_dir):
+        """Kimi should still use its native skills dir when ai_skills is false."""
+        _create_init_options(project_dir, ai="kimi", ai_skills=False)
+        skills_dir = _create_skills_dir(project_dir, ai="kimi")
+        manager = ExtensionManager(project_dir)
+        result = manager._get_skills_dir()
+        assert result == skills_dir
+
+    def test_returns_none_for_non_dict_init_options(self, project_dir):
+        """Corrupted-but-parseable init-options should not crash skill-dir lookup."""
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text("[]")
+        _create_skills_dir(project_dir, ai="claude")
+        manager = ExtensionManager(project_dir)
+        result = manager._get_skills_dir()
+        assert result is None
+
 
 # ===== Extension Skill Registration Tests =====
 
@@ -326,6 +344,78 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-hello" in metadata["registered_skills"]
         assert "speckit-test-ext-world" in metadata["registered_skills"]
 
+    def test_kimi_creates_skills_when_ai_skills_disabled(self, project_dir, temp_dir):
+        """Kimi should still auto-register extension skills in native-skills mode."""
+        _create_init_options(project_dir, ai="kimi", ai_skills=False)
+        skills_dir = _create_skills_dir(project_dir, ai="kimi")
+        ext_dir = _create_extension_dir(temp_dir, ext_id="test-ext")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-test-ext-hello" in metadata["registered_skills"]
+        assert "speckit-test-ext-world" in metadata["registered_skills"]
+        assert (skills_dir / "speckit-test-ext-hello" / "SKILL.md").exists()
+
+    def test_skill_registration_resolves_script_placeholders(self, project_dir, temp_dir):
+        """Auto-registered extension skills should resolve script placeholders."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "scripted-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "scripted-ext",
+                "name": "Scripted Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.scripted-ext.plan",
+                        "file": "commands/plan.md",
+                        "description": "Scripted plan command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "plan.md").write_text(
+            "---\n"
+            "description: Scripted plan command\n"
+            "scripts:\n"
+            "  sh: ../../scripts/bash/setup-plan.sh --json \"{ARGS}\"\n"
+            "agent_scripts:\n"
+            "  sh: ../../scripts/bash/update-agent-context.sh __AGENT__\n"
+            "---\n\n"
+            "Run {SCRIPT}\n"
+            "Then {AGENT_SCRIPT}\n"
+            "Review templates/checklist.md and memory/constitution.md for __AGENT__.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-scripted-ext-plan" / "SKILL.md").read_text()
+        assert "{SCRIPT}" not in content
+        assert "{AGENT_SCRIPT}" not in content
+        assert "{ARGS}" not in content
+        assert "__AGENT__" not in content
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert ".specify/scripts/bash/update-agent-context.sh claude" in content
+        assert ".specify/templates/checklist.md" in content
+        assert ".specify/memory/constitution.md" in content
+
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""
         project_dir, skills_dir = skills_project
@@ -452,6 +542,21 @@ class TestExtensionSkillUnregistration:
 
 class TestExtensionSkillEdgeCases:
     """Test edge cases in extension skill registration."""
+
+    def test_install_with_non_dict_init_options_does_not_crash(self, project_dir, extension_dir):
+        """Corrupted init-options payloads should disable skill registration, not crash install."""
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text("[]")
+        _create_skills_dir(project_dir, ai="claude")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        metadata = manager.registry.get(manifest.id)
+        assert metadata["registered_skills"] == []
 
     def test_command_without_frontmatter(self, skills_project, temp_dir):
         """Commands without YAML frontmatter should still produce valid skills."""

@@ -511,24 +511,32 @@ class ExtensionManager:
         return _ignore
 
     def _get_skills_dir(self) -> Optional[Path]:
-        """Return the skills directory if ``--ai-skills`` was used during init.
+        """Return the active skills directory for extension skill registration.
 
         Reads ``.specify/init-options.json`` to determine whether skills
         are enabled and which agent was selected, then delegates to
         the module-level ``_get_skills_dir()`` helper for the concrete path.
 
+        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
+        ``.kimi/skills`` exists, extension installs should still propagate
+        command skills even when ``ai_skills`` is false.
+
         Returns:
             The skills directory ``Path``, or ``None`` if skills were not
-            enabled or the init-options file is missing.
+            enabled and no native-skills fallback applies.
         """
         from . import load_init_options, _get_skills_dir as resolve_skills_dir
 
         opts = load_init_options(self.project_root)
-        if not opts.get("ai_skills"):
-            return None
+        if not isinstance(opts, dict):
+            opts = {}
 
         agent = opts.get("ai")
-        if not agent:
+        if not isinstance(agent, str) or not agent:
+            return None
+
+        ai_skills_enabled = bool(opts.get("ai_skills"))
+        if not ai_skills_enabled and agent != "kimi":
             return None
 
         skills_dir = resolve_skills_dir(self.project_root, agent)
@@ -560,9 +568,18 @@ class ExtensionManager:
         if not skills_dir:
             return []
 
+        from . import load_init_options
+        from .agents import CommandRegistrar
         import yaml
 
         written: List[str] = []
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            opts = {}
+        selected_ai = opts.get("ai")
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return []
+        registrar = CommandRegistrar()
 
         for cmd_info in manifest.commands:
             cmd_name = cmd_info["name"]
@@ -612,22 +629,11 @@ class ExtensionManager:
                     except OSError:
                         pass  # best-effort cleanup
                 continue
-            if content.startswith("---"):
-                parts = content.split("---", 2)
-                if len(parts) >= 3:
-                    try:
-                        frontmatter = yaml.safe_load(parts[1])
-                    except yaml.YAMLError:
-                        frontmatter = {}
-                    if not isinstance(frontmatter, dict):
-                        frontmatter = {}
-                    body = parts[2].strip()
-                else:
-                    frontmatter = {}
-                    body = content
-            else:
-                frontmatter = {}
-                body = content
+            frontmatter, body = registrar.parse_frontmatter(content)
+            frontmatter = registrar._adjust_script_paths(frontmatter)
+            body = registrar.resolve_skill_placeholders(
+                selected_ai, frontmatter, body, self.project_root
+            )
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
