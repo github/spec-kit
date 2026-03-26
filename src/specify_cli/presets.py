@@ -663,9 +663,9 @@ class PresetManager:
             # including Kimi native skills when ai_skills is false.
             # If both modern and legacy directories exist, update both.
             target_skill_names: List[str] = []
-            if (skills_dir / skill_name).exists():
+            if (skills_dir / skill_name).is_dir():
                 target_skill_names.append(skill_name)
-            if legacy_skill_name != skill_name and (skills_dir / legacy_skill_name).exists():
+            if legacy_skill_name != skill_name and (skills_dir / legacy_skill_name).is_dir():
                 target_skill_names.append(legacy_skill_name)
             if not target_skill_names:
                 continue

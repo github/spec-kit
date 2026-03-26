@@ -252,6 +252,23 @@ class TestKimiLegacySkillMigration:
         assert (legacy_dir / "SKILL.md").read_text() == "legacy"
         assert (target_dir / "SKILL.md").read_text() == "new"
 
+    def test_keeps_legacy_dir_when_matching_target_but_extra_files_exist(self, project_dir):
+        skills_dir = project_dir / ".kimi" / "skills"
+        legacy_dir = skills_dir / "speckit.plan"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "SKILL.md").write_text("legacy")
+        (legacy_dir / "notes.txt").write_text("custom")
+        target_dir = skills_dir / "speckit-plan"
+        target_dir.mkdir(parents=True)
+        (target_dir / "SKILL.md").write_text("legacy")
+
+        migrated, removed = _migrate_legacy_kimi_dotted_skills(skills_dir)
+
+        assert migrated == 0
+        assert removed == 0
+        assert legacy_dir.exists()
+        assert (legacy_dir / "notes.txt").read_text() == "custom"
+
 
 # ===== install_ai_skills Tests =====
 

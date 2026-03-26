@@ -2040,6 +2040,23 @@ class TestPresetSkills:
         assert "preset:self-test" not in content, "Preset content should be gone"
         assert "templates/commands/specify.md" in content, "Should reference core template"
 
+    def test_skill_not_overridden_when_skill_path_is_file(self, project_dir):
+        """Preset install should skip non-directory skill targets."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        (skills_dir / "speckit-specify").write_text("not-a-directory")
+
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+
+        assert (skills_dir / "speckit-specify").is_file()
+        metadata = manager.registry.get("self-test")
+        assert "speckit-specify" not in metadata.get("registered_skills", [])
+
     def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
         """Skills should not be created when no existing skill dir is found."""
         self._write_init_options(project_dir, ai="claude")

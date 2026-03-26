@@ -1763,8 +1763,13 @@ def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
         if target_skill.is_file():
             try:
                 if target_skill.read_bytes() == legacy_skill.read_bytes():
-                    shutil.rmtree(legacy_dir)
-                    removed_count += 1
+                    # Preserve legacy directory when it contains extra user files.
+                    has_extra_entries = any(
+                        child.name != "SKILL.md" for child in legacy_dir.iterdir()
+                    )
+                    if not has_extra_entries:
+                        shutil.rmtree(legacy_dir)
+                        removed_count += 1
             except OSError:
                 # Best-effort migration: preserve legacy dir on read failures.
                 pass
