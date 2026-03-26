@@ -24,7 +24,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, ExtensionResolver, normalize_priority
+from .extensions import ExtensionResolver, normalize_priority
 
 
 @dataclass
