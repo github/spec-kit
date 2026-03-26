@@ -251,9 +251,11 @@ class CommandRegistrar:
         ):
             text = text.replace(old, new)
 
-        text = re.sub(r"(?<![\w.])/?memory/", ".specify/memory/", text)
-        text = re.sub(r"(?<![\w.])/?scripts/", ".specify/scripts/", text)
-        text = re.sub(r"(?<![\w.])/?templates/", ".specify/templates/", text)
+        # Only rewrite top-level style references so extension-local paths like
+        # ".specify/extensions/<ext>/scripts/..." remain intact.
+        text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?memory/', r"\1.specify/memory/", text)
+        text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?scripts/', r"\1.specify/scripts/", text)
+        text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?templates/', r"\1.specify/templates/", text)
 
         return text.replace(".specify/.specify/", ".specify/").replace(".specify.specify/", ".specify/")
 

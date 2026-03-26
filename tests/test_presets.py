@@ -1995,6 +1995,16 @@ class TestPresetSkills:
         content = skill_file.read_text()
         assert "untouched" in content, "Skill should not be modified when ai_skills=False"
 
+    def test_get_skills_dir_returns_none_for_non_string_ai(self, project_dir):
+        """Corrupted init-options ai values should not crash preset skill resolution."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text('{"ai":["codex"],"ai_skills":true,"script":"sh"}')
+
+        manager = PresetManager(project_dir)
+
+        assert manager._get_skills_dir() is None
+
     def test_skill_not_updated_without_init_options(self, project_dir, temp_dir):
         """When no init-options.json exists, preset install should not touch skills."""
         skills_dir = project_dir / ".claude" / "skills"

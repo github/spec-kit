@@ -2151,10 +2151,6 @@ def init(
 
             if ai_skills:
                 if selected_ai in NATIVE_SKILLS_AGENTS:
-                    if skills_dir is None:
-                        raise RuntimeError(
-                            f"Could not resolve skills directory for agent: {selected_ai}"
-                        )
                     bundled_found = _has_bundled_skills(project_path, selected_ai)
                     if bundled_found:
                         detail = f"bundled skills → {skills_dir.relative_to(project_path)}"

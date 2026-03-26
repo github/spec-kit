@@ -574,7 +574,7 @@ class PresetManager:
 
         opts = load_init_options(self.project_root)
         agent = opts.get("ai")
-        if not agent:
+        if not isinstance(agent, str) or not agent:
             return None
 
         ai_skills_enabled = bool(opts.get("ai_skills"))

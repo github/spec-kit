@@ -778,6 +778,36 @@ $ARGUMENTS
         assert adjusted["scripts"]["sh"] == ".specify/scripts/bash/setup-plan.sh {ARGS}"
         assert adjusted["scripts"]["ps"] == ".specify/scripts/powershell/setup-plan.ps1 {ARGS}"
 
+    def test_adjust_script_paths_preserves_extension_local_paths(self):
+        """Extension-local script paths should not be rewritten into .specify/.specify."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        registrar = AgentCommandRegistrar()
+        original = {
+            "scripts": {
+                "sh": ".specify/extensions/test-ext/scripts/setup.sh {ARGS}",
+                "ps": "scripts/powershell/setup-plan.ps1 {ARGS}",
+            }
+        }
+
+        adjusted = registrar._adjust_script_paths(original)
+
+        assert adjusted["scripts"]["sh"] == ".specify/extensions/test-ext/scripts/setup.sh {ARGS}"
+        assert adjusted["scripts"]["ps"] == ".specify/scripts/powershell/setup-plan.ps1 {ARGS}"
+
+    def test_rewrite_project_relative_paths_preserves_extension_local_body_paths(self):
+        """Body rewrites should preserve extension-local assets while fixing top-level refs."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        body = (
+            "Read `.specify/extensions/test-ext/templates/spec.md`\n"
+            "Run scripts/bash/setup-plan.sh\n"
+        )
+
+        rewritten = AgentCommandRegistrar._rewrite_project_relative_paths(body)
+
+        assert ".specify/extensions/test-ext/templates/spec.md" in rewritten
+        assert ".specify/scripts/bash/setup-plan.sh" in rewritten
+
     def test_render_toml_command_handles_embedded_triple_double_quotes(self):
         """TOML renderer should stay valid when body includes triple double-quotes."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
