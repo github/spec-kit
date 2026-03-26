@@ -105,7 +105,7 @@ Also update any function docstrings, examples, and error messages that list avai
 
 #### 3. Update README Documentation
 
-Update the **Supported AI Agents** section in `README.md` to include the new agent:
+Update the **Supported AI Tools** section in `README.md` to include the new tool:
 
 - Add the new agent to the table with appropriate support level (Full/Partial)
 - Include the agent's official website link
