@@ -1694,8 +1694,8 @@ class PresetResolver:
         seen: set[str] = set()
         results: List[Dict[str, str]] = []
 
-        # Determine file extension and subdirectory mapping
-        ext = ".sh" if template_type == "script" else ".md"
+        # Determine file extensions and subdirectory mapping
+        exts = [".sh", ".ps1"] if template_type == "script" else [".md"]
         if template_type == "template":
             subdirs = ["templates", ""]
         elif template_type == "command":
@@ -1723,7 +1723,7 @@ class PresetResolver:
             if not directory.is_dir():
                 return
             for f in sorted(directory.iterdir()):
-                if f.is_file() and f.suffix == ext:
+                if f.is_file() and f.suffix in exts:
                     name = f.stem
                     if name in seen:
                         continue
