@@ -560,11 +560,7 @@ class ExtensionManager:
         if not skills_dir:
             return []
 
-        from . import load_init_options
         import yaml
-
-        opts = load_init_options(self.project_root)
-        selected_ai = opts.get("ai", "")
 
         written: List[str] = []
 
@@ -587,17 +583,12 @@ class ExtensionManager:
             if not source_file.is_file():
                 continue
 
-            # Derive skill name from command name, matching the convention used by
-            # presets.py: strip the leading "speckit." prefix, then form:
-            #   Kimi  → "speckit.{short_name}"  (dot preserved for Kimi agent)
-            #   other → "speckit-{short_name}"  (hyphen separator)
+            # Derive skill name from command name using the same hyphenated
+            # convention as hook rendering and preset skill registration.
             short_name_raw = cmd_name
             if short_name_raw.startswith("speckit."):
                 short_name_raw = short_name_raw[len("speckit."):]
-            if selected_ai == "kimi":
-                skill_name = f"speckit.{short_name_raw}"
-            else:
-                skill_name = f"speckit-{short_name_raw}"
+            skill_name = f"speckit-{short_name_raw.replace('.', '-')}"
 
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
