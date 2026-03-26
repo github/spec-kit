@@ -213,13 +213,18 @@ class CommandRegistrar:
         return f"---\n{yaml_str}---\n"
 
     def _adjust_script_paths(self, frontmatter: dict) -> dict:
-        """Adjust script paths from extension-relative to repo-relative.
+        """Normalize script paths in frontmatter to generated project locations.
+
+        Rewrites known repo-relative and top-level script paths under the
+        `scripts` and `agent_scripts` keys (for example `../../scripts/`,
+        `../../templates/`, `../../memory/`, `scripts/`, `templates/`, and
+        `memory/`) to the `.specify/...` paths used in generated projects.
 
         Args:
             frontmatter: Frontmatter dictionary
 
         Returns:
-            Modified frontmatter with adjusted paths
+            Modified frontmatter with normalized project paths
         """
         frontmatter = deepcopy(frontmatter)
 

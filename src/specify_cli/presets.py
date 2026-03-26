@@ -588,25 +588,23 @@ class PresetManager:
         return skills_dir
 
     @staticmethod
-    def _skill_names_for_command(cmd_name: str) -> List[str]:
+    def _skill_names_for_command(cmd_name: str) -> tuple[str, str]:
         """Return the modern and legacy skill directory names for a command."""
         raw_short_name = cmd_name
         if raw_short_name.startswith("speckit."):
             raw_short_name = raw_short_name[len("speckit."):]
 
-        skill_names = [f"speckit-{raw_short_name.replace('.', '-')}"]
+        modern_skill_name = f"speckit-{raw_short_name.replace('.', '-')}"
         legacy_skill_name = f"speckit.{raw_short_name}"
-        if legacy_skill_name not in skill_names:
-            skill_names.append(legacy_skill_name)
+        return modern_skill_name, legacy_skill_name
 
-        return skill_names
-
-    def _find_extension_skill_restore(self, skill_name: str) -> Optional[Dict[str, Any]]:
-        """Find the highest-priority installed extension template for a skill."""
+    def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
+        """Index extension-backed skill restore data by skill directory name."""
         from .extensions import ExtensionManifest, ValidationError
 
         resolver = PresetResolver(self.project_root)
         extensions_dir = self.project_root / ".specify" / "extensions"
+        restore_index: Dict[str, Dict[str, Any]] = {}
 
         for _priority, ext_id, _metadata in resolver._get_all_extensions_by_priority():
             ext_dir = extensions_dir / ext_id
@@ -625,8 +623,6 @@ class PresetManager:
                 cmd_file_rel = cmd_info.get("file")
                 if not isinstance(cmd_name, str) or not isinstance(cmd_file_rel, str):
                     continue
-                if skill_name not in self._skill_names_for_command(cmd_name):
-                    continue
 
                 cmd_path = Path(cmd_file_rel)
                 if cmd_path.is_absolute():
@@ -641,13 +637,17 @@ class PresetManager:
                 if not source_file.is_file():
                     continue
 
-                return {
+                restore_info = {
                     "command_name": cmd_name,
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
                 }
+                modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
+                restore_index.setdefault(modern_skill_name, restore_info)
+                if legacy_skill_name != modern_skill_name:
+                    restore_index.setdefault(legacy_skill_name, restore_info)
 
-        return None
+        return restore_index
 
     def _register_skills(
         self,
@@ -797,6 +797,7 @@ class PresetManager:
         init_opts = load_init_options(self.project_root)
         selected_ai = init_opts.get("ai")
         registrar = CommandRegistrar()
+        extension_restore_index = self._build_extension_skill_restore_index()
 
         for skill_name in skill_names:
             # Derive command name from skill name (speckit-specify -> specify)
@@ -851,7 +852,7 @@ class PresetManager:
                 skill_file.write_text(skill_content, encoding="utf-8")
                 continue
 
-            extension_restore = self._find_extension_skill_restore(skill_name)
+            extension_restore = extension_restore_index.get(skill_name)
             if extension_restore:
                 content = extension_restore["source_file"].read_text(encoding="utf-8")
                 frontmatter, body = registrar.parse_frontmatter(content)
