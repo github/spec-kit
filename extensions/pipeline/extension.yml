@@ -1,0 +1,26 @@
+schema_version: "1.0"
+
+extension:
+  id: pipeline
+  name: Spec Kit Pipeline
+  version: 1.0.0
+  description: End-to-end SDD workflow orchestration — runs specify, clarify, plan, tasks, analyze, and implement in sequence with automatic progression.
+  author: RchrdHndrcks
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.1.0"
+
+provides:
+  commands:
+    - name: speckit.pipeline.run
+      file: commands/pipeline.md
+      description: Run the full speckit workflow end-to-end (specify → clarify → plan → tasks → analyze → implement) with automatic progression between steps.
+      aliases:
+        - speckit.pipeline
+
+tags:
+  - workflow
+  - automation
+  - pipeline
