@@ -41,17 +41,14 @@ def _create_init_options(project_root: Path, ai: str = "claude", ai_skills: bool
 def _create_skills_dir(project_root: Path, ai: str = "claude") -> Path:
     """Create and return the expected skills directory for the given agent."""
     # Match the logic in _get_skills_dir() from specify_cli
-    from specify_cli import AGENT_CONFIG, AGENT_SKILLS_DIR_OVERRIDES, DEFAULT_SKILLS_DIR
+    from specify_cli import AGENT_CONFIG, DEFAULT_SKILLS_DIR
 
-    if ai in AGENT_SKILLS_DIR_OVERRIDES:
-        skills_dir = project_root / AGENT_SKILLS_DIR_OVERRIDES[ai]
+    agent_config = AGENT_CONFIG.get(ai, {})
+    agent_folder = agent_config.get("folder", "")
+    if agent_folder:
+        skills_dir = project_root / agent_folder.rstrip("/") / "skills"
     else:
-        agent_config = AGENT_CONFIG.get(ai, {})
-        agent_folder = agent_config.get("folder", "")
-        if agent_folder:
-            skills_dir = project_root / agent_folder.rstrip("/") / "skills"
-        else:
-            skills_dir = project_root / DEFAULT_SKILLS_DIR
+        skills_dir = project_root / DEFAULT_SKILLS_DIR
 
     skills_dir.mkdir(parents=True, exist_ok=True)
     return skills_dir

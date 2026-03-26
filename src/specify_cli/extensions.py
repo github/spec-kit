@@ -738,11 +738,9 @@ class ExtensionManager:
                 shutil.rmtree(skill_subdir)
         else:
             # Fallback: scan all possible agent skills directories
-            from . import AGENT_CONFIG, AGENT_SKILLS_DIR_OVERRIDES, DEFAULT_SKILLS_DIR
+            from . import AGENT_CONFIG, DEFAULT_SKILLS_DIR
 
             candidate_dirs: set[Path] = set()
-            for override_path in AGENT_SKILLS_DIR_OVERRIDES.values():
-                candidate_dirs.add(self.project_root / override_path)
             for cfg in AGENT_CONFIG.values():
                 folder = cfg.get("folder", "")
                 if folder:
