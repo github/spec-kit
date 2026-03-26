@@ -1141,6 +1141,62 @@ Then {AGENT_SCRIPT}
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
         assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
+    def test_codex_skill_registration_handles_non_dict_init_options(
+        self, project_dir, temp_dir
+    ):
+        """Non-dict init-options payloads should not crash skill placeholder resolution."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-script-list-init"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-script-list-init",
+                "name": "List init options",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.list.plan",
+                        "file": "commands/plan.md",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            """---
+description: "List init scripted command"
+scripts:
+  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
+---
+
+Run {SCRIPT}
+"""
+        )
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text("[]")
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-list-plan" / "SKILL.md").read_text()
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+
     def test_codex_skill_registration_fallback_prefers_powershell_on_windows(
         self, project_dir, temp_dir, monkeypatch
     ):

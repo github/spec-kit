@@ -2005,6 +2005,16 @@ class TestPresetSkills:
 
         assert manager._get_skills_dir() is None
 
+    def test_get_skills_dir_returns_none_for_non_dict_init_options(self, project_dir):
+        """Corrupted non-dict init-options payloads should fail closed."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text("[]")
+
+        manager = PresetManager(project_dir)
+
+        assert manager._get_skills_dir() is None
+
     def test_skill_not_updated_without_init_options(self, project_dir, temp_dir):
         """When no init-options.json exists, preset install should not touch skills."""
         skills_dir = project_dir / ".claude" / "skills"
@@ -2332,6 +2342,23 @@ class TestPresetSkills:
         assert ".specify/templates/checklist.md" in content
         assert ".specify/memory/constitution.md" in content
         assert "for kimi" in content
+
+    def test_preset_skill_registration_handles_non_dict_init_options(self, project_dir, temp_dir):
+        """Non-dict init-options payloads should not crash preset install/remove flows."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text("[]")
+
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify", body="untouched")
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(self_test_dir, "0.1.5")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "untouched" in content
 
 
 class TestPresetSetPriority:

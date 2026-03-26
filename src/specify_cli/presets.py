@@ -573,6 +573,8 @@ class PresetManager:
         from . import load_init_options, _get_skills_dir
 
         opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            opts = {}
         agent = opts.get("ai")
         if not isinstance(agent, str) or not agent:
             return None
@@ -699,6 +701,8 @@ class PresetManager:
         from .agents import CommandRegistrar
 
         init_opts = load_init_options(self.project_root)
+        if not isinstance(init_opts, dict):
+            init_opts = {}
         selected_ai = init_opts.get("ai")
         if not isinstance(selected_ai, str):
             return []
@@ -795,6 +799,8 @@ class PresetManager:
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
         init_opts = load_init_options(self.project_root)
+        if not isinstance(init_opts, dict):
+            init_opts = {}
         selected_ai = init_opts.get("ai")
         registrar = CommandRegistrar()
         extension_restore_index = self._build_extension_skill_restore_index()

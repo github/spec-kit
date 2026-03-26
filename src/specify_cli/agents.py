@@ -387,7 +387,11 @@ class CommandRegistrar:
         if not isinstance(agent_scripts, dict):
             agent_scripts = {}
 
-        script_variant = load_init_options(project_root).get("script")
+        init_opts = load_init_options(project_root)
+        if not isinstance(init_opts, dict):
+            init_opts = {}
+
+        script_variant = init_opts.get("script")
         if script_variant not in {"sh", "ps"}:
             fallback_order = []
             default_variant = "ps" if platform.system().lower().startswith("win") else "sh"
