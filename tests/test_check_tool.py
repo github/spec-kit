@@ -8,8 +8,6 @@ Covers issue https://github.com/github/spec-kit/issues/550:
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
-
 from specify_cli import check_tool
 
 
@@ -39,18 +37,18 @@ class TestCheckToolClaude:
              patch("shutil.which", return_value=None):
             assert check_tool("claude") is True
 
-    def test_detected_via_path(self):
+    def test_detected_via_path(self, tmp_path):
         """claude on PATH (global npm install) should still work."""
-        fake_missing = Path("/nonexistent/claude")
+        fake_missing = tmp_path / "nonexistent" / "claude"
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_missing), \
              patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
              patch("shutil.which", return_value="/usr/local/bin/claude"):
             assert check_tool("claude") is True
 
-    def test_not_found_when_nowhere(self):
+    def test_not_found_when_nowhere(self, tmp_path):
         """Should return False when claude is genuinely not installed."""
-        fake_missing = Path("/nonexistent/claude")
+        fake_missing = tmp_path / "nonexistent" / "claude"
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_missing), \
              patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
@@ -63,7 +61,7 @@ class TestCheckToolClaude:
         fake_npm_claude.parent.mkdir(parents=True)
         fake_npm_claude.touch()
 
-        fake_missing = Path("/nonexistent/claude")
+        fake_missing = tmp_path / "nonexistent" / "claude"
         tracker = MagicMock()
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_missing), \

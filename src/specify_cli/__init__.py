@@ -614,8 +614,7 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
     #   2. ~/.claude/local/node_modules/.bin/claude  (npm-local install, e.g. via nvm)
     # Neither path may be on the system PATH, so we check them explicitly.
     if tool == "claude":
-        if (CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file()) or \
-           (CLAUDE_NPM_LOCAL_PATH.exists() and CLAUDE_NPM_LOCAL_PATH.is_file()):
+        if CLAUDE_LOCAL_PATH.is_file() or CLAUDE_NPM_LOCAL_PATH.is_file():
             if tracker:
                 tracker.complete(tool, "available")
             return True
